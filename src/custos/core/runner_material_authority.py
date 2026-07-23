@@ -351,9 +351,7 @@ def parse_strategy_release_material_resolution(
         "strategy_release_material",
     )
     if set(material) != _STRATEGY_RELEASE_MATERIAL_FIELDS:
-        raise RunnerMaterialResolutionError(
-            "StrategyRelease material shape is not exact V1"
-        )
+        raise RunnerMaterialResolutionError("StrategyRelease material shape is not exact V1")
     snapshot = _exact_object(material.get("snapshot"), "strategy_release_material.snapshot")
     if set(snapshot) != _STRATEGY_RELEASE_SNAPSHOT_FIELDS:
         raise RunnerMaterialResolutionError("StrategyRelease snapshot shape is not exact V1")
@@ -470,8 +468,7 @@ def parse_strategy_release_material_resolution(
         or release_binding.get("release_statement") != release_statement
         or snapshot.get("artifact_ref_digest") != release_binding.get("artifact_ref_digest")
         or snapshot.get("release_bom_digest") != release_binding.get("release_bom_digest")
-        or snapshot.get("artifact_evidence_digest")
-        != evidence.get("composite_evidence_digest")
+        or snapshot.get("artifact_evidence_digest") != evidence.get("composite_evidence_digest")
         or artifact_ref.artifact_sha256 != source.snapshot.artifact_digest
         or artifact_ref.manifest_sha256 != source.snapshot.manifest_digest
         or evidence.get("strategy_release_id") != str(source.snapshot.release_id)

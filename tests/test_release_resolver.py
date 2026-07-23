@@ -23,7 +23,9 @@ class _Authority:
         self.result = result
         self.calls: list[tuple[object, str]] = []
 
-    async def resolve_strategy_release(self, *, command: object, command_fingerprint: str) -> object:
+    async def resolve_strategy_release(
+        self, *, command: object, command_fingerprint: str
+    ) -> object:
         self.calls.append((command, command_fingerprint))
         if isinstance(self.result, Exception):
             raise self.result

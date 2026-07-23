@@ -6,7 +6,10 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from custos_toolkit_nautilus.adapter.registry import (
+
+pytest.importorskip("custos_toolkit_nautilus")
+
+from custos_toolkit_nautilus.adapter.registry import (  # noqa: E402
     get_strategy_info,
     register_strategy,
     unregister_strategy,

@@ -126,9 +126,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument(
         "--artifact-cache-dir",
         type=Path,
-        default=Path(
-            os.environ.get("CUSTOS_ARTIFACT_CACHE_DIR", str(DEFAULT_ARTIFACT_CACHE_DIR))
-        ),
+        default=Path(os.environ.get("CUSTOS_ARTIFACT_CACHE_DIR", str(DEFAULT_ARTIFACT_CACHE_DIR))),
     )
     parser.add_argument(
         "--artifact-registry",

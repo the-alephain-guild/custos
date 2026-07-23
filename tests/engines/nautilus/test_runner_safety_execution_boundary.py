@@ -18,9 +18,9 @@ from nautilus_trader.model.objects import Currency  # noqa: E402
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs  # noqa: E402
 
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig  # noqa: E402
+from custos.core.order_reservation_boundary import RunnerReservationBoundary  # noqa: E402
 from custos.engines.nautilus.runner_safety import (  # noqa: E402
     GuardedLiveExecutionClient,
-    RunnerReservationBoundary,
     RunnerSafetyExecutionDispatch,
     guarded_exec_client_factory,
 )

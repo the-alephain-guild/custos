@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import socket
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
-import requests
 
 from custos.artifacts.errors import ArtifactVerificationError
 from custos.artifacts.sigstore_verifier import ProductionSigstoreVerifier
+
+pytest.importorskip("sigstore")
+pytest.importorskip("sigstore_protobuf_specs")
+
 from tests.sigstore_crypto_fixture import (
     DIFFERENT_ISSUER,
     DIFFERENT_SUBJECT_SHA256,
@@ -26,7 +30,7 @@ def test_real_crypto_bundle_verifies_offline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fixture = build_offline_sigstore_fixture(tmp_path)
-    monkeypatch.setattr(requests.Session, "request", _forbid_network)
+    monkeypatch.setattr(socket.socket, "connect", _forbid_network)
 
     evidence = ProductionSigstoreVerifier().verify(fixture.request)
 

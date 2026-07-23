@@ -4,10 +4,10 @@ import builtins
 import hashlib
 import inspect
 import json
+import socket
 from pathlib import Path
 
 import pytest
-import requests
 
 from custos.artifacts.errors import ArtifactVerificationCode, ArtifactVerificationError
 from custos.artifacts.policy import SigstoreIdentityV1
@@ -65,6 +65,7 @@ def test_sigstore_dependency_missing_fails_closed_with_typed_code(tmp_path, monk
 def test_real_trusted_root_and_invalid_bundle_reject_offline_without_network(
     tmp_path, monkeypatch
 ) -> None:
+    pytest.importorskip("sigstore")
     assert TRUSTED_ROOT.is_file()
     assert (
         hashlib.sha256(TRUSTED_ROOT.read_bytes()).hexdigest()
@@ -76,7 +77,7 @@ def test_real_trusted_root_and_invalid_bundle_reject_offline_without_network(
     def forbid_network(*args, **kwargs):
         raise AssertionError("offline verifier attempted network access")
 
-    monkeypatch.setattr(requests.sessions.Session, "request", forbid_network)
+    monkeypatch.setattr(socket.socket, "connect", forbid_network)
     with pytest.raises(ArtifactVerificationError) as error:
         ProductionSigstoreVerifier().verify(_request(tmp_path))
 

@@ -22,10 +22,10 @@ from nautilus_trader.live.node import TradingNode  # noqa: E402
 from nautilus_trader.model.identifiers import TraderId  # noqa: E402
 
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig  # noqa: E402
+from custos.core.order_reservation_boundary import RunnerReservationBoundary  # noqa: E402
 from custos.engines.nautilus.host import NtTradingNodeHost  # noqa: E402
 from custos.engines.nautilus.runner_safety import (  # noqa: E402
     GuardedLiveExecutionClient,
-    RunnerReservationBoundary,
     guarded_exec_client_factory,
 )
 from custos.engines.nautilus.venue_binance import (  # noqa: E402

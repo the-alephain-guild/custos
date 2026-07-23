@@ -73,8 +73,7 @@ class HttpOciBlobTransportV1:
             raise ValueError("OCI registry timeout must be positive")
         self._allowed_registries = frozenset(normalized)
         self._credentials = {
-            registry.lower(): credential
-            for registry, credential in (credentials or {}).items()
+            registry.lower(): credential for registry, credential in (credentials or {}).items()
         }
         if not set(self._credentials).issubset(self._allowed_registries):
             raise ValueError("OCI credential registry is not allowlisted")
@@ -143,15 +142,13 @@ class HttpOciBlobTransportV1:
             )
         query = parse_qsl(parsed.query, keep_blank_values=True)
         query.extend((("service", service), ("scope", scope)))
-        token_url = urlunsplit(
-            (parsed.scheme, parsed.netloc, parsed.path, urlencode(query), "")
-        )
+        token_url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), ""))
         headers: dict[str, str] = {}
         credential = self._credentials.get(registry)
         if credential is not None:
-            encoded = base64.b64encode(
-                f"{credential.username}:{credential.token}".encode()
-            ).decode("ascii")
+            encoded = base64.b64encode(f"{credential.username}:{credential.token}".encode()).decode(
+                "ascii"
+            )
             headers["Authorization"] = f"Basic {encoded}"
         try:
             payload = self._request_bytes(token_url, headers, 64 * 1024)
@@ -249,9 +246,7 @@ class RegistryStrategyReleaseMaterializerV1:
             statement_coordinate.registry,
             statement_coordinate.repository,
         ) != (bundle_coordinate.registry, bundle_coordinate.repository):
-            raise StrategyReleaseResolutionRejected(
-                "statement and bundle OCI repositories differ"
-            )
+            raise StrategyReleaseResolutionRejected("statement and bundle OCI repositories differ")
         strategy_member = self._strategy_member(release_authority.release_bom)
         artifact_ref = release_authority.artifact_ref
         statement_path, bundle_path, wheel_path = await asyncio.gather(
@@ -344,12 +339,8 @@ class RegistryStrategyReleaseMaterializerV1:
             for member in members
             if isinstance(member, Mapping) and member.get("role") == "strategy_wheel"
         ]
-        if len(strategy_members) != 1 or not isinstance(
-            strategy_members[0].get("name"), str
-        ):
-            raise StrategyReleaseResolutionRejected(
-                "release BOM has no unique strategy wheel"
-            )
+        if len(strategy_members) != 1 or not isinstance(strategy_members[0].get("name"), str):
+            raise StrategyReleaseResolutionRejected("release BOM has no unique strategy wheel")
         return strategy_members[0]
 
     def _materialize_blob(
@@ -371,9 +362,7 @@ class RegistryStrategyReleaseMaterializerV1:
         except (StrategyReleaseResolutionRejected, StrategyReleaseResolutionUnavailable):
             raise
         except Exception as error:
-            raise StrategyReleaseResolutionUnavailable(
-                "OCI blob transport failed"
-            ) from error
+            raise StrategyReleaseResolutionUnavailable("OCI blob transport failed") from error
         self._verify_payload(payload, coordinate.digest, expected_size)
         digest_root = path.parent
         if self._cache_root.is_symlink() or digest_root.is_symlink():
@@ -406,9 +395,7 @@ class RegistryStrategyReleaseMaterializerV1:
 
     def _read_cached(self, path: Path, expected_size: int | None) -> bytes:
         if path.is_symlink() or not path.is_file():
-            raise StrategyReleaseResolutionRejected(
-                "artifact cache entry is not a regular file"
-            )
+            raise StrategyReleaseResolutionRejected("artifact cache entry is not a regular file")
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
         try:
             descriptor = os.open(path, flags)
@@ -433,9 +420,7 @@ class RegistryStrategyReleaseMaterializerV1:
             after.st_mtime_ns,
             after.st_ctime_ns,
         ):
-            raise StrategyReleaseResolutionRejected(
-                "artifact cache entry changed while being read"
-            )
+            raise StrategyReleaseResolutionRejected("artifact cache entry changed while being read")
         digest = path.name
         self._verify_payload(payload, digest, expected_size)
         return payload
@@ -447,9 +432,7 @@ class RegistryStrategyReleaseMaterializerV1:
         expected_size: int | None,
     ) -> None:
         if len(payload) > self._max_blob_bytes:
-            raise StrategyReleaseResolutionRejected(
-                "artifact material exceeds the byte limit"
-            )
+            raise StrategyReleaseResolutionRejected("artifact material exceeds the byte limit")
         if expected_size is not None and len(payload) != expected_size:
             raise StrategyReleaseResolutionRejected("artifact material size differs")
         if hashlib.sha256(payload).hexdigest() != digest:

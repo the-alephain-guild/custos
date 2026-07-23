@@ -107,11 +107,11 @@ async def test_materializer_rejects_cross_repository_attestation_coordinates(
     tmp_path: Path,
 ) -> None:
     authority, statement, blobs = _fixture()
-    authority.detached_attestation_ref["bundle_coordinate"] = (
-        authority.detached_attestation_ref["bundle_coordinate"].replace(
-            "alchymia-labs/v1-team-strategy-artifacts",
-            "other/repository",
-        )
+    authority.detached_attestation_ref["bundle_coordinate"] = authority.detached_attestation_ref[
+        "bundle_coordinate"
+    ].replace(
+        "alchymia-labs/v1-team-strategy-artifacts",
+        "other/repository",
     )
     subject = RegistryStrategyReleaseMaterializerV1(
         cache_root=(tmp_path / "cache").resolve(),
@@ -129,9 +129,7 @@ async def test_materializer_rejects_cross_repository_attestation_coordinates(
 async def test_materializer_rejects_registry_byte_drift(tmp_path: Path) -> None:
     authority, statement, blobs = _fixture()
     wheel_digest = authority.artifact_ref.artifact_sha256
-    blobs[("ghcr.io", "alchymia-labs/v1-team-strategy-artifacts", wheel_digest)] = (
-        b"drift"
-    )
+    blobs[("ghcr.io", "alchymia-labs/v1-team-strategy-artifacts", wheel_digest)] = b"drift"
     subject = RegistryStrategyReleaseMaterializerV1(
         cache_root=(tmp_path / "cache").resolve(),
         transport=_Transport(blobs),

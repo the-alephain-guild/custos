@@ -53,6 +53,7 @@ from custos.contracts.crucible_runner_safety_policy import (
 from custos.core.credential_resolver import VaultRunnerCredentialResolverV1
 from custos.core.engine_lifecycle import EngineLifecycleConfig, EngineLifecycleSupervisor
 from custos.core.engine_protocol import ExecutionEngineProtocol
+from custos.core.fallback_breaker import FallbackBreaker
 from custos.core.machine_credential_vault import (
     MachineCredentialError,
     MachineCredentialHttpClient,
@@ -69,6 +70,7 @@ from custos.core.nats_transport import (
     RunnerNatsTransportSet,
     runner_nats_transport_domain,
 )
+from custos.core.order_reservation_boundary import RunnerReservationBoundary
 from custos.core.per_key_vault import PerKeyVault
 from custos.core.readiness import ReadinessFile
 from custos.core.runner_command_intake import (
@@ -137,8 +139,7 @@ def _build_strategy_release_runtime(
     missing = sorted(name for name, present in configured.items() if not present)
     if missing:
         raise ValueError(
-            "production StrategyRelease configuration is incomplete: "
-            + ", ".join(missing)
+            "production StrategyRelease configuration is incomplete: " + ", ".join(missing)
         )
     username = str(args.artifact_registry_username).strip()
     token = str(args.artifact_registry_token).strip()
@@ -146,9 +147,7 @@ def _build_strategy_release_runtime(
         raise ValueError("artifact registry username and token must be configured together")
     registry = str(args.artifact_registry).strip().lower()
     credentials = (
-        {registry: RegistryPullCredentialV1(username=username, token=token)}
-        if username
-        else {}
+        {registry: RegistryPullCredentialV1(username=username, token=token)} if username else {}
     )
     transport = HttpOciBlobTransportV1(
         allowed_registries=(registry,),
@@ -399,8 +398,6 @@ def _build_runner_safety_boundary_factory(
         limits = await safety_policy_resolver.resolve(str(spec["trading_mode"]))
         if not limits.owner_policy or limits.policy_id is None:
             raise RuntimeError("runner safety execution requires a durable verified owner policy")
-        from custos.core.fallback_breaker import FallbackBreaker
-        from custos.engines.nautilus.runner_safety import RunnerReservationBoundary
 
         return RunnerReservationBoundary(
             store=state_store,

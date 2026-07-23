@@ -16,13 +16,13 @@
     },
     {
       "path": "src/custos/core/runner_material_authority.py",
-      "sha256": "562080b5347e823f1617e52b9822e3a787cc48a7957e59f8a757dc1c72e1d914",
-      "size_bytes": 10520
+      "sha256": "8fcf0a5257fbc3580c87dc1b4d5881e7d6d7b34090a78b5c5b81914bd2501d7b",
+      "size_bytes": 25114
     },
     {
       "path": "tests/test_runner_material_authority.py",
-      "sha256": "bd840aeafb2e425178ee320c2383ab87805c8189436158edb61377fa58d1b361",
-      "size_bytes": 6707
+      "sha256": "ccf9918735df1b51b8ede747f6aa69da75d9078a30fa27952b7cfeda4d2225c6",
+      "size_bytes": 18839
     },
     {
       "path": "src/custos/artifacts/development_runtime.py",

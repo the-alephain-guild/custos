@@ -90,8 +90,7 @@ def _strategy_release_snapshot_digest(snapshot: Mapping[str, object]) -> str:
     if match is None:
         raise ValueError("StrategyRelease snapshot validated_at is not canonical UTC")
     validated_at = (
-        f"{match.group('second')}."
-        f"{(match.group('fraction') or '').ljust(9, '0')}Z"
+        f"{match.group('second')}.{(match.group('fraction') or '').ljust(9, '0')}Z"
     ).encode("ascii")
     hasher = hashlib.sha256()
     hasher.update(b"strategy-release-snapshot-v1")
@@ -232,9 +231,7 @@ class StrategyReleaseArtifactAuthorityV1:
             key=lambda member: str(member.get("name")),
         )
         if bom_runtime_artifacts != artifact_ref_runtime_artifacts:
-            raise ValueError(
-                "release BOM runtime artifacts differ from StrategyArtifactRefV1"
-            )
+            raise ValueError("release BOM runtime artifacts differ from StrategyArtifactRefV1")
         if (
             hashlib.sha256(self.crucible_artifact_evidence_digest_input_bytes).hexdigest()
             != self.crucible_artifact_evidence_digest
