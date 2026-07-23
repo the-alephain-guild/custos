@@ -22,6 +22,7 @@ from custos.contracts.crucible_runner_safety_policy import (
 )
 from custos.core.fallback_breaker import FallbackBreakerConfig
 from custos.core.local_cap import LocalCapConfig, RunnerNotionalCap
+from custos.core.runner_control_consumer import RunnerControlConsumerV1
 from custos.core.runner_fact import (
     RUNNER_STATE_SCHEMA_VERSION,
     RunnerFactIdentity,
@@ -129,6 +130,57 @@ def _verified_policy(
         allowed_trading_modes=frozenset({"live", "sandbox", "testnet"}),
         signature_keys={"runner-policy-runtime-test": private_key.public_key()},
     ).verify(subject=subject, signed_envelope_bytes=envelope_bytes)
+
+
+def _policy_authenticator(
+    private_key: Ed25519PrivateKey,
+    *,
+    allowed_trading_modes: frozenset[str] = frozenset({"live", "sandbox", "testnet"}),
+) -> CrucibleRunnerSafetyPolicyAuthenticator:
+    return CrucibleRunnerSafetyPolicyAuthenticator(
+        expected_tenant_id=TENANT_ID,
+        expected_runner_id=RUNNER_ID,
+        allowed_trading_modes=allowed_trading_modes,
+        signature_keys={"runner-policy-runtime-test": private_key.public_key()},
+    )
+
+
+class _PolicyMessage:
+    def __init__(self, verified: VerifiedRunnerSafetyPolicy) -> None:
+        self.subject = verified.exact_subject
+        self.data = verified.exact_signed_envelope_bytes
+        self.acked = False
+        self.termed = False
+        self.nak_delay: float | None = None
+
+    async def ack(self) -> None:
+        self.acked = True
+
+    async def term(self) -> None:
+        self.termed = True
+
+    async def nak(self, *, delay: float) -> None:
+        self.nak_delay = delay
+
+
+class _PolicyClient:
+    def assert_policy_binding(self, subject: str, policy: object) -> None:
+        assert subject.startswith("crucible.runner.policy.v1.")
+        assert policy is not None
+
+
+class _PolicyCommitStore:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.fail = fail
+        self.committed: list[VerifiedRunnerSafetyPolicy] = []
+
+    async def record_verified_runner_safety_policy(
+        self,
+        verified: VerifiedRunnerSafetyPolicy,
+    ) -> None:
+        if self.fail:
+            raise RuntimeError("injected policy durability failure")
+        self.committed.append(verified)
 
 
 def _store(path: Path, *, tenant_id: str = TENANT_ID) -> RunnerStateStore:
@@ -291,6 +343,74 @@ def test_policy_event_actor_and_status_contract_is_closed() -> None:
         _verified_policy(private_key, status="expired")
     with pytest.raises(RunnerSafetyPolicyVerificationError, match="status"):
         _verified_policy(private_key, status="superseded")
+
+
+@pytest.mark.asyncio
+async def test_policy_delivery_acks_only_after_durable_commit_and_naks_store_failure() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    verified = _verified_policy(private_key)
+    committed_store = _PolicyCommitStore()
+    consumer = RunnerControlConsumerV1(
+        command_runtime=object(),  # type: ignore[arg-type]
+        policy_authenticator=_policy_authenticator(private_key),
+        state_store=committed_store,  # type: ignore[arg-type]
+    )
+    committed = _PolicyMessage(verified)
+
+    await consumer._process_policy(_PolicyClient(), committed)  # noqa: SLF001
+
+    assert committed_store.committed == [verified]
+    assert committed.acked is True
+    assert committed.termed is False
+    assert committed.nak_delay is None
+
+    failing = _PolicyMessage(verified)
+    retrying_consumer = RunnerControlConsumerV1(
+        command_runtime=object(),  # type: ignore[arg-type]
+        policy_authenticator=_policy_authenticator(private_key),
+        state_store=_PolicyCommitStore(fail=True),  # type: ignore[arg-type]
+    )
+
+    await retrying_consumer._process_policy(_PolicyClient(), failing)  # noqa: SLF001
+
+    assert failing.acked is False
+    assert failing.termed is False
+    assert failing.nak_delay == 10.0
+
+
+@pytest.mark.asyncio
+async def test_invalid_or_wrong_scope_policy_delivery_is_terminated() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    verified = _verified_policy(private_key)
+    store = _PolicyCommitStore()
+    consumer = RunnerControlConsumerV1(
+        command_runtime=object(),  # type: ignore[arg-type]
+        policy_authenticator=_policy_authenticator(
+            private_key,
+            allowed_trading_modes=frozenset({"sandbox"}),
+        ),
+        state_store=store,  # type: ignore[arg-type]
+    )
+    invalid = _PolicyMessage(verified)
+    envelope = json.loads(invalid.data)
+    envelope["signature"] = ("A" if envelope["signature"][0] != "A" else "B") + envelope[
+        "signature"
+    ][1:]
+    invalid.data = json.dumps(envelope, separators=(",", ":")).encode()
+
+    await consumer._process_policy(_PolicyClient(), invalid)  # noqa: SLF001
+
+    assert invalid.termed is True
+    assert invalid.acked is False
+    assert store.committed == []
+
+    wrong_scope = _PolicyMessage(_verified_policy(private_key, trading_mode="live"))
+
+    await consumer._process_policy(_PolicyClient(), wrong_scope)  # noqa: SLF001
+
+    assert wrong_scope.termed is True
+    assert wrong_scope.acked is False
+    assert store.committed == []
 
 
 @pytest.mark.asyncio
