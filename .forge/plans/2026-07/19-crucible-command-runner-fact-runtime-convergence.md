@@ -1157,7 +1157,9 @@ the same activation, command fingerprint, safety and RunnerFact path.
 
 This does not claim real transport readiness. Exact SIM/LIVE NATS, redelivery,
 restart, policy publication/readback and production engine evidence remain open.
-No validation was run for this checkpoint.
+On 2026-07-23, the sandbox development-artifact and command-runtime focused gate
+passed `10/10`; that evidence covers only local artifact materialization through
+the common runtime path.
 
 
 ## Active T15 contract correction (2026-07-23)

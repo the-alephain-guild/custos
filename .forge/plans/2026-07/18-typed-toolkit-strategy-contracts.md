@@ -1,6 +1,6 @@
 # 18 - Publish typed toolkit and strategy execution contracts
 
-> **Status**: ⏳ In progress — sole V1 contract and sandbox development-artifact verifier/runtime are CODE-READY / UNVERIFIED; authenticated production StrategyRelease resolution, immutable PS publication and final cross-repo acceptance remain open
+> **Status**: ⏳ In progress — sole V1 contract and sandbox development-artifact verifier/runtime are focused verified; authenticated production StrategyRelease resolution, immutable PS publication and final cross-repo acceptance remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-07-22 for the business-named first-production V1 release relock
 > **Project**: Custos
@@ -575,6 +575,9 @@ Execution checkpoint (2026-07-21):
 - Focused canonical V1 artifact/toolkit verification is `138 passed`; the
   repository authority gate also passes after repairing its canonical consumer
   receipt digest check.
+- The sandbox development-source branch and its command-runtime convergence are
+  focused verified on 2026-07-23: `tests/test_development_artifact.py` plus
+  `tests/test_runner_command_runtime.py` report `10 passed`.
 - Status remains `READY_V1_CODE_PENDING_STRATEGY_RELEASE_RESOLVER`: daemon,
   runtime, live and production readiness remain false until the real resolver,
   protected PS publication and Crucible acceptance are composed.
@@ -724,7 +727,7 @@ git commit -m "docs(custos): mark plan 18 as completed"
 | Old contract/runtime generations | removed | old runtime module and command-owned evidence path are absent |
 | PS V1 handoff | pending final pins | PS source uses the sole V1 OCI topology |
 | Crucible V1 handoff | Custos contract exact; artifact acceptance open | final Custos producer receipt is pinned at Crucible `014edd4`; real PS publication and Plan 88 C6 native acceptance remain open |
-| Runtime activation | code-ready boundary only | authenticated StrategyRelease resolver and real publication remain absent |
+| Runtime activation | local sandbox focused verified | development-source verification and command-runtime convergence pass 10/10; authenticated StrategyRelease resolver and real publication remain absent |
 | Production/live | STOP | requires final exact-byte receipts and real runtime evidence |
 
 ## Deviations and Improvements
