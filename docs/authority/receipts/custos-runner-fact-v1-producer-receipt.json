@@ -3,7 +3,7 @@
   "canonical_name": "Custos RunnerFact V1 producer receipt",
   "status": "READY_FOR_CRUCIBLE_CONSUMER_VALIDATION",
   "authority_coordinate": "custos.runner-fact.v1",
-  "producer_commit": "8c4454f35c5189063bad1516d77e260f034d3da7",
+  "producer_commit": "fcf8df5fd3592257c48cfa22464c1ef6cedf23cf",
   "asset_index": {
     "path": "docs/authority/runner-fact-contract-assets-v1.json",
     "sha256": "ddb279b4aec15e9b520a9f00899b7cbf2bf7ea81dd81456464cc6c932f6b9ed6",

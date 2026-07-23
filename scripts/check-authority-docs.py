@@ -1613,7 +1613,7 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
         errors.append("RunnerFact V1 producer receipt schema differs")
     if receipt.get("status") != "READY_FOR_CRUCIBLE_CONSUMER_VALIDATION":
         errors.append("RunnerFact V1 producer receipt status differs")
-    if receipt.get("producer_commit") != "8c4454f35c5189063bad1516d77e260f034d3da7":
+    if receipt.get("producer_commit") != "fcf8df5fd3592257c48cfa22464c1ef6cedf23cf":
         errors.append("RunnerFact V1 producer receipt does not pin the immutable asset commit")
     expected_index_binding = {
         "path": RUNNER_FACT_CONTRACT_INDEX_PATH,

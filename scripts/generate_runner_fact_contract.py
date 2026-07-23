@@ -43,7 +43,7 @@ from custos.core.runner_fact import (
 
 ROOT = Path(__file__).resolve().parents[1]
 AUTHORITY_COORDINATE = "custos.runner-fact.v1"
-PRODUCER_ASSET_COMMIT = "8c4454f35c5189063bad1516d77e260f034d3da7"
+PRODUCER_ASSET_COMMIT = "fcf8df5fd3592257c48cfa22464c1ef6cedf23cf"
 TENANT_ID = "acme"
 MODE = "sandbox"
 RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
