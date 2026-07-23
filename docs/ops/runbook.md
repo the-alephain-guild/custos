@@ -68,8 +68,33 @@ Useful checks:
 
 ```bash
 arx-runner health
+arx-runner health --json | jq .
 du -h ~/.arx/state/runner-fact-outbox.db
 ```
+
+The JSON form is the sole runtime-health V1 projection. It is atomically
+refreshed from the existing RunnerFact SQLite database and reports each enabled
+transport mode, SQLite quick-check state, database/WAL/disk bytes, command
+outcomes and in-progress leases, desired/applied drift, restart/quarantine,
+pending RunnerFact/PubAck age and signed runner-policy expiry. It is not a
+second journal or business-state store.
+
+Operational thresholds:
+
+- page immediately when `sqlite_quick_check != "ok"`,
+  `overdue_in_progress_commands > 0`, or `quarantined_deployments > 0`;
+- warn when `oldest_desired_applied_drift_age_seconds > 30` or
+  `oldest_pending_fact_age_seconds > 30`, and page at 120 seconds;
+- warn when `disk_free_bytes < 2147483648` and stop new risk-increasing work
+  below 1073741824 bytes;
+- warn when `next_policy_expiry_seconds < 900`; an expired testnet/live policy
+  remains fail closed;
+- any missing or false `transport_modes` entry makes the readiness document
+  invalid rather than hiding one failed mode behind another.
+
+Preserve the database and its `-wal`/`-shm` siblings before recovery. A failed
+SQLite quick check, exhausted disk or stale WAL is an operator recovery event;
+do not delete the database to make health green.
 
 ## Engine or venue failure
 
@@ -89,7 +114,9 @@ different instance.
    key, and RunnerFact outbox.
 3. Restart the service.
 4. Confirm `arx-runner health` succeeds.
-5. Confirm Crucible receives the expected lifecycle fact generation.
+5. Inspect `arx-runner health --json` for drift, quarantine, policy expiry and
+   pending PubAck age.
+6. Confirm Crucible receives the expected lifecycle fact generation.
 
 The runner resumes from enrolled machine authority and Crucible desired state.
 No long-term credential is stored in runner.toml, and no local file is the

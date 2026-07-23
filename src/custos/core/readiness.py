@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 _FILE_MODE = 0o600
 _DIR_MODE = 0o700
@@ -29,6 +31,8 @@ class ReadinessFile:
         strategy_id: str | None,
         nats_connected: bool,
         deployment_subscription: bool,
+        transport_modes: Mapping[str, bool],
+        runtime_metrics: Mapping[str, object],
     ) -> None:
         if _expired(self.credential_valid_until):
             self.clear()
@@ -46,6 +50,8 @@ class ReadinessFile:
             "strategy_id": strategy_id,
             "nats_connected": nats_connected,
             "deployment_subscription": deployment_subscription,
+            "transport_modes": dict(transport_modes),
+            "runtime_metrics": dict(runtime_metrics),
         }
         self._atomic_write(json.dumps(state, separators=(",", ":")).encode("utf-8"))
 
@@ -70,34 +76,58 @@ class ReadinessFile:
 
 
 def is_ready_file(path: Path) -> bool:
+    return read_ready_file(path) is not None
+
+
+def read_ready_file(path: Path) -> dict[str, Any] | None:
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return False
+        return None
     if not isinstance(state, dict) or set(state) != set(_FIELDS):
-        return False
+        return None
     if state.get("ready") is not True or state.get("nats_connected") is not True:
-        return False
+        return None
     if state.get("credential_state") != "active":
-        return False
+        return None
     if state.get("credential_binding_valid") is not True:
-        return False
+        return None
     if not isinstance(state.get("credential_version"), int) or state["credential_version"] < 1:
-        return False
+        return None
     for field in ("tenant_id", "runner_id", "credential_id", "machine_key_id"):
         if not isinstance(state.get(field), str) or not state[field]:
-            return False
+            return None
     if not isinstance(state.get("credential_valid_until"), str) or _expired(
         state["credential_valid_until"]
     ):
-        return False
+        return None
     strategy_id = state.get("strategy_id")
     if strategy_id is not None and (not isinstance(strategy_id, str) or not strategy_id):
-        return False
+        return None
     subscription = state.get("deployment_subscription")
     if strategy_id is not None and subscription is not True:
-        return False
-    return isinstance(subscription, bool)
+        return None
+    if not isinstance(subscription, bool):
+        return None
+    transport_modes = state.get("transport_modes")
+    if (
+        not isinstance(transport_modes, dict)
+        or not transport_modes
+        or any(
+            mode not in {"sandbox", "testnet", "live"} or connected is not True
+            for mode, connected in transport_modes.items()
+        )
+    ):
+        return None
+    metrics = state.get("runtime_metrics")
+    if (
+        not isinstance(metrics, dict)
+        or set(metrics) != set(_RUNTIME_METRIC_FIELDS)
+        or metrics.get("schema_version") != "alephain.custos.runner-runtime-metrics.v1"
+        or metrics.get("sqlite_quick_check") != "ok"
+    ):
+        return None
+    return state
 
 
 _FIELDS = (
@@ -113,6 +143,33 @@ _FIELDS = (
     "strategy_id",
     "nats_connected",
     "deployment_subscription",
+    "transport_modes",
+    "runtime_metrics",
+)
+
+_RUNTIME_METRIC_FIELDS = (
+    "schema_version",
+    "collected_at",
+    "database_bytes",
+    "wal_bytes",
+    "disk_free_bytes",
+    "sqlite_quick_check",
+    "pending_fact_batches",
+    "oldest_pending_fact_age_seconds",
+    "fact_publish_attempts",
+    "desired_deployments",
+    "desired_applied_drift",
+    "oldest_desired_applied_drift_age_seconds",
+    "quarantined_deployments",
+    "restart_count_total",
+    "in_progress_commands",
+    "overdue_in_progress_commands",
+    "command_outcomes",
+    "terminal_command_outcomes",
+    "last_command_outcome_age_seconds",
+    "policy_heads",
+    "expired_policy_heads",
+    "next_policy_expiry_seconds",
 )
 
 

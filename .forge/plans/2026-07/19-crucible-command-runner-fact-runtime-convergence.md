@@ -1,6 +1,6 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T8a focused verification and local real command-to-fact round trip pass; production StrategyRelease, per-mode NATS/policy receipts, immutable runtime RC and T9-T10 remain open
+> **Status**: ⏳ In progress — T2-T8a, sandbox artifact runtime and runtime-health V1 focused verification pass; production StrategyRelease, per-mode NATS/policy receipts, immutable runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-07-21 through exact CR89/CR99/CR100 runner-control contract convergence
 > **Project**: Custos
@@ -1070,6 +1070,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 - [x] engine protocol 是唯一首次生产 V1，不保留 predecessor protocol
 - [x] readiness 覆盖 task/connectivity/portfolio/reconciliation/strategy
 - [x] restart budget/backoff/quarantine
+- [x] runtime-health V1 从唯一 RunnerFact SQLite store 原子投影 command outcome/lag、desired/applied drift、restart/quarantine、PubAck backlog、policy expiry、SQLite/WAL/disk，并通过 `health --json` 暴露 exact per-mode transport state；聚焦回归 30/30
 - [x] equity/unrealized 使用真实 NT API
 - [x] runner cap 来自 Crucible Plan 99 signed versioned policy，且不在 DeploymentSpec 内
 - [x] policy/reservation/exposure checkpoint durable 并可 restart reconcile

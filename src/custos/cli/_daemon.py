@@ -419,6 +419,32 @@ def _transport_profile_for_mode(
     )
 
 
+async def _publish_runtime_readiness(
+    stop: asyncio.Event,
+    *,
+    readiness: ReadinessFile,
+    fact_outbox: RunnerFactOutbox,
+    transport_modes: tuple[str, ...],
+    deployment_subscription: bool,
+    interval_seconds: float = 10.0,
+) -> None:
+    """Refresh one fail-closed operational projection from owner state."""
+
+    while not stop.is_set():
+        metrics = await fact_outbox.runtime_metrics()
+        readiness.mark_ready(
+            strategy_id=None,
+            nats_connected=True,
+            deployment_subscription=deployment_subscription,
+            transport_modes={mode: True for mode in transport_modes},
+            runtime_metrics=metrics.to_dict(),
+        )
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
+        except TimeoutError:
+            pass
+
+
 async def run_daemon(args: argparse.Namespace) -> int:
     """Start signed-command reconciliation and signed RunnerFact publication.
 
@@ -550,6 +576,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 name="crucible-runner-fact-publisher",
             )
         )
+        deployment_subscription = False
         if args.reconcile:
             key_id = str(args.crucible_domain_key_id).strip()
             if not key_id:
@@ -665,17 +692,19 @@ async def run_daemon(args: argparse.Namespace) -> int:
                         name=f"crucible-runner-control-{mode}",
                     )
                 )
-            readiness.mark_ready(
-                strategy_id=None,
-                nats_connected=True,
-                deployment_subscription=True,
+            deployment_subscription = True
+        tasks.append(
+            asyncio.create_task(
+                _publish_runtime_readiness(
+                    stop,
+                    readiness=readiness,
+                    fact_outbox=fact_outbox,
+                    transport_modes=tuple(clients),
+                    deployment_subscription=deployment_subscription,
+                ),
+                name="runner-runtime-readiness",
             )
-        else:
-            readiness.mark_ready(
-                strategy_id=None,
-                nats_connected=True,
-                deployment_subscription=False,
-            )
+        )
 
         await _supervise_long_running_tasks(tasks, stop)
     finally:

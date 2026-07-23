@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -266,6 +267,13 @@ def _render_utc(value: datetime) -> str:
     if micros % 1000 == 0:
         return f"{base}.{micros // 1000:03d}Z"
     return f"{base}.{micros:06d}Z"
+
+
+def _file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except FileNotFoundError:
+        return 0
 
 
 def _uuid(value: UUID | str, field: str) -> str:
@@ -994,6 +1002,37 @@ class PendingRunnerFactBatch:
 
 
 @dataclass(frozen=True, slots=True)
+class RunnerRuntimeMetricsV1:
+    """Operational projection read atomically from the sole RunnerFact store."""
+
+    schema_version: str
+    collected_at: str
+    database_bytes: int
+    wal_bytes: int
+    disk_free_bytes: int
+    sqlite_quick_check: str
+    pending_fact_batches: int
+    oldest_pending_fact_age_seconds: float | None
+    fact_publish_attempts: int
+    desired_deployments: int
+    desired_applied_drift: int
+    oldest_desired_applied_drift_age_seconds: float | None
+    quarantined_deployments: int
+    restart_count_total: int
+    in_progress_commands: int
+    overdue_in_progress_commands: int
+    command_outcomes: int
+    terminal_command_outcomes: int
+    last_command_outcome_age_seconds: float | None
+    policy_heads: int
+    expired_policy_heads: int
+    next_policy_expiry_seconds: float | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
 class CommandOutcomeCommitResult:
     outcome_id: str
     outcome: str
@@ -1450,6 +1489,139 @@ class RunnerFactOutbox:
             )
             for row in rows
         ]
+
+    async def runtime_metrics(
+        self,
+        *,
+        now: datetime | None = None,
+    ) -> RunnerRuntimeMetricsV1:
+        return await asyncio.to_thread(self._runtime_metrics, now)
+
+    def _runtime_metrics(self, now: datetime | None) -> RunnerRuntimeMetricsV1:
+        observed_at = now or datetime.now(UTC)
+        if observed_at.tzinfo is None:
+            raise ValueError("runtime metrics clock must be timezone-aware")
+        observed_at = observed_at.astimezone(UTC)
+        observed_at_ns = int(observed_at.timestamp() * 1_000_000_000)
+        drift_predicate = """
+            applied.deployment_instance_id IS NULL
+            OR applied.generation != desired.generation
+            OR applied.command_fingerprint != desired.command_fingerprint
+        """
+
+        with self._connect() as connection:
+            connection.execute("BEGIN")
+            outbox = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS pending_count,
+                    MIN(created_at) AS oldest_created_at,
+                    COALESCE(SUM(attempts), 0) AS publish_attempts
+                FROM runner_fact_outbox
+                """
+            ).fetchone()
+            deployments = connection.execute(
+                f"""
+                SELECT
+                    COUNT(*) AS desired_count,
+                    COALESCE(SUM(CASE WHEN {drift_predicate} THEN 1 ELSE 0 END), 0)
+                        AS drift_count,
+                    MIN(CASE WHEN {drift_predicate} THEN desired.updated_at_ns END)
+                        AS oldest_drift_at_ns,
+                    COALESCE(SUM(CASE
+                        WHEN desired.desired_status = 'quarantined'
+                          OR applied.observed_status = 'quarantined'
+                        THEN 1 ELSE 0 END), 0) AS quarantined_count,
+                    COALESCE(SUM(applied.restart_count), 0) AS restart_count
+                FROM desired_deployments AS desired
+                LEFT JOIN applied_deployments AS applied
+                    ON applied.deployment_instance_id = desired.deployment_instance_id
+                """
+            ).fetchone()
+            leases = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS in_progress_count,
+                    COALESCE(SUM(CASE WHEN lease_until_ns <= ? THEN 1 ELSE 0 END), 0)
+                        AS overdue_count
+                FROM command_in_progress_lease
+                """,
+                (observed_at_ns,),
+            ).fetchone()
+            outcomes = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS outcome_count,
+                    COALESCE(SUM(CASE WHEN durable_disposition = 'term' THEN 1 ELSE 0 END), 0)
+                        AS terminal_count,
+                    MAX(recorded_at_ns) AS latest_recorded_at_ns
+                FROM command_outcomes
+                """
+            ).fetchone()
+            policies = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS head_count,
+                    COALESCE(SUM(CASE WHEN policy.expires_at_ns <= ? THEN 1 ELSE 0 END), 0)
+                        AS expired_count,
+                    MIN(policy.expires_at_ns) AS next_expiry_ns
+                FROM runner_cap_policy_head AS head
+                JOIN runner_cap_policy AS policy ON policy.policy_id = head.policy_id
+                """,
+                (observed_at_ns,),
+            ).fetchone()
+            quick_check = connection.execute("PRAGMA quick_check(1)").fetchone()
+            connection.rollback()
+
+        oldest_pending = outbox["oldest_created_at"]
+        oldest_pending_age = (
+            max(
+                0.0,
+                (
+                    observed_at
+                    - datetime.fromisoformat(str(oldest_pending).replace("Z", "+00:00")).astimezone(
+                        UTC
+                    )
+                ).total_seconds(),
+            )
+            if oldest_pending is not None
+            else None
+        )
+
+        def age_seconds(value: Any) -> float | None:
+            if value is None:
+                return None
+            return max(0.0, (observed_at_ns - int(value)) / 1_000_000_000)
+
+        next_expiry = policies["next_expiry_ns"]
+        return RunnerRuntimeMetricsV1(
+            schema_version="alephain.custos.runner-runtime-metrics.v1",
+            collected_at=observed_at.isoformat().replace("+00:00", "Z"),
+            database_bytes=self.path.stat().st_size,
+            wal_bytes=_file_size(self.path.with_name(f"{self.path.name}-wal")),
+            disk_free_bytes=shutil.disk_usage(self.path.parent).free,
+            sqlite_quick_check=str(quick_check[0]) if quick_check is not None else "missing",
+            pending_fact_batches=int(outbox["pending_count"]),
+            oldest_pending_fact_age_seconds=oldest_pending_age,
+            fact_publish_attempts=int(outbox["publish_attempts"]),
+            desired_deployments=int(deployments["desired_count"]),
+            desired_applied_drift=int(deployments["drift_count"]),
+            oldest_desired_applied_drift_age_seconds=age_seconds(deployments["oldest_drift_at_ns"]),
+            quarantined_deployments=int(deployments["quarantined_count"]),
+            restart_count_total=int(deployments["restart_count"]),
+            in_progress_commands=int(leases["in_progress_count"]),
+            overdue_in_progress_commands=int(leases["overdue_count"]),
+            command_outcomes=int(outcomes["outcome_count"]),
+            terminal_command_outcomes=int(outcomes["terminal_count"]),
+            last_command_outcome_age_seconds=age_seconds(outcomes["latest_recorded_at_ns"]),
+            policy_heads=int(policies["head_count"]),
+            expired_policy_heads=int(policies["expired_count"]),
+            next_policy_expiry_seconds=(
+                (int(next_expiry) - observed_at_ns) / 1_000_000_000
+                if next_expiry is not None
+                else None
+            ),
+        )
 
     async def acknowledge(self, batch_id: UUID) -> None:
         await asyncio.to_thread(self._acknowledge, batch_id)
