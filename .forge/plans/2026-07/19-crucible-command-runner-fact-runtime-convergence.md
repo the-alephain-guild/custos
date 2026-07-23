@@ -1253,3 +1253,21 @@ mypy together, with 33 lifecycle/command/composition tests and Ruff green.
 The remaining Plan 19 boundary is launched evidence: real Crucible HTTP/PG,
 registry and Sigstore verification, NATS delivery/redelivery, engine action,
 atomic applied-state plus lifecycle outbox commit, and signed RunnerFact PubAck.
+
+## 2026-07-23 clean base runtime gate
+
+Custos `3fd8aaa0556da35562e381edcca7aeac51f08cd0` restores
+`make verify-base-clean` as an honest gate. Sigstore crypto tests no longer
+depend on undeclared `requests` and collect only when the `lts` dependency is
+installed; Nautilus-only registry tests collect only with the Nautilus extra.
+The framework-independent order reservation boundary now lives in `core`, so
+the base `sandbox-sim` daemon can construct owner-policy enforcement without
+importing NautilusTrader. The Nautilus adapter supplies only its cache-specific
+order semantics.
+
+The final gate passes 581 tests with 14 capability-based skips and one
+documented xfail, followed by generated authority drift checks, the 241/241
+zero-rewrite extraction gate, and strict mypy closure for both toolkit
+packages. This closes the known base-profile collection and composition debt;
+it does not replace the still-open launched HTTP/PG, registry/Sigstore,
+NATS/engine and RunnerFact PubAck receipts.
