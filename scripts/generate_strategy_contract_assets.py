@@ -52,7 +52,7 @@ RUNNER_COMMAND_GOLDEN_PATH = "docs/authority/runner-deployment-command-golden-v1
 RUNNER_COMMAND_GOLDEN_SIDECAR_PATH = (
     "docs/authority/runner-deployment-command-golden-v1.json.sha256"
 )
-RUNNER_COMMAND_PRODUCER_COMMIT = "750dd10f204198c90e5a1a827a36f2f1907bae04"
+RUNNER_COMMAND_PRODUCER_COMMIT = "d1e850b5021feb899873a91ef23d2f2ba3f665ae"
 RUNNER_COMMAND_SUBJECT_TEMPLATE = "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
 
 TOOLKIT_RC_SCHEMA_PATH = "docs/gateway-contract/v1/toolkit_rc_receipt_manifest_v1.schema.json"

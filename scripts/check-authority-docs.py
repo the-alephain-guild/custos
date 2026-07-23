@@ -64,6 +64,7 @@ RUNNER_FACT_CONTRACT_RECEIPT_PATH = (
 )
 RUNNER_COMMAND_CONSUMER_SOURCE = "src/custos/contracts/crucible_runner_command.py"
 RUNNER_COMMAND_GOLDEN_PATH = "docs/authority/runner-deployment-command-golden-v1.json"
+RUNNER_COMMAND_PRODUCER_COMMIT = "d1e850b5021feb899873a91ef23d2f2ba3f665ae"
 REVIEW_VENDOR_ROOT = "docs/authority/receipts/vendor"
 CURRENT_STRATEGY_CONTRACT_SOURCE = (
     "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py"
@@ -539,7 +540,7 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
     elif (
         producer.get("contract") != "CrucibleRunnerDeploymentCommandV1"
         or producer.get("status") != "CONTRACT_V1_PINNED_RUNTIME_RECEIPT_PENDING"
-        or producer.get("producer_commit") != "750dd10f204198c90e5a1a827a36f2f1907bae04"
+        or producer.get("producer_commit") != RUNNER_COMMAND_PRODUCER_COMMIT
         or producer.get("subject_template") != "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
     ):
         errors.append("runner command consumer V1 producer contract differs")

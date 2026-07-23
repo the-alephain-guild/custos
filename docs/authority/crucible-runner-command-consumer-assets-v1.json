@@ -11,17 +11,17 @@
     },
     {
       "path": "tests/test_runner_deployment_command_golden.py",
-      "sha256": "8e6e832d3304c4daae62470244f98316a4819959a8a9851023583138501cafa6",
-      "size_bytes": 4677
+      "sha256": "2e5a942e762d2d19a7447fcea08a570473757adc2b628c363f8e864558a2a7c3",
+      "size_bytes": 5476
     },
     {
       "path": "docs/authority/runner-deployment-command-golden-v1.json",
-      "sha256": "a73970d1fc2042d67c8fd06927129c82275171311ceb5e03ff55ca017573f5b9",
-      "size_bytes": 12207
+      "sha256": "14aa3052a956bcf8add883c5793be886e62f9117cfa99bfb620fcfae92014b9e",
+      "size_bytes": 18190
     },
     {
       "path": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
-      "sha256": "802146c0a7e1495a6e25f54ef109569b3999dec8d9060f95a6a6d99c3ae19435",
+      "sha256": "5a121be4f47381ab1f35e5c96c676a95a649502c717e78267536d6c2007ce8c5",
       "size_bytes": 107
     }
   ],
@@ -40,7 +40,7 @@
   "exact_signed_event_bytes_retained": true,
   "producer_authority": {
     "contract": "CrucibleRunnerDeploymentCommandV1",
-    "producer_commit": "750dd10f204198c90e5a1a827a36f2f1907bae04",
+    "producer_commit": "d1e850b5021feb899873a91ef23d2f2ba3f665ae",
     "receipt": null,
     "repository": "tesseract-trading/crucible-rust",
     "status": "CONTRACT_V1_PINNED_RUNTIME_RECEIPT_PENDING",

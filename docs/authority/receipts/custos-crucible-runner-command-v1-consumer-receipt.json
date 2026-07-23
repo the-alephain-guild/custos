@@ -10,7 +10,7 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
-    "sha256": "8a0c8f15d6635ae0c2e9e1d953b7944eaabc23c4a2d9989830d29a898ee1a527",
+    "sha256": "e8633912812dc6f53df9c472b1fdee40f594c8772387563590af4d627fd161fe",
     "size_bytes": 2093
   },
   "contract_guards": {
@@ -25,7 +25,7 @@
   },
   "crucible_producer": {
     "contract": "CrucibleRunnerDeploymentCommandV1",
-    "producer_commit": "750dd10f204198c90e5a1a827a36f2f1907bae04",
+    "producer_commit": "d1e850b5021feb899873a91ef23d2f2ba3f665ae",
     "receipt": null,
     "repository": "tesseract-trading/crucible-rust",
     "status": "CONTRACT_V1_PINNED_RUNTIME_RECEIPT_PENDING",

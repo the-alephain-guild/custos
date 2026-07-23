@@ -61,16 +61,37 @@ def _signed(case: dict) -> tuple[bytes, CrucibleDomainEventVerifier]:
 
 
 @pytest.mark.parametrize(
-    ("case_name", "generation", "lifecycle_state"),
+    ("case_name", "generation", "lifecycle_state", "deployment_instance_id", "development"),
     [
-        ("deployment_spec_ready_for_runner", 1, "running"),
-        ("deployment_instance_desired_state_changed", 2, "paused"),
+        (
+            "deployment_spec_ready_for_runner",
+            1,
+            "running",
+            "20000000-0000-4000-8000-000000000002",
+            False,
+        ),
+        (
+            "deployment_instance_desired_state_changed",
+            2,
+            "paused",
+            "20000000-0000-4000-8000-000000000002",
+            False,
+        ),
+        (
+            "deployment_spec_ready_for_runner_development_source",
+            1,
+            "running",
+            "22000000-0000-4000-8000-000000000022",
+            True,
+        ),
     ],
 )
 def test_crucible_golden_commands_parse_through_real_signature_verifier(
     case_name: str,
     generation: int,
     lifecycle_state: str,
+    deployment_instance_id: str,
+    development: bool,
 ) -> None:
     case = next(value for value in _fixture()["cases"] if value["name"] == case_name)
     payload = case["event_document"]["payload"]
@@ -88,7 +109,13 @@ def test_crucible_golden_commands_parse_through_real_signature_verifier(
 
     assert spec.generation == generation
     assert spec.lifecycle_state.value == lifecycle_state
-    assert str(spec.deployment_instance_id) == ("20000000-0000-4000-8000-000000000002")
+    assert str(spec.deployment_instance_id) == deployment_instance_id
+    assert command.is_development_source is development
+    if development:
+        assert spec.trading_mode.value == "sandbox"
+        assert spec.artifact_source.snapshot.promotable is False
+        assert spec.promotion_id is None
+        assert spec.promotion_evidence_digest is None
 
 
 def test_outer_trading_mode_alias_is_rejected_without_fallback() -> None:
