@@ -1,12 +1,12 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T8a, sandbox artifact runtime and runtime-health V1 focused verification pass; production StrategyRelease, per-mode NATS/policy receipts, immutable runtime RC and T9-T10 remain open
+> **Status**: ⏳ In progress — T2-T8a, sandbox artifact runtime, runtime-health V1 and CR99 producer handoff focused verification pass; physical-mode policy/NATS receipts, production StrategyRelease, immutable runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-07-21 through exact CR89/CR99/CR100 runner-control contract convergence
 > **Project**: Custos
 > **Source**: Audit of pre-plan migration `324da6e`, PS Plan 53, and v1.team review
 > **For Claude**: Use `/forge:execute` to implement this plan.
-> **Immediately executable**: none in 19c; Task 7 is hard-blocked on the clean landed Crucible Plan 99 signed-policy receipt
+> **Immediately executable**: T7 contract handoff is complete; launched policy publication/PubAck acceptance remains gated by real `0117` mode-database and NATS receipts
 > **19d-T8a gate**: 19c STOP only; it produces the immutable RunnerFact candidate before Crucible Plan 90 Phase A
 > **Runtime RC gates**: Crucible Plan 89 migration 0116 signed command producer and `CR89-0116-GENERATION-STORAGE`; Crucible Plan 90 Phase-A schema/golden compatibility receipt; Crucible Plan 99 runner-safety-policy-authority; Crucible Plan 100 runner NATS transport authority and revocation receipts; Custos Plan 18 staged candidate and exact final required by the selected RC/final-candidate BOM
 > **Close-out gates**: Crucible Plan 90 Phase-B real runtime round-trip receipt; PS Plan 56 exact final-candidate acceptance
@@ -929,12 +929,14 @@ git commit -m "fix(custos): use reliable Nautilus portfolio equity"
 5. Do not copy authorization or approval logic from Crucible.
 
 > **Execution status (2026-07-21)**:
-> `READY_CONTRACT_ONLY_PENDING_RUNNER_POLICY_RUNTIME_RECEIPT`. Custos now pins the exact
-> CR99 producer commit, schema, golden and SHA sidecar; the current exact-contract,
-> durable revision/reservation slice is `18 passed`. Policy identity is one immutable
+> `READY_PRODUCER_HANDOFF_PENDING_RUNTIME_PUBLICATION_RECEIPT`. Custos now pins the exact
+> CR99 producer code commit `d52bb16`, handoff commit `fe93008`, schema, golden,
+> producer receipt and SHA sidecar; the current exact-contract, durable
+> revision/reservation slice is `20 passed`. Policy identity is one immutable
 > `policy_id` per revision with an exact prior reference; the former parallel
 > `policy_version`/`generation` axis is deleted. Signed event/outbox publication,
-> real daemon policy consumption and runtime/live promotion remain false.
+> real mode-database migration, NATS/PubAck, daemon policy consumption and
+> runtime/live promotion remain false.
 > Command and policy both consume the sole six-field signed-domain-event V1
 > envelope; the temporary policy-only nine-field envelope was deleted.
 
@@ -1105,7 +1107,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | Signed command V1 consumer | focused verified | consumes real DeploymentSpec domain events; exact contract assets regenerated and authority-checked |
 | RunnerFact SQLite V1 deep module | focused verified | one store, one outbox and one instance-continuous sequence |
 | Engine lifecycle | local verified, production blocked | 118-test T2-T8a gate passes; authenticated production artifact authority is not composed |
-| Runner policy V1 | exact contract gate pass, blocked | CR99 signed event/outbox runtime receipt and real daemon consumption pending |
+| Runner policy V1 | producer handoff focused verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; `0117` mode execution, NATS/PubAck and real daemon consumption pending |
 | Machine credential and NATS vault V1 | direct credential contract ready; NATS runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; control `0029`, durable replay receipt, JWT/ACL/durable readback and dual-domain broker evidence pending |
 | RunnerFact V1 producer candidate | local consumer validation passed | immutable `8c4454f` assets pinned; formal clean cross-repository Phase A receipt remains required |
 | Local sandbox runtime | PASS | signed Custos facts traversed NATS, Crucible ingest/replay/projectors and ARX owner read |

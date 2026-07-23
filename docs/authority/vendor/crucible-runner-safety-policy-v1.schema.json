@@ -53,7 +53,7 @@
     "risk_reducing_orders": { "const": "always_permitted" },
     "effective_at": { "type": "string", "format": "date-time" },
     "expires_at": { "type": "string", "format": "date-time" },
-    "status": { "enum": ["active", "superseded", "revoked", "expired"] },
+    "status": { "enum": ["active", "revoked", "expired"] },
     "previous": {
       "oneOf": [
         { "type": "null" },

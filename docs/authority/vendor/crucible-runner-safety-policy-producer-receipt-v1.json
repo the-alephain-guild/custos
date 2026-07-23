@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "receipt_id": "CRUCIBLE-RUNNER-SAFETY-POLICY-V1",
+  "owner": "crucible-rust",
+  "consumer": "custos",
+  "status": "CODE_READY_LOCAL_VERIFIED_RUNTIME_PUBLICATION_OPEN",
+  "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
+  "authority_coordinate": "crucible.runner-aggregate-cap-policy.v1",
+  "subject_template": "crucible.runner.policy.v1.<tenant>.<runner_id>.<mode>",
+  "signature_profile": "crucible-domain-event-v1-exact-bytes",
+  "event_encoding": "application/json;base64url",
+  "policy_identity": {
+    "scope": [
+      "tenant_id",
+      "runner_id",
+      "trading_mode"
+    ],
+    "revision_axis": "revision",
+    "successor_fence": "previous policy_id + revision + policy_digest",
+    "supersession": "derived from the active successor previous reference",
+    "terminal_statuses": [
+      "revoked",
+      "expired"
+    ]
+  },
+  "assets": {
+    "schema": {
+      "path": "docs/authority/runner-safety-policy-v1.schema.json",
+      "sha256": "2029b02dbf5f415c13f539cb807bf72c45b1be712fb0922a66f7d10bf4e8ac89",
+      "size_bytes": 2515
+    },
+    "golden": {
+      "path": "docs/authority/runner-safety-policy-golden-v1.json",
+      "sha256": "ebd5c7679ff1182ea991fb72417ffa379180a4b8a50103552d06500842c7054a",
+      "size_bytes": 1276
+    },
+    "golden_sha256": {
+      "path": "docs/authority/runner-safety-policy-golden-v1.json.sha256",
+      "sha256": "16cb4ecce1744d7c2fe82fb80a34b9fdf49769512793615b62314804d286e2bf",
+      "size_bytes": 102
+    }
+  },
+  "producer_capabilities": {
+    "owner_http_lifecycle": true,
+    "actor_assertion_scope_enforced": true,
+    "mode_local_outbox": true,
+    "signed_exact_subject_route": true,
+    "system_expiration_successor": true,
+    "system_event_actor_assertion_jti_nullable": true,
+    "human_mutation_actor_assertion_jti_required": true,
+    "readiness_fail_closed": true,
+    "compatibility_parser_present": false
+  },
+  "verification": [
+    {
+      "scope": "owner HTTP lifecycle",
+      "result": "2 passed"
+    },
+    {
+      "scope": "signed publisher route",
+      "result": "2 passed"
+    },
+    {
+      "scope": "runner safety policy contract",
+      "result": "5 passed"
+    },
+    {
+      "scope": "runner NATS transport contract",
+      "result": "5 passed"
+    },
+    {
+      "scope": "expiration service",
+      "result": "7 passed"
+    },
+    {
+      "scope": "expiration worker health",
+      "result": "1 passed"
+    },
+    {
+      "scope": "readiness",
+      "result": "3 passed"
+    }
+  ],
+  "checked_in_mode_migration_head": "0117",
+  "mode_database_execution_receipts": {
+    "sandbox": null,
+    "testnet": null,
+    "live": null
+  },
+  "runtime_publication_receipt": null,
+  "custos_consumer_receipt": null,
+  "runtime_ready": false,
+  "live_ready": false,
+  "production_ready": false
+}

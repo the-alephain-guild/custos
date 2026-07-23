@@ -1221,13 +1221,14 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
         return
 
     index = load_json(index_path)
-    expected_status = "READY_CONTRACT_ONLY_PENDING_RUNNER_POLICY_RUNTIME_RECEIPT"
+    expected_status = "READY_PRODUCER_HANDOFF_PENDING_RUNTIME_PUBLICATION_RECEIPT"
     if index.get("schema_version") != 1 or index.get("status") != expected_status:
         errors.append("runner policy consumer asset index status differs")
     expected_assets = {
         "docs/authority/vendor/crucible-runner-safety-policy-v1.schema.json",
         "docs/authority/vendor/crucible-runner-safety-policy-golden-v1.json",
         "docs/authority/vendor/crucible-runner-safety-policy-golden-v1.json.sha256",
+        "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json",
     }
     assets = _asset_table(
         index.get("producer_assets"), label="runner policy producer assets", errors=errors
@@ -1259,6 +1260,9 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
         or producer.get("authority_coordinate") != "crucible.runner-aggregate-cap-policy.v1"
         or producer.get("subject_template") != "crucible.runner.policy.v1.<tenant>.<runner>.<mode>"
         or not re.fullmatch(r"[0-9a-f]{40}", str(producer.get("producer_commit") or ""))
+        or not re.fullmatch(r"[0-9a-f]{40}", str(producer.get("producer_receipt_commit") or ""))
+        or producer.get("producer_receipt")
+        != "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json"
         or producer.get("runtime_receipt") is not None
     ):
         errors.append("runner policy producer authority binding differs")
@@ -1286,6 +1290,10 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
         "producer_commit"
     ):
         errors.append("runner policy receipt producer commit differs from asset index")
+    if receipt.get("producer_authority", {}).get("producer_receipt_commit") != producer.get(
+        "producer_receipt_commit"
+    ):
+        errors.append("runner policy receipt producer handoff commit differs from asset index")
     if (ROOT / "docs/authority/vendor/crucible-plan-99").exists():
         errors.append("superseded Crucible runner policy vendor pins must be deleted")
 
@@ -1302,9 +1310,9 @@ def verify_runner_policy_runtime(manifest: dict[str, Any], errors: list[str]) ->
         "command": "uv run pytest -q tests/test_runner_policy_runtime.py "
         "tests/test_runner_fact_store.py "
         "tests/test_order_reservation.py",
-        "passed": 18,
+        "passed": 20,
         "required_before_runtime_ready": True,
-        "status": "FOCUSED_RUNNER_POLICY_EXACT_CONTRACT_PASS",
+        "status": "FOCUSED_RUNNER_POLICY_PRODUCER_HANDOFF_PASS",
     }:
         errors.append("runner policy V1 focused validation evidence differs")
     if receipt.get("runtime_policy_consumed") is not False:

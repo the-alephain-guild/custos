@@ -17,21 +17,23 @@ tenant/mode/runner scope.
 This is not key-sorted JCS. The golden signature is synthetic contract evidence
 and is never accepted as runtime signature evidence.
 
-The immutable revision is policy id, policy version, generation, digest,
-previous-policy fence, effective time and expiry. Initial policy version and
-generation are 1 with no prior. Every successor advances both values by exactly
-one and binds the prior id/version/generation/digest. Missing, stale, conflicting,
-downgraded, wrong-scope, inactive, not-yet-effective, expired or invalidly signed
-policy fails closed.
+Each immutable revision has a unique policy id, one monotonic `revision`, digest,
+effective time, expiry and exact `previous` policy id/revision/digest fence.
+Revision 1 has no prior. Every successor advances only `revision` by exactly one
+and binds the prior revision. Supersession is derived from that successor edge;
+it is not a mutable status. The only terminal statuses are `revoked` and
+`expired`. Human activation/revocation events require a canonical ActorAssertion
+JTI, while the deterministic system-expiry successor carries a null JTI.
+Missing, stale, conflicting, downgraded, wrong-scope, inactive,
+not-yet-effective, expired or invalidly signed policy fails closed.
 
 ## Durable code boundary
 
-T7B advances the local implementation to `READY_CONTRACT_CONSUMER_CODE_ONLY`.
 After signature verification, exact policy and verification material are stored
 in the existing RunnerFact SQLite database. The sole first-production state
 schema V1 includes one scoped policy head; it does not add a second database or
-outbox. A successor must advance
-version and generation by exactly one and match the durable prior fence.
+outbox. A successor must advance `revision` by exactly one and match the durable
+prior fence.
 Restart recovery rejects missing, inactive, premature and expired policy.
 
 `LocalCapConfig` and `FallbackBreakerConfig` can only be built from that verified
@@ -39,10 +41,16 @@ policy or from the explicit strictest sandbox/testnet fallback. Live has no
 fallback. The reconciler never reads DeploymentSpec `risk_config` for these
 limits. Risk-reducing intents remain permitted by the local cap contract.
 
+The daemon uses this resolver for sandbox, testnet and live. A current, valid,
+owner-signed policy enables the same execution boundary in every mode. Live has
+no compile-time override or local fallback: missing, revoked or expired durable
+authority blocks risk-increasing execution.
+
 ## Current readiness
 
-The signed Crucible V1 producer receipt and exact-byte pin are not yet available,
-runtime publication is false, and the daemon has not consumed a real signed policy.
-The native engine-boundary order interceptor and full reservation lifecycle are
-also open. Therefore code-only readiness does not enable the team daemon, live,
-runtime or production capability.
+The Crucible producer handoff at `fe93008` is pinned exactly, including producer
+code `d52bb16`, schema/golden digests, exact subject and signature profile. The
+native engine boundary, aggregate reservation lifecycle and valid-live-policy
+code path are focused verified. Physical mode migration execution, launched
+NATS publication/PubAck, real daemon consumption and release promotion remain
+open, so runtime, live deployment and production readiness remain false.

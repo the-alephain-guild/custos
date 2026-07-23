@@ -1,13 +1,15 @@
 {
   "schema_version": 1,
-  "status": "READY_CONTRACT_ONLY_PENDING_RUNNER_POLICY_RUNTIME_RECEIPT",
+  "status": "READY_PRODUCER_HANDOFF_PENDING_RUNTIME_PUBLICATION_RECEIPT",
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
-    "producer_commit": "9ba70ce60648a3b3df6a669a112143b601c13b62",
+    "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
+    "producer_receipt_commit": "fe930088ea158f8fee057da79aa900674e48b2d3",
     "contract": "RunnerAggregateCapPolicyV1",
     "authority_coordinate": "crucible.runner-aggregate-cap-policy.v1",
     "subject_template": "crucible.runner.policy.v1.<tenant>.<runner>.<mode>",
     "signature_profile": "crucible-domain-event-v1-exact-bytes",
+    "producer_receipt": "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json",
     "runtime_receipt": null
   },
   "producer_assets": [
@@ -15,8 +17,8 @@
       "role": "schema",
       "path": "docs/authority/vendor/crucible-runner-safety-policy-v1.schema.json",
       "source_path": "docs/authority/runner-safety-policy-v1.schema.json",
-      "sha256": "460b2a820a2dee3df057f8f69db6d8e42e423b0ec843d736f1736dbd47b0926d",
-      "size_bytes": 2529
+      "sha256": "2029b02dbf5f415c13f539cb807bf72c45b1be712fb0922a66f7d10bf4e8ac89",
+      "size_bytes": 2515
     },
     {
       "role": "golden",
@@ -31,12 +33,19 @@
       "source_path": "docs/authority/runner-safety-policy-golden-v1.json.sha256",
       "sha256": "16cb4ecce1744d7c2fe82fb80a34b9fdf49769512793615b62314804d286e2bf",
       "size_bytes": 102
+    },
+    {
+      "role": "producer_receipt",
+      "path": "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json",
+      "source_path": "docs/authority/receipts/crucible-runner-safety-policy-v1.json",
+      "sha256": "6985bc77a58e47da091c383eb65963ee9075d57d88610134d96257c93e325aac",
+      "size_bytes": 2811
     }
   ],
   "consumer_model": {
     "path": "src/custos/contracts/crucible_runner_safety_policy.py",
-    "sha256": "f1eac3cf951df9a7eefa569306574384734453a19b3bc974daceb7e36e1d88ab",
-    "size_bytes": 18077
+    "sha256": "6d977f19084437a0cef0f5b3ba04323e438af50c22a4d965a31f6166d37822ca",
+    "size_bytes": 18358
   },
   "signed_envelope_fields": [
     "schema_version",
@@ -49,6 +58,7 @@
   "policy_identity": "immutable policy_id per revision with exact previous reference",
   "policy_revision_axis": "revision",
   "legacy_policy_version_or_generation_allowed": false,
+  "producer_handoff_ready": true,
   "runtime_ready": false,
   "live_ready": false,
   "production_ready": false

@@ -199,6 +199,10 @@
       "path": "docs/authority/vendor/crucible-runner-safety-policy-golden-v1.json.sha256"
     },
     {
+      "role": "crucible_runner_policy_producer_receipt_v1",
+      "path": "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json"
+    },
+    {
       "role": "runner_policy_receipt_v1",
       "path": "docs/authority/receipts/custos-runner-safety-policy-v1-consumer-receipt.json"
     },
@@ -334,6 +338,7 @@
       "docs/authority/vendor/crucible-runner-safety-policy-v1.schema.json",
       "docs/authority/vendor/crucible-runner-safety-policy-golden-v1.json",
       "docs/authority/vendor/crucible-runner-safety-policy-golden-v1.json.sha256",
+      "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json",
       "docs/authority/vendor/crucible-runner-nats-transport-authority-v1.schema.json",
       "docs/authority/vendor/crucible-runner-nats-transport-authority-golden-v1.json",
       "docs/authority/vendor/crucible-runner-nats-transport-authority-golden-v1.json.sha256",

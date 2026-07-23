@@ -1,29 +1,36 @@
 {
   "receipt_version": 1,
-  "receipt_status": "READY_CONTRACT_ONLY_PENDING_RUNNER_POLICY_RUNTIME_RECEIPT",
+  "receipt_status": "READY_PRODUCER_HANDOFF_PENDING_RUNTIME_PUBLICATION_RECEIPT",
   "repository": "tesseract-trading/custos",
-  "generated_at": "2026-07-21",
-  "code_commit": "24109d0355229c2e2368335008d07de02a1056ff",
+  "generated_at": "2026-07-23",
+  "code_commit": "ab5038cf11a7dff6ca79264e6cb91b32758c1357",
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-safety-policy-consumer-assets-v1.json",
-    "sha256": "df4642323957fccdccaa851a581bd1d4fcbe688deb370c8e8e01a55fc7a97cf4",
-    "size_bytes": 2124
+    "sha256": "2ac64476636c8f2002febe1ce273eea753d4b367cf97d0eb95b6c35cbe709c33",
+    "size_bytes": 2674
   },
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
-    "producer_commit": "9ba70ce60648a3b3df6a669a112143b601c13b62",
+    "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
+    "producer_receipt_commit": "fe930088ea158f8fee057da79aa900674e48b2d3",
+    "producer_receipt_path": "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json",
+    "producer_receipt_sha256": "6985bc77a58e47da091c383eb65963ee9075d57d88610134d96257c93e325aac",
     "authority_coordinate": "crucible.runner-aggregate-cap-policy.v1",
     "subject_template": "crucible.runner.policy.v1.<tenant>.<runner>.<mode>",
-    "schema_sha256": "460b2a820a2dee3df057f8f69db6d8e42e423b0ec843d736f1736dbd47b0926d",
+    "schema_sha256": "2029b02dbf5f415c13f539cb807bf72c45b1be712fb0922a66f7d10bf4e8ac89",
     "golden_sha256": "ebd5c7679ff1182ea991fb72417ffa379180a4b8a50103552d06500842c7054a",
     "runtime_receipt": null,
-    "authority_ready": false
+    "contract_authority_ready": true,
+    "runtime_authority_ready": false
   },
   "runner_state_schema_version": 1,
   "policy_revision_axis": "revision",
   "immutable_policy_id_per_revision": true,
   "exact_previous_reference_required": true,
   "contract_assets_vendored": true,
+  "producer_handoff_consumed": true,
+  "system_expiry_null_actor_assertion_jti_supported": true,
+  "superseded_status_allowed": false,
   "event_idempotency_and_conflict_ready": true,
   "policy_head_required": true,
   "per_order_cap_enforced": true,
@@ -35,6 +42,7 @@
   "risk_reducing_release_ready": true,
   "reduce_only_and_cancel_non_blocking": true,
   "missing_owner_policy_fails_closed": true,
+  "valid_live_owner_policy_code_path_ready": true,
   "native_execution_client_interception_ready": true,
   "engine_boundary_enforcement_ready": true,
   "daemon_boundary_factory_wired": true,
@@ -53,21 +61,21 @@
   "live_ready": false,
   "production_ready": false,
   "open_blockers": [
-    "Crucible signed runner-policy event, mode-local outbox and runtime producer receipt",
-    "real owner policy consumption by the team daemon",
+    "0117 execution receipts from the physical sim and live databases",
+    "launched signed policy publication, PubAck and real owner-policy consumption",
     "live runtime and production promotion"
   ],
   "sources": {
-    "src/custos/contracts/crucible_runner_safety_policy.py": "f1eac3cf951df9a7eefa569306574384734453a19b3bc974daceb7e36e1d88ab",
-    "src/custos/core/runner_fact.py": "da0b5714407b6d8fcfc02b1a71b1e9b679023ae795039fe7deaa0e2f6e499c5f",
-    "tests/test_runner_policy_runtime.py": "b0e71434ae56c0d498f04e182da60f18e3b06ff2c78f799ff40bfa424774f336",
-    "tests/test_runner_fact_store.py": "768cdd57a75b224d78d887f186cd8a703126689f8ef79f3805cd3b731d263642",
+    "src/custos/contracts/crucible_runner_safety_policy.py": "6d977f19084437a0cef0f5b3ba04323e438af50c22a4d965a31f6166d37822ca",
+    "src/custos/core/runner_fact.py": "3b57ded85a3e7ee31ebc2000fab083e4030a7b2d2600fc7ece4cde54bfd49ce1",
+    "tests/test_runner_policy_runtime.py": "ffcc3f045e67ad25a7fc69efa0a01d3ed02736fa1a37802f271b9a3fa010e872",
+    "tests/test_runner_fact_store.py": "3f2a5a1bf134913660b46712e3361db479533b219a72b3efc0d3faa3f680417d",
     "tests/test_order_reservation.py": "774fb53aec057f1979373e49b9e6e095ed581fe43b402e18b28ee3e5bf46ad2d"
   },
   "validation": {
     "command": "uv run pytest -q tests/test_runner_policy_runtime.py tests/test_runner_fact_store.py tests/test_order_reservation.py",
-    "passed": 18,
+    "passed": 20,
     "required_before_runtime_ready": true,
-    "status": "FOCUSED_RUNNER_POLICY_EXACT_CONTRACT_PASS"
+    "status": "FOCUSED_RUNNER_POLICY_PRODUCER_HANDOFF_PASS"
   }
 }
