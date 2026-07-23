@@ -37,8 +37,16 @@ class ReadinessFile:
         if _expired(self.credential_valid_until):
             self.clear()
             raise RuntimeError("refusing readiness for an expired machine credential")
+        mode_state = dict(transport_modes)
+        metrics = dict(runtime_metrics)
+        ready = bool(
+            nats_connected
+            and mode_state
+            and all(mode_state.values())
+            and metrics.get("sqlite_quick_check") == "ok"
+        )
         state = {
-            "ready": True,
+            "ready": ready,
             "tenant_id": self.tenant_id,
             "runner_id": self.runner_id,
             "credential_id": self.credential_id,
@@ -50,8 +58,8 @@ class ReadinessFile:
             "strategy_id": strategy_id,
             "nats_connected": nats_connected,
             "deployment_subscription": deployment_subscription,
-            "transport_modes": dict(transport_modes),
-            "runtime_metrics": dict(runtime_metrics),
+            "transport_modes": mode_state,
+            "runtime_metrics": metrics,
         }
         self._atomic_write(json.dumps(state, separators=(",", ":")).encode("utf-8"))
 
@@ -76,30 +84,31 @@ class ReadinessFile:
 
 
 def is_ready_file(path: Path) -> bool:
-    return read_ready_file(path) is not None
+    state = read_health_file(path)
+    return state is not None and is_ready_state(state)
 
 
-def read_ready_file(path: Path) -> dict[str, Any] | None:
+def read_health_file(path: Path) -> dict[str, Any] | None:
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(state, dict) or set(state) != set(_FIELDS):
         return None
-    if state.get("ready") is not True or state.get("nats_connected") is not True:
+    if not isinstance(state.get("ready"), bool) or not isinstance(
+        state.get("nats_connected"), bool
+    ):
         return None
-    if state.get("credential_state") != "active":
-        return None
-    if state.get("credential_binding_valid") is not True:
+    if not isinstance(state.get("credential_state"), str) or not isinstance(
+        state.get("credential_binding_valid"), bool
+    ):
         return None
     if not isinstance(state.get("credential_version"), int) or state["credential_version"] < 1:
         return None
     for field in ("tenant_id", "runner_id", "credential_id", "machine_key_id"):
         if not isinstance(state.get(field), str) or not state[field]:
             return None
-    if not isinstance(state.get("credential_valid_until"), str) or _expired(
-        state["credential_valid_until"]
-    ):
+    if not isinstance(state.get("credential_valid_until"), str):
         return None
     strategy_id = state.get("strategy_id")
     if strategy_id is not None and (not isinstance(strategy_id, str) or not strategy_id):
@@ -114,7 +123,7 @@ def read_ready_file(path: Path) -> dict[str, Any] | None:
         not isinstance(transport_modes, dict)
         or not transport_modes
         or any(
-            mode not in {"sandbox", "testnet", "live"} or connected is not True
+            mode not in {"sandbox", "testnet", "live"} or not isinstance(connected, bool)
             for mode, connected in transport_modes.items()
         )
     ):
@@ -124,10 +133,24 @@ def read_ready_file(path: Path) -> dict[str, Any] | None:
         not isinstance(metrics, dict)
         or set(metrics) != set(_RUNTIME_METRIC_FIELDS)
         or metrics.get("schema_version") != "alephain.custos.runner-runtime-metrics.v1"
-        or metrics.get("sqlite_quick_check") != "ok"
+        or not isinstance(metrics.get("sqlite_quick_check"), str)
     ):
         return None
     return state
+
+
+def is_ready_state(state: Mapping[str, Any]) -> bool:
+    transport_modes = state["transport_modes"]
+    metrics = state["runtime_metrics"]
+    return bool(
+        state["ready"] is True
+        and state["nats_connected"] is True
+        and state["credential_state"] == "active"
+        and state["credential_binding_valid"] is True
+        and not _expired(str(state["credential_valid_until"]))
+        and all(transport_modes.values())
+        and metrics["sqlite_quick_check"] == "ok"
+    )
 
 
 _FIELDS = (

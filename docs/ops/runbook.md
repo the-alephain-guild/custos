@@ -89,8 +89,9 @@ Operational thresholds:
   below 1073741824 bytes;
 - warn when `next_policy_expiry_seconds < 900`; an expired testnet/live policy
   remains fail closed;
-- any missing or false `transport_modes` entry makes the readiness document
-  invalid rather than hiding one failed mode behind another.
+- any missing `transport_modes` entry invalidates the document; any false entry
+  preserves diagnostics but sets `ready=false`, so one failed mode cannot hide
+  behind another.
 
 Preserve the database and its `-wal`/`-shm` siblings before recovery. A failed
 SQLite quick check, exhausted disk or stale WAL is an operator recovery event;

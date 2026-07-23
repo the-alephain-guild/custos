@@ -4272,6 +4272,14 @@ class RunnerFactJetStreamPublisher:
         self._jetstreams[trading_mode] = connection.jetstream()
         return self._jetstreams[trading_mode]
 
+    def is_mode_connected(self, trading_mode: str) -> bool:
+        connection = self._nats.get(trading_mode)
+        return bool(
+            connection is not None
+            and getattr(connection, "is_connected", False)
+            and not getattr(connection, "is_closed", False)
+        )
+
     async def drain_once(self) -> int:
         self._authority_guard()
         delivered = 0

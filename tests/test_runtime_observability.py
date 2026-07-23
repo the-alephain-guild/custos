@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from custos.cli.subcommands.health import _health
-from custos.core.readiness import ReadinessFile, is_ready_file, read_ready_file
+from custos.core.readiness import ReadinessFile, is_ready_file, read_health_file
 from custos.core.runner_fact import RunnerFactOutbox
 
 
@@ -213,7 +213,7 @@ async def test_readiness_json_exposes_exact_mode_and_runtime_health(
     )
 
     assert is_ready_file(ready_path)
-    assert read_ready_file(ready_path) is not None
+    assert read_health_file(ready_path) is not None
     assert _health(argparse.Namespace(ready_file=ready_path, json=True)) == 0
     output = json.loads(capsys.readouterr().out)
     assert output["transport_modes"] == {"sandbox": True}
@@ -266,3 +266,7 @@ def test_readiness_rejects_a_hidden_failed_transport_mode(tmp_path: Path) -> Non
     )
 
     assert not is_ready_file(ready_path)
+    state = read_health_file(ready_path)
+    assert state is not None
+    assert state["ready"] is False
+    assert _health(argparse.Namespace(ready_file=ready_path, json=True)) == 1

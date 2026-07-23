@@ -424,7 +424,8 @@ async def _publish_runtime_readiness(
     *,
     readiness: ReadinessFile,
     fact_outbox: RunnerFactOutbox,
-    transport_modes: tuple[str, ...],
+    clients: dict[str, CrucibleNatsClient],
+    fact_publisher: RunnerFactJetStreamPublisher,
     deployment_subscription: bool,
     interval_seconds: float = 10.0,
 ) -> None:
@@ -432,11 +433,15 @@ async def _publish_runtime_readiness(
 
     while not stop.is_set():
         metrics = await fact_outbox.runtime_metrics()
+        transport_modes = {
+            mode: client.is_connected and fact_publisher.is_mode_connected(mode)
+            for mode, client in clients.items()
+        }
         readiness.mark_ready(
             strategy_id=None,
-            nats_connected=True,
+            nats_connected=bool(transport_modes) and all(transport_modes.values()),
             deployment_subscription=deployment_subscription,
-            transport_modes={mode: True for mode in transport_modes},
+            transport_modes=transport_modes,
             runtime_metrics=metrics.to_dict(),
         )
         try:
@@ -540,7 +545,10 @@ async def run_daemon(args: argparse.Namespace) -> int:
         machine_key_id=machine_credential.machine_key_id,
     )
     readiness.clear()
-    await asyncio.gather(*(client.connect() for client in clients.values()))
+    await asyncio.gather(
+        *(client.connect() for client in clients.values()),
+        *(fact_publisher.connect(mode) for mode in clients),
+    )
     log.info(
         "runner_started",
         extra={"tenant_id": args.tenant_id, "runner_id": args.runner_id},
@@ -699,7 +707,8 @@ async def run_daemon(args: argparse.Namespace) -> int:
                     stop,
                     readiness=readiness,
                     fact_outbox=fact_outbox,
-                    transport_modes=tuple(clients),
+                    clients=clients,
+                    fact_publisher=fact_publisher,
                     deployment_subscription=deployment_subscription,
                 ),
                 name="runner-runtime-readiness",

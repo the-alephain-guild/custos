@@ -57,6 +57,14 @@ class CrucibleNatsClient:
         self._js = None
         self._jsm = None
 
+    @property
+    def is_connected(self) -> bool:
+        return bool(
+            self._nc is not None
+            and getattr(self._nc, "is_connected", False)
+            and not getattr(self._nc, "is_closed", False)
+        )
+
     async def subscribe_control(self) -> Any:
         self.machine_credential.assert_active()
         self.connection_profile.assert_active()
