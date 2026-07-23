@@ -28,9 +28,24 @@ from custos.artifacts.development_runtime import (
     DevelopmentArtifactRuntimeConfigV1,
     DevelopmentStrategyArtifactRuntimeV1,
 )
+from custos.artifacts.immutable_material import (
+    HttpOciBlobTransportV1,
+    RegistryPullCredentialV1,
+    RegistryStrategyReleaseMaterializerV1,
+)
 from custos.artifacts.policy import ArchiveLimitsV1
-from custos.artifacts.release_resolver import UnavailableStrategyReleaseArtifactResolverV1
-from custos.artifacts.runtime import ArtifactRuntimeCapabilityV1
+from custos.artifacts.release_resolver import (
+    CrucibleStrategyReleaseArtifactResolverV1,
+    StrategyReleaseArtifactResolverV1,
+    UnavailableStrategyReleaseArtifactResolverV1,
+)
+from custos.artifacts.runtime import (
+    ArtifactRuntimeCapabilityV1,
+    ArtifactRuntimeConfigV1,
+    StrategyArtifactRuntimeV1,
+)
+from custos.artifacts.sigstore_verifier import ProductionSigstoreVerifier
+from custos.artifacts.verification_types import RunnerLocalArtifactVerificationConfig
 from custos.contracts.crucible_runner_safety_policy import (
     CrucibleRunnerSafetyPolicyAuthenticator,
 )
@@ -85,17 +100,84 @@ log = logging.getLogger("custos")
 _AVAILABLE_ENGINES = {"nautilus", "sandbox-sim"}
 
 
-def _load_crucible_domain_public_key(path: Path) -> Ed25519PublicKey:
+def _load_ed25519_public_key(path: Path, *, label: str) -> Ed25519PublicKey:
     """Load the sole V1 format: canonical base64 of 32 raw Ed25519 bytes."""
 
     encoded = path.expanduser().resolve(strict=True).read_text(encoding="ascii").strip()
     try:
         raw = base64.b64decode(encoded, validate=True)
     except (ValueError, binascii.Error) as exc:
-        raise ValueError("Crucible domain public key is not canonical base64") from exc
+        raise ValueError(f"{label} is not canonical base64") from exc
     if len(raw) != 32 or base64.b64encode(raw).decode("ascii") != encoded:
-        raise ValueError("Crucible domain public key must encode exactly 32 Ed25519 bytes")
+        raise ValueError(f"{label} must encode exactly 32 Ed25519 bytes")
     return Ed25519PublicKey.from_public_bytes(raw)
+
+
+def _build_strategy_release_runtime(
+    *,
+    args: argparse.Namespace,
+    state_store: RunnerStateStore,
+    material_authority: RunnerMaterialAuthorityClient,
+) -> tuple[StrategyReleaseArtifactResolverV1, StrategyArtifactRuntimeV1 | None]:
+    required = {
+        "release policy envelope": args.artifact_release_policy_envelope,
+        "release policy key id": str(args.artifact_release_policy_key_id).strip(),
+        "release policy public key": args.artifact_release_policy_public_key,
+        "Sigstore trusted root": args.artifact_sigstore_trusted_root,
+    }
+    configured = {name: bool(value) for name, value in required.items()}
+    if not any(configured.values()):
+        return UnavailableStrategyReleaseArtifactResolverV1(), None
+    missing = sorted(name for name, present in configured.items() if not present)
+    if missing:
+        raise ValueError(
+            "production StrategyRelease configuration is incomplete: "
+            + ", ".join(missing)
+        )
+    username = str(args.artifact_registry_username).strip()
+    token = str(args.artifact_registry_token).strip()
+    if bool(username) != bool(token):
+        raise ValueError("artifact registry username and token must be configured together")
+    registry = str(args.artifact_registry).strip().lower()
+    credentials = (
+        {registry: RegistryPullCredentialV1(username=username, token=token)}
+        if username
+        else {}
+    )
+    transport = HttpOciBlobTransportV1(
+        allowed_registries=(registry,),
+        credentials=credentials,
+    )
+    materializer = RegistryStrategyReleaseMaterializerV1(
+        cache_root=args.artifact_cache_dir.expanduser().resolve(),
+        transport=transport,
+    )
+    resolver = CrucibleStrategyReleaseArtifactResolverV1(
+        authority=material_authority,
+        materializer=materializer,
+    )
+    policy_envelope = args.artifact_release_policy_envelope.expanduser().resolve(strict=True)
+    policy_public_key = args.artifact_release_policy_public_key.expanduser().resolve(strict=True)
+    trusted_root = args.artifact_sigstore_trusted_root.expanduser().resolve(strict=True)
+    runtime = StrategyArtifactRuntimeV1(
+        state=state_store,
+        config=ArtifactRuntimeConfigV1(
+            local_verification=RunnerLocalArtifactVerificationConfig(
+                signed_policy_envelope_bytes=policy_envelope.read_bytes(),
+                policy_authority_key_id=str(args.artifact_release_policy_key_id).strip(),
+                policy_authority_public_key=_load_ed25519_public_key(
+                    policy_public_key,
+                    label="artifact release policy public key",
+                ),
+                sigstore_trusted_root_bytes=trusted_root.read_bytes(),
+                quarantine_parent=args.artifact_quarantine_dir.expanduser().resolve(),
+            ),
+            activation_parent=args.artifact_activation_dir.expanduser().resolve(),
+            capability=ArtifactRuntimeCapabilityV1.production_ready(),
+        ),
+        sigstore_verifier=ProductionSigstoreVerifier(),
+    )
+    return resolver, runtime
 
 
 def _runner_fact_authority(
@@ -590,7 +672,10 @@ async def run_daemon(args: argparse.Namespace) -> int:
             key_id = str(args.crucible_domain_key_id).strip()
             if not key_id:
                 raise ValueError("Crucible domain key id is required for reconciliation")
-            domain_public_key = _load_crucible_domain_public_key(args.crucible_domain_public_key)
+            domain_public_key = _load_ed25519_public_key(
+                args.crucible_domain_public_key,
+                label="Crucible domain public key",
+            )
             signature_keys = {key_id: domain_public_key}
             delivery_policy = CommandDeliveryPolicy()
             command_authenticator = CrucibleRunnerCommandAuthenticator(
@@ -633,12 +718,13 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 artifact_capability=artifact_capability,
                 config=EngineLifecycleConfig(live_execution_enabled=False),
             )
+            material_authority = RunnerMaterialAuthorityClient(
+                metadata.backend_url,
+                machine_credential,
+            )
             development_runtime = DevelopmentStrategyArtifactRuntimeV1(
                 state=state_store,
-                material_resolver=RunnerMaterialAuthorityClient(
-                    metadata.backend_url,
-                    machine_credential,
-                ),
+                material_resolver=material_authority,
                 config=DevelopmentArtifactRuntimeConfigV1(
                     artifact_root=args.development_artifact_root.expanduser().resolve(),
                     quarantine_parent=args.artifact_quarantine_dir.expanduser().resolve(),
@@ -646,11 +732,16 @@ async def run_daemon(args: argparse.Namespace) -> int:
                     archive_limits=ArchiveLimitsV1(),
                 ),
             )
+            release_resolver, strategy_artifact_runtime = _build_strategy_release_runtime(
+                args=args,
+                state_store=state_store,
+                material_authority=material_authority,
+            )
             command_runtime = RunnerCommandRuntimeCoordinator(
                 intake=intake,
                 durability=state_store,
-                release_resolver=UnavailableStrategyReleaseArtifactResolverV1(),
-                artifact_runtime=None,
+                release_resolver=release_resolver,
+                artifact_runtime=strategy_artifact_runtime,
                 development_artifact_runtime=development_runtime,
                 entry_point_loader=NautilusRuntimeEntryPointLoaderV1(),
                 credential_resolver=VaultRunnerCredentialResolverV1(_build_vault(args)),

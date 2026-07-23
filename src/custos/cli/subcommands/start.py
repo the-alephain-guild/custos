@@ -26,6 +26,12 @@ DEFAULT_NATS_CA = Path.home() / ".arx" / "certs" / "crucible-nats-ca.pem"
 DEFAULT_DEVELOPMENT_ARTIFACT_ROOT = Path.home() / ".alephain" / "v1-team" / "strategy-artifacts"
 DEFAULT_ARTIFACT_QUARANTINE_DIR = Path.home() / ".arx" / "state" / "artifact-quarantine"
 DEFAULT_ARTIFACT_ACTIVATION_DIR = Path.home() / ".arx" / "state" / "artifact-activations"
+DEFAULT_ARTIFACT_CACHE_DIR = Path.home() / ".arx" / "state" / "artifact-cache"
+
+
+def _optional_path_from_environment(name: str) -> Path | None:
+    value = os.environ.get(name, "").strip()
+    return Path(value) if value else None
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -117,10 +123,47 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         type=Path,
         default=DEFAULT_ARTIFACT_ACTIVATION_DIR,
     )
+    parser.add_argument(
+        "--artifact-cache-dir",
+        type=Path,
+        default=Path(
+            os.environ.get("CUSTOS_ARTIFACT_CACHE_DIR", str(DEFAULT_ARTIFACT_CACHE_DIR))
+        ),
+    )
+    parser.add_argument(
+        "--artifact-registry",
+        default=os.environ.get("CUSTOS_ARTIFACT_REGISTRY", "ghcr.io"),
+    )
+    parser.add_argument(
+        "--artifact-registry-username",
+        default=os.environ.get("CUSTOS_ARTIFACT_REGISTRY_USERNAME", ""),
+    )
+    parser.add_argument(
+        "--artifact-release-policy-envelope",
+        type=Path,
+        default=_optional_path_from_environment("CUSTOS_ARTIFACT_RELEASE_POLICY_ENVELOPE"),
+    )
+    parser.add_argument(
+        "--artifact-release-policy-key-id",
+        default=os.environ.get("CUSTOS_ARTIFACT_RELEASE_POLICY_KEY_ID", ""),
+    )
+    parser.add_argument(
+        "--artifact-release-policy-public-key",
+        type=Path,
+        default=_optional_path_from_environment("CUSTOS_ARTIFACT_RELEASE_POLICY_PUBLIC_KEY"),
+    )
+    parser.add_argument(
+        "--artifact-sigstore-trusted-root",
+        type=Path,
+        default=_optional_path_from_environment("CUSTOS_ARTIFACT_SIGSTORE_TRUSTED_ROOT"),
+    )
     parser.add_argument("--runner-fact-snapshot-interval-secs", type=float, default=10.0)
     parser.add_argument("--runner-fact-period-secs", type=int, default=86_400)
     parser.add_argument("--runner-fact-period-retry-secs", type=float, default=30.0)
-    parser.set_defaults(handler=run)
+    parser.set_defaults(
+        artifact_registry_token=os.environ.get("CUSTOS_ARTIFACT_REGISTRY_TOKEN", ""),
+        handler=run,
+    )
 
 
 def run(args: argparse.Namespace) -> int:
@@ -168,6 +211,14 @@ def run(args: argparse.Namespace) -> int:
         development_artifact_root=args.development_artifact_root,
         artifact_quarantine_dir=args.artifact_quarantine_dir,
         artifact_activation_dir=args.artifact_activation_dir,
+        artifact_cache_dir=args.artifact_cache_dir,
+        artifact_registry=args.artifact_registry,
+        artifact_registry_username=args.artifact_registry_username,
+        artifact_registry_token=args.artifact_registry_token,
+        artifact_release_policy_envelope=args.artifact_release_policy_envelope,
+        artifact_release_policy_key_id=args.artifact_release_policy_key_id,
+        artifact_release_policy_public_key=args.artifact_release_policy_public_key,
+        artifact_sigstore_trusted_root=args.artifact_sigstore_trusted_root,
         runner_fact_snapshot_interval_secs=args.runner_fact_snapshot_interval_secs,
         runner_fact_period_secs=args.runner_fact_period_secs,
         runner_fact_period_retry_secs=args.runner_fact_period_retry_secs,

@@ -196,6 +196,45 @@ class StrategyReleaseArtifactAuthorityV1:
             != self.artifact_ref_digest
         ):
             raise ValueError("artifact_ref_digest differs from StrategyArtifactRefV1")
+        members = self.release_bom.get("members")
+        if not isinstance(members, list):
+            raise ValueError("release BOM members must be an array")
+        strategy_members = [
+            member
+            for member in members
+            if isinstance(member, Mapping) and member.get("role") == "strategy_wheel"
+        ]
+        if len(strategy_members) != 1:
+            raise ValueError("release BOM must contain one strategy wheel")
+        strategy_member = strategy_members[0]
+        if (
+            strategy_member.get("coordinate") != self.artifact_ref.artifact_coordinate
+            or strategy_member.get("sha256") != self.artifact_ref.artifact_sha256
+            or strategy_member.get("size_bytes") != self.artifact_ref.artifact_size_bytes
+        ):
+            raise ValueError("release BOM strategy wheel differs from StrategyArtifactRefV1")
+        bom_runtime_artifacts = sorted(
+            (
+                {
+                    field: member.get(field)
+                    for field in ("role", "name", "media_type", "size_bytes", "sha256")
+                }
+                for member in members
+                if isinstance(member, Mapping) and member.get("role") == "runtime_artifact"
+            ),
+            key=lambda member: str(member.get("name")),
+        )
+        artifact_ref_runtime_artifacts = sorted(
+            (
+                member.model_dump(mode="json")
+                for member in self.artifact_ref.required_runtime_artifacts
+            ),
+            key=lambda member: str(member.get("name")),
+        )
+        if bom_runtime_artifacts != artifact_ref_runtime_artifacts:
+            raise ValueError(
+                "release BOM runtime artifacts differ from StrategyArtifactRefV1"
+            )
         if (
             hashlib.sha256(self.crucible_artifact_evidence_digest_input_bytes).hexdigest()
             != self.crucible_artifact_evidence_digest
@@ -295,6 +334,7 @@ class ArtifactQuarantineCapability(Protocol):
         entry_point: str,
         limits: ArchiveLimitsV1,
         quarantine_parent: Path,
+        required_runtime_artifacts: tuple[Mapping[str, object], ...],
     ) -> QuarantinedWheel: ...
 
 
@@ -370,30 +410,36 @@ def _read_stable_member(path: Path, *, label: str) -> bytes:
     return payload
 
 
-def verify_full_bom_member_files(
+def verify_execution_member_files(
     release_bom: Mapping[str, object],
     member_paths: Mapping[str, Path],
 ) -> tuple[VerifiedArtifactMemberV1, ...]:
-    """Derive the only member table from the full PS BOM and verify every byte."""
+    """Verify the immutable strategy bytes that this process will execute."""
 
     members = release_bom.get("members")
     if not isinstance(members, list) or not members:
         raise ArtifactVerificationError(
             ArtifactVerificationCode.MEMBER_SET_MISMATCH,
-            "full release BOM members must be a non-empty array",
+            "release BOM members must be a non-empty array",
         )
-    expected_names = {member.get("name") for member in members if isinstance(member, Mapping)}
+    execution_members = [
+        member
+        for member in members
+        if isinstance(member, Mapping) and member.get("role") == "strategy_wheel"
+    ]
+    expected_names = {member.get("name") for member in execution_members}
     if (
-        len(expected_names) != len(members)
+        len(execution_members) != 1
+        or len(expected_names) != len(execution_members)
         or any(not isinstance(name, str) or not name for name in expected_names)
         or set(member_paths) != expected_names
     ):
         raise ArtifactVerificationError(
             ArtifactVerificationCode.MEMBER_SET_MISMATCH,
-            "member paths must exactly match names derived from the full release BOM",
+            "member paths must exactly match the strategy execution closure",
         )
     verified: list[VerifiedArtifactMemberV1] = []
-    for raw in members:
+    for raw in execution_members:
         if not isinstance(raw, Mapping):
             raise ArtifactVerificationError(
                 ArtifactVerificationCode.MEMBER_SET_MISMATCH,
@@ -435,13 +481,13 @@ def verify_full_bom_member_files(
     return tuple(verified)
 
 
-class FullBomMemberVerifier:
+class ExecutionMemberVerifier:
     def verify(
         self,
         release_bom: Mapping[str, object],
         member_paths: Mapping[str, Path],
     ) -> tuple[VerifiedArtifactMemberV1, ...]:
-        return verify_full_bom_member_files(release_bom, member_paths)
+        return verify_execution_member_files(release_bom, member_paths)
 
 
 class ProductionArtifactQuarantiner:
@@ -453,6 +499,7 @@ class ProductionArtifactQuarantiner:
         entry_point: str,
         limits: ArchiveLimitsV1,
         quarantine_parent: Path,
+        required_runtime_artifacts: tuple[Mapping[str, object], ...],
     ) -> QuarantinedWheel:
         return quarantine_wheel(
             wheel_path,
@@ -460,6 +507,7 @@ class ProductionArtifactQuarantiner:
             entry_point=entry_point,
             limits=limits,
             quarantine_parent=quarantine_parent,
+            required_runtime_artifacts=required_runtime_artifacts,
         )
 
 
@@ -556,7 +604,7 @@ class StrategyArtifactRuntimeV1:
         self._state = state
         self._config = config
         self._sigstore_verifier = sigstore_verifier
-        self._member_verifier = member_verifier or FullBomMemberVerifier()
+        self._member_verifier = member_verifier or ExecutionMemberVerifier()
         self._quarantiner = quarantiner or ProductionArtifactQuarantiner()
         self._activator = DurableArtifactActivatorV1(
             state=state,
@@ -627,7 +675,7 @@ class StrategyArtifactRuntimeV1:
         if len(strategy_wheels) != 1:
             raise ArtifactVerificationError(
                 ArtifactVerificationCode.MEMBER_SET_MISMATCH,
-                "full release BOM must resolve one verified strategy wheel",
+                "execution closure must resolve one verified strategy wheel",
             )
         subjects = _statement_subjects(statement)
         sigstore_request = SigstoreVerificationRequest(
@@ -657,7 +705,7 @@ class StrategyArtifactRuntimeV1:
         if not isinstance(entry_point_group, str) or not isinstance(entry_point, str):
             raise ArtifactVerificationError(
                 ArtifactVerificationCode.MANIFEST_INVALID,
-                "full release BOM lacks the typed strategy entry point",
+                "release BOM lacks the typed strategy entry point",
             )
         quarantined = self._quarantiner.quarantine(
             wheel_path=strategy_wheels[0].path,
@@ -665,6 +713,10 @@ class StrategyArtifactRuntimeV1:
             entry_point=entry_point,
             limits=verified_policy.policy.archive_limits,
             quarantine_parent=local.quarantine_parent,
+            required_runtime_artifacts=tuple(
+                member.model_dump(mode="json")
+                for member in release_authority.artifact_ref.required_runtime_artifacts
+            ),
         )
 
         policy_decision = RunnerLocalArtifactPolicyDecisionV1(
@@ -789,5 +841,5 @@ __all__ = [
     "StrategyArtifactRuntimeV1",
     "StrategyReleaseArtifactAuthorityV1",
     "VerifiedArtifactMemberV1",
-    "verify_full_bom_member_files",
+    "verify_execution_member_files",
 ]

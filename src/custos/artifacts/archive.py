@@ -12,6 +12,7 @@ import stat
 import tempfile
 import unicodedata
 import zipfile
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -286,6 +287,50 @@ def _entry_point_exists_in_ast(root: Path, file_names: set[str], entry_point: st
     return attribute in exported
 
 
+def _verify_required_runtime_artifacts(
+    root: Path,
+    file_names: set[str],
+    required_runtime_artifacts: Sequence[Mapping[str, object]],
+) -> None:
+    seen_names: set[str] = set()
+    for artifact in required_runtime_artifacts:
+        name = artifact.get("name")
+        role = artifact.get("role")
+        size_bytes = artifact.get("size_bytes")
+        digest = artifact.get("sha256")
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in seen_names
+            or role != "runtime_artifact"
+            or type(size_bytes) is not int
+            or size_bytes <= 0
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+        ):
+            raise ArtifactVerificationError(
+                ArtifactVerificationCode.MEMBER_SET_MISMATCH,
+                "required runtime artifact metadata is invalid",
+            )
+        seen_names.add(name)
+        candidates = sorted(
+            candidate
+            for candidate in file_names
+            if candidate == name or candidate.endswith(f"/{name}")
+        )
+        if len(candidates) != 1:
+            raise ArtifactVerificationError(
+                ArtifactVerificationCode.MEMBER_SET_MISMATCH,
+                f"wheel does not contain one exact runtime artifact: {name}",
+            )
+        payload = (root / candidates[0]).read_bytes()
+        if len(payload) != size_bytes or hashlib.sha256(payload).hexdigest() != digest:
+            raise ArtifactVerificationError(
+                ArtifactVerificationCode.MEMBER_SET_MISMATCH,
+                f"wheel runtime artifact bytes differ: {name}",
+            )
+
+
 def quarantine_wheel(
     wheel_path: Path,
     *,
@@ -293,6 +338,7 @@ def quarantine_wheel(
     entry_point: str,
     limits: ArchiveLimitsV1,
     quarantine_parent: Path,
+    required_runtime_artifacts: Sequence[Mapping[str, object]] = (),
 ) -> QuarantinedWheel:
     root: Path | None = None
     try:
@@ -306,6 +352,11 @@ def quarantine_wheel(
             _extract_to_quarantine(archive, inventory, root)
         file_names = {name for name, info in inventory.items() if not info.is_dir()}
         _verify_wheel_record(root, file_names)
+        _verify_required_runtime_artifacts(
+            root,
+            file_names,
+            required_runtime_artifacts,
+        )
         if not _entry_point_declared(root, file_names, entry_point_group, entry_point):
             raise ArtifactVerificationError(
                 ArtifactVerificationCode.ENTRY_POINT_INVALID,

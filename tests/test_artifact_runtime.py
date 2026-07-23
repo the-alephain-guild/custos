@@ -9,7 +9,7 @@ import pytest
 from custos.artifacts.errors import ArtifactVerificationCode, ArtifactVerificationError
 from custos.artifacts.runtime import (
     ArtifactRuntimeCapabilityV1,
-    verify_full_bom_member_files,
+    verify_execution_member_files,
 )
 
 
@@ -23,7 +23,7 @@ def test_artifact_runtime_capability_has_one_v1_shape() -> None:
     assert ready.blocked_reason is None
 
 
-def test_full_bom_member_verifier_binds_exact_bytes(tmp_path: Path) -> None:
+def test_execution_member_verifier_binds_exact_strategy_bytes(tmp_path: Path) -> None:
     wheel = tmp_path / "strategy.whl"
     wheel.write_bytes(b"verified-wheel")
     digest = hashlib.sha256(b"verified-wheel").hexdigest()
@@ -39,7 +39,7 @@ def test_full_bom_member_verifier_binds_exact_bytes(tmp_path: Path) -> None:
         ]
     }
 
-    verified = verify_full_bom_member_files(
+    verified = verify_execution_member_files(
         release_bom,
         {"strategy.whl": wheel},
     )
@@ -49,7 +49,7 @@ def test_full_bom_member_verifier_binds_exact_bytes(tmp_path: Path) -> None:
     assert verified[0].path == wheel
 
 
-def test_full_bom_member_verifier_rejects_unlisted_member(tmp_path: Path) -> None:
+def test_execution_member_verifier_rejects_unlisted_member(tmp_path: Path) -> None:
     wheel = tmp_path / "strategy.whl"
     wheel.write_bytes(b"verified-wheel")
     release_bom = {
@@ -68,7 +68,7 @@ def test_full_bom_member_verifier_rejects_unlisted_member(tmp_path: Path) -> Non
         ArtifactVerificationError,
         match="member paths must exactly match",
     ) as captured:
-        verify_full_bom_member_files(
+        verify_execution_member_files(
             release_bom,
             {
                 "strategy.whl": wheel,
@@ -94,7 +94,7 @@ def _single_member_bom(path: Path, payload: bytes) -> dict[str, object]:
 
 
 @pytest.mark.parametrize("case", ["missing", "drift", "directory", "symlink"])
-def test_full_bom_member_verifier_rejects_non_exact_member_files(
+def test_execution_member_verifier_rejects_non_exact_member_files(
     tmp_path: Path,
     case: str,
 ) -> None:
@@ -117,7 +117,7 @@ def test_full_bom_member_verifier_rejects_non_exact_member_files(
         os.symlink(target, member)
 
     with pytest.raises(ArtifactVerificationError) as captured:
-        verify_full_bom_member_files(release_bom, member_paths)
+        verify_execution_member_files(release_bom, member_paths)
 
     assert captured.value.code in {
         ArtifactVerificationCode.MEMBER_SET_MISMATCH,
@@ -125,7 +125,7 @@ def test_full_bom_member_verifier_rejects_non_exact_member_files(
     }
 
 
-def test_full_bom_member_verifier_rejects_duplicate_member_identity(tmp_path: Path) -> None:
+def test_execution_member_verifier_rejects_duplicate_strategy_identity(tmp_path: Path) -> None:
     member = tmp_path / "strategy.whl"
     payload = b"verified-wheel"
     member.write_bytes(payload)
@@ -136,6 +136,6 @@ def test_full_bom_member_verifier_rejects_duplicate_member_identity(tmp_path: Pa
     ]
 
     with pytest.raises(ArtifactVerificationError) as captured:
-        verify_full_bom_member_files(release_bom, {member.name: member})
+        verify_execution_member_files(release_bom, {member.name: member})
 
     assert captured.value.code is ArtifactVerificationCode.MEMBER_SET_MISMATCH

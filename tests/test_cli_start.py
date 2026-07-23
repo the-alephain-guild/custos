@@ -252,6 +252,7 @@ def test_start_default_paths_target_arx_namespace(
         namespace.runner_capability,
         namespace.runner_fact_outbox,
         namespace.crucible_domain_public_key,
+        namespace.artifact_cache_dir,
     ):
         assert ".custos" not in str(path)
         assert ".arx" in str(path)

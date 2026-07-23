@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import stat
 import sys
 import unicodedata
@@ -29,6 +30,73 @@ def test_valid_wheel_is_quarantined_without_importing_entry_point(tmp_path) -> N
     assert verified.verified_entry_point == "strategies.supertrend:RuntimeAdapter"
     assert "strategies.supertrend" not in sys.modules
     assert (verified.root / "strategies/supertrend.py").is_file()
+
+
+def test_required_runtime_artifact_is_verified_after_safe_extraction(tmp_path) -> None:
+    wheel = tmp_path / "supertrend.whl"
+    schema = b'{"type":"object"}'
+    write_test_wheel(
+        wheel,
+        extra_entries=[
+            (
+                regular_zip_info("strategies/resources/config.schema.json"),
+                schema,
+            )
+        ],
+    )
+
+    verified = quarantine_wheel(
+        wheel,
+        entry_point_group="alephain.strategy_runtime.v1",
+        entry_point="strategies.supertrend:RuntimeAdapter",
+        limits=ArchiveLimitsV1(),
+        quarantine_parent=tmp_path / "quarantine",
+        required_runtime_artifacts=(
+            {
+                "role": "runtime_artifact",
+                "name": "resources/config.schema.json",
+                "media_type": "application/schema+json",
+                "size_bytes": len(schema),
+                "sha256": hashlib.sha256(schema).hexdigest(),
+            },
+        ),
+    )
+
+    assert verified.root.is_dir()
+
+
+def test_required_runtime_artifact_drift_fails_closed(tmp_path) -> None:
+    wheel = tmp_path / "supertrend.whl"
+    schema = b'{"type":"object"}'
+    write_test_wheel(
+        wheel,
+        extra_entries=[
+            (
+                regular_zip_info("strategies/resources/config.schema.json"),
+                schema,
+            )
+        ],
+    )
+
+    with pytest.raises(ArtifactVerificationError) as error:
+        quarantine_wheel(
+            wheel,
+            entry_point_group="alephain.strategy_runtime.v1",
+            entry_point="strategies.supertrend:RuntimeAdapter",
+            limits=ArchiveLimitsV1(),
+            quarantine_parent=tmp_path / "quarantine",
+            required_runtime_artifacts=(
+                {
+                    "role": "runtime_artifact",
+                    "name": "resources/config.schema.json",
+                    "media_type": "application/schema+json",
+                    "size_bytes": len(schema),
+                    "sha256": "0" * 64,
+                },
+            ),
+        )
+
+    assert error.value.code is ArtifactVerificationCode.MEMBER_SET_MISMATCH
 
 
 @pytest.mark.parametrize("case", ["traversal", "symlink", "device", "normalization", "duplicate"])

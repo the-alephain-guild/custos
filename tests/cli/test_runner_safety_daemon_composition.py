@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import base64
 from decimal import Decimal
+from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 
 from custos.artifacts.release_resolver import (
+    CrucibleStrategyReleaseArtifactResolverV1,
     StrategyReleaseResolutionUnavailable,
     UnavailableStrategyReleaseArtifactResolverV1,
 )
-from custos.cli._daemon import _build_runner_safety_boundary_factory
+from custos.cli._daemon import (
+    _build_runner_safety_boundary_factory,
+    _build_strategy_release_runtime,
+)
 from custos.core.fallback_breaker import FallbackBreakerConfig
 
 POLICY_ID = UUID("22222222-2222-4222-8222-222222222222")
@@ -80,3 +86,74 @@ async def test_uncomposed_strategy_release_authority_fails_closed() -> None:
 
     with pytest.raises(StrategyReleaseResolutionUnavailable, match="not composed"):
         await resolver.resolve(object())
+
+
+def _artifact_args(tmp_path: Path, **overrides: object) -> SimpleNamespace:
+    values: dict[str, object] = {
+        "artifact_release_policy_envelope": None,
+        "artifact_release_policy_key_id": "",
+        "artifact_release_policy_public_key": None,
+        "artifact_sigstore_trusted_root": None,
+        "artifact_registry": "ghcr.io",
+        "artifact_registry_username": "",
+        "artifact_registry_token": "",
+        "artifact_cache_dir": tmp_path / "cache",
+        "artifact_quarantine_dir": tmp_path / "quarantine",
+        "artifact_activation_dir": tmp_path / "activations",
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+def test_strategy_release_runtime_remains_uncomposed_without_any_trust_input(
+    tmp_path: Path,
+) -> None:
+    resolver, runtime = _build_strategy_release_runtime(
+        args=_artifact_args(tmp_path),
+        state_store=object(),
+        material_authority=object(),
+    )
+
+    assert isinstance(resolver, UnavailableStrategyReleaseArtifactResolverV1)
+    assert runtime is None
+
+
+def test_strategy_release_runtime_rejects_partial_trust_configuration(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="configuration is incomplete"):
+        _build_strategy_release_runtime(
+            args=_artifact_args(
+                tmp_path,
+                artifact_release_policy_key_id="release-policy-key",
+            ),
+            state_store=object(),
+            material_authority=object(),
+        )
+
+
+def test_strategy_release_runtime_composes_only_with_complete_local_trust(
+    tmp_path: Path,
+) -> None:
+    envelope = tmp_path / "release-policy.json"
+    public_key = tmp_path / "release-policy.pub"
+    trusted_root = tmp_path / "sigstore-trusted-root.json"
+    envelope.write_bytes(b"{}")
+    public_key.write_text(base64.b64encode(bytes(range(32))).decode("ascii"), encoding="ascii")
+    trusted_root.write_bytes(b"{}")
+
+    resolver, runtime = _build_strategy_release_runtime(
+        args=_artifact_args(
+            tmp_path,
+            artifact_release_policy_envelope=envelope,
+            artifact_release_policy_key_id="release-policy-key",
+            artifact_release_policy_public_key=public_key,
+            artifact_sigstore_trusted_root=trusted_root,
+        ),
+        state_store=object(),
+        material_authority=object(),
+    )
+
+    assert isinstance(resolver, CrucibleStrategyReleaseArtifactResolverV1)
+    assert runtime is not None
+    assert runtime.capability_ready is True

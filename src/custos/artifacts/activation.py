@@ -21,13 +21,38 @@ from custos.contracts.crucible_runner_command import CrucibleRunnerDeploymentCom
 class DurableArtifactRuntimeState(Protocol):
     async def load_durable_desired_command(self, deployment_instance_id: UUID) -> Any: ...
 
-    async def load_artifact_activation(self, **kwargs: Any) -> Mapping[str, Any] | None: ...
+    async def load_artifact_activation(
+        self,
+        *,
+        command: Any,
+        activation_id: str,
+        artifact_identity_digest: str,
+        artifact_authority_digest: str,
+    ) -> Mapping[str, Any] | None: ...
 
-    async def stage_artifact_activation(self, **kwargs: Any) -> None: ...
+    async def stage_artifact_activation(
+        self,
+        *,
+        command: Any,
+        activation_id: str,
+        artifact_identity_digest: str,
+        artifact_authority_digest: str,
+    ) -> None: ...
 
-    async def mark_artifact_activation_active(self, **kwargs: Any) -> None: ...
+    async def mark_artifact_activation_active(
+        self,
+        *,
+        command: Any,
+        activation_id: str,
+    ) -> None: ...
 
-    async def quarantine_artifact_activation(self, **kwargs: Any) -> None: ...
+    async def quarantine_artifact_activation(
+        self,
+        *,
+        command: Any,
+        activation_id: str,
+        reason: str,
+    ) -> None: ...
 
 
 class RuntimeEntryPointLoader(Protocol):

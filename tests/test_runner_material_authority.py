@@ -217,7 +217,8 @@ def _strategy_material_fixture() -> tuple[
                 "media_type": "application/vnd.pypa.wheel",
                 "size_bytes": len(artifact_payload),
                 "sha256": artifact_digest,
-            }
+            },
+            artifact_ref["required_runtime_artifacts"][0],
         ],
     }
     release_bom_json, release_bom_digest = _canonical_document(release_bom)
