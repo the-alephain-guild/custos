@@ -18,8 +18,9 @@ import binascii
 import hashlib
 import logging
 import signal
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -51,6 +52,7 @@ from custos.contracts.crucible_runner_safety_policy import (
 )
 from custos.core.credential_resolver import VaultRunnerCredentialResolverV1
 from custos.core.engine_lifecycle import EngineLifecycleConfig, EngineLifecycleSupervisor
+from custos.core.engine_protocol import ExecutionEngineProtocol
 from custos.core.machine_credential_vault import (
     MachineCredentialError,
     MachineCredentialHttpClient,
@@ -86,7 +88,7 @@ from custos.core.runner_fact import (
     RunnerFactOutbox,
     RunnerStateStore,
 )
-from custos.core.runner_fact_producer import RunnerFactProductionLoop
+from custos.core.runner_fact_producer import RunnerFactHost, RunnerFactProductionLoop
 from custos.core.runner_material_authority import RunnerMaterialAuthorityClient
 from custos.core.runner_safety_policy import (
     DurableRunnerSafetyPolicyResolver,
@@ -98,6 +100,10 @@ from custos.engines.nautilus.runtime_loader import NautilusRuntimeEntryPointLoad
 log = logging.getLogger("custos")
 
 _AVAILABLE_ENGINES = {"nautilus", "sandbox-sim"}
+
+
+class RunnerExecutionHost(ExecutionEngineProtocol, RunnerFactHost, Protocol):
+    """One host used by both the execution and signed-fact runtime paths."""
 
 
 def _load_ed25519_public_key(path: Path, *, label: str) -> Ed25519PublicKey:
@@ -302,7 +308,7 @@ def _build_host(
     fact_emitter: RunnerFactEmitter | None = None,
     capability_receipt: RunnerCapabilityReceipt | None = None,
     runner_safety_boundary_factory=None,
-):
+) -> RunnerExecutionHost:
     """Pick the execution engine host from the clean-break ``--engine`` enum.
 
     ``nautilus`` selects the real ``NtTradingNodeHost`` and ``sandbox-sim``
@@ -442,7 +448,7 @@ async def _shutdown_in_order(
     host: object | None,
     fact_outbox: object,
     fact_publisher: object,
-    clients: dict[str, object],
+    clients: Mapping[str, object],
 ) -> None:
     """Stop intake/tasks, stop deployments, flush facts, then close transports."""
 

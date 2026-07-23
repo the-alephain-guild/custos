@@ -6,7 +6,7 @@ import asyncio
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from custos.artifacts.runtime import ArtifactRuntimeCapabilityV1
 from custos.core.engine_protocol import (
@@ -16,7 +16,8 @@ from custos.core.engine_protocol import (
     EngineTerminalEvent,
     ExecutionEngineProtocol,
 )
-from custos.core.runner_fact import EngineLifecycleDurableState
+from custos.core.runner_command_intake import VerifiedRunnerCommand
+from custos.core.runner_fact import CommandOutcomeCommitResult, EngineLifecycleDurableState
 
 
 class EngineLifecycleError(RuntimeError):
@@ -51,17 +52,61 @@ class EngineLifecycleConfig:
 
 
 class EngineLifecycleStateStore(Protocol):
-    async def load_engine_lifecycle_state(self, verified: Any) -> EngineLifecycleDurableState: ...
+    async def load_engine_lifecycle_state(
+        self, verified: VerifiedRunnerCommand
+    ) -> EngineLifecycleDurableState: ...
 
-    async def record_in_progress_lease(self, **kwargs: Any) -> None: ...
+    async def record_in_progress_lease(
+        self,
+        *,
+        delivery_id: str,
+        verified: VerifiedRunnerCommand,
+        lease_until_ns: int,
+    ) -> None: ...
 
-    async def record_engine_restart(self, **kwargs: Any) -> int: ...
+    async def record_engine_restart(
+        self,
+        *,
+        delivery_id: str,
+        verified: VerifiedRunnerCommand,
+        reason_code: str,
+        lease_until_ns: int,
+    ) -> int: ...
 
-    async def commit_applied_and_enqueue_lifecycle(self, **kwargs: Any) -> Any: ...
+    async def commit_applied_and_enqueue_lifecycle(
+        self,
+        *,
+        delivery_id: str,
+        verified: VerifiedRunnerCommand,
+        engine_handle: str | None,
+        observed_status: str,
+        artifact_activation_id: str | None = None,
+        artifact_policy_id: str | None = None,
+    ) -> CommandOutcomeCommitResult: ...
 
-    async def commit_recovered_engine_ready(self, **kwargs: Any) -> None: ...
+    async def commit_recovered_engine_ready(
+        self,
+        *,
+        verified: VerifiedRunnerCommand,
+        engine_handle: str,
+        observed_status: str,
+        artifact_activation_id: str | None = None,
+        artifact_policy_id: str | None = None,
+    ) -> None: ...
 
-    async def commit_verified_command_outcome_and_enqueue_fact(self, **kwargs: Any) -> Any: ...
+    async def commit_verified_command_outcome_and_enqueue_fact(
+        self,
+        *,
+        delivery_id: str,
+        verified: VerifiedRunnerCommand,
+        outcome: Literal["applied", "conflict", "stale", "retry_exhausted"],
+        reason_code: str,
+        engine_handle: str | None,
+        observed_status: str,
+        lifecycle_state: str,
+        artifact_activation_id: str | None = None,
+        artifact_policy_id: str | None = None,
+    ) -> CommandOutcomeCommitResult: ...
 
 
 class EngineLifecycleSupervisor:
