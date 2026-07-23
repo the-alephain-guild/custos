@@ -1,6 +1,6 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T8a and the clone-local development material path pass; real PG/NATS/engine command-to-fact evidence, physical-mode policy/NATS receipts, production StrategyRelease, immutable runtime RC and T9-T10 remain open
+> **Status**: ⏳ In progress — T2-T8a, clone-local development runtime and production StrategyRelease authority consumption pass; immutable OCI materialization/daemon composition, real PG/NATS/engine command-to-fact evidence, physical-mode policy/NATS receipts, runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-07-23 through direct instance-bound Crucible material resolution
 > **Project**: Custos
@@ -1111,12 +1111,12 @@ git commit -m "docs(custos): mark plan 19 as completed"
 |---|---|---|
 | Signed command V1 consumer | development runtime focused verified | consumes real DeploymentSpec domain events; exact-event fingerprint, direct Crucible material resolution, contract assets and authority gate pass |
 | RunnerFact SQLite V1 deep module | focused verified | one store, one outbox and one instance-continuous sequence |
-| Engine lifecycle | local verified, production blocked | 118-test T2-T8a gate passes; authenticated production artifact authority is not composed |
+| Engine lifecycle | local verified; production materialization blocked | 118-test T2-T8a gate passes; production authority contract is consumed at `4ad12b2`, while immutable OCI materialization, trust composition and launched activation remain open |
 | Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, NATS/PubAck and real daemon consumption pending |
 | Machine credential and NATS vault V1 | direct credential contract ready; NATS runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; control `0029`, durable replay receipt, JWT/ACL/durable readback and dual-domain broker evidence pending |
 | RunnerFact V1 producer candidate | local consumer validation passed | immutable `8c4454f` assets pinned; formal clean cross-repository Phase A receipt remains required |
 | Local sandbox runtime | focused code PASS; launched receipt open | instance-bound development material reaches the common runtime path; real NATS delivery/redelivery, engine launch and projected fact receipt remain required |
-| Production/live | STOP | production StrategyRelease, CR99/CR100 receipts, immutable runtime RC, Phase B and PS56 acceptance remain absent |
+| Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 real receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 
 The machine-readable boundary is pinned by
 `docs/authority/crucible-runner-machine-request-consumer-assets-v1.json` and
@@ -1212,3 +1212,19 @@ standalone authority and diff gates also passed. This closes the clone-local
 development command/material implementation. Real PG/NATS delivery,
 redelivery/restart, launched engine and projected RunnerFact evidence remain
 open; no production StrategyRelease readiness is inferred.
+
+## 2026-07-23 production StrategyRelease authority handoff
+
+Crucible `10b85e4486cf4d422f8d0703a9ad69cab9f1c08a` now returns the complete immutable
+StrategyRelease authority through the same instance-bound machine endpoint used
+by development material. Custos `4ad12b2aba2e1865b2921434d9f053bc036fa75a`
+strictly consumes the mutually exclusive production branch, validates exact
+snapshot/evidence/binding semantics and separates owner resolution from local
+byte materialization.
+
+The focused production-authority consumer gate passes 30 tests, Ruff and mypy;
+the Crucible producer passes store 3/3, fmt and server-http compile gates. The
+daemon still composes the fail-closed production default because immutable OCI
+execution-byte acquisition, runner-local signed trust material and a real
+StrategyRelease publication receipt are not yet present. No live, runtime-RC or
+command-to-fact readiness is inferred.

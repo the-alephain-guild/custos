@@ -1,6 +1,6 @@
 # 18 - Publish typed toolkit and strategy execution contracts
 
-> **Status**: ⏳ In progress — sole V1 contract and sandbox development-artifact verifier/runtime are focused verified; authenticated production StrategyRelease resolution, immutable PS publication and final cross-repo acceptance remain open
+> **Status**: ⏳ In progress — sole V1 contract, sandbox development runtime and authenticated production StrategyRelease authority consumption are focused verified; immutable OCI materialization, daemon composition, PS publication and final cross-repo acceptance remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-07-22 for the business-named first-production V1 release relock
 > **Project**: Custos
@@ -79,17 +79,22 @@ route.
 - Input binds the authenticated runner, tenant, trading mode, exact
   `deployment_instance_id`, `deployment_spec_id`, spec digest, generation,
   signed command fingerprint and `strategy_release_id`.
-- The response returns strict V1 canonical StrategyRelease snapshot bytes,
-  ArtifactRef, full PS BOM, statement/detached-attestation coordinates and
-  digests, Crucible evidence and acceptance bytes/digests. It never returns a
-  local filesystem path, trust root, selectable policy or mutable tag.
-- The signed command binds the complete execution-binding digest. Custos must
-  recompute that digest over the resolved response before using any coordinate;
-  the endpoint does not invent a second release schema or an unnecessary second
-  response-signing authority.
-- Custos fetches immutable OCI members into a runner-local quarantine area and
-  independently verifies every byte, Sigstore proof and signed local policy
-  before import. Crucible does not download into the runner filesystem.
+- The response returns strict V1 StrategyRelease snapshot fields, exact
+  canonical ArtifactRef/BOM/statement/detached-reference bytes, Crucible
+  evidence plus its exact digest-input bytes, and the command-specific
+  execution binding. It never returns a production filesystem path, trust root,
+  selectable policy or mutable tag.
+- The signed command binds the immutable StrategyRelease snapshot digest plus
+  instance/spec/generation/config authority. Custos recomputes the response
+  binding digest and validates its transitive snapshot -> ArtifactRef/BOM/
+  evidence chain before using any coordinate; the endpoint does not invent a
+  second release schema or response-signing authority.
+- Custos fetches immutable OCI execution material into runner-local quarantine
+  and independently verifies every byte that can be executed or imported,
+  together with the detached statement/bundle and signed local policy, before
+  import. Source trees and other non-runtime provenance remain Crucible
+  acceptance evidence and are not fabricated as runner-local dependencies.
+  Crucible does not download into the runner filesystem.
 - Authentication reuses the enrolled Custos machine credential, the sole
   `crucible.runner.machine.request.v1` proof domain and `X-Crucible-*` headers.
   ARX neither relays this request nor receives artifact material.
@@ -727,7 +732,7 @@ git commit -m "docs(custos): mark plan 18 as completed"
 | Old contract/runtime generations | removed | old runtime module and command-owned evidence path are absent |
 | PS V1 handoff | pending final pins | PS source uses the sole V1 OCI topology |
 | Crucible V1 handoff | Custos contract exact; artifact acceptance open | final Custos producer receipt is pinned at Crucible `014edd4`; real PS publication and Plan 88 C6 native acceptance remain open |
-| Runtime activation | local sandbox focused verified | development-source verification and command-runtime convergence pass 10/10; authenticated StrategyRelease resolver and real publication remain absent |
+| Runtime activation | sandbox ready; production authority focused verified | development-source runtime passes; Crucible `10b85e4` exposes complete production authority and Custos `4ad12b2` strictly consumes it; immutable OCI materialization, daemon composition and real publication remain open |
 | Production/live | STOP | requires final exact-byte receipts and real runtime evidence |
 
 ## Deviations and Improvements
@@ -764,8 +769,27 @@ artifact root plus owner-provided digests, verifies the source and publication
 receipt bytes, quarantines invalid material and never accepts a path from an
 ARX/Crucible DTO. The snapshot is sandbox-only and non-promotable.
 
-The production StrategyRelease resolver remains deliberately fail-closed until
-the authenticated Crucible capability and real protected publication receipts
-exist. No local artifact can satisfy T5e, live or production readiness. This
-checkpoint is code-ready but unverified; no test, daemon or real-service gate was
-run for it.
+The daemon production StrategyRelease path remains deliberately fail-closed
+until immutable materialization, local trust configuration and real protected
+publication receipts exist. No local artifact can satisfy T5e, live or
+production readiness.
+
+## 2026-07-23 production StrategyRelease authority checkpoint
+
+Crucible `10b85e4486cf4d422f8d0703a9ad69cab9f1c08a` extends the sole authenticated
+runner-material response with the exact StrategyRelease snapshot, immutable
+artifact binding, complete Crucible evidence and the evidence digest-input JSON.
+Development and StrategyRelease material remain mutually exclusive branches of
+the same V1 endpoint.
+
+Custos `4ad12b2aba2e1865b2921434d9f053bc036fa75a` consumes that response directly,
+recomputes the instance-bound execution-binding digest, validates the
+domain-separated snapshot digest and exact evidence preimage, and keeps owner
+lookup separate from runner-local immutable materialization. The focused gate
+passes 30 tests plus Ruff and mypy; Crucible store tests pass 3/3 and the
+server-http test target compiles with `cargo fmt --check`.
+
+This is a clone-local producer/consumer contract checkpoint, not T5e or
+production readiness. Immutable OCI execution-byte acquisition, daemon trust
+composition, real machine-authenticated HTTP/PG, Sigstore, engine activation and
+RunnerFact receipts remain mandatory.
