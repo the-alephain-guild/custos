@@ -5,19 +5,20 @@
   "consumer_model": {
     "path": "src/custos/contracts/crucible_runner_command.py",
     "public_export": "CrucibleRunnerDeploymentCommandV1",
-    "sha256": "72d26e8d29f06ced25b21c637e081b82ba08c1377f930f9f0bd3dade9ebc72ff",
-    "size_bytes": 13936
+    "sha256": "84de385402c2d84222301b95ff70bb44c095a4a3ceeb605b946af55ff794cdb9",
+    "size_bytes": 13993
   },
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
-    "sha256": "e8633912812dc6f53df9c472b1fdee40f594c8772387563590af4d627fd161fe",
-    "size_bytes": 2093
+    "sha256": "0e6c2b0195d9f9fe3933e7486de96691c9b1c83ee118861140e26e866503c380",
+    "size_bytes": 2794
   },
   "contract_guards": {
     "command_selected_root_policy_issuer_workflow": false,
     "compatibility_fallback": false,
     "custos_command_schema_published": false,
     "deployment_spec_only": true,
+    "exact_event_command_fingerprint_pinned": true,
     "exact_signed_event_bytes_retained": true,
     "second_bom_authority_allowed": false,
     "signature_bytes_in_fingerprint": false,
@@ -25,19 +26,19 @@
   },
   "crucible_producer": {
     "contract": "CrucibleRunnerDeploymentCommandV1",
-    "producer_commit": "d1e850b5021feb899873a91ef23d2f2ba3f665ae",
+    "producer_commit": "57783973375055cd8af7cc4e681314a0b633f6fa",
     "receipt": null,
     "repository": "tesseract-trading/crucible-rust",
     "status": "CONTRACT_V1_PINNED_RUNTIME_RECEIPT_PENDING",
     "subject_template": "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
   },
+  "development_material_resolution_ready": true,
   "open_blockers": [
-    "Crucible signed command outbox and runtime producer receipt",
-    "authenticated StrategyRelease authority resolver wiring",
-    "Custos durable RunnerFact state and engine lifecycle completion"
+    "real PG NATS engine command-to-fact receipt",
+    "authenticated Custos production StrategyRelease material consumption"
   ],
   "production_ready": false,
   "receipt_schema_version": 1,
-  "receipt_status": "READY_CONTRACT_ONLY_PENDING_COMMAND_RUNTIME_RECEIPT",
+  "receipt_status": "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
   "runtime_ready": false
 }

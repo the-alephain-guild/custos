@@ -31,13 +31,27 @@ def _base64url(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
 
-def _signed(case: dict) -> tuple[bytes, CrucibleDomainEventVerifier]:
-    subject = case["subject"]
-    event_bytes = json.dumps(
-        case["event_document"],
+def _recursively_sorted(value: object) -> object:
+    if isinstance(value, dict):
+        return {key: _recursively_sorted(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [_recursively_sorted(item) for item in value]
+    return value
+
+
+def _producer_event_bytes(case: dict) -> bytes:
+    event = dict(case["event_document"])
+    event["payload"] = _recursively_sorted(event["payload"])
+    return json.dumps(
+        event,
         ensure_ascii=False,
         separators=(",", ":"),
     ).encode("utf-8")
+
+
+def _signed(case: dict) -> tuple[bytes, CrucibleDomainEventVerifier]:
+    subject = case["subject"]
+    event_bytes = _producer_event_bytes(case)
     subject_bytes = subject.encode("utf-8")
     framed = b"".join(
         (
@@ -105,6 +119,7 @@ def test_crucible_golden_commands_parse_through_real_signature_verifier(
         signed_envelope_bytes=data,
         subject=case["subject"],
     )
+    assert command.command_fingerprint == case["command_fingerprint"]
     spec = command.to_runtime_spec()
 
     assert spec.generation == generation

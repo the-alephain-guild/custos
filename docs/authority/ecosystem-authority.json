@@ -53,7 +53,7 @@
   },
   "runner_command_golden_fixture": {
     "path": "docs/authority/runner-deployment-command-golden-v1.json",
-    "sha256": "14aa3052a956bcf8add883c5793be886e62f9117cfa99bfb620fcfae92014b9e",
+    "sha256": "8660b25eace5f4a83869d3bb0228b2955c0edf6e6e466d915250169adc9d20b0",
     "sha256_sidecar": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
     "optional_sibling_path": "../crucible-rust/docs/authority/runner-deployment-command-golden-v1.json",
     "cases": [
@@ -105,11 +105,12 @@
     "artifact_ref_schema_version": 1,
     "asset_index_status": "CANONICAL_V1_CONTRACT_ASSETS_PUBLISHED",
     "canonical_consumer_handoff_ready": false,
-    "runner_command_consumer_status": "READY_COMMAND_CONSUMER_CONTRACT_ONLY",
+    "runner_command_consumer_status": "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
     "runner_command_consumer_asset_index": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
     "runner_command_consumer_receipt": "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
     "runner_command_consumer_model": "src/custos/contracts/crucible_runner_command.py",
     "runner_command_contract_ready": true,
+    "runner_command_development_material_resolution_ready": true,
     "runner_command_exact_signed_event_bytes_retained": true,
     "runner_command_schema_owned_by_custos": false,
     "runner_command_runtime_ready": false,

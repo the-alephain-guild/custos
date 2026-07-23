@@ -48,11 +48,14 @@ RUNNER_COMMAND_CONSUMER_RECEIPT_PATH = (
 )
 RUNNER_COMMAND_CONSUMER_SOURCE = "src/custos/contracts/crucible_runner_command.py"
 RUNNER_COMMAND_CONSUMER_TEST = "tests/test_runner_deployment_command_golden.py"
+RUNNER_MATERIAL_AUTHORITY_SOURCE = "src/custos/core/runner_material_authority.py"
+RUNNER_MATERIAL_AUTHORITY_TEST = "tests/test_runner_material_authority.py"
+DEVELOPMENT_ARTIFACT_RUNTIME_SOURCE = "src/custos/artifacts/development_runtime.py"
 RUNNER_COMMAND_GOLDEN_PATH = "docs/authority/runner-deployment-command-golden-v1.json"
 RUNNER_COMMAND_GOLDEN_SIDECAR_PATH = (
     "docs/authority/runner-deployment-command-golden-v1.json.sha256"
 )
-RUNNER_COMMAND_PRODUCER_COMMIT = "d1e850b5021feb899873a91ef23d2f2ba3f665ae"
+RUNNER_COMMAND_PRODUCER_COMMIT = "57783973375055cd8af7cc4e681314a0b633f6fa"
 RUNNER_COMMAND_SUBJECT_TEMPLATE = "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
 
 TOOLKIT_RC_SCHEMA_PATH = "docs/gateway-contract/v1/toolkit_rc_receipt_manifest_v1.schema.json"
@@ -517,6 +520,9 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
     for relative in (
         RUNNER_COMMAND_CONSUMER_SOURCE,
         RUNNER_COMMAND_CONSUMER_TEST,
+        RUNNER_MATERIAL_AUTHORITY_SOURCE,
+        RUNNER_MATERIAL_AUTHORITY_TEST,
+        DEVELOPMENT_ARTIFACT_RUNTIME_SOURCE,
         RUNNER_COMMAND_GOLDEN_PATH,
         RUNNER_COMMAND_GOLDEN_SIDECAR_PATH,
     ):
@@ -526,8 +532,12 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
         {
             "asset_index_schema_version": 1,
             "canonical_name": "Custos canonical V1 Crucible DeploymentSpec consumer assets",
-            "status": "READY_CONTRACT_ONLY_PENDING_COMMAND_RUNTIME_RECEIPT",
-            "consumer_scope": ["deployment_spec_command", "durable_runner_intake"],
+            "status": "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
+            "consumer_scope": [
+                "deployment_spec_command",
+                "durable_runner_intake",
+                "development_material_resolution",
+            ],
             "producer_authority": {
                 "repository": "tesseract-trading/crucible-rust",
                 "contract": "CrucibleRunnerDeploymentCommandV1",
@@ -546,12 +556,14 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
             "custos_publishes_command_schema": False,
             "exact_signed_event_bytes_retained": True,
             "signature_bytes_in_fingerprint": False,
+            "exact_event_command_fingerprint_pinned": True,
             "command_contains_deployment_spec_only": True,
             "strategy_release_authority_resolution": (
-                "authenticated Crucible StrategyRelease resolver"
+                "pending authenticated Custos production material consumption"
             ),
             "consumer_code_ready": True,
             "command_contract_consumer_ready": True,
+            "development_material_resolution_ready": True,
             "runtime_ready": False,
             "production_ready": False,
         }
@@ -560,7 +572,7 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
         {
             "receipt_schema_version": 1,
             "canonical_name": "Custos canonical V1 DeploymentSpec consumer receipt",
-            "receipt_status": "READY_CONTRACT_ONLY_PENDING_COMMAND_RUNTIME_RECEIPT",
+            "receipt_status": "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
             "contract_asset_index": {
                 "path": RUNNER_COMMAND_CONSUMER_INDEX_PATH,
                 "sha256": sha256(index),
@@ -584,6 +596,7 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
                 "deployment_spec_only": True,
                 "exact_signed_event_bytes_retained": True,
                 "signature_bytes_in_fingerprint": False,
+                "exact_event_command_fingerprint_pinned": True,
                 "compatibility_fallback": False,
                 "second_bom_authority_allowed": False,
                 "command_selected_root_policy_issuer_workflow": False,
@@ -592,12 +605,12 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
             },
             "consumer_code_ready": True,
             "command_contract_consumer_ready": True,
+            "development_material_resolution_ready": True,
             "runtime_ready": False,
             "production_ready": False,
             "open_blockers": [
-                "Crucible signed command outbox and runtime producer receipt",
-                "authenticated StrategyRelease authority resolver wiring",
-                "Custos durable RunnerFact state and engine lifecycle completion",
+                "real PG NATS engine command-to-fact receipt",
+                "authenticated Custos production StrategyRelease material consumption",
             ],
         }
     )

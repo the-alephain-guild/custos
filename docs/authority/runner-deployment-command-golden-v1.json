@@ -6,6 +6,7 @@
     {
       "name": "deployment_spec_ready_for_runner",
       "subject": "crucible.runner.command.v1.acme.10000000-0000-4000-8000-000000000001.sandbox",
+      "command_fingerprint": "30427469ef57d8f2cbb33c8b87c738d4a23d53f979cc236b957960081d3e824c",
       "event_document": {
         "schema_version": 1,
         "event_id": "90000000-0000-4000-8000-000000000009",
@@ -155,6 +156,7 @@
     {
       "name": "deployment_instance_desired_state_changed",
       "subject": "crucible.runner.command.v1.acme.10000000-0000-4000-8000-000000000001.sandbox",
+      "command_fingerprint": "c59b1ae2fded6ebc42ca4f53c68b1b17348db6c84d4b117a716941bf80bb6844",
       "event_document": {
         "schema_version": 1,
         "event_id": "90000000-0000-4000-8000-000000000010",
@@ -304,6 +306,7 @@
     {
       "name": "deployment_spec_ready_for_runner_development_source",
       "subject": "crucible.runner.command.v1.acme.10000000-0000-4000-8000-000000000001.sandbox",
+      "command_fingerprint": "1d43c856f87de376d8383b88b1c0021bbf7957439f15adfe3adf55770f3f0c89",
       "event_document": {
         "schema_version": 1,
         "event_id": "90000000-0000-4000-8000-000000000011",

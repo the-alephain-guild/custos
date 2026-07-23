@@ -268,7 +268,7 @@ def test_cross_language_fingerprint_vector_uses_exact_signed_event_bytes() -> No
     )
 
 
-def test_signature_rotation_does_not_change_command_or_producer_fingerprint() -> None:
+def test_signature_rotation_does_not_change_command_fingerprint() -> None:
     first_bytes, subject = _signed_fixture(private_key=KEY_A, key_id="key-a")
     second_bytes, _ = _signed_fixture(private_key=KEY_B, key_id="key-b")
     keys = {"key-a": KEY_A, "key-b": KEY_B}
@@ -278,7 +278,7 @@ def test_signature_rotation_does_not_change_command_or_producer_fingerprint() ->
     second = authenticator.verify(subject=subject, signed_envelope_bytes=second_bytes)
 
     assert first.command_fingerprint == second.command_fingerprint
-    assert first.command.producer_fingerprint == second.command.producer_fingerprint
+    assert first.command.command_fingerprint == second.command.command_fingerprint
     assert (
         first.verification_receipt.signature_key_id != second.verification_receipt.signature_key_id
     )

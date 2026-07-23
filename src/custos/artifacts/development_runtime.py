@@ -9,7 +9,6 @@ from typing import cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from custos_toolkit.contracts.strategy_execution import (
-    DevelopmentSourceRefV1,
     FrozenJsonObject,
     StrategyExecutionContextV1,
     canonical_json_digest,
@@ -30,6 +29,10 @@ from custos.artifacts.development_source import (
 from custos.artifacts.policy import ArchiveLimitsV1
 from custos.contracts.crucible_runner_command import CrucibleRunnerDeploymentCommandV1
 from custos.contracts.deployment import DevelopmentArtifactSourceV1
+from custos.core.runner_material_authority import (
+    DevelopmentRunnerMaterialResolver,
+    RunnerMaterialUnavailableError,
+)
 
 
 class DevelopmentArtifactRuntimeBlocked(RuntimeError):
@@ -90,9 +93,11 @@ class DevelopmentStrategyArtifactRuntimeV1:
         *,
         state: DurableArtifactRuntimeState,
         config: DevelopmentArtifactRuntimeConfigV1,
+        material_resolver: DevelopmentRunnerMaterialResolver,
     ) -> None:
         self._state = state
         self._config = config
+        self._material_resolver = material_resolver
         self._activator = DurableArtifactActivatorV1(
             state=state,
             activation_parent=config.activation_parent,
@@ -109,18 +114,22 @@ class DevelopmentStrategyArtifactRuntimeV1:
         if not isinstance(source, DevelopmentArtifactSourceV1):
             raise ValueError("development runtime received a StrategyRelease command")
         snapshot = source.snapshot
-        source_path = self._config.artifact_root / "sha256" / snapshot.source_sha256
-        source_ref = DevelopmentSourceRefV1(
-            schema_version=1,
-            source_path=str(source_path),
-            source_sha256=snapshot.source_sha256,
-            trading_mode="sandbox",
-            promotable=False,
-        )
+        try:
+            material = await self._material_resolver.resolve_development(
+                command=command,
+                command_fingerprint=durable.command_fingerprint,
+            )
+        except RunnerMaterialUnavailableError as error:
+            raise DevelopmentArtifactRuntimeBlocked(
+                "development artifact authority is unavailable"
+            ) from error
+        source_ref = material.source_ref
+        if material.publication_receipt_digest != snapshot.publication_receipt_digest:
+            raise ValueError("development artifact receipt differs from signed command")
         try:
             verified_artifact = verify_development_artifact(
                 source_ref,
-                publication_receipt_digest=snapshot.publication_receipt_digest,
+                publication_receipt_digest=material.publication_receipt_digest,
                 configured_root=self._config.artifact_root,
                 runtime_mode=command.mode,
             )

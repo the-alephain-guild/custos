@@ -128,7 +128,6 @@ class CommandVerificationReceipt:
     signature_profile: str
     exact_subject: str
     verified_event_bytes_sha256: str
-    producer_fingerprint: str
     command_fingerprint: str
     schema_version: Literal[1] = 1
 
@@ -330,6 +329,12 @@ class CrucibleRunnerCommandAuthenticator:
             subject=command.verified_subject,
             verified_exact_event_bytes=command.exact_signed_event_bytes,
         )
+        if command.command_fingerprint != command_fingerprint:
+            raise CommandVerificationError(
+                UntrustedCommandReason.INVALID_SCHEMA,
+                "Crucible runner command fingerprint differs from exact event bytes",
+                raw_envelope_digest=raw_digest,
+            )
         receipt = CommandVerificationReceipt(
             signature_key_id=material.key_id,
             signature_profile=DOMAIN_EVENT_SIGNATURE_PROFILE,
@@ -337,7 +342,6 @@ class CrucibleRunnerCommandAuthenticator:
             verified_event_bytes_sha256=hashlib.sha256(
                 command.exact_signed_event_bytes
             ).hexdigest(),
-            producer_fingerprint=command.producer_fingerprint,
             command_fingerprint=command_fingerprint,
         )
         return VerifiedRunnerCommand(

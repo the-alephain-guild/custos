@@ -64,7 +64,7 @@ RUNNER_FACT_CONTRACT_RECEIPT_PATH = (
 )
 RUNNER_COMMAND_CONSUMER_SOURCE = "src/custos/contracts/crucible_runner_command.py"
 RUNNER_COMMAND_GOLDEN_PATH = "docs/authority/runner-deployment-command-golden-v1.json"
-RUNNER_COMMAND_PRODUCER_COMMIT = "d1e850b5021feb899873a91ef23d2f2ba3f665ae"
+RUNNER_COMMAND_PRODUCER_COMMIT = "57783973375055cd8af7cc4e681314a0b633f6fa"
 REVIEW_VENDOR_ROOT = "docs/authority/receipts/vendor"
 CURRENT_STRATEGY_CONTRACT_SOURCE = (
     "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py"
@@ -503,7 +503,7 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         return
 
     index = load_json(index_path)
-    expected_code_status = "READY_CONTRACT_ONLY_PENDING_COMMAND_RUNTIME_RECEIPT"
+    expected_code_status = "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT"
     if index.get("status") != expected_code_status:
         errors.append("runner command consumer code status differs")
     model = index.get("consumer_model")
@@ -515,6 +515,22 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         if model.get("size_bytes") != source_path.stat().st_size:
             errors.append("runner command consumer consumer model size differs")
     consumer_assets = index.get("consumer_assets")
+    if not isinstance(consumer_assets, list):
+        errors.append("runner command consumer assets must be a list")
+        consumer_assets = []
+    for asset in consumer_assets:
+        if not isinstance(asset, dict):
+            errors.append("runner command consumer asset entry must be an object")
+            continue
+        asset_path = resolve(str(asset.get("path") or ""))
+        if not asset_path.is_file():
+            errors.append(f"runner command consumer asset is missing: {asset_path}")
+            continue
+        asset_bytes = asset_path.read_bytes()
+        if asset.get("sha256") != hashlib.sha256(asset_bytes).hexdigest() or asset.get(
+            "size_bytes"
+        ) != len(asset_bytes):
+            errors.append(f"runner command consumer asset digest differs: {asset_path}")
     fixture = (
         next(
             (
@@ -548,6 +564,14 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         errors.append("runner command consumer command must contain DeploymentSpec only")
     if index.get("command_contract_consumer_ready") is not True:
         errors.append("runner command consumer exact command contract must be ready")
+    if index.get("development_material_resolution_ready") is not True:
+        errors.append("runner command consumer development material resolution must be ready")
+    if index.get("consumer_scope") != [
+        "deployment_spec_command",
+        "durable_runner_intake",
+        "development_material_resolution",
+    ]:
+        errors.append("runner command consumer scope differs")
 
     receipt = load_json(receipt_path)
     if receipt.get("receipt_status") != expected_code_status:
@@ -560,6 +584,8 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         errors.append("runner command consumer receipt does not bind the current index")
     if receipt.get("runtime_ready") is not False or receipt.get("production_ready") is not False:
         errors.append("runner command consumer cannot claim runtime or production readiness")
+    if receipt.get("development_material_resolution_ready") is not True:
+        errors.append("runner command receipt development material resolution differs")
 
     source = source_path.read_text(encoding="utf-8")
     required = (

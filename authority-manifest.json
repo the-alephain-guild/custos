@@ -237,18 +237,20 @@
     {
       "role": "crucible_runner_command_consumer_asset_index_v1",
       "path": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
-      "status": "READY_CONTRACT_ONLY_PENDING_COMMAND_RUNTIME_RECEIPT",
+      "status": "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
       "consumer_code_ready": true,
       "command_contract_consumer_ready": true,
+      "development_material_resolution_ready": true,
       "runtime_ready": false,
       "production_ready": false
     },
     {
       "role": "runner_command_consumer_receipt_v1",
       "path": "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
-      "receipt_status": "READY_CONTRACT_ONLY_PENDING_COMMAND_RUNTIME_RECEIPT",
+      "receipt_status": "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
       "consumer_code_ready": true,
       "command_contract_consumer_ready": true,
+      "development_material_resolution_ready": true,
       "runtime_ready": false,
       "production_ready": false
     },
@@ -514,8 +516,9 @@
     {
       "path": "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
       "must_contain": [
-        "READY_CONTRACT_ONLY_PENDING_COMMAND_RUNTIME_RECEIPT",
+        "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
         "\"deployment_spec_only\": true",
+        "\"development_material_resolution_ready\": true",
         "\"strategy_release_material_in_command\": false",
         "\"production_ready\": false"
       ]

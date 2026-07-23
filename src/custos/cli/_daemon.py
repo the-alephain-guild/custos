@@ -72,6 +72,7 @@ from custos.core.runner_fact import (
     RunnerStateStore,
 )
 from custos.core.runner_fact_producer import RunnerFactProductionLoop
+from custos.core.runner_material_authority import RunnerMaterialAuthorityClient
 from custos.core.runner_safety_policy import (
     DurableRunnerSafetyPolicyResolver,
     RunnerSafetyPolicyResolver,
@@ -634,6 +635,10 @@ async def run_daemon(args: argparse.Namespace) -> int:
             )
             development_runtime = DevelopmentStrategyArtifactRuntimeV1(
                 state=state_store,
+                material_resolver=RunnerMaterialAuthorityClient(
+                    metadata.backend_url,
+                    machine_credential,
+                ),
                 config=DevelopmentArtifactRuntimeConfigV1(
                     artifact_root=args.development_artifact_root.expanduser().resolve(),
                     quarantine_parent=args.artifact_quarantine_dir.expanduser().resolve(),

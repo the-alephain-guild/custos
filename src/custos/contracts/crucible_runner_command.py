@@ -35,7 +35,7 @@ _EVENT_TYPE_PREFIXES = frozenset(
         "DeploymentInstanceDesiredStateChanged",
     }
 )
-_FINGERPRINT_DOMAIN = b"CRUCIBLE-RUNNER-DEPLOYMENT-COMMAND-FINGERPRINT-V1\0"
+_COMMAND_FINGERPRINT_DOMAIN = b"CRUCIBLE-RUNNER-COMMAND-FINGERPRINT-V1\0"
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _KEY_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _BASE64URL_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -100,10 +100,10 @@ class CrucibleRunnerDeploymentCommandV1(BaseModel):
 
     _exact_signed_event_bytes: bytes = PrivateAttr(default=b"")
     _verified_subject: str = PrivateAttr(default="")
-    _producer_fingerprint: str = PrivateAttr(default="")
+    _command_fingerprint: str = PrivateAttr(default="")
 
     @property
-    def trading_mode(self) -> str:
+    def trading_mode(self) -> Literal["sandbox", "testnet", "live"]:
         """Return the explicit trading mode used by local execution state."""
 
         return self.mode
@@ -117,8 +117,8 @@ class CrucibleRunnerDeploymentCommandV1(BaseModel):
         return self._verified_subject
 
     @property
-    def producer_fingerprint(self) -> str:
-        return self._producer_fingerprint
+    def command_fingerprint(self) -> str:
+        return self._command_fingerprint
 
     @property
     def strategy_id(self) -> UUID:
@@ -286,10 +286,12 @@ class CrucibleRunnerDeploymentCommandV1(BaseModel):
         ):
             raise ValueError("event authority differs from command authority")
 
-        fingerprint = hashlib.sha256(_framed(_FINGERPRINT_DOMAIN, subject, event_bytes)).hexdigest()
+        fingerprint = hashlib.sha256(
+            _framed(_COMMAND_FINGERPRINT_DOMAIN, subject, event_bytes)
+        ).hexdigest()
         object.__setattr__(command, "_exact_signed_event_bytes", event_bytes)
         object.__setattr__(command, "_verified_subject", subject)
-        object.__setattr__(command, "_producer_fingerprint", fingerprint)
+        object.__setattr__(command, "_command_fingerprint", fingerprint)
         return command
 
 

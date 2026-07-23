@@ -3845,7 +3845,7 @@ class RunnerStateStore:
             raise RunnerStateDurabilityError("durable desired command verification bindings differ")
         object.__setattr__(command, "_exact_signed_event_bytes", exact_event_bytes)
         object.__setattr__(command, "_verified_subject", row["exact_subject"])
-        object.__setattr__(command, "_producer_fingerprint", receipt.producer_fingerprint)
+        object.__setattr__(command, "_command_fingerprint", receipt.command_fingerprint)
         return DurableDesiredCommand(
             command=command,
             command_fingerprint=row["command_fingerprint"],
@@ -4094,7 +4094,7 @@ class RunnerStateStore:
             command_fingerprint != expected_fingerprint
             or verification_receipt.command_fingerprint != expected_fingerprint
             or verification_receipt.exact_subject != command.verified_subject
-            or verification_receipt.producer_fingerprint != command.producer_fingerprint
+            or command.command_fingerprint != expected_fingerprint
             or verification_receipt.verified_event_bytes_sha256
             != _sha256_hex(command.exact_signed_event_bytes)
         ):
