@@ -23,6 +23,8 @@
     "allowed_modes": [
       "sandbox"
     ],
+    "content_addressed_root_required": true,
+    "digest_profile": "sha256-canonical-directory-v1",
     "promotable": false,
     "production_fallback": false
   },
@@ -45,6 +47,7 @@
   "runtime_ready": false,
   "production_ready": false,
   "implementation_files": [
+    "src/custos/artifacts/development_source.py",
     "src/custos/artifacts/release_resolver.py",
     "src/custos/artifacts/runtime.py",
     "src/custos/core/credential_resolver.py",

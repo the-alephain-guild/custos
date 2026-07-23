@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
 
+from custos.artifacts.development_runtime import (
+    ActivatedDevelopmentStrategyArtifact,
+    DevelopmentArtifactRuntimeBlocked,
+    DevelopmentStrategyArtifactRuntimeV1,
+    PreparedDevelopmentStrategyArtifact,
+)
+from custos.artifacts.development_source import DevelopmentSourceVerificationError
 from custos.artifacts.errors import ArtifactVerificationError
 from custos.artifacts.release_resolver import (
     StrategyReleaseArtifactResolverV1,
@@ -36,6 +44,8 @@ from custos.core.runner_command_intake import (
     InboundCommandDelivery,
     VerifiedRunnerCommand,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class RunnerCredentialResolutionError(RuntimeError):
@@ -84,7 +94,8 @@ class RunnerCommandRuntimeCoordinator:
         intake: CommandIntakeCoordinator,
         durability: CommandIntakeDurability,
         release_resolver: StrategyReleaseArtifactResolverV1,
-        artifact_runtime: StrategyArtifactRuntimeV1,
+        artifact_runtime: StrategyArtifactRuntimeV1 | None,
+        development_artifact_runtime: DevelopmentStrategyArtifactRuntimeV1 | None = None,
         entry_point_loader: RuntimeEntryPointLoader,
         credential_resolver: RunnerCredentialResolverV1,
         engine_lifecycle: EngineLifecycleSupervisor,
@@ -94,6 +105,7 @@ class RunnerCommandRuntimeCoordinator:
         self._durability = durability
         self._release_resolver = release_resolver
         self._artifact_runtime = artifact_runtime
+        self._development_artifact_runtime = development_artifact_runtime
         self._entry_point_loader = entry_point_loader
         self._credential_resolver = credential_resolver
         self._engine_lifecycle = engine_lifecycle
@@ -114,12 +126,29 @@ class RunnerCommandRuntimeCoordinator:
         if verified is None:
             raise RuntimeError("applicable command intake result lost verified authority")
 
+        activated: ActivatedStrategyArtifact | ActivatedDevelopmentStrategyArtifact | None
+        ready: EngineReadyReceipt | None
         try:
-            _prepared, activated, ready = await self._with_heartbeat(
-                delivery,
-                self._resolve_activate_apply(delivery, verified),
-            )
-        except (StrategyReleaseResolutionRejected, ArtifactVerificationError) as error:
+            if verified.command.lifecycle_state == "running":
+                _prepared, activated, ready = await self._with_heartbeat(
+                    delivery,
+                    self._resolve_activate_apply(delivery.delivery_id, verified),
+                )
+            else:
+                activated = None
+                ready = None
+                await self._with_heartbeat(
+                    delivery,
+                    self._engine_lifecycle.apply_non_running(
+                        delivery_id=delivery.delivery_id,
+                        verified=verified,
+                    ),
+                )
+        except (
+            StrategyReleaseResolutionRejected,
+            ArtifactVerificationError,
+            DevelopmentSourceVerificationError,
+        ) as error:
             reason = self._reason_code("artifact_authority_rejected", error)
             return await self._terminal_rejection(delivery, intake, verified, reason)
         except (RunnerCredentialResolutionRejected, ArtifactRuntimeActivationError) as error:
@@ -134,6 +163,7 @@ class RunnerCommandRuntimeCoordinator:
             )
         except (
             StrategyReleaseResolutionUnavailable,
+            DevelopmentArtifactRuntimeBlocked,
             RunnerCredentialResolutionUnavailable,
             ArtifactRuntimeBlocked,
             EngineLifecycleBlocked,
@@ -145,6 +175,14 @@ class RunnerCommandRuntimeCoordinator:
                 self._reason_code("runtime_dependency_unavailable", error),
             )
         except Exception as error:  # noqa: BLE001 - bounded fail-closed retry
+            logger.exception(
+                "runner command apply failed",
+                extra={
+                    "delivery_id": delivery.delivery_id,
+                    "deployment_instance_id": str(verified.command.deployment_instance_id),
+                    "generation": verified.command.generation,
+                },
+            )
             return await self._retry_or_exhaust(
                 delivery,
                 intake,
@@ -156,28 +194,68 @@ class RunnerCommandRuntimeCoordinator:
         return RunnerCommandRuntimeResult(
             status=RunnerCommandRuntimeStatus.APPLIED_ACKED,
             intake=intake,
-            activation_id=activated.activation_id,
+            activation_id=activated.activation_id if activated is not None else None,
             ready_receipt=ready,
         )
 
+    async def recover(self, verified: VerifiedRunnerCommand) -> EngineReadyReceipt:
+        """Restore one durable running command without an inbound ACK boundary."""
+
+        if verified.command.lifecycle_state != "running":
+            raise RuntimeError("only a running durable command may recover an engine")
+        _prepared, _activated, ready = await self._resolve_activate_apply(
+            (
+                "startup-recovery:"
+                f"{verified.command.deployment_instance_id}:"
+                f"{verified.command.generation}"
+            ),
+            verified,
+        )
+        return ready
+
     async def _resolve_activate_apply(
         self,
-        delivery: InboundCommandDelivery,
+        delivery_id: str,
         verified: VerifiedRunnerCommand,
-    ) -> tuple[PreparedStrategyArtifact, ActivatedStrategyArtifact, EngineReadyReceipt]:
-        resolved = await self._release_resolver.resolve(verified)
-        prepared = await self._artifact_runtime.prepare(
-            deployment_instance_id=verified.command.deployment_instance_id,
-            release_authority=resolved.release_authority,
-            release_statement_bytes=resolved.release_statement_bytes,
-            detached_bundle_path=resolved.detached_bundle_path,
-            member_paths=resolved.member_paths,
-            verified_at=resolved.verified_at,
-        )
-        activated = await self._artifact_runtime.activate(
-            prepared,
-            loader=self._entry_point_loader,
-        )
+    ) -> tuple[
+        PreparedStrategyArtifact | PreparedDevelopmentStrategyArtifact,
+        ActivatedStrategyArtifact | ActivatedDevelopmentStrategyArtifact,
+        EngineReadyReceipt,
+    ]:
+        if verified.command.is_development_source:
+            development_artifact_runtime = self._development_artifact_runtime
+            if development_artifact_runtime is None:
+                raise DevelopmentArtifactRuntimeBlocked(
+                    "sandbox development artifact runtime is not composed"
+                )
+            prepared = await development_artifact_runtime.prepare(
+                deployment_instance_id=verified.command.deployment_instance_id,
+            )
+            activated = await development_artifact_runtime.activate(
+                prepared,
+                loader=self._entry_point_loader,
+            )
+            artifact_policy_id = prepared.receipt.artifact_policy_id
+        else:
+            resolved = await self._release_resolver.resolve(verified)
+            artifact_runtime = self._artifact_runtime
+            if artifact_runtime is None:
+                raise StrategyReleaseResolutionUnavailable(
+                    "production StrategyRelease runtime is not composed"
+                )
+            prepared = await artifact_runtime.prepare(
+                deployment_instance_id=verified.command.deployment_instance_id,
+                release_authority=resolved.release_authority,
+                release_statement_bytes=resolved.release_statement_bytes,
+                detached_bundle_path=resolved.detached_bundle_path,
+                member_paths=resolved.member_paths,
+                verified_at=resolved.verified_at,
+            )
+            activated = await artifact_runtime.activate(
+                prepared,
+                loader=self._entry_point_loader,
+            )
+            artifact_policy_id = prepared.receipt.runner_local_policy_decision.policy_id
         runtime_spec_model = verified.command.to_runtime_spec()
         credential = await self._credential_resolver.resolve(
             verified,
@@ -185,12 +263,12 @@ class RunnerCommandRuntimeCoordinator:
         )
         runtime_spec = runtime_spec_model.model_dump(mode="python")
         ready = await self._engine_lifecycle.apply(
-            delivery_id=delivery.delivery_id,
+            delivery_id=delivery_id,
             verified=verified,
             runtime_spec=runtime_spec,
             credential=credential,
             artifact=activated,
-            local_policy_id=prepared.receipt.runner_local_policy_decision.policy_id,
+            artifact_policy_id=artifact_policy_id,
         )
         return prepared, activated, ready
 
@@ -229,12 +307,20 @@ class RunnerCommandRuntimeCoordinator:
                 outcome="retry_exhausted",
                 reason_code=reason_code,
             )
-        except Exception:
+        except Exception as error:
+            logger.exception(
+                "durable runner command rejection failed",
+                extra={
+                    "delivery_id": delivery.delivery_id,
+                    "deployment_instance_id": str(verified.command.deployment_instance_id),
+                    "generation": verified.command.generation,
+                },
+            )
             await delivery.nak(delay=self._policy.backoff_for(delivery.delivered_count))
             return RunnerCommandRuntimeResult(
                 status=RunnerCommandRuntimeStatus.RETRY_SCHEDULED,
                 intake=intake,
-                reason_code="durable_runtime_rejection_failed",
+                reason_code=self._reason_code("durable_runtime_rejection_failed", error),
             )
         await delivery.term()
         return RunnerCommandRuntimeResult(

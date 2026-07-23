@@ -29,6 +29,8 @@ def _put_argv(vault_dir: Path, key_id: str = "binance-paper") -> list[str]:
         "acme",
         "--api-key",
         "public-api-key",
+        "--scope-digest",
+        "a" * 64,
         "--api-secret",
         "super-secret-value",
         "--age-recipient",
@@ -116,6 +118,7 @@ def test_vault_put_writes_permission_scope(tmp_path: Path, monkeypatch: pytest.M
     assert payload["binance-paper"]["permission_scope"] == "trade_no_withdraw"
     assert payload["binance-paper"]["api_key"] == "public-api-key"
     assert payload["binance-paper"]["api_secret"] == "super-secret-value"
+    assert payload["binance-paper"]["scope_digest"] == "a" * 64
 
 
 def test_vault_put_never_logs_secret(
@@ -148,6 +151,8 @@ def test_vault_put_never_logs_secret(
                 "acme",
                 "--api-key",
                 "public-api-key",
+                "--scope-digest",
+                "a" * 64,
                 "--api-secret",
                 "super-secret-value",
                 "--age-recipient",
@@ -205,6 +210,8 @@ def test_vault_put_secret_stdin_path(tmp_path: Path, monkeypatch: pytest.MonkeyP
         "acme",
         "--api-key",
         "public-api-key",
+        "--scope-digest",
+        "a" * 64,
         "--api-secret-stdin",
         "--age-recipient",
         "age1x",
@@ -232,6 +239,8 @@ def test_vault_put_secret_env_path(tmp_path: Path, monkeypatch: pytest.MonkeyPat
         "acme",
         "--api-key",
         "public-api-key",
+        "--scope-digest",
+        "a" * 64,
         "--api-secret-env",
         "MY_ENV_SECRET",
         "--age-recipient",

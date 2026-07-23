@@ -149,6 +149,27 @@ def test_start_preserves_engine_and_fact_outbox_flags(
     assert namespace.vault_dir == vault_dir
 
 
+def test_start_preserves_explicit_development_local_nats_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner_toml = tmp_path / "arx" / "runner.toml"
+    _seed_runner_toml(runner_toml)
+
+    exit_code, run_daemon, _credential = _run_start(
+        [
+            "--runner-toml",
+            str(runner_toml),
+            "--development-local-nats-url",
+            "nats://127.0.0.1:4222",
+        ],
+        monkeypatch=monkeypatch,
+    )
+
+    assert exit_code == 0
+    assert run_daemon.call_args.args[0].development_local_nats_url == "nats://127.0.0.1:4222"
+
+
 def test_start_rejects_machine_vault_override_binding_mismatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -184,10 +205,10 @@ def test_engine_noop_selects_noop_host() -> None:
     from argparse import Namespace
 
     from custos.cli._daemon import _build_host
-    from custos.engines.nautilus.host import NoopHost
+    from custos.engines.nautilus.host import SandboxSimulationHost
 
-    host = _build_host(Namespace(engine="noop", tenant_id="acme", runner_id=_RUNNER_ID))
-    assert isinstance(host, NoopHost)
+    host = _build_host(Namespace(engine="sandbox-sim", tenant_id="acme", runner_id=_RUNNER_ID))
+    assert isinstance(host, SandboxSimulationHost)
 
 
 def test_use_nt_host_flag_is_removed() -> None:

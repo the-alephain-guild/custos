@@ -2,14 +2,14 @@
 (target: design for three, implement one).
 
 Two hosts satisfy ExecutionEngineProtocol:
-- NoopHost: explicit contract-test stub which never claims live capability.
+- SandboxSimulationHost: deterministic sandbox execution simulator.
 - NtTradingNodeHost: real NautilusTrader host. deploy dispatches on
   spec.trading_mode: sandbox (real-time data + locally simulated execution),
   testnet (real Binance exec on the testnet endpoint), and live (real exchange,
   gated by verified artifact, credential, promotion and local live admission).
 
 NautilusTrader is an optional runtime (`nautilus` extra, Python 3.12+). This
-module import-guards it so the reconciler can import NoopHost on a base install
+module import-guards it so the reconciler can import SandboxSimulationHost on a base install
 without NT; NtTradingNodeHost.deploy fails fast if NT is missing.
 """
 
@@ -70,7 +70,7 @@ except ImportError:  # nautilus extra absent (audit / paper install) — deploy 
     TraderId = None
     PriceType = None
 
-__all__ = ["NoopHost", "NtTradingNodeHost"]
+__all__ = ["SandboxSimulationHost", "NtTradingNodeHost"]
 
 _log = get_logger("custos.nautilus_host")
 
@@ -103,18 +103,17 @@ def _sanitize_exception(exc: Exception) -> dict:
     return {"error_type": type(exc).__name__, "error": msg}
 
 
-class NoopHost:
-    """Stub NautilusHost for non-execution path.
+class SandboxSimulationHost:
+    """Deterministic sandbox execution simulator.
 
-    It only logs structured events and returns placeholders so reconcile can run in
-    paper / dev / sim mode. Live mode is rejected by execution admission,
-    because this stub would silently
-    accept a live spec but never execute. A real NT host (NtTradingNodeHost) replaces
-    this stub once the adapter is fully wired.
+    It exercises artifact activation, credential resolution, lifecycle durability,
+    readiness, and RunnerFact publication without connecting to a venue. Admission
+    restricts it to the signed ``sandbox`` mode and ``SIM`` connector. Testnet and
+    live always require ``NtTradingNodeHost``.
 
     The method signatures exactly match ExecutionEngineProtocol so the lifecycle
     supervisor can use this dependency and admission can immediately reject
-    supports_live.
+    supports_trading_mode.
     """
 
     def __init__(self) -> None:
@@ -131,7 +130,7 @@ class NoopHost:
             spec
         )
         _log.info(
-            "nautilus_host_deploy_stub",
+            "sandbox_simulation_engine_deployed",
             deployment_instance_id=deployment_instance_id,
             artifact_activation_id=artifact.activation_id,
         )
@@ -139,30 +138,31 @@ class NoopHost:
 
     async def reconfigure(self, spec: dict) -> None:
         _log.info(
-            "nautilus_host_reconfigure_stub",
+            "sandbox_simulation_engine_reconfigured",
             deployment_instance_id=spec.get("deployment_instance_id"),
         )
 
     async def stop(self, deployment_instance_id: str) -> None:
         self._lifecycle_authorities.pop(deployment_instance_id, None)
-        _log.info("nautilus_host_stop_stub", deployment_instance_id=deployment_instance_id)
+        _log.info(
+            "sandbox_simulation_engine_stopped",
+            deployment_instance_id=deployment_instance_id,
+        )
 
-    def supports_live(self) -> bool:
-        # Fail-safe: a stub that neither routes orders nor holds venue state must
-        # Never claim live capability; execution admission rejects it on live.
-        return False
+    def supports_trading_mode(self, mode: str) -> bool:
+        # This host is an explicit local simulation boundary. It may exercise the
+        # full lifecycle in sandbox, but must never claim a real-venue mode.
+        return mode == "sandbox"
 
     def supports_venue(self, venue: str) -> bool:
-        return False
+        return venue.lower() == "sim"
 
     async def get_open_notional(self, deployment_instance_id: str) -> Decimal:
-        # Stub holds no positions — zero exposure. The runner cap / breaker are
-        # correctly no-ops against it (NoopHost only ever runs paper / sim).
+        # The simulator holds no positions, so its observed exposure is exactly zero.
         return Decimal("0")
 
     async def check_engine_connected(self, deployment_instance_id: str) -> ConnectivityState:
-        # Stub has no engine to disconnect — always reports connected so the
-        # zombie watchdog never flags a paper/sim runner.
+        # The in-process simulator has no external connection to lose.
         return ConnectivityState(
             data_connected=True, exec_connected=True, checked_at_epoch_s=time.time()
         )
@@ -171,7 +171,7 @@ class NoopHost:
         # Stub holds no positions — flatten is a no-op, logged so the breaker's
         # trip is still observable on a paper/sim runner.
         _log.info(
-            "noophost_flatten_noop",
+            "sandbox_simulation_positions_flattened",
             deployment_instance_id=deployment_instance_id,
             reason=reason,
         )
@@ -202,13 +202,21 @@ class NoopHost:
         *,
         timeout_secs: float,
     ) -> EngineReadyReceipt:
-        raise RuntimeError("noop host cannot publish engine readiness")
+        stored = self._lifecycle_authorities.get(str(authority.deployment_instance_id))
+        if stored != authority:
+            raise RuntimeError("sandbox simulation lifecycle authority is not deployed")
+        return EngineReadyReceipt.from_authority(
+            authority,
+            checks=EngineReadinessChecks.all_ready(),
+            ready_at_ns=time.time_ns(),
+        )
 
     async def wait_terminal(
         self,
         authority: EngineLifecycleAuthority,
     ) -> EngineTerminalEvent:
-        raise RuntimeError("noop host has no supervised engine task")
+        await asyncio.Event().wait()
+        raise AssertionError("sandbox simulation terminal wait unexpectedly returned")
 
 
 class NtTradingNodeHost:
@@ -263,8 +271,8 @@ class NtTradingNodeHost:
                 "(needs Python 3.12+) to run NtTradingNodeHost"
             )
 
-    def supports_live(self) -> bool:
-        return True
+    def supports_trading_mode(self, mode: str) -> bool:
+        return mode in {"sandbox", "testnet", "live"}
 
     def supports_venue(self, venue: str) -> bool:
         return venue.lower() in _SUPPORTED_VENUES
@@ -538,7 +546,9 @@ class NtTradingNodeHost:
         timeout_secs: float,
     ) -> EngineReadyReceipt:
         if authority.trading_mode == "live":
-            raise RuntimeError("live readiness remains fail closed until engine supervision is complete")
+            raise RuntimeError(
+                "live readiness remains fail closed until engine supervision is complete"
+            )
         deadline = asyncio.get_running_loop().time() + timeout_secs
         instance_id = str(authority.deployment_instance_id)
         while asyncio.get_running_loop().time() < deadline:

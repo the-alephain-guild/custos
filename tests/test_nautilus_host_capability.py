@@ -1,8 +1,7 @@
 """Host capability declarations used by execution admission.
 
-NoopHost is a paper/sim stub: it must declare it supports neither live nor any
-venue, so the gate's fail-safe default keeps a stub off live venues. The real
-NtTradingNodeHost declares live + the Binance connectors it actually wires.
+SandboxSimulationHost accepts only sandbox plus the SIM connector. The real
+NtTradingNodeHost declares the Binance connectors it actually wires.
 
 No NautilusTrader dependency: capability answers are static declarations, so
 they are unit-testable on a base install. A separate NT-gated drift guard
@@ -11,23 +10,29 @@ asserts the declared venue set stays in sync with the venue-config module.
 
 from __future__ import annotations
 
-from custos.engines.nautilus.host import NoopHost, NtTradingNodeHost
+from custos.engines.nautilus.host import NtTradingNodeHost, SandboxSimulationHost
 
 
-def test_noophost_rejects_live_capability() -> None:
+def test_sandbox_simulation_host_rejects_live_capability() -> None:
     # Fail-safe: the stub must never claim live capability, or the gate would
     # let a paper stub silently swallow live orders.
-    assert NoopHost().supports_live() is False
+    assert SandboxSimulationHost().supports_trading_mode("live") is False
 
 
-def test_noophost_rejects_all_venues() -> None:
-    host = NoopHost()
+def test_sandbox_simulation_host_accepts_sandbox_capability() -> None:
+    assert SandboxSimulationHost().supports_trading_mode("sandbox") is True
+
+
+def test_sandbox_simulation_host_accepts_only_the_simulation_connector() -> None:
+    host = SandboxSimulationHost()
+    assert host.supports_venue("SIM") is True
     assert host.supports_venue("binance") is False
     assert host.supports_venue("binance_perpetual") is False
+    assert host.supports_venue("okx") is False
 
 
 def test_ntlivehost_declares_live() -> None:
-    assert NtTradingNodeHost().supports_live() is True
+    assert NtTradingNodeHost().supports_trading_mode("live") is True
 
 
 def test_ntlivehost_venue_binance_supported() -> None:

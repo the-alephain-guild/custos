@@ -35,8 +35,8 @@ STRATEGY_ID = UUID("40000000-0000-4000-8000-000000000004")
 CAPABILITY_ID = UUID("50000000-0000-4000-8000-000000000005")
 SHA_A = "a" * 64
 SHA_B = "b" * 64
-ARTIFACT_REF_DIGEST = "c" * 64
-ARTIFACT_EVIDENCE_DIGEST = "d" * 64
+ARTIFACT_IDENTITY_DIGEST = "c" * 64
+ARTIFACT_AUTHORITY_DIGEST = "d" * 64
 POLICY_ID = UUID("60000000-0000-4000-8000-000000000006")
 
 
@@ -388,8 +388,8 @@ async def test_applied_commit_is_atomic_with_lifecycle_outbox_and_restart_replay
     await store.record_artifact_activation(
         verified=verified,
         activation_id="activation-1",
-        artifact_ref_digest=ARTIFACT_REF_DIGEST,
-        artifact_evidence_digest=ARTIFACT_EVIDENCE_DIGEST,
+        artifact_identity_digest=ARTIFACT_IDENTITY_DIGEST,
+        artifact_authority_digest=ARTIFACT_AUTHORITY_DIGEST,
     )
     await store.record_verified_runner_safety_policy(_runner_policy())
     result = await store.commit_applied_and_enqueue_lifecycle(
@@ -398,7 +398,7 @@ async def test_applied_commit_is_atomic_with_lifecycle_outbox_and_restart_replay
         engine_handle="engine-1",
         observed_status="running",
         artifact_activation_id="activation-1",
-        local_policy_id=str(POLICY_ID),
+        artifact_policy_id="artifact-policy-1",
     )
 
     assert result.committed is True
@@ -426,7 +426,7 @@ async def test_applied_commit_is_atomic_with_lifecycle_outbox_and_restart_replay
         engine_handle="engine-1",
         observed_status="running",
         artifact_activation_id="activation-1",
-        local_policy_id="runner-cap-1",
+        artifact_policy_id="artifact-policy-1",
     )
     assert replay.replay_disposition.value == "ack"
     assert repeated.committed is False

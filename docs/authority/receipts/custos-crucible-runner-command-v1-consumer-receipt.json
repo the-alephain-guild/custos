@@ -5,13 +5,13 @@
   "consumer_model": {
     "path": "src/custos/contracts/crucible_runner_command.py",
     "public_export": "CrucibleRunnerDeploymentCommandV1",
-    "sha256": "b156413d6158a8efcc6ab932162ccecfd603c8ab50ab069e8755dda33722eee5",
-    "size_bytes": 12654
+    "sha256": "d1a3aa7ebe92d54824e15714faf37348ef056efa769d2d739278c588455865ca",
+    "size_bytes": 13914
   },
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
-    "sha256": "b7c5c252c526b73748b80743ae71e39e3f6ef1173fd0ec0c84e6afba859c6d18",
-    "size_bytes": 2092
+    "sha256": "74de37db22b00f2571c7294bc54ad5d588259057f63ff1b79da24d681e455bc8",
+    "size_bytes": 2093
   },
   "contract_guards": {
     "command_selected_root_policy_issuer_workflow": false,

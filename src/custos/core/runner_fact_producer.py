@@ -23,7 +23,6 @@ from custos.core.runner_fact import (
     runner_fact_event_id,
     settlement_fee,
     settlement_fill,
-    settlement_period_closed,
     venue_ledger_snapshot_facts,
 )
 
@@ -317,11 +316,11 @@ class RunnerFactProductionLoop:
                     )
                     self._period_starts[key] = self._floor_period(now)
                     continue
-                if await self._close_period(deployment, start, closed_at):
+                if await self._close_reconciliation_period(deployment, start, closed_at):
                     self._period_starts[key] = closed_at
             await self._wait(stop, self._period_retry_secs)
 
-    async def _close_period(
+    async def _close_reconciliation_period(
         self,
         deployment: RunnerFactDeployment,
         started_at: datetime,
@@ -330,16 +329,6 @@ class RunnerFactProductionLoop:
         authority = deployment.authority
         period = f"{started_at:%Y%m%dT%H%M%SZ}_{closed_at:%Y%m%dT%H%M%SZ}"
         try:
-            await self._emitter.emit(
-                authority,
-                (
-                    settlement_period_closed(
-                        event_id=_scoped_event_id(authority, "settlement_period", period),
-                        period=period,
-                        closed_at=closed_at,
-                    ),
-                ),
-            )
             if not deployment.reconciliation_available:
                 _log.warning(
                     "runner_fact_reconciliation_unavailable",

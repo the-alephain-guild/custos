@@ -15,6 +15,8 @@ in known locations and imports them to trigger registration.
 import logging
 import os
 import sys
+from hashlib import sha256
+from inspect import getsourcefile
 from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, Unpack, cast
@@ -38,6 +40,7 @@ _STRATEGY_REGISTRY: dict[
         type[NautilusStrategyCore],
         type[NautilusTradingStrategyConfig],
         Callable[[ConfigWrapper], object],  # parameters_builder
+        tuple[str, str, str],
     ],
 ] = {}
 
@@ -207,14 +210,41 @@ def register_strategy(
             parameters_builder=build_parameters_config,
         )
     """
+    fingerprint = (
+        _component_fingerprint(strategy_class),
+        _component_fingerprint(config_class),
+        _component_fingerprint(parameters_builder),
+    )
     if name in _STRATEGY_REGISTRY:
-        # Allow re-registration from same class (idempotent)
-        existing_class = _STRATEGY_REGISTRY[name][0]
-        if existing_class is strategy_class:
+        if _STRATEGY_REGISTRY[name][3] == fingerprint:
+            _STRATEGY_REGISTRY[name] = (
+                strategy_class,
+                config_class,
+                parameters_builder,
+                fingerprint,
+            )
             return
         raise ValueError(f"Strategy '{name}' is already registered")
-    _STRATEGY_REGISTRY[name] = (strategy_class, config_class, parameters_builder)
+    _STRATEGY_REGISTRY[name] = (
+        strategy_class,
+        config_class,
+        parameters_builder,
+        fingerprint,
+    )
     logger.debug(f"Registered strategy: {name}")
+
+
+def _component_fingerprint(component: object) -> str:
+    module_name = str(getattr(component, "__module__", "")).strip()
+    qualified_name = str(getattr(component, "__qualname__", "")).strip()
+    source_file = getsourcefile(component)
+    if not module_name or not qualified_name or source_file is None:
+        raise ValueError("strategy registration component lacks source authority")
+    try:
+        source_digest = sha256(Path(source_file).resolve(strict=True).read_bytes()).hexdigest()
+    except OSError as error:
+        raise ValueError("strategy registration source authority is unavailable") from error
+    return f"{module_name}:{qualified_name}:{source_digest}"
 
 
 def unregister_strategy(name: str) -> None:
@@ -279,7 +309,7 @@ def create_strategy(
         available = list(_STRATEGY_REGISTRY.keys())
         raise ValueError(f"Unknown strategy: '{name}'. Available: {available}")
 
-    strategy_class, config_class, parameters_builder = _STRATEGY_REGISTRY[name]
+    strategy_class, config_class, parameters_builder, _fingerprint = _STRATEGY_REGISTRY[name]
 
     # Option 1: Pre-built config - use directly
     if config is not None:
@@ -318,7 +348,7 @@ def get_strategy_info(name: str) -> dict[str, object]:
     if name not in _STRATEGY_REGISTRY:
         raise KeyError(f"Strategy '{name}' is not registered")
 
-    strategy_class, config_class, parameters_builder = _STRATEGY_REGISTRY[name]
+    strategy_class, config_class, parameters_builder, _fingerprint = _STRATEGY_REGISTRY[name]
     return {
         "name": name,
         "strategy_class": strategy_class,

@@ -10,9 +10,7 @@ EXTRACTION = ROOT / "docs/authority/strategy-toolkit-extraction-v1.json"
 EXTRACTION_RECEIPT = ROOT / "docs/authority/receipts/strategy-toolkit-extraction-receipt-v1.json"
 BASELINE = ROOT / "docs/authority/strategy-toolkit-typing-baseline-v1.json"
 CLOSURE = ROOT / "docs/authority/strategy-toolkit-typing-closure-v1.json"
-CLOSURE_RECEIPT = (
-    ROOT / "docs/authority/receipts/strategy-toolkit-typing-closure-receipt-v1.json"
-)
+CLOSURE_RECEIPT = ROOT / "docs/authority/receipts/strategy-toolkit-typing-closure-receipt-v1.json"
 EXTRACTION_COMMIT = "b5ff7ee9cea0e78f4462a478bafa42f8f6e18805"
 TYPING_CLOSURE_COMMIT = "5a19a816d4f6d90e7d3fbde80d39f562decd8c4b"
 

@@ -102,7 +102,7 @@ def test_noop_host_never_claims_live_capability(noop_host, trading_mode):
 
 - **NATS mock**: 用 `aiofiles` mock 或 mock `nats.aio.client.Client` 而非跑真 NATS
 - **sops mock**: mock `subprocess.run` 拦 `sops --decrypt` 命令
-- **NT mock**: 用 `NoopHost` (production 也是 v0.0.x 默认) 而非 mock NT lifecycle
+- **本地执行模拟**: 用 `SandboxSimulationHost` 完整演练 sandbox lifecycle；testnet/live 必须使用真实 `NtTradingNodeHost`
 - **交易所 API mock**: 用 `pytest-httpx` 或 `respx` 拦 HTTP (若未来加同步 HTTP)
 
 ## 覆盖率 (未来)

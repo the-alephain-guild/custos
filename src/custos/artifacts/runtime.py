@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
-import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol, TypeAlias, cast
+from typing import Literal, Protocol, TypeAlias, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from custos_toolkit.contracts.strategy_execution import (
@@ -24,6 +22,12 @@ from custos_toolkit.contracts.strategy_execution import (
     deep_freeze_json,
 )
 
+from custos.artifacts.activation import (
+    ArtifactActivationCandidateV1,
+    DurableArtifactActivatorV1,
+    DurableArtifactRuntimeState,
+    RuntimeEntryPointLoader,
+)
 from custos.artifacts.archive import QuarantinedWheel, quarantine_wheel
 from custos.artifacts.errors import ArtifactVerificationCode, ArtifactVerificationError
 from custos.artifacts.policy import ArchiveLimitsV1, verify_signed_release_policy
@@ -35,6 +39,7 @@ from custos.artifacts.verification_types import (
     SigstoreVerifierCapability,
 )
 from custos.contracts.crucible_runner_command import CrucibleRunnerDeploymentCommandV1
+from custos.contracts.deployment import StrategyReleaseArtifactSourceV1
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -138,12 +143,18 @@ class StrategyReleaseArtifactAuthorityV1:
         return hashlib.sha256(self.strategy_release_snapshot_bytes).hexdigest()
 
     def assert_command_binding(self, command: CrucibleRunnerDeploymentCommandV1) -> None:
-        spec = command.deployment_spec
+        source = command.artifact_source
+        if not isinstance(source, StrategyReleaseArtifactSourceV1):
+            raise ArtifactVerificationError(
+                ArtifactVerificationCode.COMMAND_BINDING_INVALID,
+                "StrategyRelease material cannot satisfy a development-source command",
+            )
+        snapshot = source.snapshot
         expected = (
-            (str(self.strategy_release_id), str(spec["strategy_release_id"])),
-            (self.strategy_release_snapshot_digest, str(spec["strategy_release_snapshot_digest"])),
-            (self.artifact_ref.artifact_sha256, str(spec["strategy_artifact_digest"])),
-            (self.artifact_ref.manifest_sha256, str(spec["strategy_manifest_digest"])),
+            (self.strategy_release_id, snapshot.release_id),
+            (self.strategy_release_snapshot_digest, snapshot.snapshot_digest),
+            (self.artifact_ref.artifact_sha256, snapshot.artifact_digest),
+            (self.artifact_ref.manifest_sha256, snapshot.manifest_digest),
         )
         if any(actual != signed for actual, signed in expected):
             raise ArtifactVerificationError(
@@ -179,18 +190,6 @@ class ActivatedStrategyArtifact:
 RuntimeArtifactSource: TypeAlias = PreparedStrategyArtifact | DevelopmentSourceRefV1
 
 
-class DurableArtifactRuntimeState(Protocol):
-    async def load_durable_desired_command(self, deployment_instance_id: UUID) -> Any: ...
-
-    async def load_artifact_activation(self, **kwargs: Any) -> Mapping[str, Any] | None: ...
-
-    async def stage_artifact_activation(self, **kwargs: Any) -> None: ...
-
-    async def mark_artifact_activation_active(self, **kwargs: Any) -> None: ...
-
-    async def quarantine_artifact_activation(self, **kwargs: Any) -> None: ...
-
-
 class ArtifactMemberVerifier(Protocol):
     def verify(
         self,
@@ -209,17 +208,6 @@ class ArtifactQuarantineCapability(Protocol):
         limits: ArchiveLimitsV1,
         quarantine_parent: Path,
     ) -> QuarantinedWheel: ...
-
-
-class RuntimeEntryPointLoader(Protocol):
-    def load(
-        self,
-        *,
-        activation_root: Path,
-        entry_point: str,
-        effective_config: FrozenJsonObject,
-        execution_context: StrategyExecutionContextV1,
-    ) -> object: ...
 
 
 def _strict_json_object(payload: bytes, label: str) -> dict[str, object]:
@@ -475,6 +463,10 @@ class StrategyArtifactRuntimeV1:
         self._sigstore_verifier = sigstore_verifier
         self._member_verifier = member_verifier or FullBomMemberVerifier()
         self._quarantiner = quarantiner or ProductionArtifactQuarantiner()
+        self._activator = DurableArtifactActivatorV1(
+            state=state,
+            activation_parent=config.activation_parent,
+        )
 
     @property
     def capability_ready(self) -> bool:
@@ -667,84 +659,27 @@ class StrategyArtifactRuntimeV1:
             raise ArtifactRuntimeBlocked(
                 self._config.capability.blocked_reason or "artifact runtime capability is not READY"
             )
-        command = prepared.command
         release_authority = prepared.release_authority
-        parent = self._config.activation_parent
-        parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        activation_root = parent / prepared.activation_id
-        durable_activation = await self._state.load_artifact_activation(
-            command=command,
-            activation_id=prepared.activation_id,
-            artifact_ref_digest=release_authority.artifact_ref_digest,
-            artifact_evidence_digest=release_authority.crucible_artifact_evidence_digest,
-        )
-        replay_active = durable_activation is not None and durable_activation["state"] == "active"
-        if activation_root.exists() and not replay_active:
-            raise ArtifactRuntimeActivationError(
-                "immutable activation path exists without matching active durability"
-            )
-        if replay_active and not activation_root.exists():
-            await self._state.quarantine_artifact_activation(
-                command=command,
-                activation_id=prepared.activation_id,
-                reason="active_activation_root_missing",
-            )
-            raise ArtifactRuntimeActivationError(
-                "durable active artifact has no immutable activation directory"
-            )
-        if replay_active:
-            shutil.rmtree(prepared.quarantine_root, ignore_errors=True)
-        else:
-            await self._state.stage_artifact_activation(
-                command=command,
-                activation_id=prepared.activation_id,
-                artifact_ref_digest=release_authority.artifact_ref_digest,
-                artifact_evidence_digest=release_authority.crucible_artifact_evidence_digest,
-            )
-            try:
-                os.replace(prepared.quarantine_root, activation_root)
-                await self._state.mark_artifact_activation_active(
-                    command=command,
-                    activation_id=prepared.activation_id,
-                )
-            except Exception as error:
-                recovery_root = (
-                    self._config.local_verification.quarantine_parent
-                    / f"activation-failed-{prepared.activation_id}"
-                )
-                try:
-                    if activation_root.exists() and not recovery_root.exists():
-                        os.replace(activation_root, recovery_root)
-                finally:
-                    await self._state.quarantine_artifact_activation(
-                        command=command,
-                        activation_id=prepared.activation_id,
-                        reason="durable_activation_commit_failed",
-                    )
-                raise ArtifactRuntimeActivationError(
-                    "durable activation failed before Python import"
-                ) from error
-
         try:
-            strategy = loader.load(
-                activation_root=activation_root,
-                entry_point=prepared.verified_entry_point,
-                effective_config=prepared.effective_config,
-                execution_context=prepared.execution_context,
+            materialized = await self._activator.activate(
+                ArtifactActivationCandidateV1(
+                    command=prepared.command,
+                    activation_id=prepared.activation_id,
+                    quarantine_root=prepared.quarantine_root,
+                    entry_point=prepared.verified_entry_point,
+                    effective_config=prepared.effective_config,
+                    execution_context=prepared.execution_context,
+                    artifact_identity_digest=release_authority.artifact_ref_digest,
+                    artifact_authority_digest=(release_authority.crucible_artifact_evidence_digest),
+                ),
+                loader=loader,
             )
-        except Exception as error:
-            await self._state.quarantine_artifact_activation(
-                command=command,
-                activation_id=prepared.activation_id,
-                reason="verified_entry_point_load_failed",
-            )
-            raise ArtifactRuntimeActivationError(
-                "verified entry point failed after durable activation"
-            ) from error
+        except RuntimeError as error:
+            raise ArtifactRuntimeActivationError(str(error)) from error
         return ActivatedStrategyArtifact(
             prepared=prepared,
-            activation_root=activation_root,
-            strategy=strategy,
+            activation_root=materialized.activation_root,
+            strategy=materialized.strategy,
         )
 
 

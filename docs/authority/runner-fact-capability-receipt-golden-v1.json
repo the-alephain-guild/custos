@@ -4,7 +4,7 @@
   "runner_id": "10000000-0000-4000-8000-000000000001",
   "capability_version_id": "50000000-0000-4000-8000-000000000005",
   "capability_version": 1,
-  "manifest_digest": "b16afad5cf47f0250affa7b2c8fef94788ec8d314d9501aec048647df91dc924",
+  "manifest_digest": "f11dc620a94742f3747bd654e2c39accbebeb38ef4d63c9f8521fb5d5286f913",
   "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
   "key_version": 1,
   "algorithm": "ed25519",
@@ -13,6 +13,7 @@
   "binding_evidence_digest": "55591d4b2eafd34a1f30b292d7b8fbf44cd66510626a531480dcc7f48d5988d4",
   "capability_manifest": {
     "schema_version": 1,
+    "agent_version": "fixture-v1",
     "contract": "custos.runner_fact.capability.v1",
     "closed_fact_union": true,
     "unknown_fact_kind": "terminal_unsupported_contract",
@@ -30,6 +31,36 @@
       "venue_ledger_snapshot_chunk": "reconciliation",
       "reconciliation_period_closed": "reconciliation",
       "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle"
+    },
+    "runner_fact_contracts": {
+      "risk": {
+        "schema_version": 1,
+        "equity_snapshot": "v1",
+        "position_snapshot": "v1",
+        "heartbeat": "v1"
+      },
+      "settlement": {
+        "schema_version": 1,
+        "fill": "v1",
+        "position_closed": "v1",
+        "fee": "v1",
+        "period_closed": "v1"
+      },
+      "reconciliation": {
+        "schema_version": 1,
+        "execution_fill": "v1",
+        "venue_ledger_snapshot_manifest": "v1",
+        "venue_ledger_snapshot_chunk": "v1",
+        "reconciliation_period_closed": "v1"
+      },
+      "health": {
+        "schema_version": 1,
+        "heartbeat": "v1"
+      },
+      "deployment_lifecycle": {
+        "schema_version": 1,
+        "deployment_lifecycle": "v1"
+      }
     },
     "settlement_scope_bindings": [
       {

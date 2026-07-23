@@ -17,19 +17,19 @@ from custos.core.engine_protocol import (
     OrderSnapshot,
     PositionSnapshot,
 )
-from custos.engines.nautilus.host import NoopHost, NtTradingNodeHost
+from custos.engines.nautilus.host import NtTradingNodeHost, SandboxSimulationHost
 
 
 def _nt_host() -> NtTradingNodeHost:
     return NtTradingNodeHost(tenant_id="t", runner_id="r")
 
 
-async def test_get_open_notional_noophost_zero() -> None:
-    assert await NoopHost().get_open_notional("spec-1") == Decimal("0")
+async def test_get_open_notional_sandbox_simulation_host_zero() -> None:
+    assert await SandboxSimulationHost().get_open_notional("spec-1") == Decimal("0")
 
 
 async def test_get_open_notional_returns_decimal() -> None:
-    noop_val = await NoopHost().get_open_notional("spec-1")
+    noop_val = await SandboxSimulationHost().get_open_notional("spec-1")
     nt_val = await _nt_host().get_open_notional("spec-x")
     assert isinstance(noop_val, Decimal)
     assert isinstance(nt_val, Decimal)
@@ -45,7 +45,7 @@ class _MissingGetOpenNotional:
 
     async def stop(self, spec_id: str) -> None: ...
 
-    def supports_live(self) -> bool:
+    def supports_trading_mode(self, mode: str) -> bool:
         return False
 
     def supports_venue(self, venue: str) -> bool:
@@ -53,7 +53,7 @@ class _MissingGetOpenNotional:
 
 
 def test_both_hosts_still_isinstance_after_tier2() -> None:
-    assert isinstance(NoopHost(), ExecutionEngineProtocol)
+    assert isinstance(SandboxSimulationHost(), ExecutionEngineProtocol)
     assert isinstance(_nt_host(), ExecutionEngineProtocol)
     # relaxed-double: dropping a Tier-2 method must break the isinstance check,
     # so the extended protocol is proven a live guard.
@@ -64,18 +64,18 @@ def test_both_hosts_still_isinstance_after_tier2() -> None:
 
 
 async def test_get_positions_returns_decimal_money() -> None:
-    noop_positions = await NoopHost().get_positions("spec-1")
+    noop_positions = await SandboxSimulationHost().get_positions("spec-1")
     assert noop_positions == []
     # A stub host has no positions; the shape contract (empty list) still holds.
 
 
 async def test_get_orders_returns_decimal_money() -> None:
-    noop_orders = await NoopHost().get_orders("spec-1")
+    noop_orders = await SandboxSimulationHost().get_orders("spec-1")
     assert noop_orders == []
 
 
-async def test_get_engine_status_noophost_zero_values() -> None:
-    status = await NoopHost().get_engine_status("spec-1")
+async def test_get_engine_status_sandbox_simulation_host_zero_values() -> None:
+    status = await SandboxSimulationHost().get_engine_status("spec-1")
     assert isinstance(status, EngineStatus)
     assert status.phase == "running"
     assert status.position_count == 0
@@ -142,7 +142,7 @@ class _MissingGetEngineStatus:
 
     async def stop(self, spec_id: str) -> None: ...
 
-    def supports_live(self) -> bool:
+    def supports_trading_mode(self, mode: str) -> bool:
         return False
 
     def supports_venue(self, venue: str) -> bool:
@@ -166,6 +166,6 @@ class _MissingGetEngineStatus:
 
 
 def test_both_hosts_still_isinstance_after_snapshot_methods() -> None:
-    assert isinstance(NoopHost(), ExecutionEngineProtocol)
+    assert isinstance(SandboxSimulationHost(), ExecutionEngineProtocol)
     assert isinstance(_nt_host(), ExecutionEngineProtocol)
     assert not isinstance(_MissingGetEngineStatus(), ExecutionEngineProtocol)

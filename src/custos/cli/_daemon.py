@@ -13,11 +13,29 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
+import binascii
 import hashlib
 import logging
 import signal
+from pathlib import Path
+from typing import Any
 from uuid import UUID
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+from custos.artifacts.development_runtime import (
+    DevelopmentArtifactRuntimeConfigV1,
+    DevelopmentStrategyArtifactRuntimeV1,
+)
+from custos.artifacts.policy import ArchiveLimitsV1
+from custos.artifacts.release_resolver import UnavailableStrategyReleaseArtifactResolverV1
+from custos.artifacts.runtime import ArtifactRuntimeCapabilityV1
+from custos.contracts.crucible_runner_safety_policy import (
+    CrucibleRunnerSafetyPolicyAuthenticator,
+)
+from custos.core.credential_resolver import VaultRunnerCredentialResolverV1
+from custos.core.engine_lifecycle import EngineLifecycleConfig, EngineLifecycleSupervisor
 from custos.core.machine_credential_vault import (
     MachineCredentialError,
     MachineCredentialHttpClient,
@@ -27,6 +45,8 @@ from custos.core.machine_credential_vault import (
 )
 from custos.core.nats_client import CrucibleNatsClient
 from custos.core.nats_transport import (
+    DevelopmentLocalNatsConnectionProfile,
+    RunnerNatsConnectionProfile,
     RunnerNatsTransportConnectionProfile,
     RunnerNatsTransportError,
     RunnerNatsTransportSet,
@@ -34,19 +54,75 @@ from custos.core.nats_transport import (
 )
 from custos.core.per_key_vault import PerKeyVault
 from custos.core.readiness import ReadinessFile
+from custos.core.runner_command_intake import (
+    CommandDeliveryPolicy,
+    CommandIntakeCoordinator,
+    CrucibleRunnerCommandAuthenticator,
+    VerifiedRunnerCommand,
+)
+from custos.core.runner_command_runtime import RunnerCommandRuntimeCoordinator
+from custos.core.runner_control_consumer import RunnerControlConsumerV1
 from custos.core.runner_fact import (
     RunnerCapabilityReceipt,
+    RunnerFactAuthority,
     RunnerFactEmitter,
     RunnerFactIdentity,
     RunnerFactJetStreamPublisher,
     RunnerFactOutbox,
+    RunnerStateStore,
 )
-from custos.core.runner_safety_policy import RunnerSafetyPolicyResolver
+from custos.core.runner_fact_producer import RunnerFactProductionLoop
+from custos.core.runner_safety_policy import (
+    DurableRunnerSafetyPolicyResolver,
+    RunnerSafetyPolicyResolver,
+)
 from custos.core.runner_toml import RunnerToml
+from custos.engines.nautilus.runtime_loader import NautilusRuntimeEntryPointLoaderV1
 
 log = logging.getLogger("custos")
 
-_AVAILABLE_ENGINES = {"nautilus", "noop"}
+_AVAILABLE_ENGINES = {"nautilus", "sandbox-sim"}
+
+
+def _load_crucible_domain_public_key(path: Path) -> Ed25519PublicKey:
+    """Load the sole V1 format: canonical base64 of 32 raw Ed25519 bytes."""
+
+    encoded = path.expanduser().resolve(strict=True).read_text(encoding="ascii").strip()
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("Crucible domain public key is not canonical base64") from exc
+    if len(raw) != 32 or base64.b64encode(raw).decode("ascii") != encoded:
+        raise ValueError("Crucible domain public key must encode exactly 32 Ed25519 bytes")
+    return Ed25519PublicKey.from_public_bytes(raw)
+
+
+def _runner_fact_authority(
+    capability: RunnerCapabilityReceipt,
+    verified: Any,
+) -> RunnerFactAuthority:
+    command = verified.command
+    capability.require_scope_bindings(
+        projectors=("deployment_lifecycle",),
+        trading_mode=command.trading_mode,
+        deployment_instance_id=command.deployment_instance_id,
+        deployment_spec_id=command.deployment_spec_id,
+        deployment_spec_digest=command.deployment_spec_digest,
+        strategy_id=command.strategy_id,
+    )
+    return RunnerFactAuthority(
+        tenant_id=command.tenant_id,
+        trading_mode=command.trading_mode,
+        runner_id=command.runner_id,
+        deployment_instance_id=command.deployment_instance_id,
+        deployment_spec_id=command.deployment_spec_id,
+        deployment_spec_digest=command.deployment_spec_digest,
+        generation=command.generation,
+        strategy_id=command.strategy_id,
+        capability_version_id=capability.capability_version_id,
+        capability_version=capability.capability_version,
+        capability_manifest_digest=capability.manifest_digest,
+    )
 
 
 async def _watch_machine_authority(
@@ -95,7 +171,7 @@ async def _watch_machine_authority(
 
 async def _watch_nats_transport_authority(
     stop: asyncio.Event,
-    profiles: dict[str, RunnerNatsTransportConnectionProfile],
+    profiles: dict[str, RunnerNatsConnectionProfile],
     *,
     check_secs: float = 1.0,
 ) -> None:
@@ -146,9 +222,9 @@ def _build_host(
 ):
     """Pick the execution engine host from the clean-break ``--engine`` enum.
 
-    ``nautilus`` selects the real ``NtTradingNodeHost`` and ``noop`` selects
-    the explicit contract-test stub. Execution admission still guards every live
-    deploy regardless of engine choice.
+    ``nautilus`` selects the real ``NtTradingNodeHost`` and ``sandbox-sim``
+    selects the deterministic sandbox-only simulator. Execution admission rejects
+    testnet and live before the simulator can deploy.
     """
     engine = getattr(args, "engine", "nautilus")
     if engine not in _AVAILABLE_ENGINES:
@@ -166,11 +242,63 @@ def _build_host(
             capability_receipt=capability_receipt,
             runner_safety_boundary_factory=runner_safety_boundary_factory,
         )
-    if engine == "noop":
-        from custos.engines.nautilus.host import NoopHost
+    if engine == "sandbox-sim":
+        from custos.engines.nautilus.sandbox_runner_fact_host import (
+            SandboxRunnerFactHost,
+        )
 
-        return NoopHost()
+        return SandboxRunnerFactHost(
+            tenant_id=args.tenant_id,
+            capability_receipt=capability_receipt,
+        )
     raise SystemExit(f"unhandled engine {engine!r}")
+
+
+async def _recover_durable_running_commands(
+    *,
+    state_store,
+    command_runtime,
+    capability,
+) -> None:
+    identities = await state_store.list_recoverable_desired_command_identities()
+    for identity in identities:
+        projectors = ["settlement", "risk", "health"]
+        if identity.trading_mode in {"testnet", "live"}:
+            projectors.append("reconciliation")
+        try:
+            capability.require_scope_bindings(
+                projectors=projectors,
+                trading_mode=identity.trading_mode,
+                deployment_instance_id=identity.deployment_instance_id,
+                deployment_spec_id=identity.deployment_spec_id,
+                deployment_spec_digest=identity.deployment_spec_digest,
+                strategy_id=identity.strategy_id,
+            )
+        except Exception as exc:  # noqa: BLE001 - stale local state is not current authority
+            log.info(
+                "durable_command_recovery_skipped",
+                extra={
+                    "deployment_instance_id": str(identity.deployment_instance_id),
+                    "reason": "not_bound_by_current_capability",
+                    "error_type": type(exc).__name__,
+                },
+            )
+            continue
+        durable = await state_store.load_durable_desired_command(identity.deployment_instance_id)
+        command = durable.command
+        verified = VerifiedRunnerCommand(
+            command=command,
+            command_fingerprint=durable.command_fingerprint,
+            verification_receipt=durable.verification_receipt,
+        )
+        await command_runtime.recover(verified)
+        log.info(
+            "durable_command_recovered",
+            extra={
+                "deployment_instance_id": str(command.deployment_instance_id),
+                "generation": command.generation,
+            },
+        )
 
 
 def _build_runner_safety_boundary_factory(
@@ -271,7 +399,7 @@ async def _shutdown_in_order(
 def _transport_profile_for_mode(
     args: argparse.Namespace,
     credential: object,
-) -> RunnerNatsTransportConnectionProfile:
+) -> RunnerNatsConnectionProfile:
     trading_mode = credential.trading_mode  # type: ignore[attr-defined]
     domain = runner_nats_transport_domain(trading_mode)
     prefix = "nats_live" if domain == "live" else "nats_sim"
@@ -303,14 +431,46 @@ async def run_daemon(args: argparse.Namespace) -> int:
     machine_credential = MachineCredentialVault(args.machine_vault).load()
     machine_credential.assert_binding(metadata)
     MachineCredentialHttpClient(metadata.backend_url, machine_credential).verify_active()
-    transport_set = RunnerNatsTransportSet.load(
-        args.nats_transport_vault_dir,
-        args.enabled_modes,
-    )
-    transport_profiles = {
-        mode: _transport_profile_for_mode(args, transport_set.active(mode))
-        for mode in args.enabled_modes
-    }
+    development_local_nats_url = str(getattr(args, "development_local_nats_url", "")).strip()
+    if development_local_nats_url:
+        if tuple(args.enabled_modes) != ("sandbox",):
+            raise RunnerNatsTransportError(
+                "development local NATS requires exactly one sandbox mode session"
+            )
+        if any(
+            str(getattr(args, field, "")).strip()
+            for field in (
+                "nats_sim_url",
+                "nats_sim_server_name",
+                "nats_sim_issuer_public_key",
+                "nats_live_url",
+                "nats_live_server_name",
+                "nats_live_issuer_public_key",
+            )
+        ):
+            raise RunnerNatsTransportError(
+                "development local NATS cannot be combined with production endpoints"
+            )
+        transport_profiles: dict[str, RunnerNatsConnectionProfile] = {
+            "sandbox": DevelopmentLocalNatsConnectionProfile(
+                tenant_id=args.tenant_id,
+                runner_id=UUID(args.runner_id),
+                nats_url=development_local_nats_url,
+            )
+        }
+        log.warning(
+            "development_local_nats_enabled",
+            extra={"trading_mode": "sandbox", "promotable": False},
+        )
+    else:
+        transport_set = RunnerNatsTransportSet.load(
+            args.nats_transport_vault_dir,
+            args.enabled_modes,
+        )
+        transport_profiles = {
+            mode: _transport_profile_for_mode(args, transport_set.active(mode))
+            for mode in args.enabled_modes
+        }
     identity = RunnerFactIdentity.from_private_bytes(
         machine_credential.private_key_bytes,
         machine_credential.machine_key_id,
@@ -391,9 +551,124 @@ async def run_daemon(args: argparse.Namespace) -> int:
             )
         )
         if args.reconcile:
-            raise SystemExit(
-                "first-production V1 reconcile is blocked until the authenticated "
-                "Crucible StrategyRelease resolver receipt is composed"
+            key_id = str(args.crucible_domain_key_id).strip()
+            if not key_id:
+                raise ValueError("Crucible domain key id is required for reconciliation")
+            domain_public_key = _load_crucible_domain_public_key(args.crucible_domain_public_key)
+            signature_keys = {key_id: domain_public_key}
+            delivery_policy = CommandDeliveryPolicy()
+            command_authenticator = CrucibleRunnerCommandAuthenticator(
+                expected_tenant_id=args.tenant_id,
+                expected_runner_id=runner_id,
+                allowed_trading_modes=frozenset(args.enabled_modes),
+                signature_keys=signature_keys,
+            )
+            state_store = RunnerStateStore(
+                outbox=fact_outbox,
+                identity=identity,
+                tenant_id=args.tenant_id,
+                runner_id=runner_id,
+                authority_resolver=lambda verified: _runner_fact_authority(capability, verified),
+            )
+            intake = CommandIntakeCoordinator(
+                authenticator=command_authenticator,
+                durability=state_store,
+                policy=delivery_policy,
+            )
+            fact_emitter = RunnerFactEmitter(
+                fact_outbox,
+                identity,
+                machine_credential.assert_active,
+            )
+            safety_policy_resolver = DurableRunnerSafetyPolicyResolver(state_store)
+            host = _build_host(
+                args,
+                fact_emitter=fact_emitter,
+                capability_receipt=capability,
+                runner_safety_boundary_factory=_build_runner_safety_boundary_factory(
+                    state_store=state_store,
+                    safety_policy_resolver=safety_policy_resolver,
+                ),
+            )
+            artifact_capability = ArtifactRuntimeCapabilityV1.production_ready()
+            lifecycle = EngineLifecycleSupervisor(
+                engine=host,
+                state_store=state_store,
+                artifact_capability=artifact_capability,
+                config=EngineLifecycleConfig(live_execution_enabled=False),
+            )
+            development_runtime = DevelopmentStrategyArtifactRuntimeV1(
+                state=state_store,
+                config=DevelopmentArtifactRuntimeConfigV1(
+                    artifact_root=args.development_artifact_root.expanduser().resolve(),
+                    quarantine_parent=args.artifact_quarantine_dir.expanduser().resolve(),
+                    activation_parent=args.artifact_activation_dir.expanduser().resolve(),
+                    archive_limits=ArchiveLimitsV1(),
+                ),
+            )
+            command_runtime = RunnerCommandRuntimeCoordinator(
+                intake=intake,
+                durability=state_store,
+                release_resolver=UnavailableStrategyReleaseArtifactResolverV1(),
+                artifact_runtime=None,
+                development_artifact_runtime=development_runtime,
+                entry_point_loader=NautilusRuntimeEntryPointLoaderV1(),
+                credential_resolver=VaultRunnerCredentialResolverV1(_build_vault(args)),
+                engine_lifecycle=lifecycle,
+                delivery_policy=delivery_policy,
+            )
+            await _recover_durable_running_commands(
+                state_store=state_store,
+                command_runtime=command_runtime,
+                capability=capability,
+            )
+            fact_production = RunnerFactProductionLoop(
+                host=host,
+                emitter=fact_emitter,
+                snapshot_interval_secs=args.runner_fact_snapshot_interval_secs,
+                period_secs=args.runner_fact_period_secs,
+                period_retry_secs=args.runner_fact_period_retry_secs,
+            )
+            tasks.extend(
+                (
+                    asyncio.create_task(
+                        fact_production.run_observability(stop),
+                        name="runner-fact-observability",
+                    ),
+                    asyncio.create_task(
+                        fact_production.run_periods(stop),
+                        name="runner-fact-periods",
+                    ),
+                )
+            )
+            control_consumer = RunnerControlConsumerV1(
+                command_runtime=command_runtime,
+                policy_authenticator=CrucibleRunnerSafetyPolicyAuthenticator(
+                    expected_tenant_id=args.tenant_id,
+                    expected_runner_id=runner_id,
+                    allowed_trading_modes=frozenset(args.enabled_modes),
+                    signature_keys=signature_keys,
+                ),
+                state_store=state_store,
+            )
+            subscriptions = {
+                mode: await clients[mode].subscribe_control() for mode in args.enabled_modes
+            }
+            for mode, subscription in subscriptions.items():
+                tasks.append(
+                    asyncio.create_task(
+                        control_consumer.run(
+                            client=clients[mode],
+                            subscription=subscription,
+                            stop=stop,
+                        ),
+                        name=f"crucible-runner-control-{mode}",
+                    )
+                )
+            readiness.mark_ready(
+                strategy_id=None,
+                nats_connected=True,
+                deployment_subscription=True,
             )
         else:
             readiness.mark_ready(

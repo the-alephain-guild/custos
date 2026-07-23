@@ -54,7 +54,7 @@ custos/
 │   │   ├── runner_fact_producer.py ← typed engine observations → RunnerFact builders
 │   │   └── log.py             ← structlog 配置
 │   ├── engines/nautilus/      ← NT Python 引擎
-│   │   ├── host.py            ← NoopHost + NtTradingNodeHost + execution admission
+│   │   ├── host.py            ← SandboxSimulationHost + NtTradingNodeHost + execution admission
 │   │   ├── risk.py            ← 本地 fallback breaker (drawdown + max_notional)
 │   │   ├── runtime_loader.py ← 已验证 activation 的唯一 V1 entry-point loader
 │   │   └── venue_binance.py   ← Binance venue 适配
@@ -116,15 +116,22 @@ arx-runner enroll --token <one-time-token> --backend https://arx.internal:8000 \
 arx-runner credential verify
 
 # 一次性 (每 credential): sops+age encrypt → ~/.arx/vault/<key-id>.enc
-arx-runner vault put --key-id binance-paper --api-key-stdin --api-secret-stdin
+arx-runner vault put --key-id binance-paper \
+  --scope-digest '<DeploymentSpec credential_scope.scope_digest>' \
+  --api-key '<venue-api-key>' --api-secret-stdin
 
 # 日常启动 (读 ~/.arx/runner.toml + ~/.arx/vault/*.enc)
 export SOPS_AGE_KEY_FILE=~/.arx/age.key
-arx-runner start --nats-url nats://localhost:4222
+arx-runner start --enabled-mode sandbox \
+  --nats-sim-url tls://crucible-nats.internal:4222 \
+  --nats-sim-server-name crucible-nats.internal \
+  --nats-sim-issuer-public-key "$CRUCIBLE_NATS_SIM_ISSUER_PUBLIC_KEY"
 ```
 
 关键 `start` 参数:
-- `--nats-url` — arx NATS endpoint (默认 `nats://localhost:4222`)
+- `--nats-sim-url` / `--nats-live-url` — Crucible-owned TLS NATS endpoints;
+  workstation sandbox demos may instead explicitly use loopback-only
+  `--development-local-nats-url`.
 - `--wal-path` — telemetry WAL 路径 (默认 `~/.arx/state/telemetry-wal.db`)
 - `--engine` — 引擎选择 (默认 `nautilus`, 未来 `hummingbot` / `athanor` 等接入槽已预留)
 - `runner.toml` 只含 public binding metadata；opaque credential + Ed25519 private key

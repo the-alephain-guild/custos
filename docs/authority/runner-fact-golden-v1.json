@@ -11,7 +11,7 @@
   "strategy_id": "40000000-0000-4000-8000-000000000004",
   "capability_version_id": "50000000-0000-4000-8000-000000000005",
   "capability_version": 1,
-  "capability_manifest_digest": "b16afad5cf47f0250affa7b2c8fef94788ec8d314d9501aec048647df91dc924",
+  "capability_manifest_digest": "f11dc620a94742f3747bd654e2c39accbebeb38ef4d63c9f8521fb5d5286f913",
   "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
   "emitted_at": "2026-07-15T08:00:00Z",
   "source_seq_start": 1,
@@ -191,5 +191,5 @@
       "seq": 13
     }
   ],
-  "signature": "T_0-AKZ69V3xQdd_MjbxHG4ZsbDkeO0H1TtmwQv194psmNJh9m9Q93gmbbegRXV_yH2jMLlaWXalwu3Ge5diCw"
+  "signature": "DYQ0iQpkFY-7BEsh03ztXBOD4uCkElo0ecc032IJZUD4Vk2Yi0t1hoV8RM0qR5j5yIyLG4ddzd7b-fQBlc2JAA"
 }

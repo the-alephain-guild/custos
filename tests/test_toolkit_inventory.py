@@ -106,5 +106,5 @@ def test_extraction_receipt_is_scoped_and_reports_open_blockers() -> None:
     assert receipt["typing"]["closure_requirement"] == "strict extracted-source typing closure"
     assert [blocker["capability"] for blocker in receipt["blockers"]] == [
         "strict extracted-source typing closure",
-        "Custos Plan 18 Task 5",
+        "public pre-import verifier and attestation",
     ]

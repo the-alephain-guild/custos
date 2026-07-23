@@ -59,6 +59,8 @@ class EngineLifecycleStateStore(Protocol):
 
     async def commit_applied_and_enqueue_lifecycle(self, **kwargs: Any) -> Any: ...
 
+    async def commit_recovered_engine_ready(self, **kwargs: Any) -> None: ...
+
     async def commit_verified_command_outcome_and_enqueue_fact(self, **kwargs: Any) -> Any: ...
 
 
@@ -94,11 +96,12 @@ class EngineLifecycleSupervisor:
         runtime_spec: dict[str, Any],
         credential: dict[str, Any],
         artifact: ActivatedEngineArtifactV1,
-        local_policy_id: str | None = None,
+        artifact_policy_id: str | None = None,
     ) -> EngineReadyReceipt:
         authority = self._require_authorized_runtime(verified, runtime_spec, credential)
         artifact_activation_id = artifact.activation_id
         state = await self._store.load_engine_lifecycle_state(verified)
+        recovered_applied = False
         if state.desired_status == "quarantined":
             raise EngineLifecycleQuarantined(
                 state.quarantine_reason or "deployment lifecycle is durably quarantined"
@@ -113,6 +116,7 @@ class EngineLifecycleSupervisor:
                     verified=verified,
                     reason_code="engine_missing_after_restart",
                 )
+                recovered_applied = True
             else:
                 self._require_ready_identity(receipt, authority)
                 return receipt
@@ -126,8 +130,41 @@ class EngineLifecycleSupervisor:
             credential=credential,
             artifact=artifact,
             artifact_activation_id=artifact_activation_id,
-            local_policy_id=local_policy_id,
+            artifact_policy_id=artifact_policy_id,
             restart_count=restart_count,
+            recovered_applied=recovered_applied,
+        )
+
+    async def apply_non_running(
+        self,
+        *,
+        delivery_id: str,
+        verified: Any,
+    ) -> None:
+        """Apply a signed fail-safe lifecycle state without touching artifact bytes."""
+
+        lifecycle_state = str(verified.command.lifecycle_state)
+        if lifecycle_state not in {"paused", "stopped", "archived"}:
+            raise EngineLifecycleBlocked(
+                "non-running lifecycle application requires paused, stopped or archived"
+            )
+        authority = EngineLifecycleAuthority.from_verified_command(verified)
+        if not self._engine.supports_trading_mode(authority.trading_mode):
+            raise EngineLifecycleBlocked("engine does not support the signed trading mode")
+        await self._store.load_engine_lifecycle_state(verified)
+        await self._store.record_in_progress_lease(
+            delivery_id=delivery_id,
+            verified=verified,
+            lease_until_ns=self._lease_deadline_ns(),
+        )
+        await self._engine.stop(str(authority.deployment_instance_id))
+        await self._store.commit_applied_and_enqueue_lifecycle(
+            delivery_id=delivery_id,
+            verified=verified,
+            engine_handle=None,
+            observed_status=lifecycle_state,
+            artifact_activation_id=None,
+            artifact_policy_id=None,
         )
 
     async def supervise_once(
@@ -138,7 +175,7 @@ class EngineLifecycleSupervisor:
         runtime_spec: dict[str, Any],
         credential: dict[str, Any],
         artifact: ActivatedEngineArtifactV1,
-        local_policy_id: str | None = None,
+        artifact_policy_id: str | None = None,
     ) -> EngineReadyReceipt | None:
         authority = self._require_authorized_runtime(verified, runtime_spec, credential)
         artifact_activation_id = artifact.activation_id
@@ -151,7 +188,7 @@ class EngineLifecycleSupervisor:
                 verified=verified,
                 reason_code=event.reason_code,
                 artifact_activation_id=artifact_activation_id,
-                local_policy_id=local_policy_id,
+                artifact_policy_id=artifact_policy_id,
             )
         await self._store.record_in_progress_lease(
             delivery_id=delivery_id,
@@ -169,7 +206,7 @@ class EngineLifecycleSupervisor:
                 verified=verified,
                 reason_code=f"restart_budget_exhausted:{event.reason_code}",
                 artifact_activation_id=artifact_activation_id,
-                local_policy_id=local_policy_id,
+                artifact_policy_id=artifact_policy_id,
             )
         await self._sleep(self._backoff(restart_count))
         return await self._start_with_budget(
@@ -180,7 +217,7 @@ class EngineLifecycleSupervisor:
             credential=credential,
             artifact=artifact,
             artifact_activation_id=artifact_activation_id,
-            local_policy_id=local_policy_id,
+            artifact_policy_id=artifact_policy_id,
             restart_count=restart_count,
         )
 
@@ -194,8 +231,9 @@ class EngineLifecycleSupervisor:
         credential: dict[str, Any],
         artifact: ActivatedEngineArtifactV1,
         artifact_activation_id: str,
-        local_policy_id: str | None,
+        artifact_policy_id: str | None,
         restart_count: int,
+        recovered_applied: bool = False,
     ) -> EngineReadyReceipt:
         while True:
             await self._store.record_in_progress_lease(
@@ -222,7 +260,7 @@ class EngineLifecycleSupervisor:
                         verified=verified,
                         reason_code=reason_code,
                         artifact_activation_id=artifact_activation_id,
-                        local_policy_id=local_policy_id,
+                        artifact_policy_id=artifact_policy_id,
                     )
                 restart_count = await self._record_restart(
                     delivery_id=delivery_id,
@@ -231,14 +269,23 @@ class EngineLifecycleSupervisor:
                 )
                 await self._sleep(self._backoff(restart_count))
                 continue
-            await self._store.commit_applied_and_enqueue_lifecycle(
-                delivery_id=delivery_id,
-                verified=verified,
-                engine_handle=handle,
-                observed_status="ready",
-                artifact_activation_id=artifact_activation_id,
-                local_policy_id=local_policy_id,
-            )
+            if recovered_applied:
+                await self._store.commit_recovered_engine_ready(
+                    verified=verified,
+                    engine_handle=handle,
+                    observed_status="ready",
+                    artifact_activation_id=artifact_activation_id,
+                    artifact_policy_id=artifact_policy_id,
+                )
+            else:
+                await self._store.commit_applied_and_enqueue_lifecycle(
+                    delivery_id=delivery_id,
+                    verified=verified,
+                    engine_handle=handle,
+                    observed_status="ready",
+                    artifact_activation_id=artifact_activation_id,
+                    artifact_policy_id=artifact_policy_id,
+                )
             return receipt
 
     async def _quarantine(
@@ -248,7 +295,7 @@ class EngineLifecycleSupervisor:
         verified: Any,
         reason_code: str,
         artifact_activation_id: str,
-        local_policy_id: str | None,
+        artifact_policy_id: str | None,
     ) -> None:
         await self._store.commit_verified_command_outcome_and_enqueue_fact(
             delivery_id=delivery_id,
@@ -259,7 +306,7 @@ class EngineLifecycleSupervisor:
             observed_status="quarantined",
             lifecycle_state=str(verified.command.lifecycle_state),
             artifact_activation_id=artifact_activation_id,
-            local_policy_id=local_policy_id,
+            artifact_policy_id=artifact_policy_id,
         )
         raise EngineLifecycleQuarantined(reason_code)
 
@@ -298,6 +345,8 @@ class EngineLifecycleSupervisor:
         mode = str(runtime_spec.get("trading_mode") or "")
         if mode != authority.trading_mode:
             raise EngineLifecycleBlocked("runtime spec mode differs from signed command")
+        if not self._engine.supports_trading_mode(mode):
+            raise EngineLifecycleBlocked(f"execution engine does not support signed mode {mode}")
         connector = str(runtime_spec.get("connector") or "")
         if not connector or not self._engine.supports_venue(connector):
             raise EngineLifecycleBlocked("execution engine does not support the signed venue")
@@ -308,8 +357,6 @@ class EngineLifecycleSupervisor:
                 "real-venue credential must be scoped to trade_no_withdraw"
             )
         if mode == "live":
-            if not self._engine.supports_live():
-                raise EngineLifecycleBlocked("execution engine does not support live mode")
             if not self._config.live_execution_enabled:
                 raise EngineLifecycleBlocked(
                     "live execution is disabled until the immutable runtime receipt is accepted"

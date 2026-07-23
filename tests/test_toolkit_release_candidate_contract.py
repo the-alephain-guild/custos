@@ -55,9 +55,7 @@ def _member(role: ToolkitRcMemberRole, **overrides: object) -> ToolkitRcMemberV1
         "sigstore_attestation": _artifact(f"{role.value}.sigstore.json", DIGESTS[6]),
         "source_repository": "https://github.com/alchymia-labs/custos",
         "source_commit": "a" * 40,
-        "toolkit_extraction_receipt": _artifact(
-            f"{role.value}.extraction.json", DIGESTS[7]
-        ),
+        "toolkit_extraction_receipt": _artifact(f"{role.value}.extraction.json", DIGESTS[7]),
         "toolkit_typing_closure_receipt": _artifact(
             f"{role.value}.typing-closure.json", DIGESTS[8]
         ),
@@ -198,5 +196,5 @@ def test_authority_registers_exact_v1_ready_receipt() -> None:
     receipt_path = ROOT / "docs/authority/receipts/custos-toolkit-rc-authority-v1.json"
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert receipt["status"] == "READY_TOOLKIT_RC"
-    assert receipt["candidate_version"] == "0.1.0rc2"
-    assert receipt["source_commit"] == "ccae31ef1d906cea86bda00066b9ffbc159f2c6e"
+    assert receipt["candidate_version"] == "0.1.0rc5"
+    assert receipt["source_commit"] == "a3fd88c4e7e25433b508b2fece94be876630f380"

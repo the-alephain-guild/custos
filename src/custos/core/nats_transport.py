@@ -24,7 +24,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 import nats
@@ -77,6 +77,36 @@ class RunnerNatsTransportError(RuntimeError):
 
 class RunnerNatsTransportRevokedError(RunnerNatsTransportError):
     """The broker rejected the current User JWT generation."""
+
+
+class RunnerNatsConnectionProfile(Protocol):
+    """Deep connection seam shared by production and explicit local sandbox transport."""
+
+    @property
+    def tenant_id(self) -> str: ...
+
+    @property
+    def runner_id(self) -> UUID: ...
+
+    @property
+    def trading_mode(self) -> str: ...
+
+    @property
+    def durable_config(self) -> Mapping[str, Any]: ...
+
+    def assert_active(self) -> None: ...
+
+    def assert_publish_subject(self, subject: str) -> None: ...
+
+    async def connect(
+        self,
+        *,
+        name: str,
+        error_cb: Callable[[Exception], Awaitable[None] | None] | None = None,
+        disconnected_cb: Callable[[], Awaitable[None] | None] | None = None,
+        allow_reconnect: bool = True,
+        max_reconnect_attempts: int = -1,
+    ) -> Any: ...
 
 
 def _canonical_json_bytes(value: Mapping[str, Any]) -> bytes:
@@ -202,7 +232,9 @@ def _validate_jwt(
         (subscribe, "deny", permission_profile["subscribe_deny"]),
     )
     if any(claim.get(key) != value for claim, key, value in expected):
-        raise RunnerNatsTransportError("NATS User JWT permissions diverge from the runner-control transport profile")
+        raise RunnerNatsTransportError(
+            "NATS User JWT permissions diverge from the runner-control transport profile"
+        )
 
 
 def runner_nats_transport_domain(trading_mode: str) -> str:
@@ -436,7 +468,9 @@ class RunnerNatsTransportCredential:
             self.tenant_id, self.runner_id, self.trading_mode
         )
         if self.permission_profile != expected_permission:
-            raise RunnerNatsTransportError("permission profile is not exact runner-control authority")
+            raise RunnerNatsTransportError(
+                "permission profile is not exact runner-control authority"
+            )
         expected_durable = _expected_durable_config(
             self.tenant_id, self.runner_id, self.trading_mode
         )
@@ -667,7 +701,9 @@ class RunnerNatsRevocationChallenge:
             and self.user_public_key == credential.user_public_key
         )
         if not expected:
-            raise RunnerNatsTransportError("runner-control revocation challenge credential binding mismatch")
+            raise RunnerNatsTransportError(
+                "runner-control revocation challenge credential binding mismatch"
+            )
 
     def to_document(self) -> dict[str, Any]:
         return {
@@ -1611,6 +1647,74 @@ class RunnerNatsTransportConnectionProfile:
             if _is_explicit_nats_authorization_rejection(exc):
                 self.mark_authorization_denied()
             raise
+
+
+@dataclass(frozen=True, slots=True)
+class DevelopmentLocalNatsConnectionProfile:
+    """Unauthenticated loopback transport for the non-promotable sandbox lane only."""
+
+    tenant_id: str
+    runner_id: UUID
+    nats_url: str
+
+    def __post_init__(self) -> None:
+        if not _SAFE_ID.fullmatch(self.tenant_id) or self.runner_id.int == 0:
+            raise RunnerNatsTransportError("local NATS identity is invalid")
+        parsed = urllib.parse.urlsplit(self.nats_url)
+        if (
+            parsed.scheme != "nats"
+            or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+            or parsed.port is None
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+            or parsed.path not in {"", "/"}
+        ):
+            raise RunnerNatsTransportError(
+                "development local NATS requires a credential-free loopback nats:// URL"
+            )
+
+    @property
+    def trading_mode(self) -> str:
+        return "sandbox"
+
+    @property
+    def transport_domain(self) -> str:
+        return "sim"
+
+    @property
+    def durable_config(self) -> Mapping[str, Any]:
+        return _expected_durable_config(self.tenant_id, self.runner_id, self.trading_mode)
+
+    def assert_active(self) -> None:
+        return None
+
+    def assert_publish_subject(self, subject: str) -> None:
+        expected = f"{RUNNER_FACT_SUBJECT_PREFIX}.{self.tenant_id}.{self.runner_id}.sandbox"
+        if subject != expected:
+            raise RunnerNatsTransportError(
+                "RunnerFact subject is outside the local sandbox authority"
+            )
+
+    async def connect(
+        self,
+        *,
+        name: str,
+        error_cb: Callable[[Exception], Awaitable[None] | None] | None = None,
+        disconnected_cb: Callable[[], Awaitable[None] | None] | None = None,
+        allow_reconnect: bool = True,
+        max_reconnect_attempts: int = -1,
+    ) -> Any:
+        self.assert_active()
+        return await nats.connect(
+            servers=[self.nats_url],
+            name=name,
+            error_cb=error_cb,
+            disconnected_cb=disconnected_cb,
+            allow_reconnect=allow_reconnect,
+            max_reconnect_attempts=max_reconnect_attempts,
+        )
 
 
 def _is_explicit_nats_authorization_rejection(error: Exception) -> bool:

@@ -26,14 +26,19 @@ SPEC = UUID("30000000-0000-4000-8000-000000000003")
 DIGEST = "a" * 64
 
 
-def _verified(*, mode: str = "sandbox", generation: int = 1):
+def _verified(
+    *,
+    mode: str = "sandbox",
+    generation: int = 1,
+    lifecycle_state: str = "running",
+):
     command = SimpleNamespace(
         deployment_instance_id=INSTANCE,
         deployment_spec_id=SPEC,
         deployment_spec_digest=DIGEST,
         generation=generation,
         trading_mode=mode,
-        lifecycle_state="running",
+        lifecycle_state=lifecycle_state,
     )
     return SimpleNamespace(command=command, command_fingerprint="b" * 64)
 
@@ -100,6 +105,19 @@ class _Store:
             quarantine_reason=None,
         )
 
+    async def commit_recovered_engine_ready(self, **kwargs):
+        self.events.append("commit_recovered_ready")
+        verified = kwargs["verified"]
+        self.state = EngineLifecycleDurableState(
+            desired_status="applied",
+            applied_generation=verified.command.generation,
+            applied_command_fingerprint=verified.command_fingerprint,
+            engine_handle=kwargs["engine_handle"],
+            observed_status=kwargs["observed_status"],
+            restart_count=self.state.restart_count,
+            quarantine_reason=None,
+        )
+
     async def commit_verified_command_outcome_and_enqueue_fact(self, **kwargs):
         self.events.append("commit_terminal")
         self.terminal.append((kwargs["outcome"], kwargs["reason_code"]))
@@ -134,8 +152,8 @@ class _Engine:
         self.stop_calls += 1
         self.events.append("stop")
 
-    def supports_live(self) -> bool:
-        return False
+    def supports_trading_mode(self, mode: str) -> bool:
+        return mode == "sandbox"
 
     def supports_venue(self, venue: str) -> bool:
         return True
@@ -261,6 +279,41 @@ async def test_restart_replay_probes_ready_without_duplicate_deploy() -> None:
 
 
 @pytest.mark.asyncio
+async def test_process_restart_rebuilds_engine_without_duplicate_applied_fact() -> None:
+    verified = _verified()
+    store = _Store(
+        state=EngineLifecycleDurableState(
+            desired_status="applied",
+            applied_generation=1,
+            applied_command_fingerprint=verified.command_fingerprint,
+            engine_handle="lost-process-handle",
+            observed_status="ready",
+            restart_count=0,
+            quarantine_reason=None,
+        )
+    )
+    engine = _Engine([RuntimeError("engine process is absent"), _ready(verified)])
+
+    await _supervisor(store, engine).apply(
+        delivery_id="startup-recovery",
+        verified=verified,
+        runtime_spec={"trading_mode": "sandbox", "connector": "binance"},
+        credential={},
+        artifact=_Artifact(),
+    )
+
+    assert engine.events == ["wait_ready", "stop", "deploy", "wait_ready"]
+    assert store.events == [
+        "load_state",
+        "restart",
+        "lease",
+        "commit_recovered_ready",
+    ]
+    assert store.state.restart_count == 1
+    assert store.state.engine_handle == "handle-1"
+
+
+@pytest.mark.asyncio
 async def test_readiness_timeout_exhausts_durable_budget_and_quarantines() -> None:
     verified = _verified()
     store = _Store()
@@ -352,3 +405,32 @@ async def test_blocked_artifact_capability_and_live_mode_fail_before_engine_acti
             artifact=_Artifact(),
         )
     assert engine.events == []
+
+
+@pytest.mark.asyncio
+async def test_non_running_generation_stops_without_artifact_deploy() -> None:
+    prior = _verified()
+    verified = _verified(generation=2, lifecycle_state="paused")
+    store = _Store(
+        state=EngineLifecycleDurableState(
+            desired_status="pending",
+            applied_generation=1,
+            applied_command_fingerprint=prior.command_fingerprint,
+            engine_handle="handle-1",
+            observed_status="ready",
+            restart_count=0,
+            quarantine_reason=None,
+        )
+    )
+    engine = _Engine([])
+
+    await _supervisor(store, engine).apply_non_running(
+        delivery_id="pause-delivery",
+        verified=verified,
+    )
+
+    assert engine.events == ["stop"]
+    assert store.events == ["load_state", "lease", "commit_ready"]
+    assert store.state.applied_generation == 2
+    assert store.state.engine_handle is None
+    assert store.state.observed_status == "paused"

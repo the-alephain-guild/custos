@@ -12,7 +12,7 @@ import argparse
 import pytest
 
 from custos.cli._daemon import _build_host
-from custos.engines.nautilus.host import NoopHost, NtTradingNodeHost
+from custos.engines.nautilus.host import NtTradingNodeHost, SandboxSimulationHost
 
 
 def _ns(engine: str = "nautilus") -> argparse.Namespace:
@@ -31,7 +31,7 @@ def test_cli_engine_defaults_to_nautilus() -> None:
 
 
 def test_cli_engine_noop_is_explicit() -> None:
-    assert isinstance(_build_host(_ns(engine="noop")), NoopHost)
+    assert isinstance(_build_host(_ns(engine="sandbox-sim")), SandboxSimulationHost)
 
 
 def test_cli_engine_unknown_rejected() -> None:

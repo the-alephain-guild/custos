@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from custos.engines.nautilus.host import NoopHost, NtTradingNodeHost
+from custos.engines.nautilus.host import NtTradingNodeHost, SandboxSimulationHost
 
 
 class _FakeInstrumentId(str):
@@ -152,9 +152,9 @@ async def test_flatten_positions_maps_to_close_all() -> None:
     assert sorted(strategy.closed) == ["BTCUSDT", "ETHUSDT"]
 
 
-async def test_flatten_positions_noophost_noop() -> None:
+async def test_flatten_positions_sandbox_simulation_host_noop() -> None:
     # A paper host flatten is a logged no-op — no exception, no state.
-    await NoopHost().flatten_positions("spec-1", "notional_breach")
+    await SandboxSimulationHost().flatten_positions("spec-1", "notional_breach")
 
 
 # -- T2.1 snapshot Tier-2 NT-side impl tests ------------------------------

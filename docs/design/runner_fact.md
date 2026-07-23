@@ -60,6 +60,14 @@ kinds are terminal contract violations; they cannot fall back to unsigned logs.
 | reconciliation | `venue_ledger_snapshot_manifest`, `venue_ledger_snapshot_chunk`, `reconciliation_period_closed` |
 | deployment lifecycle | `RunnerDeploymentLifecycleFact.v1` |
 
+`period_closed` is a calendar settlement fact and its V1 `period` is exactly
+`YYYY-MM`. It is emitted only by the durable settlement lifecycle. The
+reconciliation production loop may emit venue-ledger evidence and
+`reconciliation_period_closed`; it must never translate an arbitrary retry or
+snapshot interval into a settlement close. If an independent venue ledger is
+unavailable, that loop emits no close fact and records the unavailable
+capability locally.
+
 Payload numbers are either JSON integers or canonical decimal strings. Python
 binary floats are rejected recursively before SQLite persistence so signatures
 do not depend on language-specific number rendering.

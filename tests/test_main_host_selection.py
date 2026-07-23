@@ -1,7 +1,7 @@
 """Runner runtime host selection.
 
 The lifecycle supervisor binds a single host from the clean-break ``--engine`` enum.
-``nautilus`` selects the real ``NtTradingNodeHost`` and ``noop`` selects the
+``nautilus`` selects the real ``NtTradingNodeHost`` and ``sandbox-sim`` selects the
 explicit contract-test stub. Execution admission still guards every live deploy.
 
 After the CLI package split: ``_build_host`` lives in ``custos.cli._daemon`` (the flat
@@ -32,8 +32,8 @@ def test_build_host_defaults_to_nautilus() -> None:
     assert type(_build_host(_host_args())).__name__ == "NtTradingNodeHost"
 
 
-def test_build_host_noop_when_explicit() -> None:
-    assert type(_build_host(_host_args(engine="noop"))).__name__ == "NoopHost"
+def test_build_host_uses_runner_fact_sandbox_when_explicit() -> None:
+    assert type(_build_host(_host_args(engine="sandbox-sim"))).__name__ == "SandboxRunnerFactHost"
 
 
 @pytest.mark.asyncio

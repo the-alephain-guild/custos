@@ -20,6 +20,20 @@ snapshot, artifact and manifest digests, activated atomically, then passed to
 the engine as an `ActivatedEngineArtifactV1`. The engine never imports a path
 from a command.
 
+The explicit local-development alternative is `DevelopmentSourceRefV1`. Its
+`source_sha256` uses the Custos-owned `sha256-canonical-directory-v1` profile:
+start SHA-256 with the ASCII domain `CUSTOS-DEVELOPMENT-SOURCE-DIRECTORY-V1\0`,
+then, for each non-empty safe POSIX relative path sorted by UTF-8 bytes, append
+the 8-byte big-endian path length, path bytes, 8-byte big-endian content length
+and exact content bytes. The directory must be
+`<configured-root>/sha256/<source_sha256>`, contain only stable regular files and
+no symlinks, and is accepted only for sandbox with `promotable=false`.
+
+The reference is returned by Crucible's authenticated preview-material resolver;
+it is never carried in the signed command and never represented as a
+`StrategyRelease`. Development evidence cannot satisfy testnet, live, promotion,
+runtime-RC or production-readiness gates.
+
 Runner lifecycle observations use the signed RunnerFact V1 outbox. The outbox
 allocates `facts[].seq`; typed fact builders never supply it.
 

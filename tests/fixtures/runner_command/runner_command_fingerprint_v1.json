@@ -4,8 +4,8 @@
   "domain_utf8": "CRUCIBLE-RUNNER-COMMAND-FINGERPRINT-V1\u0000",
   "source_fixture": "docs/authority/runner-deployment-command-golden-v1.json",
   "subject": "crucible.runner.command.v1.acme.10000000-0000-4000-8000-000000000001.sandbox",
-  "verified_exact_event_bytes_sha256": "bbc4818b5eaf6e9af5517c8de42d450d4769fa606b68c3626e9d25e22d8ff844",
-  "verified_exact_event_bytes_size": 2698,
-  "command_fingerprint": "a7d519405bfc0a04f216068da9123fd5302af8badb26cbb3d0d316e964cc9269",
+  "verified_exact_event_bytes_sha256": "a4b97529988d289bff59cf64ec52141b73c4f87a3b7d5d80cadffe8e8ec7047d",
+  "verified_exact_event_bytes_size": 3701,
+  "command_fingerprint": "743c9ecfd715890e7411a363f91fb93cc7993685295153a4232d3ae346be9222",
   "signature_bytes_included": false
 }

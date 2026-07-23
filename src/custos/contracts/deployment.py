@@ -14,12 +14,20 @@ import json
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self, TypeAlias
 from uuid import UUID
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    StringConstraints,
+    TypeAdapter,
+    model_validator,
+)
 
 DOMAIN_EVENT_SIGNATURE_CONTEXT = b"CRUCIBLE-DOMAIN-EVENT-V1\0"
 DOMAIN_EVENT_SIGNATURE_PROFILE = "crucible-domain-event-v1-exact-bytes"
@@ -32,15 +40,12 @@ _CANONICAL_DEPLOYMENT_SPEC_FIELDS = frozenset(
         "tenant_id",
         "trading_mode",
         "strategy_id",
-        "strategy_release_id",
-        "strategy_release_version",
-        "strategy_artifact_digest",
-        "strategy_manifest_digest",
-        "strategy_release_snapshot_digest",
+        "artifact_source",
         "execution_config",
         "strategy_product_id",
         "risk_policy_id",
         "risk_policy_version",
+        "risk_policy",
         "risk_policy_digest",
         "target_runner_id",
         "engine_binding_id",
@@ -101,6 +106,54 @@ class CredentialScopeRefV1(BaseModel):
     scope_digest: Sha256Hex
 
 
+class StrategyReleaseSnapshotV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    definition_id: Annotated[UUID, Field(strict=False)]
+    release_id: Annotated[UUID, Field(strict=False)]
+    release_version: StrictInt = Field(ge=1)
+    artifact_digest: Sha256Hex
+    manifest_digest: Sha256Hex
+    snapshot_digest: Sha256Hex
+
+
+class DevelopmentArtifactSnapshotV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    definition_id: Annotated[UUID, Field(strict=False)]
+    source_sha256: Sha256Hex
+    publication_receipt_digest: Sha256Hex
+    snapshot_digest: Sha256Hex
+    promotable: Literal[False]
+
+    @model_validator(mode="after")
+    def validate_snapshot_digest(self) -> Self:
+        if canonical_development_snapshot_digest(self) != self.snapshot_digest:
+            raise ValueError("development artifact snapshot digest differs")
+        return self
+
+
+class StrategyReleaseArtifactSourceV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    kind: Literal["strategy_release"]
+    snapshot: StrategyReleaseSnapshotV1
+
+
+class DevelopmentArtifactSourceV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    kind: Literal["development_source"]
+    snapshot: DevelopmentArtifactSnapshotV1
+
+
+DeploymentArtifactSourceV1: TypeAlias = Annotated[
+    StrategyReleaseArtifactSourceV1 | DevelopmentArtifactSourceV1,
+    Field(discriminator="kind"),
+]
+_ARTIFACT_SOURCE_ADAPTER = TypeAdapter(DeploymentArtifactSourceV1)
+
+
 class DeploymentSpec(BaseModel):
     """Validated local engine view of a canonical Crucible DeploymentSpec V1."""
 
@@ -110,6 +163,7 @@ class DeploymentSpec(BaseModel):
     deployment_instance_id: UUID
     deployment_spec_digest: Sha256Hex
     strategy_id: UUID
+    artifact_source: DeploymentArtifactSourceV1
     generation: StrictInt = Field(ge=1)
     trading_mode: TradingMode
     lifecycle_state: LifecycleState
@@ -215,6 +269,7 @@ def runtime_deployment_spec(
             "deployment_instance_id": deployment_instance_id,
             "deployment_spec_digest": deployment_spec_digest,
             "strategy_id": canonical.get("strategy_id"),
+            "artifact_source": canonical.get("artifact_source"),
             "generation": generation,
             "trading_mode": canonical.get("trading_mode"),
             "lifecycle_state": lifecycle_state,
@@ -230,6 +285,27 @@ def runtime_deployment_spec(
             "promotion_evidence_digest": canonical.get("promotion_evidence_digest"),
         }
     )
+
+
+def parse_deployment_artifact_source(value: object) -> DeploymentArtifactSourceV1:
+    return _ARTIFACT_SOURCE_ADAPTER.validate_python(value)
+
+
+def canonical_development_snapshot_digest(snapshot: DevelopmentArtifactSnapshotV1) -> str:
+    payload = {
+        "schema_version": 1,
+        "definition_id": str(snapshot.definition_id),
+        "source_sha256": snapshot.source_sha256,
+        "publication_receipt_digest": snapshot.publication_receipt_digest,
+        "promotable": False,
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _decode_base64url(value: str) -> bytes:
@@ -263,3 +339,22 @@ def canonical_deployment_spec_digest(canonical: dict[str, Any]) -> str:
         sort_keys=True,
     ).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def validate_risk_policy_snapshot(canonical: dict[str, Any]) -> None:
+    """Verify the opaque Crucible-owned policy bytes without interpreting them."""
+
+    policy = canonical.get("risk_policy")
+    expected = canonical.get("risk_policy_digest")
+    if not isinstance(policy, dict) or not policy:
+        raise ValueError("canonical DeploymentSpec risk_policy must be an object")
+    if not isinstance(expected, str) or len(expected) != 64:
+        raise ValueError("canonical DeploymentSpec risk_policy_digest is invalid")
+    encoded = json.dumps(
+        policy,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    if hashlib.sha256(encoded).hexdigest() != expected:
+        raise ValueError("canonical DeploymentSpec risk policy digest differs")

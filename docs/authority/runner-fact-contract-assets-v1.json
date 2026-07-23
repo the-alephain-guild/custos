@@ -82,20 +82,20 @@
     {
       "role": "runner_fact_batch_golden",
       "path": "docs/authority/runner-fact-golden-v1.json",
-      "sha256": "76adf72c2dbfdea4bd4438288c3151540dd95dcb7415c934ea0ada65851aa045",
+      "sha256": "556ed09cd77628686d454cfc6372b01a23077bc5dfea3343cf3301d2df804d86",
       "size_bytes": 6461
     },
     {
       "role": "runner_fact_capability_manifest",
       "path": "docs/authority/runner-fact-capability-manifest-v1.json",
-      "sha256": "382c97aafdba7f13fe80d4e740f0967339f22b9477fd87d5c800fbf492a159f3",
-      "size_bytes": 3025
+      "sha256": "1326d8ab6f4cf54e7acb969d441305e7f5e807cd54d8e97545ea3c33e2012f1a",
+      "size_bytes": 3772
     },
     {
       "role": "runner_fact_capability_receipt_golden",
       "path": "docs/authority/runner-fact-capability-receipt-golden-v1.json",
-      "sha256": "e669f37d5739ae1861c967479ebd202d52a9eca643890c36584f97c973e3d84b",
-      "size_bytes": 6221
+      "sha256": "f2666f1315db942d7738c1b09d53dede9e1f5de3f43a3acf5f9d6fc3dd9f498e",
+      "size_bytes": 7030
     },
     {
       "role": "runtime_event_fact_parity_matrix",
@@ -106,7 +106,7 @@
     {
       "role": "runner_fact_signing_preimage_golden",
       "path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
-      "sha256": "703e6d3a4fa16d55790abbebabff0acfcd46a9b5a9a8dce4eec51b35602ad4fc",
+      "sha256": "740f1eebd0d1cb12b9630b923b47980d03b8812b868524e0447ad090eb4e8f6d",
       "size_bytes": 5434
     }
   ]

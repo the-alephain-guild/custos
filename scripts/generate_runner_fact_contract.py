@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from custos.core.runner_fact import (
     RUNNER_FACT_KIND_PROJECTORS,
+    RUNNER_FACT_PROJECTOR_CONTRACTS,
     RUNNER_FACT_SCHEMA_VERSION,
     RUNNER_FACT_SIGNING_DOMAIN,
     RUNNER_FACT_SIGNING_HEADER_FIELDS,
@@ -511,10 +512,15 @@ def _capability_manifest(spec_id: UUID, spec_digest: str) -> dict[str, Any]:
     base = _scope(spec_id, spec_digest)
     return {
         "schema_version": 1,
+        "agent_version": "fixture-v1",
         "contract": "custos.runner_fact.capability.v1",
         "closed_fact_union": True,
         "unknown_fact_kind": "terminal_unsupported_contract",
         "fact_kind_projectors": dict(RUNNER_FACT_KIND_PROJECTORS),
+        "runner_fact_contracts": {
+            projector: dict(contract)
+            for projector, contract in RUNNER_FACT_PROJECTOR_CONTRACTS.items()
+        },
         "settlement_scope_bindings": [dict(base)],
         "risk_scope_bindings": [
             {

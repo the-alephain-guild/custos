@@ -5,7 +5,7 @@ implement ``ExecutionEngineProtocol``. The command coordinator and lifecycle
 supervisor operate exclusively through this interface so they remain
 engine-agnostic.
 
-``supports_live`` / ``supports_venue`` are synchronous capability queries the
+``supports_trading_mode`` / ``supports_venue`` are synchronous capability queries the
 execution-admission layer calls before any async work; a host declares up-front whether it can
 handle live execution and which venues it wires.
 
@@ -311,7 +311,7 @@ class ExecutionEngineProtocol(Protocol):
 
     async def stop(self, deployment_instance_id: str) -> None: ...
 
-    def supports_live(self) -> bool: ...
+    def supports_trading_mode(self, mode: str) -> bool: ...
 
     def supports_venue(self, venue: str) -> bool: ...
 

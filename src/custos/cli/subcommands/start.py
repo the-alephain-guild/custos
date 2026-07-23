@@ -23,6 +23,9 @@ DEFAULT_RUNNER_FACT_OUTBOX = Path.home() / ".arx" / "state" / "runner-fact-outbo
 DEFAULT_CRUCIBLE_DOMAIN_PUBLIC_KEY = Path.home() / ".arx" / "crucible-domain-event.pub"
 DEFAULT_NATS_TRANSPORT_VAULT_DIR = Path.home() / ".arx" / "vault" / "runner-nats-transport"
 DEFAULT_NATS_CA = Path.home() / ".arx" / "certs" / "crucible-nats-ca.pem"
+DEFAULT_DEVELOPMENT_ARTIFACT_ROOT = Path.home() / ".alephain" / "v1-team" / "strategy-artifacts"
+DEFAULT_ARTIFACT_QUARANTINE_DIR = Path.home() / ".arx" / "state" / "artifact-quarantine"
+DEFAULT_ARTIFACT_ACTIVATION_DIR = Path.home() / ".arx" / "state" / "artifact-activations"
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -49,6 +52,14 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         choices=("sandbox", "testnet", "live"),
         required=True,
         help="Repeat for every exact mode session hosted by this supervisor.",
+    )
+    parser.add_argument(
+        "--development-local-nats-url",
+        default=os.environ.get("CUSTOS_DEVELOPMENT_LOCAL_NATS_URL", ""),
+        help=(
+            "Explicit non-promotable sandbox-only loopback NATS endpoint; "
+            "production transport vault, TLS and issuer pin remain mandatory otherwise."
+        ),
     )
     parser.add_argument("--nats-sim-url", default=os.environ.get("CRUCIBLE_NATS_SIM_URL", ""))
     parser.add_argument("--nats-sim-ca", type=Path, default=DEFAULT_NATS_CA)
@@ -81,10 +92,31 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         "--crucible-domain-key-id",
         default=os.environ.get("CRUCIBLE_DOMAIN_EVENT_KEY_ID", ""),
     )
-    parser.add_argument("--engine", choices=["nautilus", "noop"], default="nautilus")
+    parser.add_argument("--engine", choices=["nautilus", "sandbox-sim"], default="nautilus")
     parser.add_argument("--ready-file", type=Path, default=DEFAULT_READY_FILE)
     parser.add_argument("--runner-capability", type=Path, default=DEFAULT_RUNNER_CAPABILITY)
     parser.add_argument("--runner-fact-outbox", type=Path, default=DEFAULT_RUNNER_FACT_OUTBOX)
+    parser.add_argument(
+        "--development-artifact-root",
+        type=Path,
+        default=Path(
+            os.environ.get(
+                "CUSTOS_DEVELOPMENT_ARTIFACT_ROOT",
+                str(DEFAULT_DEVELOPMENT_ARTIFACT_ROOT),
+            )
+        ),
+        help="Shared sandbox-only content-addressed artifact store.",
+    )
+    parser.add_argument(
+        "--artifact-quarantine-dir",
+        type=Path,
+        default=DEFAULT_ARTIFACT_QUARANTINE_DIR,
+    )
+    parser.add_argument(
+        "--artifact-activation-dir",
+        type=Path,
+        default=DEFAULT_ARTIFACT_ACTIVATION_DIR,
+    )
     parser.add_argument("--runner-fact-snapshot-interval-secs", type=float, default=10.0)
     parser.add_argument("--runner-fact-period-secs", type=int, default=86_400)
     parser.add_argument("--runner-fact-period-retry-secs", type=float, default=30.0)
@@ -115,6 +147,7 @@ def run(args: argparse.Namespace) -> int:
         runner_toml_path=args.runner_toml_path.expanduser().resolve(),
         machine_vault=bound_vault_path,
         enabled_modes=tuple(args.enabled_mode),
+        development_local_nats_url=args.development_local_nats_url,
         nats_transport_vault_dir=args.nats_transport_vault_dir,
         nats_sim_url=args.nats_sim_url,
         nats_sim_ca=args.nats_sim_ca,
@@ -132,6 +165,9 @@ def run(args: argparse.Namespace) -> int:
         ready_file=args.ready_file,
         runner_capability=args.runner_capability,
         runner_fact_outbox=args.runner_fact_outbox,
+        development_artifact_root=args.development_artifact_root,
+        artifact_quarantine_dir=args.artifact_quarantine_dir,
+        artifact_activation_dir=args.artifact_activation_dir,
         runner_fact_snapshot_interval_secs=args.runner_fact_snapshot_interval_secs,
         runner_fact_period_secs=args.runner_fact_period_secs,
         runner_fact_period_retry_secs=args.runner_fact_period_retry_secs,

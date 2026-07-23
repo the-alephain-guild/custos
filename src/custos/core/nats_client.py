@@ -9,7 +9,7 @@ from uuid import UUID
 from nats.js.api import AckPolicy, DeliverPolicy, ReplayPolicy
 
 from custos.core.nats_transport import (
-    RunnerNatsTransportConnectionProfile,
+    RunnerNatsConnectionProfile,
     RunnerNatsTransportError,
 )
 
@@ -18,7 +18,7 @@ from custos.core.nats_transport import (
 class CrucibleNatsClient:
     """Bind, but never create, the exact tenant+runner command+policy consumer."""
 
-    connection_profile: RunnerNatsTransportConnectionProfile
+    connection_profile: RunnerNatsConnectionProfile
     tenant_id: str
     runner_id: str
     machine_credential: Any
@@ -48,7 +48,7 @@ class CrucibleNatsClient:
             )
         )
         self._js = self._nc.jetstream()
-        self._jsm = self._nc.jetstream_manager()
+        self._jsm = self._js
 
     async def close(self) -> None:
         if self._nc is not None and not self._nc.is_closed:

@@ -14,9 +14,14 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, StringConstraints, model_validator
 
 from custos.contracts.deployment import (
+    DeploymentArtifactSourceV1,
     DeploymentSpec,
+    DevelopmentArtifactSourceV1,
+    StrategyReleaseArtifactSourceV1,
     canonical_deployment_spec_digest,
+    parse_deployment_artifact_source,
     runtime_deployment_spec,
+    validate_risk_policy_snapshot,
 )
 
 __all__ = ["CrucibleRunnerDeploymentCommandV1"]
@@ -31,7 +36,6 @@ _EVENT_TYPE_PREFIXES = frozenset(
     }
 )
 _FINGERPRINT_DOMAIN = b"CRUCIBLE-RUNNER-DEPLOYMENT-COMMAND-FINGERPRINT-V1\0"
-_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_TOKEN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _KEY_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _BASE64URL_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -117,12 +121,38 @@ class CrucibleRunnerDeploymentCommandV1(BaseModel):
         return self._producer_fingerprint
 
     @property
+    def strategy_id(self) -> UUID:
+        """Return the canonical strategy identity carried by DeploymentSpec V1."""
+
+        return _required_uuid(
+            self.deployment_spec.get("strategy_id"), "deployment_spec.strategy_id"
+        )
+
+    @property
     def strategy_release_id(self) -> UUID:
-        return UUID(str(self.deployment_spec["strategy_release_id"]))
+        source = self.artifact_source
+        if not isinstance(source, StrategyReleaseArtifactSourceV1):
+            raise ValueError("development source has no StrategyRelease identity")
+        return source.snapshot.release_id
 
     @property
     def strategy_artifact_digest(self) -> str:
-        return str(self.deployment_spec["strategy_artifact_digest"])
+        return self.artifact_identity_digest
+
+    @property
+    def artifact_source(self) -> DeploymentArtifactSourceV1:
+        return parse_deployment_artifact_source(self.deployment_spec["artifact_source"])
+
+    @property
+    def artifact_identity_digest(self) -> str:
+        source = self.artifact_source
+        if isinstance(source, StrategyReleaseArtifactSourceV1):
+            return source.snapshot.artifact_digest
+        return source.snapshot.source_sha256
+
+    @property
+    def is_development_source(self) -> bool:
+        return isinstance(self.artifact_source, DevelopmentArtifactSourceV1)
 
     def to_runtime_spec(self) -> DeploymentSpec:
         """Translate the signed canonical spec into the local engine view."""
@@ -154,17 +184,19 @@ class CrucibleRunnerDeploymentCommandV1(BaseModel):
         for actual, expected, field_name in bindings:
             if actual != expected:
                 raise ValueError(f"deployment_spec.{field_name} differs from command authority")
+        validate_risk_policy_snapshot(spec)
         if canonical_deployment_spec_digest(spec) != self.deployment_spec_digest:
             raise ValueError("deployment_spec digest differs from command authority")
-        for field_name in (
-            "strategy_artifact_digest",
-            "strategy_manifest_digest",
-            "strategy_release_snapshot_digest",
+        strategy_id = _required_uuid(spec.get("strategy_id"), "deployment_spec.strategy_id")
+        source = parse_deployment_artifact_source(spec.get("artifact_source"))
+        if source.snapshot.definition_id != strategy_id:
+            raise ValueError("deployment_spec artifact source differs from strategy_id")
+        if isinstance(source, DevelopmentArtifactSourceV1) and (
+            self.mode != "sandbox"
+            or spec.get("promotion_id") is not None
+            or spec.get("promotion_evidence_digest") is not None
         ):
-            value = spec.get(field_name)
-            if not isinstance(value, str) or _SHA256_PATTERN.fullmatch(value) is None:
-                raise ValueError(f"deployment_spec.{field_name} must be lowercase SHA-256")
-        _required_uuid(spec.get("strategy_release_id"), "deployment_spec.strategy_release_id")
+            raise ValueError("development source is sandbox-only and cannot be promoted")
         _required_timestamp(self.issued_at, "issued_at")
         return self
 

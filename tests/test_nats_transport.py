@@ -23,6 +23,7 @@ from custos.cli.subcommands import nats_transport as nats_transport_cli
 from custos.core import nats_transport
 from custos.core.machine_credential_vault import MachineCredentialTransportError
 from custos.core.nats_transport import (
+    DevelopmentLocalNatsConnectionProfile,
     RunnerNatsRevocationChallenge,
     RunnerNatsRevocationObservation,
     RunnerNatsTransportAuthorityClient,
@@ -50,6 +51,35 @@ _AUTHORITY_IDS = {
     "testnet": UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
     "live": UUID("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"),
 }
+
+
+def test_development_local_profile_is_exact_loopback_sandbox() -> None:
+    profile = DevelopmentLocalNatsConnectionProfile(
+        tenant_id=_TENANT,
+        runner_id=_RUNNER,
+        nats_url="nats://127.0.0.1:4222",
+    )
+
+    assert profile.trading_mode == "sandbox"
+    assert profile.durable_config["durable_name"] == (
+        f"custos-control-v1-{_TENANT}-{_RUNNER}-sandbox"
+    )
+    profile.assert_publish_subject(f"crucible.runner.fact.v1.{_TENANT}.{_RUNNER}.sandbox")
+    with pytest.raises(RunnerNatsTransportError, match="local sandbox authority"):
+        profile.assert_publish_subject(f"crucible.runner.fact.v1.{_TENANT}.{_RUNNER}.live")
+
+
+@pytest.mark.parametrize(
+    "url",
+    ("nats://nats.internal:4222", "tls://127.0.0.1:4222", "nats://user@localhost:4222"),
+)
+def test_development_local_profile_rejects_non_loopback_or_authenticated_urls(url: str) -> None:
+    with pytest.raises(RunnerNatsTransportError, match="loopback"):
+        DevelopmentLocalNatsConnectionProfile(
+            tenant_id=_TENANT,
+            runner_id=_RUNNER,
+            nats_url=url,
+        )
 
 
 def test_cli_registers_each_transport_action_without_option_conflicts() -> None:
@@ -317,7 +347,9 @@ def test_issued_credential_verifies_jwt_acl_durable_and_redacts_secrets() -> Non
     rendered = repr(credential)
 
     assert credential.durable_config["stream_name"] == "CRUCIBLE_RUNNER_CONTROL_SIM_V1"
-    assert credential.durable_config["durable_name"] == (f"custos-control-v1-{_TENANT}-{_RUNNER}-{_MODE}")
+    assert credential.durable_config["durable_name"] == (
+        f"custos-control-v1-{_TENANT}-{_RUNNER}-{_MODE}"
+    )
     assert credential.user_jwt not in rendered
     assert base64.b64encode(credential.user_seed).decode("ascii") not in rendered
 

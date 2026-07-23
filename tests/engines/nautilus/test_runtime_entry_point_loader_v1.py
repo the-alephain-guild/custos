@@ -54,10 +54,19 @@ class Runtime:
     assert strategy == ("verified-strategy", {"period": 20, "generation": 1})
 
 
-def test_loader_rejects_module_cached_from_another_activation(tmp_path: Path) -> None:
+def test_loader_replaces_module_cached_from_another_activation(tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "collision.py").write_text("Runtime = object()\n", encoding="utf-8")
+    (outside / "collision.py").write_text(
+        """
+class Runtime:
+    def build_config(self, effective_config, execution_context):
+        return "outside"
+    def build_strategy(self, config):
+        return config
+""".lstrip(),
+        encoding="utf-8",
+    )
     sys.path.insert(0, str(outside))
     try:
         __import__("collision")
@@ -66,15 +75,25 @@ def test_loader_rejects_module_cached_from_another_activation(tmp_path: Path) ->
 
     activation = tmp_path / "activation"
     activation.mkdir()
-    (activation / "collision.py").write_text("Runtime = object()\n", encoding="utf-8")
+    (activation / "collision.py").write_text(
+        """
+class Runtime:
+    def build_config(self, effective_config, execution_context):
+        return "current-activation"
+    def build_strategy(self, config):
+        return config
+""".lstrip(),
+        encoding="utf-8",
+    )
     try:
-        with pytest.raises(NautilusRuntimeEntryPointError, match="immutable activation"):
-            NautilusRuntimeEntryPointLoaderV1().load(
-                activation_root=activation,
-                entry_point="collision:Runtime",
-                effective_config=deep_freeze_json({}),
-                execution_context=_context(),
-            )
+        strategy = NautilusRuntimeEntryPointLoaderV1().load(
+            activation_root=activation,
+            entry_point="collision:Runtime",
+            effective_config=deep_freeze_json({}),
+            execution_context=_context(),
+        )
+        assert strategy == "current-activation"
+        assert Path(sys.modules["collision"].__file__).is_relative_to(activation)
     finally:
         sys.modules.pop("collision", None)
 

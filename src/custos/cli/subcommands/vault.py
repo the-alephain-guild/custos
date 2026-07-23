@@ -17,6 +17,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -32,6 +33,7 @@ DEFAULT_VAULT_DIR = Path.home() / ".arx" / "vault"
 _DIR_MODE = 0o700
 _FILE_MODE = 0o600
 _SOPS_TIMEOUT_SECS = 30
+_LOWER_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 # Stdlib logger — matches the decrypt audit event sink so caplog +
 # downstream audit-writer pattern-match code stays uniform.
@@ -63,6 +65,12 @@ def _register_put(actions: argparse._SubParsersAction) -> None:
         type=lambda v: validate_id("tenant_id", v),
     )
     p.add_argument("--api-key", required=True)
+    p.add_argument(
+        "--scope-digest",
+        required=True,
+        type=lambda value: _scope_digest(value),
+        help="Exact lowercase SHA-256 bound by DeploymentSpec credential_scope.",
+    )
     secret = p.add_mutually_exclusive_group(required=True)
     secret.add_argument(
         "--api-secret-stdin",
@@ -134,6 +142,12 @@ def _dispatch(args: argparse.Namespace) -> int:
     return action_handler(args)
 
 
+def _scope_digest(value: str) -> str:
+    if not _LOWER_SHA256.fullmatch(value):
+        raise argparse.ArgumentTypeError("scope digest must be lowercase SHA-256")
+    return value
+
+
 def _put(args: argparse.Namespace) -> int:
     """Encrypt one credential to ``<vault-dir>/<key-id>.enc`` via sops+age.
 
@@ -166,6 +180,7 @@ def _put(args: argparse.Namespace) -> int:
             "api_key": args.api_key,
             "api_secret": api_secret,
             "permission_scope": args.permission_scope,
+            "scope_digest": args.scope_digest,
         }
     }
     payload_bytes = json.dumps(payload).encode("utf-8")

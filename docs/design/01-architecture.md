@@ -63,7 +63,7 @@
 
 任何 venue 部署都必须通过唯一 V1 execution admission：
 
-- `NoopHost` 只允许 `sandbox` / `testnet`
+- `SandboxSimulationHost` 只允许 `sandbox` + `SIM` connector，并产生身份绑定的 ready receipt
 - `NtTradingNodeHost` 只接收已验证并激活的 immutable artifact
 - `live` 还要求 host capability、`trade_no_withdraw` credential、signed promotion
   evidence 与本地 `live_execution_enabled` 同时成立

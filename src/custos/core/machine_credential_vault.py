@@ -511,6 +511,28 @@ class MachineCredentialVault:
             _fsync_directory(self.path.parent)
 
 
+def _machine_authority_rejection_context(error: HTTPError) -> str:
+    try:
+        raw = error.read(_MAX_RESPONSE_BYTES + 1)
+        if len(raw) > _MAX_RESPONSE_BYTES:
+            return ""
+        document = json.loads(raw)
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return ""
+    if not isinstance(document, dict):
+        return ""
+    fields: list[str] = []
+    code = document.get("code")
+    if isinstance(code, str) and _SAFE_ID.fullmatch(code):
+        fields.append(f"code={code}")
+    correlation_id = document.get("correlation_id")
+    try:
+        fields.append(f"correlation_id={UUID(str(correlation_id))}")
+    except (TypeError, ValueError, AttributeError):
+        pass
+    return f" ({', '.join(fields)})" if fields else ""
+
+
 class MachineCredentialHttpClient:
     """Typed direct Crucible machine client; error text never includes secrets."""
 
@@ -553,6 +575,7 @@ class MachineCredentialHttpClient:
             if 400 <= exc.code < 500 and exc.code not in {408, 425, 429}:
                 raise MachineCredentialRejectedError(
                     f"machine authority rejected request with HTTP {exc.code}"
+                    f"{_machine_authority_rejection_context(exc)}"
                 ) from exc
             raise MachineCredentialTransportError(
                 "machine authority returned a server error"

@@ -105,6 +105,21 @@ def test_outer_trading_mode_alias_is_rejected_without_fallback() -> None:
         )
 
 
+def test_risk_policy_snapshot_digest_is_verified_without_business_interpretation() -> None:
+    case = deepcopy(_fixture()["cases"][0])
+    case["event_document"]["payload"]["deployment_spec"]["risk_policy"]["max_notional_leverage"] = (
+        "99"
+    )
+    data, verifier = _signed(case)
+
+    verifier.verify(subject=case["subject"], data=data)
+    with pytest.raises(ValueError, match="risk policy digest differs"):
+        CrucibleRunnerDeploymentCommandV1.from_verified_signed_envelope(
+            signed_envelope_bytes=data,
+            subject=case["subject"],
+        )
+
+
 def test_golden_hash_matches_snapshot_sidecar_and_optional_sibling() -> None:
     raw = FIXTURE.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()

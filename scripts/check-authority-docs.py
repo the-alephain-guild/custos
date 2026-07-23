@@ -692,7 +692,7 @@ def verify_toolkit_rc_release_authority(manifest: dict[str, object], errors: lis
         "receipt_status": "READY_TOOLKIT_RC",
         "receipt_present": True,
         "receipt_path": "docs/authority/receipts/custos-toolkit-rc-authority-v1.json",
-        "receipt_sha256": "45cd1ea2d5de7ca96e220cf696c13b9474b8361d7531eaa3caf1f117b886cbc9",
+        "receipt_sha256": "570f69cbb9c796bfa82a57543ba163a4f3586d4fd57ca08a4174ed52ee713702",
         "handoff_ready": True,
         "publication_protocol": "OCI_DISTRIBUTION_V1",
         "runtime_ready": False,
@@ -728,8 +728,8 @@ def _verify_toolkit_rc_receipt(errors: list[str]) -> None:
         errors.append("canonical Toolkit RC READY receipt sidecar differs")
     receipt = load_json(receipt_path)
     expected_receipt = {
-        "candidate_version": "0.1.0rc2",
-        "source_commit": "ccae31ef1d906cea86bda00066b9ffbc159f2c6e",
+        "candidate_version": "0.1.0rc5",
+        "source_commit": "a3fd88c4e7e25433b508b2fece94be876630f380",
         "status": "READY_TOOLKIT_RC",
         "ready": True,
         "handoff_ready": True,
@@ -749,8 +749,8 @@ def _verify_toolkit_rc_receipt(errors: list[str]) -> None:
         errors.append("canonical Toolkit RC READY receipt lacks publication evidence")
     else:
         expected_publication = {
-            "manifest_digest": "sha256:7e5415877e8240aa316fba28d25fa5a41a9b0aeaa3b604e1015de619dfb5dcaf",
-            "workflow_run_id": 29846674028,
+            "manifest_digest": "sha256:670a50cf3725e03744bc2e9efeff74230db934bd83d10a927839254f3d6283d5",
+            "workflow_run_id": 29880238705,
             "release_environment": "toolkit-rc-release",
             "tag_readback_verified": True,
             "manifest_commit_verified": True,
@@ -759,8 +759,8 @@ def _verify_toolkit_rc_receipt(errors: list[str]) -> None:
             if publication.get(key) != value:
                 errors.append(f"canonical Toolkit RC publication {key} differs")
     expected_release = {
-        "promotion_run_id": 29846846571,
-        "promotion_artifact_digest": "sha256:d2756e8c8f9e069e5f4f83a064707338da6054a915b55fff240041c249aa0858",
+        "promotion_run_id": 29883298628,
+        "promotion_artifact_digest": "sha256:940bd28ca11b5a8d92f814a0cf39113d93afa89d571648041c5bf002ad418acb",
         "receipt_sha256": receipt_digest,
     }
     for key, value in expected_release.items():

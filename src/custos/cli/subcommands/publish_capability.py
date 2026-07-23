@@ -1,4 +1,4 @@
-"""Provision RunnerFact capability using the enrolled machine identity."""
+"""Publish a RunnerFact capability revision using the enrolled machine identity."""
 
 from __future__ import annotations
 
@@ -25,13 +25,13 @@ from custos.core.runner_fact import (
 )
 from custos.core.runner_toml import RunnerToml
 
-_ONBOARDING_PATH = "/api/v1/runner/capability-onboarding"
+_PUBLICATION_PATH = "/api/v1/runner/capability-publications"
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
-        "onboard",
-        help="Provision Runner capability v1 with the enrolled machine key.",
+        "publish-capability",
+        help="Publish the next Runner capability revision with the enrolled machine key.",
     )
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--runner-toml", type=Path, default=Path.home() / ".arx" / "runner.toml")
@@ -42,6 +42,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--idempotency-key", type=_non_nil_uuid, default=None)
     parser.add_argument("--capability-version-id", type=_non_nil_uuid, default=None)
+    parser.add_argument("--capability-version", type=_positive_int, default=None)
     parser.set_defaults(handler=run)
 
 
@@ -58,26 +59,28 @@ def run(args: argparse.Namespace) -> int:
         identity = RunnerFactIdentity.from_private_bytes(
             credential.private_key_bytes, credential.machine_key_id
         )
-        request_body = identity.onboarding_request(
+        capability_version = _next_capability_version(args.authority_path, args.capability_version)
+        request_body = identity.publication_request(
             tenant_id=runner.tenant_id,
             runner_id=UUID(runner.runner_id),
             capability_manifest=document,
+            capability_version=capability_version,
             capability_version_id=args.capability_version_id,
             idempotency_key=args.idempotency_key,
         )
         response = MachineCredentialHttpClient(runner.backend_url, credential).post(
-            _ONBOARDING_PATH,
+            _PUBLICATION_PATH,
             request_body.body,
             correlation_id=request_body.idempotency_key,
         )
     except (OSError, ValueError, TypeError, RunnerFactError, MachineCredentialError) as exc:
-        print(f"Runner capability onboarding failed: {exc}", file=sys.stderr)
+        print(f"Runner capability publication failed: {exc}", file=sys.stderr)
         return 1
 
     expected = {
         "runner_id": runner.runner_id,
         "capability_version_id": str(request_body.capability_version_id),
-        "capability_version": 1,
+        "capability_version": request_body.capability_version,
         "manifest_digest": request_body.manifest_digest,
         "key_id": identity.key_id,
         "key_version": 1,
@@ -127,8 +130,9 @@ def run(args: argparse.Namespace) -> int:
         print(f"Cannot persist Runner capability receipt: {exc}", file=sys.stderr)
         return 1
     print(
-        "Runner capability onboarded: "
+        "Runner capability published: "
         f"capability_version_id={expected['capability_version_id']} "
+        f"capability_version={expected['capability_version']} "
         f"key_id={identity.key_id} restart_required={receipt['restart_required']}"
     )
     return 0
@@ -151,6 +155,19 @@ def _write_receipt(path: Path, receipt: dict[str, object]) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _next_capability_version(path: Path, requested: int | None) -> int:
+    if requested is not None:
+        return requested
+    authority_path = path.expanduser().resolve()
+    if not authority_path.exists():
+        return 1
+    document = json.loads(authority_path.read_text(encoding="utf-8"))
+    current = document.get("capability_version") if isinstance(document, dict) else None
+    if type(current) is not int or current < 1:
+        raise ValueError("existing Runner capability receipt has no valid revision")
+    return current + 1
+
+
 def _is_lower_sha256(value: object) -> bool:
     return (
         isinstance(value, str)
@@ -166,4 +183,14 @@ def _non_nil_uuid(value: str) -> UUID:
         raise argparse.ArgumentTypeError("value must be a UUID") from exc
     if parsed.int == 0:
         raise argparse.ArgumentTypeError("UUID must not be nil")
+    return parsed
+
+
+def _positive_int(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("value must be an integer") from exc
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("value must be positive")
     return parsed

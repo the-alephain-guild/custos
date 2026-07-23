@@ -10,7 +10,7 @@ _EXPECTED_METHODS = (
     "deploy",
     "reconfigure",
     "stop",
-    "supports_live",
+    "supports_trading_mode",
     "supports_venue",
     "get_open_notional",
     "check_engine_connected",
@@ -21,7 +21,7 @@ _EXPECTED_METHODS = (
     "wait_ready",
     "wait_terminal",
 )
-_EXPECTED_SYNC_METHODS = frozenset({"supports_live", "supports_venue"})
+_EXPECTED_SYNC_METHODS = frozenset({"supports_trading_mode", "supports_venue"})
 
 
 def test_existing_execution_engine_protocol_method_set_is_frozen() -> None:

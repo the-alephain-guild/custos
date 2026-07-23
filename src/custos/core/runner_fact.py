@@ -68,7 +68,7 @@ RUNNER_FACT_SIGNING_HEADER_FIELDS: Final[tuple[str, ...]] = (
     "payload_digest",
 )
 REGISTRATION_SIGNING_DOMAIN: Final = "arx.runner_verification_key.register.v1"
-ONBOARDING_SIGNING_DOMAIN: Final = "crucible.runner_capability.onboard.v1"
+PUBLICATION_SIGNING_DOMAIN: Final = "crucible.runner_capability.publish.v1"
 RUNNER_FACT_EVENT_NAMESPACE: Final = UUID("834c6f30-4d2c-5f91-a2c4-5e8358fe6be4")
 SUPPORTED_CURRENCIES: Final = frozenset({"USD", "USDT", "USDC", "BTC", "ETH"})
 MAX_FACTS_PER_BATCH: Final = 512
@@ -92,6 +92,48 @@ RUNNER_FACT_KIND_PROJECTORS: Final[Mapping[str, str]] = MappingProxyType(
         "venue_ledger_snapshot_chunk": "reconciliation",
         "reconciliation_period_closed": "reconciliation",
         "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle",
+    }
+)
+RUNNER_FACT_PROJECTOR_CONTRACTS: Final[Mapping[str, Mapping[str, object]]] = MappingProxyType(
+    {
+        "risk": MappingProxyType(
+            {
+                "schema_version": 1,
+                "equity_snapshot": "v1",
+                "position_snapshot": "v1",
+                "heartbeat": "v1",
+            }
+        ),
+        "settlement": MappingProxyType(
+            {
+                "schema_version": 1,
+                "fill": "v1",
+                "position_closed": "v1",
+                "fee": "v1",
+                "period_closed": "v1",
+            }
+        ),
+        "reconciliation": MappingProxyType(
+            {
+                "schema_version": 1,
+                "execution_fill": "v1",
+                "venue_ledger_snapshot_manifest": "v1",
+                "venue_ledger_snapshot_chunk": "v1",
+                "reconciliation_period_closed": "v1",
+            }
+        ),
+        "health": MappingProxyType(
+            {
+                "schema_version": 1,
+                "heartbeat": "v1",
+            }
+        ),
+        "deployment_lifecycle": MappingProxyType(
+            {
+                "schema_version": 1,
+                "deployment_lifecycle": "v1",
+            }
+        ),
     }
 )
 _NATS_TOKEN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -362,9 +404,10 @@ class RunnerFactRegistrationRequest:
 
 
 @dataclass(frozen=True, slots=True)
-class RunnerCapabilityOnboardingRequest:
+class RunnerCapabilityPublicationRequest:
     idempotency_key: UUID
     capability_version_id: UUID
+    capability_version: int
     manifest_digest: str
     body: Mapping[str, Any]
 
@@ -450,16 +493,17 @@ class RunnerFactIdentity:
             },
         )
 
-    def onboarding_request(
+    def publication_request(
         self,
         *,
         tenant_id: str,
         runner_id: UUID,
         capability_manifest: Mapping[str, Any],
+        capability_version: int,
         capability_version_id: UUID | None = None,
         idempotency_key: UUID | None = None,
-    ) -> RunnerCapabilityOnboardingRequest:
-        """Create the exact ADR-018 capability-v1 plus key-v1 PoP request."""
+    ) -> RunnerCapabilityPublicationRequest:
+        """Create one exact capability-publication V1 plus initial key PoP request."""
         tenant = _non_empty(tenant_id, "tenant_id")
         runner = _uuid(runner_id, "runner_id")
         capability_id_value = capability_version_id or uuid4()
@@ -467,16 +511,18 @@ class RunnerFactIdentity:
         idempotency = idempotency_key or uuid4()
         if idempotency.int == 0:
             raise RunnerFactContractError("idempotency_key must not be nil")
+        if type(capability_version) is not int or capability_version < 1:
+            raise RunnerFactContractError("capability_version must be a positive integer")
         manifest = dict(capability_manifest)
         manifest_digest = _sha256_hex(_canonical_json_bytes(manifest))
         public_key_digest = _sha256_hex(self.public_key_bytes)
         proof = "\n".join(
             (
-                ONBOARDING_SIGNING_DOMAIN,
+                PUBLICATION_SIGNING_DOMAIN,
                 f"tenant_id={tenant}",
                 f"runner_id={runner}",
                 f"capability_version_id={capability_id}",
-                "capability_version=1",
+                f"capability_version={capability_version}",
                 f"manifest_digest={manifest_digest}",
                 f"key_id={self.key_id}",
                 "algorithm=ed25519",
@@ -486,7 +532,7 @@ class RunnerFactIdentity:
         )
         body = {
             "capability_version_id": capability_id,
-            "capability_version": 1,
+            "capability_version": capability_version,
             "capability_manifest": manifest,
             "manifest_digest": manifest_digest,
             "key_id": self.key_id,
@@ -495,9 +541,10 @@ class RunnerFactIdentity:
                 self._private_key.sign(proof.encode("utf-8"))
             ).decode("ascii"),
         }
-        return RunnerCapabilityOnboardingRequest(
+        return RunnerCapabilityPublicationRequest(
             idempotency_key=idempotency,
             capability_version_id=capability_id_value,
+            capability_version=capability_version,
             manifest_digest=manifest_digest,
             body=body,
         )
@@ -1050,11 +1097,13 @@ class RunnerFactOutbox:
                     deployment_spec_id TEXT NOT NULL,
                     deployment_spec_digest TEXT NOT NULL,
                     generation INTEGER NOT NULL CHECK (generation > 0),
-                    artifact_ref_digest TEXT NOT NULL,
-                    artifact_evidence_digest TEXT NOT NULL,
-                    state TEXT NOT NULL CHECK (state IN ('active', 'quarantined')),
+                    artifact_identity_digest TEXT NOT NULL,
+                    artifact_authority_digest TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK (
+                        state IN ('staged', 'active', 'quarantined')
+                    ),
                     quarantine_reason TEXT,
-                    activated_at_ns INTEGER NOT NULL,
+                    activated_at_ns INTEGER,
                     updated_at_ns INTEGER NOT NULL,
                     FOREIGN KEY (deployment_instance_id)
                         REFERENCES desired_deployments(deployment_instance_id)
@@ -1107,14 +1156,12 @@ class RunnerFactOutbox:
                     restart_count INTEGER NOT NULL DEFAULT 0 CHECK (restart_count >= 0),
                     quarantine_reason TEXT,
                     artifact_activation_id TEXT,
-                    local_policy_id TEXT,
+                    artifact_policy_id TEXT,
                     updated_at_ns INTEGER NOT NULL,
                     FOREIGN KEY (deployment_instance_id)
                         REFERENCES desired_deployments(deployment_instance_id),
                     FOREIGN KEY (artifact_activation_id)
-                        REFERENCES artifact_activation(activation_id),
-                    FOREIGN KEY (local_policy_id)
-                        REFERENCES runner_cap_policy(policy_id)
+                        REFERENCES artifact_activation(activation_id)
                 );
                 CREATE TABLE IF NOT EXISTS command_outcomes (
                     outcome_id TEXT PRIMARY KEY,
@@ -1188,6 +1235,18 @@ class RunnerFactOutbox:
                     );
                 """
             )
+            activation_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(artifact_activation)")
+            }
+            required_activation_columns = {
+                "artifact_identity_digest",
+                "artifact_authority_digest",
+            }
+            if not required_activation_columns.issubset(activation_columns):
+                raise RunnerStateMigrationError(
+                    "runner state database predates the canonical V1 artifact-source shape; "
+                    "recreate the pre-production database"
+                )
             connection.execute(
                 """
                 CREATE UNIQUE INDEX IF NOT EXISTS runner_cap_policy_scope_revision
@@ -1422,6 +1481,16 @@ class DurableDesiredCommand:
     command_fingerprint: str
     exact_subject: str
     verification_receipt: CommandVerificationReceipt
+
+
+@dataclass(frozen=True, slots=True)
+class DurableDesiredCommandIdentity:
+    deployment_instance_id: UUID
+    deployment_spec_id: UUID
+    deployment_spec_digest: str
+    generation: int
+    trading_mode: str
+    strategy_id: UUID
 
 
 @dataclass(frozen=True, slots=True)
@@ -1711,7 +1780,7 @@ class RunnerStateStore:
         engine_handle: str | None,
         observed_status: str,
         artifact_activation_id: str | None = None,
-        local_policy_id: str | None = None,
+        artifact_policy_id: str | None = None,
     ) -> CommandOutcomeCommitResult:
         return await self.commit_verified_command_outcome_and_enqueue_fact(
             delivery_id=delivery_id,
@@ -1722,8 +1791,130 @@ class RunnerStateStore:
             observed_status=observed_status,
             lifecycle_state=verified.command.lifecycle_state,
             artifact_activation_id=artifact_activation_id,
-            local_policy_id=local_policy_id,
+            artifact_policy_id=artifact_policy_id,
         )
+
+    async def commit_recovered_engine_ready(
+        self,
+        *,
+        verified: VerifiedRunnerCommand,
+        engine_handle: str,
+        observed_status: str,
+        artifact_activation_id: str | None = None,
+        artifact_policy_id: str | None = None,
+    ) -> None:
+        """Persist a rebuilt process-local engine without duplicating applied facts."""
+
+        await asyncio.to_thread(
+            self._commit_recovered_engine_ready,
+            verified,
+            engine_handle,
+            observed_status,
+            artifact_activation_id,
+            artifact_policy_id,
+        )
+
+    def _commit_recovered_engine_ready(
+        self,
+        verified: VerifiedRunnerCommand,
+        engine_handle: str,
+        observed_status: str,
+        artifact_activation_id: str | None,
+        artifact_policy_id: str | None,
+    ) -> None:
+        handle = _non_empty(engine_handle, "engine_handle")
+        observed = _non_empty(observed_status, "observed_status")
+        command = verified.command
+        self._validated_command_material(
+            command,
+            verified.command_fingerprint,
+            verified.verification_receipt,
+        )
+        connection = self._outbox._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            desired = connection.execute(
+                "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?",
+                (str(command.deployment_instance_id),),
+            ).fetchone()
+            applied = connection.execute(
+                "SELECT * FROM applied_deployments WHERE deployment_instance_id = ?",
+                (str(command.deployment_instance_id),),
+            ).fetchone()
+            if desired is None or applied is None:
+                raise RunnerStateDurabilityError(
+                    "engine recovery requires durable desired and applied state"
+                )
+            self._require_desired_authority(desired, command)
+            if (
+                desired["desired_status"] != "applied"
+                or int(applied["generation"]) != command.generation
+                or applied["command_fingerprint"] != verified.command_fingerprint
+            ):
+                raise RunnerStateDurabilityError(
+                    "engine recovery differs from current applied authority"
+                )
+            if artifact_activation_id is not None:
+                activation = connection.execute(
+                    """
+                    SELECT 1 FROM artifact_activation
+                    WHERE activation_id = ? AND deployment_instance_id = ?
+                      AND generation = ? AND state = 'active'
+                    """,
+                    (
+                        artifact_activation_id,
+                        str(command.deployment_instance_id),
+                        command.generation,
+                    ),
+                ).fetchone()
+                if activation is None:
+                    raise RunnerStateDurabilityError(
+                        "recovered engine artifact activation is absent or quarantined"
+                    )
+            lease = connection.execute(
+                """
+                SELECT restart_count FROM command_in_progress_lease
+                WHERE deployment_instance_id = ? AND generation = ?
+                  AND command_fingerprint = ?
+                """,
+                (
+                    str(command.deployment_instance_id),
+                    command.generation,
+                    verified.command_fingerprint,
+                ),
+            ).fetchone()
+            restart_count = max(
+                int(applied["restart_count"]),
+                int(lease["restart_count"]) if lease is not None else 0,
+            )
+            connection.execute(
+                """
+                UPDATE applied_deployments
+                SET engine_handle = ?, observed_status = ?, restart_count = ?,
+                    quarantine_reason = NULL, artifact_activation_id = ?,
+                    artifact_policy_id = ?, updated_at_ns = ?
+                WHERE deployment_instance_id = ?
+                """,
+                (
+                    handle,
+                    observed,
+                    restart_count,
+                    artifact_activation_id,
+                    artifact_policy_id,
+                    time.time_ns(),
+                    str(command.deployment_instance_id),
+                ),
+            )
+            connection.execute(
+                "DELETE FROM command_in_progress_lease WHERE deployment_instance_id = ?",
+                (str(command.deployment_instance_id),),
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     async def commit_verified_command_outcome_and_enqueue_fact(
         self,
@@ -1736,7 +1927,7 @@ class RunnerStateStore:
         observed_status: str,
         lifecycle_state: str,
         artifact_activation_id: str | None = None,
-        local_policy_id: str | None = None,
+        artifact_policy_id: str | None = None,
     ) -> CommandOutcomeCommitResult:
         authority = self._authority_for_verified(verified)
         lifecycle_fact = _command_lifecycle_fact(
@@ -1756,7 +1947,7 @@ class RunnerStateStore:
             observed_status,
             lifecycle_fact,
             artifact_activation_id,
-            local_policy_id,
+            artifact_policy_id,
         )
 
     def _commit_verified_command_outcome_and_enqueue_fact(
@@ -1770,7 +1961,7 @@ class RunnerStateStore:
         observed_status: str,
         lifecycle_fact: Mapping[str, Any],
         artifact_activation_id: str | None,
-        local_policy_id: str | None,
+        artifact_policy_id: str | None,
     ) -> CommandOutcomeCommitResult:
         if outcome not in {"applied", "conflict", "stale", "retry_exhausted"}:
             raise RunnerStateDurabilityError("verified command outcome is invalid")
@@ -1888,18 +2079,6 @@ class RunnerStateStore:
                     raise RunnerStateDurabilityError(
                         "applied command artifact activation is absent or quarantined"
                     )
-            if local_policy_id is not None:
-                policy = connection.execute(
-                    """
-                    SELECT 1 FROM runner_cap_policy
-                    WHERE policy_id = ? AND tenant_scope = ? AND trading_mode = ?
-                    """,
-                    (local_policy_id, command.tenant_id, command.trading_mode),
-                ).fetchone()
-                if policy is None:
-                    raise RunnerStateDurabilityError(
-                        "applied command local policy reference is absent or cross-scope"
-                    )
             if outcome == "applied":
                 connection.execute(
                     """
@@ -1907,7 +2086,7 @@ class RunnerStateStore:
                         deployment_instance_id, deployment_spec_id,
                         deployment_spec_digest, generation, command_fingerprint,
                         engine_handle, observed_status, restart_count,
-                        quarantine_reason, artifact_activation_id, local_policy_id,
+                        quarantine_reason, artifact_activation_id, artifact_policy_id,
                         updated_at_ns
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
                     ON CONFLICT(deployment_instance_id) DO UPDATE SET
@@ -1919,8 +2098,14 @@ class RunnerStateStore:
                         observed_status = excluded.observed_status,
                         restart_count = excluded.restart_count,
                         quarantine_reason = NULL,
-                        artifact_activation_id = excluded.artifact_activation_id,
-                        local_policy_id = excluded.local_policy_id,
+                        artifact_activation_id = COALESCE(
+                            excluded.artifact_activation_id,
+                            applied_deployments.artifact_activation_id
+                        ),
+                        artifact_policy_id = COALESCE(
+                            excluded.artifact_policy_id,
+                            applied_deployments.artifact_policy_id
+                        ),
                         updated_at_ns = excluded.updated_at_ns
                     """,
                     (
@@ -1933,7 +2118,7 @@ class RunnerStateStore:
                         observed,
                         restart_count,
                         artifact_activation_id,
-                        local_policy_id,
+                        artifact_policy_id,
                         time.time_ns(),
                     ),
                 )
@@ -2248,26 +2433,26 @@ class RunnerStateStore:
         *,
         verified: VerifiedRunnerCommand,
         activation_id: str,
-        artifact_ref_digest: str,
-        artifact_evidence_digest: str,
+        artifact_identity_digest: str,
+        artifact_authority_digest: str,
     ) -> None:
         await asyncio.to_thread(
             self._record_artifact_activation,
             verified,
             activation_id,
-            artifact_ref_digest,
-            artifact_evidence_digest,
+            artifact_identity_digest,
+            artifact_authority_digest,
         )
 
     def _record_artifact_activation(
         self,
         verified: VerifiedRunnerCommand,
         activation_id: str,
-        artifact_ref_digest: str,
-        artifact_evidence_digest: str,
+        artifact_identity_digest: str,
+        artifact_authority_digest: str,
     ) -> None:
-        _state_digest(artifact_ref_digest, "artifact_ref_digest")
-        _state_digest(artifact_evidence_digest, "artifact_evidence_digest")
+        _state_digest(artifact_identity_digest, "artifact_identity_digest")
+        _state_digest(artifact_authority_digest, "artifact_authority_digest")
         command = verified.command
         with self._outbox._connect() as connection:
             desired = connection.execute(
@@ -2282,8 +2467,8 @@ class RunnerStateStore:
                 """
                 INSERT INTO artifact_activation (
                     activation_id, deployment_instance_id, deployment_spec_id,
-                    deployment_spec_digest, generation, artifact_ref_digest,
-                    artifact_evidence_digest, state, activated_at_ns, updated_at_ns
+                    deployment_spec_digest, generation, artifact_identity_digest,
+                    artifact_authority_digest, state, activated_at_ns, updated_at_ns
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
                 ON CONFLICT(activation_id) DO UPDATE SET
                     state = 'active', quarantine_reason = NULL,
@@ -2295,8 +2480,8 @@ class RunnerStateStore:
                     str(command.deployment_spec_id),
                     command.deployment_spec_digest,
                     command.generation,
-                    artifact_ref_digest,
-                    artifact_evidence_digest,
+                    artifact_identity_digest,
+                    artifact_authority_digest,
                     time.time_ns(),
                     time.time_ns(),
                 ),
@@ -3398,6 +3583,60 @@ class RunnerStateStore:
             deployment_instance_id,
         )
 
+    async def list_recoverable_desired_command_identities(
+        self,
+    ) -> tuple[DurableDesiredCommandIdentity, ...]:
+        return await asyncio.to_thread(self._list_recoverable_desired_command_identities)
+
+    def _list_recoverable_desired_command_identities(
+        self,
+    ) -> tuple[DurableDesiredCommandIdentity, ...]:
+        with self._outbox._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM desired_deployments
+                WHERE desired_status IN ('recorded', 'applied')
+                ORDER BY updated_at_ns, deployment_instance_id
+                """
+            ).fetchall()
+        identities: list[DurableDesiredCommandIdentity] = []
+        for row in rows:
+            if row["tenant_id"] != self._tenant_id or row["runner_id"] != str(self._runner_id):
+                raise RunnerStateAuthorityError(
+                    "recoverable desired command differs from local tenant/runner scope"
+                )
+            try:
+                document = json.loads(row["canonical_command"])
+                deployment_spec = document["deployment_spec"]
+                lifecycle_state = document["lifecycle_state"]
+                strategy_id = UUID(str(deployment_spec["strategy_id"]))
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+                raise RunnerStateDurabilityError(
+                    "recoverable desired command identity is corrupt"
+                ) from error
+            if lifecycle_state != "running":
+                continue
+            if (
+                str(document.get("deployment_instance_id")) != row["deployment_instance_id"]
+                or str(document.get("deployment_spec_id")) != row["deployment_spec_id"]
+                or document.get("deployment_spec_digest") != row["deployment_spec_digest"]
+                or document.get("generation") != int(row["generation"])
+            ):
+                raise RunnerStateDurabilityError(
+                    "recoverable desired command identity differs from normalized state"
+                )
+            identities.append(
+                DurableDesiredCommandIdentity(
+                    deployment_instance_id=UUID(row["deployment_instance_id"]),
+                    deployment_spec_id=UUID(row["deployment_spec_id"]),
+                    deployment_spec_digest=row["deployment_spec_digest"],
+                    generation=int(row["generation"]),
+                    trading_mode=row["trading_mode"],
+                    strategy_id=strategy_id,
+                )
+            )
+        return tuple(identities)
+
     def _load_durable_desired_command(self, deployment_instance_id: UUID) -> DurableDesiredCommand:
         from custos.contracts.crucible_runner_command import (
             CrucibleRunnerDeploymentCommandV1,
@@ -3447,27 +3686,27 @@ class RunnerStateStore:
         *,
         command: Any,
         activation_id: str,
-        artifact_ref_digest: str,
-        artifact_evidence_digest: str,
+        artifact_identity_digest: str,
+        artifact_authority_digest: str,
     ) -> Mapping[str, Any] | None:
         return await asyncio.to_thread(
             self._load_artifact_activation,
             command,
             activation_id,
-            artifact_ref_digest,
-            artifact_evidence_digest,
+            artifact_identity_digest,
+            artifact_authority_digest,
         )
 
     def _load_artifact_activation(
         self,
         command: Any,
         activation_id: str,
-        artifact_ref_digest: str,
-        artifact_evidence_digest: str,
+        artifact_identity_digest: str,
+        artifact_authority_digest: str,
     ) -> Mapping[str, Any] | None:
         activation = _non_empty(activation_id, "activation_id")
-        _state_digest(artifact_ref_digest, "artifact_ref_digest")
-        _state_digest(artifact_evidence_digest, "artifact_evidence_digest")
+        _state_digest(artifact_identity_digest, "artifact_identity_digest")
+        _state_digest(artifact_authority_digest, "artifact_authority_digest")
         with self._outbox._connect() as connection:
             desired = connection.execute(
                 "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?",
@@ -3489,16 +3728,16 @@ class RunnerStateStore:
                 str(command.deployment_spec_id),
                 command.deployment_spec_digest,
                 command.generation,
-                artifact_ref_digest,
-                artifact_evidence_digest,
+                artifact_identity_digest,
+                artifact_authority_digest,
             )
             actual = (
                 row["deployment_instance_id"],
                 row["deployment_spec_id"],
                 row["deployment_spec_digest"],
                 row["generation"],
-                row["artifact_ref_digest"],
-                row["artifact_evidence_digest"],
+                row["artifact_identity_digest"],
+                row["artifact_authority_digest"],
             )
             if actual != expected:
                 raise RunnerStateDurabilityError(
@@ -3514,27 +3753,27 @@ class RunnerStateStore:
         *,
         command: Any,
         activation_id: str,
-        artifact_ref_digest: str,
-        artifact_evidence_digest: str,
+        artifact_identity_digest: str,
+        artifact_authority_digest: str,
     ) -> None:
         await asyncio.to_thread(
             self._stage_artifact_activation,
             command,
             activation_id,
-            artifact_ref_digest,
-            artifact_evidence_digest,
+            artifact_identity_digest,
+            artifact_authority_digest,
         )
 
     def _stage_artifact_activation(
         self,
         command: Any,
         activation_id: str,
-        artifact_ref_digest: str,
-        artifact_evidence_digest: str,
+        artifact_identity_digest: str,
+        artifact_authority_digest: str,
     ) -> None:
         activation = _non_empty(activation_id, "activation_id")
-        _state_digest(artifact_ref_digest, "artifact_ref_digest")
-        _state_digest(artifact_evidence_digest, "artifact_evidence_digest")
+        _state_digest(artifact_identity_digest, "artifact_identity_digest")
+        _state_digest(artifact_authority_digest, "artifact_authority_digest")
         with self._outbox._connect() as connection:
             desired = connection.execute(
                 "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?",
@@ -3554,8 +3793,8 @@ class RunnerStateStore:
                 str(command.deployment_spec_id),
                 command.deployment_spec_digest,
                 command.generation,
-                artifact_ref_digest,
-                artifact_evidence_digest,
+                artifact_identity_digest,
+                artifact_authority_digest,
             )
             if existing is not None:
                 actual = (
@@ -3563,8 +3802,8 @@ class RunnerStateStore:
                     existing["deployment_spec_id"],
                     existing["deployment_spec_digest"],
                     existing["generation"],
-                    existing["artifact_ref_digest"],
-                    existing["artifact_evidence_digest"],
+                    existing["artifact_identity_digest"],
+                    existing["artifact_authority_digest"],
                 )
                 if actual != expected:
                     raise RunnerStateDurabilityError(
@@ -3575,11 +3814,10 @@ class RunnerStateStore:
                 """
                 INSERT INTO artifact_activation (
                     activation_id, deployment_instance_id, deployment_spec_id,
-                    deployment_spec_digest, generation, artifact_ref_digest,
-                    artifact_evidence_digest, state, quarantine_reason,
+                    deployment_spec_digest, generation, artifact_identity_digest,
+                    artifact_authority_digest, state, quarantine_reason,
                     activated_at_ns, updated_at_ns
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'quarantined',
-                          'activation_pending', NULL, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'staged', NULL, NULL, ?)
                 """,
                 (activation, *expected, time.time_ns()),
             )
@@ -3610,8 +3848,7 @@ class RunnerStateStore:
                     activated_at_ns = ?, updated_at_ns = ?
                 WHERE activation_id = ? AND deployment_instance_id = ?
                   AND deployment_spec_id = ? AND generation = ?
-                  AND state = 'quarantined'
-                  AND quarantine_reason = 'activation_pending'
+                  AND state = 'staged'
                 """,
                 (
                     now,
@@ -4122,7 +4359,7 @@ def capability_binding_evidence_digest(
 
 @dataclass(frozen=True, slots=True)
 class RunnerCapabilityReceipt:
-    """Public, non-secret authority returned by atomic Runner onboarding."""
+    """Public, non-secret authority returned by atomic Runner publication."""
 
     tenant_id: str
     runner_id: UUID
@@ -4217,6 +4454,11 @@ class RunnerCapabilityReceipt:
         if (
             manifest.get("closed_fact_union") is not True
             or manifest.get("fact_kind_projectors") != dict(RUNNER_FACT_KIND_PROJECTORS)
+            or manifest.get("runner_fact_contracts")
+            != {
+                projector: dict(contract)
+                for projector, contract in RUNNER_FACT_PROJECTOR_CONTRACTS.items()
+            }
             or manifest.get("unknown_fact_kind") != "terminal_unsupported_contract"
         ):
             raise RunnerFactContractError(
@@ -4232,7 +4474,7 @@ class RunnerCapabilityReceipt:
             or not _is_lower_sha256(evidence_digest)
             or document["algorithm"] != "ed25519"
             or type(document["capability_version"]) is not int
-            or document["capability_version"] != 1
+            or document["capability_version"] < 1
             or type(document["key_version"]) is not int
             or document["key_version"] != 1
         ):

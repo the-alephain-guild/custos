@@ -203,4 +203,16 @@ verify: check-authority
 
 verify: toolkit-typecheck
 
+.PHONY: verify-development-artifact
+
+CUSTOS_DEVELOPMENT_ARTIFACT_ROOT ?= $(HOME)/.alephain/v1-team/strategy-artifacts
+
+verify-development-artifact:  ## Verify one PS local artifact for sandbox execution
+	@test -n "$(CUSTOS_DEVELOPMENT_SOURCE_SHA256)" || { echo "CUSTOS_DEVELOPMENT_SOURCE_SHA256 is required" >&2; exit 2; }
+	@test -n "$(CUSTOS_DEVELOPMENT_PUBLICATION_RECEIPT_DIGEST)" || { echo "CUSTOS_DEVELOPMENT_PUBLICATION_RECEIPT_DIGEST is required" >&2; exit 2; }
+	uv run --package custos-runner python scripts/verify_development_artifact.py \
+		--artifact-root "$(CUSTOS_DEVELOPMENT_ARTIFACT_ROOT)" \
+		--source-sha256 "$(CUSTOS_DEVELOPMENT_SOURCE_SHA256)" \
+		--publication-receipt-digest "$(CUSTOS_DEVELOPMENT_PUBLICATION_RECEIPT_DIGEST)"
+
 .PHONY: check-toolkit-extraction

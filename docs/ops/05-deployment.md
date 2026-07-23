@@ -49,6 +49,7 @@ printf '%s\n' '<venue-api-secret>' | arx-runner vault put \
   --key-id binance-testnet \
   --tenant-id acme \
   --api-key '<venue-api-key>' \
+  --scope-digest '<DeploymentSpec credential_scope.scope_digest>' \
   --api-secret-stdin \
   --age-recipient "$SOPS_AGE_RECIPIENT" \
   --permission-scope trade_no_withdraw
@@ -62,11 +63,30 @@ credential and Ed25519 private key remain encrypted together in
 
 ```bash
 arx-runner start \
-  --nats-url nats://crucible-nats.internal:4222 \
+  --enabled-mode sandbox \
+  --nats-sim-url tls://crucible-nats.internal:4222 \
+  --nats-sim-ca "$HOME/.arx/certs/crucible-nats-ca.pem" \
+  --nats-sim-server-name crucible-nats.internal \
+  --nats-sim-issuer-public-key "$CRUCIBLE_NATS_SIM_ISSUER_PUBLIC_KEY" \
   --crucible-domain-public-key "$HOME/.arx/crucible-domain-event.pub" \
   --crucible-domain-key-id crucible-domain-v1 \
   --engine nautilus
 ```
+
+For a non-promotable workstation demonstration, the sole plaintext exception is
+an explicit loopback sandbox session:
+
+```bash
+arx-runner start --enabled-mode sandbox --reconcile \
+  --development-local-nats-url nats://127.0.0.1:24222 \
+  --crucible-domain-public-key /tmp/v1-team-demo/crucible-domain-event.pub \
+  --crucible-domain-key-id crucible-domain-v1 \
+  --engine sandbox-sim
+```
+
+The development flag rejects non-loopback hosts, `testnet`, `live`, credentials
+in the URL, and any simultaneous production NATS endpoint. It is never a
+fallback from failed TLS/NKey authority.
 
 `deployment_instance_id` is the runtime primary key for reconciler state,
 engine handles, watchdogs, fallback breakers, and facts. `spec_id` identifies

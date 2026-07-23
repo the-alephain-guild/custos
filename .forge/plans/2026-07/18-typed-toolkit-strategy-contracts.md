@@ -1,6 +1,6 @@
 # 18 - Publish typed toolkit and strategy execution contracts
 
-> **Status**: ⏳ In progress — sole V1 code, Custos↔Crucible contract handoff and business-named RC5 authority READY; authenticated Crucible resolution, immutable PS publication and final cross-repo acceptance remain open
+> **Status**: ⏳ In progress — sole V1 contract and sandbox development-artifact verifier/runtime are CODE-READY / UNVERIFIED; authenticated production StrategyRelease resolution, immutable PS publication and final cross-repo acceptance remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-07-22 for the business-named first-production V1 release relock
 > **Project**: Custos
@@ -45,6 +45,26 @@ This plan defines one production contract generation only.
    bytes and policy, then activates the engine.
 5. All three repositories regenerate local authority manifests and truthful
    readiness receipts from the final bytes.
+
+### Sandbox development material
+
+`DevelopmentSourceRefV1` is the sole V1 development alternative to an attested
+production artifact. It is not a compatibility fallback:
+
+- Crucible returns it only from the authenticated preview-deployment material
+  resolver for a persisted development-artifact registration and a sandbox
+  DeploymentInstance. It never appears as a StrategyRelease snapshot.
+- `source_path` must resolve beneath the configured read-only development artifact
+  root and name a content-addressed published directory; Custos must not import
+  from a PS checkout or accept an arbitrary command-provided path.
+- Custos verifies the canonical directory inventory against `source_sha256` before
+  loading using its sole `sha256-canonical-directory-v1` profile and records the
+  development source digest in durable applied state and RunnerFacts.
+- `promotable=false` and `trading_mode=sandbox` are invariant. Testnet/live,
+  missing root confinement, symlinks, byte drift or a production runtime profile
+  fail closed before import.
+- this path produces a development runtime receipt only. It cannot satisfy T5e
+  production artifact acceptance, Plan 19 runtime RC or any GHCR release gate.
 
 ### CR89 runner resolution producer contract
 
@@ -613,6 +633,10 @@ Execution checkpoint (2026-07-21):
 - RC5 is the sole current V1 consumer pin. No alias, old parser or compatibility
   reader is introduced; earlier immutable RC bytes remain registry audit
   evidence only.
+- 2026-07-23 authority-gate correction replaced stale hard-coded RC2 expectations
+  with the exact RC5 source, manifest, release run, promotion run and receipt
+  digest. Immutable T4/T4b and RC5 evidence bytes were not rewritten;
+  `make check-authority` passes with RC5 as the sole current pin.
 - The business-named contract handshake is exact before publication: Crucible
   consumer commit `a30a62bb2e4115adaad9c036386ebb2b731e0526` is bound by the Custos producer
   handoff, and Crucible final readback commit `014edd4` pins that handoff while
@@ -728,3 +752,17 @@ git commit -m "docs(custos): mark plan 18 as completed"
 - Business release owner: Crucible.
 - Artifact producer: PS.
 - Execution ABI and local verifier owner: Custos.
+
+## 2026-07-22 sandbox development-artifact checkpoint
+
+Custos now has one business-named development-artifact verifier and a shared
+activation boundary. It derives content-addressed storage from the configured
+artifact root plus owner-provided digests, verifies the source and publication
+receipt bytes, quarantines invalid material and never accepts a path from an
+ARX/Crucible DTO. The snapshot is sandbox-only and non-promotable.
+
+The production StrategyRelease resolver remains deliberately fail-closed until
+the authenticated Crucible capability and real protected publication receipts
+exist. No local artifact can satisfy T5e, live or production readiness. This
+checkpoint is code-ready but unverified; no test, daemon or real-service gate was
+run for it.

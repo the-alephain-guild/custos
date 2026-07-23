@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from custos.core.engine_protocol import ExecutionEngineProtocol
-from custos.engines.nautilus.host import NoopHost, NtTradingNodeHost
+from custos.engines.nautilus.host import NtTradingNodeHost, SandboxSimulationHost
 
 
-def test_noophost_implements_protocol() -> None:
-    assert isinstance(NoopHost(), ExecutionEngineProtocol)
+def test_sandbox_simulation_host_implements_protocol() -> None:
+    assert isinstance(SandboxSimulationHost(), ExecutionEngineProtocol)
 
 
 def test_nt_trading_node_host_implements_protocol() -> None:

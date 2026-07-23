@@ -82,8 +82,11 @@ arx-runner enroll \
   --runner-id 018f8b5f-6f7d-7e23-8c31-bd34ab9d0d41
 
 arx-runner credential verify
-arx-runner onboard --manifest runner-capability.json
-arx-runner start --nats-url nats://arx.internal:4222
+arx-runner publish-capability --manifest runner-capability.json
+arx-runner start --enabled-mode sandbox \
+  --nats-sim-url tls://crucible-nats.internal:4222 \
+  --nats-sim-server-name crucible-nats.internal \
+  --nats-sim-issuer-public-key "$CRUCIBLE_NATS_SIM_ISSUER_PUBLIC_KEY"
 ```
 
 HTTP is accepted only for loopback development. Redirects are not followed,

@@ -22,12 +22,22 @@
         "payload": {
           "deployment_instance_id": "20000000-0000-4000-8000-000000000002",
           "deployment_spec": {
-            "credential_scope": {
-              "scope_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-              "scope_id": "91000000-0000-4000-8000-000000000011"
-            },
+            "schema_version": 1,
             "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
-            "engine_binding_id": "80000000-0000-4000-8000-000000000008",
+            "tenant_id": "acme",
+            "trading_mode": "sandbox",
+            "strategy_id": "40000000-0000-4000-8000-000000000004",
+            "artifact_source": {
+              "kind": "strategy_release",
+              "snapshot": {
+                "definition_id": "40000000-0000-4000-8000-000000000004",
+                "release_id": "50000000-0000-4000-8000-000000000005",
+                "release_version": 1,
+                "artifact_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "manifest_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              }
+            },
             "execution_config": {
               "connector": "binance_perpetual",
               "engine": "nautilus",
@@ -47,33 +57,87 @@
                 "period": 10
               }
             },
+            "strategy_product_id": "60000000-0000-4000-8000-000000000006",
+            "risk_policy_id": "70000000-0000-4000-8000-000000000007",
+            "risk_policy_version": 1,
+            "risk_policy": {
+              "schema_version": 1,
+              "trading_day": {
+                "time_zone": "Etc/UTC",
+                "boundary_local_time": "00:00:00"
+              },
+              "max_total_exposure": {
+                "currency": "USDT",
+                "amount": "10000"
+              },
+              "max_total_drawdown_ratio": "0.20",
+              "max_daily_loss": {
+                "kind": "ratio",
+                "limit": "0.05",
+                "base": "start_of_day_cash_flow_adjusted_nav"
+              },
+              "max_notional_leverage": "1",
+              "max_single_strategy_allocation_ratio": "1.0"
+            },
+            "risk_policy_digest": "96d56dada66c975be1f64660afb1ea3f210dd6d304491ea12f39fbec17c8b368",
+            "target_runner_id": "10000000-0000-4000-8000-000000000001",
+            "engine_binding_id": "80000000-0000-4000-8000-000000000008",
             "execution_channel": {
               "channel_type": "sandbox_sim_engine",
               "engine_binding_id": "80000000-0000-4000-8000-000000000008"
             },
-            "promotion_evidence_digest": null,
+            "credential_scope": {
+              "scope_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "scope_id": "91000000-0000-4000-8000-000000000011"
+            },
+            "runner_contract_requirements": {
+              "risk": {
+                "schema_version": 1,
+                "equity_snapshot": "v1",
+                "position_snapshot": "v1",
+                "heartbeat": "v1"
+              },
+              "settlement": {
+                "schema_version": 1,
+                "fill": "v1",
+                "position_closed": "v1",
+                "fee": "v1",
+                "period_closed": "v1"
+              },
+              "reconciliation": {
+                "schema_version": 1,
+                "execution_fill": "v1",
+                "venue_ledger_snapshot_manifest": "v1",
+                "venue_ledger_snapshot_chunk": "v1",
+                "reconciliation_period_closed": "v1"
+              },
+              "health": {
+                "schema_version": 1,
+                "heartbeat": "v1"
+              },
+              "deployment_lifecycle": {
+                "schema_version": 1,
+                "deployment_lifecycle": "v1"
+              }
+            },
+            "venue_source_policy": [
+              {
+                "venue": "BINANCE",
+                "ledger_source": "venue_api"
+              }
+            ],
+            "source_policy_digest": "20b77f1ec428e8eac5dc1a5d6038ea530d48aadde3347ee2bde1012cfd62c250",
+            "scheduling_policy": {
+              "timezone": "UTC",
+              "schedule": {
+                "kind": "continuous"
+              }
+            },
+            "scheduling_policy_digest": "ba04d8d8d52abf2176c4bf632d262f5e593e7a7dd2022903af20f6eb3e105d88",
             "promotion_id": null,
-            "risk_policy_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "risk_policy_id": "70000000-0000-4000-8000-000000000007",
-            "risk_policy_version": 1,
-            "runner_contract_requirements": {},
-            "scheduling_policy": {},
-            "scheduling_policy_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "schema_version": 1,
-            "source_policy_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "strategy_artifact_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "strategy_id": "40000000-0000-4000-8000-000000000004",
-            "strategy_manifest_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "strategy_product_id": "60000000-0000-4000-8000-000000000006",
-            "strategy_release_id": "50000000-0000-4000-8000-000000000005",
-            "strategy_release_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "strategy_release_version": 1,
-            "target_runner_id": "10000000-0000-4000-8000-000000000001",
-            "tenant_id": "acme",
-            "trading_mode": "sandbox",
-            "venue_source_policy": []
+            "promotion_evidence_digest": null
           },
-          "deployment_spec_digest": "d8206096757fa872b39ab231bfd966685e30eaceddd9bdb749f6d6ec936d70af",
+          "deployment_spec_digest": "c07620dbba681c16ddd4271bb8607a8ee50f1ce9923fe6587a0f67a2df063235",
           "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
           "generation": 1,
           "issued_at": "2026-07-14T00:00:00Z",
@@ -107,12 +171,22 @@
         "payload": {
           "deployment_instance_id": "20000000-0000-4000-8000-000000000002",
           "deployment_spec": {
-            "credential_scope": {
-              "scope_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-              "scope_id": "91000000-0000-4000-8000-000000000011"
-            },
+            "schema_version": 1,
             "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
-            "engine_binding_id": "80000000-0000-4000-8000-000000000008",
+            "tenant_id": "acme",
+            "trading_mode": "sandbox",
+            "strategy_id": "40000000-0000-4000-8000-000000000004",
+            "artifact_source": {
+              "kind": "strategy_release",
+              "snapshot": {
+                "definition_id": "40000000-0000-4000-8000-000000000004",
+                "release_id": "50000000-0000-4000-8000-000000000005",
+                "release_version": 1,
+                "artifact_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "manifest_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              }
+            },
             "execution_config": {
               "connector": "binance_perpetual",
               "engine": "nautilus",
@@ -132,33 +206,87 @@
                 "period": 10
               }
             },
+            "strategy_product_id": "60000000-0000-4000-8000-000000000006",
+            "risk_policy_id": "70000000-0000-4000-8000-000000000007",
+            "risk_policy_version": 1,
+            "risk_policy": {
+              "schema_version": 1,
+              "trading_day": {
+                "time_zone": "Etc/UTC",
+                "boundary_local_time": "00:00:00"
+              },
+              "max_total_exposure": {
+                "currency": "USDT",
+                "amount": "10000"
+              },
+              "max_total_drawdown_ratio": "0.20",
+              "max_daily_loss": {
+                "kind": "ratio",
+                "limit": "0.05",
+                "base": "start_of_day_cash_flow_adjusted_nav"
+              },
+              "max_notional_leverage": "1",
+              "max_single_strategy_allocation_ratio": "1.0"
+            },
+            "risk_policy_digest": "96d56dada66c975be1f64660afb1ea3f210dd6d304491ea12f39fbec17c8b368",
+            "target_runner_id": "10000000-0000-4000-8000-000000000001",
+            "engine_binding_id": "80000000-0000-4000-8000-000000000008",
             "execution_channel": {
               "channel_type": "sandbox_sim_engine",
               "engine_binding_id": "80000000-0000-4000-8000-000000000008"
             },
-            "promotion_evidence_digest": null,
+            "credential_scope": {
+              "scope_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "scope_id": "91000000-0000-4000-8000-000000000011"
+            },
+            "runner_contract_requirements": {
+              "risk": {
+                "schema_version": 1,
+                "equity_snapshot": "v1",
+                "position_snapshot": "v1",
+                "heartbeat": "v1"
+              },
+              "settlement": {
+                "schema_version": 1,
+                "fill": "v1",
+                "position_closed": "v1",
+                "fee": "v1",
+                "period_closed": "v1"
+              },
+              "reconciliation": {
+                "schema_version": 1,
+                "execution_fill": "v1",
+                "venue_ledger_snapshot_manifest": "v1",
+                "venue_ledger_snapshot_chunk": "v1",
+                "reconciliation_period_closed": "v1"
+              },
+              "health": {
+                "schema_version": 1,
+                "heartbeat": "v1"
+              },
+              "deployment_lifecycle": {
+                "schema_version": 1,
+                "deployment_lifecycle": "v1"
+              }
+            },
+            "venue_source_policy": [
+              {
+                "venue": "BINANCE",
+                "ledger_source": "venue_api"
+              }
+            ],
+            "source_policy_digest": "20b77f1ec428e8eac5dc1a5d6038ea530d48aadde3347ee2bde1012cfd62c250",
+            "scheduling_policy": {
+              "timezone": "UTC",
+              "schedule": {
+                "kind": "continuous"
+              }
+            },
+            "scheduling_policy_digest": "ba04d8d8d52abf2176c4bf632d262f5e593e7a7dd2022903af20f6eb3e105d88",
             "promotion_id": null,
-            "risk_policy_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "risk_policy_id": "70000000-0000-4000-8000-000000000007",
-            "risk_policy_version": 1,
-            "runner_contract_requirements": {},
-            "scheduling_policy": {},
-            "scheduling_policy_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "schema_version": 1,
-            "source_policy_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "strategy_artifact_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "strategy_id": "40000000-0000-4000-8000-000000000004",
-            "strategy_manifest_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "strategy_product_id": "60000000-0000-4000-8000-000000000006",
-            "strategy_release_id": "50000000-0000-4000-8000-000000000005",
-            "strategy_release_snapshot_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-            "strategy_release_version": 1,
-            "target_runner_id": "10000000-0000-4000-8000-000000000001",
-            "tenant_id": "acme",
-            "trading_mode": "sandbox",
-            "venue_source_policy": []
+            "promotion_evidence_digest": null
           },
-          "deployment_spec_digest": "d8206096757fa872b39ab231bfd966685e30eaceddd9bdb749f6d6ec936d70af",
+          "deployment_spec_digest": "c07620dbba681c16ddd4271bb8607a8ee50f1ce9923fe6587a0f67a2df063235",
           "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
           "generation": 2,
           "issued_at": "2026-07-14T00:01:00Z",

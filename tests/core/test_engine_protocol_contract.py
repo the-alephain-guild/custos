@@ -31,7 +31,7 @@ class _CompleteHost:
     async def stop(self, spec_id: str) -> None:
         pass
 
-    def supports_live(self) -> bool:
+    def supports_trading_mode(self, mode: str) -> bool:
         return False
 
     def supports_venue(self, venue: str) -> bool:
@@ -85,7 +85,7 @@ class _MissingDeploy:
     async def stop(self, spec_id: str) -> None:
         pass
 
-    def supports_live(self) -> bool:
+    def supports_trading_mode(self, mode: str) -> bool:
         return False
 
     def supports_venue(self, venue: str) -> bool:
@@ -114,5 +114,5 @@ def test_missing_deploy_fails_protocol() -> None:
     assert not isinstance(_MissingDeploy(), ExecutionEngineProtocol)
 
 
-def test_missing_supports_live_fails_protocol() -> None:
+def test_missing_supports_trading_mode_fails_protocol() -> None:
     assert not isinstance(_MissingSupportsLive(), ExecutionEngineProtocol)

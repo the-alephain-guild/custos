@@ -6,22 +6,22 @@
   "consumer_assets": [
     {
       "path": "src/custos/contracts/crucible_runner_command.py",
-      "sha256": "b156413d6158a8efcc6ab932162ccecfd603c8ab50ab069e8755dda33722eee5",
-      "size_bytes": 12654
+      "sha256": "d1a3aa7ebe92d54824e15714faf37348ef056efa769d2d739278c588455865ca",
+      "size_bytes": 13914
     },
     {
       "path": "tests/test_runner_deployment_command_golden.py",
-      "sha256": "b4f606aa78d58f8d3192b31cb90c8e96b2e2a1ecb26233d677b521da8062d8e4",
-      "size_bytes": 4095
+      "sha256": "0b9639abd35006186f388c99d5d9a34720d3849a550f6f246467b83699c3ab6c",
+      "size_bytes": 4675
     },
     {
       "path": "docs/authority/runner-deployment-command-golden-v1.json",
-      "sha256": "b7cfe71fb5d15079c248f57017fe3d9c7025bd28c8756aeb27d6ac0968a1f5ea",
-      "size_bytes": 8059
+      "sha256": "a73970d1fc2042d67c8fd06927129c82275171311ceb5e03ff55ca017573f5b9",
+      "size_bytes": 12207
     },
     {
       "path": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
-      "sha256": "d9a579a827f4642855fcea9bd3ec04a055f9edb5201e245948b28b3a00a01816",
+      "sha256": "802146c0a7e1495a6e25f54ef109569b3999dec8d9060f95a6a6d99c3ae19435",
       "size_bytes": 107
     }
   ],
@@ -29,8 +29,8 @@
   "consumer_model": {
     "path": "src/custos/contracts/crucible_runner_command.py",
     "public_export": "CrucibleRunnerDeploymentCommandV1",
-    "sha256": "b156413d6158a8efcc6ab932162ccecfd603c8ab50ab069e8755dda33722eee5",
-    "size_bytes": 12654
+    "sha256": "d1a3aa7ebe92d54824e15714faf37348ef056efa769d2d739278c588455865ca",
+    "size_bytes": 13914
   },
   "consumer_scope": [
     "deployment_spec_command",

@@ -21,6 +21,8 @@ def _put_argv(vault_dir: Path, permission_scope: str | None = None) -> list[str]
         "acme",
         "--api-key",
         "public-api-key",
+        "--scope-digest",
+        "a" * 64,
         "--api-secret",
         "test-secret",
         "--age-recipient",

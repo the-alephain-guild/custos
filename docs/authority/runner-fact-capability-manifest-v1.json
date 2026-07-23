@@ -1,5 +1,6 @@
 {
   "schema_version": 1,
+  "agent_version": "fixture-v1",
   "contract": "custos.runner_fact.capability.v1",
   "closed_fact_union": true,
   "unknown_fact_kind": "terminal_unsupported_contract",
@@ -17,6 +18,36 @@
     "venue_ledger_snapshot_chunk": "reconciliation",
     "reconciliation_period_closed": "reconciliation",
     "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle"
+  },
+  "runner_fact_contracts": {
+    "risk": {
+      "schema_version": 1,
+      "equity_snapshot": "v1",
+      "position_snapshot": "v1",
+      "heartbeat": "v1"
+    },
+    "settlement": {
+      "schema_version": 1,
+      "fill": "v1",
+      "position_closed": "v1",
+      "fee": "v1",
+      "period_closed": "v1"
+    },
+    "reconciliation": {
+      "schema_version": 1,
+      "execution_fill": "v1",
+      "venue_ledger_snapshot_manifest": "v1",
+      "venue_ledger_snapshot_chunk": "v1",
+      "reconciliation_period_closed": "v1"
+    },
+    "health": {
+      "schema_version": 1,
+      "heartbeat": "v1"
+    },
+    "deployment_lifecycle": {
+      "schema_version": 1,
+      "deployment_lifecycle": "v1"
+    }
   },
   "settlement_scope_bindings": [
     {

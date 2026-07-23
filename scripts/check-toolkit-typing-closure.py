@@ -106,7 +106,7 @@ def check() -> list[str]:
     extraction_implementation = cast(dict[str, object], extraction_receipt["implementation"])
     if extraction_implementation.get("implementation_commit") != EXTRACTION_IMPLEMENTATION_COMMIT:
         errors.append("historical T4 receipt implementation commit drifted")
-    if closure.get("extraction_implementation_commit") != EXTRACTION_IMPLEMENTATION_COMMIT:
+    if closure.get("extracted_implementation_commit") != EXTRACTION_IMPLEMENTATION_COMMIT:
         errors.append("T4b manifest does not bind the canonical T4 implementation commit")
     if closure.get("extraction_manifest_sha256") != _sha256(EXTRACTION_PATH.read_bytes()):
         errors.append("T4b extraction-manifest digest mismatch")
