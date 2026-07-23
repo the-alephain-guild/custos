@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "receipt_id": "CUSTOS-RUNNER-SAFETY-POLICY-FAILURE-MATRIX-V1",
+  "owner": "custos",
+  "status": "LOCAL_FAILURE_MATRIX_VERIFIED_RUNTIME_ACCEPTANCE_OPEN",
+  "producer_code_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
+  "producer_handoff_commit": "fe930088ea158f8fee057da79aa900674e48b2d3",
+  "consumer_implementation_commit": "ab5038cf11a7dff6ca79264e6cb91b32758c1357",
+  "consumer_handoff_commit": "7e045f61c3985953fef4221051cbd24c9c668932",
+  "failure_matrix_test_commit": "001288de08d123824bc8243921d2eb640386be4c",
+  "verified_semantics": {
+    "valid_signed_policy_commit_before_ack": true,
+    "durability_failure_nak_without_ack": true,
+    "invalid_signature_term_without_commit": true,
+    "wrong_scope_term_without_commit": true,
+    "missing_policy_fails_closed": true,
+    "not_yet_effective_policy_fails_closed": true,
+    "expired_policy_fails_closed": true,
+    "revoked_policy_fails_closed": true,
+    "system_expiry_null_actor_assertion_jti_consumed": true,
+    "superseded_status_rejected": true,
+    "valid_signed_live_policy_code_path_ready": true,
+    "live_local_fallback_absent": true,
+    "risk_reducing_order_remains_permitted": true
+  },
+  "source": {
+    "path": "tests/test_runner_policy_runtime.py",
+    "sha256": "72c94ff27c03926643b3f50cefd36cf2d72ff0685e793abe6e090265ac67d90f",
+    "size_bytes": 17695
+  },
+  "validation": {
+    "command": "uv run pytest -q tests/test_runner_policy_runtime.py tests/test_runner_fact_store.py tests/test_order_reservation.py",
+    "passed": 22,
+    "status": "FOCUSED_RUNNER_POLICY_LOCAL_FAILURE_MATRIX_PASS"
+  },
+  "runtime_acceptance_open": [
+    "physical sim and live database execution of migration 0117",
+    "launched signed policy publication and PubAck",
+    "real daemon policy consumption over the exact per-mode durable",
+    "broker outage with committed outbox retained pending",
+    "testnet and live launched fail-closed readiness"
+  ],
+  "runtime_policy_consumed": false,
+  "runtime_ready": false,
+  "live_ready": false,
+  "production_ready": false
+}

@@ -1,6 +1,6 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T8a, sandbox artifact runtime, runtime-health V1 and CR99 producer handoff focused verification pass; physical-mode policy/NATS receipts, production StrategyRelease, immutable runtime RC and T9-T10 remain open
+> **Status**: ⏳ In progress — T2-T8a, sandbox artifact runtime, runtime-health V1, CR99 producer handoff and local policy failure matrix pass; physical-mode policy/NATS receipts, production StrategyRelease, immutable runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-07-21 through exact CR89/CR99/CR100 runner-control contract convergence
 > **Project**: Custos
@@ -1107,7 +1107,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | Signed command V1 consumer | focused verified | consumes real DeploymentSpec domain events; exact contract assets regenerated and authority-checked |
 | RunnerFact SQLite V1 deep module | focused verified | one store, one outbox and one instance-continuous sequence |
 | Engine lifecycle | local verified, production blocked | 118-test T2-T8a gate passes; authenticated production artifact authority is not composed |
-| Runner policy V1 | producer handoff focused verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; `0117` mode execution, NATS/PubAck and real daemon consumption pending |
+| Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, NATS/PubAck and real daemon consumption pending |
 | Machine credential and NATS vault V1 | direct credential contract ready; NATS runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; control `0029`, durable replay receipt, JWT/ACL/durable readback and dual-domain broker evidence pending |
 | RunnerFact V1 producer candidate | local consumer validation passed | immutable `8c4454f` assets pinned; formal clean cross-repository Phase A receipt remains required |
 | Local sandbox runtime | PASS | signed Custos facts traversed NATS, Crucible ingest/replay/projectors and ARX owner read |

@@ -154,6 +154,8 @@
     "status": "READY_PRODUCER_HANDOFF_PENDING_RUNTIME_PUBLICATION_RECEIPT",
     "receipt": "docs/authority/receipts/custos-runner-safety-policy-v1-consumer-receipt.json",
     "contract_receipt": "docs/authority/receipts/custos-runner-safety-policy-v1-consumer-receipt.json",
+    "local_failure_matrix_receipt": "docs/authority/receipts/custos-runner-safety-policy-failure-matrix-v1.json",
+    "local_failure_matrix_ready": true,
     "policy_contract_consumer_ready": true,
     "local_code_ready": true,
     "authority_scope": [

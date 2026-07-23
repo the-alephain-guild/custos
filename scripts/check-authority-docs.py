@@ -52,6 +52,9 @@ RUNNER_POLICY_CONSUMER_SOURCE = "src/custos/contracts/crucible_runner_safety_pol
 RUNNER_POLICY_RECEIPT_PATH = (
     "docs/authority/receipts/custos-runner-safety-policy-v1-consumer-receipt.json"
 )
+RUNNER_POLICY_FAILURE_MATRIX_RECEIPT_PATH = (
+    "docs/authority/receipts/custos-runner-safety-policy-failure-matrix-v1.json"
+)
 RUNNER_NATS_TRANSPORT_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/custos-runner-nats-transport-v1-consumer-receipt.json"
 )
@@ -1319,6 +1322,38 @@ def verify_runner_policy_runtime(manifest: dict[str, Any], errors: list[str]) ->
         errors.append("runner policy V1 must remain fail-closed before owner policy consumption")
     if receipt.get("runtime_ready") is not False or receipt.get("production_ready") is not False:
         errors.append("runner policy V1 cannot claim runtime or production readiness")
+
+    matrix_path = resolve(RUNNER_POLICY_FAILURE_MATRIX_RECEIPT_PATH)
+    if not matrix_path.is_file():
+        errors.append("runner policy local failure-matrix receipt is missing")
+        return
+    matrix = load_json(matrix_path)
+    if (
+        matrix.get("schema_version") != 1
+        or matrix.get("status") != "LOCAL_FAILURE_MATRIX_VERIFIED_RUNTIME_ACCEPTANCE_OPEN"
+        or matrix.get("runtime_policy_consumed") is not False
+        or matrix.get("runtime_ready") is not False
+        or matrix.get("live_ready") is not False
+        or matrix.get("production_ready") is not False
+    ):
+        errors.append("runner policy local failure-matrix readiness boundary differs")
+    if matrix.get("validation") != {
+        "command": "uv run pytest -q tests/test_runner_policy_runtime.py "
+        "tests/test_runner_fact_store.py "
+        "tests/test_order_reservation.py",
+        "passed": 22,
+        "status": "FOCUSED_RUNNER_POLICY_LOCAL_FAILURE_MATRIX_PASS",
+    }:
+        errors.append("runner policy local failure-matrix validation differs")
+    source = matrix.get("source")
+    source_path = resolve(str(source.get("path") if isinstance(source, dict) else ""))
+    if (
+        not isinstance(source, dict)
+        or not source_path.is_file()
+        or source.get("sha256") != hashlib.sha256(source_path.read_bytes()).hexdigest()
+        or source.get("size_bytes") != source_path.stat().st_size
+    ):
+        errors.append("runner policy local failure-matrix source binding differs")
 
 
 def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) -> None:
