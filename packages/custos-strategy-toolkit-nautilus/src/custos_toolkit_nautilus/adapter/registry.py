@@ -15,9 +15,9 @@ in known locations and imports them to trigger registration.
 import logging
 import os
 import sys
+from collections.abc import Callable
 from hashlib import sha256
 from inspect import getsourcefile
-from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol, Unpack, cast
 
@@ -234,7 +234,7 @@ def register_strategy(
     logger.debug(f"Registered strategy: {name}")
 
 
-def _component_fingerprint(component: object) -> str:
+def _component_fingerprint(component: type[object] | Callable[..., object]) -> str:
     module_name = str(getattr(component, "__module__", "")).strip()
     qualified_name = str(getattr(component, "__qualname__", "")).strip()
     source_file = getsourcefile(component)
