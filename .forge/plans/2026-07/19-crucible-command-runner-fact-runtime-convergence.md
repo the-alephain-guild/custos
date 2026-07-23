@@ -1045,7 +1045,10 @@ git commit -m "docs(custos): mark plan 19 as completed"
 
 ## Verification
 
-- [ ] verification floor 全绿
+- [x] verification floor 全绿
+  - `make verify`: `620 passed, 4 skipped, 1 xfailed`; base mypy `41` files and Nautilus mypy `59` files passed; authority gate passed.
+  - `make verify-nt`: `620 passed, 4 skipped, 1 xfailed`.
+  - `make -n verify-runtime-existing`: Docker runtime contract and standalone runtime targets resolve without Make drift.
 - [x] command schema 来自 clean landed Crucible producer
 - [ ] schema/golden/digest 双仓 compatibility gate
 - [x] same generation + different fingerprint terminal reject
