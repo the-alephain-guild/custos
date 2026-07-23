@@ -906,9 +906,6 @@ def build_assets() -> dict[Path, bytes]:
         "asset_index_schema_version": 1,
         "authority_coordinate": AUTHORITY_COORDINATE,
         "status": "CANONICAL_V1_PENDING_RUNTIME_RECEIPTS",
-        "phase_a_input_ready": True,
-        "crucible_phase_a_compatible": False,
-        "projector_compatibility_ready": False,
         "runtime_rc": False,
         "real_runtime_round_trip_ready": False,
         "live_ready": False,
@@ -970,8 +967,6 @@ def build_assets() -> dict[Path, bytes]:
             "consumer_receipts": {
                 "crucible_rust": None,
             },
-            "phase_a_input_ready": True,
-            "crucible_phase_a_compatible": False,
             "runtime_rc": False,
             "real_runtime_round_trip_ready": False,
             "live_ready": False,

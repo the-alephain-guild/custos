@@ -128,7 +128,6 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
         "deployment_spec_digest",
         "generation",
     ]
-    assert index["crucible_phase_a_compatible"] is False
     assert index["runtime_rc"] is False
     assert index["live_ready"] is False
     assert index["runtime_ready"] is False

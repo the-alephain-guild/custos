@@ -376,9 +376,6 @@
     "stream_identity": "tenant_id+trading_mode+runner_id+deployment_instance_id",
     "transport_subject_identity": "tenant_id+runner_id+trading_mode",
     "generation_resets_sequence": false,
-    "phase_a_input_ready": true,
-    "crucible_phase_a_compatible": false,
-    "projector_compatibility_ready": false,
     "runtime_rc": false,
     "real_runtime_round_trip_ready": false,
     "golden_signature_is_runtime_evidence": false,
@@ -387,10 +384,6 @@
     "live_ready": false,
     "runtime_ready": false,
     "production_ready": false,
-    "phase_a_consumer_receipt": null,
-    "crucible_phase_a_receipt": null,
-    "t8b_stop": true,
-    "runtime_candidate_consumer_gate_ready": true,
     "authority_coordinate": "custos.runner-fact.v1"
   },
   "contract_evolution_policy": {

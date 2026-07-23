@@ -1625,7 +1625,6 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     if receipt.get("consumer_receipts") != {"crucible_rust": None}:
         errors.append("RunnerFact V1 external consumer receipt must remain pending")
     for field in (
-        "crucible_phase_a_compatible",
         "runtime_rc",
         "real_runtime_round_trip_ready",
         "live_ready",
@@ -1636,26 +1635,20 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
             errors.append(f"RunnerFact V1 producer receipt {field} must remain false")
 
 
-def verify_runner_fact_consumer_handoff(manifest: dict[str, Any], errors: list[str]) -> None:
-    old_receipt = (
-        ROOT
-        / "docs/authority/receipts/custos-plan-19-task-8b-runner-fact-phase-a-consumer-receipt.json"
-    )
-    if old_receipt.exists():
-        errors.append(
-            f"superseded RunnerFact candidate consumer receipt must be deleted: {old_receipt}"
-        )
-    if (ROOT / "docs/authority/vendor/crucible-plan-90").exists():
-        errors.append("superseded Crucible RunnerFact candidate vendor pin must be deleted")
+def verify_runner_fact_authority(errors: list[str]) -> None:
     ecosystem = load_json(ROOT / "docs/authority/ecosystem-authority.json")
     state = ecosystem.get("runner_fact_contract_v1")
     if not isinstance(state, dict):
         errors.append("ecosystem runner_fact_contract_v1 must be an object")
         return
-    if state.get("phase_a_consumer_receipt") is not None:
-        errors.append("RunnerFact V1 consumer receipt must remain absent until exact-byte repin")
-    if state.get("crucible_phase_a_compatible") is not False:
-        errors.append("RunnerFact V1 compatibility must remain false until Crucible receipt")
+    if state.get("authority_coordinate") != "custos.runner-fact.v1":
+        errors.append("ecosystem RunnerFact V1 authority coordinate differs")
+    if state.get("status") != "READY_FOR_CRUCIBLE_CONSUMER_VALIDATION":
+        errors.append("ecosystem RunnerFact V1 status differs")
+    if state.get("receipt") != (
+        "docs/authority/receipts/custos-runner-fact-v1-producer-receipt.json"
+    ):
+        errors.append("ecosystem RunnerFact V1 producer receipt path differs")
 
 
 def main() -> int:
@@ -1719,7 +1712,7 @@ def main() -> int:
     verify_runner_policy_runtime(manifest, errors)
     verify_runner_nats_transport(manifest, errors)
     verify_runner_fact_contract(manifest, errors)
-    verify_runner_fact_consumer_handoff(manifest, errors)
+    verify_runner_fact_authority(errors)
     verify_strategy_contract_canonical_source(errors)
     for entry in manifest.get("external_optional_documents", []):
         path = resolve(entry["path"])
