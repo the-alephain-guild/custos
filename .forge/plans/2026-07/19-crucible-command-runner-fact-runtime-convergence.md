@@ -1,8 +1,8 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T8a, sandbox artifact runtime, runtime-health V1, CR99 producer handoff and local policy failure matrix pass; physical-mode policy/NATS receipts, production StrategyRelease, immutable runtime RC and T9-T10 remain open
+> **Status**: ⏳ In progress — T2-T8a and the clone-local development material path pass; real PG/NATS/engine command-to-fact evidence, physical-mode policy/NATS receipts, production StrategyRelease, immutable runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
-> **Revised**: 2026-07-21 through exact CR89/CR99/CR100 runner-control contract convergence
+> **Revised**: 2026-07-23 through direct instance-bound Crucible material resolution
 > **Project**: Custos
 > **Source**: Audit of pre-plan migration `324da6e`, PS Plan 53, and v1.team review
 > **For Claude**: Use `/forge:execute` to implement this plan.
@@ -733,17 +733,22 @@ schema/golden compatibility receipt owner；Task 2 不生成、不要求也不�
 7. 本 Task 与 Plan 18 T5d-B 是同一 implementation slice、consumer model 和
    receipt；禁止各自实现一套 DTO 或验收链。
 
-> **Execution status (2026-07-21)**: Task 2 consumer code uses the sole
+> **Execution status (2026-07-23)**: Task 2 consumer code uses the sole
 > `CrucibleRunnerDeploymentCommandV1` DeploymentSpec event and is
-> `READY_CONTRACT_ONLY_PENDING_COMMAND_RUNTIME_RECEIPT`. Custos pins Crucible
-> commit `750dd10`, the exact command golden and the CR100
+> `READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT`. Custos pins Crucible
+> commit `57783973375055cd8af7cc4e681314a0b633f6fa`, the exact command golden and
+> the CR100
 > `crucible.runner.command.v1.<tenant>.<runner>.<mode>` subject. Custos retains
-> exact signed event bytes and computes its command fingerprint; StrategyRelease
-> material is resolved from authenticated Crucible authority and is never embedded
-> in the command. The canonical payload now has one typed `execution_config` and
-> rejects `parameters`, `code_provenance`, `strategy_path` and `code_hash`.
-> Runtime readiness remains fail closed until CR89 signed outbox publication and
-> authenticated resolver receipts exist.
+> exact signed event bytes and computes the sole command fingerprint from
+> subject + exact event bytes; outer signature rotation cannot change that
+> identity. Commit `b0655ef725b88a1d5d6c75176d1658253dc3ed15` makes the
+> sandbox development runtime resolve an instance/spec/generation-bound
+> `DevelopmentSourceRefV1` directly from the machine-authenticated Crucible
+> material authority, re-verify the returned binding and confine the absolute
+> path to the configured content-addressed root. StrategyRelease material is
+> never embedded in the command. Runtime readiness remains fail closed until
+> the real PG/NATS/engine command-to-fact receipt and authenticated Custos
+> production StrategyRelease consumption exist.
 
 Development execution is a separate, non-promotable acceptance slice: a sandbox
 command may resolve a Crucible-owned development-artifact registration to
@@ -1104,13 +1109,13 @@ git commit -m "docs(custos): mark plan 19 as completed"
 
 | Work | State | Current boundary |
 |---|---|---|
-| Signed command V1 consumer | focused verified | consumes real DeploymentSpec domain events; exact contract assets regenerated and authority-checked |
+| Signed command V1 consumer | development runtime focused verified | consumes real DeploymentSpec domain events; exact-event fingerprint, direct Crucible material resolution, contract assets and authority gate pass |
 | RunnerFact SQLite V1 deep module | focused verified | one store, one outbox and one instance-continuous sequence |
 | Engine lifecycle | local verified, production blocked | 118-test T2-T8a gate passes; authenticated production artifact authority is not composed |
 | Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, NATS/PubAck and real daemon consumption pending |
 | Machine credential and NATS vault V1 | direct credential contract ready; NATS runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; control `0029`, durable replay receipt, JWT/ACL/durable readback and dual-domain broker evidence pending |
 | RunnerFact V1 producer candidate | local consumer validation passed | immutable `8c4454f` assets pinned; formal clean cross-repository Phase A receipt remains required |
-| Local sandbox runtime | PASS | signed Custos facts traversed NATS, Crucible ingest/replay/projectors and ARX owner read |
+| Local sandbox runtime | focused code PASS; launched receipt open | instance-bound development material reaches the common runtime path; real NATS delivery/redelivery, engine launch and projected fact receipt remain required |
 | Production/live | STOP | production StrategyRelease, CR99/CR100 receipts, immutable runtime RC, Phase B and PS56 acceptance remain absent |
 
 The machine-readable boundary is pinned by
@@ -1153,10 +1158,12 @@ Custos owns local execution plus signed RunnerFacts.
 The daemon now composes one signed command consumer, signed runner-policy
 consumer, RunnerState/RunnerFact deep module, safety boundary and engine
 supervisor. The artifact branch is selected by the owner DeploymentSpec:
-`development_source` resolves only from the operator-configured local root and
-is accepted only for sandbox, while `strategy_release` remains fail-closed until
-the authenticated production resolver is composed. Both branches converge on
-the same activation, command fingerprint, safety and RunnerFact path.
+`development_source` is accepted only for sandbox and resolves through the
+machine-authenticated Crucible material authority before Custos confines and
+verifies the returned path under the operator-configured root.
+`strategy_release` remains fail-closed until authenticated production
+consumption is composed. Both branches converge on the same activation,
+command fingerprint, safety and RunnerFact path.
 
 This does not claim real transport readiness. Exact SIM/LIVE NATS, redelivery,
 restart, policy publication/readback and production engine evidence remain open.
@@ -1189,18 +1196,19 @@ Validation boundary:
 - `make verify-base-clean` reached pytest collection but the existing base profile had removed `requests` and the Nautilus toolkit while those tests still imported both unconditionally. No transport test executed in that failed gate; this unrelated profile drift is not repaired in T15.
 - The current-session Docker-backed `make verify-nats-revocation` rerun was not authorized by the execution environment. The existing real-NATS receipt remains historical evidence; the launched cross-process round trip remains explicitly false.
 
-## 2026-07-23 development command exact-byte handoff
+## 2026-07-23 development command and material handoff
 
 Crucible producer checkpoint
-`d1e850b5021feb899873a91ef23d2f2ba3f665ae` adds a third command golden case
-whose sole V1 DeploymentSpec carries the registered, pathless
-`development_source` snapshot. Custos consumer checkpoint `d232ef8` pins those
-exact bytes, verifies the real Ed25519 envelope, parses the tagged artifact
-source and proves sandbox/non-promotable/promotion-null invariants before the
-existing development runtime resolves local material.
+`57783973375055cd8af7cc4e681314a0b633f6fa` publishes the sole V1 exact-event
+command fingerprint and direct, machine-authenticated instance-bound material
+resolver. Custos consumer checkpoint
+`b0655ef725b88a1d5d6c75176d1658253dc3ed15` pins the producer golden, removes
+the duplicate producer-fingerprint concept and consumes the development
+material response without reconstructing a path from the command digest.
 
-The combined command-intake, development-artifact and runtime focused gate
-passed `41/41`; Ruff, generated-asset drift and standalone authority gates also
-passed. This closes the clone-local development-command contract handoff. Real
-NATS delivery/redelivery, restart and launched engine evidence remain open and
-no production StrategyRelease readiness is inferred.
+The command-intake, durable store, development-artifact and material-authority
+focused gate passed `48/48`; focused mypy, Ruff, generated-asset drift,
+standalone authority and diff gates also passed. This closes the clone-local
+development command/material implementation. Real PG/NATS delivery,
+redelivery/restart, launched engine and projected RunnerFact evidence remain
+open; no production StrategyRelease readiness is inferred.
