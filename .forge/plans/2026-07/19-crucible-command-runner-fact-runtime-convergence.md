@@ -1275,3 +1275,17 @@ host, Binance venue, execution safety boundary and toolkit adapter.
 This closes the known base-profile and NT-profile local code/verification debt;
 it does not replace the still-open launched HTTP/PG, registry/Sigstore,
 NATS/engine and RunnerFact PubAck receipts.
+
+## 2026-07-23 RunnerFact authority cleanup
+
+Custos `fcf8df5fd3592257c48cfa22464c1ef6cedf23cf` removes the remaining
+`phase_a`, `T8b` and candidate-compatibility fields from the RunnerFact
+generator, exact-byte assets, producer receipt, ecosystem authority and drift
+checker. Those values were plan progress, not execution capabilities, and
+Crucible never consumed them. The current authority keeps only the business
+coordinate, exact assets, consumer-receipt slot and runtime/live/production
+readiness facts.
+
+The focused contract gate passes 9/9, generated assets are exact, the authority
+checker passes and the removed planning names are absent from source, tests and
+authority documents.
