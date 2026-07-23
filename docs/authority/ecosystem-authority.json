@@ -320,7 +320,10 @@
   "runner_nats_transport_consumer": {
     "owner": "crucible-rust",
     "consumer": "custos",
-    "status": "READY_CONTRACT_ONLY_PENDING_TRANSPORT_RUNTIME",
+    "status": "CLONE_LOCAL_CONSUMER_VERIFIED",
+    "producer_commit": "e2499bb",
+    "operation_begin_endpoint": "POST /api/v1/runner-nats/transport-operations",
+    "operation_result_endpoint": "POST /api/v1/runner-nats/transport-operation-results",
     "control_streams": {
       "sim": "CRUCIBLE_RUNNER_CONTROL_SIM_V1",
       "live": "CRUCIBLE_RUNNER_CONTROL_LIVE_V1"
@@ -335,7 +338,11 @@
       "live": "live"
     },
     "local_user_nkey_custody": true,
+    "user_nkey_possession_proof": true,
     "per_mode_sops_age_vaults": true,
+    "pending_operation_persisted_before_network": true,
+    "restart_reuses_operation_id_and_seed": true,
+    "compatibility_lifecycle_routes_present": false,
     "supervisor_transport_set_implemented": true,
     "runner_fact_mode_router_implemented": true,
     "pinned_tls_and_account_issuer": true,

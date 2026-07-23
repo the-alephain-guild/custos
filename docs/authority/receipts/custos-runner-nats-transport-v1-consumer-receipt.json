@@ -1,19 +1,20 @@
 {
   "receipt_schema_version": 1,
   "receipt_id": "CUSTOS-RUNNER-NATS-TRANSPORT-CONSUMER-V1",
-  "receipt_status": "READY_CONTRACT_ONLY_PENDING_TRANSPORT_RUNTIME",
+  "receipt_status": "CLONE_LOCAL_CONSUMER_VERIFIED",
   "repository": "tesseract-trading/custos",
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
-    "producer_commit": "95fdc87de77c8d996bc633a6514f9dd70258f280",
+    "producer_commit": "e2499bb",
     "contract_assets": {
       "schema": "docs/authority/vendor/crucible-runner-nats-transport-authority-v1.schema.json",
       "schema_sha256": "d0868bddde5cc64c93233940cf36be6be2d2b00203af0707fe878ddfa95606a0",
       "golden": "docs/authority/vendor/crucible-runner-nats-transport-authority-golden-v1.json",
       "golden_sha256": "ff2d4c892bf3455dec9a17de35bd5e5b1758a5338f2350d48cb79b71476b0ec5"
     },
-    "authority_receipt": null,
-    "authority_ready": false,
+    "authority_receipt": "tesseract-trading/crucible-rust/docs/authority/receipts/crucible-runner-nats-broker-authority-v1.json",
+    "http_contract_receipt": "tesseract-trading/crucible-rust/docs/authority/receipts/crucible-runner-nats-transport-http-v1.json",
+    "authority_ready": true,
     "control_streams": {
       "sim": "CRUCIBLE_RUNNER_CONTROL_SIM_V1",
       "live": "CRUCIBLE_RUNNER_CONTROL_LIVE_V1"
@@ -22,7 +23,8 @@
     "policy_subject_prefix": "crucible.runner.policy.v1"
   },
   "implementation": {
-    "transport_authority": "src/custos/core/nats_transport.py",
+    "transport_vault_and_connection": "src/custos/core/nats_transport.py",
+    "transport_authority_client": "src/custos/core/runner_nats_authority.py",
     "command_consumer": "src/custos/core/nats_client.py",
     "runner_fact_publisher": "src/custos/core/runner_fact.py",
     "daemon_composition": "src/custos/cli/_daemon.py",
@@ -48,7 +50,15 @@
     "multi_mode_jwt_allowed": false,
     "exact_tenant_runner_mode_filters_required": true,
     "legacy_subject_fallback_allowed": false,
-    "legacy_credential_parser_allowed": false
+    "legacy_credential_parser_allowed": false,
+    "operation_begin_endpoint": "POST /api/v1/runner-nats/transport-operations",
+    "operation_result_endpoint": "POST /api/v1/runner-nats/transport-operation-results",
+    "arx_authorization_intent_required": true,
+    "user_nkey_possession_proof_required": true,
+    "pending_operation_persisted_before_network": true,
+    "restart_reuses_operation_id_and_seed": true,
+    "pending_result_exposes_user_jwt": false,
+    "compatibility_lifecycle_routes_present": false
   },
   "truth": {
     "custos_user_nkey_seed_owner": true,
@@ -59,6 +69,9 @@
     "command_subject_payload_mode_double_binding_implemented": true,
     "sim_live_account_issuer_stream_binding_implemented": true,
     "user_seed_sent_over_http_or_nats": false,
+    "begin_poll_consumer_implemented": true,
+    "restart_safe_pending_operation_implemented": true,
+    "broker_receipt_required_for_rotate_or_revoke": true,
     "crucible_signer_or_admin_secret_present": false,
     "pinned_account_issuer_required": true,
     "jwt_signature_and_acl_verification_implemented": true,
@@ -80,11 +93,20 @@
     "live_ready": false,
     "production_ready": false
   },
+  "clone_local_validation": {
+    "focused_command": "uv run pytest tests/test_nats_transport.py -q",
+    "focused_result": "17 passed",
+    "lint_command": "make check",
+    "lint_result": "PASS",
+    "authority_command": "make check-authority",
+    "authority_result": "PASS",
+    "real_nats_receipt_reused": true,
+    "launched_cross-process_round_trip": false
+  },
   "open_blockers": [
-    "Crucible has published contract bytes but not the credential, durable and broker-readback authority receipt",
-    "production tenant runner mode durables have no exact SIM/LIVE runtime readback receipt",
-    "production credential rotation and reconnect-denial evidence is absent",
-    "real NATS SIM/LIVE account isolation has not passed the explicit integration gate",
+    "the isolated Crucible signer, provisioner, server worker and Custos client have not produced one launched end-to-end runtime receipt",
+    "production tenant runner mode durables have no deployed exact SIM/LIVE runtime readback receipt",
+    "Custos has not consumed the signed CR99 runner policy in a launched runtime",
     "team execution remains blocked on the authenticated StrategyRelease resolver"
   ]
 }

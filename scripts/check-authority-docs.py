@@ -1317,6 +1317,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     receipt_path = resolve(RUNNER_NATS_TRANSPORT_CONSUMER_RECEIPT_PATH)
     source_paths = {
         "transport": resolve("src/custos/core/nats_transport.py"),
+        "authority_client": resolve("src/custos/core/runner_nats_authority.py"),
         "consumer": resolve("src/custos/core/nats_client.py"),
         "publisher": resolve("src/custos/core/runner_fact.py"),
         "daemon": resolve("src/custos/cli/_daemon.py"),
@@ -1327,13 +1328,21 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         return
 
     receipt = load_json(receipt_path)
-    if receipt.get("receipt_status") != "READY_CONTRACT_ONLY_PENDING_TRANSPORT_RUNTIME":
-        errors.append("runner NATS transport contract-only status differs")
+    if receipt.get("receipt_status") != "CLONE_LOCAL_CONSUMER_VERIFIED":
+        errors.append("runner NATS transport clone-local status differs")
     producer = receipt.get("producer_authority")
-    if not isinstance(producer, dict) or producer.get("authority_ready") is not False:
+    if not isinstance(producer, dict) or producer.get("authority_ready") is not True:
         errors.append("runner NATS transport producer authority truth differs")
-    elif producer.get("authority_receipt") is not None:
-        errors.append("runner NATS transport cannot pin an unpublished producer receipt")
+    elif (
+        producer.get("producer_commit") != "e2499bb"
+        or producer.get("authority_receipt")
+        != "tesseract-trading/crucible-rust/docs/authority/receipts/"
+        "crucible-runner-nats-broker-authority-v1.json"
+        or producer.get("http_contract_receipt")
+        != "tesseract-trading/crucible-rust/docs/authority/receipts/"
+        "crucible-runner-nats-transport-http-v1.json"
+    ):
+        errors.append("runner NATS transport producer handoff receipt differs")
     if producer.get("control_streams") != {
         "sim": "CRUCIBLE_RUNNER_CONTROL_SIM_V1",
         "live": "CRUCIBLE_RUNNER_CONTROL_LIVE_V1",
@@ -1379,6 +1388,14 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "exact_tenant_runner_mode_filters_required": True,
             "legacy_subject_fallback_allowed": False,
             "legacy_credential_parser_allowed": False,
+            "operation_begin_endpoint": "POST /api/v1/runner-nats/transport-operations",
+            "operation_result_endpoint": ("POST /api/v1/runner-nats/transport-operation-results"),
+            "arx_authorization_intent_required": True,
+            "user_nkey_possession_proof_required": True,
+            "pending_operation_persisted_before_network": True,
+            "restart_reuses_operation_id_and_seed": True,
+            "pending_result_exposes_user_jwt": False,
+            "compatibility_lifecycle_routes_present": False,
         }
         for key, value in expected.items():
             if contract.get(key) != value:
@@ -1397,6 +1414,13 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         }:
             errors.append("runner NATS transport local real-NATS revocation evidence differs")
         for key in (
+            "begin_poll_consumer_implemented",
+            "restart_safe_pending_operation_implemented",
+            "broker_receipt_required_for_rotate_or_revoke",
+        ):
+            if truth.get(key) is not True:
+                errors.append(f"runner NATS transport implemented truth {key} differs")
+        for key in (
             "production_transport_credential_provisioned",
             "production_durable_verified",
             "real_nats_integration_passed",
@@ -1409,6 +1433,8 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
                 errors.append(f"runner NATS transport pending truth {key} differs")
 
     transport = source_paths["transport"].read_text(encoding="utf-8")
+    authority_client = source_paths["authority_client"].read_text(encoding="utf-8")
+    cli = source_paths["cli"].read_text(encoding="utf-8")
     required_markers = (
         "custos-control-v1-",
         "custos.runner.control.v1.delivery",
@@ -1433,6 +1459,31 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         )
     ):
         errors.append("runner NATS transport transport retains the superseded command-only profile")
+    required_authority_markers = (
+        "/api/v1/runner-nats/transport-operations",
+        "/api/v1/runner-nats/transport-operation-results",
+        "crucible.runner.nats-key-possession.v1",
+        "authorization_intent_id",
+        "user_key_possession_signature_base64",
+    )
+    if any(marker not in authority_client for marker in required_authority_markers):
+        errors.append("runner NATS transport authority client contract differs")
+    combined_lifecycle = "\n".join((transport, authority_client, cli))
+    if any(
+        marker in combined_lifecycle
+        for marker in (
+            "runner-nats-transport/enroll",
+            "runner-nats-transport/rotate",
+            "runner-nats-transport/activate",
+            "revoke-superseded",
+            "revocation-challenge",
+            "revocation-evidence",
+            "RunnerNatsRevocationChallenge",
+            "RunnerNatsRevocationObservation",
+            "from_issued_response",
+        )
+    ):
+        errors.append("runner NATS transport retains a superseded lifecycle contract")
     if re.search(
         r"(?:custos-v|runner_command_v|RunnerDeploymentCommandV)"
         r"(?:[2-9]|[1-9][0-9]+)",
@@ -1445,7 +1496,14 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     snapshot = ecosystem.get("runner_nats_transport_consumer")
     if not isinstance(snapshot, dict):
         errors.append("runner NATS transport ecosystem snapshot is missing")
-    elif snapshot.get("status") != "READY_CONTRACT_ONLY_PENDING_TRANSPORT_RUNTIME":
+    elif (
+        snapshot.get("status") != "CLONE_LOCAL_CONSUMER_VERIFIED"
+        or snapshot.get("producer_commit") != "e2499bb"
+        or snapshot.get("user_nkey_possession_proof") is not True
+        or snapshot.get("pending_operation_persisted_before_network") is not True
+        or snapshot.get("restart_reuses_operation_id_and_seed") is not True
+        or snapshot.get("compatibility_lifecycle_routes_present") is not False
+    ):
         errors.append("runner NATS transport ecosystem status differs")
 
 

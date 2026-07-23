@@ -1158,3 +1158,28 @@ the same activation, command fingerprint, safety and RunnerFact path.
 This does not claim real transport readiness. Exact SIM/LIVE NATS, redelivery,
 restart, policy publication/readback and production engine evidence remain open.
 No validation was run for this checkpoint.
+
+
+## Active T15 contract correction (2026-07-23)
+
+Status: CLONE-LOCAL COMPLETE; LAUNCHED RUNTIME RECEIPT OPEN
+
+- Custos consumes the sole Crucible V1 machine surface: `POST /api/v1/runner-nats/transport-operations` plus authenticated polling of `POST /api/v1/runner-nats/transport-operation-results`. All earlier enroll/rotate/activate/challenge/evidence routes, DTOs and parsers are deleted in place.
+- Before the first network call, Custos MUST atomically persist an encrypted pending operation containing `authorization_intent_id`, `operation_id`, exact mode/generation bindings and the locally generated User NKey seed. Restart resumes the same business operation; it never creates a replacement key or operation implicitly.
+- Enroll, rotate and revoke consume an explicit ARX-approved `authorization_intent_id`. Custos supplies a canonical NKey possession proof, never the seed.
+- Crucible owns signing, provisioning, exact readback, rotation revocation and broker receipts. Custos accepts a User JWT only from a succeeded result, verifies the immutable authority locally, proves the replacement can connect and proves the retired JWT cannot reconnect.
+- The local vault has one V1 shape: active credential plus optional pending operation. It has no activation revision, retiring challenge or evidence-submission compatibility state.
+
+
+T15 clone-local completion evidence (2026-07-23):
+
+- `uv run pytest tests/test_nats_transport.py -q` passed (`17 passed`).
+- Focused ruff checks passed for the transport, authority client, CLI and real-NATS integration test.
+- Production code contains no superseded lifecycle endpoint, challenge, evidence, activation-revision or old credential-parser symbol.
+- Crucible producer handoff is pinned to `e2499bb`; the remaining T15 evidence is one launched signer + provisioner + server worker + Custos begin/poll round trip, not more contract code.
+
+
+Validation boundary:
+
+- `make verify-base-clean` reached pytest collection but the existing base profile had removed `requests` and the Nautilus toolkit while those tests still imported both unconditionally. No transport test executed in that failed gate; this unrelated profile drift is not repaired in T15.
+- The current-session Docker-backed `make verify-nats-revocation` rerun was not authorized by the execution environment. The existing real-NATS receipt remains historical evidence; the launched cross-process round trip remains explicitly false.

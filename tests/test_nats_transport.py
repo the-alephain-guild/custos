@@ -21,22 +21,25 @@ from nats.errors import Error as NatsError
 
 from custos.cli.subcommands import nats_transport as nats_transport_cli
 from custos.core import nats_transport
-from custos.core.machine_credential_vault import MachineCredentialTransportError
 from custos.core.nats_transport import (
     DevelopmentLocalNatsConnectionProfile,
-    RunnerNatsRevocationChallenge,
-    RunnerNatsRevocationObservation,
-    RunnerNatsTransportAuthorityClient,
     RunnerNatsTransportBundle,
     RunnerNatsTransportConnectionProfile,
     RunnerNatsTransportCredential,
     RunnerNatsTransportError,
+    RunnerNatsTransportPendingOperation,
     RunnerNatsTransportRevokedError,
     RunnerNatsTransportSet,
     RunnerNatsTransportVault,
     assert_old_generation_reconnect_denied,
     runner_control_stream,
     runner_nats_transport_domain,
+)
+from custos.core.runner_nats_authority import (
+    RUNNER_NATS_OPERATION_PATH,
+    RUNNER_NATS_OPERATION_RESULT_PATH,
+    RunnerNatsTransportAuthorityClient,
+    RunnerNatsTransportOperationCompletion,
 )
 
 _TENANT = "tenant-a"
@@ -98,7 +101,7 @@ def test_cli_registers_each_transport_action_without_option_conflicts() -> None:
         "--trading-mode",
         _MODE,
     ]
-    for action in ("enroll", "rotate", "activate"):
+    for action in ("enroll", "rotate", "revoke"):
         parsed = parser.parse_args(
             [
                 "nats-transport",
@@ -106,10 +109,24 @@ def test_cli_registers_each_transport_action_without_option_conflicts() -> None:
                 *common,
                 "--crucible-url",
                 "https://crucible.example.test",
+                "--authorization-intent-id",
+                "11111111-1111-4111-8111-111111111111",
             ]
         )
         assert parsed.transport_action == action
         assert parsed.issuer_public_key == "ACRUCIBLE"
+
+    resumed = parser.parse_args(
+        [
+            "nats-transport",
+            "resume",
+            *common,
+            "--crucible-url",
+            "https://crucible.example.test",
+        ]
+    )
+    assert resumed.transport_action == "resume"
+    assert not hasattr(resumed, "authorization_intent_id")
 
     parsed = parser.parse_args(["nats-transport", "verify", *common])
     assert parsed.transport_action == "verify"
@@ -193,6 +210,7 @@ def _issued(
     generation: int = 1,
     trading_mode: str = _MODE,
     now: datetime | None = None,
+    operation_id: UUID = _OPERATION_ID,
 ) -> dict[str, object]:
     issued_at = (now or datetime(2026, 7, 19, 8, 0, tzinfo=UTC)).replace(microsecond=0)
     expires_at = issued_at + timedelta(hours=1)
@@ -257,7 +275,7 @@ def _issued(
         "not_before": issued_at.isoformat().replace("+00:00", "Z"),
         "expires_at": expires_at.isoformat().replace("+00:00", "Z"),
         "status": "active",
-        "operation_id": str(_OPERATION_ID),
+        "operation_id": str(operation_id),
     }
     authority["authority_digest"] = _digest(authority)
     return authority
@@ -272,7 +290,7 @@ def _credential(
     user_seed, user_pair, user_public = _keypair(nkeys.PREFIX_BYTE_USER)
     account_seed, account_pair, account_public = _keypair(nkeys.PREFIX_BYTE_ACCOUNT)
     try:
-        return RunnerNatsTransportCredential.from_issued_response(
+        return RunnerNatsTransportCredential.from_authority_document(
             _issued(
                 user_seed=user_seed,
                 user_public_key=user_public,
@@ -291,53 +309,6 @@ def _credential(
     finally:
         user_pair.wipe()
         account_pair.wipe()
-        del account_seed
-
-
-def _rotation_bundle(
-    *,
-    now: datetime | None = None,
-) -> RunnerNatsTransportBundle:
-    current = (now or datetime.now(UTC)).replace(microsecond=0)
-    account_seed, account_pair, account_public = _keypair(nkeys.PREFIX_BYTE_ACCOUNT)
-    user_seed_1, user_pair_1, user_public_1 = _keypair(nkeys.PREFIX_BYTE_USER)
-    user_seed_2, user_pair_2, user_public_2 = _keypair(nkeys.PREFIX_BYTE_USER)
-    try:
-        active = RunnerNatsTransportCredential.from_issued_response(
-            _issued(
-                user_seed=user_seed_1,
-                user_public_key=user_public_1,
-                account_pair=account_pair,
-                account_public_key=account_public,
-                generation=1,
-                now=current,
-            ),
-            user_seed=user_seed_1,
-            expected_tenant_id=_TENANT,
-            expected_runner_id=_RUNNER,
-            expected_trading_mode=_MODE,
-            expected_issuer_public_key=account_public,
-        )
-        pending = RunnerNatsTransportCredential.from_issued_response(
-            _issued(
-                user_seed=user_seed_2,
-                user_public_key=user_public_2,
-                account_pair=account_pair,
-                account_public_key=account_public,
-                generation=2,
-                now=current,
-            ),
-            user_seed=user_seed_2,
-            expected_tenant_id=_TENANT,
-            expected_runner_id=_RUNNER,
-            expected_trading_mode=_MODE,
-            expected_issuer_public_key=account_public,
-        )
-        return RunnerNatsTransportBundle(active=active, pending=pending)
-    finally:
-        account_pair.wipe()
-        user_pair_1.wipe()
-        user_pair_2.wipe()
         del account_seed
 
 
@@ -363,9 +334,9 @@ def test_supervisor_transport_set_keeps_exact_mode_authorities_independent(
     live = _credential(trading_mode="live", now=now)
     transports = RunnerNatsTransportSet(
         {
-            "sandbox": RunnerNatsTransportBundle(active=sandbox, pending=None),
-            "testnet": RunnerNatsTransportBundle(active=testnet, pending=None),
-            "live": RunnerNatsTransportBundle(active=live, pending=None),
+            "sandbox": RunnerNatsTransportBundle(active=sandbox, pending_operation=None),
+            "testnet": RunnerNatsTransportBundle(active=testnet, pending_operation=None),
+            "live": RunnerNatsTransportBundle(active=live, pending_operation=None),
         }
     )
 
@@ -378,7 +349,9 @@ def test_supervisor_transport_set_keeps_exact_mode_authorities_independent(
     assert RunnerNatsTransportVault(tmp_path, "live").path == tmp_path / "live.enc"
 
     with pytest.raises(RunnerNatsTransportError, match="mode binding mismatch"):
-        RunnerNatsTransportSet({"live": RunnerNatsTransportBundle(active=sandbox, pending=None)})
+        RunnerNatsTransportSet(
+            {"live": RunnerNatsTransportBundle(active=sandbox, pending_operation=None)}
+        )
 
 
 def test_permission_or_stream_drift_is_rejected_before_socket_open() -> None:
@@ -399,7 +372,7 @@ def test_permission_or_stream_drift_is_rejected_before_socket_open() -> None:
             response["durable_config"]  # type: ignore[arg-type]
         )
         with pytest.raises(RunnerNatsTransportError, match="exact runner-control authority"):
-            RunnerNatsTransportCredential.from_issued_response(
+            RunnerNatsTransportCredential.from_authority_document(
                 response,
                 user_seed=user_seed,
                 expected_tenant_id=_TENANT,
@@ -508,242 +481,207 @@ async def test_broker_authorization_denial_invalidates_generation(
         profile.assert_active()
 
 
-def test_rotation_keeps_old_generation_active_until_pending_promotes() -> None:
-    account_seed, account_pair, account_public = _keypair(nkeys.PREFIX_BYTE_ACCOUNT)
-    user_seed_1, user_pair_1, user_public_1 = _keypair(nkeys.PREFIX_BYTE_USER)
-    user_seed_2, user_pair_2, user_public_2 = _keypair(nkeys.PREFIX_BYTE_USER)
-    try:
-        active = RunnerNatsTransportCredential.from_issued_response(
-            _issued(
-                user_seed=user_seed_1,
-                user_public_key=user_public_1,
-                account_pair=account_pair,
-                account_public_key=account_public,
-                generation=1,
-            ),
-            user_seed=user_seed_1,
-            expected_tenant_id=_TENANT,
-            expected_runner_id=_RUNNER,
-            expected_trading_mode=_MODE,
-            expected_issuer_public_key=account_public,
-        )
-        pending = RunnerNatsTransportCredential.from_issued_response(
-            _issued(
-                user_seed=user_seed_2,
-                user_public_key=user_public_2,
-                account_pair=account_pair,
-                account_public_key=account_public,
-                generation=2,
-            ),
-            user_seed=user_seed_2,
-            expected_tenant_id=_TENANT,
-            expected_runner_id=_RUNNER,
-            expected_trading_mode=_MODE,
-            expected_issuer_public_key=account_public,
-        )
-
-        staged = RunnerNatsTransportBundle(active=active, pending=pending)
-        promoted = staged.promote_pending()
-
-        assert staged.active is active
-        assert staged.pending is pending
-        assert promoted.active is pending
-        assert promoted.pending is None
-        assert promoted.retiring is active
-        assert promoted.revocation is None
-    finally:
-        account_pair.wipe()
-        user_pair_1.wipe()
-        user_pair_2.wipe()
-        del account_seed
-
-
-def test_v1_vault_document_round_trips_retirement_state_without_secret_loss() -> None:
-    staged = _rotation_bundle()
-    assert staged.active is not None
-    promoted = staged.promote_pending()
-    assert promoted.retiring is not None
-    challenge = RunnerNatsRevocationChallenge.from_response(
-        _revocation_challenge(promoted.retiring),
-        promoted.retiring,
-    )
-    assert promoted.active is not None
-    persisted = promoted.with_revocation(_observation(challenge, replacement=promoted.active))
-    restored = RunnerNatsTransportBundle.from_document(persisted.to_document())
-
-    assert restored.to_document()["schema_version"] == 1
-    assert restored == persisted
-    assert restored.retiring.user_jwt == staged.active.user_jwt
-
-
-def test_issue_request_exposes_only_public_nkey_and_uses_canonical_signature_path() -> None:
-    account_seed, account_pair, account_public = _keypair(nkeys.PREFIX_BYTE_ACCOUNT)
-    machine = SimpleNamespace(
+def _machine() -> SimpleNamespace:
+    return SimpleNamespace(
         tenant_id=_TENANT,
         runner_id=_RUNNER,
         credential_id=_MACHINE_ID,
         credential_version=1,
     )
-    captured: dict[str, object] = {}
-
-    class _Http:
-        def post(self, path, body, **kwargs):  # type: ignore[no-untyped-def]
-            captured.update(path=path, body=body, kwargs=kwargs)
-            return _issued(
-                user_seed=b"not-used-by-response",
-                user_public_key=body["user_public_key"],
-                account_pair=account_pair,
-                account_public_key=account_public,
-                now=datetime.now(UTC),
-            )
-
-    try:
-        client = RunnerNatsTransportAuthorityClient(
-            "https://crucible.internal",
-            machine,  # type: ignore[arg-type]
-        )
-        client.http = _Http()  # type: ignore[assignment]
-
-        credential = client.issue_initial(
-            trading_mode=_MODE,
-            expected_issuer_public_key=account_public,
-            now=datetime.now(UTC),
-        )
-
-        body = captured["body"]
-        assert captured["path"] == "/internal/v1/runner-nats-transport/enroll"
-        assert captured["kwargs"]["canonical_path"] == (  # type: ignore[index]
-            "/api/v1/runner-nats-transport/enroll"
-        )
-        assert "seed" not in json.dumps(body).lower()
-        assert credential.user_public_key == body["user_public_key"]  # type: ignore[index]
-    finally:
-        account_pair.wipe()
-        del account_seed
 
 
-def _revocation_challenge(
-    credential: RunnerNatsTransportCredential,
-    *,
-    now: datetime | None = None,
-) -> dict[str, object]:
-    issued_at = (now or datetime.now(UTC)).replace(microsecond=0)
-    return {
-        "profile": "crucible.runner.nats-revocation-challenge.v1",
-        "tenant_id": credential.tenant_id,
-        "runner_id": str(credential.runner_id),
-        "trading_mode": credential.trading_mode,
-        "transport_domain": credential.transport_domain,
-        "authority_id": str(credential.authority_id),
-        "generation": credential.credential_generation,
-        "user_public_key": credential.user_public_key,
-        "resolver_account_jwt_sha256": "d" * 64,
-        "revoke_before": issued_at.isoformat().replace("+00:00", "Z"),
-        "challenge_nonce": "33333333-3333-4333-8333-333333333333",
-        "expected_binding_revision": 2,
-        "issued_at": issued_at.isoformat().replace("+00:00", "Z"),
-        "expires_at": (issued_at + timedelta(minutes=5)).isoformat().replace("+00:00", "Z"),
-    }
-
-
-def _observation(
-    challenge: RunnerNatsRevocationChallenge,
-    *,
-    replacement: RunnerNatsTransportCredential | None = None,
-) -> RunnerNatsRevocationObservation:
-    return RunnerNatsRevocationObservation(
-        challenge=challenge,
-        replacement_authority_id=(
-            replacement.authority_id if replacement is not None else challenge.authority_id
-        ),
-        replacement_generation=(
-            replacement.credential_generation
-            if replacement is not None
-            else challenge.generation + 1
-        ),
-        replacement_connected_at=datetime.now(UTC),
-        challenge_validated_at=datetime.now(UTC),
-    )
-
-
-def test_revocation_challenge_and_observation_round_trip_without_secret_material() -> None:
-    credential = _credential(now=datetime.now(UTC))
-    challenge = RunnerNatsRevocationChallenge.from_response(
-        _revocation_challenge(credential),
-        credential,
-    )
-    forced_at = datetime.now(UTC)
-    observation = _observation(challenge).mark_forced_disconnect(forced_at)
-    observation = observation.mark_reconnect_denied(forced_at + timedelta(seconds=1))
-
-    restored = RunnerNatsRevocationObservation.from_document(observation.to_document())
-    rendered = json.dumps(restored.to_document(), sort_keys=True)
-
-    assert restored == observation
-    assert credential.user_jwt not in rendered
-    assert "seed" not in rendered.lower()
-
-
-def test_revocation_challenge_rejects_cross_generation_substitution() -> None:
-    credential = _credential(now=datetime.now(UTC))
-    response = _revocation_challenge(credential)
-    response["generation"] = credential.credential_generation + 1
-
-    with pytest.raises(RunnerNatsTransportError, match="binding mismatch"):
-        RunnerNatsRevocationChallenge.from_response(response, credential)
-
-
-def test_authority_client_uses_targeted_superseded_route_and_public_evidence() -> None:
-    credential = _credential(now=datetime.now(UTC))
-    machine = SimpleNamespace(
-        tenant_id=_TENANT,
-        runner_id=_RUNNER,
-        credential_id=_MACHINE_ID,
-        credential_version=1,
-    )
-    captured: list[tuple[str, dict[str, object], dict[str, object]]] = []
-    completed_at = datetime.now(UTC).replace(microsecond=0)
-
-    class _Http:
-        def post(self, path, body, **kwargs):  # type: ignore[no-untyped-def]
-            captured.append((path, body, kwargs))
-            if path.endswith("revoke-superseded") or path.endswith("revocation-challenge"):
-                return _revocation_challenge(credential)
-            return {
-                "tenant_id": _TENANT,
-                "runner_id": str(_RUNNER),
-                "trading_mode": credential.trading_mode,
-                "authority_id": str(credential.authority_id),
-                "generation": credential.credential_generation,
-                "resolver_account_jwt_sha256": "d" * 64,
-                "completed_at": completed_at.isoformat().replace("+00:00", "Z"),
-            }
-
+def test_pending_rotation_vault_round_trip_preserves_active_and_local_seed() -> None:
+    active = _credential(now=datetime.now(UTC))
     client = RunnerNatsTransportAuthorityClient(
         "https://crucible.internal",
-        machine,  # type: ignore[arg-type]
+        _machine(),  # type: ignore[arg-type]
     )
+    operation = client.prepare_rotation(
+        active,
+        authorization_intent_id=UUID("11111111-1111-4111-8111-111111111111"),
+    )
+    staged = RunnerNatsTransportBundle(
+        active=active,
+        pending_operation=operation,
+    )
+
+    restored = RunnerNatsTransportBundle.from_document(staged.to_document())
+
+    assert restored == staged
+    assert restored.active == active
+    assert restored.pending_operation == operation
+    assert restored.pending_operation.user_seed == operation.user_seed
+    assert restored.pending_operation.target_generation == 2
+
+
+def test_authority_client_uses_only_begin_poll_v1_and_never_sends_seed() -> None:
+    account_seed, account_pair, account_public = _keypair(nkeys.PREFIX_BYTE_ACCOUNT)
+    client = RunnerNatsTransportAuthorityClient(
+        "https://crucible.internal",
+        _machine(),  # type: ignore[arg-type]
+    )
+    operation = client.prepare_initial(
+        authorization_intent_id=UUID("11111111-1111-4111-8111-111111111111"),
+        trading_mode=_MODE,
+        expected_issuer_public_key=account_public,
+        now=datetime.now(UTC),
+    )
+    operation = RunnerNatsTransportPendingOperation.from_document(operation.to_document())
+    calls: list[tuple[str, dict[str, object], dict[str, object]]] = []
+    result_reads = 0
+
+    class _Http:
+        def post(self, path, body, **kwargs):  # type: ignore[no-untyped-def]
+            nonlocal result_reads
+            calls.append((path, body, kwargs))
+            if path == RUNNER_NATS_OPERATION_PATH:
+                return {
+                    "operation_id": str(operation.operation_id),
+                    "target_generation": 1,
+                    "request_fingerprint": "f" * 64,
+                    "phase": "pending_signing",
+                    "replayed": False,
+                }
+            result_reads += 1
+            base = {
+                "schema_version": 1,
+                "operation_id": str(operation.operation_id),
+                "trading_mode": _MODE,
+                "operation_kind": "issue",
+                "target_generation": 1,
+                "request_fingerprint": "f" * 64,
+                "revocation_receipt_digest": None,
+            }
+            if result_reads == 1:
+                return {
+                    **base,
+                    "phase": "pending_provisioning",
+                    "outcome": "pending",
+                    "authority": None,
+                }
+            return {
+                **base,
+                "phase": "pending_readback",
+                "outcome": "succeeded",
+                "authority": _issued(
+                    user_seed=operation.user_seed,
+                    user_public_key=operation.user_public_key,
+                    account_pair=account_pair,
+                    account_public_key=account_public,
+                    now=datetime.now(UTC),
+                    operation_id=operation.operation_id,
+                ),
+            }
+
+    try:
+        client.http = _Http()  # type: ignore[assignment]
+        completion = client.execute(
+            operation,
+            timeout_seconds=1,
+            poll_interval_seconds=0.001,
+        )
+
+        assert completion.credential is not None
+        assert completion.credential.user_seed == operation.user_seed
+        assert [call[0] for call in calls] == [
+            RUNNER_NATS_OPERATION_PATH,
+            RUNNER_NATS_OPERATION_RESULT_PATH,
+            RUNNER_NATS_OPERATION_RESULT_PATH,
+        ]
+        assert all(call[2]["canonical_path"] == call[0] for call in calls)
+        serialized_requests = json.dumps([body for _, body, _ in calls], sort_keys=True)
+        assert base64.b64encode(operation.user_seed).decode("ascii") not in serialized_requests
+        assert "user_seed" not in serialized_requests
+        assert calls[0][1]["user_public_key"] == operation.user_public_key
+        assert calls[0][1]["user_key_possession_signature_base64"]
+    finally:
+        account_pair.wipe()
+        del account_seed
+
+
+def test_pending_result_rejects_completion_material() -> None:
+    account_seed, account_pair, account_public = _keypair(nkeys.PREFIX_BYTE_ACCOUNT)
+    client = RunnerNatsTransportAuthorityClient(
+        "https://crucible.internal",
+        _machine(),  # type: ignore[arg-type]
+    )
+    operation = client.prepare_initial(
+        authorization_intent_id=UUID("11111111-1111-4111-8111-111111111111"),
+        trading_mode=_MODE,
+        expected_issuer_public_key=account_public,
+    )
+
+    class _Http:
+        def post(self, path, body, **_kwargs):  # type: ignore[no-untyped-def]
+            if path == RUNNER_NATS_OPERATION_PATH:
+                return {
+                    "operation_id": str(operation.operation_id),
+                    "target_generation": 1,
+                    "request_fingerprint": "f" * 64,
+                    "phase": "pending_signing",
+                    "replayed": False,
+                }
+            return {
+                "schema_version": 1,
+                "operation_id": str(operation.operation_id),
+                "trading_mode": _MODE,
+                "operation_kind": "issue",
+                "target_generation": 1,
+                "phase": "pending_signing",
+                "outcome": "pending",
+                "request_fingerprint": "f" * 64,
+                "authority": {},
+                "revocation_receipt_digest": None,
+            }
+
+    try:
+        client.http = _Http()  # type: ignore[assignment]
+        with pytest.raises(RunnerNatsTransportError, match="exposed completion"):
+            client.execute(operation, timeout_seconds=1)
+    finally:
+        account_pair.wipe()
+        del account_seed
+
+
+def test_revocation_completion_requires_broker_receipt() -> None:
+    active = _credential(now=datetime.now(UTC))
+    client = RunnerNatsTransportAuthorityClient(
+        "https://crucible.internal",
+        _machine(),  # type: ignore[arg-type]
+    )
+    operation = client.prepare_revocation(
+        active,
+        authorization_intent_id=UUID("11111111-1111-4111-8111-111111111111"),
+    )
+
+    class _Http:
+        def post(self, path, body, **_kwargs):  # type: ignore[no-untyped-def]
+            if path == RUNNER_NATS_OPERATION_PATH:
+                return {
+                    "operation_id": str(operation.operation_id),
+                    "target_generation": active.credential_generation,
+                    "request_fingerprint": "f" * 64,
+                    "phase": "pending_revocation",
+                    "replayed": False,
+                }
+            return {
+                "schema_version": 1,
+                "operation_id": str(operation.operation_id),
+                "trading_mode": active.trading_mode,
+                "operation_kind": "revoke",
+                "target_generation": active.credential_generation,
+                "phase": "pending_revocation",
+                "outcome": "succeeded",
+                "request_fingerprint": "f" * 64,
+                "authority": None,
+                "revocation_receipt_digest": "d" * 64,
+            }
+
     client.http = _Http()  # type: ignore[assignment]
+    completion = client.execute(operation, timeout_seconds=1)
 
-    challenge = client.revoke_superseded(
-        credential,
-        expected_active_revision=2,
-        reason="replacement active",
-    )
-    observation = _observation(challenge).mark_forced_disconnect(datetime.now(UTC))
-    observation = observation.mark_reconnect_denied(datetime.now(UTC))
-    assert client.read_revocation_challenge(credential) == challenge
-    assert client.submit_revocation_evidence(observation, reason="old JWT denied") == completed_at
-
-    assert [call[0] for call in captured] == [
-        "/internal/v1/runner-nats-transport/revoke-superseded",
-        "/internal/v1/runner-nats-transport/revocation-challenge",
-        "/internal/v1/runner-nats-transport/revocation-evidence",
-    ]
-    assert captured[0][2]["canonical_path"] == ("/api/v1/runner-nats-transport/revoke-superseded")
-    serialized = json.dumps([body for _, body, _ in captured], sort_keys=True)
-    assert credential.user_jwt not in serialized
-    assert "seed" not in serialized.lower()
+    assert completion.credential is None
+    assert completion.revocation_receipt_digest == "d" * 64
 
 
 @pytest.mark.asyncio
@@ -831,123 +769,129 @@ async def test_old_generation_probe_requires_typed_authorization_denial(
 
 
 @pytest.mark.asyncio
-async def test_rotation_submission_loss_keeps_retiring_state_and_restart_resubmits(
+async def test_cli_commits_rotation_only_after_new_connect_and_old_denial(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    staged = _rotation_bundle()
-    assert staged.active is not None
-    assert staged.pending is not None
-    challenge = RunnerNatsRevocationChallenge.from_response(
-        _revocation_challenge(staged.active),
-        staged.active,
-    )
-    completed_at = datetime.now(UTC)
+    account_seed, account_pair, account_public = _keypair(nkeys.PREFIX_BYTE_ACCOUNT)
+    active_seed, active_pair, active_public = _keypair(nkeys.PREFIX_BYTE_USER)
+    try:
+        active = RunnerNatsTransportCredential.from_authority_document(
+            _issued(
+                user_seed=active_seed,
+                user_public_key=active_public,
+                account_pair=account_pair,
+                account_public_key=account_public,
+                generation=1,
+                now=datetime.now(UTC),
+            ),
+            user_seed=active_seed,
+            expected_tenant_id=_TENANT,
+            expected_runner_id=_RUNNER,
+            expected_trading_mode=_MODE,
+            expected_issuer_public_key=account_public,
+        )
+        client = RunnerNatsTransportAuthorityClient(
+            "https://crucible.internal",
+            _machine(),  # type: ignore[arg-type]
+        )
+        operation = client.prepare_rotation(
+            active,
+            authorization_intent_id=UUID("11111111-1111-4111-8111-111111111111"),
+        )
+        replacement = RunnerNatsTransportCredential.from_authority_document(
+            _issued(
+                user_seed=operation.user_seed,
+                user_public_key=operation.user_public_key,
+                account_pair=account_pair,
+                account_public_key=account_public,
+                generation=2,
+                now=datetime.now(UTC),
+                operation_id=operation.operation_id,
+            ),
+            user_seed=operation.user_seed,
+            expected_tenant_id=_TENANT,
+            expected_runner_id=_RUNNER,
+            expected_trading_mode=_MODE,
+            expected_issuer_public_key=account_public,
+        )
+        bundle = RunnerNatsTransportBundle(
+            active=active,
+            pending_operation=operation,
+        )
+        completion = RunnerNatsTransportOperationCompletion(
+            operation_id=operation.operation_id,
+            operation_kind="rotate",
+            target_generation=2,
+            request_fingerprint="f" * 64,
+            credential=replacement,
+            revocation_receipt_digest="d" * 64,
+        )
 
-    class _Connection:
-        is_closed = False
+        events: list[str] = []
 
-        async def close(self) -> None:
-            self.is_closed = True
+        class _Connection:
+            is_closed = False
 
-    class _Profile:
-        def __init__(self, credential, *_args, **_kwargs):  # type: ignore[no-untyped-def]
-            self.credential = credential
+            async def close(self) -> None:
+                self.is_closed = True
+                events.append("new_closed")
 
-        async def connect(self, **_kwargs):  # type: ignore[no-untyped-def]
-            return _Connection()
+        class _Profile:
+            def __init__(self, credential, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+                self.credential = credential
 
-        async def wait_disconnected(self) -> None:
-            return None
+            async def connect(self, **_kwargs):  # type: ignore[no-untyped-def]
+                events.append("new_connected")
+                return _Connection()
 
-    class _Vault:
-        def __init__(self) -> None:
-            self.persisted: list[RunnerNatsTransportBundle] = []
+        async def denied(profile, **_kwargs):  # type: ignore[no-untyped-def]
+            assert profile.credential is active
+            events.append("old_denied")
 
-        def persist(self, bundle, **_kwargs):  # type: ignore[no-untyped-def]
-            self.persisted.append(bundle)
+        class _Vault:
+            def __init__(self) -> None:
+                self.persisted: list[RunnerNatsTransportBundle] = []
 
-    class _Authority:
-        fail_submit = True
+            def persist(self, value, **_kwargs):  # type: ignore[no-untyped-def]
+                events.append("persisted")
+                self.persisted.append(value)
 
-        def activate(self, credential):  # type: ignore[no-untyped-def]
-            return {
-                "tenant_id": credential.tenant_id,
-                "runner_id": str(credential.runner_id),
-                "authority_id": str(credential.authority_id),
-                "generation": credential.credential_generation,
-                "status": "active",
-                "revision": 2,
-            }
+            def delete(self) -> None:
+                raise AssertionError("rotation must not delete the vault")
 
-        def revoke_superseded(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
-            return challenge
+        monkeypatch.setattr(
+            nats_transport_cli,
+            "RunnerNatsTransportConnectionProfile",
+            _Profile,
+        )
+        monkeypatch.setattr(
+            nats_transport_cli,
+            "assert_old_generation_reconnect_denied",
+            denied,
+        )
+        args = SimpleNamespace(
+            nats_url="tls://nats.internal:4222",
+            nats_ca=tmp_path / "ca.pem",
+            nats_server_name="nats.internal",
+            verification_timeout_secs=30.0,
+        )
+        vault = _Vault()
 
-        def read_revocation_challenge(self, *_args):  # type: ignore[no-untyped-def]
-            return challenge
-
-        def submit_revocation_evidence(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
-            if self.fail_submit:
-                raise MachineCredentialTransportError("response lost")
-            return completed_at
-
-    async def denial(*_args, **_kwargs):  # type: ignore[no-untyped-def]
-        return None
-
-    monkeypatch.setattr(
-        nats_transport_cli,
-        "RunnerNatsTransportConnectionProfile",
-        _Profile,
-    )
-    monkeypatch.setattr(
-        nats_transport_cli,
-        "assert_old_generation_reconnect_denied",
-        denial,
-    )
-    args = SimpleNamespace(
-        nats_url="tls://nats.internal:4222",
-        nats_ca=tmp_path / "ca.pem",
-        nats_server_name="nats.internal",
-        issuer_public_key=staged.active.issuer_public_key,
-        revocation_timeout_secs=300.0,
-    )
-    vault = _Vault()
-    authority = _Authority()
-
-    with pytest.raises(MachineCredentialTransportError, match="response lost"):
-        await nats_transport_cli._activate_and_complete_retirement(  # noqa: SLF001
+        completed = await nats_transport_cli._verify_and_commit(  # noqa: SLF001
             args=args,
-            authority=authority,  # type: ignore[arg-type]
             vault=vault,  # type: ignore[arg-type]
-            bundle=staged,
+            bundle=bundle,
+            completion=completion,
             age_recipient="age1test",
         )
 
-    durable = vault.persisted[-1]
-    assert durable.retiring is staged.active
-    assert durable.revocation is not None
-    assert durable.revocation.evidence_ready is True
-
-    authority.fail_submit = False
-    resumed = await nats_transport_cli._activate_and_complete_retirement(  # noqa: SLF001
-        args=args,
-        authority=authority,  # type: ignore[arg-type]
-        vault=vault,  # type: ignore[arg-type]
-        bundle=durable,
-        age_recipient="age1test",
-    )
-
-    assert resumed.retiring is None
-    assert resumed.revocation is not None
-    assert resumed.revocation.completed_at == completed_at
-
-
-def test_expired_revocation_challenge_fails_closed() -> None:
-    credential = _credential(now=datetime.now(UTC))
-    response = _revocation_challenge(
-        credential,
-        now=datetime.now(UTC) - timedelta(minutes=10),
-    )
-
-    with pytest.raises(RunnerNatsTransportError, match="expired"):
-        RunnerNatsRevocationChallenge.from_response(response, credential)
+        assert completed is not None
+        assert completed.active is replacement
+        assert completed.pending_operation is None
+        assert events == ["new_connected", "new_closed", "old_denied", "persisted"]
+        assert vault.persisted == [completed]
+    finally:
+        active_pair.wipe()
+        account_pair.wipe()
+        del account_seed

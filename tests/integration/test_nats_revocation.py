@@ -223,7 +223,7 @@ def _transport_credential(
         "operation_id": str(uuid4()),
     }
     response["authority_digest"] = _sha256_document(response)
-    return RunnerNatsTransportCredential.from_issued_response(
+    return RunnerNatsTransportCredential.from_authority_document(
         response,
         user_seed=user_seed,
         expected_tenant_id=_TENANT,

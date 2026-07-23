@@ -1,4 +1,4 @@
-"""Runner-control User NKey/JWT transport enrollment and rotation."""
+"""Runner-control User NKey/JWT transport enrollment, rotation and revocation."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ import argparse
 import asyncio
 import os
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from custos.cli.subcommands.start import DEFAULT_RUNNER_TOML
 from custos.cli.validators import validate_backend_url
@@ -19,13 +19,15 @@ from custos.core.machine_credential_vault import (
     resolve_age_recipient,
 )
 from custos.core.nats_transport import (
-    RunnerNatsRevocationObservation,
-    RunnerNatsTransportAuthorityClient,
     RunnerNatsTransportBundle,
     RunnerNatsTransportConnectionProfile,
     RunnerNatsTransportError,
     RunnerNatsTransportVault,
     assert_old_generation_reconnect_denied,
+)
+from custos.core.runner_nats_authority import (
+    RunnerNatsTransportAuthorityClient,
+    RunnerNatsTransportOperationCompletion,
 )
 from custos.core.runner_toml import RunnerToml
 
@@ -36,25 +38,45 @@ DEFAULT_NATS_CA = Path.home() / ".arx" / "certs" / "crucible-nats-ca.pem"
 def register(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "nats-transport",
-        help="Enroll, rotate, activate or verify the runner-control NATS credential.",
+        help="Issue, rotate, revoke, resume or verify runner-control NATS authority.",
     )
     actions = parser.add_subparsers(
         dest="transport_action",
-        metavar="{enroll,rotate,activate,verify}",
+        metavar="{enroll,rotate,revoke,resume,verify}",
     )
-    for action in ("enroll", "rotate", "activate"):
+    for action in ("enroll", "rotate", "revoke"):
         child = actions.add_parser(action)
-        _add_authority_arguments(child)
+        _add_authority_arguments(child, require_intent=True)
         child.set_defaults(handler=run)
+    resume = actions.add_parser("resume")
+    _add_authority_arguments(resume, require_intent=False)
+    resume.set_defaults(handler=run)
     verify = actions.add_parser("verify")
     _add_local_arguments(verify)
     verify.set_defaults(handler=run)
 
 
-def _add_authority_arguments(parser: argparse.ArgumentParser) -> None:
+def _add_authority_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    require_intent: bool,
+) -> None:
     _add_identity_arguments(parser)
     _add_nats_connection_arguments(parser)
     parser.add_argument("--crucible-url", required=True, type=validate_backend_url)
+    if require_intent:
+        parser.add_argument(
+            "--authorization-intent-id",
+            required=True,
+            type=UUID,
+            help="ARX-approved runner NATS transport authorization intent UUID.",
+        )
+    parser.add_argument(
+        "--operation-timeout-secs",
+        type=float,
+        default=300.0,
+        help="Bounded wait for the Crucible authority operation.",
+    )
     parser.add_argument(
         "--age-recipient",
         default=None,
@@ -72,15 +94,15 @@ def _add_nats_connection_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--nats-ca", type=Path, default=DEFAULT_NATS_CA)
     parser.add_argument("--nats-server-name", required=True)
     parser.add_argument(
-        "--revocation-timeout-secs",
+        "--verification-timeout-secs",
         type=float,
-        default=300.0,
-        help="Bounded wait for forced disconnect and explicit old-JWT denial.",
+        default=30.0,
+        help="Bounded wait for explicit old-JWT authorization denial.",
     )
     parser.add_argument(
         "--issuer-public-key",
         default=os.environ.get("CRUCIBLE_NATS_ISSUER_ACCOUNT_NKEY", ""),
-        help="Pinned runner-control NATS Account public NKey.",
+        help="Optional pin override; persisted authority remains canonical.",
     )
 
 
@@ -101,7 +123,7 @@ def _add_identity_arguments(parser: argparse.ArgumentParser) -> None:
         "--trading-mode",
         choices=("sandbox", "testnet", "live"),
         required=True,
-        help="Exact mode authority to enroll, rotate, activate or verify.",
+        help="Exact mode authority to operate or verify.",
     )
 
 
@@ -119,22 +141,20 @@ def run(args: argparse.Namespace) -> int:
         machine_credential = MachineCredentialVault(machine_vault_path).load()
         machine_credential.assert_binding(metadata)
         vault = RunnerNatsTransportVault(args.transport_vault_dir, args.trading_mode)
+
         if args.transport_action == "verify":
             bundle = vault.load()
             if bundle.active is None:
-                raise RunnerNatsTransportError(
-                    "NATS transport has no active generation; run activate"
-                )
-            if bundle.retiring is not None:
-                raise RunnerNatsTransportError(
-                    "NATS transport has unresolved retiring-generation evidence"
-                )
+                raise RunnerNatsTransportError("NATS transport has no active generation")
+            if bundle.pending_operation is not None:
+                raise RunnerNatsTransportError("NATS transport has a pending operation; run resume")
+            issuer = _bound_issuer(args.issuer_public_key, bundle)
             RunnerNatsTransportConnectionProfile(
                 credential=bundle.active,
                 nats_url=args.nats_url,
                 ca_path=args.nats_ca,
                 server_name=args.nats_server_name,
-                pinned_issuer_public_key=_required_issuer(args.issuer_public_key),
+                pinned_issuer_public_key=issuer,
             )
             print(
                 "NATS transport verified: "
@@ -152,71 +172,154 @@ def run(args: argparse.Namespace) -> int:
         )
         if args.transport_action == "enroll":
             if vault.path.exists():
-                raise RunnerNatsTransportError("NATS transport vault already exists; use rotate")
-            pending = authority.issue_initial(
+                raise RunnerNatsTransportError("NATS transport vault already exists")
+            operation = authority.prepare_initial(
+                authorization_intent_id=args.authorization_intent_id,
                 trading_mode=args.trading_mode,
                 expected_issuer_public_key=_required_issuer(args.issuer_public_key),
             )
-            bundle = RunnerNatsTransportBundle(active=None, pending=pending)
-        elif args.transport_action == "rotate":
+            bundle = RunnerNatsTransportBundle(
+                active=None,
+                pending_operation=operation,
+            )
+            vault.persist(bundle, age_recipient=age_recipient)
+        elif args.transport_action in {"rotate", "revoke"}:
             bundle = vault.load()
             if bundle.active is None:
-                raise RunnerNatsTransportError("cannot rotate without an active generation")
-            if bundle.pending is not None:
                 raise RunnerNatsTransportError(
-                    "pending generation must be activated before another rotation"
+                    f"cannot {args.transport_action} without active authority"
                 )
-            if bundle.retiring is not None:
+            if bundle.pending_operation is not None:
                 raise RunnerNatsTransportError(
-                    "retiring generation must complete before another rotation"
+                    "pending NATS operation must be resumed before another operation"
                 )
-            if args.issuer_public_key and args.issuer_public_key != bundle.active.issuer_public_key:
-                raise RunnerNatsTransportError("rotation issuer pin differs from active authority")
-            pending = authority.issue_rotation(bundle.active)
-            bundle = RunnerNatsTransportBundle(active=bundle.active, pending=pending)
-        elif args.transport_action == "activate":
+            _bound_issuer(args.issuer_public_key, bundle)
+            if args.transport_action == "rotate":
+                operation = authority.prepare_rotation(
+                    bundle.active,
+                    authorization_intent_id=args.authorization_intent_id,
+                )
+            else:
+                operation = authority.prepare_revocation(
+                    bundle.active,
+                    authorization_intent_id=args.authorization_intent_id,
+                )
+            bundle = bundle.with_pending_operation(operation)
+            vault.persist(bundle, age_recipient=age_recipient)
+        elif args.transport_action == "resume":
             bundle = vault.load()
-            if bundle.pending is None and bundle.retiring is None:
-                raise RunnerNatsTransportError(
-                    "NATS transport has no pending or retiring generation"
-                )
+            if bundle.pending_operation is None:
+                raise RunnerNatsTransportError("NATS transport has no pending operation")
+            _bound_issuer(args.issuer_public_key, bundle)
         else:
             raise RunnerNatsTransportError("a nats-transport action is required")
 
-        vault.persist(bundle, age_recipient=age_recipient)
-        promoted = asyncio.run(
-            _activate_and_complete_retirement(
+        assert bundle.pending_operation is not None
+        completion = authority.execute(
+            bundle.pending_operation,
+            timeout_seconds=float(args.operation_timeout_secs),
+        )
+        completed = asyncio.run(
+            _verify_and_commit(
                 args=args,
-                authority=authority,
                 vault=vault,
                 bundle=bundle,
+                completion=completion,
                 age_recipient=age_recipient,
             )
         )
-        assert promoted.active is not None
+        if completed is None:
+            print(
+                "NATS transport revoked: "
+                f"operation_id={completion.operation_id} "
+                f"receipt={completion.revocation_receipt_digest}"
+            )
+            return 0
+        assert completed.active is not None
         print(
             "NATS transport active: "
-            f"tenant_id={promoted.active.tenant_id} "
-            f"runner_id={promoted.active.runner_id} "
-            f"trading_mode={promoted.active.trading_mode} "
-            f"generation={promoted.active.credential_generation}"
+            f"tenant_id={completed.active.tenant_id} "
+            f"runner_id={completed.active.runner_id} "
+            f"trading_mode={completed.active.trading_mode} "
+            f"generation={completed.active.credential_generation}"
         )
         return 0
-    except (MachineCredentialError, RunnerNatsTransportError, OSError, ValueError) as exc:
+    except (
+        MachineCredentialError,
+        MachineCredentialTransportError,
+        RunnerNatsTransportError,
+        OSError,
+        ValueError,
+    ) as exc:
         print(f"NATS transport operation failed closed: {exc}", file=sys.stderr)
         return 1
+
+
+async def _verify_and_commit(
+    *,
+    args: argparse.Namespace,
+    vault: RunnerNatsTransportVault,
+    bundle: RunnerNatsTransportBundle,
+    completion: RunnerNatsTransportOperationCompletion,
+    age_recipient: str,
+) -> RunnerNatsTransportBundle | None:
+    operation = bundle.pending_operation
+    if operation is None or completion.operation_id != operation.operation_id:
+        raise RunnerNatsTransportError("NATS completion has no matching pending operation")
+    issuer = operation.expected_issuer_public_key
+    if operation.operation_kind in {"issue", "rotate"}:
+        credential = completion.credential
+        if credential is None:
+            raise RunnerNatsTransportError("completed NATS operation has no credential")
+        profile = _connection_profile(args, credential, issuer)
+        connection = await _connect(
+            profile,
+            name=f"custos-transport-activate-{credential.runner_id}",
+            allow_reconnect=False,
+            max_reconnect_attempts=0,
+        )
+        await _close(connection)
+        if bundle.active is not None:
+            await _assert_denied(args, bundle.active, issuer)
+        completed = bundle.complete_with(credential)
+        vault.persist(completed, age_recipient=age_recipient)
+        return completed
+
+    if completion.credential is not None or completion.revocation_receipt_digest is None:
+        raise RunnerNatsTransportError("completed NATS revocation result is invalid")
+    if bundle.active is None:
+        raise RunnerNatsTransportError("NATS revocation has no active local authority")
+    await _assert_denied(args, bundle.active, issuer)
+    vault.delete()
+    return None
+
+
+async def _assert_denied(
+    args: argparse.Namespace,
+    credential: Any,
+    issuer: str,
+) -> None:
+    timeout = float(args.verification_timeout_secs)
+    if timeout <= 0:
+        raise RunnerNatsTransportError("NATS verification timeout must be positive")
+    await assert_old_generation_reconnect_denied(
+        _connection_profile(args, credential, issuer),
+        name=f"custos-transport-denial-{credential.runner_id}",
+        timeout_seconds=timeout,
+    )
 
 
 def _connection_profile(
     args: argparse.Namespace,
     credential: Any,
+    issuer: str,
 ) -> RunnerNatsTransportConnectionProfile:
     return RunnerNatsTransportConnectionProfile(
         credential=credential,
         nats_url=args.nats_url,
         ca_path=args.nats_ca,
         server_name=args.nats_server_name,
-        pinned_issuer_public_key=_required_issuer(args.issuer_public_key),
+        pinned_issuer_public_key=issuer,
     )
 
 
@@ -235,7 +338,7 @@ async def _connect(
         )
     except RunnerNatsTransportError:
         raise
-    except Exception as exc:  # noqa: BLE001 - normalize NATS client implementation errors
+    except Exception as exc:  # noqa: BLE001 - normalize NATS client errors
         raise RunnerNatsTransportError("cannot establish pinned runner NATS session") from exc
 
 
@@ -244,174 +347,24 @@ async def _close(connection: Any | None) -> None:
         await connection.close()
 
 
-def _remaining_timeout(args: argparse.Namespace, expires_at: datetime) -> float:
-    configured = float(args.revocation_timeout_secs)
-    if configured <= 0:
-        raise RunnerNatsTransportError("revocation timeout must be positive")
-    remaining = (expires_at - datetime.now(UTC)).total_seconds()
-    if remaining <= 0:
-        raise RunnerNatsTransportError("runner-control revocation challenge expired")
-    return min(configured, remaining)
-
-
-async def _activate_and_complete_retirement(
-    *,
-    args: argparse.Namespace,
-    authority: RunnerNatsTransportAuthorityClient,
-    vault: RunnerNatsTransportVault,
-    bundle: RunnerNatsTransportBundle,
-    age_recipient: str,
-) -> RunnerNatsTransportBundle:
-    pending_connection: Any | None = None
-    retiring_connection: Any | None = None
-    retiring_profile: RunnerNatsTransportConnectionProfile | None = None
-    replacement_connected_at: datetime | None = None
-    try:
-        if bundle.pending is not None:
-            pending_profile = _connection_profile(args, bundle.pending)
-            pending_connection = await _connect(
-                pending_profile,
-                name=f"custos-transport-activate-{bundle.pending.runner_id}",
-                allow_reconnect=False,
-                max_reconnect_attempts=0,
-            )
-            replacement_connected_at = datetime.now(UTC)
-            if bundle.active is not None:
-                retiring_profile = _connection_profile(args, bundle.active)
-                retiring_connection = await _connect(
-                    retiring_profile,
-                    name=f"custos-transport-retire-{bundle.active.runner_id}",
-                    allow_reconnect=True,
-                    max_reconnect_attempts=1,
-                )
-            activation = authority.activate(bundle.pending)
-            bundle = bundle.promote_pending()
-            vault.persist(bundle, age_recipient=age_recipient)
-            await _close(pending_connection)
-            pending_connection = None
-            if bundle.retiring is None:
-                return bundle
-            expected_active_revision = activation["revision"]
-        elif bundle.retiring is not None:
-            if bundle.active is None:
-                raise RunnerNatsTransportError(
-                    "retiring NATS generation has no replacement active generation"
-                )
-            expected_active_revision = (
-                bundle.revocation.challenge.expected_binding_revision
-                if bundle.revocation is not None
-                else authority.activate(bundle.active)["revision"]
-            )
-            if bundle.revocation is None:
-                active_profile = _connection_profile(args, bundle.active)
-                pending_connection = await _connect(
-                    active_profile,
-                    name=f"custos-transport-resume-{bundle.active.runner_id}",
-                    allow_reconnect=False,
-                    max_reconnect_attempts=0,
-                )
-                replacement_connected_at = datetime.now(UTC)
-                retiring_profile = _connection_profile(args, bundle.retiring)
-                retiring_connection = await _connect(
-                    retiring_profile,
-                    name=f"custos-transport-retire-{bundle.retiring.runner_id}",
-                    allow_reconnect=True,
-                    max_reconnect_attempts=1,
-                )
-        else:
-            raise RunnerNatsTransportError("NATS transport has no pending or retiring generation")
-
-        assert bundle.retiring is not None
-        retiring = bundle.retiring
-        observation = bundle.revocation
-        if observation is None:
-            if retiring_profile is None or retiring_connection is None:
-                raise RunnerNatsTransportError(
-                    "old-generation session is required before broker revocation"
-                )
-            try:
-                challenge = authority.revoke_superseded(
-                    retiring,
-                    expected_active_revision=expected_active_revision,
-                    reason="Custos replacement generation activated",
-                )
-            except MachineCredentialTransportError:
-                challenge = authority.read_revocation_challenge(retiring)
-            if bundle.active is None or replacement_connected_at is None:
-                raise RunnerNatsTransportError(
-                    "replacement generation connectivity was not observed"
-                )
-            bundle = bundle.with_revocation(
-                RunnerNatsRevocationObservation(
-                    challenge=challenge,
-                    replacement_authority_id=(bundle.active.authority_id),
-                    replacement_generation=bundle.active.credential_generation,
-                    replacement_connected_at=replacement_connected_at,
-                    challenge_validated_at=datetime.now(UTC),
-                )
-            )
-            observation = bundle.revocation
-            assert observation is not None
-            vault.persist(bundle, age_recipient=age_recipient)
-            try:
-                await asyncio.wait_for(
-                    retiring_profile.wait_disconnected(),
-                    timeout=_remaining_timeout(args, challenge.expires_at),
-                )
-            except TimeoutError as exc:
-                raise RunnerNatsTransportError(
-                    "old NATS generation did not report forced disconnect"
-                ) from exc
-            bundle = bundle.with_revocation(observation.mark_forced_disconnect(datetime.now(UTC)))
-            observation = bundle.revocation
-            assert observation is not None
-            vault.persist(bundle, age_recipient=age_recipient)
-        else:
-            current = authority.read_revocation_challenge(retiring)
-            if current != observation.challenge:
-                raise RunnerNatsTransportError(
-                    "persisted revocation challenge differs from Crucible"
-                )
-            if observation.forced_disconnect_observed_at is None:
-                raise RunnerNatsTransportError(
-                    "forced-disconnect observation was not durable before restart"
-                )
-
-        if observation.old_generation_reconnect_denied_at is None:
-            await _close(retiring_connection)
-            retiring_connection = None
-            denial_profile = _connection_profile(args, retiring)
-            await assert_old_generation_reconnect_denied(
-                denial_profile,
-                name=f"custos-transport-denial-{retiring.runner_id}",
-                timeout_seconds=_remaining_timeout(args, observation.challenge.expires_at),
-            )
-            bundle = bundle.with_revocation(observation.mark_reconnect_denied(datetime.now(UTC)))
-            observation = bundle.revocation
-            assert observation is not None
-            vault.persist(bundle, age_recipient=age_recipient)
-
-        current = authority.read_revocation_challenge(retiring)
-        if current != observation.challenge:
-            raise RunnerNatsTransportError(
-                "revocation challenge changed before evidence submission"
-            )
-        completed_at = authority.submit_revocation_evidence(
-            observation,
-            reason="Custos observed forced disconnect and exact old-JWT denial",
-        )
-        bundle = bundle.complete_retirement(completed_at)
-        vault.persist(bundle, age_recipient=age_recipient)
-        return bundle
-    finally:
-        await _close(pending_connection)
-        await _close(retiring_connection)
+def _bound_issuer(value: str, bundle: RunnerNatsTransportBundle) -> str:
+    expected = (
+        bundle.pending_operation.expected_issuer_public_key
+        if bundle.pending_operation is not None
+        else bundle.active.issuer_public_key
+        if bundle.active is not None
+        else ""
+    )
+    supplied = value.strip()
+    if supplied and supplied != expected:
+        raise RunnerNatsTransportError("issuer pin differs from persisted authority")
+    return _required_issuer(expected)
 
 
 def _required_issuer(value: str) -> str:
     issuer = value.strip()
     if not issuer:
         raise RunnerNatsTransportError(
-            "--issuer-account-public-nkey or CRUCIBLE_NATS_ISSUER_ACCOUNT_NKEY is required"
+            "--issuer-public-key or CRUCIBLE_NATS_ISSUER_ACCOUNT_NKEY is required"
         )
     return issuer
