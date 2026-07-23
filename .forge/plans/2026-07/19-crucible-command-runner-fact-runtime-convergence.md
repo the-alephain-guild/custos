@@ -1244,7 +1244,12 @@ Partial configuration is a startup error; registry credentials are paired and
 the token is environment-only. Development material remains a distinct,
 non-promotable branch of the same V1 authority response and is never a fallback.
 
-The focused gate passes 62 tests, Ruff and mypy over all changed modules. The
-remaining Plan 19 boundary is launched evidence: real Crucible HTTP/PG, registry
-and Sigstore verification, NATS delivery/redelivery, engine action, atomic
-applied-state plus lifecycle outbox commit, and signed RunnerFact PubAck.
+The focused gate passes 62 tests, Ruff and mypy over all changed modules.
+Custos `45d41fad5f7649fef0e93242071e686ee42ab51c` subsequently replaces the daemon's
+untyped engine/fact-host factory and variadic lifecycle-store protocol with the
+exact first-production interfaces; the daemon and lifecycle module now pass
+mypy together, with 33 lifecycle/command/composition tests and Ruff green.
+
+The remaining Plan 19 boundary is launched evidence: real Crucible HTTP/PG,
+registry and Sigstore verification, NATS delivery/redelivery, engine action,
+atomic applied-state plus lifecycle outbox commit, and signed RunnerFact PubAck.
