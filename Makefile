@@ -3,7 +3,7 @@
 # Standalone open-source repository entrypoint. Standardized validation targets
 # keep shell execution deterministic and avoid permission drift from ad-hoc commands.
 
-.PHONY: help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation clean toolkit-sync-check strategy-contract-assets check-strategy-contract-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
+.PHONY: help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation clean toolkit-sync-check strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
 
 # Default target: help
 .DEFAULT_GOAL := help
@@ -196,7 +196,10 @@ check-toolkit-extraction:
 	uv run python scripts/check-toolkit-extraction.py
 	uv run --package custos-runner --extra dev --extra nautilus python scripts/check-toolkit-typing-closure.py
 
-check-authority: check-strategy-contract-assets check-toolkit-extraction
+check-runner-machine-request-consumer-assets:
+	uv run python scripts/generate_runner_machine_request_consumer_assets.py --check
+
+check-authority: check-strategy-contract-assets check-toolkit-extraction check-runner-machine-request-consumer-assets
 	@/usr/bin/python3 scripts/check-authority-docs.py
 
 verify: check-authority

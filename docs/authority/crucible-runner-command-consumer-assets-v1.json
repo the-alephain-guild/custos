@@ -6,13 +6,13 @@
   "consumer_assets": [
     {
       "path": "src/custos/contracts/crucible_runner_command.py",
-      "sha256": "d1a3aa7ebe92d54824e15714faf37348ef056efa769d2d739278c588455865ca",
-      "size_bytes": 13914
+      "sha256": "72d26e8d29f06ced25b21c637e081b82ba08c1377f930f9f0bd3dade9ebc72ff",
+      "size_bytes": 13936
     },
     {
       "path": "tests/test_runner_deployment_command_golden.py",
-      "sha256": "0b9639abd35006186f388c99d5d9a34720d3849a550f6f246467b83699c3ab6c",
-      "size_bytes": 4675
+      "sha256": "8e6e832d3304c4daae62470244f98316a4819959a8a9851023583138501cafa6",
+      "size_bytes": 4677
     },
     {
       "path": "docs/authority/runner-deployment-command-golden-v1.json",
@@ -29,8 +29,8 @@
   "consumer_model": {
     "path": "src/custos/contracts/crucible_runner_command.py",
     "public_export": "CrucibleRunnerDeploymentCommandV1",
-    "sha256": "d1a3aa7ebe92d54824e15714faf37348ef056efa769d2d739278c588455865ca",
-    "size_bytes": 13914
+    "sha256": "72d26e8d29f06ced25b21c637e081b82ba08c1377f930f9f0bd3dade9ebc72ff",
+    "size_bytes": 13936
   },
   "consumer_scope": [
     "deployment_spec_command",

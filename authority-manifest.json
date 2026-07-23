@@ -369,6 +369,7 @@
       "scripts/check-toolkit-extraction.py",
       "scripts/check-toolkit-typing-baseline.py",
       "scripts/check-toolkit-typing-closure.py",
+      "scripts/generate_runner_machine_request_consumer_assets.py",
       "scripts/generate_strategy_contract_assets.py",
       "scripts/generate_runner_fact_contract.py",
       "scripts/toolkit_rc_oci.py",
