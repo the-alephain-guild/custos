@@ -1268,6 +1268,10 @@ order semantics.
 The final gate passes 581 tests with 14 capability-based skips and one
 documented xfail, followed by generated authority drift checks, the 241/241
 zero-rewrite extraction gate, and strict mypy closure for both toolkit
-packages. This closes the known base-profile collection and composition debt;
+packages. The independent `make verify-nt` gate passes 639 tests with 6
+capability-based skips and one documented xfail, including the real Nautilus
+host, Binance venue, execution safety boundary and toolkit adapter.
+
+This closes the known base-profile and NT-profile local code/verification debt;
 it does not replace the still-open launched HTTP/PG, registry/Sigstore,
 NATS/engine and RunnerFact PubAck receipts.
