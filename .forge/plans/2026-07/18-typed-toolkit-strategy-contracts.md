@@ -732,7 +732,7 @@ git commit -m "docs(custos): mark plan 18 as completed"
 | Old contract/runtime generations | removed | old runtime module and command-owned evidence path are absent |
 | PS V1 handoff | pending final pins | PS source uses the sole V1 OCI topology |
 | Crucible V1 handoff | Custos contract exact; artifact acceptance open | final Custos producer receipt is pinned at Crucible `014edd4`; real PS publication and Plan 88 C6 native acceptance remain open |
-| Runtime activation | sandbox ready; production authority focused verified | development-source runtime passes; Crucible `10b85e4` exposes complete production authority and Custos `4ad12b2` strictly consumes it; immutable OCI materialization, daemon composition and real publication remain open |
+| Runtime activation | sandbox ready; production clone-local path ready | development-source runtime passes; Crucible `10b85e4` exposes complete production authority; Custos `4ad12b2` validates it and `d926ab0` composes immutable OCI acquisition, cache, trust policy and activation; real publication and launched receipts remain open |
 | Production/live | STOP | requires final exact-byte receipts and real runtime evidence |
 
 ## Deviations and Improvements
@@ -793,3 +793,26 @@ This is a clone-local producer/consumer contract checkpoint, not T5e or
 production readiness. Immutable OCI execution-byte acquisition, daemon trust
 composition, real machine-authenticated HTTP/PG, Sigstore, engine activation and
 RunnerFact receipts remain mandatory.
+
+## 2026-07-23 immutable execution material checkpoint
+
+Custos `d926ab0` implements the production side of the sole V1 artifact path.
+It accepts only signed detached OCI coordinates from one configured HTTPS
+registry, acquires the detached statement, Sigstore bundle and exact strategy
+wheel by digest, writes immutable content-addressed cache entries atomically,
+and verifies the ArtifactRef-declared execution members before activation. The
+runtime no longer treats the full release BOM as a list of runner-local files:
+PS source, SBOM and other non-executable provenance remain Crucible-owned
+evidence, while only executable/importable bytes are materialized by Custos.
+
+The daemon now composes the Crucible StrategyRelease authority, signed local
+release policy, trusted Sigstore root, registry transport and artifact cache as
+one all-or-none production trust configuration. A partial configuration fails
+startup, private-registry username/token must be paired, and production
+resolution cannot fall back to development material.
+
+The focused gate passes 62 tests plus Ruff and mypy over the changed modules.
+This proves clone-local parsing, acquisition, cache, quarantine and composition;
+it does not prove a real registry pull, Sigstore verification, Crucible HTTP/PG
+lookup, engine activation or RunnerFact publication. T5e and production/live
+remain open until those launched receipts exist.

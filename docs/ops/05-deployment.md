@@ -103,6 +103,28 @@ signed event, canonical digest, tenant, runner, deployment instance and
 generation, then resolves StrategyRelease material through the authenticated
 owner boundary.
 
+Production StrategyRelease execution additionally requires the following
+environment variables as one complete trust configuration:
+
+```bash
+export CUSTOS_ARTIFACT_CACHE_DIR=/var/lib/custos/artifacts
+export CUSTOS_ARTIFACT_RELEASE_POLICY_ENVELOPE=/etc/custos/artifact-release-policy.json
+export CUSTOS_ARTIFACT_RELEASE_POLICY_PUBLIC_KEY=/etc/custos/artifact-release-policy.pub
+export CUSTOS_ARTIFACT_SIGSTORE_TRUSTED_ROOT=/etc/custos/sigstore-trusted-root.json
+export CUSTOS_ARTIFACT_RELEASE_POLICY_KEY_ID=custos-artifact-release-policy-v1
+export CUSTOS_ARTIFACT_REGISTRY=ghcr.io
+```
+
+For a private registry, also set
+`CUSTOS_ARTIFACT_REGISTRY_USERNAME` and
+`CUSTOS_ARTIFACT_REGISTRY_TOKEN` together. The token intentionally has no CLI
+flag so it cannot enter process arguments. Custos accepts only signed detached
+material coordinates on the configured HTTPS registry, verifies the complete
+Crucible snapshot and evidence chain, and stores immutable blobs under
+`$CUSTOS_ARTIFACT_CACHE_DIR/sha256/<digest>`. Missing or partial production
+trust configuration fails startup; an unavailable production resolver never
+falls back to development material.
+
 Live execution requires a Crucible-issued `promotion_id` and
 `promotion_evidence_digest`. Custos validates their presence but does not count
 human approvers or implement separation-of-duties policy.

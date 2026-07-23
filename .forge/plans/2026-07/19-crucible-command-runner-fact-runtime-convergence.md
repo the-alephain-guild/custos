@@ -1228,3 +1228,23 @@ daemon still composes the fail-closed production default because immutable OCI
 execution-byte acquisition, runner-local signed trust material and a real
 StrategyRelease publication receipt are not yet present. No live, runtime-RC or
 command-to-fact readiness is inferred.
+
+## 2026-07-23 immutable materialization and daemon composition
+
+Custos `d926ab0` closes the clone-local implementation gap between the
+StrategyRelease authority response and the shared activation boundary. The
+production resolver now acquires signed detached OCI material from an
+allowlisted HTTPS registry, caches it by digest without overwrite, validates
+the exact strategy wheel and its required runtime members, and supplies only
+verified execution bytes to quarantine and activation.
+
+The daemon composes this resolver only when the artifact cache, signed local
+release-policy envelope and key, and trusted Sigstore root are all present.
+Partial configuration is a startup error; registry credentials are paired and
+the token is environment-only. Development material remains a distinct,
+non-promotable branch of the same V1 authority response and is never a fallback.
+
+The focused gate passes 62 tests, Ruff and mypy over all changed modules. The
+remaining Plan 19 boundary is launched evidence: real Crucible HTTP/PG, registry
+and Sigstore verification, NATS delivery/redelivery, engine action, atomic
+applied-state plus lifecycle outbox commit, and signed RunnerFact PubAck.
