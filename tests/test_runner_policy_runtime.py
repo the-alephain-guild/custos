@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from custos.contracts.crucible_runner_safety_policy import (
     CrucibleRunnerSafetyPolicyAuthenticator,
     RunnerAggregateCapPolicyRefV1,
+    RunnerSafetyPolicyVerificationError,
     VerifiedRunnerSafetyPolicy,
 )
 from custos.core.fallback_breaker import FallbackBreakerConfig
@@ -72,6 +73,7 @@ def _verified_policy(
     max_total: str = "500",
     effective_at: str = "2026-07-15T00:00:00Z",
     expires_at: str = "2026-08-15T00:00:00Z",
+    actor_assertion_jti: str | None = "30000000-0000-4000-8000-000000000003",
 ) -> VerifiedRunnerSafetyPolicy:
     body = {
         "schema_version": 1,
@@ -106,7 +108,7 @@ def _verified_policy(
         "event_type": "RunnerAggregateCapPolicyV1",
         "payload": payload,
         "correlation_id": "30000000-0000-4000-8000-000000000002",
-        "actor_assertion_jti": "30000000-0000-4000-8000-000000000003",
+        "actor_assertion_jti": actor_assertion_jti,
         "occurred_at": "2026-07-15T00:00:01Z",
     }
     event_bytes = json.dumps(event, separators=(",", ":")).encode()
@@ -257,6 +259,41 @@ async def test_scope_status_effective_and_expiry_are_enforced_after_restart(
 
 
 @pytest.mark.asyncio
+async def test_system_expiry_is_accepted_with_null_actor_jti_and_fails_closed(
+    tmp_path: Path,
+) -> None:
+    private_key = Ed25519PrivateKey.generate()
+    store = _store(tmp_path / "system-expired.sqlite3")
+    active = _verified_policy(private_key)
+    await store.record_verified_runner_safety_policy(active)
+    expired = _verified_policy(
+        private_key,
+        revision=2,
+        previous=_prior(active),
+        status="expired",
+        effective_at="2026-07-15T00:00:00Z",
+        expires_at="2026-07-15T12:00:00Z",
+        actor_assertion_jti=None,
+    )
+
+    await store.record_verified_runner_safety_policy(expired)
+
+    with pytest.raises(RunnerStateAuthorityError, match="not active"):
+        await store.load_effective_runner_safety_policy("sandbox", now=NOW)
+
+
+def test_policy_event_actor_and_status_contract_is_closed() -> None:
+    private_key = Ed25519PrivateKey.generate()
+
+    with pytest.raises(RunnerSafetyPolicyVerificationError, match="actor_assertion_jti"):
+        _verified_policy(private_key, actor_assertion_jti=None)
+    with pytest.raises(RunnerSafetyPolicyVerificationError, match="system-expired"):
+        _verified_policy(private_key, status="expired")
+    with pytest.raises(RunnerSafetyPolicyVerificationError, match="status"):
+        _verified_policy(private_key, status="superseded")
+
+
+@pytest.mark.asyncio
 async def test_cap_and_breaker_only_use_verified_policy_or_non_live_fallback() -> None:
     private_key = Ed25519PrivateKey.generate()
     policy = _verified_policy(private_key).policy
@@ -291,18 +328,18 @@ async def test_cap_and_breaker_only_use_verified_policy_or_non_live_fallback() -
 
 
 @pytest.mark.asyncio
-async def test_durable_resolver_returns_verified_policy_but_is_not_daemon_capability(
+async def test_durable_resolver_uses_valid_owner_policy_for_live_and_fails_closed_without_one(
     tmp_path: Path,
 ) -> None:
     private_key = Ed25519PrivateKey.generate()
     store = _store(tmp_path / "runner-state.sqlite3")
-    verified = _verified_policy(private_key)
+    verified = _verified_policy(private_key, trading_mode="live")
     await store.record_verified_runner_safety_policy(verified)
     resolver = DurableRunnerSafetyPolicyResolver(store=store, now=lambda: NOW)
 
-    limits = await resolver.resolve("sandbox")
+    limits = await resolver.resolve("live")
 
     assert limits.policy_id == verified.policy.policy_id
     assert limits.owner_policy is True
-    assert resolver.runtime_publication_receipt_present is False
-    assert resolver.live_capability is False
+    with pytest.raises(RunnerStateAuthorityError, match="missing"):
+        await resolver.resolve("testnet")

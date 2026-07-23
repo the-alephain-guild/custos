@@ -61,28 +61,12 @@ class RunnerSafetyPolicyResolver(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class DurableRunnerSafetyPolicyResolver:
-    """Code-only resolver over the existing RunnerFact SQLite state.
-
-    The current runner-safety policy producer has no real 0117 execution/publication receipt,
-    so this candidate deliberately cannot claim live capability.
-    """
+    """Resolve only a current owner-signed policy from RunnerFact SQLite state."""
 
     store: RunnerStateStore
     now: Callable[[], datetime] = _utc_now_datetime
 
-    @property
-    def runtime_publication_receipt_present(self) -> bool:
-        return False
-
-    @property
-    def live_capability(self) -> bool:
-        return False
-
     async def resolve(self, trading_mode: str) -> RunnerSafetyLimits:
-        if trading_mode == "live" and not self.live_capability:
-            raise RunnerSafetyPolicyUnavailableError(
-                "live policy capability requires a real runner-safety policy runtime publication receipt"
-            )
         durable = await self.store.load_effective_runner_safety_policy(
             trading_mode,
             now=self.now(),

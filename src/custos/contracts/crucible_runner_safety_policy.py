@@ -138,7 +138,7 @@ class RunnerAggregateCapPolicyV1(BaseModel):
     risk_reducing_orders: Literal["always_permitted"]
     effective_at: datetime
     expires_at: datetime
-    status: Literal["active", "superseded", "revoked", "expired"]
+    status: Literal["active", "revoked", "expired"]
     previous: RunnerAggregateCapPolicyRefV1 | None
     policy_digest: Digest
 
@@ -313,7 +313,7 @@ def _parse_exact_event(*, subject: str, event_bytes: bytes) -> RunnerAggregateCa
         raise ValueError("event document is not exact compact JSON")
     if event["schema_version"] != 1:
         raise ValueError("event schema_version must be exactly 1")
-    for field in ("event_id", "correlation_id", "actor_assertion_jti"):
+    for field in ("event_id", "correlation_id"):
         _require_canonical_uuid(event[field], f"event.{field}")
     _require_timestamp(event["occurred_at"], "event.occurred_at")
     event_plane = event["event_plane"]
@@ -342,6 +342,12 @@ def _parse_exact_event(*, subject: str, event_bytes: bytes) -> RunnerAggregateCa
     if payload["policy_digest"] != actual_digest:
         raise ValueError("policy digest differs from runner-safety policy canonical JSON")
     policy = RunnerAggregateCapPolicyV1.model_validate(payload)
+    actor_assertion_jti = event["actor_assertion_jti"]
+    if policy.status == "expired":
+        if actor_assertion_jti is not None:
+            raise ValueError("system-expired policy must not carry an actor assertion JTI")
+    else:
+        _require_canonical_uuid(actor_assertion_jti, "event.actor_assertion_jti")
 
     expected_subject = (
         f"{SUBJECT_PREFIX}.{policy.tenant_id}.{policy.runner_id}.{policy.trading_mode}"
