@@ -1188,3 +1188,19 @@ Validation boundary:
 
 - `make verify-base-clean` reached pytest collection but the existing base profile had removed `requests` and the Nautilus toolkit while those tests still imported both unconditionally. No transport test executed in that failed gate; this unrelated profile drift is not repaired in T15.
 - The current-session Docker-backed `make verify-nats-revocation` rerun was not authorized by the execution environment. The existing real-NATS receipt remains historical evidence; the launched cross-process round trip remains explicitly false.
+
+## 2026-07-23 development command exact-byte handoff
+
+Crucible producer checkpoint
+`d1e850b5021feb899873a91ef23d2f2ba3f665ae` adds a third command golden case
+whose sole V1 DeploymentSpec carries the registered, pathless
+`development_source` snapshot. Custos consumer checkpoint `d232ef8` pins those
+exact bytes, verifies the real Ed25519 envelope, parses the tagged artifact
+source and proves sandbox/non-promotable/promotion-null invariants before the
+existing development runtime resolves local material.
+
+The combined command-intake, development-artifact and runtime focused gate
+passed `41/41`; Ruff, generated-asset drift and standalone authority gates also
+passed. This closes the clone-local development-command contract handoff. Real
+NATS delivery/redelivery, restart and launched engine evidence remain open and
+no production StrategyRelease readiness is inferred.
