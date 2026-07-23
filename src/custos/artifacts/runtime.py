@@ -42,6 +42,69 @@ from custos.contracts.crucible_runner_command import CrucibleRunnerDeploymentCom
 from custos.contracts.deployment import StrategyReleaseArtifactSourceV1
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_UTC_TIMESTAMP = re.compile(
+    r"^(?P<second>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})"
+    r"(?:\.(?P<fraction>[0-9]{1,9}))?Z$"
+)
+_STRATEGY_RELEASE_SNAPSHOT_FIELDS = {
+    "release_id",
+    "definition_id",
+    "lifecycle_version",
+    "release_number",
+    "artifact_ref_digest",
+    "manifest_digest",
+    "release_bom_digest",
+    "artifact_evidence_digest",
+    "validated_at",
+    "snapshot_digest",
+}
+
+
+def _strategy_release_snapshot_digest(snapshot: Mapping[str, object]) -> str:
+    if set(snapshot) != _STRATEGY_RELEASE_SNAPSHOT_FIELDS:
+        raise ValueError("StrategyRelease snapshot shape is not exact V1")
+    try:
+        release_id = UUID(str(snapshot["release_id"]))
+        definition_id = UUID(str(snapshot["definition_id"]))
+    except (ValueError, TypeError) as error:
+        raise ValueError("StrategyRelease snapshot identity is invalid") from error
+    integers: list[bytes] = []
+    for field in ("lifecycle_version", "release_number"):
+        value = snapshot[field]
+        if isinstance(value, bool) or not isinstance(value, int) or value <= 0 or value >= 2**64:
+            raise ValueError(f"StrategyRelease snapshot {field} is invalid")
+        integers.append(value.to_bytes(8, "big"))
+    digests: list[bytes] = []
+    for field in (
+        "artifact_ref_digest",
+        "manifest_digest",
+        "release_bom_digest",
+        "artifact_evidence_digest",
+    ):
+        value = snapshot[field]
+        if not isinstance(value, str) or _SHA256.fullmatch(value) is None:
+            raise ValueError(f"StrategyRelease snapshot {field} is invalid")
+        digests.append(value.encode("ascii"))
+    timestamp = snapshot["validated_at"]
+    match = _UTC_TIMESTAMP.fullmatch(timestamp) if isinstance(timestamp, str) else None
+    if match is None:
+        raise ValueError("StrategyRelease snapshot validated_at is not canonical UTC")
+    validated_at = (
+        f"{match.group('second')}."
+        f"{(match.group('fraction') or '').ljust(9, '0')}Z"
+    ).encode("ascii")
+    hasher = hashlib.sha256()
+    hasher.update(b"strategy-release-snapshot-v1")
+    for part in (
+        release_id.bytes,
+        definition_id.bytes,
+        *integers,
+        *digests,
+        validated_at,
+    ):
+        hasher.update(len(part).to_bytes(8, "big"))
+        hasher.update(part)
+    return hasher.hexdigest()
 
 
 class ArtifactRuntimeBlocked(RuntimeError):
@@ -111,6 +174,7 @@ class StrategyReleaseArtifactAuthorityV1:
     detached_attestation_ref: dict[str, object]
     crucible_artifact_evidence: dict[str, object]
     crucible_artifact_evidence_digest: str
+    crucible_artifact_evidence_digest_input_bytes: bytes
     crucible_artifact_acceptance: dict[str, object]
     crucible_artifact_acceptance_receipt_digest: str
 
@@ -133,14 +197,38 @@ class StrategyReleaseArtifactAuthorityV1:
         ):
             raise ValueError("artifact_ref_digest differs from StrategyArtifactRefV1")
         if (
-            canonical_json_digest(self.crucible_artifact_evidence)
+            hashlib.sha256(self.crucible_artifact_evidence_digest_input_bytes).hexdigest()
             != self.crucible_artifact_evidence_digest
         ):
-            raise ValueError("artifact evidence digest differs from Crucible evidence")
+            raise ValueError("artifact evidence digest differs from Crucible digest input")
+        evidence_input = _strict_json_object(
+            self.crucible_artifact_evidence_digest_input_bytes,
+            "Crucible artifact evidence digest input",
+            require_canonical=False,
+        )
+        expected_evidence_input = dict(self.crucible_artifact_evidence)
+        expected_evidence_input["composite_evidence_digest"] = ""
+        if evidence_input != expected_evidence_input:
+            raise ValueError("artifact evidence differs from Crucible digest input")
+        snapshot = _strict_json_object(
+            self.strategy_release_snapshot_bytes,
+            "StrategyRelease snapshot",
+        )
+        if snapshot != self.crucible_artifact_acceptance:
+            raise ValueError("StrategyRelease snapshot differs from Crucible acceptance")
+        if (
+            self.strategy_release_snapshot_digest
+            != self.crucible_artifact_acceptance_receipt_digest
+        ):
+            raise ValueError("StrategyRelease snapshot digest differs from acceptance receipt")
 
     @property
     def strategy_release_snapshot_digest(self) -> str:
-        return hashlib.sha256(self.strategy_release_snapshot_bytes).hexdigest()
+        snapshot = _strict_json_object(
+            self.strategy_release_snapshot_bytes,
+            "StrategyRelease snapshot",
+        )
+        return _strategy_release_snapshot_digest(snapshot)
 
     def assert_command_binding(self, command: CrucibleRunnerDeploymentCommandV1) -> None:
         source = command.artifact_source
@@ -210,7 +298,12 @@ class ArtifactQuarantineCapability(Protocol):
     ) -> QuarantinedWheel: ...
 
 
-def _strict_json_object(payload: bytes, label: str) -> dict[str, object]:
+def _strict_json_object(
+    payload: bytes,
+    label: str,
+    *,
+    require_canonical: bool = True,
+) -> dict[str, object]:
     def reject_duplicates(pairs: list[tuple[str, object]]) -> dict[str, object]:
         result: dict[str, object] = {}
         for key, value in pairs:
@@ -230,7 +323,9 @@ def _strict_json_object(payload: bytes, label: str) -> dict[str, object]:
             ArtifactVerificationCode.SIGSTORE_EVIDENCE_MISMATCH,
             f"{label} is not strict UTF-8 JSON",
         ) from error
-    if not isinstance(value, dict) or canonical_json_bytes(value) != payload:
+    if not isinstance(value, dict) or (
+        require_canonical and canonical_json_bytes(value) != payload
+    ):
         raise ArtifactVerificationError(
             ArtifactVerificationCode.SIGSTORE_EVIDENCE_MISMATCH,
             f"{label} is not an exact canonical JSON object",
