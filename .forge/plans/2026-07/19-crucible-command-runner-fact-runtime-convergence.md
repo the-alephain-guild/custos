@@ -1028,9 +1028,9 @@ git commit -m "fix(custos): use reliable Nautilus portfolio equity"
 > bytes with receipt SHA-256
 > `32a1aea9c7335529c645f670713110a76b159cf9baaf0301c8dbe0204f4a754d`.
 > Phase A exact-byte handoff and the authenticated clone-local
-> command-to-engine-to-fact-to-PostgreSQL acceptance are complete. The immutable
-> runtime RC, full daemon, production-service authority and all live/production
-> flags remain open.
+> command-to-production-daemon-to-engine-to-fact-to-PostgreSQL acceptance are
+> complete. The immutable runtime RC, production-service-issued authority and
+> all live/production flags remain open.
 
 ### Task 9: Publish the immutable runtime RC / final-candidate
 
@@ -1133,7 +1133,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, policy-bound PubAck and real daemon consumption pending |
 | Machine credential and NATS vault V1 | direct credential plus clone-local authenticated transport ready; production runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; `d7256ec` proves TLS/User-JWT rotation and revoked-generation reconnect denial; `ba562a9` binds the preprovisioned control durable and completes the authenticated same-batch PG acceptance. Control `0029`, deployed durable readback and dual-domain broker receipts remain pending. |
 | RunnerFact V1 | Phase A exact-byte plus authenticated command-derived PG acceptance complete; runtime RC open | producer asset commit `cce7693` and current Crucible receipt `e4b5e1d` are pinned; Custos `ba562a9` and Crucible `79b5acb` prove JetStream control delivery, signed command verification, sandbox engine readiness, commit-before-ACK, broker ack-floor advancement, authenticated lifecycle PubAck and same-batch PostgreSQL projection. Custos `ad7728e` additionally persists exact PubAck evidence before outbox retirement. Immutable artifact activation, production-service credentials and runtime RC remain required. |
-| Local sandbox runtime | authenticated control-durable command-to-Crucible-PG PASS; production owner round trip open | the launched acceptance process binds the existing durable, reaches engine readiness, ACKs only after lifecycle commit, atomically records the PubAck receipt before clearing the outbox and reaches one Crucible lifecycle projector row with the same batch. Immutable PS material and launched production signer/provisioner/server services remain open. |
+| Local sandbox runtime | authenticated control-durable command-to-Crucible-PG PASS through production `run_daemon`; production-issued authority open | the launched production daemon binds the existing durable using explicitly test-issued in-memory authorities, reaches engine readiness, ACKs only after lifecycle commit, atomically records the PubAck receipt before clearing the outbox and reaches one Crucible lifecycle projector row with the same batch. Immutable PS material and launched production signer/provisioner/server services remain open. |
 | Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 production receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 
 The machine-readable boundary is pinned by
@@ -1194,7 +1194,7 @@ the common runtime path.
 
 ## Active T15 contract correction (2026-07-23)
 
-Status: CLONE-LOCAL COMPLETE; LAUNCHED RUNTIME RECEIPT OPEN
+Status: AUTHENTICATED CLONE-LOCAL DAEMON COMPLETE; PRODUCTION-ISSUED AUTHORITY OPEN
 
 - Custos consumes the sole Crucible V1 machine surface: `POST /api/v1/runner-nats/transport-operations` plus authenticated polling of `POST /api/v1/runner-nats/transport-operation-results`. All earlier enroll/rotate/activate/challenge/evidence routes, DTOs and parsers are deleted in place.
 - Before the first network call, Custos MUST atomically persist an encrypted pending operation containing `authorization_intent_id`, `operation_id`, exact mode/generation bindings and the locally generated User NKey seed. Restart resumes the same business operation; it never creates a replacement key or operation implicitly.
@@ -1294,9 +1294,13 @@ untyped engine/fact-host factory and variadic lifecycle-store protocol with the
 exact first-production interfaces; the daemon and lifecycle module now pass
 mypy together, with 33 lifecycle/command/composition tests and Ruff green.
 
-The remaining Plan 19 boundary is launched evidence: real Crucible HTTP/PG,
-registry and Sigstore verification, NATS delivery/redelivery, engine action,
-atomic applied-state plus lifecycle outbox commit, and signed RunnerFact PubAck.
+The remaining Plan 19 boundary is production-issued authority and immutable
+runtime-RC evidence. The authenticated clone-local gate now launches production
+`run_daemon`, uses real Crucible HTTP/PG and NATS delivery, performs the engine
+action, commits applied state plus lifecycle outbox atomically, and durably
+records the signed RunnerFact PubAck. It deliberately uses test-issued
+in-memory authorities and non-immutable sandbox material, so registry/Sigstore,
+CR99/CR100 production issuance and live/runtime promotion remain open.
 
 ## 2026-07-23 clean base runtime gate
 

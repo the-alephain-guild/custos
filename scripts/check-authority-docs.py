@@ -1390,7 +1390,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         "authority_client": resolve("src/custos/core/runner_nats_authority.py"),
         "consumer": resolve("src/custos/core/nats_client.py"),
         "publisher": resolve("src/custos/core/runner_fact.py"),
-        "acceptance": resolve("tests/integration/runner_command_lifecycle_process.py"),
+        "acceptance": resolve("tests/integration/runner_daemon_lifecycle_process.py"),
         "daemon": resolve("src/custos/cli/_daemon.py"),
         "cli": resolve("src/custos/cli/subcommands/nats_transport.py"),
     }
@@ -1505,7 +1505,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
                 "CRUCIBLE_REPO=<crucible-rust> "
                 "make verify-authenticated-runtime-projection"
             ),
-            "custos_code_commit": "ba562a91a3d160293f3f0631c47a954164766662",
+            "custos_code_commit": "cdc4112000874116a2eb6f9eb7c33d457fb3f8b9",
             "crucible_code_commit": "79b5acb9a97bf9639b46ad8be4c25e03412f8092",
             "status": "PASS",
             "tests_passed": 1,
@@ -1513,13 +1513,16 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "canonical_runner_fact_stream_subjects": "crucible.runner.fact.v1.*.*.*",
             "runner_publish_acl_remained_exact": True,
             "command_delivered_via_existing_durable": True,
+            "custos_daemon_launched": True,
             "sandbox_engine_ready": True,
             "command_ack_after_lifecycle_commit": True,
             "runner_fact_puback_observed": True,
+            "durable_puback_receipt": True,
             "same_batch_accepted_by_crucible": True,
             "postgresql_projection_work_count": 1,
             "dynamic_capability_authority_matched": True,
             "immutable_artifact_materialization": False,
+            "production_authority_issued": False,
             "production_services_launched": False,
         }:
             errors.append("authenticated runtime projection evidence differs")
@@ -1623,7 +1626,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("command_delivered_via_jetstream") is not True
         or snapshot.get("authenticated_runtime_projection_gate_passed") is not True
         or snapshot.get("same_batch_accepted_by_crucible_postgresql") is not True
+        or snapshot.get("custos_daemon_launched_in_authenticated_gate") is not True
+        or snapshot.get("durable_puback_receipt_recorded") is not True
         or snapshot.get("immutable_artifact_materialization_in_gate") is not False
+        or snapshot.get("production_authority_issued_in_gate") is not False
         or snapshot.get("crucible_projection_in_authenticated_gate") is not True
         or snapshot.get("sqlite_outbox_empty_after_puback") is not True
     ):

@@ -365,7 +365,10 @@
     "command_delivered_via_jetstream": true,
     "authenticated_runtime_projection_gate_passed": true,
     "same_batch_accepted_by_crucible_postgresql": true,
+    "custos_daemon_launched_in_authenticated_gate": true,
+    "durable_puback_receipt_recorded": true,
     "immutable_artifact_materialization_in_gate": false,
+    "production_authority_issued_in_gate": false,
     "crucible_projection_in_authenticated_gate": true,
     "sqlite_outbox_empty_after_puback": true,
     "local_real_nats_image_id": "sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9",
@@ -406,7 +409,9 @@
       "same_batch_accepted_by_crucible_postgresql": true,
       "immutable_artifact_materialization": false,
       "crucible_projection_observed": true,
-      "production_credential": false
+      "production_credential": false,
+      "sha256": "b4392105c292f0954c615ecb95e1b6c7d875ec0365eb2691a6bffae12c3c1360",
+      "size_bytes": 7356
     },
     "signing_preimage_golden": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
     "signing_preimage_complete": true,
