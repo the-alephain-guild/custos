@@ -1,12 +1,12 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T8a, clone-local development runtime, production StrategyRelease authority consumption and development-local real JetStream RunnerFact PubAck pass; immutable OCI materialization/daemon composition, launched engine-to-Crucible round-trip evidence, physical-mode policy/NATS receipts, runtime RC and T9-T10 remain open
+> **Status**: ⏳ In progress — T2-T8a, clone-local development runtime, production StrategyRelease authority consumption and authenticated TLS/User-JWT RunnerFact PubAck pass; immutable OCI materialization/daemon composition, launched engine-to-Crucible round-trip evidence, physical-mode policy/NATS receipts, runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
-> **Revised**: 2026-07-26 through RunnerFact V1 Phase A exact-byte acceptance
+> **Revised**: 2026-07-26 through authenticated clone-local RunnerFact publication
 > **Project**: Custos
 > **Source**: Audit of pre-plan migration `324da6e`, PS Plan 53, and v1.team review
 > **For Claude**: Use `/forge:execute` to implement this plan.
-> **Immediately executable**: T7 contract handoff is complete; launched policy publication/PubAck acceptance remains gated by real `0117` mode-database and NATS receipts
+> **Immediately executable**: T7 contract handoff and authenticated clone-local PubAck are complete; launched policy-bound daemon publication remains gated by real `0117` mode-database and production NATS receipts
 > **19d-T8a gate**: 19c STOP only; it produces the immutable RunnerFact candidate before Crucible Plan 90 Phase A
 > **Runtime RC gates**: Crucible Plan 89 migration 0116 signed command producer and `CR89-0116-GENERATION-STORAGE`; Crucible Plan 90 Phase-A schema/golden compatibility receipt; Crucible Plan 99 runner-safety-policy-authority; Crucible Plan 100 runner NATS transport authority and revocation receipts; Custos Plan 18 staged candidate and exact final required by the selected RC/final-candidate BOM
 > **Close-out gates**: Crucible Plan 90 Phase-B real runtime round-trip receipt; PS Plan 56 exact final-candidate acceptance
@@ -995,8 +995,11 @@ git commit -m "fix(custos): use reliable Nautilus portfolio equity"
 > schema/golden bytes are vendored and pinned, but credential issuance, durable
 > readback, SIM/LIVE broker evidence and production readiness remain mandatory.
 > The local `make verify-nats-revocation` gate passes against real
-> `nats:2.10-alpine` TLS/User-JWT transport and proves forced disconnect plus
-> old-generation reconnect denial; it is not a CR100 or dual-broker receipt.
+> `nats:2.10-alpine` TLS/User-JWT transport and proves forced disconnect,
+> old-generation reconnect denial, admin-preprovisioned RunnerFact stream,
+> replacement-credential PubAck, exact `Nats-Msg-Id=batch_id` and SQLite outbox
+> deletion only after PubAck. It is clone-local evidence, not a CR100 production
+> or dual-broker receipt.
 
 ### Task 8: Complete the sole RunnerFact V1 contract
 
@@ -1116,11 +1119,11 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | Signed command V1 consumer | development runtime focused verified | consumes real DeploymentSpec domain events; exact-event fingerprint, direct Crucible material resolution, contract assets and authority gate pass |
 | RunnerFact SQLite V1 deep module | focused verified | one store, one outbox and one instance-continuous sequence |
 | Engine lifecycle | local verified; production materialization blocked | 118-test T2-T8a gate passes; production authority contract is consumed at `4ad12b2`, while immutable OCI materialization, trust composition and launched activation remain open |
-| Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, NATS/PubAck and real daemon consumption pending |
-| Machine credential and NATS vault V1 | direct credential contract ready; NATS runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; control `0029`, durable replay receipt, JWT/ACL/durable readback and dual-domain broker evidence pending |
-| RunnerFact V1 | Phase A exact-byte plus local publisher accepted; runtime open | producer asset commit `cce7693`, Crucible consumer code `506afcd` and receipt `818242c` are pinned; Custos `c7d6f8b` launches an independent publisher process, receives PubAck, and that same dynamic batch reaches Crucible accepted state plus lifecycle projector work. Authenticated daemon/engine round trip and immutable runtime RC remain required. |
-| Local sandbox runtime | real publisher PASS; launched engine receipt open | instance-bound development material reaches the common runtime path; local JetStream publication passes `1/1`, while real command redelivery, engine launch and same-batch Crucible projection remain required |
-| Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 real receipts, runtime RC, Phase B and PS56 acceptance remain absent |
+| Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, policy-bound PubAck and real daemon consumption pending |
+| Machine credential and NATS vault V1 | direct credential plus clone-local authenticated transport ready; production runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; `d7256ec` proves TLS/User-JWT rotation, revoked-generation reconnect denial and replacement-credential PubAck. Control `0029`, deployed durable readback and dual-domain broker receipts remain pending. |
+| RunnerFact V1 | Phase A exact-byte plus authenticated local publisher accepted; runtime open | producer asset commit `cce7693`, Crucible consumer code `506afcd` and receipt `818242c` are pinned; Custos `c7d6f8b` launches the publisher and `d7256ec` proves signed TLS publication. The same dynamic development batch reaches Crucible accepted state plus lifecycle projector work. One authenticated daemon/engine-to-Crucible round trip and immutable runtime RC remain required. |
+| Local sandbox runtime | authenticated publisher PASS; launched engine receipt open | replacement Runner JWT reaches a preprovisioned stream and clears the durable outbox after PubAck; the development same-batch gate reaches Crucible projection. Real command redelivery, engine launch and one unified authenticated round trip remain required. |
+| Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 production receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 
 The machine-readable boundary is pinned by
 `docs/authority/crucible-runner-machine-request-consumer-assets-v1.json` and
@@ -1202,7 +1205,11 @@ Validation boundary:
 - `make verify-base-clean` reached pytest collection but the existing base profile had removed `requests` and the Nautilus toolkit while those tests still imported both unconditionally. No transport test executed in that failed gate; this unrelated profile drift is not repaired in T15.
 - The current-session Docker-backed `make verify-nats-revocation` gate passes
   `1/1` against real TLS/User-JWT NATS and proves forced disconnect plus
-  old-generation reconnect denial.
+  old-generation reconnect denial. At Custos `d7256ec`, the same gate also uses
+  an independent admin JWT to preprovision the RunnerFact stream and launches
+  the production outbox/publisher under the replacement Runner JWT; PubAck,
+  `Nats-Msg-Id=batch_id` and post-PubAck SQLite deletion all pass without giving
+  the Runner stream-admin authority.
 - `make verify-runner-fact-publication` passes `1/1` at Custos
   `c7d6f8b11849399dfbf9855729af67a841518622`: an independent process
   uses the production RunnerFact outbox/signer/publisher, receives a real
@@ -1210,7 +1217,8 @@ Validation boundary:
   the published SQLite row only afterward, preserves `Nats-Msg-Id=batch_id`
   and reopens with no pending row. Its receipt is development-only and does not
   claim daemon launch, engine application, authenticated publication or
-  Crucible projection.
+  Crucible projection; those claims are intentionally carried by their distinct
+  authenticated-transport and Crucible-consumer evidence.
 
 ## 2026-07-23 development command and material handoff
 

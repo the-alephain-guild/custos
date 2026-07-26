@@ -357,6 +357,11 @@
     "production_transport_credential_provisioned": false,
     "production_durable_verified": false,
     "local_real_nats_revocation_gate_passed": true,
+    "local_authenticated_runner_fact_puback_passed": true,
+    "admin_preprovisioned_runner_fact_stream": true,
+    "runner_stream_admin_authority": false,
+    "launched_authenticated_publisher_process": true,
+    "sqlite_outbox_empty_after_puback": true,
     "local_real_nats_image_id": "sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9",
     "real_nats_integration_passed": false,
     "team_daemon_enabled": false,
@@ -379,9 +384,16 @@
     },
     "local_publication_receipt": {
       "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
-      "sha256": "216934e76582cc0b760aa96c49359f5fafd1cfbef43b5cbebbcc4e71d66d370d",
-      "size_bytes": 2074,
+      "sha256": "2d967b06ec4d258aac2720b4d0fa54276ef52a4e3dc3b42cc7b836d63cb824e1",
+      "size_bytes": 1993,
       "status": "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN"
+    },
+    "authenticated_transport_receipt": {
+      "path": "docs/authority/receipts/custos-runner-nats-transport-v1-consumer-receipt.json",
+      "status": "CLONE_LOCAL_CONSUMER_VERIFIED",
+      "launched_publisher_process": true,
+      "jetstream_puback_observed": true,
+      "production_credential": false
     },
     "signing_preimage_golden": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
     "signing_preimage_complete": true,

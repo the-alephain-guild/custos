@@ -85,7 +85,13 @@
       "image": "nats:2.10-alpine",
       "image_id": "sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9",
       "status": "PASS",
-      "tests_passed": 1
+      "tests_passed": 1,
+      "admin_preprovisioned_runner_fact_stream": true,
+      "runner_stream_admin_authority": false,
+      "launched_authenticated_publisher_process": true,
+      "jetstream_puback_observed": true,
+      "nats_msg_id_equals_batch_id": true,
+      "sqlite_outbox_empty_after_puback": true
     },
     "real_nats_integration_passed": false,
     "team_daemon_enabled": false,
@@ -101,12 +107,13 @@
     "authority_command": "make check-authority",
     "authority_result": "PASS",
     "real_nats_receipt_reused": true,
+    "launched_authenticated_publisher_process": true,
     "launched_cross-process_round_trip": false
   },
   "open_blockers": [
     "the isolated Crucible signer, provisioner, server worker and Custos client have not produced one launched end-to-end runtime receipt",
     "production tenant runner mode durables have no deployed exact SIM/LIVE runtime readback receipt",
     "Custos has not consumed the signed CR99 runner policy in a launched runtime",
-    "team execution remains blocked on the authenticated StrategyRelease resolver"
+    "the immutable StrategyRelease has not been materialized and activated by a launched engine"
   ]
 }

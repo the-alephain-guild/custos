@@ -1481,12 +1481,20 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "image_id": ("sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9"),
             "status": "PASS",
             "tests_passed": 1,
+            "admin_preprovisioned_runner_fact_stream": True,
+            "runner_stream_admin_authority": False,
+            "launched_authenticated_publisher_process": True,
+            "jetstream_puback_observed": True,
+            "nats_msg_id_equals_batch_id": True,
+            "sqlite_outbox_empty_after_puback": True,
         }:
             errors.append("runner NATS transport local real-NATS revocation evidence differs")
         for key in (
             "begin_poll_consumer_implemented",
             "restart_safe_pending_operation_implemented",
             "broker_receipt_required_for_rotate_or_revoke",
+            "jwt_signature_and_acl_verification_implemented",
+            "tls_ca_and_exact_server_name_required",
         ):
             if truth.get(key) is not True:
                 errors.append(f"runner NATS transport implemented truth {key} differs")
@@ -1573,6 +1581,11 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("pending_operation_persisted_before_network") is not True
         or snapshot.get("restart_reuses_operation_id_and_seed") is not True
         or snapshot.get("compatibility_lifecycle_routes_present") is not False
+        or snapshot.get("local_authenticated_runner_fact_puback_passed") is not True
+        or snapshot.get("admin_preprovisioned_runner_fact_stream") is not True
+        or snapshot.get("runner_stream_admin_authority") is not False
+        or snapshot.get("launched_authenticated_publisher_process") is not True
+        or snapshot.get("sqlite_outbox_empty_after_puback") is not True
     ):
         errors.append("runner NATS transport ecosystem status differs")
 
@@ -1685,12 +1698,12 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     local_publication = load_json(local_publication_path)
     expected_source = {
         "repository": "tesseract-trading/custos",
-        "code_commit": "c7d6f8b11849399dfbf9855729af67a841518622",
+        "code_commit": "d7256ec98c8d25f09f6a6856a9e40f98468678a0",
         "publisher_process": "tests/integration/runner_fact_publication_process.py",
         "publisher_process_sha256": (
-            "025fdbe677c98be8cd9ec97ecb6fd2a66aa3238e2dcef9fd835fac88eb4238fd"
+            "a1cff9f61a40cc40b0df6dfcd492e2cd94c7c1161b0483535ce162a305b3dfc9"
         ),
-        "publisher_process_size_bytes": 3521,
+        "publisher_process_size_bytes": 5115,
         "test": "tests/integration/test_runner_fact_publication.py",
         "test_sha256": "f3dc6881a61a5aafc1d33833882f3cc7c74dc6f92333c979bec15fa59ef869d7",
         "test_size_bytes": 4814,
@@ -1783,8 +1796,8 @@ def verify_runner_fact_authority(errors: list[str]) -> None:
         errors.append("ecosystem RunnerFact V1 consumer receipt binding differs")
     if state.get("local_publication_receipt") != {
         "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
-        "sha256": "216934e76582cc0b760aa96c49359f5fafd1cfbef43b5cbebbcc4e71d66d370d",
-        "size_bytes": 2074,
+        "sha256": "2d967b06ec4d258aac2720b4d0fa54276ef52a4e3dc3b42cc7b836d63cb824e1",
+        "size_bytes": 1993,
         "status": "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN",
     }:
         errors.append("ecosystem RunnerFact V1 local publication receipt binding differs")

@@ -5,10 +5,10 @@
   "authority_coordinate": "custos.runner-fact.v1",
   "source": {
     "repository": "tesseract-trading/custos",
-    "code_commit": "c7d6f8b11849399dfbf9855729af67a841518622",
+    "code_commit": "d7256ec98c8d25f09f6a6856a9e40f98468678a0",
     "publisher_process": "tests/integration/runner_fact_publication_process.py",
-    "publisher_process_sha256": "025fdbe677c98be8cd9ec97ecb6fd2a66aa3238e2dcef9fd835fac88eb4238fd",
-    "publisher_process_size_bytes": 3521,
+    "publisher_process_sha256": "a1cff9f61a40cc40b0df6dfcd492e2cd94c7c1161b0483535ce162a305b3dfc9",
+    "publisher_process_size_bytes": 5115,
     "test": "tests/integration/test_runner_fact_publication.py",
     "test_sha256": "f3dc6881a61a5aafc1d33833882f3cc7c74dc6f92333c979bec15fa59ef869d7",
     "test_size_bytes": 4814,
@@ -45,9 +45,7 @@
   "runtime_ready": false,
   "production_ready": false,
   "open_blockers": [
-    "launched Custos command and engine application receipt",
-    "authenticated RunnerFact publication receipt",
-    "Crucible PostgreSQL projection from the same published batch",
+    "one launched authenticated Custos command, engine application and Crucible projection receipt",
     "immutable Custos runtime RC receipt"
   ]
 }
