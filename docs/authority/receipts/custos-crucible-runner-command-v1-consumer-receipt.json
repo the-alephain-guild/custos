@@ -10,7 +10,7 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
-    "sha256": "6539401a1b693bd0da912f63472a2c030b5b912a3af9b6226718986648b0565c",
+    "sha256": "877a1d93a0811af29d0e0af44aa3ccbdb80e316046e75497de39c037c1a43d24",
     "size_bytes": 5950
   },
   "contract_guards": {

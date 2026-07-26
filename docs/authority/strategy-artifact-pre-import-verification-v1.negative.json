@@ -1,6 +1,6 @@
 {
   "base_golden": "docs/authority/strategy-artifact-pre-import-verification-v1.golden.json",
-  "base_golden_sha256": "97c2137f76115d07828f7da0c4d7e9a7e7dd4d32d3f1e49bedeb7aebeea8c18e",
+  "base_golden_sha256": "05c6eed77f910607566742b52f679a03ffcee3d3bb20a66c087ce01f373a0b3b",
   "canonical_name": "Custos canonical V1 pre-import receipt negative mutations",
   "cases": [
     {
@@ -42,20 +42,31 @@
           "detached_attestation_ref",
           "bundle_sha256"
         ],
-        "value": "8d46cc9e3a4d3e56f27d73608186c493f46ccc776c2f12e19042012db7069a01"
+        "value": "16f4486dfbd49df9a1a96a03338cc888e4567cd48695c63e6e79e7940f6be8ff"
       },
       "name": "bundle_self_reference_forbidden"
     },
     {
       "mutation": {
-        "operation": "replace",
+        "operation": "add",
         "path": [
-          "runner_local_policy_decision",
-          "policy_digest"
+          "crucible_artifact_evidence",
+          "manifest_digest"
         ],
-        "value": "9999999999999999999999999999999999999999999999999999999999999999"
+        "value": "d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f"
       },
-      "name": "crucible_policy_reuse_forbidden"
+      "name": "legacy_crucible_manifest_alias_forbidden"
+    },
+    {
+      "mutation": {
+        "operation": "add",
+        "path": [
+          "crucible_artifact_acceptance",
+          "receipt_digest"
+        ],
+        "value": "76925a21ebf75e5f74748766746ed1e4aca568ad6141bcb5cb7bb539f429f1b9"
+      },
+      "name": "legacy_crucible_receipt_alias_forbidden"
     },
     {
       "mutation": {

@@ -15,7 +15,6 @@ from custos_toolkit.contracts.strategy_execution import (
     RunnerLocalArtifactPolicyDecisionV1,
     StrategyArtifactPreImportVerificationReceiptV1,
     StrategyArtifactRefV1,
-    canonical_json_digest,
     canonical_model_digest,
 )
 from custos_toolkit.contracts.toolkit_rc import (
@@ -175,155 +174,26 @@ def _build_artifact_ref_assets() -> dict[str, bytes]:
 
 def build_v1_contract_assets() -> dict[str, bytes]:
     artifact_assets = _build_artifact_ref_assets()
-    strategy_release_id = "strategy-release-018f6e9a-v1"
-    artifact_sha256 = "1" * 64
-    manifest_sha256 = "2" * 64
-    source_tree_sha256 = "3" * 64
-    execution_abi_sha256 = "4" * 64
-    toolkit_sbom_sha256 = "5" * 64
-    build_lock_sha256 = "6" * 64
-    bundle_sha256 = "7" * 64
-    artifact_evidence_digest = "8" * 64
-    crucible_policy_digest = "9" * 64
-    acceptance_receipt_digest = "a" * 64
-
-    release_bom = {
-        "schema_version": 1,
-        "strategy_release_id": strategy_release_id,
-        "strategy_artifact_coordinate": (
-            "oci://registry.example.invalid/strategies/team-alpha@sha256:" + artifact_sha256
-        ),
-        "strategy_artifact_sha256": artifact_sha256,
-        "strategy_manifest_sha256": manifest_sha256,
-        "strategy_source_commit": "0123456789abcdef0123456789abcdef01234567",
-        "strategy_source_tree_sha256": source_tree_sha256,
-        "producer_repository": "alchymia-labs/philosophers-stone",
-        "engine": "nautilus",
-        "engine_version": "1.230.0",
-        "execution_abi_schema_sha256": execution_abi_sha256,
-        "toolkit_sbom_sha256": toolkit_sbom_sha256,
-        "build_lock_sha256": build_lock_sha256,
-        "entry_point_group": "custos.strategies",
-        "entry_point_name": "team_alpha",
-        "members": [
-            {
-                "role": "strategy_wheel",
-                "name": "team_alpha-1.0.0-py3-none-any.whl",
-                "sha256": artifact_sha256,
-                "size_bytes": 4096,
-                "media_type": "application/vnd.python.wheel",
-            },
-            {
-                "role": "strategy_manifest",
-                "name": "strategy-manifest-v1.json",
-                "sha256": manifest_sha256,
-                "size_bytes": 1024,
-                "media_type": "application/json",
-            },
-            {
-                "role": "runtime_artifact",
-                "name": "runtime-config-v1.json",
-                "sha256": "b" * 64,
-                "size_bytes": 512,
-                "media_type": "application/json",
-            },
-        ],
-    }
-    members_by_role = {item["role"]: item for item in release_bom["members"]}
-    runtime_member = members_by_role["runtime_artifact"]
-    artifact_ref = StrategyArtifactRefV1(
-        artifact_kind="wheel",
-        artifact_coordinate=release_bom["strategy_artifact_coordinate"],
-        artifact_sha256=artifact_sha256,
-        artifact_size_bytes=members_by_role["strategy_wheel"]["size_bytes"],
-        manifest_sha256=manifest_sha256,
-        manifest_size_bytes=members_by_role["strategy_manifest"]["size_bytes"],
-        required_runtime_artifacts=(
-            member(
-                ArtifactMemberRole.RUNTIME_ARTIFACT,
-                runtime_member["name"],
-                runtime_member["sha256"],
-                runtime_member["size_bytes"],
-                runtime_member["media_type"],
-            ),
-        ),
-        sbom_sha256=toolkit_sbom_sha256,
-        contract_schema_sha256=execution_abi_sha256,
-        source_repository=release_bom["producer_repository"],
-        source_commit=release_bom["strategy_source_commit"],
-        normalized_source_tree_sha256=source_tree_sha256,
-        python_version="3.12.4",
-        engine=release_bom["engine"],
-        engine_version=release_bom["engine_version"],
-        base_contracts_version="1.0.0rc1",
-        engine_toolkit_version="1.0.0rc1",
-        build_inputs=(DigestBindingV1(name="build-lock", sha256=build_lock_sha256),),
+    resolution_golden = json.loads(
+        (
+            ROOT / "docs/authority/vendor/"
+            "crucible-runner-strategy-release-resolution-v1.golden.json"
+        ).read_text(encoding="utf-8")
     )
-    release_bom_digest = canonical_json_digest(release_bom)
-    artifact_ref_digest = canonical_model_digest(artifact_ref)
-    release_statement = {
-        "_type": "https://in-toto.io/Statement/v1",
-        "schema_version": 1,
-        "subject": [
-            {"name": "strategy-release-bom-v1", "digest": {"sha256": release_bom_digest}},
-            {"name": "strategy-artifact", "digest": {"sha256": artifact_sha256}},
-            {"name": "strategy-manifest-v1", "digest": {"sha256": manifest_sha256}},
-        ],
-        "predicate_type": "https://the-alephain-guild.dev/strategy-release/v1",
-        "predicate": {
-            "strategy_release_id": strategy_release_id,
-            "strategy_artifact_coordinate": release_bom["strategy_artifact_coordinate"],
-            "strategy_artifact_sha256": artifact_sha256,
-            "strategy_manifest_sha256": manifest_sha256,
-            "release_bom_sha256": release_bom_digest,
-        },
-    }
-    release_statement_digest = canonical_json_digest(release_statement)
-    detached_ref = {
-        "schema_version": 1,
-        "statement_sha256": release_statement_digest,
-        "bundle_sha256": bundle_sha256,
-        "bundle_media_type": "application/vnd.dev.sigstore.bundle+json;version=0.3",
-    }
-    detached_ref_digest = canonical_json_digest(detached_ref)
-    signed_producer_claims = dict(release_statement["predicate"])
-    evidence = {
-        "schema_version": 1,
-        "strategy_release_id": strategy_release_id,
-        "artifact_ref_digest": artifact_ref_digest,
-        "manifest_digest": manifest_sha256,
-        "release_bom_digest": release_bom_digest,
-        "statement_digest": release_statement_digest,
-        "attestation_ref_digest": detached_ref_digest,
-        "bundle_sha256": bundle_sha256,
-        "artifact_evidence_digest": artifact_evidence_digest,
-        "signed_producer_claims": signed_producer_claims,
-        "sigstore_proof": {
-            "bundle_sha256": bundle_sha256,
-            "statement_sha256": release_statement_digest,
-            "certificate_sha256": "c" * 64,
-            "certificate_identity": "release@philosophers-stone",
-            "certificate_issuer": "https://token.actions.githubusercontent.com",
-            "checkpoint_verified": True,
-            "sct_verified": True,
-            "set_verified": True,
-            "rekor_log_id": "d" * 64,
-        },
-        "local_policy_evaluation": {
-            "authority": "crucible-rust",
-            "policy_id": "strategy-release-acceptance-v1",
-            "policy_version": 1,
-            "policy_digest": crucible_policy_digest,
-            "decision": "accepted",
-        },
-    }
-    acceptance = {
-        "schema_version": 1,
-        "strategy_release_id": strategy_release_id,
-        "artifact_evidence_digest": artifact_evidence_digest,
-        "receipt_digest": acceptance_receipt_digest,
-        "decision": "accepted",
-    }
+    release_material = resolution_golden["response"]["strategy_release_material"]
+    artifact_binding = release_material["artifact_binding"]
+    release_bom = json.loads(artifact_binding["release_bom_canonical_json"])
+    release_bom_digest = artifact_binding["release_bom_digest"]
+    artifact_ref = StrategyArtifactRefV1.model_validate(artifact_binding["artifact_ref"])
+    artifact_ref_digest = artifact_binding["artifact_ref_digest"]
+    release_statement = artifact_binding["release_statement"]
+    release_statement_digest = artifact_binding["release_statement_digest"]
+    detached_ref = artifact_binding["detached_attestation_ref"]
+    detached_ref_digest = artifact_binding["detached_attestation_ref_digest"]
+    evidence = release_material["artifact_evidence"]
+    artifact_evidence_digest = evidence["composite_evidence_digest"]
+    acceptance = release_material["snapshot"]
+    acceptance_receipt_digest = acceptance["snapshot_digest"]
 
     policy = RunnerLocalArtifactPolicyDecisionV1(
         authority="custos-runner-local",
@@ -406,11 +276,19 @@ def build_v1_contract_assets() -> dict[str, bytes]:
                     },
                 },
                 {
-                    "name": "crucible_policy_reuse_forbidden",
+                    "name": "legacy_crucible_manifest_alias_forbidden",
                     "mutation": {
-                        "operation": "replace",
-                        "path": ["runner_local_policy_decision", "policy_digest"],
-                        "value": crucible_policy_digest,
+                        "operation": "add",
+                        "path": ["crucible_artifact_evidence", "manifest_digest"],
+                        "value": artifact_ref.manifest_sha256,
+                    },
+                },
+                {
+                    "name": "legacy_crucible_receipt_alias_forbidden",
+                    "mutation": {
+                        "operation": "add",
+                        "path": ["crucible_artifact_acceptance", "receipt_digest"],
+                        "value": acceptance_receipt_digest,
                     },
                 },
                 {
@@ -558,12 +436,10 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
         resolution_receipt.get("receipt_id") != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-V1"
         or resolution_receipt.get("owner") != "crucible-rust"
         or resolution_receipt.get("consumer") != "custos"
-        or resolution_receipt.get("producer_commit")
-        != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
+        or resolution_receipt.get("producer_commit") != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
         or resolution_receipt.get("runtime_code_commit")
         != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
-        or resolution_receipt.get("contract_commit")
-        != RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT
+        or resolution_receipt.get("contract_commit") != RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT
         or resolution_receipt.get("contract_assets") != producer_contract_assets
         or resolution_receipt.get("authority_coordinate")
         != "crucible.runner-strategy-resolution.v1"

@@ -19,8 +19,8 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/strategy-contract-assets-v1.json",
-    "sha256": "7433b608bdc923e3e89b742dd926ce04de045185e6bb04ccf57c3acaf855bc72",
-    "size_bytes": 2827
+    "sha256": "ca12a6533ab314b6e205b876255019f44767b960e862bd6f8b31b19a57e6539a",
+    "size_bytes": 2828
   },
   "contract_consumer_ready": false,
   "open_blockers": [
@@ -34,7 +34,7 @@
   "producer": {
     "repository": "tesseract-trading/custos",
     "source_path": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
-    "source_sha256": "c20520769326012ac4f077ac7fbea2bf107a55367a76d571930aefa35979b235"
+    "source_sha256": "d768ce08cfdc279a6f4c3e8bedeb3628e32b2d0e5d08b712e9702e3d01e40cf4"
   },
   "production_ready": false,
   "receipt_schema_version": 1,

@@ -321,32 +321,65 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
 
         if self.detached_attestation_ref.get("statement_sha256") != self.release_statement_digest:
             raise ValueError("detached attestation reference differs from producer statement")
+        evidence_fields = {
+            "schema_version",
+            "strategy_release_id",
+            "artifact_ref_digest",
+            "release_bom_digest",
+            "release_statement_digest",
+            "detached_attestation_ref_digest",
+            "bundle_sha256",
+            "signed_producer_claims",
+            "sigstore_proof",
+            "local_policy_evaluation",
+            "composite_evidence_digest",
+        }
+        if set(self.crucible_artifact_evidence) != evidence_fields:
+            raise ValueError("Crucible artifact evidence shape is not exact V1")
         evidence_bindings = {
             "artifact_ref_digest": self.artifact_ref_digest,
-            "manifest_digest": self.artifact_ref.manifest_sha256,
             "release_bom_digest": self.release_bom_digest,
-            "statement_digest": self.release_statement_digest,
-            "attestation_ref_digest": self.detached_attestation_ref_digest,
+            "release_statement_digest": self.release_statement_digest,
+            "detached_attestation_ref_digest": self.detached_attestation_ref_digest,
             "bundle_sha256": self.detached_attestation_ref.get("bundle_sha256"),
         }
         for name, expected_evidence in evidence_bindings.items():
             if self.crucible_artifact_evidence.get(name) != expected_evidence:
                 raise ValueError(f"Crucible artifact evidence {name} differs")
         if (
-            self.crucible_artifact_evidence.get("artifact_evidence_digest")
+            self.crucible_artifact_evidence.get("composite_evidence_digest")
             != self.crucible_artifact_evidence_digest
         ):
             raise ValueError("Crucible artifact evidence digest binding differs")
-        if (
-            self.crucible_artifact_acceptance.get("artifact_evidence_digest")
-            != self.crucible_artifact_evidence_digest
-        ):
-            raise ValueError("Crucible acceptance does not bind the artifact evidence")
-        if (
-            self.crucible_artifact_acceptance.get("receipt_digest")
-            != self.crucible_artifact_acceptance_receipt_digest
-        ):
-            raise ValueError("Crucible acceptance receipt digest binding differs")
+
+        snapshot_fields = {
+            "release_id",
+            "definition_id",
+            "lifecycle_version",
+            "release_number",
+            "artifact_ref_digest",
+            "manifest_digest",
+            "release_bom_digest",
+            "artifact_evidence_digest",
+            "validated_at",
+            "snapshot_digest",
+        }
+        if set(self.crucible_artifact_acceptance) != snapshot_fields:
+            raise ValueError("Crucible StrategyRelease snapshot shape is not exact V1")
+        snapshot_bindings = {
+            "artifact_ref_digest": self.artifact_ref_digest,
+            "manifest_digest": self.artifact_ref.manifest_sha256,
+            "release_bom_digest": self.release_bom_digest,
+            "artifact_evidence_digest": self.crucible_artifact_evidence_digest,
+            "snapshot_digest": self.crucible_artifact_acceptance_receipt_digest,
+        }
+        for name, expected_snapshot in snapshot_bindings.items():
+            if self.crucible_artifact_acceptance.get(name) != expected_snapshot:
+                raise ValueError(f"Crucible StrategyRelease snapshot {name} differs")
+        if self.crucible_artifact_acceptance.get(
+            "release_id"
+        ) != self.crucible_artifact_evidence.get("strategy_release_id"):
+            raise ValueError("Crucible StrategyRelease identity binding differs")
 
         policy = self.runner_local_policy_decision
         policy_bindings = {
