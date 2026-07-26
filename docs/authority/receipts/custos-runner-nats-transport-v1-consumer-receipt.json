@@ -1,11 +1,19 @@
 {
   "receipt_schema_version": 1,
   "receipt_id": "CUSTOS-RUNNER-NATS-TRANSPORT-CONSUMER-V1",
-  "receipt_status": "CLONE_LOCAL_CONSUMER_VERIFIED",
+  "receipt_status": "LOCAL_CRUCIBLE_PRODUCTION_SERVICES_PINNED_JOINT_RUNTIME_OPEN",
   "repository": "tesseract-trading/custos",
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
     "producer_commit": "e2499bb",
+    "runtime_receipt_commit": "ee27aa71bc7a078502f57c57e34845533accd1d9",
+    "runtime_receipt": {
+      "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
+      "source_path": "docs/authority/receipts/crucible-runner-nats-transport-runtime-v1.json",
+      "sha256": "6431cf59468b6503b8f3153fe91585fb8e8c76e99af3fc70ff8d7d1756a04da7",
+      "size_bytes": 3635,
+      "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
+    },
     "contract_assets": {
       "schema": "docs/authority/vendor/crucible-runner-nats-transport-authority-v1.schema.json",
       "schema_sha256": "d0868bddde5cc64c93233940cf36be6be2d2b00203af0707fe878ddfa95606a0",
@@ -79,8 +87,11 @@
     "tls_ca_and_exact_server_name_required": true,
     "anonymous_or_plaintext_runtime_path": false,
     "jetstream_mutation_authority_present": false,
-    "production_transport_credential_provisioned": false,
-    "production_durable_verified": false,
+    "local_crucible_production_transport_services_verified": true,
+    "local_crucible_issued_transport_credential_verified": true,
+    "local_crucible_exact_durable_readback_verified": true,
+    "joint_deployed_transport_credential_provisioned": false,
+    "joint_deployed_durable_verified": false,
     "local_real_nats_revocation_gate": {
       "command": "make verify-nats-revocation",
       "code_commit": "ba562a91a3d160293f3f0631c47a954164766662",
@@ -129,9 +140,10 @@
       "immutable_artifact_materialization": false,
       "production_authority_issued": false,
       "production_policy_issued": false,
-      "production_services_launched": false
+      "joint_deployed_services_launched": false
     },
-    "real_nats_integration_passed": false,
+    "local_crucible_full_resolver_integration_passed": true,
+    "joint_runtime_real_nats_integration_passed": false,
     "team_daemon_enabled": false,
     "runtime_ready": false,
     "live_ready": false,
@@ -152,9 +164,9 @@
     "launched_cross-process_round_trip": true
   },
   "open_blockers": [
-    "the isolated Crucible signer, provisioner and server worker have not issued the clone-local test credentials as one production-service receipt",
-    "production tenant runner mode durables have no deployed exact SIM/LIVE runtime readback receipt",
-    "the launched runtime has not consumed a production-service-issued CR99 runner policy",
+    "joint Custos daemon transport has not consumed the same service-issued credential event instance",
+    "deployed tenant runner mode durables have no exact SIM/LIVE runtime readback receipt",
+    "the joint launched runtime has not consumed a deployed CR99 runner policy",
     "the immutable StrategyRelease has not been materialized and activated by a launched engine"
   ]
 }

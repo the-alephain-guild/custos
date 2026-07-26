@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "receipt_id": "CRUCIBLE-RUNNER-NATS-TRANSPORT-RUNTIME-V1",
+  "owner": "crucible-rust",
+  "consumer": "custos",
+  "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN",
+  "authority_coordinate": "crucible.runner-nats-transport.v1",
+  "code_commit": "e086a45a94cc967ed28f2d9acc7fa871a28db1c6",
+  "control_migration": {
+    "checked_in_head": "0029",
+    "local_ephemeral_head_executed": "0029",
+    "production_executed_head": "0027",
+    "production_predecessor_receipt_required": "0028",
+    "deployed_execution_receipt": null
+  },
+  "service_processes": {
+    "local_production_crucible_server_launched": true,
+    "local_production_isolated_signer_launched": true,
+    "local_production_isolated_provisioner_launched": true,
+    "ordinary_server_account_seed_present": false,
+    "ordinary_server_operator_seed_present": false,
+    "ordinary_server_broker_admin_credential_present": false,
+    "signer_broker_admin_credential_present": false,
+    "provisioner_account_signing_seed_present": false,
+    "custos_user_seed_sent_to_crucible": false,
+    "deployed_production_services_launched": false
+  },
+  "acceptance": {
+    "command": "make verify-runner-transport-service-process",
+    "result": "1 passed",
+    "verified_at": "2026-07-26",
+    "real_postgresql": true,
+    "real_domain_event_jetstream": true,
+    "real_full_resolver_nats": true,
+    "distinct_sim_live_accounts": true,
+    "arx_actor_assertion_intent_exercised": true,
+    "direct_custos_machine_request_exercised": true,
+    "user_nkey_generated_client_side": true,
+    "machine_request_replay_authority_exercised": true,
+    "pg_durable_worker_exercised": true,
+    "isolated_signer_http_exercised": true,
+    "isolated_provisioner_http_exercised": true,
+    "exact_durable_reconciled_and_read_back": true,
+    "authority_active_only_after_readback": true,
+    "issued_user_jwt_connected": true,
+    "exact_command_delivered": true,
+    "command_ack_published": true
+  },
+  "accepted_scope": {
+    "trading_mode": "sandbox",
+    "transport_domain": "sim",
+    "credential_generation": 1,
+    "single_mode_authority": true
+  },
+  "source": {
+    "path": "crates/server-http/tests/runner_nats_transport_service_process.rs",
+    "sha256": "794beca19df21b2bfff45c604ad9009102eede71b85acba22d170af739e855a1",
+    "size_bytes": 44228
+  },
+  "predecessor_receipts": {
+    "http": {
+      "path": "docs/authority/receipts/crucible-runner-nats-transport-http-v1.json",
+      "sha256": "79f76a7ddb56be9638ce80d0358846b55e787d012b4ce4e4d672cd8bca38af70",
+      "size_bytes": 2573
+    },
+    "broker": {
+      "path": "docs/authority/receipts/crucible-runner-nats-broker-authority-v1.json",
+      "sha256": "228d7e144cddd21e6a838ba3643b6f527e984798d49cf31741485fec8d5585f7",
+      "size_bytes": 3525
+    },
+    "rotation_revocation": {
+      "path": "docs/authority/receipts/crucible-runner-nats-rotation-revocation-v1.json",
+      "sha256": "387afbe91c759fac74489ad49e7be588a9285569e5ca902176e5063bfc231753",
+      "size_bytes": 1527
+    }
+  },
+  "joint_custos_runtime": {
+    "existing_clone_local_daemon_receipt": true,
+    "same_event_instance_consumed_in_this_gate": false,
+    "immutable_strategy_release_materialized_in_this_gate": false,
+    "runtime_candidate_locked": false
+  },
+  "runtime_ready": false,
+  "live_ready": false,
+  "production_ready": false,
+  "open_blockers": [
+    "deployed control 0028 predecessor receipt",
+    "deployed control 0029 execution receipt",
+    "joint Custos daemon transport and immutable StrategyRelease runtime candidate",
+    "deployed testnet and live acceptance"
+  ]
+}

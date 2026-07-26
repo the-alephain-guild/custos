@@ -1445,13 +1445,18 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         return
 
     receipt = load_json(receipt_path)
-    if receipt.get("receipt_status") != "CLONE_LOCAL_CONSUMER_VERIFIED":
+    if (
+        receipt.get("receipt_status")
+        != "LOCAL_CRUCIBLE_PRODUCTION_SERVICES_PINNED_JOINT_RUNTIME_OPEN"
+    ):
         errors.append("runner NATS transport clone-local status differs")
     producer = receipt.get("producer_authority")
     if not isinstance(producer, dict) or producer.get("authority_ready") is not True:
         errors.append("runner NATS transport producer authority truth differs")
     elif (
         producer.get("producer_commit") != "e2499bb"
+        or producer.get("runtime_receipt_commit")
+        != "ee27aa71bc7a078502f57c57e34845533accd1d9"
         or producer.get("authority_receipt")
         != "tesseract-trading/crucible-rust/docs/authority/receipts/"
         "crucible-runner-nats-broker-authority-v1.json"
@@ -1460,6 +1465,22 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         "crucible-runner-nats-transport-http-v1.json"
     ):
         errors.append("runner NATS transport producer handoff receipt differs")
+    runtime_receipt = producer.get("runtime_receipt")
+    runtime_receipt_path = resolve(
+        str(runtime_receipt.get("path", "") if isinstance(runtime_receipt, dict) else "")
+    )
+    if (
+        not isinstance(runtime_receipt, dict)
+        or runtime_receipt.get("source_path")
+        != "docs/authority/receipts/crucible-runner-nats-transport-runtime-v1.json"
+        or runtime_receipt.get("status")
+        != "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
+        or not runtime_receipt_path.is_file()
+        or hashlib.sha256(runtime_receipt_path.read_bytes()).hexdigest()
+        != runtime_receipt.get("sha256")
+        or runtime_receipt_path.stat().st_size != runtime_receipt.get("size_bytes")
+    ):
+        errors.append("runner NATS transport producer runtime receipt bytes differ")
     if producer.get("control_streams") != {
         "sim": "CRUCIBLE_RUNNER_CONTROL_SIM_V1",
         "live": "CRUCIBLE_RUNNER_CONTROL_LIVE_V1",
@@ -1576,7 +1597,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "immutable_artifact_materialization": False,
             "production_authority_issued": False,
             "production_policy_issued": False,
-            "production_services_launched": False,
+            "joint_deployed_services_launched": False,
         }:
             errors.append("authenticated runtime projection evidence differs")
         for key in (
@@ -1585,13 +1606,17 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "broker_receipt_required_for_rotate_or_revoke",
             "jwt_signature_and_acl_verification_implemented",
             "tls_ca_and_exact_server_name_required",
+            "local_crucible_production_transport_services_verified",
+            "local_crucible_issued_transport_credential_verified",
+            "local_crucible_exact_durable_readback_verified",
+            "local_crucible_full_resolver_integration_passed",
         ):
             if truth.get(key) is not True:
                 errors.append(f"runner NATS transport implemented truth {key} differs")
         for key in (
-            "production_transport_credential_provisioned",
-            "production_durable_verified",
-            "real_nats_integration_passed",
+            "joint_deployed_transport_credential_provisioned",
+            "joint_deployed_durable_verified",
+            "joint_runtime_real_nats_integration_passed",
             "team_daemon_enabled",
             "runtime_ready",
             "live_ready",
@@ -1665,8 +1690,20 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     if not isinstance(snapshot, dict):
         errors.append("runner NATS transport ecosystem snapshot is missing")
     elif (
-        snapshot.get("status") != "CLONE_LOCAL_CONSUMER_VERIFIED"
+        snapshot.get("status")
+        != "LOCAL_CRUCIBLE_PRODUCTION_SERVICES_PINNED_JOINT_RUNTIME_OPEN"
         or snapshot.get("producer_commit") != "e2499bb"
+        or snapshot.get("producer_runtime_receipt")
+        != {
+            "commit": "ee27aa71bc7a078502f57c57e34845533accd1d9",
+            "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
+            "sha256": "6431cf59468b6503b8f3153fe91585fb8e8c76e99af3fc70ff8d7d1756a04da7",
+            "size_bytes": 3635,
+            "status": (
+                "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_"
+                "DEPLOYED_ACCEPTANCE_OPEN"
+            ),
+        }
         or snapshot.get("user_nkey_possession_proof") is not True
         or snapshot.get("pending_operation_persisted_before_network") is not True
         or snapshot.get("restart_reuses_operation_id_and_seed") is not True
@@ -1683,6 +1720,17 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("durable_puback_receipt_recorded") is not True
         or snapshot.get("authenticated_runner_policy_consumed") is not True
         or snapshot.get("same_policy_from_crucible_pg_outbox") is not True
+        or snapshot.get("local_crucible_production_transport_services_verified")
+        is not True
+        or snapshot.get("local_crucible_issued_transport_credential_verified")
+        is not True
+        or snapshot.get("local_crucible_exact_durable_readback_verified") is not True
+        or snapshot.get("joint_deployed_transport_credential_provisioned")
+        is not False
+        or snapshot.get("joint_deployed_durable_verified") is not False
+        or snapshot.get("local_crucible_full_resolver_integration_passed")
+        is not True
+        or snapshot.get("joint_runtime_real_nats_integration_passed") is not False
         or snapshot.get("crucible_policy_publisher_code_commit")
         != "40a43fbf146006bb90053c446bd15f529418b45e"
         or snapshot.get("immutable_artifact_materialization_in_gate") is not False

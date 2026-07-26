@@ -227,6 +227,10 @@
       "path": "docs/authority/vendor/crucible-runner-nats-transport-authority-golden-v1.json.sha256"
     },
     {
+      "role": "crucible_runner_nats_transport_runtime_receipt_v1",
+      "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json"
+    },
+    {
       "role": "runner_fact_asset_index_v1",
       "path": "docs/authority/runner-fact-contract-assets-v1.json"
     },
