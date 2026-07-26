@@ -34,6 +34,7 @@ from custos.core.runner_fact import (
     capability_binding_evidence_digest,
     normalize_capability_scope_bindings,
 )
+from custos.core.runner_nats_authority import RunnerNatsTransportAuthorityClient
 from custos.core.runner_toml import RunnerToml
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -223,6 +224,38 @@ def _transport_credential(path: Path) -> RunnerNatsTransportCredential:
     return credential
 
 
+def _machine_credential(path: Path) -> MachineCredential:
+    if path.stat().st_mode & 0o777 != 0o600:
+        raise PermissionError("machine credential fixture must have mode 0600")
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise ValueError("machine credential fixture must be an object")
+    credential = MachineCredential.from_document(document)
+    if credential.tenant_id != TENANT_ID or credential.runner_id != RUNNER_ID:
+        raise ValueError("machine credential does not match the daemon runtime identity")
+    return credential
+
+
+def _write_command_input(path: Path, subject: str, envelope: bytes) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        payload = json.dumps(
+            {
+                "subject": subject,
+                "payload_base64": base64.b64encode(envelope).decode("ascii"),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        os.write(descriptor, payload)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.replace(temporary, path)
+
+
 def _timestamp_text(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
@@ -233,6 +266,7 @@ def _install_acceptance_authorities(
     metadata: RunnerToml,
     transport_credential: RunnerNatsTransportCredential,
     capability: RunnerCapabilityReceipt,
+    verify_machine_authority_with_crucible: bool,
 ) -> None:
     class StaticRunnerToml:
         @staticmethod
@@ -290,9 +324,10 @@ def _install_acceptance_authorities(
 
     daemon_module.RunnerToml = StaticRunnerToml  # type: ignore[misc]
     daemon_module.MachineCredentialVault = StaticMachineCredentialVault  # type: ignore[misc]
-    daemon_module.MachineCredentialHttpClient = (  # type: ignore[misc]
-        StaticMachineCredentialHttpClient
-    )
+    if not verify_machine_authority_with_crucible:
+        daemon_module.MachineCredentialHttpClient = (  # type: ignore[misc]
+            StaticMachineCredentialHttpClient
+        )
     daemon_module.RunnerNatsTransportSet = StaticTransportSet  # type: ignore[misc]
     daemon_module.RunnerCapabilityReceipt = StaticCapabilityReceipt  # type: ignore[misc]
     daemon_module._build_strategy_release_runtime = (  # type: ignore[assignment]
@@ -434,28 +469,73 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         subject=expected_subject,
         signed_envelope_bytes=expected_envelope,
     )
-    identity = RunnerFactIdentity.from_private_bytes(PRIVATE_KEY_BYTES, RUNNER_FACT_KEY_ID)
-    capability = _capability(verified.command, identity)
-    transport_credential = _transport_credential(args.transport_credential)
-    valid_until = (datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0)
-    machine_credential = MachineCredential(
-        tenant_id=TENANT_ID,
-        runner_id=RUNNER_ID,
-        credential_id=MACHINE_CREDENTIAL_ID,
-        credential_version=1,
-        credential_valid_until=valid_until,
-        machine_key_id=RUNNER_FACT_KEY_ID,
-        machine_credential="rkc1.daemon-local-acceptance",
-        private_key_bytes=PRIVATE_KEY_BYTES,
+    service_authority = args.machine_credential is not None
+    transport_operation_id: str | None = None
+    if service_authority:
+        if (
+            args.transport_credential is not None
+            or not args.crucible_url
+            or args.authorization_intent_id is None
+            or args.command_input_file is None
+        ):
+            raise ValueError(
+                "service authority mode requires machine credential, Crucible URL, "
+                "authorization intent and command input file without a static transport credential"
+            )
+        machine_credential = _machine_credential(args.machine_credential)
+        authority = RunnerNatsTransportAuthorityClient(
+            args.crucible_url,
+            machine_credential,
+        )
+        operation = authority.prepare_initial(
+            authorization_intent_id=args.authorization_intent_id,
+            trading_mode="sandbox",
+            expected_issuer_public_key=args.pinned_issuer_public_key,
+        )
+        completion = await asyncio.to_thread(
+            authority.execute,
+            operation,
+            timeout_seconds=args.operation_timeout_secs,
+        )
+        if completion.credential is None:
+            raise RuntimeError("service-issued transport operation returned no credential")
+        transport_credential = completion.credential
+        transport_operation_id = str(completion.operation_id)
+        _write_command_input(
+            args.command_input_file,
+            expected_subject,
+            expected_envelope,
+        )
+        backend_url = args.crucible_url
+    else:
+        if args.transport_credential is None:
+            raise ValueError("static acceptance mode requires --transport-credential")
+        transport_credential = _transport_credential(args.transport_credential)
+        valid_until = (datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0)
+        machine_credential = MachineCredential(
+            tenant_id=TENANT_ID,
+            runner_id=RUNNER_ID,
+            credential_id=MACHINE_CREDENTIAL_ID,
+            credential_version=1,
+            credential_valid_until=valid_until,
+            machine_key_id=RUNNER_FACT_KEY_ID,
+            machine_credential="rkc1.daemon-local-acceptance",
+            private_key_bytes=PRIVATE_KEY_BYTES,
+        )
+        backend_url = "http://127.0.0.1:9"
+    identity = RunnerFactIdentity.from_private_bytes(
+        machine_credential.private_key_bytes,
+        machine_credential.machine_key_id,
     )
+    capability = _capability(verified.command, identity)
     metadata = RunnerToml(
         tenant_id=TENANT_ID,
         runner_id=str(RUNNER_ID),
-        backend_url="http://127.0.0.1:9",
-        credential_id=str(MACHINE_CREDENTIAL_ID),
-        credential_version=1,
-        credential_valid_until=_timestamp_text(valid_until),
-        machine_key_id=RUNNER_FACT_KEY_ID,
+        backend_url=backend_url,
+        credential_id=str(machine_credential.credential_id),
+        credential_version=machine_credential.credential_version,
+        credential_valid_until=_timestamp_text(machine_credential.credential_valid_until),
+        machine_key_id=machine_credential.machine_key_id,
         machine_vault_path=str(args.database.with_suffix(".machine.enc").resolve()),
         enrolled_at=_timestamp_text(datetime.now(UTC).replace(microsecond=0)),
     )
@@ -464,6 +544,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         metadata=metadata,
         transport_credential=transport_credential,
         capability=capability,
+        verify_machine_authority_with_crucible=service_authority,
     )
     command_public_key_path = args.database.with_suffix(".command.pub")
     command_public_key_path.write_text(
@@ -526,9 +607,12 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         "broker_stream": publication.broker_stream,
         "broker_sequence": publication.broker_sequence,
         "puback_duplicate": publication.duplicate,
-        "production_authority_issued": False,
+        "production_authority_issued": service_authority,
         "production_policy_issued": False,
         "immutable_artifact_materialized": False,
+        "transport_operation_id": transport_operation_id,
+        "transport_credential_generation": transport_credential.credential_generation,
+        "encrypted_transport_vault_used": False,
     }
 
 
@@ -536,7 +620,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--nats-url", required=True)
     parser.add_argument("--database", type=Path, required=True)
-    parser.add_argument("--transport-credential", type=Path, required=True)
+    parser.add_argument("--transport-credential", type=Path)
+    parser.add_argument("--machine-credential", type=Path)
+    parser.add_argument("--crucible-url")
+    parser.add_argument("--authorization-intent-id", type=UUID)
+    parser.add_argument("--command-input-file", type=Path)
+    parser.add_argument("--operation-timeout-secs", type=float, default=30.0)
     parser.add_argument("--ca-path", type=Path, required=True)
     parser.add_argument("--server-name", required=True)
     parser.add_argument("--pinned-issuer-public-key", required=True)
