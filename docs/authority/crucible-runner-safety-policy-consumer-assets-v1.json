@@ -1,17 +1,17 @@
 {
   "schema_version": 1,
-  "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
+  "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_DEPLOYED_ISSUANCE_OPEN",
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
     "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
-    "producer_receipt_commit": "d9667586c32a573fb23d47dad7e77ab8c567284e",
+    "producer_receipt_commit": "2a851b210707c9eb86b5f244def4629081d3e3b0",
     "contract": "RunnerAggregateCapPolicyV1",
     "authority_coordinate": "crucible.runner-aggregate-cap-policy.v1",
     "subject_template": "crucible.runner.policy.v1.<tenant>.<runner>.<mode>",
     "signature_profile": "crucible-domain-event-v1-exact-bytes",
     "producer_receipt": "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json",
     "runtime_receipt": {
-      "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
+      "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_DEPLOYED_ISSUANCE_OPEN",
       "command": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
       "result": "1 passed",
       "verified_at": "2026-07-26",
@@ -22,8 +22,9 @@
       "production_daemon_path_exercised": true,
       "policy_durable_before_command_ack": true,
       "runner_fact_puback_and_projection": true,
-      "production_service_processes_launched": false,
-      "production_policy_issued": false
+      "local_crucible_production_server_acceptance_pinned": true,
+      "joint_deployed_service_processes_launched": false,
+      "deployed_production_policy_issued": false
     }
   },
   "producer_assets": [
@@ -52,8 +53,8 @@
       "role": "producer_receipt",
       "path": "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json",
       "source_path": "docs/authority/receipts/crucible-runner-safety-policy-v1.json",
-      "sha256": "d516d24d5d9016162c207f5a4678f62a896ea188f6ad5f27f3a7d7a6f6580f6e",
-      "size_bytes": 5527
+      "sha256": "6b78aad5b3d2e299c7ea9816dbead14501b85b86251a55a38c94649cd149b3eb",
+      "size_bytes": 6676
     }
   ],
   "consumer_model": {

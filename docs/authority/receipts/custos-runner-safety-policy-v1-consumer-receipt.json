@@ -1,26 +1,26 @@
 {
   "receipt_version": 1,
-  "receipt_status": "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
+  "receipt_status": "AUTHENTICATED_SAME_POLICY_CONSUMED_DEPLOYED_ISSUANCE_OPEN",
   "repository": "tesseract-trading/custos",
   "generated_at": "2026-07-23",
   "code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-safety-policy-consumer-assets-v1.json",
-    "sha256": "d3cd4a8790c42b98598ad093c84a771a05de71595c5c31f54fa9201844f83abe",
-    "size_bytes": 3410
+    "sha256": "bb3c5d62b306ed9c72027f0b05657dc9598f38ae09ae003af38bb7ac9cb4b9de",
+    "size_bytes": 3485
   },
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
     "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
-    "producer_receipt_commit": "d9667586c32a573fb23d47dad7e77ab8c567284e",
+    "producer_receipt_commit": "2a851b210707c9eb86b5f244def4629081d3e3b0",
     "producer_receipt_path": "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json",
-    "producer_receipt_sha256": "d516d24d5d9016162c207f5a4678f62a896ea188f6ad5f27f3a7d7a6f6580f6e",
+    "producer_receipt_sha256": "6b78aad5b3d2e299c7ea9816dbead14501b85b86251a55a38c94649cd149b3eb",
     "authority_coordinate": "crucible.runner-aggregate-cap-policy.v1",
     "subject_template": "crucible.runner.policy.v1.<tenant>.<runner>.<mode>",
     "schema_sha256": "2029b02dbf5f415c13f539cb807bf72c45b1be712fb0922a66f7d10bf4e8ac89",
     "golden_sha256": "ebd5c7679ff1182ea991fb72417ffa379180a4b8a50103552d06500842c7054a",
     "runtime_receipt": {
-      "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
+      "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_DEPLOYED_ISSUANCE_OPEN",
       "command": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
       "result": "1 passed",
       "verified_at": "2026-07-26",
@@ -31,8 +31,9 @@
       "production_daemon_path_exercised": true,
       "policy_durable_before_command_ack": true,
       "runner_fact_puback_and_projection": true,
-      "production_service_processes_launched": false,
-      "production_policy_issued": false
+      "local_crucible_production_server_acceptance_pinned": true,
+      "joint_deployed_service_processes_launched": false,
+      "deployed_production_policy_issued": false
     },
     "contract_authority_ready": true,
     "runtime_authority_ready": false
@@ -77,7 +78,7 @@
   "production_ready": false,
   "open_blockers": [
     "deployed 0117 receipts from testnet and live physical databases",
-    "production-service-issued policy receipt through the same runtime chain",
+    "joint deployed Crucible-to-Custos policy issuance receipt",
     "live runtime and production promotion"
   ],
   "sources": {
@@ -98,7 +99,8 @@
     "command": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
     "passed": 1,
     "status": "AUTHENTICATED_SAME_POLICY_CONSUMED",
-    "production_service_processes_launched": false,
-    "production_policy_issued": false
+    "local_crucible_production_server_acceptance_pinned": true,
+    "joint_deployed_service_processes_launched": false,
+    "deployed_production_policy_issued": false
   }
 }

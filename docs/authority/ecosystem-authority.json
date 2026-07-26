@@ -166,7 +166,7 @@
       "runner_id"
     ],
     "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
-    "producer_receipt_commit": "d9667586c32a573fb23d47dad7e77ab8c567284e",
+    "producer_receipt_commit": "2a851b210707c9eb86b5f244def4629081d3e3b0",
     "producer_main_landed": true,
     "migration_0117_executed": true,
     "migration_0117_sandbox_pg_verified": true,
@@ -191,7 +191,8 @@
     "command_intake_authority_composed": true,
     "runtime_policy_consumed": true,
     "same_policy_from_crucible_pg_outbox": true,
-    "production_policy_issued": false,
+    "local_crucible_production_server_acceptance_pinned": true,
+    "deployed_production_policy_issued": false,
     "runner_policy_capability_ready": false,
     "team_daemon_enabled": false,
     "live_ready": false,

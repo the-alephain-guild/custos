@@ -3,7 +3,7 @@
   "receipt_id": "CRUCIBLE-RUNNER-SAFETY-POLICY-V1",
   "owner": "crucible-rust",
   "consumer": "custos",
-  "status": "SANDBOX_PG_JETSTREAM_CUSTOS_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
+  "status": "LOCAL_PRODUCTION_SERVER_ISSUED_CUSTOS_CONSUMED_DEPLOYED_ISSUANCE_OPEN",
   "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
   "authority_coordinate": "crucible.runner-aggregate-cap-policy.v1",
   "subject_template": "crucible.runner.policy.v1.<tenant>.<runner_id>.<mode>",
@@ -49,6 +49,8 @@
     "system_event_actor_assertion_jti_nullable": true,
     "human_mutation_actor_assertion_jti_required": true,
     "readiness_fail_closed": true,
+    "production_server_process_acceptance": true,
+    "expiry_worker_process_readiness": true,
     "compatibility_parser_present": false
   },
   "verification": [
@@ -95,6 +97,14 @@
       "production_execution_evidence": false
     },
     {
+      "scope": "local production Crucible server owner lifecycle, expiry readiness and signed policy publication",
+      "command": "make verify-runner-policy-service-process",
+      "result": "1 passed",
+      "verified_at": "2026-07-26",
+      "local_production_binary_execution_evidence": true,
+      "deployed_production_execution_evidence": false
+    },
+    {
       "scope": "same signed policy consumed by authenticated Custos production daemon",
       "command": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
       "result": "1 passed",
@@ -117,12 +127,19 @@
     "live": null
   },
   "runtime_publication_receipt": {
-    "status": "SANDBOX_PG_JETSTREAM_CUSTOS_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
-    "code_commit": "8b5057ef2b54fbe8365ea8b5f3bd55005488e64f",
+    "status": "LOCAL_PRODUCTION_SERVER_ISSUED_CUSTOS_CONSUMED_DEPLOYED_ISSUANCE_OPEN",
+    "publication_code_commit": "8b5057ef2b54fbe8365ea8b5f3bd55005488e64f",
     "cross_repository_code_commit": "40a43fbf146006bb90053c446bd15f529418b45e",
     "custos_code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
-    "command": "make verify-runner-policy-publication",
-    "result": "1 passed",
+    "service_process_acceptance_commit": "22b34ceddd5426f9d438a0b5ce16b4661c913a0b",
+    "commands": {
+      "publication_to_custos": "make verify-runner-policy-publication",
+      "production_server_process": "make verify-runner-policy-service-process"
+    },
+    "results": {
+      "publication_to_custos": "1 passed",
+      "production_server_process": "1 passed"
+    },
     "verified_at": "2026-07-26",
     "trading_mode": "sandbox",
     "physical_database_role": "sim",
@@ -136,10 +153,16 @@
     "exact_command_policy_durable": true,
     "subject_bound_signature_verified": true,
     "puback_before_outbox_completion": true,
-    "owner_http_lifecycle_exercised": false,
-    "production_service_processes_launched": false,
-    "production_policy_issued": false,
-    "same_policy_consumed_by_custos": true
+    "local_owner_http_lifecycle_exercised": true,
+    "local_crucible_production_server_process_launched": true,
+    "local_production_binary_policy_issued": true,
+    "local_three_mode_expiry_readiness_ready": true,
+    "receipt_gated_0113_to_0117_operator_chain_exercised": true,
+    "local_isolated_signer_process_launched": false,
+    "local_transport_provisioner_process_launched": false,
+    "deployed_production_service_processes_launched": false,
+    "deployed_production_policy_issued": false,
+    "same_contract_consumed_by_custos": true
   },
   "custos_consumer_receipt": {
     "repository": "tesseract-trading/custos",

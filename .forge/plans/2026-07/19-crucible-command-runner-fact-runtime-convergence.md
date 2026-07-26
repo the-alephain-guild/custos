@@ -1337,3 +1337,21 @@ readiness facts.
 The focused contract gate passes 9/9, generated assets are exact, the authority
 checker passes and the removed planning names are absent from source, tests and
 authority documents.
+
+## 2026-07-26 Crucible safety-policy production-server receipt
+
+Crucible receipt checkpoint
+`2a851b210707c9eb86b5f244def4629081d3e3b0` now proves the production
+`crucible_rust_server` binary starts against real PostgreSQL and JetStream only
+after the canonical receipt-gated 0113-to-0117 operator chain. The launched
+process completes its live/sandbox/testnet expiry scan, accepts signed owner
+submit/approve/activate operations, publishes the exact subject-bound V1
+policy and completes the mode outbox only after PubAck.
+
+Custos vendors the exact producer receipt at SHA-256
+`6b78aad5b3d2e299c7ea9816dbead14501b85b86251a55a38c94649cd149b3eb`.
+This closes the local CR99 production-server evidence gap without claiming the
+separate Custos authenticated-runtime run consumed that same event instance.
+The isolated CR100 signer/provisioner processes, joint deployed
+Crucible-to-Custos issuance, immutable StrategyRelease runtime candidate and
+testnet/live promotion remain open; T9-T10 therefore remain in progress.

@@ -1244,7 +1244,7 @@ def verify_portfolio_semantics(manifest: dict[str, Any], errors: list[str]) -> N
 
 def _runner_policy_runtime_receipt() -> dict[str, Any]:
     return {
-        "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
+        "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_DEPLOYED_ISSUANCE_OPEN",
         "command": (
             "CRUCIBLE_REPO=<crucible-rust> "
             "make verify-authenticated-runtime-projection"
@@ -1258,8 +1258,9 @@ def _runner_policy_runtime_receipt() -> dict[str, Any]:
         "production_daemon_path_exercised": True,
         "policy_durable_before_command_ack": True,
         "runner_fact_puback_and_projection": True,
-        "production_service_processes_launched": False,
-        "production_policy_issued": False,
+        "local_crucible_production_server_acceptance_pinned": True,
+        "joint_deployed_service_processes_launched": False,
+        "deployed_production_policy_issued": False,
     }
 
 
@@ -1272,7 +1273,7 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
         return
 
     index = load_json(index_path)
-    expected_status = "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN"
+    expected_status = "AUTHENTICATED_SAME_POLICY_CONSUMED_DEPLOYED_ISSUANCE_OPEN"
     if index.get("schema_version") != 1 or index.get("status") != expected_status:
         errors.append("runner policy consumer asset index status differs")
     expected_assets = {
@@ -1311,7 +1312,8 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
         or producer.get("authority_coordinate") != "crucible.runner-aggregate-cap-policy.v1"
         or producer.get("subject_template") != "crucible.runner.policy.v1.<tenant>.<runner>.<mode>"
         or not re.fullmatch(r"[0-9a-f]{40}", str(producer.get("producer_commit") or ""))
-        or not re.fullmatch(r"[0-9a-f]{40}", str(producer.get("producer_receipt_commit") or ""))
+        or producer.get("producer_receipt_commit")
+        != "2a851b210707c9eb86b5f244def4629081d3e3b0"
         or producer.get("producer_receipt")
         != "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json"
         or producer.get("runtime_receipt") != _runner_policy_runtime_receipt()
@@ -1377,8 +1379,9 @@ def verify_runner_policy_runtime(manifest: dict[str, Any], errors: list[str]) ->
         ),
         "passed": 1,
         "status": "AUTHENTICATED_SAME_POLICY_CONSUMED",
-        "production_service_processes_launched": False,
-        "production_policy_issued": False,
+        "local_crucible_production_server_acceptance_pinned": True,
+        "joint_deployed_service_processes_launched": False,
+        "deployed_production_policy_issued": False,
     }:
         errors.append("runner policy V1 authenticated runtime evidence differs")
     if receipt.get("runtime_policy_consumed") is not True:
