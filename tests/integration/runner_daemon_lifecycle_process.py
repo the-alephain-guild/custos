@@ -20,8 +20,12 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from custos.cli import _daemon as daemon_module
-from custos.core.machine_credential_vault import MachineCredential
-from custos.core.nats_transport import RunnerNatsTransportCredential
+from custos.core.machine_credential_vault import MachineCredential, MachineCredentialVault
+from custos.core.nats_transport import (
+    RunnerNatsTransportBundle,
+    RunnerNatsTransportCredential,
+    RunnerNatsTransportVault,
+)
 from custos.core.runner_command_intake import (
     CrucibleRunnerCommandAuthenticator,
     VerifiedRunnerCommand,
@@ -268,6 +272,15 @@ def _timestamp_text(value: datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
+def _assert_encrypted_vault(path: Path, forbidden_values: tuple[bytes, ...]) -> None:
+    if path.stat().st_mode & 0o777 != 0o600:
+        raise PermissionError(f"encrypted vault must have mode 0600: {path}")
+    ciphertext = path.read_bytes()
+    for forbidden in forbidden_values:
+        if forbidden and forbidden in ciphertext:
+            raise RuntimeError(f"encrypted vault contains plaintext secret bytes: {path}")
+
+
 def _install_acceptance_authorities(
     *,
     machine_credential: MachineCredential,
@@ -275,6 +288,7 @@ def _install_acceptance_authorities(
     transport_credential: RunnerNatsTransportCredential,
     capability: RunnerCapabilityReceipt,
     verify_machine_authority_with_crucible: bool,
+    use_encrypted_authority_vaults: bool,
 ) -> None:
     class StaticRunnerToml:
         @staticmethod
@@ -330,13 +344,16 @@ def _install_acceptance_authorities(
         del vault
         return _AcceptanceCredentialResolver()
 
-    daemon_module.RunnerToml = StaticRunnerToml  # type: ignore[misc]
-    daemon_module.MachineCredentialVault = StaticMachineCredentialVault  # type: ignore[misc]
+    if not use_encrypted_authority_vaults:
+        daemon_module.RunnerToml = StaticRunnerToml  # type: ignore[misc]
+        daemon_module.MachineCredentialVault = (  # type: ignore[misc]
+            StaticMachineCredentialVault
+        )
+        daemon_module.RunnerNatsTransportSet = StaticTransportSet  # type: ignore[misc]
     if not verify_machine_authority_with_crucible:
         daemon_module.MachineCredentialHttpClient = (  # type: ignore[misc]
             StaticMachineCredentialHttpClient
         )
-    daemon_module.RunnerNatsTransportSet = StaticTransportSet  # type: ignore[misc]
     daemon_module.RunnerCapabilityReceipt = StaticCapabilityReceipt  # type: ignore[misc]
     daemon_module._build_strategy_release_runtime = (  # type: ignore[assignment]
         build_strategy_release_runtime
@@ -466,6 +483,7 @@ async def _wait_for_publication(
 
 
 async def _run(args: argparse.Namespace) -> dict[str, object]:
+    root = args.database.parent
     command_private_key = Ed25519PrivateKey.from_private_bytes(PRIVATE_KEY_BYTES)
     expected_subject, expected_envelope = _fixture_signed_command()
     verified = CrucibleRunnerCommandAuthenticator(
@@ -485,10 +503,12 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             or not args.crucible_url
             or args.authorization_intent_id is None
             or args.command_input_file is None
+            or not args.age_recipient
         ):
             raise ValueError(
                 "service authority mode requires machine credential, Crucible URL, "
-                "authorization intent and command input file without a static transport credential"
+                "authorization intent, command input file and age recipient without "
+                "a static transport credential"
             )
         machine_credential = _machine_credential(args.machine_credential)
         authority = RunnerNatsTransportAuthorityClient(
@@ -539,6 +559,8 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             expected_envelope,
             capability,
         )
+    machine_vault_path = root / "runner-machine.enc"
+    transport_vault_dir = root / "nats-transport"
     metadata = RunnerToml(
         tenant_id=TENANT_ID,
         runner_id=str(RUNNER_ID),
@@ -547,15 +569,52 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         credential_version=machine_credential.credential_version,
         credential_valid_until=_timestamp_text(machine_credential.credential_valid_until),
         machine_key_id=machine_credential.machine_key_id,
-        machine_vault_path=str(args.database.with_suffix(".machine.enc").resolve()),
+        machine_vault_path=str(machine_vault_path.resolve()),
         enrolled_at=_timestamp_text(datetime.now(UTC).replace(microsecond=0)),
     )
+    encrypted_machine_vault_used = False
+    encrypted_transport_vault_used = False
+    plaintext_machine_bootstrap_removed = False
+    if service_authority:
+        assert args.machine_credential is not None
+        assert args.age_recipient is not None
+        RunnerToml.write(root / "runner.toml", metadata)
+        MachineCredentialVault(machine_vault_path).persist(
+            machine_credential,
+            age_recipient=args.age_recipient,
+        )
+        RunnerNatsTransportVault(transport_vault_dir, "sandbox").persist(
+            RunnerNatsTransportBundle(
+                active=transport_credential,
+                pending_operation=None,
+            ),
+            age_recipient=args.age_recipient,
+        )
+        _assert_encrypted_vault(
+            machine_vault_path,
+            (
+                machine_credential.machine_credential.encode("utf-8"),
+                base64.b64encode(machine_credential.private_key_bytes),
+            ),
+        )
+        _assert_encrypted_vault(
+            transport_vault_dir / "sandbox.enc",
+            (
+                transport_credential.user_seed,
+                transport_credential.user_jwt.encode("utf-8"),
+            ),
+        )
+        args.machine_credential.unlink()
+        plaintext_machine_bootstrap_removed = not args.machine_credential.exists()
+        encrypted_machine_vault_used = True
+        encrypted_transport_vault_used = True
     _install_acceptance_authorities(
         machine_credential=machine_credential,
         metadata=metadata,
         transport_credential=transport_credential,
         capability=capability,
         verify_machine_authority_with_crucible=service_authority,
+        use_encrypted_authority_vaults=service_authority,
     )
     command_public_key_path = args.database.with_suffix(".command.pub")
     command_public_key_path.write_text(
@@ -623,7 +682,9 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         "immutable_artifact_materialized": False,
         "transport_operation_id": transport_operation_id,
         "transport_credential_generation": transport_credential.credential_generation,
-        "encrypted_transport_vault_used": False,
+        "encrypted_machine_vault_used": encrypted_machine_vault_used,
+        "encrypted_transport_vault_used": encrypted_transport_vault_used,
+        "plaintext_machine_bootstrap_removed": plaintext_machine_bootstrap_removed,
     }
 
 
@@ -636,6 +697,7 @@ def main() -> int:
     parser.add_argument("--crucible-url")
     parser.add_argument("--authorization-intent-id", type=UUID)
     parser.add_argument("--command-input-file", type=Path)
+    parser.add_argument("--age-recipient")
     parser.add_argument("--operation-timeout-secs", type=float, default=30.0)
     parser.add_argument("--ca-path", type=Path, required=True)
     parser.add_argument("--server-name", required=True)
