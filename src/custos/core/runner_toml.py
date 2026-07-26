@@ -94,7 +94,7 @@ class RunnerToml:
                 detail.append(f"missing {', '.join(missing)}")
             if unexpected:
                 detail.append(f"unexpected {', '.join(unexpected)}")
-            raise ValueError(f"{path} is not a v2 runner authority document ({'; '.join(detail)})")
+            raise ValueError(f"{path} is not a v1 runner authority document ({'; '.join(detail)})")
         try:
             return RunnerToml(**document)
         except (TypeError, ValueError) as exc:

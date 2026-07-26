@@ -114,5 +114,8 @@ def test_read_rejects_missing_required_field(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     os.chmod(target, 0o600)
-    with pytest.raises(ValueError, match="machine_vault_path"):
+    with pytest.raises(
+        ValueError,
+        match=r"not a v1 runner authority document.*machine_vault_path",
+    ):
         RunnerToml.read(target)
