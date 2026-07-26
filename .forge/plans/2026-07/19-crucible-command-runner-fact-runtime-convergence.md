@@ -1408,3 +1408,31 @@ This closes the local immutable materialization and crash-recovery gaps. Real
 PS exact-candidate OCI/Sigstore publication, locked runtime RC, deployed
 `0029`/`0117`, testnet/live and cross-repo promotion remain open. T9-T10
 therefore remain in progress.
+
+## 2026-07-26 runtime observability and recovery checkpoint
+
+Custos `ec5bdd0` completes the independently executable observability/runbook
+part of T9 without adding a second journal or metrics store. The sole
+`alephain.custos.runner-runtime-metrics.v1` health projection now combines the
+atomic RunnerFact SQLite view with read-only runtime observations for:
+
+- database/WAL/disk bytes, SQLite quick check, command outcomes and overdue
+  leases;
+- desired/applied drift, restart/quarantine, pending RunnerFact age and last
+  PubAck age;
+- policy heads/expiry, immutable artifact cache/activation bytes and active or
+  quarantined artifacts;
+- production transport-authority count, invalid/expired/revoked authority count
+  and next expiry.
+
+Readiness fails closed when any enabled transport is disconnected, SQLite is
+unhealthy or a production transport authority is invalid. Filesystem scans do
+not follow symlinks and remain non-authoritative observations. The operator
+runbook defines page/warn thresholds and preserves SQLite/WAL, vault and
+immutable artifact evidence during recovery.
+
+Focused verification passes `4/4`, Ruff, scoped mypy, the standalone authority
+gate and diff check. Direct whole-file mypy for `runner_fact.py` still reports
+37 pre-existing findings outside this change and is not claimed. Exact PS
+candidate publication, locked runtime RC, deployed mode receipts and promotion
+remain the T9-T10 blockers.
