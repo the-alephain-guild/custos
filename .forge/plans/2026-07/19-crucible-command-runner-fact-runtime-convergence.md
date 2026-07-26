@@ -1010,7 +1010,7 @@ git commit -m "fix(custos): use reliable Nautilus portfolio equity"
 
 > **Execution status (2026-07-21)**: `READY_FOR_CRUCIBLE_CONSUMER_VALIDATION`. The sole V1
 > asset index, schema, golden, signing preimage and projector matrix are pinned
-> to producer asset commit `fcf8df5fd3592257c48cfa22464c1ef6cedf23cf`.
+> to producer asset commit `7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094`.
 > Local Crucible contract validation, interleaved-generation replay and the real local
 > command-to-fact projection path now pass. The immutable cross-repository
 > consumer receipt, runtime RC and all live/production flags remain open.
