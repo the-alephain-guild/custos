@@ -1112,7 +1112,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 - [x] command ACK and RunnerFact PubAck remain distinct over the authenticated transport
 - [x] RunnerFact PubAck broker stream/sequence and payload digest are durable before pending outbox deletion
 - [x] per-mode rotation rollback preserves the prior generation; incomplete revocation suspends that mode and cannot be hidden by another mode's health
-- [ ] Custos old-generation reconnect-denial receipt is consumed by Crucible before broker revocation completes
+- [x] Crucible completes the authority operation only from its broker revoke/disconnect receipt; Custos independently requires old-generation reconnect denial before local cutover or vault deletion, with no reverse evidence callback
 - [x] RunnerFact capability revision + Crucible projector receipt
 - [x] `telemetry_actor.md` 原子 rename 为 `runner_fact.md`，不删除 typed RunnerFact authority
 - [x] sandbox/testnet/live negative matrix

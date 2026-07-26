@@ -67,6 +67,8 @@
     "pending_operation_persisted_before_network": true,
     "restart_reuses_operation_id_and_seed": true,
     "pending_result_exposes_user_jwt": false,
+    "authority_operation_completion_source": "Crucible broker revoke/disconnect receipt",
+    "reverse_client_evidence_callback_present": false,
     "compatibility_lifecycle_routes_present": false
   },
   "truth": {
@@ -81,6 +83,9 @@
     "begin_poll_consumer_implemented": true,
     "restart_safe_pending_operation_implemented": true,
     "broker_receipt_required_for_rotate_or_revoke": true,
+    "crucible_authority_completion_requires_broker_revocation_receipt": true,
+    "custos_cutover_requires_local_old_generation_denial": true,
+    "reverse_custos_denial_callback_required": false,
     "crucible_signer_or_admin_secret_present": false,
     "pinned_account_issuer_required": true,
     "jwt_signature_and_acl_verification_implemented": true,

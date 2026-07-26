@@ -1632,6 +1632,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "pending_operation_persisted_before_network": True,
             "restart_reuses_operation_id_and_seed": True,
             "pending_result_exposes_user_jwt": False,
+            "authority_operation_completion_source": (
+                "Crucible broker revoke/disconnect receipt"
+            ),
+            "reverse_client_evidence_callback_present": False,
             "compatibility_lifecycle_routes_present": False,
         }
         for key, value in expected.items():
@@ -1642,6 +1646,14 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     if not isinstance(truth, dict):
         errors.append("runner NATS transport truth is missing")
     else:
+        expected_revocation_boundary = {
+            "crucible_authority_completion_requires_broker_revocation_receipt": True,
+            "custos_cutover_requires_local_old_generation_denial": True,
+            "reverse_custos_denial_callback_required": False,
+        }
+        for key, expected in expected_revocation_boundary.items():
+            if truth.get(key) != expected:
+                errors.append(f"runner NATS transport revocation boundary {key} differs")
         if truth.get("local_real_nats_revocation_gate") != {
             "command": "make verify-nats-revocation",
             "code_commit": "ba562a91a3d160293f3f0631c47a954164766662",
