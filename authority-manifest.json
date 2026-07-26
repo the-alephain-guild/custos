@@ -265,7 +265,7 @@
       "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json",
       "producer_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
       "producer_contract_commit": "e36c6cd11008542c63fb21f8837afcb02d31ac70",
-      "producer_receipt_commit": "3aecba7933ec84bd57fc40d3d9f2da0d71f6a653",
+      "producer_receipt_commit": "84cfca9a80000d86f780fdcfe66e9aee617858c0",
       "runtime_ready": false,
       "production_ready": false
     },

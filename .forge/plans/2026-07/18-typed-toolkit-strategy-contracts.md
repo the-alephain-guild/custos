@@ -738,7 +738,7 @@ git commit -m "docs(custos): mark plan 18 as completed"
 | Old contract/runtime generations | removed | old runtime module and command-owned evidence path are absent |
 | PS V1 handoff | pending final pins | PS source uses the sole V1 OCI topology |
 | Crucible V1 handoff | Custos contract exact; artifact acceptance open | final Custos producer receipt is pinned at Crucible `014edd4`; real PS publication and Plan 88 C6 native acceptance remain open |
-| Crucible Plan 89 runner resolution | local exact-byte gate pass | Runtime `34e0f13`, contract `e36c6cd`, producer receipt `3aecba7` and Custos relock `cdb2655` bind one persisted DeploymentSpec-derived release; immutable daemon materialization and deployed acceptance remain open |
+| Crucible Plan 89 runner resolution | local exact-byte gate pass | Runtime `34e0f13`, contract `e36c6cd`, stable producer receipt `84cfca9` and Custos relock `cdb2655` bind one persisted DeploymentSpec-derived release; immutable daemon materialization and deployed acceptance remain open |
 | Runtime activation | sandbox ready; production clone-local path ready | development-source runtime passes; Crucible `10b85e4` exposes complete production authority; Custos `4ad12b2` validates it and `d926ab0` composes immutable OCI acquisition, cache, trust policy and activation; real publication and launched receipts remain open |
 | Production/live | STOP | requires final exact-byte receipts and real runtime evidence |
 
@@ -827,8 +827,8 @@ remain open until those launched receipts exist.
 ## 2026-07-26 exact runner-resolution contract checkpoint
 
 Crucible runtime `34e0f139c64b5e1ed8fe5136a432e7b00aeea9df`, sole-V1 contract
-`e36c6cd11008542c63fb21f8837afcb02d31ac70` and producer receipt
-`3aecba7933ec84bd57fc40d3d9f2da0d71f6a653` now publish one strict direct-machine
+`e36c6cd11008542c63fb21f8837afcb02d31ac70` and stable producer receipt
+`84cfca9a80000d86f780fdcfe66e9aee617858c0` now publish one strict direct-machine
 request/response schema and one exact golden. The input binds the authenticated
 runner and exact persisted instance/spec/generation/command fingerprint but has
 no `strategy_release_id`; Crucible alone derives the authorized release from the

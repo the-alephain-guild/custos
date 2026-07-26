@@ -3,7 +3,7 @@
   "receipt_id": "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-V1",
   "owner": "crucible-rust",
   "consumer": "custos",
-  "status": "LOCAL_SANDBOX_HTTP_PG_CONTRACT_READY_CUSTOS_RELOCK_OPEN",
+  "status": "LOCAL_SANDBOX_HTTP_PG_CONTRACT_READY",
   "authority_coordinate": "crucible.runner-strategy-resolution.v1",
   "producer_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
   "runtime_code_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
@@ -100,7 +100,6 @@
   "live_ready": false,
   "production_ready": false,
   "open_blockers": [
-    "Custos exact-byte consumer relock to contract commit e36c6cd11008542c63fb21f8837afcb02d31ac70",
     "protected PS OCI publication and immutable daemon materialization",
     "same-event NATS command to engine to RunnerFact acceptance with StrategyRelease material",
     "deployed testnet and live acceptance"
