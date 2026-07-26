@@ -1558,7 +1558,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     elif (
         producer.get("producer_commit") != "e2499bb"
         or producer.get("runtime_receipt_commit")
-        != "be972259f8b5aae3d295c988470f2889d061dea9"
+        != "dc1416b44514d66fd4f53f792446f0704220c373"
         or producer.get("authority_receipt")
         != "tesseract-trading/crucible-rust/docs/authority/receipts/"
         "crucible-runner-nats-broker-authority-v1.json"
@@ -1729,14 +1729,21 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "local_crucible_full_resolver_integration_passed",
             "same_service_issued_transport_event_consumed_by_custos_process",
             "joint_runtime_real_nats_integration_passed",
+            "joint_custos_daemon_consumed_same_event",
+            "same_event_production_policy_issued",
+            "same_event_authenticated_policy_consumed",
+            "same_event_sandbox_engine_ready",
+            "same_event_command_ack_after_lifecycle_commit",
+            "same_event_runner_fact_puback_observed",
         ):
             if truth.get(key) is not True:
                 errors.append(f"runner NATS transport implemented truth {key} differs")
         for key in (
             "joint_deployed_transport_credential_provisioned",
             "joint_deployed_durable_verified",
-            "joint_custos_daemon_consumed_same_event",
             "local_crucible_provisioner_plaintext_runtime_allowed",
+            "same_event_encrypted_transport_vault_used",
+            "same_event_immutable_artifact_materialized",
             "team_daemon_enabled",
             "runtime_ready",
             "live_ready",
@@ -1749,6 +1756,47 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             != "1b2f72df46519768b22c5d9f9d85ecbb618e3856"
         ):
             errors.append("runner NATS transport consumer code receipt differs")
+        if (
+            truth.get("joint_custos_daemon_code_commit")
+            != "c4a9f2d9926c72fb287394ec81ef4142b5068385"
+        ):
+            errors.append("runner NATS transport daemon code receipt differs")
+        if truth.get("joint_full_daemon_gate") != {
+            "command": "make -C <crucible-rust> verify-runner-full-daemon-local",
+            "custos_code_commit": "c4a9f2d9926c72fb287394ec81ef4142b5068385",
+            "crucible_code_commit": "1c7adeafcfaf8b6149ee56d704ed49a3ca1c2bd5",
+            "crucible_runtime_receipt_commit": (
+                "dc1416b44514d66fd4f53f792446f0704220c373"
+            ),
+            "status": "PASS",
+            "tests_passed": 1,
+            "real_postgresql": True,
+            "real_tls_full_resolver_nats": True,
+            "production_signer_process_launched": True,
+            "production_provisioner_process_launched": True,
+            "production_crucible_server_launched": True,
+            "production_custos_daemon_launched": True,
+            "service_issued_machine_authority_verified": True,
+            "service_issued_transport_authority_verified": True,
+            "production_runner_policy_issued": True,
+            "authenticated_runner_policy_consumed": True,
+            "canonical_command_consumed": True,
+            "sandbox_engine_ready": True,
+            "command_ack_after_lifecycle_commit": True,
+            "runner_fact_puback_observed": True,
+            "canonical_runner_fact_stream": "CRUCIBLE_RUNNER_FACT_V1",
+            "encrypted_transport_vault_used": False,
+            "immutable_strategy_release_materialized": False,
+            "crucible_runner_fact_projection_observed": False,
+        }:
+            errors.append("runner NATS transport joint full-daemon evidence differs")
+        if receipt.get("open_blockers") != [
+            "deployed tenant runner mode durables have no exact SIM/LIVE runtime readback receipt",
+            "the joint launched runtime has not consumed a deployed CR99 runner policy",
+            "the service-issued transport credential has not completed encrypted vault restart and rotation acceptance",
+            "the immutable StrategyRelease has not been materialized and activated by a launched engine",
+        ]:
+            errors.append("runner NATS transport open blocker boundary differs")
 
     transport = source_paths["transport"].read_text(encoding="utf-8")
     authority_client = source_paths["authority_client"].read_text(encoding="utf-8")
@@ -1820,10 +1868,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("producer_commit") != "e2499bb"
         or snapshot.get("producer_runtime_receipt")
         != {
-            "commit": "be972259f8b5aae3d295c988470f2889d061dea9",
+            "commit": "dc1416b44514d66fd4f53f792446f0704220c373",
             "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
-            "sha256": "75866310d102f83bdd3390a3c38a439dc1b21d8377418a6fda64aeef4e0ea815",
-            "size_bytes": 4811,
+            "sha256": "8fc69182d3c21cde3c1a8cb2dc87cfda601fc57889fec743b20786991574c5fe",
+            "size_bytes": 6529,
             "status": (
                 "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_"
                 "DEPLOYED_ACCEPTANCE_OPEN"
@@ -1862,7 +1910,9 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         is not True
         or snapshot.get("custos_transport_consumer_code_commit")
         != "1b2f72df46519768b22c5d9f9d85ecbb618e3856"
-        or snapshot.get("joint_custos_daemon_consumed_same_event") is not False
+        or snapshot.get("joint_custos_daemon_consumed_same_event") is not True
+        or snapshot.get("joint_custos_daemon_code_commit")
+        != "c4a9f2d9926c72fb287394ec81ef4142b5068385"
         or snapshot.get("joint_deployed_transport_credential_provisioned")
         is not False
         or snapshot.get("joint_deployed_durable_verified") is not False
@@ -1872,8 +1922,9 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("crucible_policy_publisher_code_commit")
         != "40a43fbf146006bb90053c446bd15f529418b45e"
         or snapshot.get("immutable_artifact_materialization_in_gate") is not False
-        or snapshot.get("production_authority_issued_in_gate") is not False
-        or snapshot.get("production_policy_issued_in_gate") is not False
+        or snapshot.get("production_authority_issued_in_gate") is not True
+        or snapshot.get("production_policy_issued_in_gate") is not True
+        or snapshot.get("encrypted_transport_vault_used_in_gate") is not False
         or snapshot.get("crucible_projection_in_authenticated_gate") is not True
         or snapshot.get("sqlite_outbox_empty_after_puback") is not True
     ):

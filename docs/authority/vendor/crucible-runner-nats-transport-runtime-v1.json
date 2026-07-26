@@ -5,7 +5,7 @@
   "consumer": "custos",
   "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN",
   "authority_coordinate": "crucible.runner-nats-transport.v1",
-  "code_commit": "f862db8f81dcf0675fac9d28b6f83d5c2ca67036",
+  "code_commit": "1c7adeafcfaf8b6149ee56d704ed49a3ca1c2bd5",
   "control_migration": {
     "checked_in_head": "0029",
     "local_ephemeral_head_executed": "0029",
@@ -20,6 +20,9 @@
     "ordinary_server_account_seed_present": false,
     "ordinary_server_operator_seed_present": false,
     "ordinary_server_broker_admin_credential_present": false,
+    "ordinary_server_runner_control_publisher_user_credential_present": true,
+    "ordinary_server_runner_control_publisher_cross_domain_allowed": false,
+    "ordinary_server_runner_control_publisher_admin_mutation_allowed": false,
     "signer_broker_admin_credential_present": false,
     "provisioner_account_signing_seed_present": false,
     "provisioner_tls_required": true,
@@ -30,7 +33,8 @@
     "deployed_production_services_launched": false
   },
   "acceptance": {
-    "command": "make verify-runner-transport-custos-consumer",
+    "command": "make verify-runner-full-daemon-local",
+    "regression_command": "make verify-runner-transport-custos-consumer",
     "standalone_command": "make verify-runner-transport-service-process",
     "result": "1 passed",
     "verified_at": "2026-07-26",
@@ -44,6 +48,7 @@
     "arx_actor_assertion_intent_exercised": true,
     "direct_custos_machine_request_exercised": true,
     "real_custos_consumer_process_exercised": true,
+    "real_custos_daemon_process_exercised": true,
     "custos_authority_client_exercised": true,
     "custos_tls_connection_profile_exercised": true,
     "custos_existing_durable_bind_exercised": true,
@@ -57,7 +62,17 @@
     "authority_active_only_after_readback": true,
     "issued_user_jwt_connected": true,
     "exact_command_delivered": true,
-    "command_ack_published": true
+    "command_ack_published": true,
+    "production_runner_safety_policy_issued": true,
+    "authenticated_runner_safety_policy_consumed": true,
+    "canonical_command_envelope_consumed": true,
+    "sandbox_engine_ready": true,
+    "command_ack_after_lifecycle_commit": true,
+    "runner_fact_puback_observed": true,
+    "canonical_runner_fact_stream": "CRUCIBLE_RUNNER_FACT_V1",
+    "encrypted_transport_vault_used": false,
+    "immutable_strategy_release_materialized": false,
+    "full_custos_runtime_candidate_locked": false
   },
   "accepted_scope": {
     "trading_mode": "sandbox",
@@ -67,8 +82,8 @@
   },
   "source": {
     "path": "crates/server-http/tests/runner_nats_transport_service_process.rs",
-    "sha256": "e7e42f4d476a78609fc08589749a89f8591ee8c035510436e9479ea123ab7966",
-    "size_bytes": 52819
+    "sha256": "931cf2a407473a815c5bd97f9d17848759199b5628963aa17e943e0d12c1cc0e",
+    "size_bytes": 75719
   },
   "custos_consumer_source": {
     "repository": "tesseract-trading/custos",
@@ -79,6 +94,17 @@
     "user_seed_egress": false,
     "user_jwt_egress": false,
     "machine_private_key_egress": false
+  },
+  "custos_daemon_source": {
+    "repository": "tesseract-trading/custos",
+    "commit": "c4a9f2d9926c72fb287394ec81ef4142b5068385",
+    "path": "tests/integration/runner_daemon_lifecycle_process.py",
+    "sha256": "e46cee466ada5bcfdabe4930803966908ffd9e6a97d3a45bd7d48c47d516863a",
+    "size_bytes": 25275,
+    "production_authority_issued": true,
+    "production_policy_issued": true,
+    "immutable_artifact_materialized": false,
+    "encrypted_transport_vault_used": false
   },
   "predecessor_receipts": {
     "http": {
@@ -101,7 +127,13 @@
     "existing_clone_local_daemon_receipt": true,
     "same_event_instance_consumed_in_this_gate": true,
     "custos_transport_consumer_process_launched_in_this_gate": true,
-    "custos_daemon_launched_in_this_gate": false,
+    "custos_daemon_launched_in_this_gate": true,
+    "production_runner_safety_policy_issued_in_this_gate": true,
+    "authenticated_runner_safety_policy_consumed_in_this_gate": true,
+    "sandbox_engine_ready_in_this_gate": true,
+    "command_ack_after_lifecycle_commit_in_this_gate": true,
+    "runner_fact_puback_observed_in_this_gate": true,
+    "encrypted_transport_vault_used_in_this_gate": false,
     "immutable_strategy_release_materialized_in_this_gate": false,
     "runtime_candidate_locked": false
   },
@@ -111,7 +143,8 @@
   "open_blockers": [
     "deployed control 0028 predecessor receipt",
     "deployed control 0029 execution receipt",
-    "joint Custos production daemon policy/engine flow and immutable StrategyRelease runtime candidate",
+    "encrypted Custos transport-vault restart and rotation acceptance",
+    "immutable StrategyRelease materialization in the same daemon event",
     "deployed testnet and live acceptance"
   ]
 }
