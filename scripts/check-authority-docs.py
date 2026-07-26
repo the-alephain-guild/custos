@@ -1621,7 +1621,7 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
         errors.append("RunnerFact V1 producer receipt schema differs")
     if receipt.get("status") != "PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN":
         errors.append("RunnerFact V1 producer receipt status differs")
-    if receipt.get("producer_commit") != "7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094":
+    if receipt.get("producer_commit") != "cce76931884de36c9606db02d94cf4124e7164b5":
         errors.append("RunnerFact V1 producer receipt does not pin the immutable asset commit")
     expected_index_binding = {
         "path": RUNNER_FACT_CONTRACT_INDEX_PATH,
@@ -1634,7 +1634,7 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     expected_consumer_binding = {
         "crucible_rust": {
             "repository": "tesseract-trading/crucible-rust",
-            "commit": "3a93a0607306cf7f5d18020e31f923850652167d",
+            "commit": "a36b63a73e7dadf27628df064878b0d6db6e8820",
             "producer_path": (
                 "docs/authority/receipts/"
                 "crucible-runner-fact-v1-consumer-receipt.json"
@@ -1654,14 +1654,14 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     consumer = consumer_receipt.get("consumer")
     if not isinstance(producer, dict) or (
         producer.get("asset_commit")
-        != "7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094"
+        != "cce76931884de36c9606db02d94cf4124e7164b5"
     ):
         errors.append("Crucible RunnerFact V1 receipt producer asset commit differs")
     if isinstance(producer, dict) and "producer_receipt" in producer:
         errors.append("Crucible RunnerFact V1 receipt must not create a receipt cycle")
     if not isinstance(consumer, dict) or (
         consumer.get("code_commit")
-        != "e8a5f44bee6d98f513b749dd7c7d3a673d26a787"
+        != "bba16f9fd031cd89b78ac3eaa549346b7bf2f8a0"
     ):
         errors.append("Crucible RunnerFact V1 receipt consumer code commit differs")
     for field in ("runtime_ready", "live_ready", "production_ready"):
@@ -1700,7 +1700,7 @@ def verify_runner_fact_authority(errors: list[str]) -> None:
     consumer_payload = consumer_path.read_bytes() if consumer_path.is_file() else b""
     if state.get("consumer_receipt") != {
         "repository": "tesseract-trading/crucible-rust",
-        "commit": "3a93a0607306cf7f5d18020e31f923850652167d",
+        "commit": "a36b63a73e7dadf27628df064878b0d6db6e8820",
         "path": (
             "docs/authority/receipts/vendor/"
             "crucible-runner-fact-v1-consumer-receipt.json"

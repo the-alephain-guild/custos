@@ -161,12 +161,12 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
         assert sidecar.read_text(encoding="ascii") == (f"{asset['sha256']}  {path.name}\n")
     index_payload = INDEX_PATH.read_bytes()
     assert receipt["status"] == "PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN"
-    assert receipt["producer_commit"] == "7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094"
+    assert receipt["producer_commit"] == "cce76931884de36c9606db02d94cf4124e7164b5"
     crucible_payload = CRUCIBLE_CONSUMER_RECEIPT_PATH.read_bytes()
     assert receipt["consumer_receipts"] == {
         "crucible_rust": {
             "repository": "tesseract-trading/crucible-rust",
-            "commit": "3a93a0607306cf7f5d18020e31f923850652167d",
+            "commit": "a36b63a73e7dadf27628df064878b0d6db6e8820",
             "producer_path": (
                 "docs/authority/receipts/"
                 "crucible-runner-fact-v1-consumer-receipt.json"
@@ -183,7 +183,7 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
     crucible_receipt = _json(CRUCIBLE_CONSUMER_RECEIPT_PATH)
     assert (
         crucible_receipt["producer"]["asset_commit"]
-        == "7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094"
+        == "cce76931884de36c9606db02d94cf4124e7164b5"
     )
     assert "producer_receipt" not in crucible_receipt["producer"]
     assert receipt["asset_index"] == {

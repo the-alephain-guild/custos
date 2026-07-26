@@ -1010,12 +1010,12 @@ git commit -m "fix(custos): use reliable Nautilus portfolio equity"
 
 > **Execution status (2026-07-26)**: `PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN`. The sole V1
 > asset index, schema, golden, signing preimage and projector matrix are pinned
-> to producer asset commit `7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094`.
-> Crucible consumer code commit `e8a5f44bee6d98f513b749dd7c7d3a673d26a787`
+> to producer asset commit `cce76931884de36c9606db02d94cf4124e7164b5`.
+> Crucible consumer code commit `bba16f9fd031cd89b78ac3eaa549346b7bf2f8a0`
 > accepts the closed fact union and projector map; receipt commit
-> `3a93a0607306cf7f5d18020e31f923850652167d` pins those exact producer
+> `a36b63a73e7dadf27628df064878b0d6db6e8820` pins those exact producer
 > bytes with receipt SHA-256
-> `e9171de3d2cd9f9365a0b4228356654c0ca7e8609ac657e1aee1ca36f32faf58`.
+> `a1ce1b59d11f94e1c44c38efaf651f81dfad3f96694cd0ebf90811b16c4ae873`.
 > Phase A exact-byte handoff is complete. The real runtime round trip, immutable
 > runtime RC and all live/production flags remain open.
 

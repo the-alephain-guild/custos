@@ -4,26 +4,26 @@
   "status": "EXACT_CUSTOS_RUNNER_FACT_V1_ACCEPTED_RUNTIME_OPEN",
   "producer": {
     "repository": "tesseract-trading/custos",
-    "asset_commit": "7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094",
+    "asset_commit": "cce76931884de36c9606db02d94cf4124e7164b5",
     "authority_coordinate": "custos.runner-fact.v1",
     "asset_index": {
       "producer_path": "docs/authority/runner-fact-contract-assets-v1.json",
       "local_path": "docs/authority/custos-runner-fact-contract-assets-v1.json",
-      "sha256": "8b1e0a9a92fc8225a60a08ca0101d659cf37f9b4c06826448c2e7c47ac1a259d",
+      "sha256": "3f0df2b480d983ded6d16d1b2a83f51875c84402e9e5fd247929cad4a9355f1b",
       "size_bytes": 3655
     },
     "assets": {
       "runner_fact_batch_schema": {
         "producer_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
         "local_path": "docs/authority/custos-runner-fact-batch-v1.schema.json",
-        "sha256": "4448c41b5b2390923d8ad0f1fe94114fc61b259adce822e363213e5e0c682c31",
-        "size_bytes": 31187
+        "sha256": "e835034a5aa30f6d03899e1294eb91ad379e89d2757b98dd0f95e1a3dc913e2e",
+        "size_bytes": 31214
       },
       "runner_fact_batch_golden": {
         "producer_path": "docs/authority/runner-fact-golden-v1.json",
         "local_path": "docs/authority/custos-runner-fact-golden-v1.json",
-        "sha256": "03493111cc001fb40211dd590d971335285d64017eba9286c68e5d3fe6ad062d",
-        "size_bytes": 6461
+        "sha256": "eef9594d7b068efc5056cdf360661639764460a0d32e9dff9d91a9a787c7a2cf",
+        "size_bytes": 6435
       },
       "runner_fact_capability_manifest": {
         "producer_path": "docs/authority/runner-fact-capability-manifest-v1.json",
@@ -46,14 +46,14 @@
       "runner_fact_signing_preimage_golden": {
         "producer_path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
         "local_path": "docs/authority/custos-runner-fact-signing-preimage-golden-v1.json",
-        "sha256": "0ccc0ca2b89076a6081fd462a7cb864a7316996555a5d2b3a703192ec7e4ce7c",
+        "sha256": "f5938b01e70923a236ba9d8e150eefa0ab4e8f3ee84471d3453fdc156b8424d2",
         "size_bytes": 5434
       }
     }
   },
   "consumer": {
     "repository": "tesseract-trading/crucible-rust",
-    "code_commit": "e8a5f44bee6d98f513b749dd7c7d3a673d26a787",
+    "code_commit": "bba16f9fd031cd89b78ac3eaa549346b7bf2f8a0",
     "closed_fact_union": true,
     "compatibility_fallback": false,
     "top_level_venue_snapshot_supported": false,
@@ -85,8 +85,8 @@
       },
       "inbox": {
         "path": "crates/store/src/runner_fact_inbox.rs",
-        "sha256": "c9b09ea6b3a676092068bfb0405de23a390bdb5e55890a0b7b6979b0888d44bd",
-        "size_bytes": 89972
+        "sha256": "e66354148a31819b8af5349d41a139c647a1efea11a9d5a9d3e7e2bd4b814aa3",
+        "size_bytes": 90023
       },
       "reconciliation_projector": {
         "path": "crates/store/src/runner_fact_reconciliation_projector.rs",
@@ -105,8 +105,8 @@
       },
       "transport_postgresql_acceptance": {
         "path": "crates/server-http/tests/runner_fact_transport_pg.rs",
-        "sha256": "3773097dcf626222bf85e8adcec3eb9cd15b182f9cf700455f8e64dae91fee13",
-        "size_bytes": 6902
+        "sha256": "32f6655174c5727495242698bb9727e4fe89ed61303a4ce2bc993b8c28dfe439",
+        "size_bytes": 17458
       }
     }
   },
@@ -119,7 +119,7 @@
     "format_check_passed": true,
     "poison_transport_postgresql_receipt": {
       "test": "cargo test -p server-http --test runner_fact_transport_pg",
-      "result": "1 passed",
+      "result": "2 passed; poison assertion passed",
       "verified_at": "2026-07-26",
       "real_nats_jetstream": true,
       "real_postgresql": true,
@@ -127,6 +127,21 @@
       "producer_is_custos_runtime": false,
       "authenticated_transport": false,
       "positive_projection": false
+    },
+    "signed_transport_postgresql_acceptance": {
+      "test": "cargo test -p server-http --test runner_fact_transport_pg",
+      "result": "2 passed; signed positive assertion passed",
+      "verified_at": "2026-07-26",
+      "producer_asset_commit": "cce76931884de36c9606db02d94cf4124e7164b5",
+      "consumer_code_commit": "bba16f9fd031cd89b78ac3eaa549346b7bf2f8a0",
+      "real_nats_jetstream": true,
+      "real_postgresql": true,
+      "exact_signed_golden": true,
+      "capability_and_deployment_fencing": true,
+      "accepted_batch_before_consumer_ack": true,
+      "projector_work_count": 5,
+      "producer_is_custos_runtime": false,
+      "authenticated_transport": false
     },
     "postgresql_runtime_receipt": null,
     "authenticated_nats_runtime_receipt": null,
@@ -136,9 +151,8 @@
   "live_ready": false,
   "production_ready": false,
   "open_blockers": [
-    "real PostgreSQL capability publication and positive projection receipt",
     "authenticated NATS ingest and PubAck receipt",
-    "real command-to-fact runtime round-trip receipt",
+    "real Custos command-to-fact runtime round-trip receipt",
     "immutable Custos runtime RC receipt"
   ]
 }
