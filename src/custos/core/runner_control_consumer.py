@@ -102,9 +102,11 @@ class RunnerControlConsumerV1:
             )
             client.assert_policy_binding(str(message.subject), verified.policy)
         except (RunnerSafetyPolicyVerificationError, RunnerNatsTransportError, ValueError) as exc:
+            reason_code = getattr(exc, "reason_code", "transport_binding_invalid")
             log.error(
-                "runner_safety_policy_rejected",
-                extra={"error_type": type(exc).__name__},
+                "runner_safety_policy_rejected reason=%s error_type=%s",
+                reason_code,
+                type(exc).__name__,
             )
             await message.term()
             return
