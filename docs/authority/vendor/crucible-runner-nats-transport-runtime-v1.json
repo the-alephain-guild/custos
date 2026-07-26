@@ -5,7 +5,7 @@
   "consumer": "custos",
   "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN",
   "authority_coordinate": "crucible.runner-nats-transport.v1",
-  "code_commit": "f230c2280ab690273269e89a75c5069d5f110c2d",
+  "code_commit": "4b33821b3e7ea189fdc91f6709e64c9aa82fdcc4",
   "control_migration": {
     "checked_in_head": "0029",
     "local_ephemeral_head_executed": "0029",
@@ -73,6 +73,9 @@
     "encrypted_machine_vault_used": true,
     "encrypted_transport_vault_used": true,
     "plaintext_machine_bootstrap_removed": true,
+    "daemon_launch_count": 2,
+    "daemon_restart_completed": true,
+    "encrypted_vaults_reloaded_after_restart": true,
     "immutable_strategy_release_materialized": false,
     "full_custos_runtime_candidate_locked": false
   },
@@ -84,8 +87,8 @@
   },
   "source": {
     "path": "crates/server-http/tests/runner_nats_transport_service_process.rs",
-    "sha256": "2c3036f447444404e78c6063bd3f98c9e08d5359f5af1d68f648e66d13b6c147",
-    "size_bytes": 77517
+    "sha256": "13896a870b01c585df55a57129203284d706bcd0cbb20ba3c36681572f5c9ee3",
+    "size_bytes": 77701
   },
   "custos_consumer_source": {
     "repository": "tesseract-trading/custos",
@@ -99,16 +102,19 @@
   },
   "custos_daemon_source": {
     "repository": "tesseract-trading/custos",
-    "commit": "4078653a3ef459d72c4a87d201e176e3f5984e82",
+    "commit": "1abfc4ec7b4debae4bb160f59862eaa7833b762d",
     "path": "tests/integration/runner_daemon_lifecycle_process.py",
-    "sha256": "4808c720245b15e56e98f6a37844a4b8130f8c3c189b937a5b717bf75631b00f",
-    "size_bytes": 27802,
+    "sha256": "8c518645868f473569399354400950562941401c466b78e6b9175e271558bbe2",
+    "size_bytes": 29751,
     "production_authority_issued": true,
     "production_policy_issued": true,
     "immutable_artifact_materialized": false,
     "encrypted_machine_vault_used": true,
     "encrypted_transport_vault_used": true,
-    "plaintext_machine_bootstrap_removed": true
+    "plaintext_machine_bootstrap_removed": true,
+    "daemon_launch_count": 2,
+    "daemon_restart_completed": true,
+    "encrypted_vaults_reloaded_after_restart": true
   },
   "predecessor_receipts": {
     "http": {
@@ -140,6 +146,9 @@
     "encrypted_machine_vault_used_in_this_gate": true,
     "encrypted_transport_vault_used_in_this_gate": true,
     "plaintext_machine_bootstrap_removed_in_this_gate": true,
+    "custos_daemon_launch_count_in_this_gate": 2,
+    "custos_daemon_restart_completed_in_this_gate": true,
+    "encrypted_vaults_reloaded_after_restart_in_this_gate": true,
     "immutable_strategy_release_materialized_in_this_gate": false,
     "runtime_candidate_locked": false
   },
@@ -149,7 +158,7 @@
   "open_blockers": [
     "deployed control 0028 predecessor receipt",
     "deployed control 0029 execution receipt",
-    "encrypted Custos transport-vault restart and rotation acceptance",
+    "encrypted Custos machine and transport vault rotation acceptance",
     "immutable StrategyRelease materialization in the same daemon event",
     "deployed testnet and live acceptance"
   ]

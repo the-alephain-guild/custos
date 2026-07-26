@@ -6,12 +6,12 @@
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
     "producer_commit": "e2499bb",
-    "runtime_receipt_commit": "98e43bda7163e89ae59f1662595776ccdb6aa84c",
+    "runtime_receipt_commit": "6cb9d6845c8cd0856c492ae9761a5231f6ec8254",
     "runtime_receipt": {
       "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
       "source_path": "docs/authority/receipts/crucible-runner-nats-transport-runtime-v1.json",
-      "sha256": "28ec60489bbc728a5241a210a12805207abac458fd33381d1bdfc87255d5b07c",
-      "size_bytes": 6825,
+      "sha256": "50df14c369bfb59cddfe03ebd9e05e964e83ad369d3b62fe11177227256e875f",
+      "size_bytes": 7241,
       "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
     },
     "contract_assets": {
@@ -103,7 +103,7 @@
     "same_service_issued_transport_event_consumed_by_custos_process": true,
     "custos_transport_consumer_code_commit": "1b2f72df46519768b22c5d9f9d85ecbb618e3856",
     "joint_custos_daemon_consumed_same_event": true,
-    "joint_custos_daemon_code_commit": "4078653a3ef459d72c4a87d201e176e3f5984e82",
+    "joint_custos_daemon_code_commit": "1abfc4ec7b4debae4bb160f59862eaa7833b762d",
     "same_event_production_policy_issued": true,
     "same_event_authenticated_policy_consumed": true,
     "same_event_sandbox_engine_ready": true,
@@ -112,6 +112,9 @@
     "same_event_encrypted_machine_vault_used": true,
     "same_event_encrypted_transport_vault_used": true,
     "same_event_plaintext_machine_bootstrap_removed": true,
+    "same_event_daemon_launch_count": 2,
+    "same_event_daemon_restart_completed": true,
+    "same_event_encrypted_vaults_reloaded_after_restart": true,
     "same_event_immutable_artifact_materialized": false,
     "joint_deployed_transport_credential_provisioned": false,
     "joint_deployed_durable_verified": false,
@@ -167,9 +170,9 @@
     },
     "joint_full_daemon_gate": {
       "command": "make -C <crucible-rust> verify-runner-full-daemon-local",
-      "custos_code_commit": "4078653a3ef459d72c4a87d201e176e3f5984e82",
-      "crucible_code_commit": "f230c2280ab690273269e89a75c5069d5f110c2d",
-      "crucible_runtime_receipt_commit": "98e43bda7163e89ae59f1662595776ccdb6aa84c",
+      "custos_code_commit": "1abfc4ec7b4debae4bb160f59862eaa7833b762d",
+      "crucible_code_commit": "4b33821b3e7ea189fdc91f6709e64c9aa82fdcc4",
+      "crucible_runtime_receipt_commit": "6cb9d6845c8cd0856c492ae9761a5231f6ec8254",
       "status": "PASS",
       "tests_passed": 1,
       "real_postgresql": true,
@@ -190,6 +193,9 @@
       "encrypted_machine_vault_used": true,
       "encrypted_transport_vault_used": true,
       "plaintext_machine_bootstrap_removed": true,
+      "daemon_launch_count": 2,
+      "daemon_restart_completed": true,
+      "encrypted_vaults_reloaded_after_restart": true,
       "immutable_strategy_release_materialized": false,
       "crucible_runner_fact_projection_observed": false
     },
@@ -221,7 +227,7 @@
   "open_blockers": [
     "deployed tenant runner mode durables have no exact SIM/LIVE runtime readback receipt",
     "the joint launched runtime has not consumed a deployed CR99 runner policy",
-    "the service-issued transport credential has not completed encrypted vault restart and rotation acceptance",
+    "the service-issued machine and transport credentials have not completed encrypted vault rotation acceptance",
     "the immutable StrategyRelease has not been materialized and activated by a launched engine"
   ]
 }

@@ -1558,7 +1558,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     elif (
         producer.get("producer_commit") != "e2499bb"
         or producer.get("runtime_receipt_commit")
-        != "98e43bda7163e89ae59f1662595776ccdb6aa84c"
+        != "6cb9d6845c8cd0856c492ae9761a5231f6ec8254"
         or producer.get("authority_receipt")
         != "tesseract-trading/crucible-rust/docs/authority/receipts/"
         "crucible-runner-nats-broker-authority-v1.json"
@@ -1738,6 +1738,8 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "same_event_encrypted_machine_vault_used",
             "same_event_encrypted_transport_vault_used",
             "same_event_plaintext_machine_bootstrap_removed",
+            "same_event_daemon_restart_completed",
+            "same_event_encrypted_vaults_reloaded_after_restart",
         ):
             if truth.get(key) is not True:
                 errors.append(f"runner NATS transport implemented truth {key} differs")
@@ -1760,15 +1762,17 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             errors.append("runner NATS transport consumer code receipt differs")
         if (
             truth.get("joint_custos_daemon_code_commit")
-            != "4078653a3ef459d72c4a87d201e176e3f5984e82"
+            != "1abfc4ec7b4debae4bb160f59862eaa7833b762d"
         ):
             errors.append("runner NATS transport daemon code receipt differs")
+        if truth.get("same_event_daemon_launch_count") != 2:
+            errors.append("runner NATS transport daemon launch count differs")
         if truth.get("joint_full_daemon_gate") != {
             "command": "make -C <crucible-rust> verify-runner-full-daemon-local",
-            "custos_code_commit": "4078653a3ef459d72c4a87d201e176e3f5984e82",
-            "crucible_code_commit": "f230c2280ab690273269e89a75c5069d5f110c2d",
+            "custos_code_commit": "1abfc4ec7b4debae4bb160f59862eaa7833b762d",
+            "crucible_code_commit": "4b33821b3e7ea189fdc91f6709e64c9aa82fdcc4",
             "crucible_runtime_receipt_commit": (
-                "98e43bda7163e89ae59f1662595776ccdb6aa84c"
+                "6cb9d6845c8cd0856c492ae9761a5231f6ec8254"
             ),
             "status": "PASS",
             "tests_passed": 1,
@@ -1790,6 +1794,9 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "encrypted_machine_vault_used": True,
             "encrypted_transport_vault_used": True,
             "plaintext_machine_bootstrap_removed": True,
+            "daemon_launch_count": 2,
+            "daemon_restart_completed": True,
+            "encrypted_vaults_reloaded_after_restart": True,
             "immutable_strategy_release_materialized": False,
             "crucible_runner_fact_projection_observed": False,
         }:
@@ -1797,7 +1804,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         if receipt.get("open_blockers") != [
             "deployed tenant runner mode durables have no exact SIM/LIVE runtime readback receipt",
             "the joint launched runtime has not consumed a deployed CR99 runner policy",
-            "the service-issued transport credential has not completed encrypted vault restart and rotation acceptance",
+            "the service-issued machine and transport credentials have not completed encrypted vault rotation acceptance",
             "the immutable StrategyRelease has not been materialized and activated by a launched engine",
         ]:
             errors.append("runner NATS transport open blocker boundary differs")
@@ -1872,10 +1879,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("producer_commit") != "e2499bb"
         or snapshot.get("producer_runtime_receipt")
         != {
-            "commit": "98e43bda7163e89ae59f1662595776ccdb6aa84c",
+            "commit": "6cb9d6845c8cd0856c492ae9761a5231f6ec8254",
             "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
-            "sha256": "28ec60489bbc728a5241a210a12805207abac458fd33381d1bdfc87255d5b07c",
-            "size_bytes": 6825,
+            "sha256": "50df14c369bfb59cddfe03ebd9e05e964e83ad369d3b62fe11177227256e875f",
+            "size_bytes": 7241,
             "status": (
                 "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_"
                 "DEPLOYED_ACCEPTANCE_OPEN"
@@ -1916,7 +1923,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         != "1b2f72df46519768b22c5d9f9d85ecbb618e3856"
         or snapshot.get("joint_custos_daemon_consumed_same_event") is not True
         or snapshot.get("joint_custos_daemon_code_commit")
-        != "4078653a3ef459d72c4a87d201e176e3f5984e82"
+        != "1abfc4ec7b4debae4bb160f59862eaa7833b762d"
         or snapshot.get("joint_deployed_transport_credential_provisioned")
         is not False
         or snapshot.get("joint_deployed_durable_verified") is not False
@@ -1931,6 +1938,9 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("encrypted_machine_vault_used_in_gate") is not True
         or snapshot.get("encrypted_transport_vault_used_in_gate") is not True
         or snapshot.get("plaintext_machine_bootstrap_removed_in_gate") is not True
+        or snapshot.get("daemon_launch_count_in_gate") != 2
+        or snapshot.get("daemon_restart_completed_in_gate") is not True
+        or snapshot.get("encrypted_vaults_reloaded_after_restart_in_gate") is not True
         or snapshot.get("crucible_projection_in_authenticated_gate") is not True
         or snapshot.get("sqlite_outbox_empty_after_puback") is not True
     ):

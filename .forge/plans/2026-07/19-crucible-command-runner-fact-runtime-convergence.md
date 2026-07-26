@@ -1,12 +1,12 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T8a, immutable OCI/daemon composition, authenticated projection and same-event local production-service policy/transport-to-encrypted-vault daemon flow pass; real PS material, vault restart/rotation, deployed physical-mode receipts, runtime RC and T9-T10 remain open
+> **Status**: ⏳ In progress — T2-T8a, immutable OCI/daemon composition, authenticated projection and same-event local production-service policy/transport-to-encrypted-vault daemon restart flow pass; real PS material, vault rotation, deployed physical-mode receipts, runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
-> **Revised**: 2026-07-26 through same-event local Crucible production services and Custos daemon
+> **Revised**: 2026-07-26 through same-event encrypted-vault Custos daemon restart
 > **Project**: Custos
 > **Source**: Audit of pre-plan migration `324da6e`, PS Plan 53, and v1.team review
 > **For Claude**: Use `/forge:execute` to implement this plan.
-> **Immediately executable**: T7 contract handoff, authenticated clone-local PubAck and local service-issued policy/transport daemon flow through encrypted V1 vaults are complete; vault restart/rotation, immutable StrategyRelease and deployed `0117`/`0029` receipts remain gated
+> **Immediately executable**: T7 contract handoff, authenticated clone-local PubAck and local service-issued policy/transport daemon flow through encrypted V1 vaults including restart are complete; vault rotation, immutable StrategyRelease and deployed `0117`/`0029` receipts remain gated
 > **19d-T8a gate**: 19c STOP only; it produces the immutable RunnerFact candidate before Crucible Plan 90 Phase A
 > **Runtime RC gates**: Crucible Plan 89 migration 0116 signed command producer and `CR89-0116-GENERATION-STORAGE`; Crucible Plan 90 Phase-A schema/golden compatibility receipt; Crucible Plan 99 runner-safety-policy-authority; Crucible Plan 100 runner NATS transport authority and revocation receipts; Custos Plan 18 staged candidate and exact final required by the selected RC/final-candidate BOM
 > **Close-out gates**: Crucible Plan 90 Phase-B real runtime round-trip receipt; PS Plan 56 exact final-candidate acceptance
@@ -1131,7 +1131,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | RunnerFact SQLite V1 deep module | focused verified | one store, one outbox, one instance-continuous sequence and an atomic durable PubAck publication receipt; Custos `ad7728e` plus real JetStream gate `aeca1fe` pass |
 | Engine lifecycle | production composition verified; immutable activation candidate blocked | 118-test T2-T8a gate passes; production authority is consumed at `4ad12b2` and `d926ab0` composes immutable OCI acquisition, trust and the command coordinator. Real PS bytes and same-event production-daemon activation remain open. |
 | Runner policy V1 | same-event local production issuance and daemon consumption verified; deployed issuance blocked | Crucible `1c7adea` runs the real owner HTTP, sandbox PG repository/outbox/worker and narrow SIM publisher while Custos `c4a9f2d` production daemon consumes the same signed policy before command ACK and RunnerFact PubAck. Deployed testnet/live `0117`, invalid/expired deployed-policy evidence and runtime readiness remain pending. |
-| Machine credential and NATS vault V1 | service-issued credential reaches the full daemon through encrypted vaults; restart/rotation blocked | Crucible `f230c22` launches production signer/provisioner/server and Custos `4078653` production daemon in one pinned-CA TLS full-resolver event. Custos atomically persists 0600 sops+age machine and sandbox transport vaults, verifies ciphertext excludes secret bytes, deletes the plaintext bootstrap, and the daemon reads both through production loaders before durable delivery, engine application and fact PubAck. Vault restart/rotation, deployed control `0029` and testnet/live receipts remain pending. |
+| Machine credential and NATS vault V1 | service-issued credential reaches the full daemon and survives encrypted-vault restart; rotation blocked | Crucible `4b33821` launches production signer/provisioner/server and Custos `1abfc4e` production daemon in one pinned-CA TLS full-resolver event. Custos atomically persists 0600 sops+age machine and sandbox transport vaults, verifies ciphertext excludes secret bytes, deletes the plaintext bootstrap, reaches ready, stops cleanly, clears readiness, then reaches ready again from the exact same vault and SQLite bytes before durable delivery, engine application and fact PubAck. Vault rotation, deployed control `0029` and testnet/live receipts remain pending. |
 | RunnerFact V1 | Phase A exact-byte plus authenticated command-derived PG acceptance complete; runtime RC open | producer asset commit `cce7693` and current Crucible receipt `d966758` are pinned; Custos `cdc4112` and Crucible `79b5acb` prove production `run_daemon`, JetStream control delivery, signed command verification, sandbox engine readiness, commit-before-ACK, durable lifecycle PubAck and same-batch PostgreSQL projection. Real immutable PS artifact activation, same-event production-service credentials and runtime RC remain required. |
 | Local sandbox runtime | same-event service-issued policy/transport-to-encrypted-vault daemon-to-fact PubAck passes; locked runtime candidate open | `make -C <crucible-rust> verify-runner-full-daemon-local` launches the Crucible services and Custos production daemon, persists and reloads encrypted authorities, consumes policy and command, applies the sandbox engine, ACKs after lifecycle commit and records RunnerFact PubAck. A separate authenticated gate still proves Crucible PostgreSQL projection. Immutable PS material is not combined in this event, so the locked runtime candidate remains open. |
 | Production/live | STOP | StrategyRelease authority, immutable materializer and daemon composition are clone-local verified; real PS publication, same-event CR99/CR100 deployed receipts, runtime RC, Phase B and PS56 acceptance remain absent |
@@ -1140,10 +1140,10 @@ The machine-readable boundary is pinned by
 `docs/authority/crucible-runner-machine-request-consumer-assets-v1.json` and
 `docs/authority/receipts/custos-runner-machine-request-v1-consumer-receipt.json`.
 Those records keep deployed durable replay and production readiness claims
-false. The local CR100 runtime receipt at `98e43bd` now proves same-event
+false. The local CR100 runtime receipt at `6cb9d68` now proves same-event
 consumption by the production Custos daemon through policy, command, engine,
 ACK and RunnerFact PubAck through encrypted authority vaults. Deployed control
-`0029`, vault restart/rotation, immutable StrategyRelease and testnet/live remain
+`0029`, vault rotation, immutable StrategyRelease and testnet/live remain
 open.
 
 ## Deviations and Improvements
@@ -1379,9 +1379,9 @@ that the runtime candidate is locked. T9-T10 remain in progress.
 
 ## 2026-07-26 joint production-service daemon receipt
 
-Crucible code `f230c2280ab690273269e89a75c5069d5f110c2d`, Custos code
-`4078653a3ef459d72c4a87d201e176e3f5984e82` and Crucible receipt commit
-`98e43bda7163e89ae59f1662595776ccdb6aa84c` close the next local boundary.
+Crucible code `4b33821b3e7ea189fdc91f6709e64c9aa82fdcc4`, Custos code
+`1abfc4ec7b4debae4bb160f59862eaa7833b762d` and Crucible receipt commit
+`6cb9d6845c8cd0856c492ae9761a5231f6ec8254` close the next local boundary.
 `make -C <crucible-rust> verify-runner-full-daemon-local` passes `1/1`
 against real PostgreSQL and pinned-CA TLS full-resolver NATS. One event launches
 the isolated signer, provisioner, ordinary Crucible server and production
@@ -1390,11 +1390,12 @@ Crucible-owned runner policy; consumes policy plus canonical command; applies
 the sandbox engine; ACKs after lifecycle commit; and records RunnerFact PubAck.
 
 The vendored producer receipt is exactly SHA-256
-`28ec60489bbc728a5241a210a12805207abac458fd33381d1bdfc87255d5b07c`
-at 6825 bytes. Custos persists the service-issued machine and per-mode transport
-authorities in 0600 sops+age vaults, deletes the plaintext bootstrap and starts
-the daemon through the production loaders. The acceptance adapter still uses
-non-immutable sandbox artifact material. Vault restart/rotation, immutable
+`50df14c369bfb59cddfe03ebd9e05e964e83ad369d3b62fe11177227256e875f`
+at 7241 bytes. Custos persists the service-issued machine and per-mode transport
+authorities in 0600 sops+age vaults, deletes the plaintext bootstrap, reaches
+ready, stops cleanly, clears readiness and restarts from the exact same vault
+and SQLite bytes before accepting the policy and command. The acceptance
+adapter still uses non-immutable sandbox artifact material. Vault rotation, immutable
 StrategyRelease bytes, same-event Crucible RunnerFact projection, deployed
 `0029`/`0117`, testnet/live and runtime RC remain open. T9-T10 therefore remain
 in progress.
