@@ -53,7 +53,7 @@
   },
   "consumer": {
     "repository": "tesseract-trading/crucible-rust",
-    "code_commit": "bba16f9fd031cd89b78ac3eaa549346b7bf2f8a0",
+    "code_commit": "506afcdcc6b5342f84810668b0367e983f406857",
     "closed_fact_union": true,
     "compatibility_fallback": false,
     "top_level_venue_snapshot_supported": false,
@@ -85,8 +85,8 @@
       },
       "inbox": {
         "path": "crates/store/src/runner_fact_inbox.rs",
-        "sha256": "e66354148a31819b8af5349d41a139c647a1efea11a9d5a9d3e7e2bd4b814aa3",
-        "size_bytes": 90023
+        "sha256": "636fb9a6793add10931d43e7b4d7241cb268528eccfc5f0bb4e26b2d3e6a8bad",
+        "size_bytes": 91814
       },
       "reconciliation_projector": {
         "path": "crates/store/src/runner_fact_reconciliation_projector.rs",
@@ -100,13 +100,13 @@
       },
       "transport_consumer": {
         "path": "crates/server-http/src/runner_fact_consumer.rs",
-        "sha256": "89b89a12f6b79334ce70499676e83249eaab9ad7d5cb1ff46e0870fbcb3c5f57",
-        "size_bytes": 17279
+        "sha256": "f8c3f5c85ad0dc9cea87a3ba20795fe898589701e933a4d17e5378fdf5a142a0",
+        "size_bytes": 17783
       },
       "transport_postgresql_acceptance": {
         "path": "crates/server-http/tests/runner_fact_transport_pg.rs",
-        "sha256": "32f6655174c5727495242698bb9727e4fe89ed61303a4ce2bc993b8c28dfe439",
-        "size_bytes": 17458
+        "sha256": "d5d3b309b709e5654f37ee7c999c1d4b1b24ba7dbd9ae67e51d22db199dd32c3",
+        "size_bytes": 22021
       }
     }
   },
@@ -133,7 +133,7 @@
       "result": "2 passed; signed positive assertion passed",
       "verified_at": "2026-07-26",
       "producer_asset_commit": "cce76931884de36c9606db02d94cf4124e7164b5",
-      "consumer_code_commit": "bba16f9fd031cd89b78ac3eaa549346b7bf2f8a0",
+      "consumer_code_commit": "506afcdcc6b5342f84810668b0367e983f406857",
       "real_nats_jetstream": true,
       "real_postgresql": true,
       "exact_signed_golden": true,
@@ -142,6 +142,30 @@
       "projector_work_count": 5,
       "producer_is_custos_runtime": false,
       "authenticated_transport": false
+    },
+    "raw_envelope_cryptographic_regression": {
+      "test": "cargo test -p store cryptographic_digest_preserves_the_original_timestamp_lexeme",
+      "result": "1 passed",
+      "verified_at": "2026-07-26",
+      "original_json_drives_payload_digest": true,
+      "original_json_drives_signature_preimage": true,
+      "typed_batch_drives_semantic_validation": true
+    },
+    "launched_custos_publication_acceptance": {
+      "test": "CUSTOS_REPO=<custos> cargo test -p server-http --test runner_fact_transport_pg launched_custos_publisher_reaches_crucible_projection -- --ignored",
+      "result": "1 passed",
+      "verified_at": "2026-07-26",
+      "custos_code_commit": "c7d6f8b11849399dfbf9855729af67a841518622",
+      "crucible_code_commit": "506afcdcc6b5342f84810668b0367e983f406857",
+      "real_nats_jetstream": true,
+      "real_postgresql": true,
+      "independent_custos_publisher_process": true,
+      "producer_puback_received": true,
+      "same_batch_accepted_by_crucible": true,
+      "projector_work_count": 1,
+      "authenticated_transport": false,
+      "custos_daemon_launched": false,
+      "engine_command_applied": false
     },
     "postgresql_runtime_receipt": null,
     "authenticated_nats_runtime_receipt": null,
@@ -152,7 +176,7 @@
   "production_ready": false,
   "open_blockers": [
     "authenticated NATS ingest and PubAck receipt",
-    "real Custos command-to-fact runtime round-trip receipt",
+    "launched Custos daemon command-to-engine-to-fact receipt",
     "immutable Custos runtime RC receipt"
   ]
 }

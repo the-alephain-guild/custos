@@ -46,7 +46,7 @@ AUTHORITY_COORDINATE = "custos.runner-fact.v1"
 PRODUCER_ASSET_COMMIT = "cce76931884de36c9606db02d94cf4124e7164b5"
 CRUCIBLE_CONSUMER_RECEIPT = {
     "repository": "tesseract-trading/crucible-rust",
-    "commit": "a36b63a73e7dadf27628df064878b0d6db6e8820",
+    "commit": "818242c5708d055b2c4b1e5dc9d6a9e5570667fe",
     "producer_path": (
         "docs/authority/receipts/crucible-runner-fact-v1-consumer-receipt.json"
     ),
@@ -54,8 +54,8 @@ CRUCIBLE_CONSUMER_RECEIPT = {
         "docs/authority/receipts/vendor/"
         "crucible-runner-fact-v1-consumer-receipt.json"
     ),
-    "sha256": "a1ce1b59d11f94e1c44c38efaf651f81dfad3f96694cd0ebf90811b16c4ae873",
-    "size_bytes": 6852,
+    "sha256": "600bdbb23d8f316f99ff96d666cb46a921fca13a9334d64f02d6887ac92c8acf",
+    "size_bytes": 8010,
     "status": "EXACT_CUSTOS_RUNNER_FACT_V1_ACCEPTED_RUNTIME_OPEN",
 }
 TENANT_ID = "acme"

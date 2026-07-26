@@ -1011,11 +1011,11 @@ git commit -m "fix(custos): use reliable Nautilus portfolio equity"
 > **Execution status (2026-07-26)**: `PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN`. The sole V1
 > asset index, schema, golden, signing preimage and projector matrix are pinned
 > to producer asset commit `cce76931884de36c9606db02d94cf4124e7164b5`.
-> Crucible consumer code commit `bba16f9fd031cd89b78ac3eaa549346b7bf2f8a0`
+> Crucible consumer code commit `506afcdcc6b5342f84810668b0367e983f406857`
 > accepts the closed fact union and projector map; receipt commit
-> `a36b63a73e7dadf27628df064878b0d6db6e8820` pins those exact producer
+> `818242c5708d055b2c4b1e5dc9d6a9e5570667fe` pins those exact producer
 > bytes with receipt SHA-256
-> `a1ce1b59d11f94e1c44c38efaf651f81dfad3f96694cd0ebf90811b16c4ae873`.
+> `600bdbb23d8f316f99ff96d666cb46a921fca13a9334d64f02d6887ac92c8acf`.
 > Phase A exact-byte handoff is complete. The real runtime round trip, immutable
 > runtime RC and all live/production flags remain open.
 
@@ -1118,7 +1118,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | Engine lifecycle | local verified; production materialization blocked | 118-test T2-T8a gate passes; production authority contract is consumed at `4ad12b2`, while immutable OCI materialization, trust composition and launched activation remain open |
 | Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, NATS/PubAck and real daemon consumption pending |
 | Machine credential and NATS vault V1 | direct credential contract ready; NATS runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; control `0029`, durable replay receipt, JWT/ACL/durable readback and dual-domain broker evidence pending |
-| RunnerFact V1 | Phase A exact-byte plus local publisher accepted; runtime open | producer asset commit `cce7693`, Crucible consumer code `bba16f9` and receipt `a36b63a` are pinned; Custos `c7d6f8b` launches an independent publisher process using its production outbox/signer/publisher, receives a real JetStream PubAck and clears SQLite only afterward. Authenticated daemon/engine round trip and immutable runtime RC remain required. |
+| RunnerFact V1 | Phase A exact-byte plus local publisher accepted; runtime open | producer asset commit `cce7693`, Crucible consumer code `506afcd` and receipt `818242c` are pinned; Custos `c7d6f8b` launches an independent publisher process, receives PubAck, and that same dynamic batch reaches Crucible accepted state plus lifecycle projector work. Authenticated daemon/engine round trip and immutable runtime RC remain required. |
 | Local sandbox runtime | real publisher PASS; launched engine receipt open | instance-bound development material reaches the common runtime path; local JetStream publication passes `1/1`, while real command redelivery, engine launch and same-batch Crucible projection remain required |
 | Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 real receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 
