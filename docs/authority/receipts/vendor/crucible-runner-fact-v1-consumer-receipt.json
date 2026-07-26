@@ -199,30 +199,56 @@
       "production_credential": false
     },
     "postgresql_runtime_receipt": {
-      "status": "CLONE_LOCAL_ACCEPTED_PRODUCTION_SERVICES_OPEN",
-      "crucible_code_commit": "79b5acb9a97bf9639b46ad8be4c25e03412f8092",
+      "status": "LOCAL_PRODUCTION_SERVICE_PROCESS_ACCEPTED_DEPLOYED_OPEN",
+      "crucible_code_commit": "6a15952581e59c6edbbab36de3986cb29dce993a",
       "same_batch_projected": true,
       "real_postgresql": true
     },
     "authenticated_nats_runtime_receipt": {
-      "status": "CLONE_LOCAL_ACCEPTED_PRODUCTION_CREDENTIAL_OPEN",
-      "custos_code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
+      "status": "LOCAL_PRODUCTION_AUTHORITY_ACCEPTED_DEPLOYED_OPEN",
+      "custos_code_commit": "a449b22a1beba69f90ff70c4bb6b0e0a912d6104",
       "real_tls_user_jwt_jetstream": true,
-      "production_credential": false
+      "production_credential": true,
+      "deployed_credential": false
     },
     "real_command_to_fact_round_trip_receipt": {
-      "status": "CLONE_LOCAL_ACCEPTED_RUNTIME_RC_OPEN",
+      "status": "LOCAL_PRODUCTION_SERVICE_PROCESS_ACCEPTED_RUNTIME_RC_OPEN",
       "command_to_engine_to_fact_to_projection": true,
       "same_batch_projected": true,
       "durable_puback_receipt": true,
       "authenticated_policy_consumed": true,
       "same_policy_from_crucible_pg_outbox": true,
-      "crucible_policy_publisher_code_commit": "40a43fbf146006bb90053c446bd15f529418b45e",
       "immutable_artifact_materialized": false,
       "custos_daemon_launched": true,
-      "production_authority_issued": false,
-      "production_policy_issued": false,
-      "production_services_launched": false
+      "production_authority_issued": true,
+      "production_policy_issued": true,
+      "production_services_launched": true,
+      "deployed_control_authority": false,
+      "deployed_testnet_live": false
+    },
+    "production_service_command_lifecycle_projection_acceptance": {
+      "test": "make verify-runner-full-daemon-local",
+      "result": "1 passed",
+      "verified_at": "2026-07-26",
+      "custos_code_commit": "a449b22a1beba69f90ff70c4bb6b0e0a912d6104",
+      "crucible_code_commit": "6a15952581e59c6edbbab36de3986cb29dce993a",
+      "production_transport_authority_issued": true,
+      "production_runner_safety_policy_issued": true,
+      "real_tls_user_jwt_jetstream": true,
+      "existing_control_durable": true,
+      "encrypted_vault_restart_verified": true,
+      "transport_rotation_generation": 2,
+      "old_transport_generation_reconnect_denied": true,
+      "engine_command_applied": true,
+      "command_ack_after_lifecycle_commit": true,
+      "producer_puback_received": true,
+      "durable_puback_receipt": true,
+      "same_batch_accepted_by_crucible": true,
+      "real_postgresql": true,
+      "projector_work_count": 1,
+      "immutable_artifact_materialized": false,
+      "deployed_control_authority": false,
+      "deployed_testnet_live": false
     }
   },
   "runtime_ready": false,

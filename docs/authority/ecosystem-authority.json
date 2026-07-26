@@ -340,10 +340,10 @@
     "status": "LOCAL_CRUCIBLE_PRODUCTION_SERVICES_PINNED_JOINT_RUNTIME_OPEN",
     "producer_commit": "e2499bb",
     "producer_runtime_receipt": {
-      "commit": "0619a77033947b5890952ae4f2cc02b22eabd0f9",
+      "commit": "491c632bd9395363a22543f3592a8eea6bd0be09",
       "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
-      "sha256": "54630853b55075d98417b7f9885138c3bea94401e5ace19f7339b4112fb8a836",
-      "size_bytes": 8066,
+      "sha256": "7ea0ca7c690309f050000ca6d50eaedc61c59deeca3f52e8545a892860591e4c",
+      "size_bytes": 8432,
       "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
     },
     "operation_begin_endpoint": "POST /api/v1/runner-nats/transport-operations",
@@ -426,20 +426,22 @@
     "team_daemon_enabled": false,
     "live_ready": false,
     "runtime_ready": false,
-    "production_ready": false
+    "production_ready": false,
+    "same_event_crucible_runner_fact_projection_observed": true,
+    "same_event_runner_fact_projection_work_count": 1
   },
   "runner_fact_contract_v1": {
     "owner": "custos",
-    "status": "PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN",
+    "status": "LOCAL_PRODUCTION_SERVICE_PHASE_B_ACCEPTED_RUNTIME_OPEN",
     "producer_commit": "cce76931884de36c9606db02d94cf4124e7164b5",
     "asset_index": "docs/authority/runner-fact-contract-assets-v1.json",
     "receipt": "docs/authority/receipts/custos-runner-fact-v1-producer-receipt.json",
     "consumer_receipt": {
       "repository": "tesseract-trading/crucible-rust",
-      "commit": "d9667586c32a573fb23d47dad7e77ab8c567284e",
+      "commit": "491c632bd9395363a22543f3592a8eea6bd0be09",
       "path": "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json",
-      "sha256": "28014e2be28ce038ea716f2c1d5bc82faffb381910b7fb79aff019f155128c07",
-      "size_bytes": 10568
+      "sha256": "d868bde1d7e9fa935a47a112ce4d083b1156fe9dfaa51636fd2183e8eb6cad79",
+      "size_bytes": 11703
     },
     "local_publication_receipt": {
       "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
@@ -449,7 +451,7 @@
     },
     "authenticated_transport_receipt": {
       "path": "docs/authority/receipts/custos-runner-nats-transport-v1-consumer-receipt.json",
-      "status": "CLONE_LOCAL_CONSUMER_VERIFIED",
+      "status": "LOCAL_CRUCIBLE_PRODUCTION_SERVICES_PINNED_JOINT_RUNTIME_OPEN",
       "launched_publisher_process": true,
       "signed_command_verified": true,
       "sandbox_engine_ready": true,
@@ -459,9 +461,10 @@
       "same_batch_accepted_by_crucible_postgresql": true,
       "immutable_artifact_materialization": false,
       "crucible_projection_observed": true,
-      "production_credential": false,
-      "sha256": "76131482e9b280f8f58c6d8851261d77df613c1372dd16e5b85c3bc072618c48",
-      "size_bytes": 11606
+      "production_credential": true,
+      "sha256": "9c6c5315f7266fffca2d968e3fe30028c121b432f19c8d34842f1876f5e5f7ec",
+      "size_bytes": 12693,
+      "deployed_credential": false
     },
     "signing_preimage_golden": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
     "signing_preimage_complete": true,

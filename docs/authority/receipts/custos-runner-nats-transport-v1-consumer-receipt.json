@@ -6,12 +6,12 @@
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
     "producer_commit": "e2499bb",
-    "runtime_receipt_commit": "0619a77033947b5890952ae4f2cc02b22eabd0f9",
+    "runtime_receipt_commit": "491c632bd9395363a22543f3592a8eea6bd0be09",
     "runtime_receipt": {
       "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
       "source_path": "docs/authority/receipts/crucible-runner-nats-transport-runtime-v1.json",
-      "sha256": "54630853b55075d98417b7f9885138c3bea94401e5ace19f7339b4112fb8a836",
-      "size_bytes": 8066,
+      "sha256": "7ea0ca7c690309f050000ca6d50eaedc61c59deeca3f52e8545a892860591e4c",
+      "size_bytes": 8432,
       "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
     },
     "contract_assets": {
@@ -109,6 +109,8 @@
     "same_event_sandbox_engine_ready": true,
     "same_event_command_ack_after_lifecycle_commit": true,
     "same_event_runner_fact_puback_observed": true,
+    "same_event_crucible_runner_fact_projection_observed": true,
+    "same_event_runner_fact_projection_work_count": 1,
     "same_event_encrypted_machine_vault_used": true,
     "same_event_encrypted_transport_vault_used": true,
     "same_event_plaintext_machine_bootstrap_removed": true,
@@ -177,8 +179,8 @@
     "joint_full_daemon_gate": {
       "command": "make -C <crucible-rust> verify-runner-full-daemon-local",
       "custos_code_commit": "a449b22a1beba69f90ff70c4bb6b0e0a912d6104",
-      "crucible_code_commit": "3e5f69516872d1fd323c4b6693ba077b6b7e3d9d",
-      "crucible_runtime_receipt_commit": "0619a77033947b5890952ae4f2cc02b22eabd0f9",
+      "crucible_code_commit": "6a15952581e59c6edbbab36de3986cb29dce993a",
+      "crucible_runtime_receipt_commit": "491c632bd9395363a22543f3592a8eea6bd0be09",
       "status": "PASS",
       "tests_passed": 1,
       "real_postgresql": true,
@@ -195,6 +197,9 @@
       "sandbox_engine_ready": true,
       "command_ack_after_lifecycle_commit": true,
       "runner_fact_puback_observed": true,
+      "production_runner_fact_consumer_launched": true,
+      "crucible_runner_fact_projection_observed": true,
+      "crucible_runner_fact_projection_work_count": 1,
       "canonical_runner_fact_stream": "CRUCIBLE_RUNNER_FACT_V1",
       "encrypted_machine_vault_used": true,
       "encrypted_transport_vault_used": true,
@@ -208,8 +213,7 @@
       "rotation_revocation_receipt_verified": true,
       "old_generation_reconnect_denied": true,
       "rotated_vault_reloaded_by_daemon": true,
-      "immutable_strategy_release_materialized": false,
-      "crucible_runner_fact_projection_observed": false
+      "immutable_strategy_release_materialized": false
     },
     "local_crucible_full_resolver_integration_passed": true,
     "joint_runtime_real_nats_integration_passed": true,
@@ -234,7 +238,8 @@
     "joint_transport_consumer_command": "make -C <crucible-rust> verify-runner-transport-custos-consumer",
     "joint_transport_consumer_result": "PASS",
     "joint_full_daemon_command": "make -C <crucible-rust> verify-runner-full-daemon-local",
-    "joint_full_daemon_result": "PASS"
+    "joint_full_daemon_result": "PASS",
+    "same_event_crucible_runner_fact_projection_observed": true
   },
   "open_blockers": [
     "deployed tenant runner mode durables have no exact SIM/LIVE runtime readback receipt",

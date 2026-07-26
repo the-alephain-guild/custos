@@ -5,7 +5,7 @@
   "consumer": "custos",
   "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN",
   "authority_coordinate": "crucible.runner-nats-transport.v1",
-  "code_commit": "3e5f69516872d1fd323c4b6693ba077b6b7e3d9d",
+  "code_commit": "6a15952581e59c6edbbab36de3986cb29dce993a",
   "control_migration": {
     "checked_in_head": "0029",
     "local_ephemeral_head_executed": "0029",
@@ -69,6 +69,9 @@
     "sandbox_engine_ready": true,
     "command_ack_after_lifecycle_commit": true,
     "runner_fact_puback_observed": true,
+    "production_runner_fact_consumer_exercised": true,
+    "crucible_runner_fact_projection_observed": true,
+    "same_event_runner_fact_projection_work_count": 1,
     "canonical_runner_fact_stream": "CRUCIBLE_RUNNER_FACT_V1",
     "encrypted_machine_vault_used": true,
     "encrypted_transport_vault_used": true,
@@ -93,8 +96,8 @@
   },
   "source": {
     "path": "crates/server-http/tests/runner_nats_transport_service_process.rs",
-    "sha256": "f9ff62bbf88807285a89796bea6748851b8b485a5fec7d89ef5717bede836f68",
-    "size_bytes": 78815
+    "sha256": "ae1fd6bea3c4ad60becb58255c9f0860aa3e2acaee37f135f9208395f1f32ab3",
+    "size_bytes": 89233
   },
   "custos_consumer_source": {
     "repository": "tesseract-trading/custos",
@@ -155,6 +158,9 @@
     "sandbox_engine_ready_in_this_gate": true,
     "command_ack_after_lifecycle_commit_in_this_gate": true,
     "runner_fact_puback_observed_in_this_gate": true,
+    "production_runner_fact_consumer_launched_in_this_gate": true,
+    "crucible_runner_fact_projection_observed_in_this_gate": true,
+    "same_event_runner_fact_projection_work_count_in_this_gate": 1,
     "encrypted_machine_vault_used_in_this_gate": true,
     "encrypted_transport_vault_used_in_this_gate": true,
     "plaintext_machine_bootstrap_removed_in_this_gate": true,
