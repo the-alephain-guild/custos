@@ -5,7 +5,7 @@
   "consumer": "custos",
   "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN",
   "authority_coordinate": "crucible.runner-nats-transport.v1",
-  "code_commit": "e086a45a94cc967ed28f2d9acc7fa871a28db1c6",
+  "code_commit": "1bfea3ee51624bd7bd4a569565bb3d6e7183c3ac",
   "control_migration": {
     "checked_in_head": "0029",
     "local_ephemeral_head_executed": "0029",
@@ -22,6 +22,10 @@
     "ordinary_server_broker_admin_credential_present": false,
     "signer_broker_admin_credential_present": false,
     "provisioner_account_signing_seed_present": false,
+    "provisioner_tls_required": true,
+    "provisioner_pinned_ca_required": true,
+    "provisioner_exact_server_name_required": true,
+    "provisioner_plaintext_runtime_allowed": false,
     "custos_user_seed_sent_to_crucible": false,
     "deployed_production_services_launched": false
   },
@@ -32,6 +36,9 @@
     "real_postgresql": true,
     "real_domain_event_jetstream": true,
     "real_full_resolver_nats": true,
+    "full_resolver_tls": true,
+    "pinned_ca_verified": true,
+    "exact_tls_server_name_verified": true,
     "distinct_sim_live_accounts": true,
     "arx_actor_assertion_intent_exercised": true,
     "direct_custos_machine_request_exercised": true,
@@ -54,8 +61,8 @@
   },
   "source": {
     "path": "crates/server-http/tests/runner_nats_transport_service_process.rs",
-    "sha256": "794beca19df21b2bfff45c604ad9009102eede71b85acba22d170af739e855a1",
-    "size_bytes": 44228
+    "sha256": "4b10bb30a544cde1e10d362e59bdeb51a7e07716ffb798ed676710e7d2fc27db",
+    "size_bytes": 46238
   },
   "predecessor_receipts": {
     "http": {
@@ -65,8 +72,8 @@
     },
     "broker": {
       "path": "docs/authority/receipts/crucible-runner-nats-broker-authority-v1.json",
-      "sha256": "228d7e144cddd21e6a838ba3643b6f527e984798d49cf31741485fec8d5585f7",
-      "size_bytes": 3525
+      "sha256": "5bf65b97d9f8ab30bb85c783fcf51dc15e5c4f09101ebd8f4bd052b9309a9c20",
+      "size_bytes": 3790
     },
     "rotation_revocation": {
       "path": "docs/authority/receipts/crucible-runner-nats-rotation-revocation-v1.json",

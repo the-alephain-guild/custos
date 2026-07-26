@@ -1131,16 +1131,16 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | RunnerFact SQLite V1 deep module | focused verified | one store, one outbox, one instance-continuous sequence and an atomic durable PubAck publication receipt; Custos `ad7728e` plus real JetStream gate `aeca1fe` pass |
 | Engine lifecycle | production composition verified; immutable activation candidate blocked | 118-test T2-T8a gate passes; production authority is consumed at `4ad12b2` and `d926ab0` composes immutable OCI acquisition, trust and the command coordinator. Real PS bytes and same-event production-daemon activation remain open. |
 | Runner policy V1 | same Crucible PG-outbox policy reaches authenticated production daemon; production issuance blocked | exact `d52bb16` contract + `fe93008` handoff remain pinned; Crucible `40a43fb` runs real sandbox-role PG repository/outbox/worker/signed publisher and Custos `8198276` verifies that same event, durably stores it before command ACK, then completes RunnerFact PubAck and projection. Deployed testnet/live `0117` receipts and production-service issuance remain pending. |
-| Machine credential and NATS vault V1 | direct credential, local Crucible production services and clone-local authenticated transport ready; joint deployed runtime blocked | Crucible `ee27aa7` pins a three-process production-binary receipt for ARX intent, direct machine request, PG worker, isolated signer/provisioner, full-resolver durable readback, active JWT and command ACK. Custos `ba562a9` separately binds the preprovisioned control durable and completes authenticated same-batch PG acceptance. Deployed control `0029`, same-event joint daemon and testnet/live receipts remain pending. |
+| Machine credential and NATS vault V1 | direct credential, local Crucible production services and clone-local authenticated transport ready; joint deployed runtime blocked | Crucible `b6e3399` pins a three-process production-binary receipt for ARX intent, direct machine request, PG worker, isolated signer/provisioner, pinned-CA TLS full-resolver durable readback, active JWT and command ACK (`1bfea3e` implementation). Custos `ba562a9` separately binds the preprovisioned control durable and completes authenticated same-batch PG acceptance. Deployed control `0029`, same-event joint daemon and testnet/live receipts remain pending. |
 | RunnerFact V1 | Phase A exact-byte plus authenticated command-derived PG acceptance complete; runtime RC open | producer asset commit `cce7693` and current Crucible receipt `d966758` are pinned; Custos `cdc4112` and Crucible `79b5acb` prove production `run_daemon`, JetStream control delivery, signed command verification, sandbox engine readiness, commit-before-ACK, durable lifecycle PubAck and same-batch PostgreSQL projection. Real immutable PS artifact activation, same-event production-service credentials and runtime RC remain required. |
-| Local sandbox runtime | authenticated control-durable command-to-Crucible-PG and independent Crucible transport-service issuance pass; joint runtime candidate open | Custos production `run_daemon` binds an existing durable using explicitly test-issued authorities and reaches one Crucible lifecycle projector row. Independently, Crucible `ee27aa7` launches production signer/provisioner/server and issues a readback-verified JWT/durable. These are not the same event instance; immutable PS material and the joint locked runtime candidate remain open. |
+| Local sandbox runtime | authenticated control-durable command-to-Crucible-PG and independent Crucible transport-service issuance pass; joint runtime candidate open | Custos production `run_daemon` binds an existing durable using explicitly test-issued authorities and reaches one Crucible lifecycle projector row. Independently, Crucible `b6e3399` launches production signer/provisioner/server over pinned-CA TLS and issues a readback-verified JWT/durable. These are not the same event instance; immutable PS material and the joint locked runtime candidate remain open. |
 | Production/live | STOP | StrategyRelease authority, immutable materializer and daemon composition are clone-local verified; real PS publication, same-event CR99/CR100 deployed receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 
 The machine-readable boundary is pinned by
 `docs/authority/crucible-runner-machine-request-consumer-assets-v1.json` and
 `docs/authority/receipts/custos-runner-machine-request-v1-consumer-receipt.json`.
 Those records keep deployed durable replay and production transport claims
-false. The local CR100 runtime receipt now exists at `ee27aa7`, but deployed
+false. The local CR100 runtime receipt now exists at `b6e3399`, but deployed
 control `0029`, same-event Custos consumption and testnet/live evidence remain
 open.
 
@@ -1360,7 +1360,7 @@ testnet/live promotion remain open; T9-T10 therefore remain in progress.
 ## 2026-07-26 Crucible transport-service process receipt
 
 Crucible runtime receipt checkpoint
-`ee27aa71bc7a078502f57c57e34845533accd1d9` launches the production
+`b6e33999abb146b67dc0d884f43953c9dd897388` receipts the production
 `runner_nats_signer`, `runner_nats_provisioner` and `crucible_rust_server`
 binaries as independent processes. Against real PostgreSQL and a
 full-resolver NATS it proves ARX-authorized intent, direct Custos-shaped machine
@@ -1368,7 +1368,7 @@ proof, client-owned User NKey, PG durable operation, isolated signing,
 provision/readback, active JWT, exact command delivery and ACK.
 
 Custos vendors the exact producer receipt at SHA-256
-`6431cf59468b6503b8f3153fe91585fb8e8c76e99af3fc70ff8d7d1756a04da7`.
+`7eca40481bea5606dc5b0cae1ff9ed324a3d242539e330a01de77c63fd2d3670`.
 This closes the missing local Crucible production-service evidence. It does
 not claim that the separate Custos daemon gate consumed the same credential
 event instance, that control `0029` is deployed, or that immutable

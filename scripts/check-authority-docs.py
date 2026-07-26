@@ -1555,7 +1555,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     elif (
         producer.get("producer_commit") != "e2499bb"
         or producer.get("runtime_receipt_commit")
-        != "ee27aa71bc7a078502f57c57e34845533accd1d9"
+        != "b6e33999abb146b67dc0d884f43953c9dd897388"
         or producer.get("authority_receipt")
         != "tesseract-trading/crucible-rust/docs/authority/receipts/"
         "crucible-runner-nats-broker-authority-v1.json"
@@ -1718,6 +1718,9 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "jwt_signature_and_acl_verification_implemented",
             "tls_ca_and_exact_server_name_required",
             "local_crucible_production_transport_services_verified",
+            "local_crucible_provisioner_tls_verified",
+            "local_crucible_provisioner_pinned_ca_verified",
+            "local_crucible_provisioner_exact_server_name_verified",
             "local_crucible_issued_transport_credential_verified",
             "local_crucible_exact_durable_readback_verified",
             "local_crucible_full_resolver_integration_passed",
@@ -1728,6 +1731,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "joint_deployed_transport_credential_provisioned",
             "joint_deployed_durable_verified",
             "joint_runtime_real_nats_integration_passed",
+            "local_crucible_provisioner_plaintext_runtime_allowed",
             "team_daemon_enabled",
             "runtime_ready",
             "live_ready",
@@ -1806,10 +1810,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("producer_commit") != "e2499bb"
         or snapshot.get("producer_runtime_receipt")
         != {
-            "commit": "ee27aa71bc7a078502f57c57e34845533accd1d9",
+            "commit": "b6e33999abb146b67dc0d884f43953c9dd897388",
             "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
-            "sha256": "6431cf59468b6503b8f3153fe91585fb8e8c76e99af3fc70ff8d7d1756a04da7",
-            "size_bytes": 3635,
+            "sha256": "7eca40481bea5606dc5b0cae1ff9ed324a3d242539e330a01de77c63fd2d3670",
+            "size_bytes": 3928,
             "status": (
                 "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_"
                 "DEPLOYED_ACCEPTANCE_OPEN"
@@ -1833,6 +1837,12 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("same_policy_from_crucible_pg_outbox") is not True
         or snapshot.get("local_crucible_production_transport_services_verified")
         is not True
+        or snapshot.get("local_crucible_provisioner_tls_verified") is not True
+        or snapshot.get("local_crucible_provisioner_pinned_ca_verified") is not True
+        or snapshot.get("local_crucible_provisioner_exact_server_name_verified")
+        is not True
+        or snapshot.get("local_crucible_provisioner_plaintext_runtime_allowed")
+        is not False
         or snapshot.get("local_crucible_issued_transport_credential_verified")
         is not True
         or snapshot.get("local_crucible_exact_durable_readback_verified") is not True
