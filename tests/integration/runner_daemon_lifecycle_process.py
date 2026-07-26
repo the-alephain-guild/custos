@@ -291,7 +291,10 @@ def _capability(
         "deployment_lifecycle_scope_bindings",
     ):
         for binding in manifest[key]:
+            binding["deployment_instance_id"] = str(deployment_authority["deployment_instance_id"])
+            binding["deployment_spec_id"] = str(deployment_authority["deployment_spec_id"])
             binding["deployment_spec_digest"] = deployment_authority["deployment_spec_digest"]
+            binding["strategy_id"] = str(deployment_authority["strategy_id"])
             if key == "reconciliation_scope_bindings":
                 binding["source_policy_digest"] = deployment_authority["source_policy_digest"]
     bindings = normalize_capability_scope_bindings(manifest)
