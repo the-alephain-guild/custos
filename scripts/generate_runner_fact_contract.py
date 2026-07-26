@@ -136,6 +136,10 @@ def _schema() -> dict[str, Any]:
         "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{3,9})?Z$",
     }
     non_empty = {"type": "string", "minLength": 1}
+    settlement_period = {
+        "type": "string",
+        "pattern": r"^[0-9]{4}-(?:0[1-9]|1[0-2])$",
+    }
     uuid = {
         "type": "string",
         "pattern": r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
@@ -311,7 +315,7 @@ def _schema() -> dict[str, Any]:
             {"status": {"enum": ["online", "degraded", "offline"]}, "observed_at": timestamp},
         ),
         "period_closed": _object_schema(
-            "period_closed", {"period": non_empty, "closed_at": timestamp}
+            "period_closed", {"period": settlement_period, "closed_at": timestamp}
         ),
         "venue_ledger_snapshot_manifest": _object_schema(
             "venue_ledger_snapshot_manifest",
@@ -637,7 +641,7 @@ def _facts() -> list[dict[str, Any]]:
         ),
         settlement_period_closed(
             event_id=UUID("80000000-0000-4000-8000-000000000005"),
-            period="20260715T070000Z_20260715T080000Z",
+            period="2026-07",
             closed_at=EMITTED_AT,
         ),
         equity_snapshot(

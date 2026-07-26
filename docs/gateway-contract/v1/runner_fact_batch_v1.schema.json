@@ -600,7 +600,7 @@
         },
         "period": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])$"
         },
         "closed_at": {
           "type": "string",

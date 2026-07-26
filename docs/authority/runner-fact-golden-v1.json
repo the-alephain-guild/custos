@@ -16,7 +16,7 @@
   "emitted_at": "2026-07-15T08:00:00Z",
   "source_seq_start": 1,
   "source_seq_end": 13,
-  "payload_digest": "3c93a83d857abff455e57a6e3727a6f10d124573e004dd31abaf7dd85a15f394",
+  "payload_digest": "8a50790b56ddb4bc7fa52c3a578588fe1bf95cb023639557c817e0275773c509",
   "facts": [
     {
       "kind": "execution_fill",
@@ -68,7 +68,7 @@
     {
       "kind": "period_closed",
       "event_id": "80000000-0000-4000-8000-000000000005",
-      "period": "20260715T070000Z_20260715T080000Z",
+      "period": "2026-07",
       "closed_at": "2026-07-15T08:00:00Z",
       "seq": 5
     },
@@ -191,5 +191,5 @@
       "seq": 13
     }
   ],
-  "signature": "TmZswe79KOaLEIBoCs7hFxCJx5CuLibJEG6MaZS_P2SPJ8SOClGKr6Kh7A_EFtWSVoH8FVpiuRAZ-pCg6xr2BA"
+  "signature": "bgS2L0e0EkXzgXMWKdL2vsjsroT96faMehNPR0wm3zCotHwk3OwUpJsDk50cDfLiYhJJD6Xs_xH6k7WAWUQBDg"
 }

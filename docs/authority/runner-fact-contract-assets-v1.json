@@ -73,14 +73,14 @@
     {
       "role": "runner_fact_batch_schema",
       "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-      "sha256": "4448c41b5b2390923d8ad0f1fe94114fc61b259adce822e363213e5e0c682c31",
-      "size_bytes": 31187
+      "sha256": "e835034a5aa30f6d03899e1294eb91ad379e89d2757b98dd0f95e1a3dc913e2e",
+      "size_bytes": 31214
     },
     {
       "role": "runner_fact_batch_golden",
       "path": "docs/authority/runner-fact-golden-v1.json",
-      "sha256": "03493111cc001fb40211dd590d971335285d64017eba9286c68e5d3fe6ad062d",
-      "size_bytes": 6461
+      "sha256": "eef9594d7b068efc5056cdf360661639764460a0d32e9dff9d91a9a787c7a2cf",
+      "size_bytes": 6435
     },
     {
       "role": "runner_fact_capability_manifest",
@@ -103,7 +103,7 @@
     {
       "role": "runner_fact_signing_preimage_golden",
       "path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
-      "sha256": "0ccc0ca2b89076a6081fd462a7cb864a7316996555a5d2b3a703192ec7e4ce7c",
+      "sha256": "f5938b01e70923a236ba9d8e150eefa0ab4e8f3ee84471d3453fdc156b8424d2",
       "size_bytes": 5434
     }
   ]

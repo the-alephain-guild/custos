@@ -24,6 +24,8 @@ from custos.core.runner_fact import (
     RunnerFactIdentity,
     RunnerFactOutbox,
     normalize_capability_scope_bindings,
+    reconciliation_period_closed,
+    settlement_period_closed,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -213,6 +215,30 @@ def test_schema_golden_capability_and_signature_are_one_exact_contract() -> None
     }
 
     facts = batch["facts"]
+    periods = {fact["kind"]: fact["period"] for fact in facts if "period" in fact}
+    assert periods["period_closed"] == "2026-07"
+    assert periods["reconciliation_period_closed"] == "20260715T070000Z_20260715T080000Z"
+    with pytest.raises(RunnerFactContractError, match="settlement period must use YYYY-MM"):
+        settlement_period_closed(
+            event_id=UUID("80000000-0000-4000-8000-000000000099"),
+            period=periods["reconciliation_period_closed"],
+            closed_at=batch["emitted_at"],
+        )
+    assert (
+        reconciliation_period_closed(
+            event_id=UUID("80000000-0000-4000-8000-000000000098"),
+            period=periods["reconciliation_period_closed"],
+            period_started_at="2026-07-15T07:00:00Z",
+            closed_at="2026-07-15T08:00:00Z",
+            venue_snapshots=[
+                {
+                    "venue": "BINANCE",
+                    "snapshot_id": UUID("70000000-0000-4000-8000-000000000007"),
+                }
+            ],
+        )["period"]
+        == periods["reconciliation_period_closed"]
+    )
     assert hashlib.sha256(_canonical(facts)).hexdigest() == batch["payload_digest"]
     assert [fact["seq"] for fact in facts] == list(
         range(batch["source_seq_start"], batch["source_seq_end"] + 1)

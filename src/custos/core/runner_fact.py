@@ -292,6 +292,17 @@ def _non_empty(value: Any, field: str) -> str:
     return value.strip()
 
 
+def _settlement_period(value: Any) -> str:
+    period = _non_empty(value, "period")
+    try:
+        parsed = datetime.strptime(period, "%Y-%m")
+    except ValueError as error:
+        raise RunnerFactContractError("settlement period must use YYYY-MM") from error
+    if parsed.strftime("%Y-%m") != period:
+        raise RunnerFactContractError("settlement period must use YYYY-MM")
+    return period
+
+
 def _decimal(value: Decimal | str | int, field: str, *, positive: bool = False) -> str:
     if isinstance(value, float):
         raise RunnerFactContractError(f"{field} must not be a binary float")
@@ -734,7 +745,7 @@ def settlement_period_closed(
     return {
         "kind": "period_closed",
         "event_id": _uuid(event_id, "event_id"),
-        "period": _non_empty(period, "period"),
+        "period": _settlement_period(period),
         "closed_at": _timestamp(closed_at, "closed_at"),
     }
 
