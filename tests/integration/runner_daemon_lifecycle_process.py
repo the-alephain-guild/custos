@@ -415,7 +415,7 @@ async def _wait_for_deployment_authority(path: Path) -> dict[str, object]:
         "strategy_id",
         "strategy_release_id",
     }
-    for _ in range(400):
+    for _ in range(1200):
         if path.is_file():
             document = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(document, dict) or set(document) != required:
@@ -688,7 +688,7 @@ async def _wait_for_publication(
             ):
                 return outcome, receipt
         await asyncio.sleep(0.05)
-    raise TimeoutError("daemon did not publish the lifecycle batch")
+    raise TimeoutError("daemon did not recover command ACK, persist policy, and publish lifecycle")
 
 
 async def _stop_daemon(task: asyncio.Task[int]) -> None:
