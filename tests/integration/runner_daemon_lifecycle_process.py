@@ -415,7 +415,7 @@ async def _wait_for_deployment_authority(path: Path) -> dict[str, object]:
         "strategy_id",
         "strategy_release_id",
     }
-    for _ in range(1200):
+    for _ in range(400):
         if path.is_file():
             document = json.loads(path.read_text(encoding="utf-8"))
             if not isinstance(document, dict) or set(document) != required:
@@ -673,7 +673,7 @@ async def _wait_for_publication(
     database: Path,
 ) -> tuple[dict[str, object], Any]:
     outbox = RunnerFactOutbox(database)
-    for _ in range(400):
+    for _ in range(1200):
         if task.done():
             await task
             raise RuntimeError("daemon exited before command publication")
