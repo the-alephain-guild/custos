@@ -236,13 +236,21 @@ def _machine_credential(path: Path) -> MachineCredential:
     return credential
 
 
-def _write_command_input(path: Path, subject: str, envelope: bytes) -> None:
+def _write_command_input(
+    path: Path,
+    subject: str,
+    envelope: bytes,
+    capability: RunnerCapabilityReceipt,
+) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     temporary = path.with_suffix(f"{path.suffix}.tmp")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     try:
         payload = json.dumps(
             {
+                "capability_manifest_digest": capability.manifest_digest,
+                "capability_version": capability.capability_version,
+                "capability_version_id": str(capability.capability_version_id),
                 "subject": subject,
                 "payload_base64": base64.b64encode(envelope).decode("ascii"),
             },
@@ -501,11 +509,6 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             raise RuntimeError("service-issued transport operation returned no credential")
         transport_credential = completion.credential
         transport_operation_id = str(completion.operation_id)
-        _write_command_input(
-            args.command_input_file,
-            expected_subject,
-            expected_envelope,
-        )
         backend_url = args.crucible_url
     else:
         if args.transport_credential is None:
@@ -528,6 +531,14 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         machine_credential.machine_key_id,
     )
     capability = _capability(verified.command, identity)
+    if service_authority:
+        assert args.command_input_file is not None
+        _write_command_input(
+            args.command_input_file,
+            expected_subject,
+            expected_envelope,
+            capability,
+        )
     metadata = RunnerToml(
         tenant_id=TENANT_ID,
         runner_id=str(RUNNER_ID),
