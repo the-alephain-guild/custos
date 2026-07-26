@@ -1436,3 +1436,26 @@ gate and diff check. Direct whole-file mypy for `runner_fact.py` still reports
 37 pre-existing findings outside this change and is not claimed. Exact PS
 candidate publication, locked runtime RC, deployed mode receipts and promotion
 remain the T9-T10 blockers.
+
+## 2026-07-26 production runtime image input lock checkpoint
+
+Custos `568153d` closes the source-controlled image-input gap without claiming a
+released runtime candidate. The production Dockerfile now uses one
+digest-pinned Python 3.12 base, installs the hash-complete third-party
+dependency set exported from `uv.lock`, and installs exactly one runner, base
+toolkit and Nautilus toolkit wheel with dependency resolution disabled.
+Strategy material remains outside the runner image and under Crucible's signed
+`StrategyRelease` authority.
+
+`make check-runtime-lock`, all three wheel builds, the 24-test focused release
+and image-contract gate, Ruff, the standalone authority gate and diff check
+pass. The release workflow signs all three image-input wheels but filters the
+two non-public toolkit wheels before the existing `custos-runner` PyPI publish
+step.
+
+A real Docker build was attempted but the managed session could not write
+Docker Desktop's `~/.docker/buildx/activity` state; the requested external
+execution was then denied by the host usage limit. Therefore this checkpoint
+does not claim a built image digest, runtime RC, GHCR publication or promotion.
+Those release receipts, the exact PS production candidate and deployed
+`0029`/`0117` mode receipts remain T9-T10 blockers.
