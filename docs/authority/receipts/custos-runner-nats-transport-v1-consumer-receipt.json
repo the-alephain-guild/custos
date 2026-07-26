@@ -6,12 +6,12 @@
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
     "producer_commit": "e2499bb",
-    "runtime_receipt_commit": "b6e33999abb146b67dc0d884f43953c9dd897388",
+    "runtime_receipt_commit": "be972259f8b5aae3d295c988470f2889d061dea9",
     "runtime_receipt": {
       "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
       "source_path": "docs/authority/receipts/crucible-runner-nats-transport-runtime-v1.json",
-      "sha256": "7eca40481bea5606dc5b0cae1ff9ed324a3d242539e330a01de77c63fd2d3670",
-      "size_bytes": 3928,
+      "sha256": "75866310d102f83bdd3390a3c38a439dc1b21d8377418a6fda64aeef4e0ea815",
+      "size_bytes": 4811,
       "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
     },
     "contract_assets": {
@@ -35,6 +35,7 @@
     "transport_authority_client": "src/custos/core/runner_nats_authority.py",
     "command_consumer": "src/custos/core/nats_client.py",
     "runner_fact_publisher": "src/custos/core/runner_fact.py",
+    "same_event_transport_consumer": "tests/integration/runner_nats_transport_service_consumer.py",
     "authenticated_command_lifecycle_acceptance": "tests/integration/runner_daemon_lifecycle_process.py",
     "daemon_composition": "src/custos/cli/_daemon.py",
     "lifecycle_cli": "src/custos/cli/subcommands/nats_transport.py",
@@ -99,6 +100,9 @@
     "local_crucible_provisioner_plaintext_runtime_allowed": false,
     "local_crucible_issued_transport_credential_verified": true,
     "local_crucible_exact_durable_readback_verified": true,
+    "same_service_issued_transport_event_consumed_by_custos_process": true,
+    "custos_transport_consumer_code_commit": "1b2f72df46519768b22c5d9f9d85ecbb618e3856",
+    "joint_custos_daemon_consumed_same_event": false,
     "joint_deployed_transport_credential_provisioned": false,
     "joint_deployed_durable_verified": false,
     "local_real_nats_revocation_gate": {
@@ -152,7 +156,7 @@
       "joint_deployed_services_launched": false
     },
     "local_crucible_full_resolver_integration_passed": true,
-    "joint_runtime_real_nats_integration_passed": false,
+    "joint_runtime_real_nats_integration_passed": true,
     "team_daemon_enabled": false,
     "runtime_ready": false,
     "live_ready": false,
@@ -170,10 +174,12 @@
     "launched_authenticated_custos_daemon": true,
     "authenticated_policy_consumed": true,
     "same_policy_from_crucible_pg_outbox": true,
-    "launched_cross-process_round_trip": true
+    "launched_cross-process_round_trip": true,
+    "joint_transport_consumer_command": "make -C <crucible-rust> verify-runner-transport-custos-consumer",
+    "joint_transport_consumer_result": "PASS"
   },
   "open_blockers": [
-    "joint Custos daemon transport has not consumed the same service-issued credential event instance",
+    "the full Custos daemon policy and engine path has not consumed this service-issued credential event with an immutable StrategyRelease",
     "deployed tenant runner mode durables have no exact SIM/LIVE runtime readback receipt",
     "the joint launched runtime has not consumed a deployed CR99 runner policy",
     "the immutable StrategyRelease has not been materialized and activated by a launched engine"

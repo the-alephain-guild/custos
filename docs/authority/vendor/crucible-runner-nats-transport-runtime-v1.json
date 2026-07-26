@@ -5,7 +5,7 @@
   "consumer": "custos",
   "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN",
   "authority_coordinate": "crucible.runner-nats-transport.v1",
-  "code_commit": "1bfea3ee51624bd7bd4a569565bb3d6e7183c3ac",
+  "code_commit": "f862db8f81dcf0675fac9d28b6f83d5c2ca67036",
   "control_migration": {
     "checked_in_head": "0029",
     "local_ephemeral_head_executed": "0029",
@@ -30,7 +30,8 @@
     "deployed_production_services_launched": false
   },
   "acceptance": {
-    "command": "make verify-runner-transport-service-process",
+    "command": "make verify-runner-transport-custos-consumer",
+    "standalone_command": "make verify-runner-transport-service-process",
     "result": "1 passed",
     "verified_at": "2026-07-26",
     "real_postgresql": true,
@@ -42,6 +43,11 @@
     "distinct_sim_live_accounts": true,
     "arx_actor_assertion_intent_exercised": true,
     "direct_custos_machine_request_exercised": true,
+    "real_custos_consumer_process_exercised": true,
+    "custos_authority_client_exercised": true,
+    "custos_tls_connection_profile_exercised": true,
+    "custos_existing_durable_bind_exercised": true,
+    "custos_command_ack_sync_verified": true,
     "user_nkey_generated_client_side": true,
     "machine_request_replay_authority_exercised": true,
     "pg_durable_worker_exercised": true,
@@ -61,8 +67,18 @@
   },
   "source": {
     "path": "crates/server-http/tests/runner_nats_transport_service_process.rs",
-    "sha256": "4b10bb30a544cde1e10d362e59bdeb51a7e07716ffb798ed676710e7d2fc27db",
-    "size_bytes": 46238
+    "sha256": "e7e42f4d476a78609fc08589749a89f8591ee8c035510436e9479ea123ab7966",
+    "size_bytes": 52819
+  },
+  "custos_consumer_source": {
+    "repository": "tesseract-trading/custos",
+    "commit": "1b2f72df46519768b22c5d9f9d85ecbb618e3856",
+    "path": "tests/integration/runner_nats_transport_service_consumer.py",
+    "sha256": "98dffb6dc84e563db1fff6f16b91b8b3ad567c26ac36e77dc80d79973972a7e6",
+    "size_bytes": 5770,
+    "user_seed_egress": false,
+    "user_jwt_egress": false,
+    "machine_private_key_egress": false
   },
   "predecessor_receipts": {
     "http": {
@@ -72,8 +88,8 @@
     },
     "broker": {
       "path": "docs/authority/receipts/crucible-runner-nats-broker-authority-v1.json",
-      "sha256": "5bf65b97d9f8ab30bb85c783fcf51dc15e5c4f09101ebd8f4bd052b9309a9c20",
-      "size_bytes": 3790
+      "sha256": "724a3d725caf7699db86f42daba5bda279d8c36cbe42b4c0c7c8431875506c1a",
+      "size_bytes": 3981
     },
     "rotation_revocation": {
       "path": "docs/authority/receipts/crucible-runner-nats-rotation-revocation-v1.json",
@@ -83,7 +99,9 @@
   },
   "joint_custos_runtime": {
     "existing_clone_local_daemon_receipt": true,
-    "same_event_instance_consumed_in_this_gate": false,
+    "same_event_instance_consumed_in_this_gate": true,
+    "custos_transport_consumer_process_launched_in_this_gate": true,
+    "custos_daemon_launched_in_this_gate": false,
     "immutable_strategy_release_materialized_in_this_gate": false,
     "runtime_candidate_locked": false
   },
@@ -93,7 +111,7 @@
   "open_blockers": [
     "deployed control 0028 predecessor receipt",
     "deployed control 0029 execution receipt",
-    "joint Custos daemon transport and immutable StrategyRelease runtime candidate",
+    "joint Custos production daemon policy/engine flow and immutable StrategyRelease runtime candidate",
     "deployed testnet and live acceptance"
   ]
 }

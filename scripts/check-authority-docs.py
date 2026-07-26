@@ -1536,6 +1536,9 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         "consumer": resolve("src/custos/core/nats_client.py"),
         "publisher": resolve("src/custos/core/runner_fact.py"),
         "acceptance": resolve("tests/integration/runner_daemon_lifecycle_process.py"),
+        "same_event_transport_consumer": resolve(
+            "tests/integration/runner_nats_transport_service_consumer.py"
+        ),
         "daemon": resolve("src/custos/cli/_daemon.py"),
         "cli": resolve("src/custos/cli/subcommands/nats_transport.py"),
     }
@@ -1555,7 +1558,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     elif (
         producer.get("producer_commit") != "e2499bb"
         or producer.get("runtime_receipt_commit")
-        != "b6e33999abb146b67dc0d884f43953c9dd897388"
+        != "be972259f8b5aae3d295c988470f2889d061dea9"
         or producer.get("authority_receipt")
         != "tesseract-trading/crucible-rust/docs/authority/receipts/"
         "crucible-runner-nats-broker-authority-v1.json"
@@ -1724,13 +1727,15 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "local_crucible_issued_transport_credential_verified",
             "local_crucible_exact_durable_readback_verified",
             "local_crucible_full_resolver_integration_passed",
+            "same_service_issued_transport_event_consumed_by_custos_process",
+            "joint_runtime_real_nats_integration_passed",
         ):
             if truth.get(key) is not True:
                 errors.append(f"runner NATS transport implemented truth {key} differs")
         for key in (
             "joint_deployed_transport_credential_provisioned",
             "joint_deployed_durable_verified",
-            "joint_runtime_real_nats_integration_passed",
+            "joint_custos_daemon_consumed_same_event",
             "local_crucible_provisioner_plaintext_runtime_allowed",
             "team_daemon_enabled",
             "runtime_ready",
@@ -1739,6 +1744,11 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         ):
             if truth.get(key) is not False:
                 errors.append(f"runner NATS transport pending truth {key} differs")
+        if (
+            truth.get("custos_transport_consumer_code_commit")
+            != "1b2f72df46519768b22c5d9f9d85ecbb618e3856"
+        ):
+            errors.append("runner NATS transport consumer code receipt differs")
 
     transport = source_paths["transport"].read_text(encoding="utf-8")
     authority_client = source_paths["authority_client"].read_text(encoding="utf-8")
@@ -1810,10 +1820,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("producer_commit") != "e2499bb"
         or snapshot.get("producer_runtime_receipt")
         != {
-            "commit": "b6e33999abb146b67dc0d884f43953c9dd897388",
+            "commit": "be972259f8b5aae3d295c988470f2889d061dea9",
             "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
-            "sha256": "7eca40481bea5606dc5b0cae1ff9ed324a3d242539e330a01de77c63fd2d3670",
-            "size_bytes": 3928,
+            "sha256": "75866310d102f83bdd3390a3c38a439dc1b21d8377418a6fda64aeef4e0ea815",
+            "size_bytes": 4811,
             "status": (
                 "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_"
                 "DEPLOYED_ACCEPTANCE_OPEN"
@@ -1846,12 +1856,19 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("local_crucible_issued_transport_credential_verified")
         is not True
         or snapshot.get("local_crucible_exact_durable_readback_verified") is not True
+        or snapshot.get(
+            "same_service_issued_transport_event_consumed_by_custos_process"
+        )
+        is not True
+        or snapshot.get("custos_transport_consumer_code_commit")
+        != "1b2f72df46519768b22c5d9f9d85ecbb618e3856"
+        or snapshot.get("joint_custos_daemon_consumed_same_event") is not False
         or snapshot.get("joint_deployed_transport_credential_provisioned")
         is not False
         or snapshot.get("joint_deployed_durable_verified") is not False
         or snapshot.get("local_crucible_full_resolver_integration_passed")
         is not True
-        or snapshot.get("joint_runtime_real_nats_integration_passed") is not False
+        or snapshot.get("joint_runtime_real_nats_integration_passed") is not True
         or snapshot.get("crucible_policy_publisher_code_commit")
         != "40a43fbf146006bb90053c446bd15f529418b45e"
         or snapshot.get("immutable_artifact_materialization_in_gate") is not False
