@@ -1,8 +1,8 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T8a and clone-local preprovisioned-control-durable-to-engine-to-authenticated-PubAck pass; immutable OCI materialization/daemon composition, launched engine-to-Crucible round-trip evidence, physical-mode policy/NATS receipts, runtime RC and T9-T10 remain open
+> **Status**: ⏳ In progress — T2-T8a and clone-local authenticated control-durable-to-engine-to-Crucible-PG round trip pass; immutable OCI materialization/daemon composition, physical-mode policy/NATS receipts, runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
-> **Revised**: 2026-07-26 through authenticated clone-local control-durable command lifecycle publication
+> **Revised**: 2026-07-26 through authenticated clone-local command lifecycle PostgreSQL projection
 > **Project**: Custos
 > **Source**: Audit of pre-plan migration `324da6e`, PS Plan 53, and v1.team review
 > **For Claude**: Use `/forge:execute` to implement this plan.
@@ -998,13 +998,14 @@ git commit -m "fix(custos): use reliable Nautilus portfolio equity"
 > `nats:2.10-alpine` TLS/User-JWT transport and proves forced disconnect,
 > old-generation reconnect denial, admin-preprovisioned RunnerFact stream,
 > replacement-credential PubAck, exact `Nats-Msg-Id=batch_id` and SQLite outbox
-> deletion only after PubAck. At `e4f23b6`, the launched process also verifies
+> deletion only after PubAck. At Custos `ba562a9`, the launched process also verifies
 > the signed command, persists desired state and artifact activation, reaches
 > sandbox engine readiness, atomically commits applied+lifecycle outbox before
-> command ACK, then publishes that same lifecycle batch. The command delivery is
-> not yet sourced from the NATS control durable, artifact bytes are not the
-> immutable OCI candidate, and Crucible projection is not part of this gate. It
-> is clone-local evidence, not a CR100 production or dual-broker receipt.
+> command ACK, publishes that same lifecycle batch and proves the same dynamic
+> `batch_id` reaches the Crucible `79b5acb` PostgreSQL lifecycle projector.
+> Artifact bytes are not the immutable OCI candidate, credentials are
+> clone-local rather than issued by launched Crucible signer/provisioner/server
+> services, and this is not a CR100 production or dual-broker receipt.
 
 ### Task 8: Complete the sole RunnerFact V1 contract
 
@@ -1125,9 +1126,9 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | RunnerFact SQLite V1 deep module | focused verified | one store, one outbox and one instance-continuous sequence |
 | Engine lifecycle | local verified; production materialization blocked | 118-test T2-T8a gate passes; production authority contract is consumed at `4ad12b2`, while immutable OCI materialization, trust composition and launched activation remain open |
 | Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, policy-bound PubAck and real daemon consumption pending |
-| Machine credential and NATS vault V1 | direct credential plus clone-local authenticated transport ready; production runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; `d7256ec` proves TLS/User-JWT rotation and revoked-generation reconnect denial; `fe70bc4` binds the preprovisioned control durable and adds command-derived lifecycle PubAck. Control `0029`, deployed durable readback and dual-domain broker receipts remain pending. |
-| RunnerFact V1 | Phase A exact-byte plus authenticated control-command-derived publisher accepted; runtime open | producer asset commit `cce7693`, Crucible consumer code `506afcd` and receipt `818242c` are pinned; `fe70bc4` proves JetStream control delivery, signed command verification, sandbox engine readiness, commit-before-ACK, broker ack-floor advancement and authenticated lifecycle PubAck. The development same-batch gate separately reaches Crucible projection. One immutable-artifact/Crucible unified round trip and runtime RC remain required. |
-| Local sandbox runtime | control-durable command-to-engine-to-authenticated-PubAck PASS; unified owner round trip open | the launched process binds the existing durable, reaches engine readiness, ACKs only after lifecycle commit and clears the durable outbox only after PubAck. Immutable PS material and Crucible projection still need to be combined in the same run. |
+| Machine credential and NATS vault V1 | direct credential plus clone-local authenticated transport ready; production runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; `d7256ec` proves TLS/User-JWT rotation and revoked-generation reconnect denial; `ba562a9` binds the preprovisioned control durable and completes the authenticated same-batch PG acceptance. Control `0029`, deployed durable readback and dual-domain broker receipts remain pending. |
+| RunnerFact V1 | Phase A exact-byte plus authenticated command-derived PG acceptance complete; runtime RC open | producer asset commit `cce7693` and receipt `818242c` remain pinned; Custos `ba562a9` and Crucible `79b5acb` prove JetStream control delivery, signed command verification, sandbox engine readiness, commit-before-ACK, broker ack-floor advancement, authenticated lifecycle PubAck and same-batch PostgreSQL projection. Immutable artifact activation, production-service credentials and runtime RC remain required. |
+| Local sandbox runtime | authenticated control-durable command-to-Crucible-PG PASS; production owner round trip open | the launched acceptance process binds the existing durable, reaches engine readiness, ACKs only after lifecycle commit, clears the outbox only after PubAck and reaches one Crucible lifecycle projector row with the same batch. Immutable PS material and launched production signer/provisioner/server services remain open. |
 | Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 production receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 
 The machine-readable boundary is pinned by
@@ -1214,13 +1215,16 @@ Validation boundary:
   an independent admin JWT to preprovision the RunnerFact stream and launches
   the production outbox/publisher under the replacement Runner JWT; PubAck,
   `Nats-Msg-Id=batch_id` and post-PubAck SQLite deletion all pass without giving
-  the Runner stream-admin authority. Custos `fe70bc4` extends that same launched
+  the Runner stream-admin authority. Custos `ba562a9` extends that same launched
   process by binding the admin-preprovisioned exact-mode control durable,
   consuming the signed command over JetStream, persisting durable intake and
   artifact activation state, reaching sandbox engine readiness, atomically
   committing applied+lifecycle state before ACK and proving the broker ack floor
-  advanced to the command sequence. Immutable OCI materialization and Crucible
-  projection deliberately remain false in this receipt.
+  advanced to the command sequence. Crucible `79b5acb` independently derives the
+  same command-scoped capability authority, accepts the exact published batch
+  into real PostgreSQL and creates one lifecycle projector work row. Immutable
+  OCI materialization and launched production services deliberately remain
+  false in this receipt.
 - `make verify-runner-fact-publication` passes `1/1` at Custos
   `c7d6f8b11849399dfbf9855729af67a841518622`: an independent process
   uses the production RunnerFact outbox/signer/publisher, receives a real

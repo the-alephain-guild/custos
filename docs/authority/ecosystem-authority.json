@@ -363,8 +363,10 @@
     "launched_authenticated_publisher_process": true,
     "local_signed_command_engine_puback_passed": true,
     "command_delivered_via_jetstream": true,
+    "authenticated_runtime_projection_gate_passed": true,
+    "same_batch_accepted_by_crucible_postgresql": true,
     "immutable_artifact_materialization_in_gate": false,
-    "crucible_projection_in_authenticated_gate": false,
+    "crucible_projection_in_authenticated_gate": true,
     "sqlite_outbox_empty_after_puback": true,
     "local_real_nats_image_id": "sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9",
     "real_nats_integration_passed": false,
@@ -388,8 +390,8 @@
     },
     "local_publication_receipt": {
       "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
-      "sha256": "2d967b06ec4d258aac2720b4d0fa54276ef52a4e3dc3b42cc7b836d63cb824e1",
-      "size_bytes": 1993,
+      "sha256": "d6ab0120cf6a6b8e996a666db7606b2772aa77068b4335e511162d2462087a24",
+      "size_bytes": 1989,
       "status": "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN"
     },
     "authenticated_transport_receipt": {
@@ -401,8 +403,9 @@
       "command_ack_after_lifecycle_commit": true,
       "jetstream_puback_observed": true,
       "command_delivered_via_jetstream": true,
+      "same_batch_accepted_by_crucible_postgresql": true,
       "immutable_artifact_materialization": false,
-      "crucible_projection_observed": false,
+      "crucible_projection_observed": true,
       "production_credential": false
     },
     "signing_preimage_golden": "docs/authority/runner-fact-signing-preimage-golden-v1.json",

@@ -83,7 +83,7 @@
     "production_durable_verified": false,
     "local_real_nats_revocation_gate": {
       "command": "make verify-nats-revocation",
-      "code_commit": "fe70bc4e5013f75570fd0ff2a0380baed12982a0",
+      "code_commit": "ba562a91a3d160293f3f0631c47a954164766662",
       "image": "nats:2.10-alpine",
       "image_id": "sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9",
       "status": "PASS",
@@ -104,6 +104,25 @@
       "immutable_artifact_materialization": false,
       "crucible_projection_observed": false
     },
+    "authenticated_runtime_projection_gate": {
+      "command": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
+      "custos_code_commit": "ba562a91a3d160293f3f0631c47a954164766662",
+      "crucible_code_commit": "79b5acb9a97bf9639b46ad8be4c25e03412f8092",
+      "status": "PASS",
+      "tests_passed": 1,
+      "canonical_runner_fact_stream": "CRUCIBLE_RUNNER_FACT_V1",
+      "canonical_runner_fact_stream_subjects": "crucible.runner.fact.v1.*.*.*",
+      "runner_publish_acl_remained_exact": true,
+      "command_delivered_via_existing_durable": true,
+      "sandbox_engine_ready": true,
+      "command_ack_after_lifecycle_commit": true,
+      "runner_fact_puback_observed": true,
+      "same_batch_accepted_by_crucible": true,
+      "postgresql_projection_work_count": 1,
+      "dynamic_capability_authority_matched": true,
+      "immutable_artifact_materialization": false,
+      "production_services_launched": false
+    },
     "real_nats_integration_passed": false,
     "team_daemon_enabled": false,
     "runtime_ready": false,
@@ -120,10 +139,10 @@
     "real_nats_receipt_reused": true,
     "launched_authenticated_publisher_process": true,
     "launched_authenticated_command_lifecycle_process": true,
-    "launched_cross-process_round_trip": false
+    "launched_cross-process_round_trip": true
   },
   "open_blockers": [
-    "the isolated Crucible signer, provisioner, server worker and Custos client have not produced one launched control-delivery-to-projection runtime receipt",
+    "the isolated Crucible signer, provisioner and server worker have not issued the clone-local test credentials as one production-service receipt",
     "production tenant runner mode durables have no deployed exact SIM/LIVE runtime readback receipt",
     "Custos has not consumed the signed CR99 runner policy in a launched runtime",
     "the immutable StrategyRelease has not been materialized and activated by a launched engine"

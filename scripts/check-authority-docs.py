@@ -1478,7 +1478,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     else:
         if truth.get("local_real_nats_revocation_gate") != {
             "command": "make verify-nats-revocation",
-            "code_commit": "fe70bc4e5013f75570fd0ff2a0380baed12982a0",
+            "code_commit": "ba562a91a3d160293f3f0631c47a954164766662",
             "image": "nats:2.10-alpine",
             "image_id": ("sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9"),
             "status": "PASS",
@@ -1500,6 +1500,29 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "crucible_projection_observed": False,
         }:
             errors.append("runner NATS transport local real-NATS revocation evidence differs")
+        if truth.get("authenticated_runtime_projection_gate") != {
+            "command": (
+                "CRUCIBLE_REPO=<crucible-rust> "
+                "make verify-authenticated-runtime-projection"
+            ),
+            "custos_code_commit": "ba562a91a3d160293f3f0631c47a954164766662",
+            "crucible_code_commit": "79b5acb9a97bf9639b46ad8be4c25e03412f8092",
+            "status": "PASS",
+            "tests_passed": 1,
+            "canonical_runner_fact_stream": "CRUCIBLE_RUNNER_FACT_V1",
+            "canonical_runner_fact_stream_subjects": "crucible.runner.fact.v1.*.*.*",
+            "runner_publish_acl_remained_exact": True,
+            "command_delivered_via_existing_durable": True,
+            "sandbox_engine_ready": True,
+            "command_ack_after_lifecycle_commit": True,
+            "runner_fact_puback_observed": True,
+            "same_batch_accepted_by_crucible": True,
+            "postgresql_projection_work_count": 1,
+            "dynamic_capability_authority_matched": True,
+            "immutable_artifact_materialization": False,
+            "production_services_launched": False,
+        }:
+            errors.append("authenticated runtime projection evidence differs")
         for key in (
             "begin_poll_consumer_implemented",
             "restart_safe_pending_operation_implemented",
@@ -1598,8 +1621,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("launched_authenticated_publisher_process") is not True
         or snapshot.get("local_signed_command_engine_puback_passed") is not True
         or snapshot.get("command_delivered_via_jetstream") is not True
+        or snapshot.get("authenticated_runtime_projection_gate_passed") is not True
+        or snapshot.get("same_batch_accepted_by_crucible_postgresql") is not True
         or snapshot.get("immutable_artifact_materialization_in_gate") is not False
-        or snapshot.get("crucible_projection_in_authenticated_gate") is not False
+        or snapshot.get("crucible_projection_in_authenticated_gate") is not True
         or snapshot.get("sqlite_outbox_empty_after_puback") is not True
     ):
         errors.append("runner NATS transport ecosystem status differs")
@@ -1713,15 +1738,15 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     local_publication = load_json(local_publication_path)
     expected_source = {
         "repository": "tesseract-trading/custos",
-        "code_commit": "d7256ec98c8d25f09f6a6856a9e40f98468678a0",
+        "code_commit": "ba562a91a3d160293f3f0631c47a954164766662",
         "publisher_process": "tests/integration/runner_fact_publication_process.py",
         "publisher_process_sha256": (
             "a1cff9f61a40cc40b0df6dfcd492e2cd94c7c1161b0483535ce162a305b3dfc9"
         ),
         "publisher_process_size_bytes": 5115,
         "test": "tests/integration/test_runner_fact_publication.py",
-        "test_sha256": "f3dc6881a61a5aafc1d33833882f3cc7c74dc6f92333c979bec15fa59ef869d7",
-        "test_size_bytes": 4814,
+        "test_sha256": "5f6ed9720761d619ddec32144de096045a29894c5438460692cd5ae757f7f268",
+        "test_size_bytes": 4870,
         "command": "make verify-runner-fact-publication",
         "verified_at": "2026-07-26",
         "tests_passed": 1,
@@ -1811,8 +1836,8 @@ def verify_runner_fact_authority(errors: list[str]) -> None:
         errors.append("ecosystem RunnerFact V1 consumer receipt binding differs")
     if state.get("local_publication_receipt") != {
         "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
-        "sha256": "2d967b06ec4d258aac2720b4d0fa54276ef52a4e3dc3b42cc7b836d63cb824e1",
-        "size_bytes": 1993,
+        "sha256": "d6ab0120cf6a6b8e996a666db7606b2772aa77068b4335e511162d2462087a24",
+        "size_bytes": 1989,
         "status": "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN",
     }:
         errors.append("ecosystem RunnerFact V1 local publication receipt binding differs")
