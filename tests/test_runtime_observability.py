@@ -10,9 +10,67 @@ from pathlib import Path
 
 import pytest
 
+from custos.cli._daemon import _collect_runtime_environment_metrics
 from custos.cli.subcommands.health import _health
+from custos.core.nats_transport import RunnerNatsTransportError
 from custos.core.readiness import ReadinessFile, is_ready_file, read_health_file
 from custos.core.runner_fact import RunnerFactOutbox
+
+
+class _TransportCredential:
+    def __init__(self, expires_at: datetime) -> None:
+        self.expires_at = expires_at
+
+
+class _TransportProfile:
+    def __init__(self, expires_at: datetime, *, active: bool) -> None:
+        self.credential = _TransportCredential(expires_at)
+        self._active = active
+
+    def assert_active(self) -> None:
+        if not self._active:
+            raise RunnerNatsTransportError("fixture authority is revoked")
+
+
+@pytest.mark.asyncio
+async def test_runtime_metrics_include_artifact_and_transport_observations(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 7, 26, 12, 0, tzinfo=UTC)
+    cache = tmp_path / "cache"
+    active = tmp_path / "active"
+    quarantine = tmp_path / "quarantine"
+    (cache / "sha256").mkdir(parents=True)
+    (cache / "sha256" / "artifact").write_bytes(b"cache")
+    (active / "release-a").mkdir(parents=True)
+    (active / "release-a" / "strategy.whl").write_bytes(b"active")
+    (active / "activation-failed-release-b").mkdir()
+    (active / "activation-failed-release-b" / "strategy.whl").write_bytes(b"failed")
+    (quarantine / "release-c").mkdir(parents=True)
+    (quarantine / "release-c" / "strategy.whl").write_bytes(b"quarantine")
+
+    environment = _collect_runtime_environment_metrics(
+        artifact_cache_dir=cache,
+        artifact_activation_dir=active,
+        artifact_quarantine_dir=quarantine,
+        transport_profiles={
+            "sandbox": _TransportProfile(now + timedelta(minutes=10), active=True),
+            "testnet": _TransportProfile(now + timedelta(minutes=20), active=False),
+        },  # type: ignore[arg-type]
+        now=now,
+    )
+    metrics = await RunnerFactOutbox(tmp_path / "runner-state.sqlite3").runtime_metrics(
+        now=now,
+        environment=environment,
+    )
+
+    assert metrics.artifact_cache_bytes == len(b"cache")
+    assert metrics.artifact_activation_bytes == len(b"active") + len(b"failed")
+    assert metrics.active_artifacts == 1
+    assert metrics.quarantined_artifacts == 2
+    assert metrics.transport_authorities == 2
+    assert metrics.invalid_transport_authorities == 1
+    assert metrics.next_transport_expiry_seconds == 600
 
 
 def _insert_desired(
@@ -203,6 +261,13 @@ async def test_runtime_metrics_project_store_health_without_a_second_journal(
     assert metrics.policy_heads == 1
     assert metrics.expired_policy_heads == 1
     assert metrics.next_policy_expiry_seconds == -5
+    assert metrics.artifact_cache_bytes == 0
+    assert metrics.artifact_activation_bytes == 0
+    assert metrics.active_artifacts == 0
+    assert metrics.quarantined_artifacts == 0
+    assert metrics.transport_authorities == 0
+    assert metrics.invalid_transport_authorities == 0
+    assert metrics.next_transport_expiry_seconds is None
     assert metrics.database_bytes > 0
     assert metrics.disk_free_bytes > 0
 
@@ -277,6 +342,13 @@ def test_readiness_rejects_a_hidden_failed_transport_mode(tmp_path: Path) -> Non
         "policy_heads": 0,
         "expired_policy_heads": 0,
         "next_policy_expiry_seconds": None,
+        "artifact_cache_bytes": 0,
+        "artifact_activation_bytes": 0,
+        "active_artifacts": 0,
+        "quarantined_artifacts": 0,
+        "transport_authorities": 0,
+        "invalid_transport_authorities": 0,
+        "next_transport_expiry_seconds": None,
     }
     readiness.mark_ready(
         strategy_id=None,

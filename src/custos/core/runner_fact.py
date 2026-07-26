@@ -1029,6 +1029,34 @@ class RunnerFactPublicationReceipt:
 
 
 @dataclass(frozen=True, slots=True)
+class RunnerRuntimeEnvironmentMetricsV1:
+    """Stateless filesystem and transport observations for the health projection."""
+
+    artifact_cache_bytes: int = 0
+    artifact_activation_bytes: int = 0
+    active_artifacts: int = 0
+    quarantined_artifacts: int = 0
+    transport_authorities: int = 0
+    invalid_transport_authorities: int = 0
+    next_transport_expiry_seconds: float | None = None
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "artifact_cache_bytes",
+            "artifact_activation_bytes",
+            "active_artifacts",
+            "quarantined_artifacts",
+            "transport_authorities",
+            "invalid_transport_authorities",
+        ):
+            value = getattr(self, field_name)
+            if type(value) is not int or value < 0:
+                raise ValueError(f"{field_name} must be a non-negative integer")
+        if self.invalid_transport_authorities > self.transport_authorities:
+            raise ValueError("invalid transport authority count exceeds total")
+
+
+@dataclass(frozen=True, slots=True)
 class RunnerRuntimeMetricsV1:
     """Operational projection read atomically from the sole RunnerFact store."""
 
@@ -1056,6 +1084,13 @@ class RunnerRuntimeMetricsV1:
     policy_heads: int
     expired_policy_heads: int
     next_policy_expiry_seconds: float | None
+    artifact_cache_bytes: int
+    artifact_activation_bytes: int
+    active_artifacts: int
+    quarantined_artifacts: int
+    transport_authorities: int
+    invalid_transport_authorities: int
+    next_transport_expiry_seconds: float | None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -1545,10 +1580,19 @@ class RunnerFactOutbox:
         self,
         *,
         now: datetime | None = None,
+        environment: RunnerRuntimeEnvironmentMetricsV1 | None = None,
     ) -> RunnerRuntimeMetricsV1:
-        return await asyncio.to_thread(self._runtime_metrics, now)
+        return await asyncio.to_thread(
+            self._runtime_metrics,
+            now,
+            environment or RunnerRuntimeEnvironmentMetricsV1(),
+        )
 
-    def _runtime_metrics(self, now: datetime | None) -> RunnerRuntimeMetricsV1:
+    def _runtime_metrics(
+        self,
+        now: datetime | None,
+        environment: RunnerRuntimeEnvironmentMetricsV1,
+    ) -> RunnerRuntimeMetricsV1:
         observed_at = now or datetime.now(UTC)
         if observed_at.tzinfo is None:
             raise ValueError("runtime metrics clock must be timezone-aware")
@@ -1696,6 +1740,13 @@ class RunnerFactOutbox:
                 if next_expiry is not None
                 else None
             ),
+            artifact_cache_bytes=environment.artifact_cache_bytes,
+            artifact_activation_bytes=environment.artifact_activation_bytes,
+            active_artifacts=environment.active_artifacts,
+            quarantined_artifacts=environment.quarantined_artifacts,
+            transport_authorities=environment.transport_authorities,
+            invalid_transport_authorities=environment.invalid_transport_authorities,
+            next_transport_expiry_seconds=environment.next_transport_expiry_seconds,
         )
 
     async def commit_puback(

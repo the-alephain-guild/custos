@@ -83,7 +83,7 @@
   ],
   "sources": {
     "src/custos/contracts/crucible_runner_safety_policy.py": "3b9a49479d2f47b92f9e9b1250b208a5b18dd69b75fb0d71d7bf1ebd1fab6806",
-    "src/custos/core/runner_fact.py": "0e5bf2ea1c7c65f256a283bc8047a2e16b0be4be7286be108628439dd49a8ffc",
+    "src/custos/core/runner_fact.py": "fe829e81547e905c4ee1ed2025adf59a872b960bb5e646bada4b424fee321843",
     "tests/test_runner_policy_runtime.py": "777552794064bf0b4e31caf56bef3db3927c6a4f7f83a05630c4c22865c7dac0",
     "tests/integration/test_nats_revocation.py": "66479283c584518935b7557c310f67741c84f764e31d9d7d39714b55e253f485",
     "tests/test_runner_fact_store.py": "3f2a5a1bf134913660b46712e3361db479533b219a72b3efc0d3faa3f680417d",

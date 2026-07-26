@@ -17,8 +17,10 @@ import base64
 import binascii
 import hashlib
 import logging
+import os
 import signal
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
@@ -88,6 +90,7 @@ from custos.core.runner_fact import (
     RunnerFactIdentity,
     RunnerFactJetStreamPublisher,
     RunnerFactOutbox,
+    RunnerRuntimeEnvironmentMetricsV1,
     RunnerStateStore,
 )
 from custos.core.runner_fact_producer import RunnerFactHost, RunnerFactProductionLoop
@@ -511,14 +514,25 @@ async def _publish_runtime_readiness(
     readiness: ReadinessFile,
     fact_outbox: RunnerFactOutbox,
     clients: dict[str, CrucibleNatsClient],
+    transport_profiles: Mapping[str, RunnerNatsConnectionProfile],
     fact_publisher: RunnerFactJetStreamPublisher,
     deployment_subscription: bool,
+    artifact_cache_dir: Path,
+    artifact_activation_dir: Path,
+    artifact_quarantine_dir: Path,
     interval_seconds: float = 10.0,
 ) -> None:
     """Refresh one fail-closed operational projection from owner state."""
 
     while not stop.is_set():
-        metrics = await fact_outbox.runtime_metrics()
+        environment = await asyncio.to_thread(
+            _collect_runtime_environment_metrics,
+            artifact_cache_dir=artifact_cache_dir,
+            artifact_activation_dir=artifact_activation_dir,
+            artifact_quarantine_dir=artifact_quarantine_dir,
+            transport_profiles=transport_profiles,
+        )
+        metrics = await fact_outbox.runtime_metrics(environment=environment)
         transport_modes = {
             mode: client.is_connected and fact_publisher.is_mode_connected(mode)
             for mode, client in clients.items()
@@ -534,6 +548,106 @@ async def _publish_runtime_readiness(
             await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
         except TimeoutError:
             pass
+
+
+def _collect_runtime_environment_metrics(
+    *,
+    artifact_cache_dir: Path,
+    artifact_activation_dir: Path,
+    artifact_quarantine_dir: Path,
+    transport_profiles: Mapping[str, RunnerNatsConnectionProfile],
+    now: datetime | None = None,
+) -> RunnerRuntimeEnvironmentMetricsV1:
+    """Collect non-authoritative runtime observations without following symlinks."""
+
+    observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+    production_authorities = 0
+    invalid_authorities = 0
+    expiry_seconds: list[float] = []
+    for profile in transport_profiles.values():
+        credential = getattr(profile, "credential", None)
+        if credential is None:
+            continue
+        production_authorities += 1
+        authority_invalid = False
+        expires_at = getattr(credential, "expires_at", None)
+        if isinstance(expires_at, datetime) and expires_at.tzinfo is not None:
+            expiry_seconds.append((expires_at.astimezone(UTC) - observed_at).total_seconds())
+        else:
+            authority_invalid = True
+        try:
+            profile.assert_active()
+        except RunnerNatsTransportError:
+            authority_invalid = True
+        if authority_invalid:
+            invalid_authorities += 1
+
+    failed_activations = _direct_child_directory_count(
+        artifact_activation_dir,
+        required_prefix="activation-failed-",
+    )
+    return RunnerRuntimeEnvironmentMetricsV1(
+        artifact_cache_bytes=_directory_bytes(artifact_cache_dir),
+        artifact_activation_bytes=_directory_bytes(artifact_activation_dir),
+        active_artifacts=_direct_child_directory_count(
+            artifact_activation_dir,
+            excluded_prefix="activation-failed-",
+        ),
+        quarantined_artifacts=(
+            _direct_child_directory_count(artifact_quarantine_dir) + failed_activations
+        ),
+        transport_authorities=production_authorities,
+        invalid_transport_authorities=invalid_authorities,
+        next_transport_expiry_seconds=min(expiry_seconds) if expiry_seconds else None,
+    )
+
+
+def _directory_bytes(root: Path) -> int:
+    if not root.exists():
+        return 0
+    total = 0
+    pending = [root]
+    while pending:
+        current = pending.pop()
+        try:
+            entries = tuple(os.scandir(current))
+        except FileNotFoundError:
+            continue
+        for entry in entries:
+            if entry.is_symlink():
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                pending.append(Path(entry.path))
+            elif entry.is_file(follow_symlinks=False):
+                try:
+                    total += entry.stat(follow_symlinks=False).st_size
+                except FileNotFoundError:
+                    continue
+    return total
+
+
+def _direct_child_directory_count(
+    root: Path,
+    *,
+    required_prefix: str | None = None,
+    excluded_prefix: str | None = None,
+) -> int:
+    if not root.exists():
+        return 0
+    count = 0
+    try:
+        entries = tuple(os.scandir(root))
+    except FileNotFoundError:
+        return 0
+    for entry in entries:
+        if entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
+            continue
+        if required_prefix is not None and not entry.name.startswith(required_prefix):
+            continue
+        if excluded_prefix is not None and entry.name.startswith(excluded_prefix):
+            continue
+        count += 1
+    return count
 
 
 async def run_daemon(args: argparse.Namespace) -> int:
@@ -807,8 +921,12 @@ async def run_daemon(args: argparse.Namespace) -> int:
                     readiness=readiness,
                     fact_outbox=fact_outbox,
                     clients=clients,
+                    transport_profiles=transport_profiles,
                     fact_publisher=fact_publisher,
                     deployment_subscription=deployment_subscription,
+                    artifact_cache_dir=args.artifact_cache_dir.expanduser().resolve(),
+                    artifact_activation_dir=args.artifact_activation_dir.expanduser().resolve(),
+                    artifact_quarantine_dir=args.artifact_quarantine_dir.expanduser().resolve(),
                 ),
                 name="runner-runtime-readiness",
             )

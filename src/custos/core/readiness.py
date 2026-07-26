@@ -44,6 +44,7 @@ class ReadinessFile:
             and mode_state
             and all(mode_state.values())
             and metrics.get("sqlite_quick_check") == "ok"
+            and metrics.get("invalid_transport_authorities") == 0
         )
         state = {
             "ready": ready,
@@ -150,6 +151,7 @@ def is_ready_state(state: Mapping[str, Any]) -> bool:
         and not _expired(str(state["credential_valid_until"]))
         and all(transport_modes.values())
         and metrics["sqlite_quick_check"] == "ok"
+        and metrics["invalid_transport_authorities"] == 0
     )
 
 
@@ -195,6 +197,13 @@ _RUNTIME_METRIC_FIELDS = (
     "policy_heads",
     "expired_policy_heads",
     "next_policy_expiry_seconds",
+    "artifact_cache_bytes",
+    "artifact_activation_bytes",
+    "active_artifacts",
+    "quarantined_artifacts",
+    "transport_authorities",
+    "invalid_transport_authorities",
+    "next_transport_expiry_seconds",
 )
 
 

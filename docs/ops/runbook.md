@@ -76,8 +76,9 @@ The JSON form is the sole runtime-health V1 projection. It is atomically
 refreshed from the existing RunnerFact SQLite database and reports each enabled
 transport mode, SQLite quick-check state, database/WAL/disk bytes, command
 outcomes and in-progress leases, desired/applied drift, restart/quarantine,
-pending RunnerFact/PubAck age and signed runner-policy expiry. It is not a
-second journal or business-state store.
+pending RunnerFact/PubAck age, signed runner-policy expiry, immutable artifact
+cache/activation bytes and transport-authority expiry/revocation state. It is
+not a second journal or business-state store.
 
 Operational thresholds:
 
@@ -89,6 +90,12 @@ Operational thresholds:
   below 1073741824 bytes;
 - warn when `next_policy_expiry_seconds < 900`; an expired testnet/live policy
   remains fail closed;
+- warn when `next_transport_expiry_seconds < 900`; page immediately when
+  `invalid_transport_authorities > 0`, including local expiry, revocation or
+  broker authorization denial;
+- page when `quarantined_artifacts > 0`; investigate unexpected growth in
+  `artifact_cache_bytes` or `artifact_activation_bytes` before deleting any
+  immutable bytes;
 - any missing `transport_modes` entry invalidates the document; any false entry
   preserves diagnostics but sets `ready=false`, so one failed mode cannot hide
   behind another.
