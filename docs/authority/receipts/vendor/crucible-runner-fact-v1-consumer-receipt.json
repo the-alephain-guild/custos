@@ -105,8 +105,8 @@
       },
       "transport_postgresql_acceptance": {
         "path": "crates/server-http/tests/runner_fact_transport_pg.rs",
-        "sha256": "d5d3b309b709e5654f37ee7c999c1d4b1b24ba7dbd9ae67e51d22db199dd32c3",
-        "size_bytes": 22021
+        "sha256": "83f66358c4fe2996aef55bb077eac8638f049f3fea153736aad6de3551229bcf",
+        "size_bytes": 30887
       }
     }
   },
@@ -167,16 +167,57 @@
       "custos_daemon_launched": false,
       "engine_command_applied": false
     },
-    "postgresql_runtime_receipt": null,
-    "authenticated_nats_runtime_receipt": null,
-    "real_command_to_fact_round_trip_receipt": null
+    "authenticated_command_lifecycle_projection_acceptance": {
+      "test": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
+      "result": "1 passed",
+      "verified_at": "2026-07-26",
+      "custos_code_commit": "ba562a91a3d160293f3f0631c47a954164766662",
+      "crucible_code_commit": "79b5acb9a97bf9639b46ad8be4c25e03412f8092",
+      "canonical_runner_fact_stream": "CRUCIBLE_RUNNER_FACT_V1",
+      "canonical_runner_fact_stream_subjects": "crucible.runner.fact.v1.*.*.*",
+      "real_tls_user_jwt_jetstream": true,
+      "existing_control_durable": true,
+      "runner_publish_acl_exact": true,
+      "signed_command_verified": true,
+      "dynamic_capability_authority_matched": true,
+      "engine_command_applied": true,
+      "command_ack_after_lifecycle_commit": true,
+      "producer_puback_received": true,
+      "same_batch_accepted_by_crucible": true,
+      "real_postgresql": true,
+      "projector_work_count": 1,
+      "immutable_artifact_materialized": false,
+      "custos_daemon_launched": false,
+      "production_services_launched": false,
+      "production_credential": false
+    },
+    "postgresql_runtime_receipt": {
+      "status": "CLONE_LOCAL_ACCEPTED_PRODUCTION_SERVICES_OPEN",
+      "crucible_code_commit": "79b5acb9a97bf9639b46ad8be4c25e03412f8092",
+      "same_batch_projected": true,
+      "real_postgresql": true
+    },
+    "authenticated_nats_runtime_receipt": {
+      "status": "CLONE_LOCAL_ACCEPTED_PRODUCTION_CREDENTIAL_OPEN",
+      "custos_code_commit": "ba562a91a3d160293f3f0631c47a954164766662",
+      "real_tls_user_jwt_jetstream": true,
+      "production_credential": false
+    },
+    "real_command_to_fact_round_trip_receipt": {
+      "status": "CLONE_LOCAL_ACCEPTED_RUNTIME_RC_OPEN",
+      "command_to_engine_to_fact_to_projection": true,
+      "same_batch_projected": true,
+      "immutable_artifact_materialized": false,
+      "custos_daemon_launched": false,
+      "production_services_launched": false
+    }
   },
   "runtime_ready": false,
   "live_ready": false,
   "production_ready": false,
   "open_blockers": [
-    "authenticated NATS ingest and PubAck receipt",
-    "launched Custos daemon command-to-engine-to-fact receipt",
+    "production-service-issued transport and runner-policy receipt",
+    "launched Custos daemon with immutable StrategyRelease materialization receipt",
     "immutable Custos runtime RC receipt"
   ]
 }

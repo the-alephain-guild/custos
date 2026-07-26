@@ -1024,11 +1024,13 @@ git commit -m "fix(custos): use reliable Nautilus portfolio equity"
 > to producer asset commit `cce76931884de36c9606db02d94cf4124e7164b5`.
 > Crucible consumer code commit `506afcdcc6b5342f84810668b0367e983f406857`
 > accepts the closed fact union and projector map; receipt commit
-> `818242c5708d055b2c4b1e5dc9d6a9e5570667fe` pins those exact producer
+> `e4b5e1d374e0a23273ef657ea6b4d1d3641b7f81` pins those exact producer
 > bytes with receipt SHA-256
-> `600bdbb23d8f316f99ff96d666cb46a921fca13a9334d64f02d6887ac92c8acf`.
-> Phase A exact-byte handoff is complete. The real runtime round trip, immutable
-> runtime RC and all live/production flags remain open.
+> `32a1aea9c7335529c645f670713110a76b159cf9baaf0301c8dbe0204f4a754d`.
+> Phase A exact-byte handoff and the authenticated clone-local
+> command-to-engine-to-fact-to-PostgreSQL acceptance are complete. The immutable
+> runtime RC, full daemon, production-service authority and all live/production
+> flags remain open.
 
 ### Task 9: Publish the immutable runtime RC / final-candidate
 
@@ -1072,7 +1074,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
   - `make verify-nt`: `620 passed, 4 skipped, 1 xfailed`.
   - `make -n verify-runtime-existing`: Docker runtime contract and standalone runtime targets resolve without Make drift.
 - [x] command schema 来自 clean landed Crucible producer
-- [ ] schema/golden/digest 双仓 compatibility gate
+- [x] schema/golden/digest 双仓 compatibility gate
 - [x] same generation + different fingerprint terminal reject
 - [x] fingerprint 与 domain+exact subject+verified exact event bytes cross-language vector 一致
 - [x] signer/profile/verification receipt durable；signature bytes 不进入 fingerprint
@@ -1130,7 +1132,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | Engine lifecycle | local verified; production materialization blocked | 118-test T2-T8a gate passes; production authority contract is consumed at `4ad12b2`, while immutable OCI materialization, trust composition and launched activation remain open |
 | Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, policy-bound PubAck and real daemon consumption pending |
 | Machine credential and NATS vault V1 | direct credential plus clone-local authenticated transport ready; production runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; `d7256ec` proves TLS/User-JWT rotation and revoked-generation reconnect denial; `ba562a9` binds the preprovisioned control durable and completes the authenticated same-batch PG acceptance. Control `0029`, deployed durable readback and dual-domain broker receipts remain pending. |
-| RunnerFact V1 | Phase A exact-byte plus authenticated command-derived PG acceptance complete; runtime RC open | producer asset commit `cce7693` and receipt `818242c` remain pinned; Custos `ba562a9` and Crucible `79b5acb` prove JetStream control delivery, signed command verification, sandbox engine readiness, commit-before-ACK, broker ack-floor advancement, authenticated lifecycle PubAck and same-batch PostgreSQL projection. Custos `ad7728e` additionally persists exact PubAck evidence before outbox retirement. Immutable artifact activation, production-service credentials and runtime RC remain required. |
+| RunnerFact V1 | Phase A exact-byte plus authenticated command-derived PG acceptance complete; runtime RC open | producer asset commit `cce7693` and current Crucible receipt `e4b5e1d` are pinned; Custos `ba562a9` and Crucible `79b5acb` prove JetStream control delivery, signed command verification, sandbox engine readiness, commit-before-ACK, broker ack-floor advancement, authenticated lifecycle PubAck and same-batch PostgreSQL projection. Custos `ad7728e` additionally persists exact PubAck evidence before outbox retirement. Immutable artifact activation, production-service credentials and runtime RC remain required. |
 | Local sandbox runtime | authenticated control-durable command-to-Crucible-PG PASS; production owner round trip open | the launched acceptance process binds the existing durable, reaches engine readiness, ACKs only after lifecycle commit, atomically records the PubAck receipt before clearing the outbox and reaches one Crucible lifecycle projector row with the same batch. Immutable PS material and launched production signer/provisioner/server services remain open. |
 | Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 production receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 
