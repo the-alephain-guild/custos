@@ -1685,10 +1685,15 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     local_publication = load_json(local_publication_path)
     expected_source = {
         "repository": "tesseract-trading/custos",
-        "code_commit": "de80a8a82cd0eb1c38bb36dbde312f5fff32f477",
+        "code_commit": "c7d6f8b11849399dfbf9855729af67a841518622",
+        "publisher_process": "tests/integration/runner_fact_publication_process.py",
+        "publisher_process_sha256": (
+            "025fdbe677c98be8cd9ec97ecb6fd2a66aa3238e2dcef9fd835fac88eb4238fd"
+        ),
+        "publisher_process_size_bytes": 3521,
         "test": "tests/integration/test_runner_fact_publication.py",
-        "test_sha256": "ccc2dd46aa51f01820880cc43ae71396229a9a8475d7a2af65ceab8274f01a9b",
-        "test_size_bytes": 6179,
+        "test_sha256": "f3dc6881a61a5aafc1d33833882f3cc7c74dc6f92333c979bec15fa59ef869d7",
+        "test_size_bytes": 4814,
         "command": "make verify-runner-fact-publication",
         "verified_at": "2026-07-26",
         "tests_passed": 1,
@@ -1701,6 +1706,34 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
         or local_publication.get("development_only") is not True
     ):
         errors.append("RunnerFact V1 development-local publication authority differs")
+    for path_field, digest_field, size_field in (
+        ("publisher_process", "publisher_process_sha256", "publisher_process_size_bytes"),
+        ("test", "test_sha256", "test_size_bytes"),
+    ):
+        source_path = resolve(str(expected_source[path_field]))
+        payload = source_path.read_bytes() if source_path.is_file() else b""
+        if (
+            hashlib.sha256(payload).hexdigest() != expected_source[digest_field]
+            or len(payload) != expected_source[size_field]
+        ):
+            errors.append(
+                f"RunnerFact V1 development-local publication source drift: {source_path}"
+            )
+    evidence = local_publication.get("evidence", {})
+    for field in (
+        "production_runner_fact_outbox_used",
+        "production_runner_fact_signer_used",
+        "production_jetstream_publisher_used",
+        "publisher_process_launched",
+        "subject_scope_enforced",
+        "producer_puback_received",
+        "outbox_deleted_only_after_puback",
+        "nats_message_id_equals_batch_id",
+    ):
+        if evidence.get(field) is not True:
+            errors.append(
+                f"RunnerFact V1 development-local publication evidence {field} differs"
+            )
     for field in (
         "custos_daemon_launched",
         "engine_command_applied",
@@ -1750,8 +1783,8 @@ def verify_runner_fact_authority(errors: list[str]) -> None:
         errors.append("ecosystem RunnerFact V1 consumer receipt binding differs")
     if state.get("local_publication_receipt") != {
         "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
-        "sha256": "b90118fe46b852c3e7c335c72141e669e57fa7e5fd72030983dbb873146db22b",
-        "size_bytes": 1811,
+        "sha256": "216934e76582cc0b760aa96c49359f5fafd1cfbef43b5cbebbcc4e71d66d370d",
+        "size_bytes": 2074,
         "status": "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN",
     }:
         errors.append("ecosystem RunnerFact V1 local publication receipt binding differs")

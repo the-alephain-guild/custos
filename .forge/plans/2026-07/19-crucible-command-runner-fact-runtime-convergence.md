@@ -1118,7 +1118,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | Engine lifecycle | local verified; production materialization blocked | 118-test T2-T8a gate passes; production authority contract is consumed at `4ad12b2`, while immutable OCI materialization, trust composition and launched activation remain open |
 | Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, NATS/PubAck and real daemon consumption pending |
 | Machine credential and NATS vault V1 | direct credential contract ready; NATS runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; control `0029`, durable replay receipt, JWT/ACL/durable readback and dual-domain broker evidence pending |
-| RunnerFact V1 | Phase A exact-byte plus local publisher accepted; runtime open | producer asset commit `cce7693`, Crucible consumer code `bba16f9` and receipt `a36b63a` are pinned; Custos `de80a8a` proves its production outbox/signer/publisher receives a real JetStream PubAck and clears SQLite only afterward. Authenticated launched round trip and immutable runtime RC remain required. |
+| RunnerFact V1 | Phase A exact-byte plus local publisher accepted; runtime open | producer asset commit `cce7693`, Crucible consumer code `bba16f9` and receipt `a36b63a` are pinned; Custos `c7d6f8b` launches an independent publisher process using its production outbox/signer/publisher, receives a real JetStream PubAck and clears SQLite only afterward. Authenticated daemon/engine round trip and immutable runtime RC remain required. |
 | Local sandbox runtime | real publisher PASS; launched engine receipt open | instance-bound development material reaches the common runtime path; local JetStream publication passes `1/1`, while real command redelivery, engine launch and same-batch Crucible projection remain required |
 | Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 real receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 
@@ -1204,8 +1204,9 @@ Validation boundary:
   `1/1` against real TLS/User-JWT NATS and proves forced disconnect plus
   old-generation reconnect denial.
 - `make verify-runner-fact-publication` passes `1/1` at Custos
-  `de80a8a82cd0eb1c38bb36dbde312f5fff32f477`: the production
-  RunnerFact outbox/signer/publisher receives a real JetStream PubAck, clears
+  `c7d6f8b11849399dfbf9855729af67a841518622`: an independent process
+  uses the production RunnerFact outbox/signer/publisher, receives a real
+  JetStream PubAck, clears
   the published SQLite row only afterward, preserves `Nats-Msg-Id=batch_id`
   and reopens with no pending row. Its receipt is development-only and does not
   claim daemon launch, engine application, authenticated publication or

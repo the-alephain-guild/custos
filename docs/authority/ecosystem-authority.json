@@ -379,8 +379,8 @@
     },
     "local_publication_receipt": {
       "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
-      "sha256": "b90118fe46b852c3e7c335c72141e669e57fa7e5fd72030983dbb873146db22b",
-      "size_bytes": 1811,
+      "sha256": "216934e76582cc0b760aa96c49359f5fafd1cfbef43b5cbebbcc4e71d66d370d",
+      "size_bytes": 2074,
       "status": "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN"
     },
     "signing_preimage_golden": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
