@@ -6,12 +6,12 @@
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
     "producer_commit": "e2499bb",
-    "runtime_receipt_commit": "6cb9d6845c8cd0856c492ae9761a5231f6ec8254",
+    "runtime_receipt_commit": "0619a77033947b5890952ae4f2cc02b22eabd0f9",
     "runtime_receipt": {
       "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
       "source_path": "docs/authority/receipts/crucible-runner-nats-transport-runtime-v1.json",
-      "sha256": "50df14c369bfb59cddfe03ebd9e05e964e83ad369d3b62fe11177227256e875f",
-      "size_bytes": 7241,
+      "sha256": "54630853b55075d98417b7f9885138c3bea94401e5ace19f7339b4112fb8a836",
+      "size_bytes": 8066,
       "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
     },
     "contract_assets": {
@@ -103,7 +103,7 @@
     "same_service_issued_transport_event_consumed_by_custos_process": true,
     "custos_transport_consumer_code_commit": "1b2f72df46519768b22c5d9f9d85ecbb618e3856",
     "joint_custos_daemon_consumed_same_event": true,
-    "joint_custos_daemon_code_commit": "1abfc4ec7b4debae4bb160f59862eaa7833b762d",
+    "joint_custos_daemon_code_commit": "a449b22a1beba69f90ff70c4bb6b0e0a912d6104",
     "same_event_production_policy_issued": true,
     "same_event_authenticated_policy_consumed": true,
     "same_event_sandbox_engine_ready": true,
@@ -112,9 +112,15 @@
     "same_event_encrypted_machine_vault_used": true,
     "same_event_encrypted_transport_vault_used": true,
     "same_event_plaintext_machine_bootstrap_removed": true,
-    "same_event_daemon_launch_count": 2,
+    "same_event_daemon_launch_count": 3,
     "same_event_daemon_restart_completed": true,
     "same_event_encrypted_vaults_reloaded_after_restart": true,
+    "same_event_transport_credential_generation": 2,
+    "same_event_transport_rotation_completed": true,
+    "same_event_rotation_pending_operation_cleared": true,
+    "same_event_rotation_revocation_receipt_verified": true,
+    "same_event_old_generation_reconnect_denied": true,
+    "same_event_rotated_vault_reloaded_by_daemon": true,
     "same_event_immutable_artifact_materialized": false,
     "joint_deployed_transport_credential_provisioned": false,
     "joint_deployed_durable_verified": false,
@@ -170,9 +176,9 @@
     },
     "joint_full_daemon_gate": {
       "command": "make -C <crucible-rust> verify-runner-full-daemon-local",
-      "custos_code_commit": "1abfc4ec7b4debae4bb160f59862eaa7833b762d",
-      "crucible_code_commit": "4b33821b3e7ea189fdc91f6709e64c9aa82fdcc4",
-      "crucible_runtime_receipt_commit": "6cb9d6845c8cd0856c492ae9761a5231f6ec8254",
+      "custos_code_commit": "a449b22a1beba69f90ff70c4bb6b0e0a912d6104",
+      "crucible_code_commit": "3e5f69516872d1fd323c4b6693ba077b6b7e3d9d",
+      "crucible_runtime_receipt_commit": "0619a77033947b5890952ae4f2cc02b22eabd0f9",
       "status": "PASS",
       "tests_passed": 1,
       "real_postgresql": true,
@@ -193,9 +199,15 @@
       "encrypted_machine_vault_used": true,
       "encrypted_transport_vault_used": true,
       "plaintext_machine_bootstrap_removed": true,
-      "daemon_launch_count": 2,
+      "daemon_launch_count": 3,
       "daemon_restart_completed": true,
       "encrypted_vaults_reloaded_after_restart": true,
+      "transport_credential_generation": 2,
+      "transport_rotation_completed": true,
+      "rotation_pending_operation_cleared": true,
+      "rotation_revocation_receipt_verified": true,
+      "old_generation_reconnect_denied": true,
+      "rotated_vault_reloaded_by_daemon": true,
       "immutable_strategy_release_materialized": false,
       "crucible_runner_fact_projection_observed": false
     },
@@ -227,7 +239,6 @@
   "open_blockers": [
     "deployed tenant runner mode durables have no exact SIM/LIVE runtime readback receipt",
     "the joint launched runtime has not consumed a deployed CR99 runner policy",
-    "the service-issued machine and transport credentials have not completed encrypted vault rotation acceptance",
     "the immutable StrategyRelease has not been materialized and activated by a launched engine"
   ]
 }
