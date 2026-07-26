@@ -80,7 +80,7 @@ MAX_VENUE_LEDGER_CHUNK_BYTES: Final = 262_144
 RUNNER_STATE_SCHEMA_VERSION: Final = 1
 RUNNER_FACT_KIND_PROJECTORS: Final[Mapping[str, str]] = MappingProxyType(
     {
-        "execution_fill": "settlement",
+        "execution_fill": "reconciliation",
         "fill": "settlement",
         "position_closed": "settlement",
         "fee": "settlement",

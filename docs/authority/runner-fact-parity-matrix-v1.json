@@ -11,7 +11,7 @@
     {
       "runtime_source": "Nautilus OrderFilled execution identity",
       "fact_kind": "execution_fill",
-      "capability_projector": "settlement",
+      "capability_projector": "reconciliation",
       "signed_batch": "RunnerFactBatchV1",
       "canonical_owner_after_ingest": "crucible-rust"
     },

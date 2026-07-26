@@ -6,8 +6,8 @@
   "producer_commit": "fcf8df5fd3592257c48cfa22464c1ef6cedf23cf",
   "asset_index": {
     "path": "docs/authority/runner-fact-contract-assets-v1.json",
-    "sha256": "ddb279b4aec15e9b520a9f00899b7cbf2bf7ea81dd81456464cc6c932f6b9ed6",
-    "size_bytes": 3651
+    "sha256": "8b1e0a9a92fc8225a60a08ca0101d659cf37f9b4c06826448c2e7c47ac1a259d",
+    "size_bytes": 3655
   },
   "consumer_receipts": {
     "crucible_rust": null

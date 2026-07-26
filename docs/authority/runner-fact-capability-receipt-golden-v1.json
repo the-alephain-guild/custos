@@ -4,7 +4,7 @@
   "runner_id": "10000000-0000-4000-8000-000000000001",
   "capability_version_id": "50000000-0000-4000-8000-000000000005",
   "capability_version": 1,
-  "manifest_digest": "f11dc620a94742f3747bd654e2c39accbebeb38ef4d63c9f8521fb5d5286f913",
+  "manifest_digest": "a1feebeb052f478831f49562cf6343a47c15a5f6d0c1b3028bfe8e56f1821a68",
   "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
   "key_version": 1,
   "algorithm": "ed25519",
@@ -18,7 +18,7 @@
     "closed_fact_union": true,
     "unknown_fact_kind": "terminal_unsupported_contract",
     "fact_kind_projectors": {
-      "execution_fill": "settlement",
+      "execution_fill": "reconciliation",
       "fill": "settlement",
       "position_closed": "settlement",
       "fee": "settlement",

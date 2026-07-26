@@ -5,7 +5,7 @@
   "closed_fact_union": true,
   "unknown_fact_kind": "terminal_unsupported_contract",
   "fact_kind_projectors": {
-    "execution_fill": "settlement",
+    "execution_fill": "reconciliation",
     "fill": "settlement",
     "position_closed": "settlement",
     "fee": "settlement",

@@ -49,7 +49,7 @@
     "generation"
   ],
   "fact_kind_projectors": {
-    "execution_fill": "settlement",
+    "execution_fill": "reconciliation",
     "fill": "settlement",
     "position_closed": "settlement",
     "fee": "settlement",
@@ -79,31 +79,31 @@
     {
       "role": "runner_fact_batch_golden",
       "path": "docs/authority/runner-fact-golden-v1.json",
-      "sha256": "556ed09cd77628686d454cfc6372b01a23077bc5dfea3343cf3301d2df804d86",
+      "sha256": "03493111cc001fb40211dd590d971335285d64017eba9286c68e5d3fe6ad062d",
       "size_bytes": 6461
     },
     {
       "role": "runner_fact_capability_manifest",
       "path": "docs/authority/runner-fact-capability-manifest-v1.json",
-      "sha256": "1326d8ab6f4cf54e7acb969d441305e7f5e807cd54d8e97545ea3c33e2012f1a",
-      "size_bytes": 3772
+      "sha256": "97d67a9a9bcc1eb4192022d33ae4fde27bd9d33222d69dbfa029caf2b061d0b4",
+      "size_bytes": 3776
     },
     {
       "role": "runner_fact_capability_receipt_golden",
       "path": "docs/authority/runner-fact-capability-receipt-golden-v1.json",
-      "sha256": "f2666f1315db942d7738c1b09d53dede9e1f5de3f43a3acf5f9d6fc3dd9f498e",
-      "size_bytes": 7030
+      "sha256": "9a1c07bd6aa8daf5056c04e883b5baefd0a1e372c5a39bfeaba430c9ad0b3770",
+      "size_bytes": 7034
     },
     {
       "role": "runtime_event_fact_parity_matrix",
       "path": "docs/authority/runner-fact-parity-matrix-v1.json",
-      "sha256": "dc2c2a0a7afecb87ad78b03e6f1d56db8090eced0ed0aab7829a40b0961192ed",
-      "size_bytes": 3780
+      "sha256": "db18533d76d05c87214b71438e41b78e6abbf0e4fcd673ccc3870361b5f9dd65",
+      "size_bytes": 3784
     },
     {
       "role": "runner_fact_signing_preimage_golden",
       "path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
-      "sha256": "740f1eebd0d1cb12b9630b923b47980d03b8812b868524e0447ad090eb4e8f6d",
+      "sha256": "0ccc0ca2b89076a6081fd462a7cb864a7316996555a5d2b3a703192ec7e4ce7c",
       "size_bytes": 5434
     }
   ]

@@ -54,10 +54,10 @@ kinds are terminal contract violations; they cannot fall back to unsigned logs.
 
 | Projector | Accepted `facts[].kind` |
 |---|---|
-| settlement | `execution_fill`, `fill`, `position_closed`, `fee`, `period_closed` |
+| settlement | `fill`, `position_closed`, `fee`, `period_closed` |
 | risk | `equity_snapshot`, `position_snapshot` |
 | health | `heartbeat`, `RunnerRuntimeLogFact.v1` |
-| reconciliation | `venue_ledger_snapshot_manifest`, `venue_ledger_snapshot_chunk`, `reconciliation_period_closed` |
+| reconciliation | `execution_fill`, `venue_ledger_snapshot_manifest`, `venue_ledger_snapshot_chunk`, `reconciliation_period_closed` |
 | deployment lifecycle | `RunnerDeploymentLifecycleFact.v1` |
 
 `period_closed` is a calendar settlement fact and its V1 `period` is exactly

@@ -58,7 +58,7 @@ EXPECTED_SIGNING_HEADER_FIELDS = [
 ]
 
 EXPECTED_KINDS = {
-    "execution_fill": "settlement",
+    "execution_fill": "reconciliation",
     "fill": "settlement",
     "position_closed": "settlement",
     "fee": "settlement",
