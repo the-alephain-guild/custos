@@ -102,9 +102,9 @@ The synthetic signing key is golden evidence only. There is no predecessor
 candidate or sequence-cutover fixture. Phase A exact-byte compatibility is
 complete: producer asset commit
 `7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094`, Crucible consumer code
-`09a5a4b7843af2068f0bc4331a8062466a38f2ba` and Crucible receipt
-`c1efcf6a9f82eed08b7931f1c7e8b02ba1020138` form the acyclic handoff,
-backfilled by Custos `2adfc27`. The producer receipt is
+`e8a5f44bee6d98f513b749dd7c7d3a673d26a787` and Crucible receipt
+`3a93a0607306cf7f5d18020e31f923850652167d` form the acyclic handoff,
+vendored by the current Custos authority chain. The producer receipt is
 `PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN`. Runtime RC, real runtime round trip,
 engine/daemon, live/runtime and production remain false until the independent
 receipts named by Plan 19 arrive.

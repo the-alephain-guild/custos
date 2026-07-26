@@ -12,11 +12,11 @@
   "consumer_receipts": {
     "crucible_rust": {
       "repository": "tesseract-trading/crucible-rust",
-      "commit": "c1efcf6a9f82eed08b7931f1c7e8b02ba1020138",
+      "commit": "3a93a0607306cf7f5d18020e31f923850652167d",
       "producer_path": "docs/authority/receipts/crucible-runner-fact-v1-consumer-receipt.json",
       "local_path": "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json",
-      "sha256": "998b63df9d2f184f5cfc3cc2197bb25e3d95d505fd0e39e9edf6597ec0ba513c",
-      "size_bytes": 5533,
+      "sha256": "e9171de3d2cd9f9365a0b4228356654c0ca7e8609ac657e1aee1ca36f32faf58",
+      "size_bytes": 6206,
       "status": "EXACT_CUSTOS_RUNNER_FACT_V1_ACCEPTED_RUNTIME_OPEN"
     }
   },

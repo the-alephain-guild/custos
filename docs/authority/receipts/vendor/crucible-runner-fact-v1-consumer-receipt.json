@@ -53,7 +53,7 @@
   },
   "consumer": {
     "repository": "tesseract-trading/crucible-rust",
-    "code_commit": "09a5a4b7843af2068f0bc4331a8062466a38f2ba",
+    "code_commit": "e8a5f44bee6d98f513b749dd7c7d3a673d26a787",
     "closed_fact_union": true,
     "compatibility_fallback": false,
     "top_level_venue_snapshot_supported": false,
@@ -100,8 +100,13 @@
       },
       "transport_consumer": {
         "path": "crates/server-http/src/runner_fact_consumer.rs",
-        "sha256": "a8a6e7eccf83eddcc3d2cf80de0a7228f35102010e09ee9b35e96f842c4b2524",
+        "sha256": "89b89a12f6b79334ce70499676e83249eaab9ad7d5cb1ff46e0870fbcb3c5f57",
         "size_bytes": 17279
+      },
+      "transport_postgresql_acceptance": {
+        "path": "crates/server-http/tests/runner_fact_transport_pg.rs",
+        "sha256": "3773097dcf626222bf85e8adcec3eb9cd15b182f9cf700455f8e64dae91fee13",
+        "size_bytes": 6902
       }
     }
   },
@@ -112,6 +117,17 @@
     "risk_unit_tests_passed": 32,
     "server_http_compile_passed": true,
     "format_check_passed": true,
+    "poison_transport_postgresql_receipt": {
+      "test": "cargo test -p server-http --test runner_fact_transport_pg",
+      "result": "1 passed",
+      "verified_at": "2026-07-26",
+      "real_nats_jetstream": true,
+      "real_postgresql": true,
+      "durable_rejection_before_consumer_ack": true,
+      "producer_is_custos_runtime": false,
+      "authenticated_transport": false,
+      "positive_projection": false
+    },
     "postgresql_runtime_receipt": null,
     "authenticated_nats_runtime_receipt": null,
     "real_command_to_fact_round_trip_receipt": null
@@ -120,7 +136,7 @@
   "live_ready": false,
   "production_ready": false,
   "open_blockers": [
-    "real PostgreSQL capability publication and projection receipt",
+    "real PostgreSQL capability publication and positive projection receipt",
     "authenticated NATS ingest and PubAck receipt",
     "real command-to-fact runtime round-trip receipt",
     "immutable Custos runtime RC receipt"
