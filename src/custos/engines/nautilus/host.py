@@ -108,8 +108,8 @@ class SandboxSimulationHost:
 
     It exercises artifact activation, credential resolution, lifecycle durability,
     readiness, and RunnerFact publication without connecting to a venue. Admission
-    restricts it to the signed ``sandbox`` mode and ``SIM`` connector. Testnet and
-    live always require ``NtTradingNodeHost``.
+    restricts it to signed ``sandbox`` commands and canonical supported connectors.
+    Testnet and live always require ``NtTradingNodeHost``.
 
     The method signatures exactly match ExecutionEngineProtocol so the lifecycle
     supervisor can use this dependency and admission can immediately reject
@@ -155,7 +155,7 @@ class SandboxSimulationHost:
         return mode == "sandbox"
 
     def supports_venue(self, venue: str) -> bool:
-        return venue.lower() == "sim"
+        return venue.lower() in _SUPPORTED_VENUES
 
     async def get_open_notional(self, deployment_instance_id: str) -> Decimal:
         # The simulator holds no positions, so its observed exposure is exactly zero.

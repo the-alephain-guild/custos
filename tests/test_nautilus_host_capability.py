@@ -1,7 +1,8 @@
 """Host capability declarations used by execution admission.
 
-SandboxSimulationHost accepts only sandbox plus the SIM connector. The real
-NtTradingNodeHost declares the Binance connectors it actually wires.
+SandboxSimulationHost accepts only sandbox while preserving the canonical
+connector identity it simulates. The real NtTradingNodeHost declares the same
+Binance connectors it actually wires.
 
 No NautilusTrader dependency: capability answers are static declarations, so
 they are unit-testable on a base install. A separate NT-gated drift guard
@@ -23,11 +24,11 @@ def test_sandbox_simulation_host_accepts_sandbox_capability() -> None:
     assert SandboxSimulationHost().supports_trading_mode("sandbox") is True
 
 
-def test_sandbox_simulation_host_accepts_only_the_simulation_connector() -> None:
+def test_sandbox_simulation_host_accepts_canonical_connectors_without_pseudo_venue() -> None:
     host = SandboxSimulationHost()
-    assert host.supports_venue("SIM") is True
-    assert host.supports_venue("binance") is False
-    assert host.supports_venue("binance_perpetual") is False
+    assert host.supports_venue("SIM") is False
+    assert host.supports_venue("binance") is True
+    assert host.supports_venue("binance_perpetual") is True
     assert host.supports_venue("okx") is False
 
 
