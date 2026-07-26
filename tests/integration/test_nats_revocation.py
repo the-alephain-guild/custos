@@ -656,7 +656,7 @@ async def _exercise_revocation(
         ready_path = database.with_suffix(".control-ready")
         process = await asyncio.create_subprocess_exec(
             sys.executable,
-            str(Path(__file__).with_name("runner_command_lifecycle_process.py")),
+            str(Path(__file__).with_name("runner_daemon_lifecycle_process.py")),
             "--nats-url",
             nats_url,
             "--database",
@@ -693,7 +693,7 @@ async def _exercise_revocation(
             )
         command_subject, signed_command = _signed_runner_command()
         command_puback = await jetstream.publish(command_subject, signed_command)
-        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
         assert process.returncode == 0, stderr.decode()
         output_lines = [line for line in stdout.decode().splitlines() if line.strip()]
         assert output_lines
@@ -707,6 +707,13 @@ async def _exercise_revocation(
         assert publication["lifecycle_fact_kind"] == "RunnerDeploymentLifecycleFact.v1"
         assert publication["lifecycle_state"] == "running"
         assert publication["lifecycle_outcome"] == "applied"
+        assert publication["daemon_launched"] is True
+        assert publication["durable_puback_receipt"] is True
+        assert publication["broker_stream"] == _FACT_STREAM
+        assert publication["broker_sequence"] > 0
+        assert publication["puback_duplicate"] is False
+        assert publication["production_authority_issued"] is False
+        assert publication["immutable_artifact_materialized"] is False
 
         control_consumer = await jetstream.consumer_info(
             _CONTROL_STREAM,
