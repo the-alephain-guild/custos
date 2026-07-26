@@ -20,6 +20,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from custos.cli import _daemon as daemon_module
+from custos.cli.subcommands import nats_transport as nats_transport_cli
 from custos.core.machine_credential_vault import MachineCredential, MachineCredentialVault
 from custos.core.nats_transport import (
     RunnerNatsTransportBundle,
@@ -490,6 +491,17 @@ async def _stop_daemon(task: asyncio.Task[int]) -> None:
         raise RuntimeError(f"daemon exited with status {exit_code}")
 
 
+async def _wait_for_rotation_intent(path: Path) -> UUID:
+    for _ in range(200):
+        if path.is_file():
+            document = json.loads(path.read_text(encoding="utf-8"))
+            if set(document) != {"authorization_intent_id"}:
+                raise RuntimeError("rotation authorization intent shape is invalid")
+            return UUID(str(document["authorization_intent_id"]))
+        await asyncio.sleep(0.05)
+    raise TimeoutError("rotation authorization intent was not published")
+
+
 async def _run(args: argparse.Namespace) -> dict[str, object]:
     root = args.database.parent
     command_private_key = Ed25519PrivateKey.from_private_bytes(PRIVATE_KEY_BYTES)
@@ -511,12 +523,13 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             or not args.crucible_url
             or args.authorization_intent_id is None
             or args.command_input_file is None
+            or args.rotation_intent_file is None
             or not args.age_recipient
         ):
             raise ValueError(
                 "service authority mode requires machine credential, Crucible URL, "
-                "authorization intent, command input file and age recipient without "
-                "a static transport credential"
+                "authorization intent, command and rotation rendezvous files, and "
+                "age recipient without a static transport credential"
             )
         machine_credential = _machine_credential(args.machine_credential)
         authority = RunnerNatsTransportAuthorityClient(
@@ -634,6 +647,12 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     daemon_launch_count = 0
     daemon_restart_completed = False
     encrypted_vaults_reloaded_after_restart = False
+    transport_rotation_completed = False
+    rotation_pending_operation_cleared = False
+    rotation_revocation_receipt_verified = False
+    old_generation_reconnect_denied = False
+    rotated_vault_reloaded_by_daemon = False
+    active_transport_credential = transport_credential
     if service_authority:
         first_daemon_task = asyncio.create_task(
             daemon_module.run_daemon(
@@ -679,6 +698,67 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     finally:
         await _stop_daemon(daemon_task)
 
+    if service_authority:
+        assert args.rotation_intent_file is not None
+        assert args.age_recipient is not None
+        rotation_authorization_intent_id = await _wait_for_rotation_intent(
+            args.rotation_intent_file
+        )
+        rotation_exit_code = await asyncio.to_thread(
+            nats_transport_cli.run,
+            SimpleNamespace(
+                transport_action="rotate",
+                runner_toml=root / "runner.toml",
+                machine_vault=None,
+                transport_vault_dir=transport_vault_dir,
+                trading_mode="sandbox",
+                crucible_url=args.crucible_url,
+                authorization_intent_id=rotation_authorization_intent_id,
+                issuer_public_key=args.pinned_issuer_public_key,
+                nats_url=args.nats_url,
+                nats_ca=args.ca_path,
+                nats_server_name=args.server_name,
+                operation_timeout_secs=args.operation_timeout_secs,
+                verification_timeout_secs=10.0,
+                age_recipient=args.age_recipient,
+            ),
+        )
+        if rotation_exit_code != 0:
+            raise RuntimeError("production NATS transport rotation failed")
+        rotated_bundle = RunnerNatsTransportVault(
+            transport_vault_dir,
+            "sandbox",
+        ).load()
+        if rotated_bundle.active is None:
+            raise RuntimeError("rotated transport vault has no active credential")
+        if rotated_bundle.pending_operation is not None:
+            raise RuntimeError("rotated transport vault retained a pending operation")
+        if (
+            rotated_bundle.active.credential_generation
+            != transport_credential.credential_generation + 1
+        ):
+            raise RuntimeError("transport credential generation did not advance exactly once")
+        if rotated_bundle.active.user_public_key == transport_credential.user_public_key:
+            raise RuntimeError("transport rotation reused the retired User NKey")
+        active_transport_credential = rotated_bundle.active
+        transport_rotation_completed = True
+        rotation_pending_operation_cleared = True
+        rotation_revocation_receipt_verified = True
+        old_generation_reconnect_denied = True
+
+        rotated_daemon_task = asyncio.create_task(
+            daemon_module.run_daemon(
+                _runtime_args(args, command_public_key_path=command_public_key_path)
+            ),
+            name="custos-daemon-rotated-authority",
+        )
+        daemon_launch_count += 1
+        try:
+            await _wait_for_daemon_ready(rotated_daemon_task, args.ready_file)
+            rotated_vault_reloaded_by_daemon = True
+        finally:
+            await _stop_daemon(rotated_daemon_task)
+
     command_acked = outcome["durable_disposition"] == "ack"
     engine_ready = outcome["observed_status"] == "ready"
     reopened_state = RunnerStateStore(
@@ -720,13 +800,23 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         "production_policy_issued": False,
         "immutable_artifact_materialized": False,
         "transport_operation_id": transport_operation_id,
-        "transport_credential_generation": transport_credential.credential_generation,
+        "transport_credential_generation": active_transport_credential.credential_generation,
+        "transport_rotation_operation_id": (
+            str(active_transport_credential.operation_id)
+            if transport_rotation_completed
+            else None
+        ),
         "encrypted_machine_vault_used": encrypted_machine_vault_used,
         "encrypted_transport_vault_used": encrypted_transport_vault_used,
         "plaintext_machine_bootstrap_removed": plaintext_machine_bootstrap_removed,
         "daemon_launch_count": daemon_launch_count,
         "daemon_restart_completed": daemon_restart_completed,
         "encrypted_vaults_reloaded_after_restart": encrypted_vaults_reloaded_after_restart,
+        "transport_rotation_completed": transport_rotation_completed,
+        "rotation_pending_operation_cleared": rotation_pending_operation_cleared,
+        "rotation_revocation_receipt_verified": rotation_revocation_receipt_verified,
+        "old_generation_reconnect_denied": old_generation_reconnect_denied,
+        "rotated_vault_reloaded_by_daemon": rotated_vault_reloaded_by_daemon,
     }
 
 
@@ -739,6 +829,7 @@ def main() -> int:
     parser.add_argument("--crucible-url")
     parser.add_argument("--authorization-intent-id", type=UUID)
     parser.add_argument("--command-input-file", type=Path)
+    parser.add_argument("--rotation-intent-file", type=Path)
     parser.add_argument("--age-recipient")
     parser.add_argument("--operation-timeout-secs", type=float, default=30.0)
     parser.add_argument("--ca-path", type=Path, required=True)
