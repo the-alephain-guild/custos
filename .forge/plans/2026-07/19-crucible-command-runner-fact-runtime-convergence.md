@@ -1008,12 +1008,16 @@ git commit -m "fix(custos): use reliable Nautilus portfolio equity"
    these same V1 bytes; no predecessor stream or parser remains.
 4. Preserve idempotent event IDs and projector semantics across retry/restart.
 
-> **Execution status (2026-07-21)**: `READY_FOR_CRUCIBLE_CONSUMER_VALIDATION`. The sole V1
+> **Execution status (2026-07-26)**: `PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN`. The sole V1
 > asset index, schema, golden, signing preimage and projector matrix are pinned
 > to producer asset commit `7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094`.
-> Local Crucible contract validation, interleaved-generation replay and the real local
-> command-to-fact projection path now pass. The immutable cross-repository
-> consumer receipt, runtime RC and all live/production flags remain open.
+> Crucible consumer code commit `09a5a4b7843af2068f0bc4331a8062466a38f2ba`
+> accepts the closed fact union and projector map; receipt commit
+> `c1efcf6a9f82eed08b7931f1c7e8b02ba1020138` pins those exact producer
+> bytes with receipt SHA-256
+> `998b63df9d2f184f5cfc3cc2197bb25e3d95d505fd0e39e9edf6597ec0ba513c`.
+> Phase A exact-byte handoff is complete. The real runtime round trip, immutable
+> runtime RC and all live/production flags remain open.
 
 ### Task 9: Publish the immutable runtime RC / final-candidate
 
@@ -1095,7 +1099,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 - [x] command ACK and RunnerFact PubAck remain distinct over the authenticated transport
 - [x] per-mode rotation rollback preserves the prior generation; incomplete revocation suspends that mode and cannot be hidden by another mode's health
 - [ ] Custos old-generation reconnect-denial receipt is consumed by Crucible before broker revocation completes
-- [ ] RunnerFact capability revision + Crucible projector receipt
+- [x] RunnerFact capability revision + Crucible projector receipt
 - [x] `telemetry_actor.md` 原子 rename 为 `runner_fact.md`，不删除 typed RunnerFact authority
 - [x] sandbox/testnet/live negative matrix
 - [x] journal/facts/logs 无 credential 或 secret
@@ -1114,7 +1118,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | Engine lifecycle | local verified; production materialization blocked | 118-test T2-T8a gate passes; production authority contract is consumed at `4ad12b2`, while immutable OCI materialization, trust composition and launched activation remain open |
 | Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, NATS/PubAck and real daemon consumption pending |
 | Machine credential and NATS vault V1 | direct credential contract ready; NATS runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; control `0029`, durable replay receipt, JWT/ACL/durable readback and dual-domain broker evidence pending |
-| RunnerFact V1 producer candidate | local consumer validation passed | immutable `8c4454f` assets pinned; formal clean cross-repository Phase A receipt remains required |
+| RunnerFact V1 | Phase A exact-byte accepted; runtime open | producer asset commit `7d8f3d3`, Crucible consumer code `09a5a4b` and receipt `c1efcf6` are pinned; real runtime round trip and immutable runtime RC remain required |
 | Local sandbox runtime | focused code PASS; launched receipt open | instance-bound development material reaches the common runtime path; real NATS delivery/redelivery, engine launch and projected fact receipt remain required |
 | Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 real receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 

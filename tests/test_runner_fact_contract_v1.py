@@ -29,6 +29,10 @@ from custos.core.runner_fact import (
 ROOT = Path(__file__).resolve().parents[1]
 INDEX_PATH = ROOT / "docs/authority/runner-fact-contract-assets-v1.json"
 RECEIPT_PATH = ROOT / "docs/authority/receipts/custos-runner-fact-v1-producer-receipt.json"
+CRUCIBLE_CONSUMER_RECEIPT_PATH = (
+    ROOT
+    / "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json"
+)
 SCHEMA_PATH = ROOT / "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json"
 GOLDEN_PATH = ROOT / "docs/authority/runner-fact-golden-v1.json"
 CAPABILITY_MANIFEST_PATH = ROOT / "docs/authority/runner-fact-capability-manifest-v1.json"
@@ -154,9 +158,32 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
         sidecar = path.with_name(path.name + ".sha256")
         assert sidecar.read_text(encoding="ascii") == (f"{asset['sha256']}  {path.name}\n")
     index_payload = INDEX_PATH.read_bytes()
-    assert receipt["status"] == "READY_FOR_CRUCIBLE_CONSUMER_VALIDATION"
+    assert receipt["status"] == "PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN"
     assert receipt["producer_commit"] == "7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094"
-    assert receipt["consumer_receipts"] == {"crucible_rust": None}
+    crucible_payload = CRUCIBLE_CONSUMER_RECEIPT_PATH.read_bytes()
+    assert receipt["consumer_receipts"] == {
+        "crucible_rust": {
+            "repository": "tesseract-trading/crucible-rust",
+            "commit": "c1efcf6a9f82eed08b7931f1c7e8b02ba1020138",
+            "producer_path": (
+                "docs/authority/receipts/"
+                "crucible-runner-fact-v1-consumer-receipt.json"
+            ),
+            "local_path": (
+                "docs/authority/receipts/vendor/"
+                "crucible-runner-fact-v1-consumer-receipt.json"
+            ),
+            "sha256": hashlib.sha256(crucible_payload).hexdigest(),
+            "size_bytes": len(crucible_payload),
+            "status": "EXACT_CUSTOS_RUNNER_FACT_V1_ACCEPTED_RUNTIME_OPEN",
+        }
+    }
+    crucible_receipt = _json(CRUCIBLE_CONSUMER_RECEIPT_PATH)
+    assert (
+        crucible_receipt["producer"]["asset_commit"]
+        == "7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094"
+    )
+    assert "producer_receipt" not in crucible_receipt["producer"]
     assert receipt["asset_index"] == {
         "path": "docs/authority/runner-fact-contract-assets-v1.json",
         "sha256": hashlib.sha256(index_payload).hexdigest(),

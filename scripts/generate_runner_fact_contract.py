@@ -44,6 +44,20 @@ from custos.core.runner_fact import (
 ROOT = Path(__file__).resolve().parents[1]
 AUTHORITY_COORDINATE = "custos.runner-fact.v1"
 PRODUCER_ASSET_COMMIT = "7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094"
+CRUCIBLE_CONSUMER_RECEIPT = {
+    "repository": "tesseract-trading/crucible-rust",
+    "commit": "c1efcf6a9f82eed08b7931f1c7e8b02ba1020138",
+    "producer_path": (
+        "docs/authority/receipts/crucible-runner-fact-v1-consumer-receipt.json"
+    ),
+    "local_path": (
+        "docs/authority/receipts/vendor/"
+        "crucible-runner-fact-v1-consumer-receipt.json"
+    ),
+    "sha256": "998b63df9d2f184f5cfc3cc2197bb25e3d95d505fd0e39e9edf6597ec0ba513c",
+    "size_bytes": 5533,
+    "status": "EXACT_CUSTOS_RUNNER_FACT_V1_ACCEPTED_RUNTIME_OPEN",
+}
 TENANT_ID = "acme"
 MODE = "sandbox"
 RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
@@ -956,7 +970,7 @@ def build_assets() -> dict[Path, bytes]:
         {
             "receipt_schema_version": 1,
             "canonical_name": "Custos RunnerFact V1 producer receipt",
-            "status": "READY_FOR_CRUCIBLE_CONSUMER_VALIDATION",
+            "status": "PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN",
             "authority_coordinate": AUTHORITY_COORDINATE,
             "producer_commit": PRODUCER_ASSET_COMMIT,
             "asset_index": {
@@ -964,16 +978,13 @@ def build_assets() -> dict[Path, bytes]:
                 "sha256": _sha256(index_payload),
                 "size_bytes": len(index_payload),
             },
-            "consumer_receipts": {
-                "crucible_rust": None,
-            },
+            "consumer_receipts": {"crucible_rust": CRUCIBLE_CONSUMER_RECEIPT},
             "runtime_rc": False,
             "real_runtime_round_trip_ready": False,
             "live_ready": False,
             "runtime_ready": False,
             "production_ready": False,
             "open_blockers": [
-                "Crucible RunnerFact V1 exact-byte consumer receipt",
                 "real runtime round-trip receipt",
                 "immutable runtime RC receipt",
             ],

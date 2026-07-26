@@ -366,10 +366,17 @@
   },
   "runner_fact_contract_v1": {
     "owner": "custos",
-    "status": "READY_FOR_CRUCIBLE_CONSUMER_VALIDATION",
+    "status": "PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN",
     "producer_commit": "7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094",
     "asset_index": "docs/authority/runner-fact-contract-assets-v1.json",
     "receipt": "docs/authority/receipts/custos-runner-fact-v1-producer-receipt.json",
+    "consumer_receipt": {
+      "repository": "tesseract-trading/crucible-rust",
+      "commit": "c1efcf6a9f82eed08b7931f1c7e8b02ba1020138",
+      "path": "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json",
+      "sha256": "998b63df9d2f184f5cfc3cc2197bb25e3d95d505fd0e39e9edf6597ec0ba513c",
+      "size_bytes": 5533
+    },
     "signing_preimage_golden": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
     "signing_preimage_complete": true,
     "capability_projector_contract_exact_pin": true,

@@ -1,0 +1,128 @@
+{
+  "receipt_schema_version": 1,
+  "canonical_name": "Crucible RunnerFact V1 exact-byte consumer receipt",
+  "status": "EXACT_CUSTOS_RUNNER_FACT_V1_ACCEPTED_RUNTIME_OPEN",
+  "producer": {
+    "repository": "tesseract-trading/custos",
+    "asset_commit": "7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094",
+    "authority_coordinate": "custos.runner-fact.v1",
+    "asset_index": {
+      "producer_path": "docs/authority/runner-fact-contract-assets-v1.json",
+      "local_path": "docs/authority/custos-runner-fact-contract-assets-v1.json",
+      "sha256": "8b1e0a9a92fc8225a60a08ca0101d659cf37f9b4c06826448c2e7c47ac1a259d",
+      "size_bytes": 3655
+    },
+    "assets": {
+      "runner_fact_batch_schema": {
+        "producer_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
+        "local_path": "docs/authority/custos-runner-fact-batch-v1.schema.json",
+        "sha256": "4448c41b5b2390923d8ad0f1fe94114fc61b259adce822e363213e5e0c682c31",
+        "size_bytes": 31187
+      },
+      "runner_fact_batch_golden": {
+        "producer_path": "docs/authority/runner-fact-golden-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-golden-v1.json",
+        "sha256": "03493111cc001fb40211dd590d971335285d64017eba9286c68e5d3fe6ad062d",
+        "size_bytes": 6461
+      },
+      "runner_fact_capability_manifest": {
+        "producer_path": "docs/authority/runner-fact-capability-manifest-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-capability-manifest-v1.json",
+        "sha256": "97d67a9a9bcc1eb4192022d33ae4fde27bd9d33222d69dbfa029caf2b061d0b4",
+        "size_bytes": 3776
+      },
+      "runner_fact_capability_receipt_golden": {
+        "producer_path": "docs/authority/runner-fact-capability-receipt-golden-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-capability-receipt-golden-v1.json",
+        "sha256": "9a1c07bd6aa8daf5056c04e883b5baefd0a1e372c5a39bfeaba430c9ad0b3770",
+        "size_bytes": 7034
+      },
+      "runtime_event_fact_parity_matrix": {
+        "producer_path": "docs/authority/runner-fact-parity-matrix-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-parity-matrix-v1.json",
+        "sha256": "db18533d76d05c87214b71438e41b78e6abbf0e4fcd673ccc3870361b5f9dd65",
+        "size_bytes": 3784
+      },
+      "runner_fact_signing_preimage_golden": {
+        "producer_path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-signing-preimage-golden-v1.json",
+        "sha256": "0ccc0ca2b89076a6081fd462a7cb864a7316996555a5d2b3a703192ec7e4ce7c",
+        "size_bytes": 5434
+      }
+    }
+  },
+  "consumer": {
+    "repository": "tesseract-trading/crucible-rust",
+    "code_commit": "09a5a4b7843af2068f0bc4331a8062466a38f2ba",
+    "closed_fact_union": true,
+    "compatibility_fallback": false,
+    "top_level_venue_snapshot_supported": false,
+    "fact_kind_projectors": {
+      "execution_fill": "reconciliation",
+      "fill": "settlement",
+      "position_closed": "settlement",
+      "fee": "settlement",
+      "period_closed": "settlement",
+      "equity_snapshot": "risk",
+      "position_snapshot": "risk",
+      "heartbeat": "health",
+      "RunnerRuntimeLogFact.v1": "health",
+      "venue_ledger_snapshot_manifest": "reconciliation",
+      "venue_ledger_snapshot_chunk": "reconciliation",
+      "reconciliation_period_closed": "reconciliation",
+      "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle"
+    },
+    "sources": {
+      "domain_union": {
+        "path": "crates/domain/src/execution/runner_fact_batch.rs",
+        "sha256": "797b6f80858b047958b0a43c1456ceb3755520cb55cde1158ed60146ae00e1e8",
+        "size_bytes": 12459
+      },
+      "capability_publication": {
+        "path": "crates/store/src/runner_capability_publication.rs",
+        "sha256": "cbe6dcf768a402f3986b91509a615a22e5b717fbb8eb1ab532d9e4cf03e91267",
+        "size_bytes": 59521
+      },
+      "inbox": {
+        "path": "crates/store/src/runner_fact_inbox.rs",
+        "sha256": "c9b09ea6b3a676092068bfb0405de23a390bdb5e55890a0b7b6979b0888d44bd",
+        "size_bytes": 89972
+      },
+      "reconciliation_projector": {
+        "path": "crates/store/src/runner_fact_reconciliation_projector.rs",
+        "sha256": "b2dd34a213568adf1649155560be5e37acda0619ae15a15824f69d8b5fcefc98",
+        "size_bytes": 92285
+      },
+      "risk_projector": {
+        "path": "crates/risk/src/runner_fact_projector.rs",
+        "sha256": "bd40fea44be2db0099afe1c0776326ba25c915222a446a8980e4a4548b8bd37e",
+        "size_bytes": 12793
+      },
+      "transport_consumer": {
+        "path": "crates/server-http/src/runner_fact_consumer.rs",
+        "sha256": "a8a6e7eccf83eddcc3d2cf80de0a7228f35102010e09ee9b35e96f842c4b2524",
+        "size_bytes": 17279
+      }
+    }
+  },
+  "verification": {
+    "cross_language_contract_tests_passed": 1,
+    "domain_unit_tests_passed": 144,
+    "store_unit_tests_passed": 29,
+    "risk_unit_tests_passed": 32,
+    "server_http_compile_passed": true,
+    "format_check_passed": true,
+    "postgresql_runtime_receipt": null,
+    "authenticated_nats_runtime_receipt": null,
+    "real_command_to_fact_round_trip_receipt": null
+  },
+  "runtime_ready": false,
+  "live_ready": false,
+  "production_ready": false,
+  "open_blockers": [
+    "real PostgreSQL capability publication and projection receipt",
+    "authenticated NATS ingest and PubAck receipt",
+    "real command-to-fact runtime round-trip receipt",
+    "immutable Custos runtime RC receipt"
+  ]
+}
