@@ -453,7 +453,7 @@ def parse_strategy_release_material_resolution(
     expected_snapshot = {
         "release_id": str(source.snapshot.release_id),
         "definition_id": str(source.snapshot.definition_id),
-        "lifecycle_version": source.snapshot.release_version,
+        "release_number": source.snapshot.release_version,
         "manifest_digest": source.snapshot.manifest_digest,
         "snapshot_digest": source.snapshot.snapshot_digest,
     }

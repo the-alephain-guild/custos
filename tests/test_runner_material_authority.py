@@ -267,7 +267,7 @@ def _strategy_material_fixture() -> tuple[
     snapshot = {
         "release_id": release_id,
         "definition_id": definition_id,
-        "lifecycle_version": 1,
+        "lifecycle_version": 2,
         "release_number": 1,
         "artifact_ref_digest": artifact_ref_digest,
         "manifest_digest": manifest_digest,
