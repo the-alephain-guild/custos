@@ -208,11 +208,12 @@ def test_post_publish_verifies_complete_runtime_contract() -> None:
         assert fragment in text, f"post-publish runtime gate missing: {fragment}"
 
 
-def test_dockerfile_states_lock_boundary_truthfully() -> None:
+def test_dockerfile_consumes_the_frozen_runtime_lock() -> None:
     text = DOCKERFILE.read_text()
 
-    assert "`uv.lock` locks" not in text
-    assert "does not consume `uv.lock`" in text
+    assert "docker/runtime-requirements.lock" in text
+    assert "--require-hashes" in text
+    assert "--no-deps" in text
 
 
 def test_release_identity_prevention_is_documented() -> None:

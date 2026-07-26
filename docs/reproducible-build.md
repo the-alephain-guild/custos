@@ -65,21 +65,25 @@ correctly differ, the xfail would fire, and we'd notice.
 
 ## Docker image reproducibility
 
-Docker image reproducibility is a separate workstream (buildkit
-timestamp normalization is not stable across buildkit versions).
-For current local 0.3.0 development, the image side of "audit the binary" is
-served by:
+The production image consumes the sole runtime dependency set exported from
+`uv.lock` into `docker/runtime-requirements.lock`. Every third-party
+requirement is hash-pinned and installed with `pip --require-hashes --no-deps`.
+The Python base is pinned by tag and multi-platform manifest digest.
 
-- `make verify-local-v030` builds `custos-runner:v0.3.0`, injects
-  `org.opencontainers.image.revision = <commit sha>`, and runs the Docker plus
-  standalone NATS gates.
-- The printed image ID and revision label provide local provenance evidence
-  for downstream development.
-- A future remote release uses cosign and `verify-release.sh` to re-pull the image and verify the CLI command matrix,
-  Nautilus/PyYAML imports, sops/age executables, readiness probe, non-root
-  identity, and cosign signature against the published digest.
+`make dist` builds the runner, base toolkit, and Nautilus toolkit wheels from
+one source checkout. The image installs exactly one of each local wheel with
+dependency resolution disabled. Strategy artifacts are not baked into the
+runner image; Crucible's signed `StrategyRelease` remains their runtime
+authority.
 
-A follow-up plan (tracked in
-[`upgrade-path.md`](upgrade-path.md#follow-up)) will pin the image
-build to a specific buildkit + `SOURCE_DATE_EPOCH` combination for
-bit-for-bit image reproducibility as well.
+Run `make runtime-lock` only when `uv.lock` intentionally changes. Both
+`make dist` and the release workflow reject lock drift. The workflow signs all
+three wheels for image construction while publishing only the `custos-runner`
+distribution to PyPI.
+
+BuildKit does not promise byte-identical image archives across versions, so the
+release identity is the candidate OCI digest. CI validates that digest, attaches
+SBOM and provenance, signs it with cosign, and promotes the same digest to
+stable tags without rebuilding. Local development keeps
+`make verify-local-v030` as the fast downstream consumer gate and records the
+source revision in the image labels.

@@ -1,33 +1,50 @@
 # custos-runner complete official runtime image.
 #
-# Multi-stage: `builder` installs the wheel + Nautilus extra against Python 3.12
-# (nautilus_trader ≥ 1.227 only publishes wheels for 3.12+, see tech-stack.md).
+# Multi-stage: `builder` installs the locked third-party runtime plus the three
+# locally built Custos wheels against Python 3.12.
 # `runtime` copies site-packages + the `arx-runner` console script over into
 # a slim base and switches to the non-privileged `custos` user (UID/GID 1000).
 #
-# The builder stage consumes a locally built wheel (Plan 12 H1 fix): before
-# `docker build` the operator runs `uv build` so `dist/custos_runner-*.whl`
-# exists at the build context root. This decouples the image from PyPI
-# publication — during the first release cut the wheel isn't uploaded yet,
-# and the CI job explicitly stages the wheel artifact from the `build-wheel`
-# job (see .github/workflows/release.yml).
+# The builder consumes locally built runner and toolkit wheels. This decouples
+# image construction from PyPI publication; CI stages the exact signed wheel
+# artifacts produced by its build job.
 
-FROM python:3.12-slim AS builder
+ARG PYTHON_BASE_IMAGE=python:3.12.13-slim-trixie@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
 
-# Copy the pre-built wheel (see Makefile `docker-build` target) and install
-# by explicit file path so pip never falls back to the last-published
-# `custos-runner` on PyPI. Transitive Python dependencies still resolve from
-# PyPI during this pip step, which does not consume `uv.lock`; bit-for-bit image
-# reproducibility remains a separate workstream. The release trust anchor is
-# the candidate image digest: CI tests that digest, promotes the same digest to
-# stable tags, and signs it with cosign.
-COPY dist/custos_runner-*.whl /tmp/
+FROM ${PYTHON_BASE_IMAGE} AS builder
+
+# Third-party dependencies are exported from uv.lock with hashes. Workspace
+# packages are installed from exactly one local wheel apiece, without any
+# dependency resolution or fallback to an externally published package.
+COPY docker/runtime-requirements.lock /tmp/runtime-requirements.lock
+COPY dist/*.whl /tmp/wheels/
 RUN set -eux; \
-    wheel="$(find /tmp -name 'custos_runner-*.whl' -print -quit)"; \
-    test -n "$wheel"; \
-    pip install --root-user-action=ignore "${wheel}[nautilus]"
+    pip install \
+      --root-user-action=ignore \
+      --require-hashes \
+      --no-deps \
+      --requirement /tmp/runtime-requirements.lock; \
+    set -- /tmp/wheels/custos_strategy_toolkit-*.whl; \
+    test "$#" -eq 1; \
+    test -f "$1"; \
+    toolkit_wheel="$1"; \
+    set -- /tmp/wheels/custos_strategy_toolkit_nautilus-*.whl; \
+    test "$#" -eq 1; \
+    test -f "$1"; \
+    nautilus_wheel="$1"; \
+    set -- /tmp/wheels/custos_runner-*.whl; \
+    test "$#" -eq 1; \
+    test -f "$1"; \
+    runner_wheel="$1"; \
+    pip install \
+      --root-user-action=ignore \
+      --no-deps \
+      "${toolkit_wheel}" \
+      "${nautilus_wheel}" \
+      "${runner_wheel}"; \
+    pip check
 
-FROM python:3.12-slim AS runtime
+FROM ${PYTHON_BASE_IMAGE} AS runtime
 
 # The vault runtime shells out to age and sops. Keep curl and CA roots in the
 # final image for operator diagnostics and explicit standalone bootstrap use.
@@ -73,8 +90,8 @@ COPY --from=builder /usr/local/bin/arx-runner /usr/local/bin/arx-runner
 # so operator-provisioned KEK vaults survive container restarts.
 VOLUME ["/home/custos/.arx"]
 
-# Pre-create the mount point owned by `custos` (Plan 12 R2-M2 fix): without
-# this an anonymous volume mount inherits root ownership, and the first
+# Pre-create the mount point owned by `custos`: without this an anonymous
+# volume mount inherits root ownership, and the first
 # `arx-runner enroll` write to `~/.arx/runner.toml` fails with EACCES because
 # we run as UID 1000.
 RUN mkdir -p /home/custos/.arx /home/custos/.arx/vault /home/custos/.arx/state \
@@ -91,8 +108,8 @@ CMD ["start"]
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
     CMD ["arx-runner", "health"]
 
-# OCI provenance labels (Plan 12 DP6): let auditors trace a running image
-# back to source. The concrete `revision` / `created` values are injected by
+# OCI provenance labels let auditors trace a running image back to source.
+# The concrete `revision` / `created` values are injected by
 # the CI workflow via `docker build --label` overrides at release time.
 LABEL org.opencontainers.image.title="custos-runner" \
       org.opencontainers.image.description="Non-custodial self-hosted execution runner (Alephain Guild)" \

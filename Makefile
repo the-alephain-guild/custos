@@ -89,8 +89,21 @@ clean:  ## Remove pycache / pytest cache / ruff cache
 LOCAL_IMAGE ?= custos-runner:v0.3.0
 SOURCE_REVISION := $(shell git rev-parse HEAD)
 
-dist:  ## Build a reproducible wheel + sdist to dist/ (respects SOURCE_DATE_EPOCH)
-	uv build
+runtime-lock:  ## Export the sole hash-pinned production dependency set from uv.lock
+	mkdir -p docker
+	uv export --frozen --no-dev --extra nautilus --no-emit-workspace --no-header --format requirements-txt --output-file docker/runtime-requirements.lock
+
+check-runtime-lock:  ## Fail when the committed production dependency set drifts from uv.lock
+	@tmp="$$(mktemp)"; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	uv export --frozen --no-dev --extra nautilus --no-emit-workspace --no-header --format requirements-txt --output-file "$$tmp"; \
+	diff -u docker/runtime-requirements.lock "$$tmp"
+
+dist: check-runtime-lock  ## Build the runner sdist and all three exact runtime wheels
+	rm -rf dist/
+	uv build --out-dir dist
+	uv build --package custos-strategy-toolkit --wheel --out-dir dist
+	uv build --package custos-strategy-toolkit-nautilus --wheel --out-dir dist
 
 sign:  ## Sign every wheel under dist/ with sigstore keyless (requires OIDC; runs in CI)
 	bash .github/workflows/scripts/sign-wheel.sh

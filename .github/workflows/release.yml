@@ -59,12 +59,11 @@ jobs:
 
       - name: Build reproducible wheel + sdist
         env:
-          # Plan 12 T8: pin epoch to the tagger date's midnight UTC so
-          # rebuilds produce bytes-identical artifacts.
+          # Pin epoch to the tagger date so rebuilds produce byte-identical
+          # Python artifacts.
           SOURCE_DATE_EPOCH: ${{ github.event.head_commit.timestamp && github.event.head_commit.timestamp || '' }}
         run: |
-          rm -rf dist/
-          uv build
+          make dist
 
       - name: Record wheel sha256 (provenance)
         run: |
@@ -219,7 +218,11 @@ jobs:
 
       - name: Strip signature bundles (PyPI only accepts wheel + sdist)
         run: |
-          rm -f dist/*.sigstore dist/SHA256SUMS
+          rm -f \
+            dist/*.sigstore \
+            dist/SHA256SUMS \
+            dist/custos_strategy_toolkit-*.whl \
+            dist/custos_strategy_toolkit_nautilus-*.whl
           ls dist/
 
       - name: Publish to PyPI via OIDC trusted publisher
