@@ -1,0 +1,369 @@
+{
+  "$id": "https://schemas.alephain.guild/crucible/runner-strategy-release-resolution-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "artifact_evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_ref_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "bundle_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "composite_evidence_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "detached_attestation_ref_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "local_policy_evaluation": {
+          "type": "object"
+        },
+        "release_bom_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "release_statement_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "signed_producer_claims": {
+          "type": "object"
+        },
+        "sigstore_proof": {
+          "type": "object"
+        },
+        "strategy_release_id": {
+          "$ref": "#/$defs/uuid"
+        }
+      },
+      "required": [
+        "schema_version",
+        "strategy_release_id",
+        "artifact_ref_digest",
+        "release_bom_digest",
+        "release_statement_digest",
+        "detached_attestation_ref_digest",
+        "bundle_sha256",
+        "signed_producer_claims",
+        "sigstore_proof",
+        "local_policy_evaluation",
+        "composite_evidence_digest"
+      ],
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "command_fingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "correlation_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "credential_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "credential_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "deployment_instance_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "deployment_spec_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "deployment_spec_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "generation": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "runner_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "tenant_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "trading_mode": {
+          "enum": [
+            "live",
+            "sandbox",
+            "testnet"
+          ]
+        }
+      },
+      "required": [
+        "tenant_id",
+        "runner_id",
+        "credential_id",
+        "credential_version",
+        "correlation_id",
+        "trading_mode",
+        "deployment_instance_id",
+        "deployment_spec_id",
+        "deployment_spec_digest",
+        "generation",
+        "command_fingerprint"
+      ],
+      "type": "object"
+    },
+    "response": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_binding": {
+          "additionalProperties": false,
+          "properties": {
+            "binding": {
+              "$ref": "#/$defs/strategy_execution_binding"
+            },
+            "kind": {
+              "const": "strategy_release"
+            }
+          },
+          "required": [
+            "kind",
+            "binding"
+          ],
+          "type": "object"
+        },
+        "artifact_binding_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "command_event_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "command_fingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "command_subject": {
+          "pattern": "^crucible\\.runner\\.command\\.v1\\.[^.]+\\.[0-9a-f-]{36}\\.(live|sandbox|testnet)$",
+          "type": "string"
+        },
+        "deployment_instance_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "deployment_spec_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "deployment_spec_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "development_source_ref": {
+          "type": "null"
+        },
+        "generation": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "runner_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "stored_command_fingerprint": {
+          "$ref": "#/$defs/sha256"
+        },
+        "strategy_release_material": {
+          "$ref": "#/$defs/strategy_release_material"
+        },
+        "tenant_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "trading_mode": {
+          "enum": [
+            "live",
+            "sandbox",
+            "testnet"
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "tenant_id",
+        "runner_id",
+        "trading_mode",
+        "deployment_instance_id",
+        "deployment_spec_id",
+        "deployment_spec_digest",
+        "generation",
+        "command_subject",
+        "command_event_sha256",
+        "command_fingerprint",
+        "stored_command_fingerprint",
+        "artifact_binding_digest",
+        "artifact_binding",
+        "development_source_ref",
+        "strategy_release_material"
+      ],
+      "type": "object"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "strategy_execution_binding": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_ref": {
+          "$ref": "schemas/crucible-strategy-release-http-v1.schema.json#/$defs/artifact_ref"
+        },
+        "deployment_instance_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "deployment_spec_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "deployment_spec_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "effective_config_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "generation": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "release_bom_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "schema_version": {
+          "const": 1
+        },
+        "strategy_release_id": {
+          "$ref": "#/$defs/uuid"
+        }
+      },
+      "required": [
+        "schema_version",
+        "deployment_instance_id",
+        "deployment_spec_id",
+        "deployment_spec_digest",
+        "generation",
+        "strategy_release_id",
+        "release_bom_digest",
+        "artifact_ref",
+        "effective_config_digest"
+      ],
+      "type": "object"
+    },
+    "strategy_release_material": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_binding": {
+          "$ref": "schemas/crucible-strategy-release-http-v1.schema.json#/$defs/artifact_evidence"
+        },
+        "artifact_evidence": {
+          "$ref": "#/$defs/artifact_evidence"
+        },
+        "artifact_evidence_digest_input_json": {
+          "minLength": 2,
+          "type": "string"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/strategy_release_snapshot"
+        }
+      },
+      "required": [
+        "snapshot",
+        "artifact_binding",
+        "artifact_evidence",
+        "artifact_evidence_digest_input_json"
+      ],
+      "type": "object"
+    },
+    "strategy_release_snapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_evidence_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "artifact_ref_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "definition_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "lifecycle_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "manifest_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "release_bom_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "release_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "release_number": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "snapshot_digest": {
+          "$ref": "#/$defs/sha256"
+        },
+        "validated_at": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "release_id",
+        "definition_id",
+        "lifecycle_version",
+        "release_number",
+        "artifact_ref_digest",
+        "manifest_digest",
+        "release_bom_digest",
+        "artifact_evidence_digest",
+        "validated_at",
+        "snapshot_digest"
+      ],
+      "type": "object"
+    },
+    "uuid": {
+      "format": "uuid",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contract_id": {
+      "const": "crucible.runner-strategy-resolution.v1"
+    },
+    "method": {
+      "const": "POST"
+    },
+    "path": {
+      "const": "/api/v1/runner-material/resolve"
+    },
+    "request": {
+      "$ref": "#/$defs/request"
+    },
+    "response": {
+      "$ref": "#/$defs/response"
+    },
+    "schema_version": {
+      "const": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "contract_id",
+    "method",
+    "path",
+    "request",
+    "response"
+  ],
+  "title": "Crucible Runner StrategyRelease Resolution V1",
+  "type": "object"
+}

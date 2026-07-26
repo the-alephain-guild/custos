@@ -1,0 +1,238 @@
+{
+  "contract_id": "crucible.runner-strategy-resolution.v1",
+  "method": "POST",
+  "path": "/api/v1/runner-material/resolve",
+  "request": {
+    "command_fingerprint": "6574e0e50416ddb973045fddeee48a043172f1952c7fe3cee8ef900db06d19e5",
+    "correlation_id": "a0000000-0000-4000-8000-00000000000a",
+    "credential_id": "90000000-0000-4000-8000-000000000009",
+    "credential_version": 1,
+    "deployment_instance_id": "20000000-0000-4000-8000-000000000002",
+    "deployment_spec_digest": "d263c65ca8891e5d0625c808f9f9f8c6989f6313ca516090e6387162c59055ef",
+    "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+    "generation": 1,
+    "runner_id": "10000000-0000-4000-8000-000000000001",
+    "tenant_id": "acme",
+    "trading_mode": "sandbox"
+  },
+  "response": {
+    "artifact_binding": {
+      "binding": {
+        "artifact_ref": {
+          "artifact_coordinate": "ghcr.io/alephain/strategy/supertrend@sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "artifact_kind": "wheel",
+          "artifact_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+          "artifact_size_bytes": 4096,
+          "base_contracts_version": "1.0.0rc1",
+          "build_inputs": [
+            {
+              "name": "uv.lock",
+              "sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+            }
+          ],
+          "contract_schema_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "engine": "nautilus",
+          "engine_toolkit_version": "1.0.0rc1",
+          "engine_version": "1.230.0",
+          "manifest_sha256": "d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f",
+          "manifest_size_bytes": 614,
+          "normalized_source_tree_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+          "python_version": "3.12.4",
+          "required_runtime_artifacts": [
+            {
+              "media_type": "application/schema+json",
+              "name": "fixture-config.schema.json",
+              "role": "runtime_artifact",
+              "sha256": "4ebcc7b5fea1973802e9dde19c422765f25075ea052ea0021141fe478d1cbf2f",
+              "size_bytes": 37
+            }
+          ],
+          "sbom_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "schema_version": 1,
+          "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "source_repository": "https://github.com/alchymia-labs/philosophers-stone"
+        },
+        "deployment_instance_id": "20000000-0000-4000-8000-000000000002",
+        "deployment_spec_digest": "d263c65ca8891e5d0625c808f9f9f8c6989f6313ca516090e6387162c59055ef",
+        "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+        "effective_config_digest": "fdf701f1973f8325f3aa11762553844d9713f699694334d717142bb00dbbbd9c",
+        "generation": 1,
+        "release_bom_digest": "b91bd49081d234eca0d88958e460b92e2d92775160e272102ccc0514e44147a8",
+        "schema_version": 1,
+        "strategy_release_id": "50000000-0000-4000-8000-000000000005"
+      },
+      "kind": "strategy_release"
+    },
+    "artifact_binding_digest": "302bae0554b952c0d24023689a5c533fb4f83b4e0aa56adb671434659cb7dd06",
+    "command_event_sha256": "5d98d4edf792356c5e4707c8709bec41d10ae249e03efec550f0396b93c75e96",
+    "command_fingerprint": "6574e0e50416ddb973045fddeee48a043172f1952c7fe3cee8ef900db06d19e5",
+    "command_subject": "crucible.runner.command.v1.acme.10000000-0000-4000-8000-000000000001.sandbox",
+    "deployment_instance_id": "20000000-0000-4000-8000-000000000002",
+    "deployment_spec_digest": "d263c65ca8891e5d0625c808f9f9f8c6989f6313ca516090e6387162c59055ef",
+    "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+    "development_source_ref": null,
+    "generation": 1,
+    "runner_id": "10000000-0000-4000-8000-000000000001",
+    "schema_version": 1,
+    "stored_command_fingerprint": "8d4bbcba7a9e30a2c842a818372b5ad981603bdd9253f1a7c8fb1fe625187a41",
+    "strategy_release_material": {
+      "artifact_binding": {
+        "artifact_ref": {
+          "artifact_coordinate": "ghcr.io/alephain/strategy/supertrend@sha256:7777777777777777777777777777777777777777777777777777777777777777",
+          "artifact_kind": "wheel",
+          "artifact_sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+          "artifact_size_bytes": 4096,
+          "base_contracts_version": "1.0.0rc1",
+          "build_inputs": [
+            {
+              "name": "uv.lock",
+              "sha256": "9999999999999999999999999999999999999999999999999999999999999999"
+            }
+          ],
+          "contract_schema_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "engine": "nautilus",
+          "engine_toolkit_version": "1.0.0rc1",
+          "engine_version": "1.230.0",
+          "manifest_sha256": "d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f",
+          "manifest_size_bytes": 614,
+          "normalized_source_tree_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+          "python_version": "3.12.4",
+          "required_runtime_artifacts": [
+            {
+              "media_type": "application/schema+json",
+              "name": "fixture-config.schema.json",
+              "role": "runtime_artifact",
+              "sha256": "4ebcc7b5fea1973802e9dde19c422765f25075ea052ea0021141fe478d1cbf2f",
+              "size_bytes": 37
+            }
+          ],
+          "sbom_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+          "schema_version": 1,
+          "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "source_repository": "https://github.com/alchymia-labs/philosophers-stone"
+        },
+        "artifact_ref_canonical_json": "{\"artifact_coordinate\":\"ghcr.io/alephain/strategy/supertrend@sha256:7777777777777777777777777777777777777777777777777777777777777777\",\"artifact_kind\":\"wheel\",\"artifact_sha256\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"artifact_size_bytes\":4096,\"base_contracts_version\":\"1.0.0rc1\",\"build_inputs\":[{\"name\":\"uv.lock\",\"sha256\":\"9999999999999999999999999999999999999999999999999999999999999999\"}],\"contract_schema_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"engine\":\"nautilus\",\"engine_toolkit_version\":\"1.0.0rc1\",\"engine_version\":\"1.230.0\",\"manifest_sha256\":\"d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f\",\"manifest_size_bytes\":614,\"normalized_source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"python_version\":\"3.12.4\",\"required_runtime_artifacts\":[{\"media_type\":\"application/schema+json\",\"name\":\"fixture-config.schema.json\",\"role\":\"runtime_artifact\",\"sha256\":\"4ebcc7b5fea1973802e9dde19c422765f25075ea052ea0021141fe478d1cbf2f\",\"size_bytes\":37}],\"sbom_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"schema_version\":1,\"source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"source_repository\":\"https://github.com/alchymia-labs/philosophers-stone\"}",
+        "artifact_ref_digest": "a7b04bdbc049bfc36d279645e294524cb735b28e2298f2f3bb8d19e192cabbe8",
+        "detached_attestation_ref": {
+          "bundle_coordinate": "fixture://sigstore-bundle@sha256:c72260fb168c6fa70922bb66e512d4d0383cd4dd5f3b5fe37cf1b3e5af28407c",
+          "bundle_sha256": "c72260fb168c6fa70922bb66e512d4d0383cd4dd5f3b5fe37cf1b3e5af28407c",
+          "payload_type": "application/vnd.in-toto+json",
+          "predicate_type": "https://the-alephain-guild.dev/attestation/strategy-release/v1",
+          "schema_version": "alephain.artifact-attestation-ref.v1",
+          "statement_coordinate": "fixture://strategy-release-statement@sha256:ad9547f9379fe4250292548555c9909d83213d5791dabbf91e75e7ff8be60005",
+          "statement_sha256": "ad9547f9379fe4250292548555c9909d83213d5791dabbf91e75e7ff8be60005"
+        },
+        "detached_attestation_ref_canonical_json": "{\"bundle_coordinate\":\"fixture://sigstore-bundle@sha256:c72260fb168c6fa70922bb66e512d4d0383cd4dd5f3b5fe37cf1b3e5af28407c\",\"bundle_sha256\":\"c72260fb168c6fa70922bb66e512d4d0383cd4dd5f3b5fe37cf1b3e5af28407c\",\"payload_type\":\"application/vnd.in-toto+json\",\"predicate_type\":\"https://the-alephain-guild.dev/attestation/strategy-release/v1\",\"schema_version\":\"alephain.artifact-attestation-ref.v1\",\"statement_coordinate\":\"fixture://strategy-release-statement@sha256:ad9547f9379fe4250292548555c9909d83213d5791dabbf91e75e7ff8be60005\",\"statement_sha256\":\"ad9547f9379fe4250292548555c9909d83213d5791dabbf91e75e7ff8be60005\"}",
+        "detached_attestation_ref_digest": "16f4486dfbd49df9a1a96a03338cc888e4567cd48695c63e6e79e7940f6be8ff",
+        "manifest": {
+          "base_contracts_version": "1.0.0rc1",
+          "config_schema_sha256": "4ebcc7b5fea1973802e9dde19c422765f25075ea052ea0021141fe478d1cbf2f",
+          "engine": "nautilus",
+          "engine_toolkit_version": "1.0.0rc1",
+          "engine_version": "1.230.0",
+          "entry_point": "team.adapter:Runtime",
+          "entry_point_group": "alephain.strategy_runtime.v1",
+          "execution_abi": "alephain.strategy_runtime.v1",
+          "requires_python": ">=3.12,<3.13",
+          "runtime_artifacts": [
+            {
+              "media_type": "application/schema+json",
+              "name": "fixture-config.schema.json",
+              "role": "runtime_artifact",
+              "sha256": "4ebcc7b5fea1973802e9dde19c422765f25075ea052ea0021141fe478d1cbf2f",
+              "size_bytes": 37
+            }
+          ],
+          "schema_version": 1
+        },
+        "manifest_canonical_json": "{\"base_contracts_version\":\"1.0.0rc1\",\"config_schema_sha256\":\"4ebcc7b5fea1973802e9dde19c422765f25075ea052ea0021141fe478d1cbf2f\",\"engine\":\"nautilus\",\"engine_toolkit_version\":\"1.0.0rc1\",\"engine_version\":\"1.230.0\",\"entry_point\":\"team.adapter:Runtime\",\"entry_point_group\":\"alephain.strategy_runtime.v1\",\"execution_abi\":\"alephain.strategy_runtime.v1\",\"requires_python\":\">=3.12,<3.13\",\"runtime_artifacts\":[{\"media_type\":\"application/schema+json\",\"name\":\"fixture-config.schema.json\",\"role\":\"runtime_artifact\",\"sha256\":\"4ebcc7b5fea1973802e9dde19c422765f25075ea052ea0021141fe478d1cbf2f\",\"size_bytes\":37}],\"schema_version\":1}",
+        "manifest_digest": "d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f",
+        "release_bom_canonical_json": "{\"build_lock_sha256\":\"1a099303e7430511d0f2d4e4791b28122b6b278502bb0bc79b400df6046b3a6c\",\"canonicalization\":\"sha256-canonical-json-v1\",\"contract_asset_index_coordinate\":\"fixture://external-custos-authority/strategy-contract-assets-v1.json\",\"contract_asset_index_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"engine\":\"nautilus\",\"engine_version\":\"1.230.0\",\"entry_point_group\":\"alephain.strategy_runtime.v1\",\"entry_point_name\":\"team.adapter:Runtime\",\"execution_abi_golden_coordinate\":\"fixture://external-custos-authority/strategy-artifact-ref-v1.golden.json\",\"execution_abi_golden_sha256\":\"7c7c2db45b22d8443ef4ad20e5b5b69201c8549b6d3f1aa6e88c4fe884dafb4b\",\"execution_abi_schema_coordinate\":\"fixture://external-custos-authority/strategy-artifact-ref-v1.schema.json\",\"execution_abi_schema_sha256\":\"61cf0bce44bfe26779b38c3159bde514e3de2e3c74967f9a1bbb06bab7139803\",\"members\":[{\"coordinate\":\"fixture://crucible/base_contracts_wheel/fixture-base-contracts-not-a-release.whl\",\"media_type\":\"application/zip\",\"name\":\"fixture-base-contracts-not-a-release.whl\",\"role\":\"base_contracts_wheel\",\"sha256\":\"65e7ff26a2125859cfbb9ef0d42a517c1cd38093c23cfdee4a3f81f9bb605dbb\",\"size_bytes\":48},{\"coordinate\":\"fixture://crucible/contract_schema/strategy-contract-assets-v1.json\",\"media_type\":\"application/json\",\"name\":\"strategy-contract-assets-v1.json\",\"role\":\"contract_schema\",\"sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"size_bytes\":57},{\"coordinate\":\"fixture://crucible/nautilus_wheel/fixture-nautilus-toolkit-not-a-release.whl\",\"media_type\":\"application/zip\",\"name\":\"fixture-nautilus-toolkit-not-a-release.whl\",\"role\":\"nautilus_wheel\",\"sha256\":\"815fc42f2660524b7f77aacc7c48b98680f6732462e17640ddd0d3ab0959ba7b\",\"size_bytes\":50},{\"coordinate\":\"fixture://crucible/runtime_artifact/fixture-config.schema.json\",\"media_type\":\"application/schema+json\",\"name\":\"fixture-config.schema.json\",\"role\":\"runtime_artifact\",\"sha256\":\"4ebcc7b5fea1973802e9dde19c422765f25075ea052ea0021141fe478d1cbf2f\",\"size_bytes\":37},{\"coordinate\":\"fixture://crucible/source_tree/team-source-inventory-v1.json\",\"media_type\":\"application/vnd.alephain.source-tree\",\"name\":\"team-source-inventory-v1.json\",\"role\":\"source_tree\",\"sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"size_bytes\":1937},{\"coordinate\":\"fixture://crucible/strategy_manifest/fixture-strategy-manifest-v1.json\",\"media_type\":\"application/json\",\"name\":\"fixture-strategy-manifest-v1.json\",\"role\":\"strategy_manifest\",\"sha256\":\"d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f\",\"size_bytes\":614},{\"coordinate\":\"fixture://crucible/strategy_sbom/fixture-strategy-sbom.spdx.json\",\"media_type\":\"application/spdx+json\",\"name\":\"fixture-strategy-sbom.spdx.json\",\"role\":\"strategy_sbom\",\"sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"size_bytes\":46},{\"coordinate\":\"fixture://crucible/strategy_wheel/fixture-supertrend-not-a-release.whl\",\"media_type\":\"application/zip\",\"name\":\"fixture-supertrend-not-a-release.whl\",\"role\":\"strategy_wheel\",\"sha256\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"size_bytes\":4096},{\"coordinate\":\"fixture://crucible/toolkit_sbom/fixture-toolkit-sbom.cdx.json\",\"media_type\":\"application/vnd.cyclonedx+json\",\"name\":\"fixture-toolkit-sbom.cdx.json\",\"role\":\"toolkit_sbom\",\"sha256\":\"b012abae3ac31763e3007be33e910aa5dd21cbee8d721b883924b92bd16d198b\",\"size_bytes\":74}],\"producer_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"producer_repository\":\"https://github.com/alchymia-labs/philosophers-stone\",\"python_requires\":\">=3.12,<3.13\",\"schema_version\":\"alephain.strategy-release-bom.v1\",\"strategy_artifact_coordinate\":\"ghcr.io/alephain/strategy/supertrend@sha256:7777777777777777777777777777777777777777777777777777777777777777\",\"strategy_artifact_sha256\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"strategy_coordinate\":\"ps://strategy/trend/supertrend@2.1.0\",\"strategy_manifest_sha256\":\"d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f\",\"strategy_sbom_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"strategy_source_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"strategy_source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"toolkit_coordinate\":\"fixture://schema-only/toolkit-not-a-release\",\"toolkit_sbom_sha256\":\"b012abae3ac31763e3007be33e910aa5dd21cbee8d721b883924b92bd16d198b\",\"toolkit_wheel_sha256\":\"815fc42f2660524b7f77aacc7c48b98680f6732462e17640ddd0d3ab0959ba7b\",\"zero_rewrite_characterization_sha256\":\"e064afc97d2526694ebae2acaf4a0bd87825c4d0acf751a414b915a8df74f303\",\"zero_rewrite_semantic_diff_sha256\":\"1eee2b5ea9bc012c9af0c44172d5a4056cd92887926075c864fc6a7e24e5a511\"}",
+        "release_bom_digest": "b91bd49081d234eca0d88958e460b92e2d92775160e272102ccc0514e44147a8",
+        "release_statement": {
+          "_type": "https://in-toto.io/Statement/v1",
+          "predicate": {
+            "build_lock_sha256": "1a099303e7430511d0f2d4e4791b28122b6b278502bb0bc79b400df6046b3a6c",
+            "contract_asset_index_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+            "engine": "nautilus",
+            "engine_version": "1.230.0",
+            "entry_point_group": "alephain.strategy_runtime.v1",
+            "entry_point_name": "team.adapter:Runtime",
+            "execution_abi_schema_sha256": "61cf0bce44bfe26779b38c3159bde514e3de2e3c74967f9a1bbb06bab7139803",
+            "producer_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "producer_repository": "https://github.com/alchymia-labs/philosophers-stone",
+            "python_requires": ">=3.12,<3.13",
+            "schema_version": "alephain.strategy-release-statement-predicate.v1",
+            "source_date_epoch": 1784073600,
+            "strategy_sbom_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "strategy_source_tree_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+            "toolkit_sbom_sha256": "b012abae3ac31763e3007be33e910aa5dd21cbee8d721b883924b92bd16d198b",
+            "toolkit_wheel_sha256": "815fc42f2660524b7f77aacc7c48b98680f6732462e17640ddd0d3ab0959ba7b",
+            "workflow_identity": "https://github.com/alchymia-labs/philosophers-stone/.github/workflows/publish-strategy-artifact.yml@refs/heads/main",
+            "zero_rewrite_characterization_sha256": "e064afc97d2526694ebae2acaf4a0bd87825c4d0acf751a414b915a8df74f303",
+            "zero_rewrite_semantic_diff_sha256": "1eee2b5ea9bc012c9af0c44172d5a4056cd92887926075c864fc6a7e24e5a511"
+          },
+          "predicateType": "https://the-alephain-guild.dev/attestation/strategy-release/v1",
+          "subject": [
+            {
+              "digest": {
+                "sha256": "b91bd49081d234eca0d88958e460b92e2d92775160e272102ccc0514e44147a8"
+              },
+              "name": "strategy-release-bom-v1"
+            },
+            {
+              "digest": {
+                "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+              },
+              "name": "strategy-artifact"
+            },
+            {
+              "digest": {
+                "sha256": "d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f"
+              },
+              "name": "strategy-manifest-v1"
+            }
+          ]
+        },
+        "release_statement_canonical_json": "{\"_type\":\"https://in-toto.io/Statement/v1\",\"predicate\":{\"build_lock_sha256\":\"1a099303e7430511d0f2d4e4791b28122b6b278502bb0bc79b400df6046b3a6c\",\"contract_asset_index_sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"engine\":\"nautilus\",\"engine_version\":\"1.230.0\",\"entry_point_group\":\"alephain.strategy_runtime.v1\",\"entry_point_name\":\"team.adapter:Runtime\",\"execution_abi_schema_sha256\":\"61cf0bce44bfe26779b38c3159bde514e3de2e3c74967f9a1bbb06bab7139803\",\"producer_commit\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"producer_repository\":\"https://github.com/alchymia-labs/philosophers-stone\",\"python_requires\":\">=3.12,<3.13\",\"schema_version\":\"alephain.strategy-release-statement-predicate.v1\",\"source_date_epoch\":1784073600,\"strategy_sbom_sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"strategy_source_tree_sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"toolkit_sbom_sha256\":\"b012abae3ac31763e3007be33e910aa5dd21cbee8d721b883924b92bd16d198b\",\"toolkit_wheel_sha256\":\"815fc42f2660524b7f77aacc7c48b98680f6732462e17640ddd0d3ab0959ba7b\",\"workflow_identity\":\"https://github.com/alchymia-labs/philosophers-stone/.github/workflows/publish-strategy-artifact.yml@refs/heads/main\",\"zero_rewrite_characterization_sha256\":\"e064afc97d2526694ebae2acaf4a0bd87825c4d0acf751a414b915a8df74f303\",\"zero_rewrite_semantic_diff_sha256\":\"1eee2b5ea9bc012c9af0c44172d5a4056cd92887926075c864fc6a7e24e5a511\"},\"predicateType\":\"https://the-alephain-guild.dev/attestation/strategy-release/v1\",\"subject\":[{\"digest\":{\"sha256\":\"b91bd49081d234eca0d88958e460b92e2d92775160e272102ccc0514e44147a8\"},\"name\":\"strategy-release-bom-v1\"},{\"digest\":{\"sha256\":\"7777777777777777777777777777777777777777777777777777777777777777\"},\"name\":\"strategy-artifact\"},{\"digest\":{\"sha256\":\"d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f\"},\"name\":\"strategy-manifest-v1\"}]}",
+        "release_statement_digest": "ad9547f9379fe4250292548555c9909d83213d5791dabbf91e75e7ff8be60005",
+        "strategy_release_id": "50000000-0000-4000-8000-000000000005"
+      },
+      "artifact_evidence": {
+        "artifact_ref_digest": "a7b04bdbc049bfc36d279645e294524cb735b28e2298f2f3bb8d19e192cabbe8",
+        "bundle_sha256": "c72260fb168c6fa70922bb66e512d4d0383cd4dd5f3b5fe37cf1b3e5af28407c",
+        "composite_evidence_digest": "7cae2dad1a2ff15b019b5225d84c7d6958f5cd101540cb0ae42c6e92141cc48c",
+        "detached_attestation_ref_digest": "16f4486dfbd49df9a1a96a03338cc888e4567cd48695c63e6e79e7940f6be8ff",
+        "local_policy_evaluation": {
+          "decision": "accepted"
+        },
+        "release_bom_digest": "b91bd49081d234eca0d88958e460b92e2d92775160e272102ccc0514e44147a8",
+        "release_statement_digest": "ad9547f9379fe4250292548555c9909d83213d5791dabbf91e75e7ff8be60005",
+        "schema_version": 1,
+        "signed_producer_claims": {
+          "producer_repository": "https://github.com/alchymia-labs/philosophers-stone"
+        },
+        "sigstore_proof": {
+          "bundle_sha256": "c72260fb168c6fa70922bb66e512d4d0383cd4dd5f3b5fe37cf1b3e5af28407c"
+        },
+        "strategy_release_id": "50000000-0000-4000-8000-000000000005"
+      },
+      "artifact_evidence_digest_input_json": "{\"schema_version\":1,\"strategy_release_id\":\"50000000-0000-4000-8000-000000000005\",\"artifact_ref_digest\":\"a7b04bdbc049bfc36d279645e294524cb735b28e2298f2f3bb8d19e192cabbe8\",\"release_bom_digest\":\"b91bd49081d234eca0d88958e460b92e2d92775160e272102ccc0514e44147a8\",\"release_statement_digest\":\"ad9547f9379fe4250292548555c9909d83213d5791dabbf91e75e7ff8be60005\",\"detached_attestation_ref_digest\":\"16f4486dfbd49df9a1a96a03338cc888e4567cd48695c63e6e79e7940f6be8ff\",\"bundle_sha256\":\"c72260fb168c6fa70922bb66e512d4d0383cd4dd5f3b5fe37cf1b3e5af28407c\",\"signed_producer_claims\":{\"producer_repository\":\"https://github.com/alchymia-labs/philosophers-stone\"},\"sigstore_proof\":{\"bundle_sha256\":\"c72260fb168c6fa70922bb66e512d4d0383cd4dd5f3b5fe37cf1b3e5af28407c\"},\"local_policy_evaluation\":{\"decision\":\"accepted\"},\"composite_evidence_digest\":\"\"}",
+      "snapshot": {
+        "artifact_evidence_digest": "7cae2dad1a2ff15b019b5225d84c7d6958f5cd101540cb0ae42c6e92141cc48c",
+        "artifact_ref_digest": "a7b04bdbc049bfc36d279645e294524cb735b28e2298f2f3bb8d19e192cabbe8",
+        "definition_id": "40000000-0000-4000-8000-000000000004",
+        "lifecycle_version": 2,
+        "manifest_digest": "d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f",
+        "release_bom_digest": "b91bd49081d234eca0d88958e460b92e2d92775160e272102ccc0514e44147a8",
+        "release_id": "50000000-0000-4000-8000-000000000005",
+        "release_number": 7,
+        "snapshot_digest": "76925a21ebf75e5f74748766746ed1e4aca568ad6141bcb5cb7bb539f429f1b9",
+        "validated_at": "2026-07-26T00:00:00Z"
+      }
+    },
+    "tenant_id": "acme",
+    "trading_mode": "sandbox"
+  },
+  "schema_version": 1
+}

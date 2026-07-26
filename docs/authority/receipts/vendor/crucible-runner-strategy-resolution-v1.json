@@ -3,9 +3,11 @@
   "receipt_id": "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-V1",
   "owner": "crucible-rust",
   "consumer": "custos",
-  "status": "LOCAL_SANDBOX_HTTP_PG_VERIFIED_CUSTOS_CONSUMER_RECEIPT_OPEN",
+  "status": "LOCAL_SANDBOX_HTTP_PG_CONTRACT_READY_CUSTOS_RELOCK_OPEN",
   "authority_coordinate": "crucible.runner-strategy-resolution.v1",
   "producer_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
+  "runtime_code_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
+  "contract_commit": "e36c6cd11008542c63fb21f8837afcb02d31ac70",
   "route": {
     "method": "POST",
     "path": "/api/v1/runner-material/resolve",
@@ -23,6 +25,8 @@
     "command_fingerprint"
   ],
   "strategy_release_binding": {
+    "request_accepts_strategy_release_id": false,
+    "release_derived_from_persisted_deployment_spec": true,
     "release_version_semantics": "StrategyRelease.release_number",
     "lifecycle_evidence_fence": "StrategyReleaseSnapshot.snapshot_digest",
     "complete_artifact_binding_returned": true,
@@ -30,6 +34,28 @@
     "artifact_evidence_digest_input_returned": true,
     "credential_or_attestation_bundle_bytes_returned": false
   },
+  "contract_assets": [
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.schema.json",
+      "sha256": "807e347558f7d637046d3effb3f39e77c806a46257e0a86d03308c0bf71aad7d",
+      "size_bytes": 9179
+    },
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.schema.json.sha256",
+      "sha256": "d1884a9f0f3a49ccc4d2bc2b717bbaf4fa0e1642a4632f359eaf36860b067eae",
+      "size_bytes": 116
+    },
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.golden.json",
+      "sha256": "1f00e2d37b96f9f3729bebf875d3d6f852a9eafa90be3c46fde06e7dc6959f1a",
+      "size_bytes": 23505
+    },
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
+      "sha256": "ad557d478849f4909489915587289422eb592c6351fa8a9f974441ee89fdfcea",
+      "size_bytes": 116
+    }
+  ],
   "publication_fence": {
     "mode_outbox_event_required": true,
     "published_at_required": true,
@@ -74,7 +100,7 @@
   "live_ready": false,
   "production_ready": false,
   "open_blockers": [
-    "Custos exact-byte consumer receipt",
+    "Custos exact-byte consumer relock to contract commit e36c6cd11008542c63fb21f8837afcb02d31ac70",
     "protected PS OCI publication and immutable daemon materialization",
     "same-event NATS command to engine to RunnerFact acceptance with StrategyRelease material",
     "deployed testnet and live acceptance"

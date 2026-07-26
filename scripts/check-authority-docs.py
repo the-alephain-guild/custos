@@ -69,9 +69,28 @@ RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
     "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json"
 )
 RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df"
-RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "a254de4ffa3cdd93576c423e1d1a5ea17f51a75c"
+RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT = "e36c6cd11008542c63fb21f8837afcb02d31ac70"
+RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "3aecba7933ec84bd57fc40d3d9f2da0d71f6a653"
+RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS = (
+    (
+        "docs/authority/runner-strategy-release-resolution-v1.schema.json",
+        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
+    ),
+    (
+        "docs/authority/runner-strategy-release-resolution-v1.schema.json.sha256",
+        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json.sha256",
+    ),
+    (
+        "docs/authority/runner-strategy-release-resolution-v1.golden.json",
+        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",
+    ),
+    (
+        "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
+        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json.sha256",
+    ),
+)
 RUNNER_COMMAND_CONSUMER_STATUS = (
-    "LOCAL_STRATEGY_RESOLUTION_RECEIPT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN"
+    "LOCAL_STRATEGY_RESOLUTION_CONTRACT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN"
 )
 REVIEW_VENDOR_ROOT = "docs/authority/receipts/vendor"
 CURRENT_STRATEGY_CONTRACT_SOURCE = (
@@ -561,7 +580,8 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         errors.append("runner command consumer producer authority is missing")
     elif (
         producer.get("contract") != "CrucibleRunnerDeploymentCommandV1"
-        or producer.get("status") != "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_PINNED"
+        or producer.get("status")
+        != "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED"
         or producer.get("producer_commit") != RUNNER_COMMAND_PRODUCER_COMMIT
         or producer.get("subject_template") != "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
     ):
@@ -574,13 +594,33 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         else:
             resolution_bytes = resolution_path.read_bytes()
             resolution_receipt = load_json(resolution_path)
+            resolution_contract_assets = []
+            producer_contract_assets = []
+            for producer_path, vendor_path in RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS:
+                contract_path = resolve(vendor_path)
+                if not contract_path.is_file():
+                    errors.append(
+                        f"runner strategy resolution contract asset is missing: {contract_path}"
+                    )
+                    continue
+                contract_bytes = contract_path.read_bytes()
+                pin = {
+                    "sha256": hashlib.sha256(contract_bytes).hexdigest(),
+                    "size_bytes": len(contract_bytes),
+                }
+                resolution_contract_assets.append(
+                    {"producer_path": producer_path, "path": vendor_path, **pin}
+                )
+                producer_contract_assets.append({"path": producer_path, **pin})
             expected_resolution_pin = {
                 "producer_commit": RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT,
+                "contract_commit": RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT,
                 "receipt_commit": RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT,
                 "path": RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
                 "sha256": hashlib.sha256(resolution_bytes).hexdigest(),
                 "size_bytes": len(resolution_bytes),
                 "status": resolution_receipt.get("status"),
+                "contract_assets": resolution_contract_assets,
             }
             if resolution_pin != expected_resolution_pin:
                 errors.append("runner strategy resolution producer receipt pin differs")
@@ -591,6 +631,19 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
                 != "crucible.runner-strategy-resolution.v1"
                 or resolution_receipt.get("producer_commit")
                 != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
+                or resolution_receipt.get("runtime_code_commit")
+                != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
+                or resolution_receipt.get("contract_commit")
+                != RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT
+                or resolution_receipt.get("contract_assets") != producer_contract_assets
+                or resolution_receipt.get("strategy_release_binding", {}).get(
+                    "request_accepts_strategy_release_id"
+                )
+                is not False
+                or resolution_receipt.get("strategy_release_binding", {}).get(
+                    "release_derived_from_persisted_deployment_spec"
+                )
+                is not True
                 or resolution_receipt.get("runtime_ready") is not False
                 or resolution_receipt.get("production_ready") is not False
             ):

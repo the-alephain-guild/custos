@@ -61,9 +61,28 @@ RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
     "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json"
 )
 RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df"
-RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "a254de4ffa3cdd93576c423e1d1a5ea17f51a75c"
+RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT = "e36c6cd11008542c63fb21f8837afcb02d31ac70"
+RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "3aecba7933ec84bd57fc40d3d9f2da0d71f6a653"
+RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS = (
+    (
+        "docs/authority/runner-strategy-release-resolution-v1.schema.json",
+        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
+    ),
+    (
+        "docs/authority/runner-strategy-release-resolution-v1.schema.json.sha256",
+        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json.sha256",
+    ),
+    (
+        "docs/authority/runner-strategy-release-resolution-v1.golden.json",
+        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",
+    ),
+    (
+        "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
+        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json.sha256",
+    ),
+)
 RUNNER_COMMAND_CONSUMER_STATUS = (
-    "LOCAL_STRATEGY_RESOLUTION_RECEIPT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN"
+    "LOCAL_STRATEGY_RESOLUTION_CONTRACT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN"
 )
 
 TOOLKIT_RC_SCHEMA_PATH = "docs/gateway-contract/v1/toolkit_rc_receipt_manifest_v1.schema.json"
@@ -526,14 +545,36 @@ def build_v1_contract_assets() -> dict[str, bytes]:
 def build_runner_command_consumer_assets() -> dict[str, bytes]:
     resolution_receipt_bytes = (ROOT / RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH).read_bytes()
     resolution_receipt = json.loads(resolution_receipt_bytes)
+    resolution_contract_assets = []
+    producer_contract_assets = []
+    for producer_path, vendor_path in RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS:
+        data = (ROOT / vendor_path).read_bytes()
+        pin = {"sha256": sha256(data), "size_bytes": len(data)}
+        resolution_contract_assets.append(
+            {"producer_path": producer_path, "path": vendor_path, **pin}
+        )
+        producer_contract_assets.append({"path": producer_path, **pin})
     if (
         resolution_receipt.get("receipt_id") != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-V1"
         or resolution_receipt.get("owner") != "crucible-rust"
         or resolution_receipt.get("consumer") != "custos"
         or resolution_receipt.get("producer_commit")
         != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
+        or resolution_receipt.get("runtime_code_commit")
+        != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
+        or resolution_receipt.get("contract_commit")
+        != RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT
+        or resolution_receipt.get("contract_assets") != producer_contract_assets
         or resolution_receipt.get("authority_coordinate")
         != "crucible.runner-strategy-resolution.v1"
+        or resolution_receipt.get("strategy_release_binding", {}).get(
+            "request_accepts_strategy_release_id"
+        )
+        is not False
+        or resolution_receipt.get("strategy_release_binding", {}).get(
+            "release_derived_from_persisted_deployment_spec"
+        )
+        is not True
         or resolution_receipt.get("runtime_ready") is not False
         or resolution_receipt.get("production_ready") is not False
     ):
@@ -548,6 +589,7 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
         RUNNER_COMMAND_GOLDEN_PATH,
         RUNNER_COMMAND_GOLDEN_SIDECAR_PATH,
         RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
+        *(vendor_path for _, vendor_path in RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS),
     ):
         data = (ROOT / relative).read_bytes()
         consumer_assets.append({"path": relative, "sha256": sha256(data), "size_bytes": len(data)})
@@ -569,13 +611,15 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
                 "subject_template": RUNNER_COMMAND_SUBJECT_TEMPLATE,
                 "strategy_resolution_receipt": {
                     "producer_commit": RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT,
+                    "contract_commit": RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT,
                     "receipt_commit": RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT,
                     "path": RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
                     "sha256": sha256(resolution_receipt_bytes),
                     "size_bytes": len(resolution_receipt_bytes),
                     "status": resolution_receipt["status"],
+                    "contract_assets": resolution_contract_assets,
                 },
-                "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_PINNED",
+                "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED",
             },
             "consumer_model": {
                 "path": RUNNER_COMMAND_CONSUMER_SOURCE,
@@ -590,7 +634,8 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
             "exact_event_command_fingerprint_pinned": True,
             "command_contains_deployment_spec_only": True,
             "strategy_release_authority_resolution": (
-                "local sandbox HTTP/PG producer receipt consumed; daemon activation remains open"
+                "sole V1 schema, golden and local HTTP/PG producer receipt consumed; "
+                "daemon activation remains open"
             ),
             "consumer_code_ready": True,
             "command_contract_consumer_ready": True,
@@ -617,13 +662,15 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
                 "subject_template": RUNNER_COMMAND_SUBJECT_TEMPLATE,
                 "strategy_resolution_receipt": {
                     "producer_commit": RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT,
+                    "contract_commit": RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT,
                     "receipt_commit": RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT,
                     "path": RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
                     "sha256": sha256(resolution_receipt_bytes),
                     "size_bytes": len(resolution_receipt_bytes),
                     "status": resolution_receipt["status"],
+                    "contract_assets": resolution_contract_assets,
                 },
-                "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_PINNED",
+                "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED",
             },
             "consumer_model": {
                 "path": RUNNER_COMMAND_CONSUMER_SOURCE,
