@@ -96,24 +96,35 @@ def _verified_policy(
         "previous": previous.model_dump(mode="json") if previous else None,
     }
     canonical_body = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
-    payload = {**body, "policy_digest": hashlib.sha256(canonical_body).hexdigest()}
+    policy_payload = {**body, "policy_digest": hashlib.sha256(canonical_body).hexdigest()}
+    subject = f"crucible.runner.policy.v1.{tenant_id}.{runner_id}.{trading_mode}"
+    payload = {
+        "policy": policy_payload,
+        "policy_id": str(POLICY_IDS[revision]),
+        "revision": revision,
+        "policy_digest": policy_payload["policy_digest"],
+        "exact_subject": subject,
+    }
     event = {
         "schema_version": 1,
         "event_id": "30000000-0000-4000-8000-000000000001",
         "tenant_id": tenant_id,
         "event_plane": {"kind": "mode", "trading_mode": trading_mode},
         "bounded_context": "risk",
-        "aggregate_type": "runner_aggregate_cap_policy",
+        "aggregate_type": "runner_safety_policy",
         "aggregate_id": str(POLICY_IDS[revision]),
         "aggregate_version": revision,
-        "event_type": "RunnerAggregateCapPolicyV1",
+        "event_type": {
+            "active": "RunnerSafetyPolicyPublished",
+            "revoked": "RunnerSafetyPolicyRevoked",
+            "expired": "RunnerSafetyPolicyExpired",
+        }.get(status, "RunnerSafetyPolicyPublished"),
         "payload": payload,
         "correlation_id": "30000000-0000-4000-8000-000000000002",
         "actor_assertion_jti": actor_assertion_jti,
         "occurred_at": "2026-07-15T00:00:01Z",
     }
     event_bytes = json.dumps(event, separators=(",", ":")).encode()
-    subject = f"crucible.runner.policy.v1.{tenant_id}.{runner_id}.{trading_mode}"
     signature_input = _frame(b"CRUCIBLE-DOMAIN-EVENT-V1\0", subject, event_bytes)
     envelope = {
         "schema_version": 1,

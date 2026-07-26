@@ -76,6 +76,13 @@ _POLICY_FIELDS = (
     "previous",
     "policy_digest",
 )
+_OUTBOX_PAYLOAD_FIELDS = (
+    "policy",
+    "policy_id",
+    "revision",
+    "policy_digest",
+    "exact_subject",
+)
 _POLICY_REF_FIELDS = ("policy_id", "revision", "policy_digest")
 _TENANT_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 _CURRENCY_PATTERN = re.compile(r"^[A-Z0-9]{3,12}$")
@@ -321,10 +328,14 @@ def _parse_exact_event(*, subject: str, event_bytes: bytes) -> RunnerAggregateCa
         raise ValueError("event_plane must be an object")
     _require_exact_keys(event_plane, ("kind", "trading_mode"), "event_plane", ordered=True)
 
-    payload = event["payload"]
-    if not isinstance(payload, dict):
+    outbox_payload = event["payload"]
+    if not isinstance(outbox_payload, dict):
         raise ValueError("event payload must be an object")
-    _require_exact_keys(payload, _POLICY_FIELDS, "policy", ordered=True)
+    _require_exact_keys(outbox_payload, _OUTBOX_PAYLOAD_FIELDS, "event payload")
+    payload = outbox_payload["policy"]
+    if not isinstance(payload, dict):
+        raise ValueError("event payload policy must be an object")
+    _require_exact_keys(payload, _POLICY_FIELDS, "policy")
     previous = payload["previous"]
     if previous is not None:
         if not isinstance(previous, dict):
@@ -352,16 +363,25 @@ def _parse_exact_event(*, subject: str, event_bytes: bytes) -> RunnerAggregateCa
     expected_subject = (
         f"{SUBJECT_PREFIX}.{policy.tenant_id}.{policy.runner_id}.{policy.trading_mode}"
     )
+    expected_event_type = {
+        "active": "RunnerSafetyPolicyPublished",
+        "revoked": "RunnerSafetyPolicyRevoked",
+        "expired": "RunnerSafetyPolicyExpired",
+    }[policy.status]
     if subject != expected_subject:
         raise ValueError("subject differs from policy tenant and trading mode")
     if (
-        event["tenant_id"] != policy.tenant_id
+        outbox_payload["policy_id"] != str(policy.policy_id)
+        or outbox_payload["revision"] != policy.revision
+        or outbox_payload["policy_digest"] != policy.policy_digest
+        or outbox_payload["exact_subject"] != expected_subject
+        or event["tenant_id"] != policy.tenant_id
         or event_plane != {"kind": "mode", "trading_mode": policy.trading_mode}
         or event["bounded_context"] != "risk"
-        or event["aggregate_type"] != "runner_aggregate_cap_policy"
+        or event["aggregate_type"] != "runner_safety_policy"
         or event["aggregate_id"] != str(policy.policy_id)
         or event["aggregate_version"] != policy.revision
-        or event["event_type"] != "RunnerAggregateCapPolicyV1"
+        or event["event_type"] != expected_event_type
     ):
         raise ValueError("event target differs from policy scope or revision")
     return policy

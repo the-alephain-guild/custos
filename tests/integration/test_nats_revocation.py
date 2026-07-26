@@ -173,6 +173,15 @@ def _durable_config() -> dict[str, Any]:
     }
 
 
+def _control_stream_subjects() -> list[str]:
+    return [
+        "crucible.runner.command.v1.*.*.sandbox",
+        "crucible.runner.policy.v1.*.*.sandbox",
+        "crucible.runner.command.v1.*.*.testnet",
+        "crucible.runner.policy.v1.*.*.testnet",
+    ]
+
+
 def _sha256_document(value: dict[str, Any]) -> str:
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
@@ -248,24 +257,31 @@ def _signed_runner_policy() -> tuple[str, bytes, dict[str, Any]]:
         "previous": None,
     }
     canonical_body = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
-    payload = {**body, "policy_digest": hashlib.sha256(canonical_body).hexdigest()}
+    policy = {**body, "policy_digest": hashlib.sha256(canonical_body).hexdigest()}
+    subject = f"crucible.runner.policy.v1.{_TENANT}.{_RUNNER}.{_MODE}"
+    payload = {
+        "policy": policy,
+        "policy_id": str(policy_id),
+        "revision": 1,
+        "policy_digest": policy["policy_digest"],
+        "exact_subject": subject,
+    }
     event = {
         "schema_version": 1,
         "event_id": "30000000-0000-4000-8000-000000000001",
         "tenant_id": _TENANT,
         "event_plane": {"kind": "mode", "trading_mode": _MODE},
         "bounded_context": "risk",
-        "aggregate_type": "runner_aggregate_cap_policy",
+        "aggregate_type": "runner_safety_policy",
         "aggregate_id": str(policy_id),
         "aggregate_version": 1,
-        "event_type": "RunnerAggregateCapPolicyV1",
+        "event_type": "RunnerSafetyPolicyPublished",
         "payload": payload,
         "correlation_id": "30000000-0000-4000-8000-000000000002",
         "actor_assertion_jti": "30000000-0000-4000-8000-000000000003",
         "occurred_at": now.isoformat().replace("+00:00", "Z"),
     }
     event_bytes = json.dumps(event, separators=(",", ":")).encode()
-    subject = f"crucible.runner.policy.v1.{_TENANT}.{_RUNNER}.{_MODE}"
     subject_bytes = subject.encode()
     framed = b"".join(
         (
@@ -285,7 +301,7 @@ def _signed_runner_policy() -> tuple[str, bytes, dict[str, Any]]:
         "signature_key_id": _COMMAND_KEY_ID,
         "signature": _b64url(private_key.sign(framed)),
     }
-    return subject, json.dumps(envelope, separators=(",", ":")).encode(), payload
+    return subject, json.dumps(envelope, separators=(",", ":")).encode(), policy
 
 
 def _transport_credential(
@@ -598,6 +614,70 @@ async def _start_crucible_projection(
     )
 
 
+async def _publish_crucible_policy(
+    *,
+    crucible_repo: Path,
+    nats_url: str,
+    certificate: Path,
+    admin_jwt: str,
+    admin_seed: bytes,
+    database: Path,
+) -> dict[str, Any]:
+    jwt_path = database.with_suffix(".policy-admin.jwt")
+    seed_path = database.with_suffix(".policy-admin.seed")
+    receipt_path = database.with_suffix(".policy-publication-receipt.json")
+    receipt_path.unlink(missing_ok=True)
+    jwt_path.write_text(admin_jwt, encoding="ascii")
+    seed_path.write_bytes(admin_seed)
+    jwt_path.chmod(0o600)
+    seed_path.chmod(0o600)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "RUNNER_POLICY_NATS_URL": nats_url,
+            "RUNNER_POLICY_NATS_USER_JWT_PATH": str(jwt_path),
+            "RUNNER_POLICY_NATS_USER_SEED_PATH": str(seed_path),
+            "RUNNER_POLICY_NATS_CA_PATH": str(certificate),
+            "RUNNER_POLICY_RECEIPT_PATH": str(receipt_path),
+            "RUNNER_POLICY_TENANT_ID": _TENANT,
+            "RUNNER_POLICY_RUNNER_ID": str(_RUNNER),
+            "RUNNER_POLICY_SIGNING_KEY_ID": _COMMAND_KEY_ID,
+        }
+    )
+    process = await asyncio.create_subprocess_exec(
+        "cargo",
+        "test",
+        "--quiet",
+        "-p",
+        "server-http",
+        "--test",
+        "runner_safety_policy_transport_pg",
+        "external_policy_reaches_custos_daemon",
+        "--",
+        "--ignored",
+        "--nocapture",
+        cwd=crucible_repo,
+        env=environment,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=120)
+    assert process.returncode == 0, stderr.decode() or stdout.decode()
+    assert receipt_path.is_file(), "Crucible policy publisher did not write its receipt"
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["status"] == "CRUCIBLE_PRODUCTION_PUBLISHER_PATH_VERIFIED"
+    assert receipt["subject"] == f"crucible.runner.policy.v1.{_TENANT}.{_RUNNER}.{_MODE}"
+    assert receipt["real_postgresql"] is True
+    assert receipt["real_authenticated_nats_jetstream"] is True
+    assert receipt["production_repository_path_exercised"] is True
+    assert receipt["production_outbox_worker_path_exercised"] is True
+    assert receipt["production_signed_publisher_path_exercised"] is True
+    assert receipt["puback_before_outbox_completion"] is True
+    assert receipt["production_service_processes_launched"] is False
+    assert receipt["production_policy_issued"] is False
+    return receipt
+
+
 async def _exercise_revocation(
     *,
     admin_jwt: str,
@@ -614,6 +694,7 @@ async def _exercise_revocation(
 ) -> None:
     connection_errors: list[str] = []
     projection_process: asyncio.subprocess.Process | None = None
+    policy_publication: dict[str, Any] | None = None
     subject = f"crucible.runner.fact.v1.{_TENANT}.{_RUNNER}.{_MODE}"
     admin = await _connect_admin(
         user_jwt=admin_jwt,
@@ -626,7 +707,7 @@ async def _exercise_revocation(
     durable = _durable_config()
     await jetstream.add_stream(
         name=_CONTROL_STREAM,
-        subjects=list(durable["filter_subjects"]),
+        subjects=_control_stream_subjects(),
     )
     await jetstream.add_consumer(
         stream=_CONTROL_STREAM,
@@ -754,8 +835,25 @@ async def _exercise_revocation(
                 "authenticated command consumer did not bind its durable: "
                 f"{stderr.decode() or stdout.decode()}"
             )
-        policy_subject, signed_policy, policy_payload = _signed_runner_policy()
-        policy_puback = await jetstream.publish(policy_subject, signed_policy)
+        if crucible_repo is None:
+            policy_subject, signed_policy, policy_payload = _signed_runner_policy()
+            policy_puback = await jetstream.publish(policy_subject, signed_policy)
+        else:
+            policy_publication = await _publish_crucible_policy(
+                crucible_repo=crucible_repo,
+                nats_url=nats_url,
+                certificate=certificate,
+                admin_jwt=admin_jwt,
+                admin_seed=admin_seed,
+                database=database,
+            )
+            policy_payload = {
+                "policy_id": policy_publication["policy_id"],
+                "revision": policy_publication["policy_revision"],
+                "policy_digest": policy_publication["policy_digest"],
+                "status": policy_publication["policy_status"],
+            }
+            policy_puback = None
         command_subject, signed_command = _signed_runner_command()
         command_puback = await jetstream.publish(command_subject, signed_command)
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
@@ -785,7 +883,11 @@ async def _exercise_revocation(
         assert publication["production_authority_issued"] is False
         assert publication["production_policy_issued"] is False
         assert publication["immutable_artifact_materialized"] is False
-        assert policy_puback.seq < command_puback.seq
+        if policy_puback is not None:
+            assert policy_puback.seq < command_puback.seq
+        else:
+            assert policy_publication is not None
+            assert policy_publication["production_signed_publisher_path_exercised"] is True
 
         control_consumer = await jetstream.consumer_info(
             _CONTROL_STREAM,
