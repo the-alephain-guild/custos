@@ -3,7 +3,7 @@
   "receipt_id": "CRUCIBLE-RUNNER-SAFETY-POLICY-V1",
   "owner": "crucible-rust",
   "consumer": "custos",
-  "status": "CODE_READY_LOCAL_VERIFIED_RUNTIME_PUBLICATION_OPEN",
+  "status": "SANDBOX_PG_JETSTREAM_CUSTOS_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
   "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
   "authority_coordinate": "crucible.runner-aggregate-cap-policy.v1",
   "subject_template": "crucible.runner.policy.v1.<tenant>.<runner_id>.<mode>",
@@ -79,16 +79,77 @@
     {
       "scope": "readiness",
       "result": "3 passed"
+    },
+    {
+      "scope": "ephemeral PostgreSQL migration and repository acceptance",
+      "command": "cargo test -p store --test runner_safety_policy_pg",
+      "result": "2 passed",
+      "verified_at": "2026-07-26",
+      "production_execution_evidence": false
+    },
+    {
+      "scope": "sandbox PostgreSQL outbox to exact Runner policy JetStream durable",
+      "command": "make verify-runner-policy-publication",
+      "result": "1 passed",
+      "verified_at": "2026-07-26",
+      "production_execution_evidence": false
+    },
+    {
+      "scope": "same signed policy consumed by authenticated Custos production daemon",
+      "command": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
+      "result": "1 passed",
+      "verified_at": "2026-07-26",
+      "production_execution_evidence": false
     }
   ],
   "checked_in_mode_migration_head": "0117",
   "mode_database_execution_receipts": {
-    "sandbox": null,
+    "sandbox": {
+      "command": "make verify-runner-policy-publication",
+      "result": "1 passed",
+      "verified_at": "2026-07-26",
+      "real_postgresql": true,
+      "physical_database_role": "sim",
+      "migration_0117_executed": true,
+      "repository_and_outbox_transaction": true
+    },
     "testnet": null,
     "live": null
   },
-  "runtime_publication_receipt": null,
-  "custos_consumer_receipt": null,
+  "runtime_publication_receipt": {
+    "status": "SANDBOX_PG_JETSTREAM_CUSTOS_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
+    "code_commit": "8b5057ef2b54fbe8365ea8b5f3bd55005488e64f",
+    "cross_repository_code_commit": "40a43fbf146006bb90053c446bd15f529418b45e",
+    "custos_code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
+    "command": "make verify-runner-policy-publication",
+    "result": "1 passed",
+    "verified_at": "2026-07-26",
+    "trading_mode": "sandbox",
+    "physical_database_role": "sim",
+    "real_postgresql": true,
+    "real_nats_jetstream": true,
+    "production_repository_path_exercised": true,
+    "production_outbox_source_path_exercised": true,
+    "production_outbox_worker_path_exercised": true,
+    "production_signed_publisher_path_exercised": true,
+    "exact_policy_subject": true,
+    "exact_command_policy_durable": true,
+    "subject_bound_signature_verified": true,
+    "puback_before_outbox_completion": true,
+    "owner_http_lifecycle_exercised": false,
+    "production_service_processes_launched": false,
+    "production_policy_issued": false,
+    "same_policy_consumed_by_custos": true
+  },
+  "custos_consumer_receipt": {
+    "repository": "tesseract-trading/custos",
+    "commit": "ef7ee7ce11f027f946ee8d23266bb76f30ec557d",
+    "producer_path": "docs/authority/receipts/custos-runner-safety-policy-v1-consumer-receipt.json",
+    "local_path": "docs/authority/receipts/vendor/custos-runner-safety-policy-v1-consumer-receipt.json",
+    "sha256": "8f971e274d3f56de8624f2757e595596454fa6cf561abbc488d7b7dfc3d9cb81",
+    "size_bytes": 5093,
+    "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN"
+  },
   "runtime_ready": false,
   "live_ready": false,
   "production_ready": false

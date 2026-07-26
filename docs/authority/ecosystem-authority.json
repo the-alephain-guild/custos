@@ -166,7 +166,7 @@
       "runner_id"
     ],
     "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
-    "producer_receipt_commit": "fe930088ea158f8fee057da79aa900674e48b2d3",
+    "producer_receipt_commit": "d9667586c32a573fb23d47dad7e77ab8c567284e",
     "producer_main_landed": true,
     "migration_0117_executed": true,
     "migration_0117_sandbox_pg_verified": true,
@@ -395,10 +395,10 @@
     "receipt": "docs/authority/receipts/custos-runner-fact-v1-producer-receipt.json",
     "consumer_receipt": {
       "repository": "tesseract-trading/crucible-rust",
-      "commit": "c4585bfe0e7fc3742ec20d454d958835b18085c1",
+      "commit": "d9667586c32a573fb23d47dad7e77ab8c567284e",
       "path": "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json",
-      "sha256": "d9dc7b47838a5da274dcf7108a6fb1c9a0a613cdcf0a5378bff8e54bdd530536",
-      "size_bytes": 10284
+      "sha256": "28014e2be28ce038ea716f2c1d5bc82faffb381910b7fb79aff019f155128c07",
+      "size_bytes": 10568
     },
     "local_publication_receipt": {
       "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",

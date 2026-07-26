@@ -4,7 +4,7 @@
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
     "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
-    "producer_receipt_commit": "fe930088ea158f8fee057da79aa900674e48b2d3",
+    "producer_receipt_commit": "d9667586c32a573fb23d47dad7e77ab8c567284e",
     "contract": "RunnerAggregateCapPolicyV1",
     "authority_coordinate": "crucible.runner-aggregate-cap-policy.v1",
     "subject_template": "crucible.runner.policy.v1.<tenant>.<runner>.<mode>",
@@ -52,8 +52,8 @@
       "role": "producer_receipt",
       "path": "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json",
       "source_path": "docs/authority/receipts/crucible-runner-safety-policy-v1.json",
-      "sha256": "6985bc77a58e47da091c383eb65963ee9075d57d88610134d96257c93e325aac",
-      "size_bytes": 2811
+      "sha256": "d516d24d5d9016162c207f5a4678f62a896ea188f6ad5f27f3a7d7a6f6580f6e",
+      "size_bytes": 5527
     }
   ],
   "consumer_model": {

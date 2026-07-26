@@ -6,15 +6,15 @@
   "code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-safety-policy-consumer-assets-v1.json",
-    "sha256": "7c662a99e0ef8aeda64d6896d221379f230f25646d8c8bf7680f914fab2b9865",
+    "sha256": "d3cd4a8790c42b98598ad093c84a771a05de71595c5c31f54fa9201844f83abe",
     "size_bytes": 3410
   },
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
     "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
-    "producer_receipt_commit": "fe930088ea158f8fee057da79aa900674e48b2d3",
+    "producer_receipt_commit": "d9667586c32a573fb23d47dad7e77ab8c567284e",
     "producer_receipt_path": "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json",
-    "producer_receipt_sha256": "6985bc77a58e47da091c383eb65963ee9075d57d88610134d96257c93e325aac",
+    "producer_receipt_sha256": "d516d24d5d9016162c207f5a4678f62a896ea188f6ad5f27f3a7d7a6f6580f6e",
     "authority_coordinate": "crucible.runner-aggregate-cap-policy.v1",
     "subject_template": "crucible.runner.policy.v1.<tenant>.<runner>.<mode>",
     "schema_sha256": "2029b02dbf5f415c13f539cb807bf72c45b1be712fb0922a66f7d10bf4e8ac89",
