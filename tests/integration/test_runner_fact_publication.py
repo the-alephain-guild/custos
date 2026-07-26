@@ -24,6 +24,7 @@ _TENANT_ID = "acme"
 _RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
 _DEPLOYMENT_INSTANCE_ID = UUID("20000000-0000-4000-8000-000000000002")
 _STREAM = "CRUCIBLE_RUNNER_FACT_V1"
+_STREAM_SUBJECTS = "crucible.runner.fact.v1.*.*.*"
 
 
 def _require_local_gate() -> None:
@@ -70,7 +71,7 @@ async def _exercise_publication(nats_url: str, database: Path) -> None:
     subject = f"crucible.runner.fact.v1.{_TENANT_ID}.{_RUNNER_ID}.sandbox"
     admin = await nats.connect(servers=[nats_url], name="runner-fact-acceptance-admin")
     jetstream = admin.jetstream()
-    await jetstream.add_stream(name=_STREAM, subjects=[subject])
+    await jetstream.add_stream(name=_STREAM, subjects=[_STREAM_SUBJECTS])
 
     process = await asyncio.create_subprocess_exec(
         sys.executable,

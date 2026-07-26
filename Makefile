@@ -3,7 +3,7 @@
 # Standalone open-source repository entrypoint. Standardized validation targets
 # keep shell execution deterministic and avoid permission drift from ad-hoc commands.
 
-.PHONY: help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-runner-fact-publication clean toolkit-sync-check strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
+.PHONY: help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication clean toolkit-sync-check strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
 
 # Default target: help
 .DEFAULT_GOAL := help
@@ -48,6 +48,10 @@ test:  ## Run full pytest (base profile; NT tests importorskip; includes known-f
 
 verify-nats-revocation:  ## Run opt-in real NATS User-JWT resolver revocation gate
 	CUSTOS_RUN_REAL_NATS_REVOCATION=1 uv run pytest tests/integration/test_nats_revocation.py -v
+
+verify-authenticated-runtime-projection:  ## Run signed command through Custos and Crucible PostgreSQL projection
+	@test -n "$(CRUCIBLE_REPO)" || { echo "CRUCIBLE_REPO is required" >&2; exit 2; }
+	CUSTOS_RUN_REAL_NATS_REVOCATION=1 CRUCIBLE_REPO="$(CRUCIBLE_REPO)" uv run pytest tests/integration/test_nats_revocation.py -v
 
 verify-runner-fact-publication:  ## Run opt-in real JetStream RunnerFact outbox/PubAck gate
 	CUSTOS_RUN_REAL_RUNNER_FACT_PUBLICATION=1 uv run pytest tests/integration/test_runner_fact_publication.py -v

@@ -35,17 +35,18 @@ from custos.core.runner_command_runtime import RunnerCommandRuntimeCoordinator
 from custos.core.runner_control_consumer import RunnerControlConsumerV1
 from custos.core.runner_fact import (
     RunnerCapabilityReceipt,
-    RunnerCapabilityScopeBinding,
     RunnerFactIdentity,
     RunnerFactJetStreamPublisher,
     RunnerFactOutbox,
     RunnerStateStore,
     capability_binding_evidence_digest,
+    normalize_capability_scope_bindings,
 )
 from custos.engines.nautilus.host import SandboxSimulationHost
 
 ROOT = Path(__file__).resolve().parents[2]
 COMMAND_FIXTURE = ROOT / "docs/authority/runner-deployment-command-golden-v1.json"
+CAPABILITY_RECEIPT = ROOT / "docs/authority/runner-fact-capability-receipt-golden-v1.json"
 TENANT_ID = "acme"
 RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
 CAPABILITY_VERSION_ID = UUID("50000000-0000-4000-8000-000000000005")
@@ -188,36 +189,63 @@ class _AcceptanceCredentialResolver:
 
 
 def _capability(command: Any, identity: RunnerFactIdentity) -> RunnerCapabilityReceipt:
-    binding = RunnerCapabilityScopeBinding(
-        projector="deployment_lifecycle",
-        trading_mode=command.trading_mode,
-        deployment_instance_id=str(command.deployment_instance_id),
-        deployment_spec_id=str(command.deployment_spec_id),
-        deployment_spec_digest=command.deployment_spec_digest,
-        strategy_id=str(command.strategy_id),
-        source_policy_digest=None,
-        required_venues=(),
-    )
-    bindings = (binding,)
-    return RunnerCapabilityReceipt(
-        tenant_id=TENANT_ID,
-        runner_id=RUNNER_ID,
-        capability_version_id=CAPABILITY_VERSION_ID,
-        capability_version=1,
-        manifest_digest=hashlib.sha256(b"authenticated-command-lifecycle-capability").hexdigest(),
-        key_id=identity.key_id,
-        key_version=1,
-        algorithm="ed25519",
-        public_key_digest=hashlib.sha256(identity.public_key_bytes).hexdigest(),
-        binding_status="validated",
+    canonical = RunnerCapabilityReceipt.load(CAPABILITY_RECEIPT)
+    manifest = json.loads(json.dumps(canonical.capability_manifest))
+    for key in (
+        "settlement_scope_bindings",
+        "risk_scope_bindings",
+        "reconciliation_scope_bindings",
+        "health_scope_bindings",
+        "deployment_lifecycle_scope_bindings",
+    ):
+        for binding in manifest[key]:
+            binding["deployment_spec_digest"] = command.deployment_spec_digest
+            if key == "reconciliation_scope_bindings":
+                binding["source_policy_digest"] = command.deployment_spec["source_policy_digest"]
+    bindings = normalize_capability_scope_bindings(manifest)
+    receipt = RunnerCapabilityReceipt(
+        tenant_id=canonical.tenant_id,
+        runner_id=canonical.runner_id,
+        capability_version_id=canonical.capability_version_id,
+        capability_version=canonical.capability_version,
+        manifest_digest=hashlib.sha256(
+            json.dumps(
+                manifest,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("utf-8")
+        ).hexdigest(),
+        key_id=canonical.key_id,
+        key_version=canonical.key_version,
+        algorithm=canonical.algorithm,
+        public_key_digest=canonical.public_key_digest,
+        binding_status=canonical.binding_status,
         binding_evidence_digest=capability_binding_evidence_digest(
-            TENANT_ID,
-            RUNNER_ID,
+            canonical.tenant_id,
+            canonical.runner_id,
             bindings,
         ),
-        capability_manifest={},
+        capability_manifest=manifest,
         scope_bindings=bindings,
     )
+    receipt.require_scope_bindings(
+        projectors=("deployment_lifecycle",),
+        trading_mode=command.trading_mode,
+        deployment_instance_id=command.deployment_instance_id,
+        deployment_spec_id=command.deployment_spec_id,
+        deployment_spec_digest=command.deployment_spec_digest,
+        strategy_id=command.strategy_id,
+    )
+    if (
+        receipt.tenant_id != TENANT_ID
+        or receipt.runner_id != RUNNER_ID
+        or receipt.capability_version_id != CAPABILITY_VERSION_ID
+        or receipt.key_id != identity.key_id
+        or receipt.public_key_digest != hashlib.sha256(identity.public_key_bytes).hexdigest()
+    ):
+        raise RuntimeError("canonical capability receipt differs from runner identity")
+    return receipt
 
 
 def _transport_profile(args: argparse.Namespace) -> RunnerNatsTransportConnectionProfile:

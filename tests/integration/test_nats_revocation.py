@@ -37,6 +37,7 @@ _RUNNER = UUID("10000000-0000-4000-8000-000000000001")
 _MODE = "sandbox"
 _DOMAIN = "sim"
 _FACT_STREAM = "CRUCIBLE_RUNNER_FACT_V1"
+_FACT_STREAM_SUBJECTS = "crucible.runner.fact.v1.*.*.*"
 _CONTROL_STREAM = "CRUCIBLE_RUNNER_CONTROL_SIM_V1"
 _COMMAND_FIXTURE = (
     Path(__file__).resolve().parents[2] / "docs/authority/runner-deployment-command-golden-v1.json"
@@ -469,6 +470,71 @@ def _wait_ready(container: str) -> None:
     pytest.fail(f"NATS did not become ready:\n{logs.stdout}\n{logs.stderr}")
 
 
+async def _start_crucible_projection(
+    *,
+    crucible_repo: Path,
+    nats_url: str,
+    certificate: Path,
+    admin_jwt: str,
+    admin_seed: bytes,
+    database: Path,
+) -> tuple[asyncio.subprocess.Process, Path]:
+    jwt_path = database.with_suffix(".projection-admin.jwt")
+    seed_path = database.with_suffix(".projection-admin.seed")
+    ready_path = database.with_suffix(".projection-ready")
+    receipt_path = database.with_suffix(".projection-receipt.json")
+    for path in (ready_path, receipt_path):
+        path.unlink(missing_ok=True)
+    jwt_path.write_text(admin_jwt, encoding="ascii")
+    seed_path.write_bytes(admin_seed)
+    jwt_path.chmod(0o600)
+    seed_path.chmod(0o600)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "RUNNER_FACT_NATS_URL": nats_url,
+            "RUNNER_FACT_NATS_USER_JWT_PATH": str(jwt_path),
+            "RUNNER_FACT_NATS_USER_SEED_PATH": str(seed_path),
+            "RUNNER_FACT_NATS_CA_PATH": str(certificate),
+            "RUNNER_FACT_PROJECTOR_READY_PATH": str(ready_path),
+            "RUNNER_FACT_PROJECTOR_RECEIPT_PATH": str(receipt_path),
+        }
+    )
+    process = await asyncio.create_subprocess_exec(
+        "cargo",
+        "test",
+        "--quiet",
+        "-p",
+        "server-http",
+        "--test",
+        "runner_fact_transport_pg",
+        "authenticated_custos_command_lifecycle_reaches_projection",
+        "--",
+        "--ignored",
+        "--nocapture",
+        cwd=crucible_repo,
+        env=environment,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    for _ in range(2400):
+        if ready_path.is_file():
+            return process, receipt_path
+        if process.returncode is not None:
+            stdout, stderr = await process.communicate()
+            raise AssertionError(
+                "Crucible authenticated projector exited before readiness: "
+                f"{stderr.decode() or stdout.decode()}"
+            )
+        await asyncio.sleep(0.05)
+    process.terminate()
+    stdout, stderr = await process.communicate()
+    raise AssertionError(
+        "Crucible authenticated projector did not become ready: "
+        f"{stderr.decode() or stdout.decode()}"
+    )
+
+
 async def _exercise_revocation(
     *,
     admin_jwt: str,
@@ -481,8 +547,10 @@ async def _exercise_revocation(
     container: str,
     active_config: Path,
     revoked_config: str,
+    crucible_repo: Path | None,
 ) -> None:
     connection_errors: list[str] = []
+    projection_process: asyncio.subprocess.Process | None = None
     subject = f"crucible.runner.fact.v1.{_TENANT}.{_RUNNER}.{_MODE}"
     admin = await _connect_admin(
         user_jwt=admin_jwt,
@@ -491,7 +559,7 @@ async def _exercise_revocation(
         certificate=certificate,
     )
     jetstream = admin.jetstream()
-    await jetstream.add_stream(name=_FACT_STREAM, subjects=[subject])
+    await jetstream.add_stream(name=_FACT_STREAM, subjects=[_FACT_STREAM_SUBJECTS])
     durable = _durable_config()
     await jetstream.add_stream(
         name=_CONTROL_STREAM,
@@ -563,6 +631,17 @@ async def _exercise_revocation(
             name="custos-t7c-old-reconnect",
             timeout_seconds=3,
         )
+
+        projection_receipt_path: Path | None = None
+        if crucible_repo is not None:
+            projection_process, projection_receipt_path = await _start_crucible_projection(
+                crucible_repo=crucible_repo,
+                nats_url=nats_url,
+                certificate=certificate,
+                admin_jwt=admin_jwt,
+                admin_seed=admin_seed,
+                database=database,
+            )
 
         replacement_profile.assert_publish_subject(subject)
         credential_path = database.with_suffix(".credential.json")
@@ -637,6 +716,21 @@ async def _exercise_revocation(
         assert control_consumer.ack_floor.stream_seq == command_puback.seq
         assert control_consumer.delivered.stream_seq == command_puback.seq
 
+        if projection_process is not None and projection_receipt_path is not None:
+            projection_stdout, projection_stderr = await asyncio.wait_for(
+                projection_process.communicate(),
+                timeout=60,
+            )
+            assert projection_process.returncode == 0, (
+                projection_stderr.decode() or projection_stdout.decode()
+            )
+            projection = json.loads(projection_receipt_path.read_text(encoding="utf-8"))
+            assert projection["batch_id"] == publication["batch_id"]
+            assert projection["ingest_status"] == "accepted"
+            assert projection["projector_work_count"] == 1
+            assert projection["real_postgresql"] is True
+            assert projection["production_consumer"] is True
+
         subscription = await jetstream.pull_subscribe(
             subject,
             durable="runner-fact-authenticated-acceptance",
@@ -658,6 +752,13 @@ async def _exercise_revocation(
         assert await RunnerFactOutbox(database).pending() == []
         assert replacement.is_connected
     finally:
+        if projection_process is not None and projection_process.returncode is None:
+            projection_process.terminate()
+            try:
+                await asyncio.wait_for(projection_process.communicate(), timeout=5)
+            except TimeoutError:
+                projection_process.kill()
+                await projection_process.communicate()
         await admin.close()
         await replacement.close()
         if not old.is_closed:
@@ -670,6 +771,12 @@ def test_real_nats_memory_resolver_revokes_old_user_jwt_and_keeps_replacement(
     tmp_path: Path,
 ) -> None:
     _require_local_gate()
+    crucible_repo_value = os.environ.get("CRUCIBLE_REPO")
+    crucible_repo = (
+        Path(crucible_repo_value).expanduser().resolve() if crucible_repo_value else None
+    )
+    if crucible_repo is not None and not (crucible_repo / "Cargo.toml").is_file():
+        pytest.fail("CRUCIBLE_REPO must point to the crucible-rust repository")
     now = datetime.now(UTC).replace(microsecond=0)
     operator_seed, operator_pair, operator_public = _keypair(nkeys.PREFIX_BYTE_OPERATOR)
     system_seed, system_pair, system_public = _keypair(nkeys.PREFIX_BYTE_ACCOUNT)
@@ -799,6 +906,7 @@ def test_real_nats_memory_resolver_revokes_old_user_jwt_and_keeps_replacement(
                 container=container,
                 active_config=active_config,
                 revoked_config=revoked_config,
+                crucible_repo=crucible_repo,
             )
         )
         logs = _run("docker", "logs", container, check=False)
