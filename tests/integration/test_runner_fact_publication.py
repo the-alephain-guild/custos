@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -14,26 +16,13 @@ from uuid import UUID, uuid4
 import nats
 import pytest
 
-from custos.core.nats_transport import DevelopmentLocalNatsConnectionProfile
-from custos.core.runner_deployment_lifecycle_fact import RunnerDeploymentLifecycleFact
-from custos.core.runner_fact import (
-    RunnerFactAuthority,
-    RunnerFactIdentity,
-    RunnerFactJetStreamPublisher,
-    RunnerFactOutbox,
-)
+from custos.core.runner_fact import RunnerFactOutbox
 
 _IMAGE = os.environ.get("CUSTOS_NATS_TEST_IMAGE", "nats:2.10-alpine")
 _ENABLED = os.environ.get("CUSTOS_RUN_REAL_RUNNER_FACT_PUBLICATION") == "1"
 _TENANT_ID = "acme"
 _RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
 _DEPLOYMENT_INSTANCE_ID = UUID("20000000-0000-4000-8000-000000000002")
-_DEPLOYMENT_SPEC_ID = UUID("30000000-0000-4000-8000-000000000003")
-_STRATEGY_ID = UUID("40000000-0000-4000-8000-000000000004")
-_CAPABILITY_VERSION_ID = UUID("50000000-0000-4000-8000-000000000005")
-_SPEC_DIGEST = "a" * 64
-_CAPABILITY_DIGEST = "b" * 64
-_KEY_ID = "ed25519-65b60673d6ed884bf01c2c222d82ada0"
 _STREAM = "CRUCIBLE_RUNNER_FACT_SIM_V1"
 
 
@@ -77,61 +66,29 @@ def _wait_ready(container: str) -> None:
     pytest.fail(f"NATS did not become ready:\n{logs.stdout}\n{logs.stderr}")
 
 
-def _authority() -> RunnerFactAuthority:
-    return RunnerFactAuthority(
-        tenant_id=_TENANT_ID,
-        trading_mode="sandbox",
-        runner_id=_RUNNER_ID,
-        deployment_instance_id=_DEPLOYMENT_INSTANCE_ID,
-        deployment_spec_id=_DEPLOYMENT_SPEC_ID,
-        deployment_spec_digest=_SPEC_DIGEST,
-        generation=1,
-        strategy_id=_STRATEGY_ID,
-        capability_version_id=_CAPABILITY_VERSION_ID,
-        capability_version=1,
-        capability_manifest_digest=_CAPABILITY_DIGEST,
-    )
-
-
 async def _exercise_publication(nats_url: str, database: Path) -> None:
     subject = f"crucible.runner.fact.v1.{_TENANT_ID}.{_RUNNER_ID}.sandbox"
     admin = await nats.connect(servers=[nats_url], name="runner-fact-acceptance-admin")
     jetstream = admin.jetstream()
     await jetstream.add_stream(name=_STREAM, subjects=[subject])
 
-    authority = _authority()
-    outbox = RunnerFactOutbox(database)
-    identity = RunnerFactIdentity.from_private_bytes(
-        bytes(range(1, 33)),
-        _KEY_ID,
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        str(Path(__file__).with_name("runner_fact_publication_process.py")),
+        "--nats-url",
+        nats_url,
+        "--database",
+        str(database),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
-    fact = RunnerDeploymentLifecycleFact.observed(
-        authority,
-        generation=1,
-        lifecycle_state="running",
-        command_fingerprint=_SPEC_DIGEST,
-        outcome="applied",
-    ).to_wire()
-    batch_id = await outbox.enqueue(authority, identity, [fact])
-    assert batch_id is not None
-    pending = await outbox.pending()
-    assert len(pending) == 1
-
-    profile = DevelopmentLocalNatsConnectionProfile(
-        tenant_id=_TENANT_ID,
-        runner_id=_RUNNER_ID,
-        nats_url=nats_url,
-    )
-    publisher = RunnerFactJetStreamPublisher(
-        connection_profiles={"sandbox": profile},
-        outbox=outbox,
-        runner_id=_RUNNER_ID,
-        authority_guard=lambda: None,
-    )
+    stdout, stderr = await process.communicate()
+    assert process.returncode == 0, stderr.decode()
+    publication = json.loads(stdout)
+    assert publication["delivered"] == 1
+    assert publication["pending_after"] == 0
+    assert publication["subject"] == subject
     try:
-        assert await publisher.drain_once() == 1
-        assert await outbox.pending() == []
-
         subscription = await jetstream.pull_subscribe(
             subject,
             durable="runner-fact-local-acceptance",
@@ -141,20 +98,20 @@ async def _exercise_publication(nats_url: str, database: Path) -> None:
         assert len(messages) == 1
         message = messages[0]
         document = json.loads(message.data)
-        assert document["batch_id"] == str(batch_id)
+        assert document["batch_id"] == publication["batch_id"]
         assert document["tenant_id"] == _TENANT_ID
         assert document["runner_id"] == str(_RUNNER_ID)
         assert document["deployment_instance_id"] == str(_DEPLOYMENT_INSTANCE_ID)
-        assert document["generation"] == 1
+        assert document["generation"] == 7
+        assert hashlib.sha256(message.data).hexdigest() == publication["payload_sha256"]
         assert message.headers is not None
-        assert message.headers["Nats-Msg-Id"] == str(batch_id)
+        assert message.headers["Nats-Msg-Id"] == publication["batch_id"]
         await message.ack()
 
         stream = await jetstream.stream_info(_STREAM)
         assert stream.state.messages == 1
         assert await RunnerFactOutbox(database).pending() == []
     finally:
-        await publisher.close()
         await admin.close()
 
 
