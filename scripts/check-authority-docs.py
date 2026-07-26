@@ -1738,15 +1738,15 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     local_publication = load_json(local_publication_path)
     expected_source = {
         "repository": "tesseract-trading/custos",
-        "code_commit": "ba562a91a3d160293f3f0631c47a954164766662",
+        "code_commit": "aeca1feb636a2335f54f2772ac1b439ac2ca6e3d",
         "publisher_process": "tests/integration/runner_fact_publication_process.py",
         "publisher_process_sha256": (
-            "a1cff9f61a40cc40b0df6dfcd492e2cd94c7c1161b0483535ce162a305b3dfc9"
+            "51795a4a0d1c467c1ff04317462eea035b658a692ef7b3598c9712e981b297f6"
         ),
-        "publisher_process_size_bytes": 5115,
+        "publisher_process_size_bytes": 5667,
         "test": "tests/integration/test_runner_fact_publication.py",
-        "test_sha256": "5f6ed9720761d619ddec32144de096045a29894c5438460692cd5ae757f7f268",
-        "test_size_bytes": 4870,
+        "test_sha256": "092f9aebbf2b55bbc1fd2bbaa8be17cde4ada8b7df7d8f7f78a6be374a1d0b6b",
+        "test_size_bytes": 5496,
         "command": "make verify-runner-fact-publication",
         "verified_at": "2026-07-26",
         "tests_passed": 1,
@@ -1780,6 +1780,10 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
         "publisher_process_launched",
         "subject_scope_enforced",
         "producer_puback_received",
+        "durable_puback_receipt_committed",
+        "puback_broker_stream_sequence_recorded",
+        "puback_payload_digest_recorded",
+        "puback_receipt_survives_sqlite_reopen",
         "outbox_deleted_only_after_puback",
         "nats_message_id_equals_batch_id",
     ):
@@ -1836,8 +1840,8 @@ def verify_runner_fact_authority(errors: list[str]) -> None:
         errors.append("ecosystem RunnerFact V1 consumer receipt binding differs")
     if state.get("local_publication_receipt") != {
         "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
-        "sha256": "d6ab0120cf6a6b8e996a666db7606b2772aa77068b4335e511162d2462087a24",
-        "size_bytes": 1989,
+        "sha256": "78473e28cbc6db66cee96163749f4de21ac9387916fc108c4f6986cdff6542bf",
+        "size_bytes": 2182,
         "status": "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN",
     }:
         errors.append("ecosystem RunnerFact V1 local publication receipt binding differs")

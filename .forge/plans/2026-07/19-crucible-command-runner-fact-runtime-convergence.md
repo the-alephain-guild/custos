@@ -24,7 +24,7 @@
 方向正确，但 original Plan 19 存在五个架构错误：
 
 1. 计划新建第二套 `runner_fact_outbox`，与现有 SQLite `RunnerFactOutbox`
-   的 seq、dedup、签名和 PubAck 删除语义冲突。
+   的 seq、dedup、签名和原子 PubAck checkpoint 语义冲突。
 2. journal 以 `spec_id` 为中心，而 runtime address 必须是
    `deployment_instance_id`。
 3. strict command/schema 被当作 Custos 单仓任务，但 Crucible 尚未生产完整字段。
@@ -106,7 +106,8 @@ Custos 已有 `RunnerFactOutbox`，负责：
 - `facts[].seq` injection；
 - signed batch construction；
 - durable pending batches；
-- JetStream PubAck 后删除。
+- JetStream PubAck 的 broker stream/sequence、payload digest 和 duplicate
+  evidence 在同一事务持久化后删除 pending row。
 
 Plan 19 禁止创建第二套 outbox。desired/applied journal tables 必须纳入同一
 SQLite deep module、connection 和 transaction boundary。实现可以内部重构文件，
@@ -286,7 +287,7 @@ conflict；signer key id、signature profile 和 verification receipt 必须单�
 - **Inbound command ACK**：Custos 对 Crucible command delivery 的
   ACK/NAK/term/in-progress。
 - **Outbound fact PubAck**：JetStream 确认 signed RunnerFact batch 后，
-  existing outbox 才删除 pending batch。
+  existing deep module 先原子持久化 publication receipt，再删除 pending batch。
 
 两者不能共享状态字段或被称为同一个 ACK。
 
@@ -304,8 +305,9 @@ Disposition 时序固定如下：
 | invalid signature/schema/version | untrusted rejection + pending security/DLQ receipt commit | TERM |
 | durable commit failure | none | NAK；禁止 ACK/TERM |
 
-Outbound fact publisher 只有收到 PubAck 才删除 existing outbox row。Inbound disposition 与
-outbound PubAck 不能复用字段、watermark 或状态枚举。
+Outbound fact publisher 只有收到 PubAck，且在 existing deep module 中原子持久化
+broker stream/sequence、payload digest 和 duplicate evidence 后，才删除 existing
+outbox row。Inbound disposition 与 outbound PubAck 不能复用字段、watermark 或状态枚举。
 
 ## Crucible Producer-First Contract
 
@@ -496,7 +498,7 @@ NtTradingNodeHost
   └── runner-level cap at engine boundary
   │
   ▼
-signed RunnerFacts ──PubAck──> existing outbox deletion
+signed RunnerFacts ──PubAck──> durable publication receipt + existing outbox deletion
 ```
 
 ## File Inventory
@@ -1106,6 +1108,7 @@ git commit -m "docs(custos): mark plan 19 as completed"
 - [x] command subject mode and signed payload mode both equal the selected session before execution/ACK
 - [x] every RunnerFact batch is published through the session matching its signed trading mode
 - [x] command ACK and RunnerFact PubAck remain distinct over the authenticated transport
+- [x] RunnerFact PubAck broker stream/sequence and payload digest are durable before pending outbox deletion
 - [x] per-mode rotation rollback preserves the prior generation; incomplete revocation suspends that mode and cannot be hidden by another mode's health
 - [ ] Custos old-generation reconnect-denial receipt is consumed by Crucible before broker revocation completes
 - [x] RunnerFact capability revision + Crucible projector receipt
@@ -1123,12 +1126,12 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | Work | State | Current boundary |
 |---|---|---|
 | Signed command V1 consumer | development runtime focused verified | consumes real DeploymentSpec domain events; exact-event fingerprint, direct Crucible material resolution, contract assets and authority gate pass |
-| RunnerFact SQLite V1 deep module | focused verified | one store, one outbox and one instance-continuous sequence |
+| RunnerFact SQLite V1 deep module | focused verified | one store, one outbox, one instance-continuous sequence and an atomic durable PubAck publication receipt; Custos `ad7728e` plus real JetStream gate `aeca1fe` pass |
 | Engine lifecycle | local verified; production materialization blocked | 118-test T2-T8a gate passes; production authority contract is consumed at `4ad12b2`, while immutable OCI materialization, trust composition and launched activation remain open |
 | Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, policy-bound PubAck and real daemon consumption pending |
 | Machine credential and NATS vault V1 | direct credential plus clone-local authenticated transport ready; production runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; `d7256ec` proves TLS/User-JWT rotation and revoked-generation reconnect denial; `ba562a9` binds the preprovisioned control durable and completes the authenticated same-batch PG acceptance. Control `0029`, deployed durable readback and dual-domain broker receipts remain pending. |
-| RunnerFact V1 | Phase A exact-byte plus authenticated command-derived PG acceptance complete; runtime RC open | producer asset commit `cce7693` and receipt `818242c` remain pinned; Custos `ba562a9` and Crucible `79b5acb` prove JetStream control delivery, signed command verification, sandbox engine readiness, commit-before-ACK, broker ack-floor advancement, authenticated lifecycle PubAck and same-batch PostgreSQL projection. Immutable artifact activation, production-service credentials and runtime RC remain required. |
-| Local sandbox runtime | authenticated control-durable command-to-Crucible-PG PASS; production owner round trip open | the launched acceptance process binds the existing durable, reaches engine readiness, ACKs only after lifecycle commit, clears the outbox only after PubAck and reaches one Crucible lifecycle projector row with the same batch. Immutable PS material and launched production signer/provisioner/server services remain open. |
+| RunnerFact V1 | Phase A exact-byte plus authenticated command-derived PG acceptance complete; runtime RC open | producer asset commit `cce7693` and receipt `818242c` remain pinned; Custos `ba562a9` and Crucible `79b5acb` prove JetStream control delivery, signed command verification, sandbox engine readiness, commit-before-ACK, broker ack-floor advancement, authenticated lifecycle PubAck and same-batch PostgreSQL projection. Custos `ad7728e` additionally persists exact PubAck evidence before outbox retirement. Immutable artifact activation, production-service credentials and runtime RC remain required. |
+| Local sandbox runtime | authenticated control-durable command-to-Crucible-PG PASS; production owner round trip open | the launched acceptance process binds the existing durable, reaches engine readiness, ACKs only after lifecycle commit, atomically records the PubAck receipt before clearing the outbox and reaches one Crucible lifecycle projector row with the same batch. Immutable PS material and launched production signer/provisioner/server services remain open. |
 | Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 production receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 
 The machine-readable boundary is pinned by

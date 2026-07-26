@@ -390,8 +390,8 @@
     },
     "local_publication_receipt": {
       "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
-      "sha256": "d6ab0120cf6a6b8e996a666db7606b2772aa77068b4335e511162d2462087a24",
-      "size_bytes": 1989,
+      "sha256": "78473e28cbc6db66cee96163749f4de21ac9387916fc108c4f6986cdff6542bf",
+      "size_bytes": 2182,
       "status": "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN"
     },
     "authenticated_transport_receipt": {
