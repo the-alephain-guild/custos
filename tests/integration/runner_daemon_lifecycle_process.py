@@ -5,11 +5,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import csv
 import hashlib
+import io
 import json
 import os
 import signal
 import sqlite3
+import stat
+import zipfile
+from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +24,29 @@ from uuid import UUID
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from custos.artifacts.immutable_material import RegistryStrategyReleaseMaterializerV1
+from custos.artifacts.policy import (
+    ArchiveLimitsV1,
+    ReleaseTrustPolicyV1,
+    SignedReleaseTrustPolicyEnvelopeV1,
+    SigstoreIdentityV1,
+    canonical_policy_bytes,
+    release_policy_signature_message,
+)
+from custos.artifacts.release_resolver import (
+    CrucibleStrategyReleaseArtifactResolverV1,
+    StrategyReleaseResolutionRejected,
+)
+from custos.artifacts.runtime import (
+    ArtifactRuntimeCapabilityV1,
+    ArtifactRuntimeConfigV1,
+    StrategyArtifactRuntimeV1,
+)
+from custos.artifacts.verification_types import (
+    RunnerLocalArtifactVerificationConfig,
+    SigstoreVerificationEvidence,
+    SigstoreVerificationRequest,
+)
 from custos.cli import _daemon as daemon_module
 from custos.cli.subcommands import nats_transport as nats_transport_cli
 from custos.core.machine_credential_vault import MachineCredential, MachineCredentialVault
@@ -26,10 +54,6 @@ from custos.core.nats_transport import (
     RunnerNatsTransportBundle,
     RunnerNatsTransportCredential,
     RunnerNatsTransportVault,
-)
-from custos.core.runner_command_intake import (
-    CrucibleRunnerCommandAuthenticator,
-    VerifiedRunnerCommand,
 )
 from custos.core.runner_fact import (
     RunnerCapabilityReceipt,
@@ -43,7 +67,6 @@ from custos.core.runner_nats_authority import RunnerNatsTransportAuthorityClient
 from custos.core.runner_toml import RunnerToml
 
 ROOT = Path(__file__).resolve().parents[2]
-COMMAND_FIXTURE = ROOT / "docs/authority/runner-deployment-command-golden-v1.json"
 CAPABILITY_RECEIPT = ROOT / "docs/authority/runner-fact-capability-receipt-golden-v1.json"
 TENANT_ID = "acme"
 RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
@@ -52,102 +75,200 @@ MACHINE_CREDENTIAL_ID = UUID("60000000-0000-4000-8000-000000000006")
 RUNNER_FACT_KEY_ID = "ed25519-65b60673d6ed884bf01c2c222d82ada0"
 COMMAND_KEY_ID = "fixture-domain-key-v1"
 PRIVATE_KEY_BYTES = bytes(range(1, 33))
+ARTIFACT_POLICY_KEY_BYTES = bytes(range(33, 65))
+ARTIFACT_REGISTRY = "local.alephain.test"
+ARTIFACT_REPOSITORY = "v1-team/strategies"
+ARTIFACT_WORKFLOW_IDENTITY = (
+    "https://github.com/alchymia-labs/philosophers-stone/"
+    ".github/workflows/publish-strategy-artifact.yml@refs/heads/main"
+)
+ARTIFACT_SOURCE_REPOSITORY = "https://github.com/alchymia-labs/philosophers-stone"
+ARTIFACT_TRUSTED_ROOT = b'{"profile":"custos-local-immutable-acceptance-v1"}'
+RUNTIME_ARTIFACT_NAME = "resources/config.schema.json"
+RUNTIME_ARTIFACT_BYTES = b'{"additionalProperties":false,"type":"object"}'
+STRATEGY_WHEEL_NAME = "v1_team_strategy-1.0.0-py3-none-any.whl"
+STRATEGY_ENTRY_POINT = "strategies.supertrend:RuntimeAdapter"
+STRATEGY_ENTRY_POINT_GROUP = "alephain.strategy_runtime.v1"
 
 
-def _recursively_sorted(value: object) -> object:
-    if isinstance(value, dict):
-        return {key: _recursively_sorted(value[key]) for key in sorted(value)}
-    if isinstance(value, list):
-        return [_recursively_sorted(item) for item in value]
-    return value
+def _base64url(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
 
-def _fixture_signed_command() -> tuple[str, bytes]:
-    fixture = json.loads(COMMAND_FIXTURE.read_text(encoding="utf-8"))
-    case = next(
-        value for value in fixture["cases"] if value["name"] == "deployment_spec_ready_for_runner"
-    )
-    event = dict(case["event_document"])
-    event["payload"] = _recursively_sorted(event["payload"])
-    event_bytes = json.dumps(
-        event,
-        ensure_ascii=False,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    subject = str(case["subject"])
-    subject_bytes = subject.encode("utf-8")
-    framed = b"".join(
+def _record_hash(payload: bytes) -> str:
+    return f"sha256={_base64url(hashlib.sha256(payload).digest())}"
+
+
+def _wheel_member(name: str) -> zipfile.ZipInfo:
+    member = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+    member.compress_type = zipfile.ZIP_STORED
+    member.create_system = 3
+    member.external_attr = (stat.S_IFREG | 0o644) << 16
+    return member
+
+
+def _write_immutable_strategy_wheel(path: Path) -> dict[str, object]:
+    module = b"""class RuntimeAdapter:
+    def build_config(self, effective_config, execution_context):
+        del execution_context
+        return dict(effective_config)
+
+    def build_strategy(self, config):
+        return {"artifact": "immutable-strategy-release-v1", "config": config}
+"""
+    dist_info = "v1_team_strategy-1.0.0.dist-info"
+    entries = [
+        ("strategies/__init__.py", b""),
+        ("strategies/supertrend.py", module),
         (
-            b"CRUCIBLE-DOMAIN-EVENT-V1\0",
-            len(subject_bytes).to_bytes(4, "big"),
-            subject_bytes,
-            len(event_bytes).to_bytes(8, "big"),
-            event_bytes,
-        )
-    )
-    private_key = Ed25519PrivateKey.from_private_bytes(PRIVATE_KEY_BYTES)
+            f"{dist_info}/entry_points.txt",
+            (f"[{STRATEGY_ENTRY_POINT_GROUP}]\nv1-team = {STRATEGY_ENTRY_POINT}\n").encode("ascii"),
+        ),
+        (
+            f"{dist_info}/WHEEL",
+            b"Wheel-Version: 1.0\nGenerator: custos-acceptance\n"
+            b"Root-Is-Purelib: true\nTag: py3-none-any\n",
+        ),
+        (
+            f"{dist_info}/METADATA",
+            b"Metadata-Version: 2.3\nName: v1-team-strategy\nVersion: 1.0.0\n",
+        ),
+        (RUNTIME_ARTIFACT_NAME, RUNTIME_ARTIFACT_BYTES),
+    ]
+    rows = [[name, _record_hash(payload), str(len(payload))] for name, payload in entries]
+    record_name = f"{dist_info}/RECORD"
+    rows.append([record_name, "", ""])
+    record = io.StringIO(newline="")
+    csv.writer(record, lineterminator="\n").writerows(rows)
+    entries.append((record_name, record.getvalue().encode("utf-8")))
 
-    def base64url(value: bytes) -> str:
-        return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
-
-    envelope = {
-        "schema_version": 1,
-        "signature_profile": "crucible-domain-event-v1-exact-bytes",
-        "event_encoding": "application/json;base64url",
-        "event_bytes": base64url(event_bytes),
-        "signature_key_id": COMMAND_KEY_ID,
-        "signature": base64url(private_key.sign(framed)),
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with zipfile.ZipFile(path, "w") as archive:
+        for name, payload in entries:
+            archive.writestr(_wheel_member(name), payload)
+    os.chmod(path, 0o400)
+    payload = path.read_bytes()
+    return {
+        "artifact_name": STRATEGY_WHEEL_NAME,
+        "artifact_path": str(path.resolve()),
+        "artifact_sha256": hashlib.sha256(payload).hexdigest(),
+        "artifact_size_bytes": len(payload),
+        "entry_point_group": STRATEGY_ENTRY_POINT_GROUP,
+        "entry_point_name": STRATEGY_ENTRY_POINT,
+        "registry": ARTIFACT_REGISTRY,
+        "repository": ARTIFACT_REPOSITORY,
+        "runtime_artifact": {
+            "media_type": "application/schema+json",
+            "name": RUNTIME_ARTIFACT_NAME,
+            "role": "runtime_artifact",
+            "sha256": hashlib.sha256(RUNTIME_ARTIFACT_BYTES).hexdigest(),
+            "size_bytes": len(RUNTIME_ARTIFACT_BYTES),
+        },
     }
-    return subject, json.dumps(envelope, separators=(",", ":")).encode("utf-8")
 
 
-class _AcceptanceReleaseResolver:
-    async def resolve(self, verified: object) -> object:
-        del verified
-        return SimpleNamespace(
-            release_authority=object(),
-            release_statement_bytes=b"daemon-acceptance-release-statement",
-            detached_bundle_path=ROOT / "pyproject.toml",
-            member_paths={"wheel": ROOT / "pyproject.toml"},
-            verified_at=datetime.now(UTC),
+class _DirectoryOciBlobTransport:
+    def __init__(self, root: Path) -> None:
+        self._root = root.resolve()
+
+    def fetch_blob(
+        self,
+        *,
+        registry: str,
+        repository: str,
+        digest: str,
+        max_bytes: int,
+    ) -> bytes:
+        if registry != ARTIFACT_REGISTRY or repository != ARTIFACT_REPOSITORY:
+            raise StrategyReleaseResolutionRejected(
+                "local immutable artifact coordinate differs from acceptance authority"
+            )
+        path = self._root / "sha256" / digest
+        if path.is_symlink() or not path.is_file():
+            raise StrategyReleaseResolutionRejected("local immutable artifact blob is absent")
+        payload = path.read_bytes()
+        if len(payload) > max_bytes or hashlib.sha256(payload).hexdigest() != digest:
+            raise StrategyReleaseResolutionRejected("local immutable artifact blob differs")
+        return payload
+
+
+class _AcceptanceSigstoreVerifier:
+    capability_id = "local-deterministic-sigstore-acceptance-v1"
+
+    def verify(self, request: SigstoreVerificationRequest) -> SigstoreVerificationEvidence:
+        if len(request.accepted_identities) != 1:
+            raise StrategyReleaseResolutionRejected(
+                "acceptance policy must authorize exactly one producer identity"
+            )
+        identity = request.accepted_identities[0]
+        return SigstoreVerificationEvidence(
+            verifier_capability_id=self.capability_id,
+            bundle_sha256=hashlib.sha256(request.bundle_path.read_bytes()).hexdigest(),
+            trusted_root_sha256=hashlib.sha256(request.trusted_root_bytes).hexdigest(),
+            issuer=identity.issuer,
+            workflow_identity=identity.workflow_identity,
+            source_repository=identity.source_repository,
+            verified_subjects=request.required_subjects,
+            transparency_log_verified=True,
         )
 
 
-class _AcceptanceArtifactRuntime:
-    def __init__(self, state: RunnerStateStore) -> None:
-        self._state = state
-
-    async def prepare(self, **kwargs: object) -> object:
-        durable = await self._state.load_durable_desired_command(
-            UUID(str(kwargs["deployment_instance_id"]))
-        )
-        return SimpleNamespace(
-            verified=VerifiedRunnerCommand(
-                command=durable.command,
-                command_fingerprint=durable.command_fingerprint,
-                verification_receipt=durable.verification_receipt,
+def _build_acceptance_strategy_release_runtime(
+    *,
+    state_store: RunnerStateStore,
+    material_authority: object,
+    material_root: Path,
+    cache_root: Path,
+    quarantine_root: Path,
+    activation_root: Path,
+) -> tuple[object, StrategyArtifactRuntimeV1]:
+    now = datetime.now(UTC)
+    policy_key = Ed25519PrivateKey.from_private_bytes(ARTIFACT_POLICY_KEY_BYTES)
+    policy = ReleaseTrustPolicyV1(
+        policy_id="custos-local-immutable-acceptance-v1",
+        version=1,
+        not_before=now - timedelta(hours=1),
+        expires_at=now + timedelta(hours=1),
+        sigstore_trusted_root_sha256=hashlib.sha256(ARTIFACT_TRUSTED_ROOT).hexdigest(),
+        accepted_identities=(
+            SigstoreIdentityV1(
+                issuer="https://token.actions.githubusercontent.com",
+                workflow_identity=ARTIFACT_WORKFLOW_IDENTITY,
+                source_repository=ARTIFACT_SOURCE_REPOSITORY,
             ),
-            receipt=SimpleNamespace(
-                runner_local_policy_decision=SimpleNamespace(
-                    policy_id="daemon-lifecycle-acceptance"
-                )
+        ),
+        require_transparency_log=True,
+        archive_limits=ArchiveLimitsV1(),
+    )
+    policy_bytes = canonical_policy_bytes(policy)
+    envelope = SignedReleaseTrustPolicyEnvelopeV1(
+        policy_bytes=_base64url(policy_bytes),
+        signature_key_id="custos-local-artifact-policy-v1",
+        signature=_base64url(policy_key.sign(release_policy_signature_message(policy_bytes))),
+    ).model_dump_json()
+    resolver = CrucibleStrategyReleaseArtifactResolverV1(
+        authority=material_authority,
+        materializer=RegistryStrategyReleaseMaterializerV1(
+            cache_root=cache_root.resolve(),
+            transport=_DirectoryOciBlobTransport(material_root),
+        ),
+    )
+    runtime = StrategyArtifactRuntimeV1(
+        state=state_store,
+        config=ArtifactRuntimeConfigV1(
+            local_verification=RunnerLocalArtifactVerificationConfig(
+                signed_policy_envelope_bytes=envelope.encode("utf-8"),
+                policy_authority_key_id="custos-local-artifact-policy-v1",
+                policy_authority_public_key=policy_key.public_key(),
+                sigstore_trusted_root_bytes=ARTIFACT_TRUSTED_ROOT,
+                quarantine_parent=quarantine_root.resolve(),
             ),
-        )
-
-    async def activate(self, prepared: object, *, loader: object) -> object:
-        del loader
-        verified = prepared.verified
-        activation_id = "daemon-lifecycle-activation"
-        await self._state.record_artifact_activation(
-            verified=verified,
-            activation_id=activation_id,
-            artifact_identity_digest=verified.command.artifact_identity_digest,
-            artifact_authority_digest=verified.command.artifact_source.snapshot.snapshot_digest,
-        )
-        return SimpleNamespace(
-            activation_id=activation_id,
-            strategy=object(),
-        )
+            activation_parent=activation_root.resolve(),
+            capability=ArtifactRuntimeCapabilityV1.production_ready(),
+        ),
+        sigstore_verifier=_AcceptanceSigstoreVerifier(),
+    )
+    return resolver, runtime
 
 
 class _AcceptanceCredentialResolver:
@@ -156,7 +277,10 @@ class _AcceptanceCredentialResolver:
         return {}
 
 
-def _capability(command: Any, identity: RunnerFactIdentity) -> RunnerCapabilityReceipt:
+def _capability(
+    deployment_authority: Mapping[str, object],
+    identity: RunnerFactIdentity,
+) -> RunnerCapabilityReceipt:
     canonical = RunnerCapabilityReceipt.load(CAPABILITY_RECEIPT)
     manifest = json.loads(json.dumps(canonical.capability_manifest))
     for key in (
@@ -167,9 +291,9 @@ def _capability(command: Any, identity: RunnerFactIdentity) -> RunnerCapabilityR
         "deployment_lifecycle_scope_bindings",
     ):
         for binding in manifest[key]:
-            binding["deployment_spec_digest"] = command.deployment_spec_digest
+            binding["deployment_spec_digest"] = deployment_authority["deployment_spec_digest"]
             if key == "reconciliation_scope_bindings":
-                binding["source_policy_digest"] = command.deployment_spec["source_policy_digest"]
+                binding["source_policy_digest"] = deployment_authority["source_policy_digest"]
     bindings = normalize_capability_scope_bindings(manifest)
     receipt = RunnerCapabilityReceipt(
         tenant_id=canonical.tenant_id,
@@ -199,11 +323,11 @@ def _capability(command: Any, identity: RunnerFactIdentity) -> RunnerCapabilityR
     )
     receipt.require_scope_bindings(
         projectors=("deployment_lifecycle",),
-        trading_mode=command.trading_mode,
-        deployment_instance_id=command.deployment_instance_id,
-        deployment_spec_id=command.deployment_spec_id,
-        deployment_spec_digest=command.deployment_spec_digest,
-        strategy_id=command.strategy_id,
+        trading_mode="sandbox",
+        deployment_instance_id=UUID(str(deployment_authority["deployment_instance_id"])),
+        deployment_spec_id=UUID(str(deployment_authority["deployment_spec_id"])),
+        deployment_spec_digest=str(deployment_authority["deployment_spec_digest"]),
+        strategy_id=UUID(str(deployment_authority["strategy_id"])),
     )
     if (
         receipt.tenant_id != TENANT_ID
@@ -241,10 +365,8 @@ def _machine_credential(path: Path) -> MachineCredential:
     return credential
 
 
-def _write_command_input(
+def _write_runtime_authority_receipt(
     path: Path,
-    subject: str,
-    envelope: bytes,
     capability: RunnerCapabilityReceipt,
 ) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -256,8 +378,6 @@ def _write_command_input(
                 "capability_manifest_digest": capability.manifest_digest,
                 "capability_version": capability.capability_version,
                 "capability_version_id": str(capability.capability_version_id),
-                "subject": subject,
-                "payload_base64": base64.b64encode(envelope).decode("ascii"),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -267,6 +387,61 @@ def _write_command_input(
     finally:
         os.close(descriptor)
     os.replace(temporary, path)
+
+
+def _write_artifact_input(path: Path, fixture: Mapping[str, object]) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary = path.with_suffix(f"{path.suffix}.tmp")
+    temporary.write_text(
+        json.dumps(fixture, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
+
+
+async def _wait_for_deployment_authority(path: Path) -> dict[str, object]:
+    required = {
+        "artifact_digests",
+        "command_subject",
+        "deployment_instance_id",
+        "deployment_spec_digest",
+        "deployment_spec_id",
+        "generation",
+        "source_policy_digest",
+        "strategy_id",
+        "strategy_release_id",
+    }
+    for _ in range(400):
+        if path.is_file():
+            document = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(document, dict) or set(document) != required:
+                raise RuntimeError("deployment authority rendezvous shape is invalid")
+            UUID(str(document["deployment_instance_id"]))
+            UUID(str(document["deployment_spec_id"]))
+            UUID(str(document["strategy_id"]))
+            UUID(str(document["strategy_release_id"]))
+            if (
+                document["generation"] != 1
+                or not isinstance(document["command_subject"], str)
+                or any(
+                    not isinstance(document[field], str) or len(str(document[field])) != 64
+                    for field in (
+                        "deployment_spec_digest",
+                        "source_policy_digest",
+                    )
+                )
+                or not isinstance(document["artifact_digests"], list)
+                or len(document["artifact_digests"]) != 3
+                or any(
+                    not isinstance(digest, str) or len(digest) != 64
+                    for digest in document["artifact_digests"]
+                )
+            ):
+                raise RuntimeError("deployment authority rendezvous values are invalid")
+            return document
+        await asyncio.sleep(0.05)
+    raise TimeoutError("Crucible did not publish deployment authority")
 
 
 def _timestamp_text(value: datetime) -> str:
@@ -290,6 +465,7 @@ def _install_acceptance_authorities(
     capability: RunnerCapabilityReceipt,
     verify_machine_authority_with_crucible: bool,
     use_encrypted_authority_vaults: bool,
+    artifact_material_dir: Path,
 ) -> None:
     class StaticRunnerToml:
         @staticmethod
@@ -338,8 +514,14 @@ def _install_acceptance_authorities(
         state_store: RunnerStateStore,
         material_authority: object,
     ) -> tuple[object, object]:
-        del args, material_authority
-        return _AcceptanceReleaseResolver(), _AcceptanceArtifactRuntime(state_store)
+        return _build_acceptance_strategy_release_runtime(
+            state_store=state_store,
+            material_authority=material_authority,
+            material_root=artifact_material_dir,
+            cache_root=args.artifact_cache_dir,
+            quarantine_root=args.artifact_quarantine_dir,
+            activation_root=args.artifact_activation_dir,
+        )
 
     def build_credential_resolver(vault: object) -> _AcceptanceCredentialResolver:
         del vault
@@ -467,7 +649,7 @@ async def _wait_for_daemon_ready(
 async def _wait_for_publication(
     task: asyncio.Task[int],
     database: Path,
-) -> tuple[dict[str, object], object]:
+) -> tuple[dict[str, object], Any]:
     outbox = RunnerFactOutbox(database)
     for _ in range(400):
         if task.done():
@@ -505,16 +687,6 @@ async def _wait_for_rotation_intent(path: Path) -> UUID:
 async def _run(args: argparse.Namespace) -> dict[str, object]:
     root = args.database.parent
     command_private_key = Ed25519PrivateKey.from_private_bytes(PRIVATE_KEY_BYTES)
-    expected_subject, expected_envelope = _fixture_signed_command()
-    verified = CrucibleRunnerCommandAuthenticator(
-        expected_tenant_id=TENANT_ID,
-        expected_runner_id=RUNNER_ID,
-        allowed_trading_modes=frozenset({"sandbox"}),
-        signature_keys={COMMAND_KEY_ID: command_private_key.public_key()},
-    ).verify(
-        subject=expected_subject,
-        signed_envelope_bytes=expected_envelope,
-    )
     service_authority = args.machine_credential is not None
     transport_operation_id: str | None = None
     if service_authority:
@@ -522,13 +694,13 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             args.transport_credential is not None
             or not args.crucible_url
             or args.authorization_intent_id is None
-            or args.command_input_file is None
+            or args.runtime_authority_ready_file is None
             or args.rotation_intent_file is None
             or not args.age_recipient
         ):
             raise ValueError(
                 "service authority mode requires machine credential, Crucible URL, "
-                "authorization intent, command and rotation rendezvous files, and "
+                "authorization intent, runtime and rotation rendezvous files, and "
                 "age recipient without a static transport credential"
             )
         machine_credential = _machine_credential(args.machine_credential)
@@ -567,11 +739,16 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             private_key_bytes=PRIVATE_KEY_BYTES,
         )
         backend_url = "http://127.0.0.1:9"
+    artifact_fixture = _write_immutable_strategy_wheel(
+        args.artifact_material_dir / "input" / STRATEGY_WHEEL_NAME
+    )
+    _write_artifact_input(args.artifact_input_file, artifact_fixture)
+    deployment_authority = await _wait_for_deployment_authority(args.deployment_authority_file)
     identity = RunnerFactIdentity.from_private_bytes(
         machine_credential.private_key_bytes,
         machine_credential.machine_key_id,
     )
-    capability = _capability(verified.command, identity)
+    capability = _capability(deployment_authority, identity)
     machine_vault_path = root / "runner-machine.enc"
     transport_vault_dir = root / "nats-transport"
     metadata = RunnerToml(
@@ -633,6 +810,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         capability=capability,
         verify_machine_authority_with_crucible=service_authority,
         use_encrypted_authority_vaults=service_authority,
+        artifact_material_dir=args.artifact_material_dir,
     )
     command_public_key_path = args.database.with_suffix(".command.pub")
     command_public_key_path.write_text(
@@ -687,11 +865,9 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
                 raise RuntimeError("encrypted authority vault bytes changed across restart")
             daemon_restart_completed = True
             encrypted_vaults_reloaded_after_restart = True
-            assert args.command_input_file is not None
-            _write_command_input(
-                args.command_input_file,
-                expected_subject,
-                expected_envelope,
+            assert args.runtime_authority_ready_file is not None
+            _write_runtime_authority_receipt(
+                args.runtime_authority_ready_file,
                 capability,
             )
         outcome, publication = await _wait_for_publication(daemon_task, args.database)
@@ -772,6 +948,35 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         "sandbox",
         now=datetime.now(UTC),
     )
+    with sqlite3.connect(args.database) as connection:
+        activation = connection.execute(
+            """
+            SELECT a.activation_id, a.state, d.artifact_activation_id
+            FROM artifact_activation AS a
+            JOIN applied_deployments AS d
+              ON d.deployment_instance_id = a.deployment_instance_id
+            WHERE a.deployment_instance_id = ?
+            """,
+            (str(deployment_authority["deployment_instance_id"]),),
+        ).fetchone()
+    cached_digests = {
+        path.name
+        for path in (root / "artifact-cache" / "sha256").iterdir()
+        if path.is_file() and not path.is_symlink()
+    }
+    artifact_digests = deployment_authority["artifact_digests"]
+    if not isinstance(artifact_digests, list):
+        raise RuntimeError("deployment authority artifact digests are invalid")
+    expected_artifact_digests = set(artifact_digests)
+    immutable_artifact_materialized = (
+        activation is not None
+        and activation[1] == "active"
+        and activation[0] == activation[2]
+        and cached_digests == expected_artifact_digests
+        and len(list((root / "artifact-activation").rglob("strategies/supertrend.py"))) == 1
+    )
+    if not immutable_artifact_materialized:
+        raise RuntimeError("immutable StrategyRelease materialization receipt is incomplete")
     policy_document = effective_policy.policy.model_dump(mode="json")
     return {
         "batch_id": str(publication.batch_id),
@@ -780,9 +985,9 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         "command_acked": command_acked,
         "runtime_status": "applied_acked" if command_acked else "unexpected",
         "engine_ready": engine_ready,
-        "deployment_instance_id": str(verified.command.deployment_instance_id),
+        "deployment_instance_id": str(deployment_authority["deployment_instance_id"]),
         "lifecycle_fact_kind": "RunnerDeploymentLifecycleFact.v1",
-        "lifecycle_state": verified.command.lifecycle_state,
+        "lifecycle_state": "running",
         "lifecycle_outcome": str(outcome["outcome"]),
         "delivered": 1,
         "pending_after": len(await RunnerFactOutbox(args.database).pending()),
@@ -798,13 +1003,13 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         "puback_duplicate": publication.duplicate,
         "production_authority_issued": service_authority,
         "production_policy_issued": False,
-        "immutable_artifact_materialized": False,
+        "immutable_artifact_materialized": immutable_artifact_materialized,
+        "strategy_release_id": str(deployment_authority["strategy_release_id"]),
+        "command_subject": str(deployment_authority["command_subject"]),
         "transport_operation_id": transport_operation_id,
         "transport_credential_generation": active_transport_credential.credential_generation,
         "transport_rotation_operation_id": (
-            str(active_transport_credential.operation_id)
-            if transport_rotation_completed
-            else None
+            str(active_transport_credential.operation_id) if transport_rotation_completed else None
         ),
         "encrypted_machine_vault_used": encrypted_machine_vault_used,
         "encrypted_transport_vault_used": encrypted_transport_vault_used,
@@ -828,7 +1033,10 @@ def main() -> int:
     parser.add_argument("--machine-credential", type=Path)
     parser.add_argument("--crucible-url")
     parser.add_argument("--authorization-intent-id", type=UUID)
-    parser.add_argument("--command-input-file", type=Path)
+    parser.add_argument("--artifact-input-file", type=Path, required=True)
+    parser.add_argument("--artifact-material-dir", type=Path, required=True)
+    parser.add_argument("--deployment-authority-file", type=Path, required=True)
+    parser.add_argument("--runtime-authority-ready-file", type=Path)
     parser.add_argument("--rotation-intent-file", type=Path)
     parser.add_argument("--age-recipient")
     parser.add_argument("--operation-timeout-secs", type=float, default=30.0)
