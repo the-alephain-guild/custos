@@ -2,7 +2,7 @@
 
 > **Status**: ⏳ In progress — T2-T8a, clone-local development runtime and production StrategyRelease authority consumption pass; immutable OCI materialization/daemon composition, real PG/NATS/engine command-to-fact evidence, physical-mode policy/NATS receipts, runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
-> **Revised**: 2026-07-23 through direct instance-bound Crucible material resolution
+> **Revised**: 2026-07-26 through RunnerFact V1 Phase A exact-byte acceptance
 > **Project**: Custos
 > **Source**: Audit of pre-plan migration `324da6e`, PS Plan 53, and v1.team review
 > **For Claude**: Use `/forge:execute` to implement this plan.

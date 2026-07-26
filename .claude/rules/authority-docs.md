@@ -99,12 +99,15 @@ Runtime-log identities include the complete stream authority; lifecycle
 identities use stable command/apply identity and exclude observation time. The
 capability loader pins the closed projector map and unknown-kind disposition.
 The synthetic signing key is golden evidence only. There is no predecessor
-candidate or sequence-cutover fixture. Crucible Phase-A compatibility, runtime
-RC, real runtime round trip, engine/daemon, live/runtime and production remain
-false until the independent receipts named by Plan 19 arrive. The producer
-receipt is `READY_FOR_CRUCIBLE_CONSUMER_VALIDATION` and pins immutable asset commit
-`8c4454f35c5189063bad1516d77e260f034d3da7`; this is candidate availability,
-not a Crucible compatibility or runtime-readiness claim.
+candidate or sequence-cutover fixture. Phase A exact-byte compatibility is
+complete: producer asset commit
+`7d8f3d3e1c1ba71bbc9e382a078f4a71cbe67094`, Crucible consumer code
+`09a5a4b7843af2068f0bc4331a8062466a38f2ba` and Crucible receipt
+`c1efcf6a9f82eed08b7931f1c7e8b02ba1020138` form the acyclic handoff,
+backfilled by Custos `2adfc27`. The producer receipt is
+`PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN`. Runtime RC, real runtime round trip,
+engine/daemon, live/runtime and production remain false until the independent
+receipts named by Plan 19 arrive.
 
 The current contract implementation is
 `packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py`.
