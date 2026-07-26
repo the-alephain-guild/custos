@@ -225,6 +225,69 @@ def _signed_runner_command() -> tuple[str, bytes]:
     return subject, json.dumps(envelope, separators=(",", ":")).encode("utf-8")
 
 
+def _signed_runner_policy() -> tuple[str, bytes, dict[str, Any]]:
+    now = datetime.now(UTC).replace(microsecond=0)
+    policy_id = UUID("20000000-0000-4000-8000-000000000001")
+    body: dict[str, Any] = {
+        "schema_version": 1,
+        "authority_coordinate": "crucible.runner-aggregate-cap-policy.v1",
+        "policy_id": str(policy_id),
+        "tenant_id": _TENANT,
+        "runner_id": str(_RUNNER),
+        "trading_mode": _MODE,
+        "revision": 1,
+        "settlement_currency": "USDT",
+        "max_order_notional": "25000",
+        "max_total_notional": "1000000",
+        "exposure_model": "filled_plus_active_reservations",
+        "breach_action": "freeze_risk_increasing",
+        "risk_reducing_orders": "always_permitted",
+        "effective_at": (now - timedelta(minutes=1)).isoformat().replace("+00:00", "Z"),
+        "expires_at": (now + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        "status": "active",
+        "previous": None,
+    }
+    canonical_body = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    payload = {**body, "policy_digest": hashlib.sha256(canonical_body).hexdigest()}
+    event = {
+        "schema_version": 1,
+        "event_id": "30000000-0000-4000-8000-000000000001",
+        "tenant_id": _TENANT,
+        "event_plane": {"kind": "mode", "trading_mode": _MODE},
+        "bounded_context": "risk",
+        "aggregate_type": "runner_aggregate_cap_policy",
+        "aggregate_id": str(policy_id),
+        "aggregate_version": 1,
+        "event_type": "RunnerAggregateCapPolicyV1",
+        "payload": payload,
+        "correlation_id": "30000000-0000-4000-8000-000000000002",
+        "actor_assertion_jti": "30000000-0000-4000-8000-000000000003",
+        "occurred_at": now.isoformat().replace("+00:00", "Z"),
+    }
+    event_bytes = json.dumps(event, separators=(",", ":")).encode()
+    subject = f"crucible.runner.policy.v1.{_TENANT}.{_RUNNER}.{_MODE}"
+    subject_bytes = subject.encode()
+    framed = b"".join(
+        (
+            b"CRUCIBLE-DOMAIN-EVENT-V1\0",
+            len(subject_bytes).to_bytes(4, "big"),
+            subject_bytes,
+            len(event_bytes).to_bytes(8, "big"),
+            event_bytes,
+        )
+    )
+    private_key = Ed25519PrivateKey.from_private_bytes(_COMMAND_PRIVATE_KEY_BYTES)
+    envelope = {
+        "schema_version": 1,
+        "signature_profile": "crucible-domain-event-v1-exact-bytes",
+        "event_encoding": "application/json;base64url",
+        "event_bytes": _b64url(event_bytes),
+        "signature_key_id": _COMMAND_KEY_ID,
+        "signature": _b64url(private_key.sign(framed)),
+    }
+    return subject, json.dumps(envelope, separators=(",", ":")).encode(), payload
+
+
 def _transport_credential(
     *,
     user_seed: bytes,
@@ -691,6 +754,8 @@ async def _exercise_revocation(
                 "authenticated command consumer did not bind its durable: "
                 f"{stderr.decode() or stdout.decode()}"
             )
+        policy_subject, signed_policy, policy_payload = _signed_runner_policy()
+        policy_puback = await jetstream.publish(policy_subject, signed_policy)
         command_subject, signed_command = _signed_runner_command()
         command_puback = await jetstream.publish(command_subject, signed_command)
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30)
@@ -708,12 +773,19 @@ async def _exercise_revocation(
         assert publication["lifecycle_state"] == "running"
         assert publication["lifecycle_outcome"] == "applied"
         assert publication["daemon_launched"] is True
+        assert publication["authenticated_policy_consumed"] is True
+        assert publication["policy_id"] == policy_payload["policy_id"]
+        assert publication["policy_revision"] == policy_payload["revision"]
+        assert publication["policy_digest"] == policy_payload["policy_digest"]
+        assert publication["policy_status"] == policy_payload["status"]
         assert publication["durable_puback_receipt"] is True
         assert publication["broker_stream"] == _FACT_STREAM
         assert publication["broker_sequence"] > 0
         assert publication["puback_duplicate"] is False
         assert publication["production_authority_issued"] is False
+        assert publication["production_policy_issued"] is False
         assert publication["immutable_artifact_materialized"] is False
+        assert policy_puback.seq < command_puback.seq
 
         control_consumer = await jetstream.consumer_info(
             _CONTROL_STREAM,

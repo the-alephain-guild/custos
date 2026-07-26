@@ -491,6 +491,18 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
 
     command_acked = outcome["durable_disposition"] == "ack"
     engine_ready = outcome["observed_status"] == "ready"
+    reopened_state = RunnerStateStore(
+        outbox=RunnerFactOutbox(args.database),
+        identity=identity,
+        tenant_id=TENANT_ID,
+        runner_id=RUNNER_ID,
+        authority_resolver=lambda _verified: capability,
+    )
+    effective_policy = await reopened_state.load_effective_runner_safety_policy(
+        "sandbox",
+        now=datetime.now(UTC),
+    )
+    policy_document = effective_policy.policy.model_dump(mode="json")
     return {
         "batch_id": str(publication.batch_id),
         "subject": publication.subject,
@@ -505,11 +517,17 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         "delivered": 1,
         "pending_after": len(await RunnerFactOutbox(args.database).pending()),
         "daemon_launched": True,
+        "authenticated_policy_consumed": True,
+        "policy_id": policy_document["policy_id"],
+        "policy_revision": policy_document["revision"],
+        "policy_digest": policy_document["policy_digest"],
+        "policy_status": policy_document["status"],
         "durable_puback_receipt": True,
         "broker_stream": publication.broker_stream,
         "broker_sequence": publication.broker_sequence,
         "puback_duplicate": publication.duplicate,
         "production_authority_issued": False,
+        "production_policy_issued": False,
         "immutable_artifact_materialized": False,
     }
 
