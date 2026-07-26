@@ -16,7 +16,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from custos.artifacts.runtime import ArtifactRuntimeCapabilityV1
 from custos.cli._daemon import _runner_fact_authority
+from custos.contracts.crucible_runner_safety_policy import (
+    CrucibleRunnerSafetyPolicyAuthenticator,
+)
 from custos.core.engine_lifecycle import EngineLifecycleConfig, EngineLifecycleSupervisor
+from custos.core.nats_client import CrucibleNatsClient
 from custos.core.nats_transport import (
     RunnerNatsTransportConnectionProfile,
     RunnerNatsTransportCredential,
@@ -28,6 +32,7 @@ from custos.core.runner_command_intake import (
     VerifiedRunnerCommand,
 )
 from custos.core.runner_command_runtime import RunnerCommandRuntimeCoordinator
+from custos.core.runner_control_consumer import RunnerControlConsumerV1
 from custos.core.runner_fact import (
     RunnerCapabilityReceipt,
     RunnerCapabilityScopeBinding,
@@ -49,81 +54,35 @@ COMMAND_KEY_ID = "fixture-domain-key-v1"
 PRIVATE_KEY_BYTES = bytes(range(1, 33))
 
 
-class _AcceptanceDelivery:
-    delivered_count = 1
-    delivery_id = "authenticated-command-lifecycle-acceptance"
+class _OneMessageSubscription:
+    def __init__(self, subscription: Any) -> None:
+        self._subscription = subscription
+        self.message: Any | None = None
+        self._complete = False
 
-    def __init__(self, subject: str, data: bytes) -> None:
-        self.subject = subject
-        self.data = data
-        self.events: list[str] = []
+    @property
+    def messages(self) -> _OneMessageSubscription:
+        return self
 
-    async def ack(self) -> None:
-        self.events.append("ack")
+    def __aiter__(self) -> _OneMessageSubscription:
+        return self
 
-    async def nak(self, delay: float | None = None) -> None:
-        self.events.append(f"nak:{delay}")
-
-    async def term(self) -> None:
-        self.events.append("term")
-
-    async def in_progress(self) -> None:
-        self.events.append("in_progress")
-
-
-class _AcceptanceReleaseResolver:
-    async def resolve(self, verified: object) -> object:
-        del verified
-        return SimpleNamespace(
-            release_authority=object(),
-            release_statement_bytes=b"acceptance-release-statement",
-            detached_bundle_path=ROOT / "pyproject.toml",
-            member_paths={"wheel": ROOT / "pyproject.toml"},
-            verified_at=object(),
-        )
+    async def __anext__(self) -> Any:
+        if self._complete:
+            raise StopAsyncIteration
+        self._complete = True
+        self.message = await self._subscription.next_msg(timeout=10.0)
+        return self.message
 
 
-class _AcceptanceArtifactRuntime:
-    def __init__(self, state: RunnerStateStore) -> None:
-        self._state = state
+class _ObservedCommandRuntime:
+    def __init__(self, runtime: RunnerCommandRuntimeCoordinator) -> None:
+        self._runtime = runtime
+        self.result: Any | None = None
 
-    async def prepare(self, **kwargs: object) -> object:
-        durable = await self._state.load_durable_desired_command(
-            UUID(str(kwargs["deployment_instance_id"]))
-        )
-        return SimpleNamespace(
-            verified=VerifiedRunnerCommand(
-                command=durable.command,
-                command_fingerprint=durable.command_fingerprint,
-                verification_receipt=durable.verification_receipt,
-            ),
-            receipt=SimpleNamespace(
-                runner_local_policy_decision=SimpleNamespace(
-                    policy_id="authenticated-command-lifecycle-acceptance"
-                )
-            )
-        )
-
-    async def activate(self, prepared: object, *, loader: object) -> object:
-        del loader
-        verified = prepared.verified
-        activation_id = "authenticated-command-lifecycle-activation"
-        await self._state.record_artifact_activation(
-            verified=verified,
-            activation_id=activation_id,
-            artifact_identity_digest=verified.command.artifact_identity_digest,
-            artifact_authority_digest=verified.command.artifact_source.snapshot.snapshot_digest,
-        )
-        return SimpleNamespace(
-            activation_id=activation_id,
-            strategy=object(),
-        )
-
-
-class _AcceptanceCredentialResolver:
-    async def resolve(self, verified: object, credential_scope: object) -> dict[str, object]:
-        del verified, credential_scope
-        return {}
+    async def process(self, delivery: Any) -> Any:
+        self.result = await self._runtime.process(delivery)
+        return self.result
 
 
 def _recursively_sorted(value: object) -> object:
@@ -134,7 +93,7 @@ def _recursively_sorted(value: object) -> object:
     return value
 
 
-def _signed_command() -> tuple[_AcceptanceDelivery, Ed25519PrivateKey]:
+def _fixture_signed_command() -> tuple[str, bytes]:
     fixture = json.loads(COMMAND_FIXTURE.read_text(encoding="utf-8"))
     case = next(
         value for value in fixture["cases"] if value["name"] == "deployment_spec_ready_for_runner"
@@ -170,13 +129,62 @@ def _signed_command() -> tuple[_AcceptanceDelivery, Ed25519PrivateKey]:
         "signature_key_id": COMMAND_KEY_ID,
         "signature": base64url(private_key.sign(framed)),
     }
-    return (
-        _AcceptanceDelivery(
-            subject,
-            json.dumps(envelope, separators=(",", ":")).encode("utf-8"),
-        ),
-        private_key,
-    )
+    return subject, json.dumps(envelope, separators=(",", ":")).encode("utf-8")
+
+
+class _AcceptanceReleaseResolver:
+    async def resolve(self, verified: object) -> object:
+        del verified
+        return SimpleNamespace(
+            release_authority=object(),
+            release_statement_bytes=b"acceptance-release-statement",
+            detached_bundle_path=ROOT / "pyproject.toml",
+            member_paths={"wheel": ROOT / "pyproject.toml"},
+            verified_at=object(),
+        )
+
+
+class _AcceptanceArtifactRuntime:
+    def __init__(self, state: RunnerStateStore) -> None:
+        self._state = state
+
+    async def prepare(self, **kwargs: object) -> object:
+        durable = await self._state.load_durable_desired_command(
+            UUID(str(kwargs["deployment_instance_id"]))
+        )
+        return SimpleNamespace(
+            verified=VerifiedRunnerCommand(
+                command=durable.command,
+                command_fingerprint=durable.command_fingerprint,
+                verification_receipt=durable.verification_receipt,
+            ),
+            receipt=SimpleNamespace(
+                runner_local_policy_decision=SimpleNamespace(
+                    policy_id="authenticated-command-lifecycle-acceptance"
+                )
+            ),
+        )
+
+    async def activate(self, prepared: object, *, loader: object) -> object:
+        del loader
+        verified = prepared.verified
+        activation_id = "authenticated-command-lifecycle-activation"
+        await self._state.record_artifact_activation(
+            verified=verified,
+            activation_id=activation_id,
+            artifact_identity_digest=verified.command.artifact_identity_digest,
+            artifact_authority_digest=verified.command.artifact_source.snapshot.snapshot_digest,
+        )
+        return SimpleNamespace(
+            activation_id=activation_id,
+            strategy=object(),
+        )
+
+
+class _AcceptanceCredentialResolver:
+    async def resolve(self, verified: object, credential_scope: object) -> dict[str, object]:
+        del verified, credential_scope
+        return {}
 
 
 def _capability(command: Any, identity: RunnerFactIdentity) -> RunnerCapabilityReceipt:
@@ -232,7 +240,8 @@ def _transport_profile(args: argparse.Namespace) -> RunnerNatsTransportConnectio
 
 
 async def _run(args: argparse.Namespace) -> dict[str, object]:
-    delivery, command_private_key = _signed_command()
+    command_private_key = Ed25519PrivateKey.from_private_bytes(PRIVATE_KEY_BYTES)
+    expected_subject, expected_envelope = _fixture_signed_command()
     identity = RunnerFactIdentity.from_private_bytes(PRIVATE_KEY_BYTES, RUNNER_FACT_KEY_ID)
     outbox = RunnerFactOutbox(args.database)
     authenticator = CrucibleRunnerCommandAuthenticator(
@@ -242,8 +251,8 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         signature_keys={COMMAND_KEY_ID: command_private_key.public_key()},
     )
     verified = authenticator.verify(
-        subject=delivery.subject,
-        signed_envelope_bytes=delivery.data,
+        subject=expected_subject,
+        signed_envelope_bytes=expected_envelope,
     )
     capability = _capability(verified.command, identity)
     state = RunnerStateStore(
@@ -254,31 +263,65 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         authority_resolver=lambda accepted: _runner_fact_authority(capability, accepted),
     )
     delivery_policy = CommandDeliveryPolicy(in_progress_interval_seconds=0.05)
-    runtime = RunnerCommandRuntimeCoordinator(
-        intake=CommandIntakeCoordinator(
-            authenticator=authenticator,
+    runtime = _ObservedCommandRuntime(
+        RunnerCommandRuntimeCoordinator(
+            intake=CommandIntakeCoordinator(
+                authenticator=authenticator,
+                durability=state,
+                policy=delivery_policy,
+            ),
             durability=state,
-            policy=delivery_policy,
-        ),
-        durability=state,
-        release_resolver=_AcceptanceReleaseResolver(),
-        artifact_runtime=_AcceptanceArtifactRuntime(state),
-        entry_point_loader=object(),
-        credential_resolver=_AcceptanceCredentialResolver(),
-        engine_lifecycle=EngineLifecycleSupervisor(
-            engine=SandboxSimulationHost(),
-            state_store=state,
-            artifact_capability=ArtifactRuntimeCapabilityV1.production_ready(),
-            config=EngineLifecycleConfig(live_execution_enabled=False),
-        ),
-        delivery_policy=delivery_policy,
+            release_resolver=_AcceptanceReleaseResolver(),
+            artifact_runtime=_AcceptanceArtifactRuntime(state),
+            entry_point_loader=object(),
+            credential_resolver=_AcceptanceCredentialResolver(),
+            engine_lifecycle=EngineLifecycleSupervisor(
+                engine=SandboxSimulationHost(),
+                state_store=state,
+                artifact_capability=ArtifactRuntimeCapabilityV1.production_ready(),
+                config=EngineLifecycleConfig(live_execution_enabled=False),
+            ),
+            delivery_policy=delivery_policy,
+        )
     )
-    result = await runtime.process(delivery)
-    if delivery.events != ["ack"] or result.ready_receipt is None:
+    profile = _transport_profile(args)
+    control_client = CrucibleNatsClient(
+        connection_profile=profile,
+        tenant_id=TENANT_ID,
+        runner_id=str(RUNNER_ID),
+        machine_credential=profile.credential,
+    )
+    await control_client.connect()
+    subscription = await control_client.subscribe_control()
+    one_message = _OneMessageSubscription(subscription)
+    args.ready_file.write_text("ready\n", encoding="ascii")
+    try:
+        await RunnerControlConsumerV1(
+            command_runtime=runtime,  # type: ignore[arg-type]
+            policy_authenticator=CrucibleRunnerSafetyPolicyAuthenticator(
+                expected_tenant_id=TENANT_ID,
+                expected_runner_id=RUNNER_ID,
+                allowed_trading_modes=frozenset({"sandbox"}),
+                signature_keys={COMMAND_KEY_ID: command_private_key.public_key()},
+            ),
+            state_store=state,
+        ).run(
+            client=control_client,
+            subscription=one_message,
+            stop=asyncio.Event(),
+        )
+    finally:
+        await control_client.close()
+    result = runtime.result
+    command_acked = bool(
+        one_message.message is not None and getattr(one_message.message, "_ackd", False)
+    )
+    if result is None or not command_acked or result.ready_receipt is None:
         raise RuntimeError(
             "signed command did not reach durable engine readiness before ACK: "
-            f"status={result.status.value}, reason={result.reason_code}, "
-            f"delivery_events={delivery.events}"
+            f"status={getattr(getattr(result, 'status', None), 'value', 'missing')}, "
+            f"reason={getattr(result, 'reason_code', 'missing')}, "
+            f"broker_acknowledged={command_acked}"
         )
     pending = await outbox.pending()
     if len(pending) != 1:
@@ -306,7 +349,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         "batch_id": str(batch.batch_id),
         "subject": batch.subject,
         "payload_sha256": hashlib.sha256(batch.payload).hexdigest(),
-        "command_acked": delivery.events == ["ack"],
+        "command_acked": command_acked,
         "runtime_status": result.status.value,
         "engine_ready": result.ready_receipt is not None,
         "deployment_instance_id": str(verified.command.deployment_instance_id),
@@ -326,6 +369,7 @@ def main() -> int:
     parser.add_argument("--ca-path", type=Path, required=True)
     parser.add_argument("--server-name", required=True)
     parser.add_argument("--pinned-issuer-public-key", required=True)
+    parser.add_argument("--ready-file", type=Path, required=True)
     args = parser.parse_args()
     print(json.dumps(asyncio.run(_run(args)), sort_keys=True, separators=(",", ":")))
     return 0

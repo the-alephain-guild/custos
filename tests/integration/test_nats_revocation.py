@@ -20,6 +20,8 @@ from uuid import UUID, uuid4
 import nats
 import nkeys  # type: ignore[import-untyped]
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from nats.js.api import AckPolicy, ConsumerConfig, DeliverPolicy, ReplayPolicy
 
 from custos.core.nats_transport import (
     RunnerNatsTransportConnectionProfile,
@@ -35,6 +37,12 @@ _RUNNER = UUID("10000000-0000-4000-8000-000000000001")
 _MODE = "sandbox"
 _DOMAIN = "sim"
 _FACT_STREAM = "CRUCIBLE_RUNNER_FACT_SIM_V1"
+_CONTROL_STREAM = "CRUCIBLE_RUNNER_CONTROL_SIM_V1"
+_COMMAND_FIXTURE = (
+    Path(__file__).resolve().parents[2] / "docs/authority/runner-deployment-command-golden-v1.json"
+)
+_COMMAND_PRIVATE_KEY_BYTES = bytes(range(1, 33))
+_COMMAND_KEY_ID = "fixture-domain-key-v1"
 
 
 def _require_local_gate() -> None:
@@ -167,6 +175,53 @@ def _durable_config() -> dict[str, Any]:
 def _sha256_document(value: dict[str, Any]) -> str:
     encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _recursively_sorted(value: object) -> object:
+    if isinstance(value, dict):
+        return {key: _recursively_sorted(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [_recursively_sorted(item) for item in value]
+    return value
+
+
+def _signed_runner_command() -> tuple[str, bytes]:
+    fixture = json.loads(_COMMAND_FIXTURE.read_text(encoding="utf-8"))
+    case = next(
+        value for value in fixture["cases"] if value["name"] == "deployment_spec_ready_for_runner"
+    )
+    event = dict(case["event_document"])
+    event["payload"] = _recursively_sorted(event["payload"])
+    event_bytes = json.dumps(
+        event,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    subject = str(case["subject"])
+    subject_bytes = subject.encode("utf-8")
+    framed = b"".join(
+        (
+            b"CRUCIBLE-DOMAIN-EVENT-V1\0",
+            len(subject_bytes).to_bytes(4, "big"),
+            subject_bytes,
+            len(event_bytes).to_bytes(8, "big"),
+            event_bytes,
+        )
+    )
+    private_key = Ed25519PrivateKey.from_private_bytes(_COMMAND_PRIVATE_KEY_BYTES)
+
+    def base64url(value: bytes) -> str:
+        return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+    envelope = {
+        "schema_version": 1,
+        "signature_profile": "crucible-domain-event-v1-exact-bytes",
+        "event_encoding": "application/json;base64url",
+        "event_bytes": base64url(event_bytes),
+        "signature_key_id": _COMMAND_KEY_ID,
+        "signature": base64url(private_key.sign(framed)),
+    }
+    return subject, json.dumps(envelope, separators=(",", ":")).encode("utf-8")
 
 
 def _transport_credential(
@@ -384,14 +439,24 @@ async def _connect_admin(
             for index in range(len(seed)):
                 seed[index] = 0
 
-    return await nats.connect(
-        servers=[nats_url],
-        name="custos-runner-fact-provisioner",
-        tls=context,
-        tls_hostname="localhost",
-        user_jwt_cb=user_jwt_cb,
-        signature_cb=signature_cb,
-    )
+    last_error: Exception | None = None
+    for _ in range(5):
+        try:
+            return await nats.connect(
+                servers=[nats_url],
+                name="custos-runner-fact-provisioner",
+                tls=context,
+                tls_hostname="localhost",
+                user_jwt_cb=user_jwt_cb,
+                signature_cb=signature_cb,
+                allow_reconnect=False,
+                max_reconnect_attempts=0,
+                connect_timeout=1,
+            )
+        except Exception as error:  # noqa: BLE001 - bounded local broker readiness retry
+            last_error = error
+            await asyncio.sleep(0.1)
+    raise AssertionError("authenticated NATS admin connection did not become ready") from last_error
 
 
 def _wait_ready(container: str) -> None:
@@ -427,6 +492,23 @@ async def _exercise_revocation(
     )
     jetstream = admin.jetstream()
     await jetstream.add_stream(name=_FACT_STREAM, subjects=[subject])
+    durable = _durable_config()
+    await jetstream.add_stream(
+        name=_CONTROL_STREAM,
+        subjects=list(durable["filter_subjects"]),
+    )
+    await jetstream.add_consumer(
+        stream=_CONTROL_STREAM,
+        config=ConsumerConfig(
+            durable_name=str(durable["durable_name"]),
+            deliver_subject=str(durable["delivery_subject"]),
+            filter_subjects=list(durable["filter_subjects"]),
+            deliver_policy=DeliverPolicy.ALL,
+            ack_policy=AckPolicy.EXPLICIT,
+            replay_policy=ReplayPolicy.INSTANT,
+            max_ack_pending=1,
+        ),
+    )
 
     async def record_connection_error(error: Exception) -> None:
         connection_errors.append(f"{type(error).__name__}: {error}")
@@ -492,6 +574,7 @@ async def _exercise_revocation(
             )
         )
         credential_path.chmod(0o600)
+        ready_path = database.with_suffix(".control-ready")
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             str(Path(__file__).with_name("runner_command_lifecycle_process.py")),
@@ -507,10 +590,31 @@ async def _exercise_revocation(
             "localhost",
             "--pinned-issuer-public-key",
             replacement_credential.issuer_public_key,
+            "--ready-file",
+            str(ready_path),
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
+        for _ in range(100):
+            if ready_path.is_file():
+                break
+            if process.returncode is not None:
+                stdout, stderr = await process.communicate()
+                raise AssertionError(
+                    "authenticated command consumer exited before durable readiness: "
+                    f"{stderr.decode() or stdout.decode()}"
+                )
+            await asyncio.sleep(0.05)
+        else:
+            process.terminate()
+            stdout, stderr = await process.communicate()
+            raise AssertionError(
+                "authenticated command consumer did not bind its durable: "
+                f"{stderr.decode() or stdout.decode()}"
+            )
+        command_subject, signed_command = _signed_runner_command()
+        command_puback = await jetstream.publish(command_subject, signed_command)
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
         assert process.returncode == 0, stderr.decode()
         output_lines = [line for line in stdout.decode().splitlines() if line.strip()]
         assert output_lines
@@ -524,6 +628,14 @@ async def _exercise_revocation(
         assert publication["lifecycle_fact_kind"] == "RunnerDeploymentLifecycleFact.v1"
         assert publication["lifecycle_state"] == "running"
         assert publication["lifecycle_outcome"] == "applied"
+
+        control_consumer = await jetstream.consumer_info(
+            _CONTROL_STREAM,
+            str(durable["durable_name"]),
+        )
+        assert control_consumer.num_ack_pending == 0
+        assert control_consumer.ack_floor.stream_seq == command_puback.seq
+        assert control_consumer.delivered.stream_seq == command_puback.seq
 
         subscription = await jetstream.pull_subscribe(
             subject,
