@@ -377,6 +377,12 @@
       "sha256": "a1ce1b59d11f94e1c44c38efaf651f81dfad3f96694cd0ebf90811b16c4ae873",
       "size_bytes": 6852
     },
+    "local_publication_receipt": {
+      "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
+      "sha256": "b90118fe46b852c3e7c335c72141e669e57fa7e5fd72030983dbb873146db22b",
+      "size_bytes": 1811,
+      "status": "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN"
+    },
     "signing_preimage_golden": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
     "signing_preimage_complete": true,
     "capability_projector_contract_exact_pin": true,

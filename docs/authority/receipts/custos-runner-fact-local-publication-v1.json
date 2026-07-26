@@ -1,0 +1,49 @@
+{
+  "receipt_schema_version": 1,
+  "canonical_name": "Custos RunnerFact V1 development-local publication acceptance",
+  "status": "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN",
+  "authority_coordinate": "custos.runner-fact.v1",
+  "source": {
+    "repository": "tesseract-trading/custos",
+    "code_commit": "de80a8a82cd0eb1c38bb36dbde312f5fff32f477",
+    "test": "tests/integration/test_runner_fact_publication.py",
+    "test_sha256": "ccc2dd46aa51f01820880cc43ae71396229a9a8475d7a2af65ceab8274f01a9b",
+    "test_size_bytes": 6179,
+    "command": "make verify-runner-fact-publication",
+    "verified_at": "2026-07-26",
+    "tests_passed": 1
+  },
+  "broker": {
+    "image": "nats:2.10-alpine",
+    "image_id": "sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9",
+    "real_nats_jetstream": true,
+    "loopback_only": true,
+    "authenticated": false
+  },
+  "evidence": {
+    "production_runner_fact_outbox_used": true,
+    "production_runner_fact_signer_used": true,
+    "production_jetstream_publisher_used": true,
+    "subject_scope_enforced": true,
+    "producer_puback_received": true,
+    "outbox_deleted_only_after_puback": true,
+    "nats_message_id_equals_batch_id": true,
+    "broker_message_count": 1,
+    "sqlite_reopen_pending_count": 0
+  },
+  "development_only": true,
+  "custos_daemon_launched": false,
+  "engine_command_applied": false,
+  "crucible_projection_observed": false,
+  "runtime_round_trip_ready": false,
+  "runtime_rc": false,
+  "live_ready": false,
+  "runtime_ready": false,
+  "production_ready": false,
+  "open_blockers": [
+    "launched Custos command and engine application receipt",
+    "authenticated RunnerFact publication receipt",
+    "Crucible PostgreSQL projection from the same published batch",
+    "immutable Custos runtime RC receipt"
+  ]
+}

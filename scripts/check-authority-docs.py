@@ -1676,6 +1676,45 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     ):
         if receipt.get(field) is not False:
             errors.append(f"RunnerFact V1 producer receipt {field} must remain false")
+    local_publication_path = resolve(
+        "docs/authority/receipts/custos-runner-fact-local-publication-v1.json"
+    )
+    if not local_publication_path.is_file():
+        errors.append("RunnerFact V1 development-local publication receipt is missing")
+        return
+    local_publication = load_json(local_publication_path)
+    expected_source = {
+        "repository": "tesseract-trading/custos",
+        "code_commit": "de80a8a82cd0eb1c38bb36dbde312f5fff32f477",
+        "test": "tests/integration/test_runner_fact_publication.py",
+        "test_sha256": "ccc2dd46aa51f01820880cc43ae71396229a9a8475d7a2af65ceab8274f01a9b",
+        "test_size_bytes": 6179,
+        "command": "make verify-runner-fact-publication",
+        "verified_at": "2026-07-26",
+        "tests_passed": 1,
+    }
+    if (
+        local_publication.get("status")
+        != "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN"
+        or local_publication.get("source") != expected_source
+        or local_publication.get("authority_coordinate") != "custos.runner-fact.v1"
+        or local_publication.get("development_only") is not True
+    ):
+        errors.append("RunnerFact V1 development-local publication authority differs")
+    for field in (
+        "custos_daemon_launched",
+        "engine_command_applied",
+        "crucible_projection_observed",
+        "runtime_round_trip_ready",
+        "runtime_rc",
+        "live_ready",
+        "runtime_ready",
+        "production_ready",
+    ):
+        if local_publication.get(field) is not False:
+            errors.append(
+                f"RunnerFact V1 development-local publication {field} must remain false"
+            )
 
 
 def verify_runner_fact_authority(errors: list[str]) -> None:
@@ -1709,6 +1748,13 @@ def verify_runner_fact_authority(errors: list[str]) -> None:
         "size_bytes": len(consumer_payload),
     }:
         errors.append("ecosystem RunnerFact V1 consumer receipt binding differs")
+    if state.get("local_publication_receipt") != {
+        "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
+        "sha256": "b90118fe46b852c3e7c335c72141e669e57fa7e5fd72030983dbb873146db22b",
+        "size_bytes": 1811,
+        "status": "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN",
+    }:
+        errors.append("ecosystem RunnerFact V1 local publication receipt binding differs")
 
 
 def main() -> int:

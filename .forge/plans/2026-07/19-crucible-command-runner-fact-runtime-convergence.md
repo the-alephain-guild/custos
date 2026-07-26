@@ -1,6 +1,6 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T8a, clone-local development runtime and production StrategyRelease authority consumption pass; immutable OCI materialization/daemon composition, real PG/NATS/engine command-to-fact evidence, physical-mode policy/NATS receipts, runtime RC and T9-T10 remain open
+> **Status**: ⏳ In progress — T2-T8a, clone-local development runtime, production StrategyRelease authority consumption and development-local real JetStream RunnerFact PubAck pass; immutable OCI materialization/daemon composition, launched engine-to-Crucible round-trip evidence, physical-mode policy/NATS receipts, runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-07-26 through RunnerFact V1 Phase A exact-byte acceptance
 > **Project**: Custos
@@ -1118,8 +1118,8 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | Engine lifecycle | local verified; production materialization blocked | 118-test T2-T8a gate passes; production authority contract is consumed at `4ad12b2`, while immutable OCI materialization, trust composition and launched activation remain open |
 | Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, NATS/PubAck and real daemon consumption pending |
 | Machine credential and NATS vault V1 | direct credential contract ready; NATS runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; control `0029`, durable replay receipt, JWT/ACL/durable readback and dual-domain broker evidence pending |
-| RunnerFact V1 | Phase A exact-byte accepted; runtime open | producer asset commit `7d8f3d3`, Crucible consumer code `e8a5f44` and receipt `3a93a06` are pinned; real runtime round trip and immutable runtime RC remain required |
-| Local sandbox runtime | focused code PASS; launched receipt open | instance-bound development material reaches the common runtime path; real NATS delivery/redelivery, engine launch and projected fact receipt remain required |
+| RunnerFact V1 | Phase A exact-byte plus local publisher accepted; runtime open | producer asset commit `cce7693`, Crucible consumer code `bba16f9` and receipt `a36b63a` are pinned; Custos `de80a8a` proves its production outbox/signer/publisher receives a real JetStream PubAck and clears SQLite only afterward. Authenticated launched round trip and immutable runtime RC remain required. |
+| Local sandbox runtime | real publisher PASS; launched engine receipt open | instance-bound development material reaches the common runtime path; local JetStream publication passes `1/1`, while real command redelivery, engine launch and same-batch Crucible projection remain required |
 | Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 real receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 
 The machine-readable boundary is pinned by
@@ -1169,8 +1169,10 @@ verifies the returned path under the operator-configured root.
 consumption is composed. Both branches converge on the same activation,
 command fingerprint, safety and RunnerFact path.
 
-This does not claim real transport readiness. Exact SIM/LIVE NATS, redelivery,
-restart, policy publication/readback and production engine evidence remain open.
+This does not claim production transport readiness. Development-local
+RunnerFact publication now passes against real JetStream; exact authenticated
+SIM/LIVE NATS, redelivery, command/engine launch, policy publication/readback
+and production engine evidence remain open.
 On 2026-07-23, the sandbox development-artifact and command-runtime focused gate
 passed `10/10`; that evidence covers only local artifact materialization through
 the common runtime path.
@@ -1198,7 +1200,16 @@ T15 clone-local completion evidence (2026-07-23):
 Validation boundary:
 
 - `make verify-base-clean` reached pytest collection but the existing base profile had removed `requests` and the Nautilus toolkit while those tests still imported both unconditionally. No transport test executed in that failed gate; this unrelated profile drift is not repaired in T15.
-- The current-session Docker-backed `make verify-nats-revocation` rerun was not authorized by the execution environment. The existing real-NATS receipt remains historical evidence; the launched cross-process round trip remains explicitly false.
+- The current-session Docker-backed `make verify-nats-revocation` gate passes
+  `1/1` against real TLS/User-JWT NATS and proves forced disconnect plus
+  old-generation reconnect denial.
+- `make verify-runner-fact-publication` passes `1/1` at Custos
+  `de80a8a82cd0eb1c38bb36dbde312f5fff32f477`: the production
+  RunnerFact outbox/signer/publisher receives a real JetStream PubAck, clears
+  the published SQLite row only afterward, preserves `Nats-Msg-Id=batch_id`
+  and reopens with no pending row. Its receipt is development-only and does not
+  claim daemon launch, engine application, authenticated publication or
+  Crucible projection.
 
 ## 2026-07-23 development command and material handoff
 

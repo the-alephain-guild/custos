@@ -239,6 +239,13 @@
       "path": "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json"
     },
     {
+      "role": "runner_fact_development_local_publication_receipt_v1",
+      "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
+      "development_only": true,
+      "runtime_ready": false,
+      "production_ready": false
+    },
+    {
       "role": "crucible_runner_command_consumer_asset_index_v1",
       "path": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
       "status": "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
