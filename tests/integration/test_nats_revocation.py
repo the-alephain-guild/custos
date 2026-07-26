@@ -494,7 +494,7 @@ async def _exercise_revocation(
         credential_path.chmod(0o600)
         process = await asyncio.create_subprocess_exec(
             sys.executable,
-            str(Path(__file__).with_name("runner_fact_publication_process.py")),
+            str(Path(__file__).with_name("runner_command_lifecycle_process.py")),
             "--nats-url",
             nats_url,
             "--database",
@@ -518,6 +518,12 @@ async def _exercise_revocation(
         assert publication["delivered"] == 1
         assert publication["pending_after"] == 0
         assert publication["subject"] == subject
+        assert publication["command_acked"] is True
+        assert publication["runtime_status"] == "applied_acked"
+        assert publication["engine_ready"] is True
+        assert publication["lifecycle_fact_kind"] == "RunnerDeploymentLifecycleFact.v1"
+        assert publication["lifecycle_state"] == "running"
+        assert publication["lifecycle_outcome"] == "applied"
 
         subscription = await jetstream.pull_subscribe(
             subject,
@@ -527,7 +533,11 @@ async def _exercise_revocation(
         messages = await subscription.fetch(1, timeout=2)
         assert len(messages) == 1
         message = messages[0]
-        assert json.loads(message.data)["batch_id"] == publication["batch_id"]
+        document = json.loads(message.data)
+        assert document["batch_id"] == publication["batch_id"]
+        assert document["deployment_instance_id"] == publication["deployment_instance_id"]
+        assert document["facts"][0]["kind"] == "RunnerDeploymentLifecycleFact.v1"
+        assert document["facts"][0]["outcome"] == "applied"
         assert message.headers is not None
         assert message.headers["Nats-Msg-Id"] == publication["batch_id"]
         await message.ack()
