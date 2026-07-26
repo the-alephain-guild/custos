@@ -27,6 +27,7 @@
     "transport_authority_client": "src/custos/core/runner_nats_authority.py",
     "command_consumer": "src/custos/core/nats_client.py",
     "runner_fact_publisher": "src/custos/core/runner_fact.py",
+    "authenticated_command_lifecycle_acceptance": "tests/integration/runner_command_lifecycle_process.py",
     "daemon_composition": "src/custos/cli/_daemon.py",
     "lifecycle_cli": "src/custos/cli/subcommands/nats_transport.py",
     "machine_http_client": "src/custos/core/machine_credential_vault.py"
@@ -82,6 +83,7 @@
     "production_durable_verified": false,
     "local_real_nats_revocation_gate": {
       "command": "make verify-nats-revocation",
+      "code_commit": "e4f23b6c7c6860dc44a39f6bd28c03e57852f3e5",
       "image": "nats:2.10-alpine",
       "image_id": "sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9",
       "status": "PASS",
@@ -91,7 +93,16 @@
       "launched_authenticated_publisher_process": true,
       "jetstream_puback_observed": true,
       "nats_msg_id_equals_batch_id": true,
-      "sqlite_outbox_empty_after_puback": true
+      "sqlite_outbox_empty_after_puback": true,
+      "signed_command_verified": true,
+      "durable_desired_state_written": true,
+      "artifact_activation_durable_before_apply": true,
+      "sandbox_engine_ready": true,
+      "applied_lifecycle_outbox_committed_before_command_ack": true,
+      "command_ack_observed": true,
+      "command_delivered_via_jetstream": false,
+      "immutable_artifact_materialization": false,
+      "crucible_projection_observed": false
     },
     "real_nats_integration_passed": false,
     "team_daemon_enabled": false,
@@ -108,10 +119,11 @@
     "authority_result": "PASS",
     "real_nats_receipt_reused": true,
     "launched_authenticated_publisher_process": true,
+    "launched_authenticated_command_lifecycle_process": true,
     "launched_cross-process_round_trip": false
   },
   "open_blockers": [
-    "the isolated Crucible signer, provisioner, server worker and Custos client have not produced one launched end-to-end runtime receipt",
+    "the isolated Crucible signer, provisioner, server worker and Custos client have not produced one launched control-delivery-to-projection runtime receipt",
     "production tenant runner mode durables have no deployed exact SIM/LIVE runtime readback receipt",
     "Custos has not consumed the signed CR99 runner policy in a launched runtime",
     "the immutable StrategyRelease has not been materialized and activated by a launched engine"

@@ -1390,6 +1390,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         "authority_client": resolve("src/custos/core/runner_nats_authority.py"),
         "consumer": resolve("src/custos/core/nats_client.py"),
         "publisher": resolve("src/custos/core/runner_fact.py"),
+        "acceptance": resolve("tests/integration/runner_command_lifecycle_process.py"),
         "daemon": resolve("src/custos/cli/_daemon.py"),
         "cli": resolve("src/custos/cli/subcommands/nats_transport.py"),
     }
@@ -1477,6 +1478,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     else:
         if truth.get("local_real_nats_revocation_gate") != {
             "command": "make verify-nats-revocation",
+            "code_commit": "e4f23b6c7c6860dc44a39f6bd28c03e57852f3e5",
             "image": "nats:2.10-alpine",
             "image_id": ("sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9"),
             "status": "PASS",
@@ -1487,6 +1489,15 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "jetstream_puback_observed": True,
             "nats_msg_id_equals_batch_id": True,
             "sqlite_outbox_empty_after_puback": True,
+            "signed_command_verified": True,
+            "durable_desired_state_written": True,
+            "artifact_activation_durable_before_apply": True,
+            "sandbox_engine_ready": True,
+            "applied_lifecycle_outbox_committed_before_command_ack": True,
+            "command_ack_observed": True,
+            "command_delivered_via_jetstream": False,
+            "immutable_artifact_materialization": False,
+            "crucible_projection_observed": False,
         }:
             errors.append("runner NATS transport local real-NATS revocation evidence differs")
         for key in (
@@ -1585,6 +1596,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("admin_preprovisioned_runner_fact_stream") is not True
         or snapshot.get("runner_stream_admin_authority") is not False
         or snapshot.get("launched_authenticated_publisher_process") is not True
+        or snapshot.get("local_signed_command_engine_puback_passed") is not True
+        or snapshot.get("command_delivered_via_jetstream") is not False
+        or snapshot.get("immutable_artifact_materialization_in_gate") is not False
+        or snapshot.get("crucible_projection_in_authenticated_gate") is not False
         or snapshot.get("sqlite_outbox_empty_after_puback") is not True
     ):
         errors.append("runner NATS transport ecosystem status differs")
