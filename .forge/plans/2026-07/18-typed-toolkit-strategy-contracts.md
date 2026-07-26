@@ -1,6 +1,6 @@
 # 18 - Publish typed toolkit and strategy execution contracts
 
-> **Status**: ⏳ In progress — sole V1 contract, sandbox development runtime and authenticated production StrategyRelease authority consumption are focused verified; immutable OCI materialization, daemon composition, PS publication and final cross-repo acceptance remain open
+> **Status**: ⏳ In progress — sole V1 contract, sandbox runtime, authenticated StrategyRelease consumption, immutable OCI materialization and production daemon composition are focused verified; real PS publication, same-event activation and final cross-repo acceptance remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-07-22 for the business-named first-production V1 release relock
 > **Project**: Custos
@@ -583,9 +583,11 @@ Execution checkpoint (2026-07-21):
 - The sandbox development-source branch and its command-runtime convergence are
   focused verified on 2026-07-23: `tests/test_development_artifact.py` plus
   `tests/test_runner_command_runtime.py` report `10 passed`.
-- Status remains `READY_V1_CODE_PENDING_STRATEGY_RELEASE_RESOLVER`: daemon,
-  runtime, live and production readiness remain false until the real resolver,
-  protected PS publication and Crucible acceptance are composed.
+- Status is `LOCAL_PRODUCTION_COMPOSITION_VERIFIED_IMMUTABLE_RELEASE_OPEN`:
+  the authenticated resolver, immutable materializer and production daemon
+  coordinator are composed, while runtime, live and production readiness remain
+  false until real PS publication, deployed Crucible acceptance and same-event
+  activation are proven.
 
 ### Task 6: Publish the immutable V1 toolkit RC
 
@@ -769,10 +771,10 @@ artifact root plus owner-provided digests, verifies the source and publication
 receipt bytes, quarantines invalid material and never accepts a path from an
 ARX/Crucible DTO. The snapshot is sandbox-only and non-promotable.
 
-The daemon production StrategyRelease path remains deliberately fail-closed
-until immutable materialization, local trust configuration and real protected
-publication receipts exist. No local artifact can satisfy T5e, live or
-production readiness.
+The daemon production StrategyRelease path is composed but remains deliberately
+fail-closed unless complete local trust configuration, real protected
+publication and deployed owner receipts are supplied. No local artifact can
+satisfy T5e, live or production readiness.
 
 ## 2026-07-23 production StrategyRelease authority checkpoint
 

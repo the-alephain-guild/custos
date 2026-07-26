@@ -1,9 +1,11 @@
 {
   "schema_version": 1,
   "receipt_id": "CUSTOS-STRATEGY-ARTIFACT-RUNTIME-V1",
-  "receipt_status": "READY_V1_CODE_PENDING_STRATEGY_RELEASE_RESOLVER",
+  "receipt_status": "LOCAL_PRODUCTION_COMPOSITION_VERIFIED_IMMUTABLE_RELEASE_OPEN",
   "repository": "tesseract-trading/custos",
-  "runtime_candidate_prepared": true,
+  "runtime_implementation_complete": true,
+  "clone_local_production_composition_verified": true,
+  "runtime_candidate_prepared": false,
   "engine_abi_requires_activated_artifact": true,
   "runner_command_runtime_coordinator_present": true,
   "durable_idempotent_activation_replay": true,
@@ -34,39 +36,52 @@
   "deep_frozen_execution_context": true,
   "python_import_after_verification": true,
   "required_runtime_dependencies": {
-    "strategy_release_resolver_composed": false,
+    "strategy_release_resolver_composed": true,
+    "immutable_oci_materializer_composed": true,
+    "daemon_command_coordinator_composed": true,
+    "clone_local_crucible_strategy_release_authority_verified": true,
     "real_ps_oci_publication_present": false,
-    "crucible_strategy_release_acceptance_present": false
+    "deployed_crucible_strategy_release_acceptance_present": false
   },
-  "capability_ready": false,
+  "local_composition_capability_ready": true,
+  "immutable_strategy_release_activated_by_production_daemon": false,
+  "runtime_candidate_ready": false,
   "engine_code_ready": true,
   "protected_execution_ready": false,
   "engine_ready": false,
-  "daemon_ready": false,
+  "daemon_composition_ready": true,
+  "daemon_process_activation_verified": false,
   "live_ready": false,
   "runtime_ready": false,
   "production_ready": false,
   "implementation_files": [
     "src/custos/artifacts/development_source.py",
+    "src/custos/artifacts/immutable_material.py",
     "src/custos/artifacts/release_resolver.py",
     "src/custos/artifacts/runtime.py",
+    "src/custos/cli/_daemon.py",
     "src/custos/core/credential_resolver.py",
     "src/custos/core/runner_command_runtime.py",
     "src/custos/core/runner_fact.py",
     "src/custos/engines/nautilus/runtime_loader.py"
   ],
   "focused_verification": {
-    "result": "not_run_after_canonical_v1_reset",
+    "result": "passed_clone_local_production_composition",
+    "implementation_commit": "d926ab0d0190de156047e140442e8271e95a70c3",
+    "authority_consumer_commit": "4ad12b2aba2e1865b2921434d9f053bc036fa75a",
     "tests": [
+      "tests/test_immutable_material.py",
+      "tests/test_release_resolver.py",
       "tests/test_artifact_runtime.py",
       "tests/test_runner_command_runtime.py",
+      "tests/cli/test_runner_safety_daemon_composition.py",
       "tests/engines/nautilus/test_runtime_entry_point_loader_v1.py"
     ]
   },
   "open_blockers": [
-    "authenticated Crucible StrategyRelease material resolver composition",
     "real Philosophers-Stone OCI publication and Crucible StrategyRelease acceptance",
-    "daemon composition of the authenticated resolver and command coordinator",
-    "signed runner safety policy and authenticated transport activation gates"
+    "same-event production daemon activation of the exact immutable StrategyRelease",
+    "locked runtime candidate plus Crucible Phase B and PS exact-candidate acceptance",
+    "deployed signed runner safety policy and authenticated transport receipts"
   ]
 }

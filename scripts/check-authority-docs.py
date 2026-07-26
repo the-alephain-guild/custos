@@ -923,7 +923,7 @@ def verify_runner_fact_durable_state(manifest: dict[str, Any], errors: list[str]
 
 
 def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None:
-    """Keep the sole V1 artifact runtime and its unresolved wiring truthful."""
+    """Keep the sole V1 artifact runtime and its remaining release gates truthful."""
 
     receipt_path = resolve(ARTIFACT_RUNTIME_RECEIPT_PATH)
     source_path = resolve(ARTIFACT_RUNTIME_SOURCE)
@@ -931,8 +931,35 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         errors.append("missing artifact runtime V1 artifact runtime authority assets")
         return
     receipt = load_json(receipt_path)
-    if receipt.get("receipt_status") != "READY_V1_CODE_PENDING_STRATEGY_RELEASE_RESOLVER":
+    expected_status = "LOCAL_PRODUCTION_COMPOSITION_VERIFIED_IMMUTABLE_RELEASE_OPEN"
+    if receipt.get("receipt_status") != expected_status:
         errors.append("artifact runtime receipt status differs")
+    expected_receipt = {
+        "runtime_implementation_complete": True,
+        "clone_local_production_composition_verified": True,
+        "runtime_candidate_prepared": False,
+        "local_composition_capability_ready": True,
+        "immutable_strategy_release_activated_by_production_daemon": False,
+        "runtime_candidate_ready": False,
+        "daemon_composition_ready": True,
+        "daemon_process_activation_verified": False,
+        "runtime_ready": False,
+        "production_ready": False,
+    }
+    for key, expected in expected_receipt.items():
+        if receipt.get(key) != expected:
+            errors.append(f"artifact runtime receipt {key} differs")
+    dependencies = receipt.get("required_runtime_dependencies")
+    expected_dependencies = {
+        "strategy_release_resolver_composed": True,
+        "immutable_oci_materializer_composed": True,
+        "daemon_command_coordinator_composed": True,
+        "clone_local_crucible_strategy_release_authority_verified": True,
+        "real_ps_oci_publication_present": False,
+        "deployed_crucible_strategy_release_acceptance_present": False,
+    }
+    if dependencies != expected_dependencies:
+        errors.append("artifact runtime dependency boundary differs")
     source = source_path.read_text(encoding="utf-8")
     required = (
         "class StrategyArtifactRuntimeV1",
@@ -950,6 +977,41 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
     )
     if any(marker in source for marker in forbidden):
         errors.append("artifact runtime runtime retains superseded command-owned artifact state")
+    materializer_source = resolve(
+        "src/custos/artifacts/immutable_material.py"
+    ).read_text(encoding="utf-8")
+    daemon_source = resolve("src/custos/cli/_daemon.py").read_text(encoding="utf-8")
+    coordinator_source = resolve(
+        "src/custos/core/runner_command_runtime.py"
+    ).read_text(encoding="utf-8")
+    required_composition = (
+        (
+            materializer_source,
+            "class RegistryStrategyReleaseMaterializerV1",
+        ),
+        (
+            daemon_source,
+            "resolver = CrucibleStrategyReleaseArtifactResolverV1(",
+        ),
+        (
+            daemon_source,
+            "runtime = StrategyArtifactRuntimeV1(",
+        ),
+        (
+            daemon_source,
+            "command_runtime = RunnerCommandRuntimeCoordinator(",
+        ),
+        (
+            coordinator_source,
+            "resolved = await self._release_resolver.resolve(verified)",
+        ),
+        (
+            coordinator_source,
+            "activated = await artifact_runtime.activate(",
+        ),
+    )
+    if any(marker not in content for content, marker in required_composition):
+        errors.append("artifact runtime production composition markers are incomplete")
 
     ecosystem_path = ROOT / "docs/authority/ecosystem-authority.json"
     runtime = load_json(ecosystem_path).get("strategy_artifact_runtime")
@@ -960,6 +1022,36 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         errors.append("strategy artifact runtime must declare canonical_v1_only=true")
     if runtime.get("compatibility_fallback_allowed") is not False:
         errors.append("strategy artifact runtime compatibility fallback must be disabled")
+    expected_runtime = {
+        "status": expected_status,
+        "strategy_release_resolver_composed": True,
+        "immutable_oci_materializer_composed": True,
+        "daemon_command_coordinator_composed": True,
+        "clone_local_crucible_strategy_release_authority_verified": True,
+        "real_ps_oci_publication_present": False,
+        "deployed_crucible_strategy_release_acceptance_present": False,
+        "local_composition_capability_ready": True,
+        "immutable_strategy_release_activated_by_production_daemon": False,
+        "runtime_candidate_ready": False,
+        "daemon_composition_ready": True,
+        "daemon_process_activation_verified": False,
+        "runtime_ready": False,
+        "production_ready": False,
+    }
+    for key, expected in expected_runtime.items():
+        if runtime.get(key) != expected:
+            errors.append(f"strategy artifact runtime {key} differs")
+    registrations = [
+        entry
+        for entry in manifest.get("authority_documents", [])
+        if entry.get("role") == "strategy_artifact_runtime_receipt_v1"
+    ]
+    if (
+        len(registrations) != 1
+        or registrations[0].get("path") != ARTIFACT_RUNTIME_RECEIPT_PATH
+        or registrations[0].get("receipt_status") != expected_status
+    ):
+        errors.append("strategy artifact runtime manifest registration differs")
 
 
 def verify_engine_lifecycle(manifest: dict[str, Any], errors: list[str]) -> None:
@@ -1052,7 +1144,14 @@ def verify_engine_lifecycle(manifest: dict[str, Any], errors: list[str]) -> None
     artifact_runtime = snapshot.get("strategy_artifact_runtime")
     if not isinstance(artifact_runtime, dict) or any(
         artifact_runtime.get(key) is not False
-        for key in ("capability_ready", "daemon_ready", "live_ready", "runtime_ready")
+        for key in (
+            "immutable_strategy_release_activated_by_production_daemon",
+            "runtime_candidate_ready",
+            "daemon_process_activation_verified",
+            "live_ready",
+            "runtime_ready",
+            "production_ready",
+        )
     ):
         errors.append("engine lifecycle must not promote the blocked artifact runtime")
 

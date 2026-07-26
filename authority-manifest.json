@@ -272,7 +272,7 @@
     {
       "role": "strategy_artifact_runtime_receipt_v1",
       "path": "docs/authority/receipts/custos-strategy-artifact-runtime-v1-receipt.json",
-      "receipt_status": "READY_V1_CODE_PENDING_STRATEGY_RELEASE_RESOLVER",
+      "receipt_status": "LOCAL_PRODUCTION_COMPOSITION_VERIFIED_IMMUTABLE_RELEASE_OPEN",
       "runtime_ready": false,
       "production_ready": false
     },
@@ -542,8 +542,11 @@
     {
       "path": "docs/authority/receipts/custos-strategy-artifact-runtime-v1-receipt.json",
       "must_contain": [
-        "READY_V1_CODE_PENDING_STRATEGY_RELEASE_RESOLVER",
+        "LOCAL_PRODUCTION_COMPOSITION_VERIFIED_IMMUTABLE_RELEASE_OPEN",
         "StrategyReleaseArtifactResolverV1",
+        "\"immutable_oci_materializer_composed\": true",
+        "\"daemon_command_coordinator_composed\": true",
+        "\"runtime_candidate_prepared\": false",
         "\"runtime_ready\": false",
         "\"production_ready\": false"
       ]
