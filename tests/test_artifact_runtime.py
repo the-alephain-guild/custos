@@ -3,14 +3,76 @@ from __future__ import annotations
 import hashlib
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from custos.artifacts.errors import ArtifactVerificationCode, ArtifactVerificationError
+from custos.artifacts.policy import SigstoreIdentityV1
 from custos.artifacts.runtime import (
     ArtifactRuntimeCapabilityV1,
+    _validate_sigstore_against_crucible,
     verify_execution_member_files,
 )
+from custos.artifacts.verification_types import (
+    DigestSubject,
+    SigstoreVerificationEvidence,
+    SigstoreVerificationRequest,
+)
+
+
+def test_crucible_sigstore_evidence_uses_exact_certificate_identity(
+    tmp_path: Path,
+) -> None:
+    issuer = "https://token.actions.githubusercontent.com"
+    workflow_identity = (
+        "https://github.com/alchymia-labs/philosophers-stone/"
+        ".github/workflows/publish-strategy-artifact.yml@refs/heads/main"
+    )
+    source_repository = "https://github.com/alchymia-labs/philosophers-stone"
+    trusted_root = b'{"trusted":"root"}'
+    bundle = tmp_path / "release.sigstore.json"
+    bundle.write_bytes(b"bundle")
+    bundle_digest = hashlib.sha256(bundle.read_bytes()).hexdigest()
+    identity = SigstoreIdentityV1(
+        issuer=issuer,
+        workflow_identity=workflow_identity,
+        source_repository=source_repository,
+    )
+    subjects = (DigestSubject(name="strategy-artifact", sha256="a" * 64),)
+    request = SigstoreVerificationRequest(
+        bundle_path=bundle,
+        trusted_root_bytes=trusted_root,
+        accepted_identities=(identity,),
+        required_subjects=subjects,
+        quarantine_parent=tmp_path,
+    )
+    evidence = SigstoreVerificationEvidence(
+        verifier_capability_id="offline-sigstore-v1",
+        bundle_sha256=bundle_digest,
+        trusted_root_sha256=hashlib.sha256(trusted_root).hexdigest(),
+        issuer=issuer,
+        workflow_identity=workflow_identity,
+        source_repository=source_repository,
+        verified_subjects=subjects,
+        transparency_log_verified=True,
+    )
+    authority = SimpleNamespace(
+        detached_attestation_ref={"bundle_sha256": bundle_digest},
+        crucible_artifact_evidence={
+            "signed_producer_claims": {
+                "workflow_identity": workflow_identity,
+                "producer_repository": source_repository,
+            },
+            "sigstore_proof": {
+                "bundle_sha256": bundle_digest,
+                "certificate_issuer": issuer,
+                "certificate_subject": workflow_identity,
+            },
+        },
+    )
+
+    _validate_sigstore_against_crucible(evidence, request, authority)
 
 
 def test_artifact_runtime_capability_has_one_v1_shape() -> None:

@@ -557,8 +557,8 @@ def _validate_sigstore_against_crucible(
             "Crucible evidence lacks signed producer claims or Sigstore proof",
         )
     expected_identity = (
-        proof.get("issuer"),
-        claims.get("workflow_identity"),
+        proof.get("certificate_issuer"),
+        proof.get("certificate_subject"),
         claims.get("producer_repository"),
     )
     actual_identity = (
@@ -573,6 +573,7 @@ def _validate_sigstore_against_crucible(
         or evidence.bundle_sha256 != authority.detached_attestation_ref.get("bundle_sha256")
         or evidence.bundle_sha256 != proof.get("bundle_sha256")
         or evidence.trusted_root_sha256 != hashlib.sha256(request.trusted_root_bytes).hexdigest()
+        or proof.get("certificate_subject") != claims.get("workflow_identity")
         or actual_identity != expected_identity
         or actual_identity
         not in {
