@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "receipt_id": "CUSTOS-STRATEGY-ARTIFACT-RUNTIME-V1",
-  "receipt_status": "LOCAL_PRODUCTION_COMPOSITION_VERIFIED_IMMUTABLE_RELEASE_OPEN",
+  "receipt_status": "LOCAL_IMMUTABLE_DAEMON_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN",
   "repository": "tesseract-trading/custos",
   "runtime_implementation_complete": true,
   "clone_local_production_composition_verified": true,
@@ -44,13 +44,14 @@
     "deployed_crucible_strategy_release_acceptance_present": false
   },
   "local_composition_capability_ready": true,
-  "immutable_strategy_release_activated_by_production_daemon": false,
+  "immutable_strategy_release_activated_by_production_daemon": true,
+  "local_immutable_engine_execution_verified": true,
   "runtime_candidate_ready": false,
   "engine_code_ready": true,
   "protected_execution_ready": false,
   "engine_ready": false,
   "daemon_composition_ready": true,
-  "daemon_process_activation_verified": false,
+  "daemon_process_activation_verified": true,
   "live_ready": false,
   "runtime_ready": false,
   "production_ready": false,
@@ -78,10 +79,24 @@
       "tests/engines/nautilus/test_runtime_entry_point_loader_v1.py"
     ]
   },
+  "joint_full_daemon_verification": {
+    "command": "make -C <crucible-rust> verify-runner-full-daemon-local",
+    "result": "1 passed",
+    "duration_seconds": 89.97,
+    "crucible_commit": "b696b8a2c31324a9acf34852bc85364cabe002ec",
+    "custos_commit": "d6ba1bf40818906f81f85e59ef819af25fdfb207",
+    "real_postgresql_strategy_release": true,
+    "exact_artifact_ref_bom_statement_evidence_snapshot_verified": true,
+    "immutable_artifact_materialized": true,
+    "sandbox_engine_applied": true,
+    "command_ack_after_lifecycle_commit": true,
+    "crash_before_broker_ack_recovered": true,
+    "runner_fact_puback": true
+  },
   "open_blockers": [
-    "real Philosophers-Stone OCI publication and Crucible StrategyRelease acceptance",
-    "same-event production daemon activation of the exact immutable StrategyRelease",
+    "real Philosophers-Stone exact-candidate OCI publication, Sigstore evidence and exact-byte pins",
     "locked runtime candidate plus Crucible Phase B and PS exact-candidate acceptance",
-    "deployed signed runner safety policy and authenticated transport receipts"
+    "deployed control migration heads 0029 and 0117",
+    "deployed signed runner safety policy, authenticated transport, testnet and live receipts"
   ]
 }

@@ -6,12 +6,12 @@
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
     "producer_commit": "e2499bb",
-    "runtime_receipt_commit": "491c632bd9395363a22543f3592a8eea6bd0be09",
+    "runtime_receipt_commit": "d86218d3097de54aef16100b7d9b59a370dda8b4",
     "runtime_receipt": {
       "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
       "source_path": "docs/authority/receipts/crucible-runner-nats-transport-runtime-v1.json",
-      "sha256": "7ea0ca7c690309f050000ca6d50eaedc61c59deeca3f52e8545a892860591e4c",
-      "size_bytes": 8432,
+      "sha256": "bac45827a2eeaf036fa6a03bc15093e51626206040b21d44171cd035dbbdcd21",
+      "size_bytes": 8660,
       "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
     },
     "contract_assets": {
@@ -103,7 +103,7 @@
     "same_service_issued_transport_event_consumed_by_custos_process": true,
     "custos_transport_consumer_code_commit": "1b2f72df46519768b22c5d9f9d85ecbb618e3856",
     "joint_custos_daemon_consumed_same_event": true,
-    "joint_custos_daemon_code_commit": "a449b22a1beba69f90ff70c4bb6b0e0a912d6104",
+    "joint_custos_daemon_code_commit": "d6ba1bf40818906f81f85e59ef819af25fdfb207",
     "same_event_production_policy_issued": true,
     "same_event_authenticated_policy_consumed": true,
     "same_event_sandbox_engine_ready": true,
@@ -123,7 +123,7 @@
     "same_event_rotation_revocation_receipt_verified": true,
     "same_event_old_generation_reconnect_denied": true,
     "same_event_rotated_vault_reloaded_by_daemon": true,
-    "same_event_immutable_artifact_materialized": false,
+    "same_event_immutable_artifact_materialized": true,
     "joint_deployed_transport_credential_provisioned": false,
     "joint_deployed_durable_verified": false,
     "local_real_nats_revocation_gate": {
@@ -178,9 +178,9 @@
     },
     "joint_full_daemon_gate": {
       "command": "make -C <crucible-rust> verify-runner-full-daemon-local",
-      "custos_code_commit": "a449b22a1beba69f90ff70c4bb6b0e0a912d6104",
-      "crucible_code_commit": "6a15952581e59c6edbbab36de3986cb29dce993a",
-      "crucible_runtime_receipt_commit": "491c632bd9395363a22543f3592a8eea6bd0be09",
+      "custos_code_commit": "d6ba1bf40818906f81f85e59ef819af25fdfb207",
+      "crucible_code_commit": "b696b8a2c31324a9acf34852bc85364cabe002ec",
+      "crucible_runtime_receipt_commit": "d86218d3097de54aef16100b7d9b59a370dda8b4",
       "status": "PASS",
       "tests_passed": 1,
       "real_postgresql": true,
@@ -213,14 +213,17 @@
       "rotation_revocation_receipt_verified": true,
       "old_generation_reconnect_denied": true,
       "rotated_vault_reloaded_by_daemon": true,
-      "immutable_strategy_release_materialized": false
+      "immutable_strategy_release_materialized": true,
+      "duration_seconds": 89.97,
+      "broker_redelivery_after_crash_before_ack_verified": true
     },
     "local_crucible_full_resolver_integration_passed": true,
     "joint_runtime_real_nats_integration_passed": true,
     "team_daemon_enabled": false,
     "runtime_ready": false,
     "live_ready": false,
-    "production_ready": false
+    "production_ready": false,
+    "same_event_command_ack_crash_recovery_verified": true
   },
   "clone_local_validation": {
     "focused_command": "uv run pytest tests/test_nats_transport.py -q",
@@ -239,11 +242,13 @@
     "joint_transport_consumer_result": "PASS",
     "joint_full_daemon_command": "make -C <crucible-rust> verify-runner-full-daemon-local",
     "joint_full_daemon_result": "PASS",
-    "same_event_crucible_runner_fact_projection_observed": true
+    "same_event_crucible_runner_fact_projection_observed": true,
+    "immutable_strategy_release_materialized": true,
+    "command_ack_crash_recovery_verified": true
   },
   "open_blockers": [
     "deployed tenant runner mode durables have no exact SIM/LIVE runtime readback receipt",
-    "the joint launched runtime has not consumed a deployed CR99 runner policy",
-    "the immutable StrategyRelease has not been materialized and activated by a launched engine"
+    "deployed CR99 runner policy and transport authority receipts remain open",
+    "real Philosophers-Stone exact-candidate OCI/Sigstore publication and runtime-candidate lock remain open"
   ]
 }

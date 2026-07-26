@@ -299,7 +299,7 @@
     {
       "role": "strategy_artifact_runtime_receipt_v1",
       "path": "docs/authority/receipts/custos-strategy-artifact-runtime-v1-receipt.json",
-      "receipt_status": "LOCAL_PRODUCTION_COMPOSITION_VERIFIED_IMMUTABLE_RELEASE_OPEN",
+      "receipt_status": "LOCAL_IMMUTABLE_DAEMON_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN",
       "runtime_ready": false,
       "production_ready": false
     },
@@ -575,7 +575,7 @@
     {
       "path": "docs/authority/receipts/custos-strategy-artifact-runtime-v1-receipt.json",
       "must_contain": [
-        "LOCAL_PRODUCTION_COMPOSITION_VERIFIED_IMMUTABLE_RELEASE_OPEN",
+        "LOCAL_IMMUTABLE_DAEMON_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN",
         "StrategyReleaseArtifactResolverV1",
         "\"immutable_oci_materializer_composed\": true",
         "\"daemon_command_coordinator_composed\": true",

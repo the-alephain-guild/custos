@@ -5,7 +5,7 @@
   "consumer": "custos",
   "status": "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN",
   "authority_coordinate": "crucible.runner-nats-transport.v1",
-  "code_commit": "6a15952581e59c6edbbab36de3986cb29dce993a",
+  "code_commit": "b696b8a2c31324a9acf34852bc85364cabe002ec",
   "control_migration": {
     "checked_in_head": "0029",
     "local_ephemeral_head_executed": "0029",
@@ -85,8 +85,10 @@
     "rotation_revocation_receipt_verified": true,
     "old_generation_reconnect_denied": true,
     "rotated_vault_reloaded_by_daemon": true,
-    "immutable_strategy_release_materialized": false,
-    "full_custos_runtime_candidate_locked": false
+    "immutable_strategy_release_materialized": true,
+    "full_custos_runtime_candidate_locked": false,
+    "duration_seconds": 89.97,
+    "broker_redelivery_after_crash_before_ack_verified": true
   },
   "accepted_scope": {
     "trading_mode": "sandbox",
@@ -96,8 +98,8 @@
   },
   "source": {
     "path": "crates/server-http/tests/runner_nats_transport_service_process.rs",
-    "sha256": "ae1fd6bea3c4ad60becb58255c9f0860aa3e2acaee37f135f9208395f1f32ab3",
-    "size_bytes": 89233
+    "sha256": "e2677791125be99004135a07f75f034110c4bd5c8144c3ec51107da4808b690d",
+    "size_bytes": 108845
   },
   "custos_consumer_source": {
     "repository": "tesseract-trading/custos",
@@ -111,13 +113,13 @@
   },
   "custos_daemon_source": {
     "repository": "tesseract-trading/custos",
-    "commit": "a449b22a1beba69f90ff70c4bb6b0e0a912d6104",
+    "commit": "d6ba1bf40818906f81f85e59ef819af25fdfb207",
     "path": "tests/integration/runner_daemon_lifecycle_process.py",
-    "sha256": "74088dd85ca3351cc16c4b6ffc3479e2413f1430d9f887ce8b3c493a313db41e",
-    "size_bytes": 34079,
+    "sha256": "f3e3a50c94670e9eb50f7575f087b63b16280956e559e4075e549facdd0b275c",
+    "size_bytes": 44386,
     "production_authority_issued": true,
     "production_policy_issued": true,
-    "immutable_artifact_materialized": false,
+    "immutable_artifact_materialized": true,
     "encrypted_machine_vault_used": true,
     "encrypted_transport_vault_used": true,
     "plaintext_machine_bootstrap_removed": true,
@@ -129,7 +131,8 @@
     "rotation_pending_operation_cleared": true,
     "rotation_revocation_receipt_verified": true,
     "old_generation_reconnect_denied": true,
-    "rotated_vault_reloaded_by_daemon": true
+    "rotated_vault_reloaded_by_daemon": true,
+    "command_ack_crash_recovery_verified": true
   },
   "predecessor_receipts": {
     "http": {
@@ -173,8 +176,9 @@
     "rotation_revocation_receipt_verified_in_this_gate": true,
     "old_generation_reconnect_denied_in_this_gate": true,
     "rotated_vault_reloaded_by_daemon_in_this_gate": true,
-    "immutable_strategy_release_materialized_in_this_gate": false,
-    "runtime_candidate_locked": false
+    "immutable_strategy_release_materialized_in_this_gate": true,
+    "runtime_candidate_locked": false,
+    "command_ack_crash_recovery_verified_in_this_gate": true
   },
   "runtime_ready": false,
   "live_ready": false,
@@ -182,7 +186,7 @@
   "open_blockers": [
     "deployed control 0028 predecessor receipt",
     "deployed control 0029 execution receipt",
-    "immutable StrategyRelease materialization in the same daemon event",
+    "real Philosophers-Stone exact-candidate OCI/Sigstore publication and runtime-candidate lock",
     "deployed testnet and live acceptance"
   ]
 }

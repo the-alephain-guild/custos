@@ -1024,7 +1024,9 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         errors.append("missing artifact runtime V1 artifact runtime authority assets")
         return
     receipt = load_json(receipt_path)
-    expected_status = "LOCAL_PRODUCTION_COMPOSITION_VERIFIED_IMMUTABLE_RELEASE_OPEN"
+    expected_status = (
+        "LOCAL_IMMUTABLE_DAEMON_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN"
+    )
     if receipt.get("receipt_status") != expected_status:
         errors.append("artifact runtime receipt status differs")
     expected_receipt = {
@@ -1032,10 +1034,11 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         "clone_local_production_composition_verified": True,
         "runtime_candidate_prepared": False,
         "local_composition_capability_ready": True,
-        "immutable_strategy_release_activated_by_production_daemon": False,
+        "immutable_strategy_release_activated_by_production_daemon": True,
+        "local_immutable_engine_execution_verified": True,
         "runtime_candidate_ready": False,
         "daemon_composition_ready": True,
-        "daemon_process_activation_verified": False,
+        "daemon_process_activation_verified": True,
         "runtime_ready": False,
         "production_ready": False,
     }
@@ -1124,10 +1127,11 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         "real_ps_oci_publication_present": False,
         "deployed_crucible_strategy_release_acceptance_present": False,
         "local_composition_capability_ready": True,
-        "immutable_strategy_release_activated_by_production_daemon": False,
+        "immutable_strategy_release_activated_by_production_daemon": True,
+        "local_immutable_engine_execution_verified": True,
         "runtime_candidate_ready": False,
         "daemon_composition_ready": True,
-        "daemon_process_activation_verified": False,
+        "daemon_process_activation_verified": True,
         "runtime_ready": False,
         "production_ready": False,
     }
@@ -1148,7 +1152,7 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
 
 
 def verify_engine_lifecycle(manifest: dict[str, Any], errors: list[str]) -> None:
-    """Validate additive lifecycle readiness without promoting blocked runtime."""
+    """Validate local immutable activation without promoting the runtime candidate."""
 
     receipt_path = resolve(ENGINE_LIFECYCLE_RECEIPT_PATH)
     lifecycle_path = resolve(ENGINE_LIFECYCLE_SOURCE)
@@ -1157,7 +1161,7 @@ def verify_engine_lifecycle(manifest: dict[str, Any], errors: list[str]) -> None
         return
     receipt = load_json(receipt_path)
     expected = {
-        "receipt_status": "PREPARED_BLOCKED_ARTIFACT_RUNTIME_CAPABILITY",
+        "receipt_status": "LOCAL_IMMUTABLE_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN",
         "engine_adapter_ready": True,
         "protocol_change": "canonical_v1",
         "runtime_identity": "deployment_instance_id",
@@ -1170,7 +1174,7 @@ def verify_engine_lifecycle(manifest: dict[str, Any], errors: list[str]) -> None
         "timeout_terminal_and_zombie_share_quarantine_path": True,
         "applied_and_terminal_lifecycle_atomic": True,
         "daemon_long_task_supervision": True,
-        "artifact_runtime_capability_ready": False,
+        "artifact_runtime_capability_ready": True,
         "team_daemon_enabled": False,
         "live_ready": False,
         "runtime_ready": False,
@@ -1235,18 +1239,22 @@ def verify_engine_lifecycle(manifest: dict[str, Any], errors: list[str]) -> None
         if state.get("runner_state_schema_version") != 1:
             errors.append("engine_lifecycle current runner_state_schema_version differs")
     artifact_runtime = snapshot.get("strategy_artifact_runtime")
+    expected_artifact_runtime = {
+        "immutable_strategy_release_activated_by_production_daemon": True,
+        "local_immutable_engine_execution_verified": True,
+        "runtime_candidate_ready": False,
+        "daemon_process_activation_verified": True,
+        "live_ready": False,
+        "runtime_ready": False,
+        "production_ready": False,
+    }
     if not isinstance(artifact_runtime, dict) or any(
-        artifact_runtime.get(key) is not False
-        for key in (
-            "immutable_strategy_release_activated_by_production_daemon",
-            "runtime_candidate_ready",
-            "daemon_process_activation_verified",
-            "live_ready",
-            "runtime_ready",
-            "production_ready",
-        )
+        artifact_runtime.get(key) != value
+        for key, value in expected_artifact_runtime.items()
     ):
-        errors.append("engine lifecycle must not promote the blocked artifact runtime")
+        errors.append(
+            "engine lifecycle local activation or runtime-candidate boundary differs"
+        )
 
     lifecycle_source = lifecycle_path.read_text(encoding="utf-8")
     protocol_source = resolve("src/custos/core/engine_protocol.py").read_text(encoding="utf-8")
@@ -1651,7 +1659,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     elif (
         producer.get("producer_commit") != "e2499bb"
         or producer.get("runtime_receipt_commit")
-        != "491c632bd9395363a22543f3592a8eea6bd0be09"
+        != "d86218d3097de54aef16100b7d9b59a370dda8b4"
         or producer.get("authority_receipt")
         != "tesseract-trading/crucible-rust/docs/authority/receipts/"
         "crucible-runner-nats-broker-authority-v1.json"
@@ -1839,6 +1847,8 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "same_event_rotation_revocation_receipt_verified",
             "same_event_old_generation_reconnect_denied",
             "same_event_rotated_vault_reloaded_by_daemon",
+            "same_event_immutable_artifact_materialized",
+            "same_event_command_ack_crash_recovery_verified",
         ):
             if truth.get(key) is not True:
                 errors.append(f"runner NATS transport implemented truth {key} differs")
@@ -1846,7 +1856,6 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "joint_deployed_transport_credential_provisioned",
             "joint_deployed_durable_verified",
             "local_crucible_provisioner_plaintext_runtime_allowed",
-            "same_event_immutable_artifact_materialized",
             "team_daemon_enabled",
             "runtime_ready",
             "live_ready",
@@ -1861,7 +1870,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             errors.append("runner NATS transport consumer code receipt differs")
         if (
             truth.get("joint_custos_daemon_code_commit")
-            != "a449b22a1beba69f90ff70c4bb6b0e0a912d6104"
+            != "d6ba1bf40818906f81f85e59ef819af25fdfb207"
         ):
             errors.append("runner NATS transport daemon code receipt differs")
         if truth.get("same_event_daemon_launch_count") != 3:
@@ -1872,10 +1881,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             errors.append("runner NATS transport projection work count differs")
         if truth.get("joint_full_daemon_gate") != {
             "command": "make -C <crucible-rust> verify-runner-full-daemon-local",
-            "custos_code_commit": "a449b22a1beba69f90ff70c4bb6b0e0a912d6104",
-            "crucible_code_commit": "6a15952581e59c6edbbab36de3986cb29dce993a",
+            "custos_code_commit": "d6ba1bf40818906f81f85e59ef819af25fdfb207",
+            "crucible_code_commit": "b696b8a2c31324a9acf34852bc85364cabe002ec",
             "crucible_runtime_receipt_commit": (
-                "491c632bd9395363a22543f3592a8eea6bd0be09"
+                "d86218d3097de54aef16100b7d9b59a370dda8b4"
             ),
             "status": "PASS",
             "tests_passed": 1,
@@ -1909,13 +1918,18 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "rotation_revocation_receipt_verified": True,
             "old_generation_reconnect_denied": True,
             "rotated_vault_reloaded_by_daemon": True,
-            "immutable_strategy_release_materialized": False,
+            "immutable_strategy_release_materialized": True,
+            "duration_seconds": 89.97,
+            "broker_redelivery_after_crash_before_ack_verified": True,
         }:
             errors.append("runner NATS transport joint full-daemon evidence differs")
         if receipt.get("open_blockers") != [
             "deployed tenant runner mode durables have no exact SIM/LIVE runtime readback receipt",
-            "the joint launched runtime has not consumed a deployed CR99 runner policy",
-            "the immutable StrategyRelease has not been materialized and activated by a launched engine",
+            "deployed CR99 runner policy and transport authority receipts remain open",
+            (
+                "real Philosophers-Stone exact-candidate OCI/Sigstore publication "
+                "and runtime-candidate lock remain open"
+            ),
         ]:
             errors.append("runner NATS transport open blocker boundary differs")
 
@@ -1989,10 +2003,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("producer_commit") != "e2499bb"
         or snapshot.get("producer_runtime_receipt")
         != {
-            "commit": "491c632bd9395363a22543f3592a8eea6bd0be09",
+            "commit": "d86218d3097de54aef16100b7d9b59a370dda8b4",
             "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
-            "sha256": "7ea0ca7c690309f050000ca6d50eaedc61c59deeca3f52e8545a892860591e4c",
-            "size_bytes": 8432,
+            "sha256": "bac45827a2eeaf036fa6a03bc15093e51626206040b21d44171cd035dbbdcd21",
+            "size_bytes": 8660,
             "status": (
                 "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_"
                 "DEPLOYED_ACCEPTANCE_OPEN"
@@ -2033,7 +2047,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         != "1b2f72df46519768b22c5d9f9d85ecbb618e3856"
         or snapshot.get("joint_custos_daemon_consumed_same_event") is not True
         or snapshot.get("joint_custos_daemon_code_commit")
-        != "a449b22a1beba69f90ff70c4bb6b0e0a912d6104"
+        != "d6ba1bf40818906f81f85e59ef819af25fdfb207"
         or snapshot.get("same_event_crucible_runner_fact_projection_observed")
         is not True
         or snapshot.get("same_event_runner_fact_projection_work_count") != 1
@@ -2045,7 +2059,8 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("joint_runtime_real_nats_integration_passed") is not True
         or snapshot.get("crucible_policy_publisher_code_commit")
         != "40a43fbf146006bb90053c446bd15f529418b45e"
-        or snapshot.get("immutable_artifact_materialization_in_gate") is not False
+        or snapshot.get("immutable_artifact_materialization_in_gate") is not True
+        or snapshot.get("command_ack_crash_recovery_in_gate") is not True
         or snapshot.get("production_authority_issued_in_gate") is not True
         or snapshot.get("production_policy_issued_in_gate") is not True
         or snapshot.get("encrypted_machine_vault_used_in_gate") is not True
@@ -2290,7 +2305,7 @@ def verify_runner_fact_authority(errors: list[str]) -> None:
         "jetstream_puback_observed": True,
         "command_delivered_via_jetstream": True,
         "same_batch_accepted_by_crucible_postgresql": True,
-        "immutable_artifact_materialization": False,
+        "immutable_artifact_materialization": True,
         "crucible_projection_observed": True,
         "production_credential": True,
         "sha256": hashlib.sha256(transport_receipt_payload).hexdigest(),

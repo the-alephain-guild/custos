@@ -1,6 +1,6 @@
 # 18 - Publish typed toolkit and strategy execution contracts
 
-> **Status**: ⏳ In progress — sole V1 contract, sandbox runtime, authenticated StrategyRelease consumption, immutable OCI materialization and production daemon composition are focused verified; real PS publication, same-event activation and final cross-repo acceptance remain open
+> **Status**: ⏳ In progress — sole V1 contract, sandbox runtime, authenticated StrategyRelease consumption and same-event immutable production-daemon activation are verified; real PS publication, locked runtime candidate and final cross-repo acceptance remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-07-22 for the business-named first-production V1 release relock
 > **Project**: Custos
@@ -585,11 +585,13 @@ Execution checkpoint (2026-07-21):
 - The sandbox development-source branch and its command-runtime convergence are
   focused verified on 2026-07-23: `tests/test_development_artifact.py` plus
   `tests/test_runner_command_runtime.py` report `10 passed`.
-- Status is `LOCAL_PRODUCTION_COMPOSITION_VERIFIED_IMMUTABLE_RELEASE_OPEN`:
+- Status is
+  `LOCAL_IMMUTABLE_DAEMON_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN`:
   the authenticated resolver, immutable materializer and production daemon
-  coordinator are composed, while runtime, live and production readiness remain
-  false until real PS publication, deployed Crucible acceptance and same-event
-  activation are proven.
+  activate exact locally issued StrategyRelease bytes in one full-daemon gate.
+  Runtime, live and production readiness remain false until real PS
+  publication, exact-candidate lock, deployed Crucible acceptance and
+  cross-repo promotion receipts are proven.
 
 ### Task 6: Publish the immutable V1 toolkit RC
 

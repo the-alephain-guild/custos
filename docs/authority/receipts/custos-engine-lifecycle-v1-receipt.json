@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "receipt_id": "CUSTOS-ENGINE-LIFECYCLE-V1",
-  "receipt_status": "PREPARED_BLOCKED_ARTIFACT_RUNTIME_CAPABILITY",
+  "receipt_status": "LOCAL_IMMUTABLE_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN",
   "repository": "tesseract-trading/custos",
   "engine_adapter_ready": true,
   "protocol_change": "canonical_v1",
@@ -33,7 +33,7 @@
     "flush RunnerFact outbox",
     "close publisher and NATS"
   ],
-  "artifact_runtime_capability_ready": false,
+  "artifact_runtime_capability_ready": true,
   "team_daemon_enabled": false,
   "live_ready": false,
   "runtime_ready": false,
@@ -46,10 +46,20 @@
       "deployment reconciler, watchdog and breaker regressions"
     ]
   },
+  "joint_full_daemon_verification": {
+    "command": "make -C <crucible-rust> verify-runner-full-daemon-local",
+    "result": "1 passed",
+    "crucible_commit": "b696b8a2c31324a9acf34852bc85364cabe002ec",
+    "custos_commit": "d6ba1bf40818906f81f85e59ef819af25fdfb207",
+    "immutable_strategy_release_activated": true,
+    "sandbox_engine_deploy_verified": true,
+    "command_ack_after_lifecycle_commit": true,
+    "runner_fact_puback_verified": true
+  },
   "open_blockers": [
-    "real artifact runtime capability remains false",
-    "real Philosophers-Stone strategy bundle receipt is absent",
-    "real Crucible C6 artifact acceptance receipt is absent",
-    "live remains blocked until the signed runner-safety policy is consumed"
+    "real Philosophers-Stone exact runtime candidate is absent",
+    "deployed Crucible StrategyRelease acceptance is absent",
+    "team daemon enablement remains false until runtime candidate lock",
+    "live remains blocked until deployed signed runner-safety policy and transport receipts exist"
   ]
 }
