@@ -1693,7 +1693,7 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     expected_consumer_binding = {
         "crucible_rust": {
             "repository": "tesseract-trading/crucible-rust",
-            "commit": "e4b5e1d374e0a23273ef657ea6b4d1d3641b7f81",
+            "commit": "521f132ece6b15d301e0f4fb382bfe15a4455d4f",
             "producer_path": (
                 "docs/authority/receipts/"
                 "crucible-runner-fact-v1-consumer-receipt.json"
@@ -1835,7 +1835,7 @@ def verify_runner_fact_authority(errors: list[str]) -> None:
     consumer_payload = consumer_path.read_bytes() if consumer_path.is_file() else b""
     if state.get("consumer_receipt") != {
         "repository": "tesseract-trading/crucible-rust",
-        "commit": "e4b5e1d374e0a23273ef657ea6b4d1d3641b7f81",
+        "commit": "521f132ece6b15d301e0f4fb382bfe15a4455d4f",
         "path": (
             "docs/authority/receipts/vendor/"
             "crucible-runner-fact-v1-consumer-receipt.json"
