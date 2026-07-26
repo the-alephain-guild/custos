@@ -635,6 +635,25 @@ def _command_outcome(database: Path) -> dict[str, object] | None:
     }
 
 
+def _runner_policy_is_durable(database: Path) -> bool:
+    try:
+        with sqlite3.connect(database) as connection:
+            row = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM runner_cap_policy_head AS head
+                JOIN runner_cap_policy AS policy ON policy.policy_id = head.policy_id
+                WHERE head.tenant_scope = ?
+                  AND head.trading_mode = 'sandbox'
+                  AND head.runner_id = ?
+                """,
+                (TENANT_ID, str(RUNNER_ID)),
+            ).fetchone()
+    except sqlite3.OperationalError:
+        return False
+    return row is not None and row[0] == 1
+
+
 async def _wait_for_daemon_ready(
     task: asyncio.Task[int],
     ready_file: Path,
@@ -662,7 +681,11 @@ async def _wait_for_publication(
         if outcome is not None:
             batch_id = UUID(str(outcome["lifecycle_batch_id"]))
             receipt = await outbox.publication_receipt(batch_id)
-            if receipt is not None and not await outbox.pending():
+            if (
+                receipt is not None
+                and not await outbox.pending()
+                and _runner_policy_is_durable(database)
+            ):
                 return outcome, receipt
         await asyncio.sleep(0.05)
     raise TimeoutError("daemon did not publish the lifecycle batch")
