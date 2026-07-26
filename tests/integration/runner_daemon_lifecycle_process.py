@@ -482,6 +482,14 @@ async def _wait_for_publication(
     raise TimeoutError("daemon did not publish the lifecycle batch")
 
 
+async def _stop_daemon(task: asyncio.Task[int]) -> None:
+    if not task.done():
+        os.kill(os.getpid(), signal.SIGTERM)
+    exit_code = await asyncio.wait_for(task, timeout=10)
+    if exit_code != 0:
+        raise RuntimeError(f"daemon exited with status {exit_code}")
+
+
 async def _run(args: argparse.Namespace) -> dict[str, object]:
     root = args.database.parent
     command_private_key = Ed25519PrivateKey.from_private_bytes(PRIVATE_KEY_BYTES)
@@ -551,14 +559,6 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         machine_credential.machine_key_id,
     )
     capability = _capability(verified.command, identity)
-    if service_authority:
-        assert args.command_input_file is not None
-        _write_command_input(
-            args.command_input_file,
-            expected_subject,
-            expected_envelope,
-            capability,
-        )
     machine_vault_path = root / "runner-machine.enc"
     transport_vault_dir = root / "nats-transport"
     metadata = RunnerToml(
@@ -575,6 +575,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     encrypted_machine_vault_used = False
     encrypted_transport_vault_used = False
     plaintext_machine_bootstrap_removed = False
+    authority_vault_digests: tuple[bytes, bytes] | None = None
     if service_authority:
         assert args.machine_credential is not None
         assert args.age_recipient is not None
@@ -608,6 +609,10 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         plaintext_machine_bootstrap_removed = not args.machine_credential.exists()
         encrypted_machine_vault_used = True
         encrypted_transport_vault_used = True
+        authority_vault_digests = (
+            hashlib.sha256(machine_vault_path.read_bytes()).digest(),
+            hashlib.sha256((transport_vault_dir / "sandbox.enc").read_bytes()).digest(),
+        )
     _install_acceptance_authorities(
         machine_credential=machine_credential,
         metadata=metadata,
@@ -626,19 +631,53 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         ).decode("ascii"),
         encoding="ascii",
     )
+    daemon_launch_count = 0
+    daemon_restart_completed = False
+    encrypted_vaults_reloaded_after_restart = False
+    if service_authority:
+        first_daemon_task = asyncio.create_task(
+            daemon_module.run_daemon(
+                _runtime_args(args, command_public_key_path=command_public_key_path)
+            ),
+            name="custos-daemon-restart-preflight",
+        )
+        daemon_launch_count += 1
+        try:
+            await _wait_for_daemon_ready(first_daemon_task, args.ready_file)
+        finally:
+            await _stop_daemon(first_daemon_task)
+        if args.ready_file.exists():
+            raise RuntimeError("daemon did not clear readiness before restart")
+
     daemon_task = asyncio.create_task(
         daemon_module.run_daemon(
             _runtime_args(args, command_public_key_path=command_public_key_path)
         ),
         name="custos-daemon-acceptance",
     )
+    daemon_launch_count += 1
     try:
         await _wait_for_daemon_ready(daemon_task, args.ready_file)
+        if service_authority:
+            assert authority_vault_digests is not None
+            reloaded_vault_digests = (
+                hashlib.sha256(machine_vault_path.read_bytes()).digest(),
+                hashlib.sha256((transport_vault_dir / "sandbox.enc").read_bytes()).digest(),
+            )
+            if reloaded_vault_digests != authority_vault_digests:
+                raise RuntimeError("encrypted authority vault bytes changed across restart")
+            daemon_restart_completed = True
+            encrypted_vaults_reloaded_after_restart = True
+            assert args.command_input_file is not None
+            _write_command_input(
+                args.command_input_file,
+                expected_subject,
+                expected_envelope,
+                capability,
+            )
         outcome, publication = await _wait_for_publication(daemon_task, args.database)
     finally:
-        if not daemon_task.done():
-            os.kill(os.getpid(), signal.SIGTERM)
-        await asyncio.wait_for(daemon_task, timeout=10)
+        await _stop_daemon(daemon_task)
 
     command_acked = outcome["durable_disposition"] == "ack"
     engine_ready = outcome["observed_status"] == "ready"
@@ -685,6 +724,9 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         "encrypted_machine_vault_used": encrypted_machine_vault_used,
         "encrypted_transport_vault_used": encrypted_transport_vault_used,
         "plaintext_machine_bootstrap_removed": plaintext_machine_bootstrap_removed,
+        "daemon_launch_count": daemon_launch_count,
+        "daemon_restart_completed": daemon_restart_completed,
+        "encrypted_vaults_reloaded_after_restart": encrypted_vaults_reloaded_after_restart,
     }
 
 
