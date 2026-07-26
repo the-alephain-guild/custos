@@ -1478,7 +1478,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     else:
         if truth.get("local_real_nats_revocation_gate") != {
             "command": "make verify-nats-revocation",
-            "code_commit": "e4f23b6c7c6860dc44a39f6bd28c03e57852f3e5",
+            "code_commit": "fe70bc4e5013f75570fd0ff2a0380baed12982a0",
             "image": "nats:2.10-alpine",
             "image_id": ("sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9"),
             "status": "PASS",
@@ -1495,7 +1495,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "sandbox_engine_ready": True,
             "applied_lifecycle_outbox_committed_before_command_ack": True,
             "command_ack_observed": True,
-            "command_delivered_via_jetstream": False,
+            "command_delivered_via_jetstream": True,
             "immutable_artifact_materialization": False,
             "crucible_projection_observed": False,
         }:
@@ -1597,7 +1597,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("runner_stream_admin_authority") is not False
         or snapshot.get("launched_authenticated_publisher_process") is not True
         or snapshot.get("local_signed_command_engine_puback_passed") is not True
-        or snapshot.get("command_delivered_via_jetstream") is not False
+        or snapshot.get("command_delivered_via_jetstream") is not True
         or snapshot.get("immutable_artifact_materialization_in_gate") is not False
         or snapshot.get("crucible_projection_in_authenticated_gate") is not False
         or snapshot.get("sqlite_outbox_empty_after_puback") is not True

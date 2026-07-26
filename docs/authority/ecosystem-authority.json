@@ -362,7 +362,7 @@
     "runner_stream_admin_authority": false,
     "launched_authenticated_publisher_process": true,
     "local_signed_command_engine_puback_passed": true,
-    "command_delivered_via_jetstream": false,
+    "command_delivered_via_jetstream": true,
     "immutable_artifact_materialization_in_gate": false,
     "crucible_projection_in_authenticated_gate": false,
     "sqlite_outbox_empty_after_puback": true,
@@ -400,7 +400,7 @@
       "sandbox_engine_ready": true,
       "command_ack_after_lifecycle_commit": true,
       "jetstream_puback_observed": true,
-      "command_delivered_via_jetstream": false,
+      "command_delivered_via_jetstream": true,
       "immutable_artifact_materialization": false,
       "crucible_projection_observed": false,
       "production_credential": false

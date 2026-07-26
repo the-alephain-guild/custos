@@ -83,7 +83,7 @@
     "production_durable_verified": false,
     "local_real_nats_revocation_gate": {
       "command": "make verify-nats-revocation",
-      "code_commit": "e4f23b6c7c6860dc44a39f6bd28c03e57852f3e5",
+      "code_commit": "fe70bc4e5013f75570fd0ff2a0380baed12982a0",
       "image": "nats:2.10-alpine",
       "image_id": "sha256:dcadf8f23b60edaaafbe901db7773e2c07947f269c475d8d33d3b46a18b0a7f9",
       "status": "PASS",
@@ -100,7 +100,7 @@
       "sandbox_engine_ready": true,
       "applied_lifecycle_outbox_committed_before_command_ack": true,
       "command_ack_observed": true,
-      "command_delivered_via_jetstream": false,
+      "command_delivered_via_jetstream": true,
       "immutable_artifact_materialization": false,
       "crucible_projection_observed": false
     },

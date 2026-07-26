@@ -1,8 +1,8 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T8a, clone-local signed command-to-engine lifecycle and authenticated TLS/User-JWT RunnerFact PubAck pass; immutable OCI materialization/daemon composition, NATS control delivery, launched engine-to-Crucible round-trip evidence, physical-mode policy/NATS receipts, runtime RC and T9-T10 remain open
+> **Status**: ⏳ In progress — T2-T8a and clone-local preprovisioned-control-durable-to-engine-to-authenticated-PubAck pass; immutable OCI materialization/daemon composition, launched engine-to-Crucible round-trip evidence, physical-mode policy/NATS receipts, runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
-> **Revised**: 2026-07-26 through authenticated clone-local command lifecycle publication
+> **Revised**: 2026-07-26 through authenticated clone-local control-durable command lifecycle publication
 > **Project**: Custos
 > **Source**: Audit of pre-plan migration `324da6e`, PS Plan 53, and v1.team review
 > **For Claude**: Use `/forge:execute` to implement this plan.
@@ -1125,9 +1125,9 @@ git commit -m "docs(custos): mark plan 19 as completed"
 | RunnerFact SQLite V1 deep module | focused verified | one store, one outbox and one instance-continuous sequence |
 | Engine lifecycle | local verified; production materialization blocked | 118-test T2-T8a gate passes; production authority contract is consumed at `4ad12b2`, while immutable OCI materialization, trust composition and launched activation remain open |
 | Runner policy V1 | producer handoff and local failure matrix verified, runtime blocked | exact `d52bb16` code + `fe93008` producer receipt pinned; commit-before-ACK, NAK/TERM and missing/expired fail-closed pass `22/22`; `0117` mode execution, policy-bound PubAck and real daemon consumption pending |
-| Machine credential and NATS vault V1 | direct credential plus clone-local authenticated transport ready; production runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; `d7256ec` proves TLS/User-JWT rotation and revoked-generation reconnect denial; `e4f23b6` adds command-derived lifecycle PubAck. Control `0029`, deployed durable readback and dual-domain broker receipts remain pending. |
-| RunnerFact V1 | Phase A exact-byte plus authenticated command-derived publisher accepted; runtime open | producer asset commit `cce7693`, Crucible consumer code `506afcd` and receipt `818242c` are pinned; `e4f23b6` proves signed command verification, sandbox engine readiness, commit-before-ACK and authenticated lifecycle PubAck. The development same-batch gate separately reaches Crucible projection. One control-durable/immutable-artifact/Crucible unified round trip and runtime RC remain required. |
-| Local sandbox runtime | signed command-to-engine-to-authenticated-PubAck PASS; unified owner round trip open | the launched process reaches engine readiness and clears the durable outbox only after PubAck. NATS control delivery, immutable PS material and Crucible projection still need to be combined in the same run. |
+| Machine credential and NATS vault V1 | direct credential plus clone-local authenticated transport ready; production runtime blocked | Crucible `d9df475` and Custos `09b870c` exact machine-request golden pass; `d7256ec` proves TLS/User-JWT rotation and revoked-generation reconnect denial; `fe70bc4` binds the preprovisioned control durable and adds command-derived lifecycle PubAck. Control `0029`, deployed durable readback and dual-domain broker receipts remain pending. |
+| RunnerFact V1 | Phase A exact-byte plus authenticated control-command-derived publisher accepted; runtime open | producer asset commit `cce7693`, Crucible consumer code `506afcd` and receipt `818242c` are pinned; `fe70bc4` proves JetStream control delivery, signed command verification, sandbox engine readiness, commit-before-ACK, broker ack-floor advancement and authenticated lifecycle PubAck. The development same-batch gate separately reaches Crucible projection. One immutable-artifact/Crucible unified round trip and runtime RC remain required. |
+| Local sandbox runtime | control-durable command-to-engine-to-authenticated-PubAck PASS; unified owner round trip open | the launched process binds the existing durable, reaches engine readiness, ACKs only after lifecycle commit and clears the durable outbox only after PubAck. Immutable PS material and Crucible projection still need to be combined in the same run. |
 | Production/live | STOP | StrategyRelease authority bytes are clone-local verified, but immutable materialization, CR99/CR100 production receipts, runtime RC, Phase B and PS56 acceptance remain absent |
 
 The machine-readable boundary is pinned by
@@ -1214,11 +1214,13 @@ Validation boundary:
   an independent admin JWT to preprovision the RunnerFact stream and launches
   the production outbox/publisher under the replacement Runner JWT; PubAck,
   `Nats-Msg-Id=batch_id` and post-PubAck SQLite deletion all pass without giving
-  the Runner stream-admin authority. Custos `e4f23b6` extends that same launched
-  process through signed command verification, durable intake, artifact
-  activation state, sandbox engine readiness and atomic applied+lifecycle
-  commit-before-ACK. NATS control delivery, immutable OCI materialization and
-  Crucible projection deliberately remain false in this receipt.
+  the Runner stream-admin authority. Custos `fe70bc4` extends that same launched
+  process by binding the admin-preprovisioned exact-mode control durable,
+  consuming the signed command over JetStream, persisting durable intake and
+  artifact activation state, reaching sandbox engine readiness, atomically
+  committing applied+lifecycle state before ACK and proving the broker ack floor
+  advanced to the command sequence. Immutable OCI materialization and Crucible
+  projection deliberately remain false in this receipt.
 - `make verify-runner-fact-publication` passes `1/1` at Custos
   `c7d6f8b11849399dfbf9855729af67a841518622`: an independent process
   uses the production RunnerFact outbox/signer/publisher, receives a real
