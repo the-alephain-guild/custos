@@ -38,6 +38,11 @@
       "path": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
       "sha256": "ea2112e53f191a3b84b805568471b98b757e2635e9f457e13f75e5c7804c94aa",
       "size_bytes": 107
+    },
+    {
+      "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json",
+      "sha256": "a07bc7e70c0ef784bd8992040f81916638ee8d3465b9820146b5b21ccbf35407",
+      "size_bytes": 3074
     }
   ],
   "consumer_code_ready": true,
@@ -50,7 +55,8 @@
   "consumer_scope": [
     "deployment_spec_command",
     "durable_runner_intake",
-    "development_material_resolution"
+    "development_material_resolution",
+    "strategy_release_material_resolution"
   ],
   "custos_publishes_command_schema": false,
   "development_material_resolution_ready": true,
@@ -59,14 +65,22 @@
   "producer_authority": {
     "contract": "CrucibleRunnerDeploymentCommandV1",
     "producer_commit": "57783973375055cd8af7cc4e681314a0b633f6fa",
-    "receipt": null,
     "repository": "tesseract-trading/crucible-rust",
-    "status": "CONTRACT_V1_PINNED_RUNTIME_RECEIPT_PENDING",
+    "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_PINNED",
+    "strategy_resolution_receipt": {
+      "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json",
+      "producer_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
+      "receipt_commit": "a254de4ffa3cdd93576c423e1d1a5ea17f51a75c",
+      "sha256": "a07bc7e70c0ef784bd8992040f81916638ee8d3465b9820146b5b21ccbf35407",
+      "size_bytes": 3074,
+      "status": "LOCAL_SANDBOX_HTTP_PG_VERIFIED_CUSTOS_CONSUMER_RECEIPT_OPEN"
+    },
     "subject_template": "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
   },
   "production_ready": false,
   "runtime_ready": false,
   "signature_bytes_in_fingerprint": false,
-  "status": "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
-  "strategy_release_authority_resolution": "pending authenticated Custos production material consumption"
+  "status": "LOCAL_STRATEGY_RESOLUTION_RECEIPT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN",
+  "strategy_release_authority_resolution": "local sandbox HTTP/PG producer receipt consumed; daemon activation remains open",
+  "strategy_release_resolution_contract_ready": true
 }

@@ -10,8 +10,8 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
-    "sha256": "d3e05efe8223f1eac872f5afda98b2300f4a3a402e792af461cc658d89283b7b",
-    "size_bytes": 2795
+    "sha256": "acafb245a1f3bf7356f53f91beeed96a1585f82a9c25716d7e7662df5cd2fc3e",
+    "size_bytes": 3580
   },
   "contract_guards": {
     "command_selected_root_policy_issuer_workflow": false,
@@ -27,18 +27,27 @@
   "crucible_producer": {
     "contract": "CrucibleRunnerDeploymentCommandV1",
     "producer_commit": "57783973375055cd8af7cc4e681314a0b633f6fa",
-    "receipt": null,
     "repository": "tesseract-trading/crucible-rust",
-    "status": "CONTRACT_V1_PINNED_RUNTIME_RECEIPT_PENDING",
+    "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_PINNED",
+    "strategy_resolution_receipt": {
+      "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json",
+      "producer_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
+      "receipt_commit": "a254de4ffa3cdd93576c423e1d1a5ea17f51a75c",
+      "sha256": "a07bc7e70c0ef784bd8992040f81916638ee8d3465b9820146b5b21ccbf35407",
+      "size_bytes": 3074,
+      "status": "LOCAL_SANDBOX_HTTP_PG_VERIFIED_CUSTOS_CONSUMER_RECEIPT_OPEN"
+    },
     "subject_template": "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
   },
   "development_material_resolution_ready": true,
   "open_blockers": [
-    "real PG NATS engine command-to-fact receipt",
-    "authenticated Custos production StrategyRelease material consumption"
+    "protected PS OCI publication and immutable daemon materialization",
+    "same-event NATS command to engine to RunnerFact acceptance with StrategyRelease material",
+    "deployed testnet and live acceptance"
   ],
   "production_ready": false,
   "receipt_schema_version": 1,
-  "receipt_status": "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
-  "runtime_ready": false
+  "receipt_status": "LOCAL_STRATEGY_RESOLUTION_RECEIPT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN",
+  "runtime_ready": false,
+  "strategy_release_resolution_contract_ready": true
 }

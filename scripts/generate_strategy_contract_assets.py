@@ -57,6 +57,14 @@ RUNNER_COMMAND_GOLDEN_SIDECAR_PATH = (
 )
 RUNNER_COMMAND_PRODUCER_COMMIT = "57783973375055cd8af7cc4e681314a0b633f6fa"
 RUNNER_COMMAND_SUBJECT_TEMPLATE = "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
+RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
+    "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json"
+)
+RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df"
+RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "a254de4ffa3cdd93576c423e1d1a5ea17f51a75c"
+RUNNER_COMMAND_CONSUMER_STATUS = (
+    "LOCAL_STRATEGY_RESOLUTION_RECEIPT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN"
+)
 
 TOOLKIT_RC_SCHEMA_PATH = "docs/gateway-contract/v1/toolkit_rc_receipt_manifest_v1.schema.json"
 TOOLKIT_RC_PENDING_SCHEMA_PATH = (
@@ -516,6 +524,20 @@ def build_v1_contract_assets() -> dict[str, bytes]:
 
 
 def build_runner_command_consumer_assets() -> dict[str, bytes]:
+    resolution_receipt_bytes = (ROOT / RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH).read_bytes()
+    resolution_receipt = json.loads(resolution_receipt_bytes)
+    if (
+        resolution_receipt.get("receipt_id") != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-V1"
+        or resolution_receipt.get("owner") != "crucible-rust"
+        or resolution_receipt.get("consumer") != "custos"
+        or resolution_receipt.get("producer_commit")
+        != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
+        or resolution_receipt.get("authority_coordinate")
+        != "crucible.runner-strategy-resolution.v1"
+        or resolution_receipt.get("runtime_ready") is not False
+        or resolution_receipt.get("production_ready") is not False
+    ):
+        raise ValueError("Crucible runner strategy resolution receipt is not the canonical V1 pin")
     consumer_assets = []
     for relative in (
         RUNNER_COMMAND_CONSUMER_SOURCE,
@@ -525,6 +547,7 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
         DEVELOPMENT_ARTIFACT_RUNTIME_SOURCE,
         RUNNER_COMMAND_GOLDEN_PATH,
         RUNNER_COMMAND_GOLDEN_SIDECAR_PATH,
+        RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
     ):
         data = (ROOT / relative).read_bytes()
         consumer_assets.append({"path": relative, "sha256": sha256(data), "size_bytes": len(data)})
@@ -532,19 +555,27 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
         {
             "asset_index_schema_version": 1,
             "canonical_name": "Custos canonical V1 Crucible DeploymentSpec consumer assets",
-            "status": "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
+            "status": RUNNER_COMMAND_CONSUMER_STATUS,
             "consumer_scope": [
                 "deployment_spec_command",
                 "durable_runner_intake",
                 "development_material_resolution",
+                "strategy_release_material_resolution",
             ],
             "producer_authority": {
                 "repository": "tesseract-trading/crucible-rust",
                 "contract": "CrucibleRunnerDeploymentCommandV1",
                 "producer_commit": RUNNER_COMMAND_PRODUCER_COMMIT,
                 "subject_template": RUNNER_COMMAND_SUBJECT_TEMPLATE,
-                "receipt": None,
-                "status": "CONTRACT_V1_PINNED_RUNTIME_RECEIPT_PENDING",
+                "strategy_resolution_receipt": {
+                    "producer_commit": RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT,
+                    "receipt_commit": RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT,
+                    "path": RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
+                    "sha256": sha256(resolution_receipt_bytes),
+                    "size_bytes": len(resolution_receipt_bytes),
+                    "status": resolution_receipt["status"],
+                },
+                "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_PINNED",
             },
             "consumer_model": {
                 "path": RUNNER_COMMAND_CONSUMER_SOURCE,
@@ -559,11 +590,12 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
             "exact_event_command_fingerprint_pinned": True,
             "command_contains_deployment_spec_only": True,
             "strategy_release_authority_resolution": (
-                "pending authenticated Custos production material consumption"
+                "local sandbox HTTP/PG producer receipt consumed; daemon activation remains open"
             ),
             "consumer_code_ready": True,
             "command_contract_consumer_ready": True,
             "development_material_resolution_ready": True,
+            "strategy_release_resolution_contract_ready": True,
             "runtime_ready": False,
             "production_ready": False,
         }
@@ -572,7 +604,7 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
         {
             "receipt_schema_version": 1,
             "canonical_name": "Custos canonical V1 DeploymentSpec consumer receipt",
-            "receipt_status": "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT",
+            "receipt_status": RUNNER_COMMAND_CONSUMER_STATUS,
             "contract_asset_index": {
                 "path": RUNNER_COMMAND_CONSUMER_INDEX_PATH,
                 "sha256": sha256(index),
@@ -583,8 +615,15 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
                 "contract": "CrucibleRunnerDeploymentCommandV1",
                 "producer_commit": RUNNER_COMMAND_PRODUCER_COMMIT,
                 "subject_template": RUNNER_COMMAND_SUBJECT_TEMPLATE,
-                "receipt": None,
-                "status": "CONTRACT_V1_PINNED_RUNTIME_RECEIPT_PENDING",
+                "strategy_resolution_receipt": {
+                    "producer_commit": RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT,
+                    "receipt_commit": RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT,
+                    "path": RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
+                    "sha256": sha256(resolution_receipt_bytes),
+                    "size_bytes": len(resolution_receipt_bytes),
+                    "status": resolution_receipt["status"],
+                },
+                "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_PINNED",
             },
             "consumer_model": {
                 "path": RUNNER_COMMAND_CONSUMER_SOURCE,
@@ -606,11 +645,13 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
             "consumer_code_ready": True,
             "command_contract_consumer_ready": True,
             "development_material_resolution_ready": True,
+            "strategy_release_resolution_contract_ready": True,
             "runtime_ready": False,
             "production_ready": False,
             "open_blockers": [
-                "real PG NATS engine command-to-fact receipt",
-                "authenticated Custos production StrategyRelease material consumption",
+                "protected PS OCI publication and immutable daemon materialization",
+                "same-event NATS command to engine to RunnerFact acceptance with StrategyRelease material",
+                "deployed testnet and live acceptance",
             ],
         }
     )

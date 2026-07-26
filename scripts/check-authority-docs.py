@@ -65,6 +65,14 @@ RUNNER_FACT_CONTRACT_RECEIPT_PATH = (
 RUNNER_COMMAND_CONSUMER_SOURCE = "src/custos/contracts/crucible_runner_command.py"
 RUNNER_COMMAND_GOLDEN_PATH = "docs/authority/runner-deployment-command-golden-v1.json"
 RUNNER_COMMAND_PRODUCER_COMMIT = "57783973375055cd8af7cc4e681314a0b633f6fa"
+RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
+    "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json"
+)
+RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df"
+RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "a254de4ffa3cdd93576c423e1d1a5ea17f51a75c"
+RUNNER_COMMAND_CONSUMER_STATUS = (
+    "LOCAL_STRATEGY_RESOLUTION_RECEIPT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN"
+)
 REVIEW_VENDOR_ROOT = "docs/authority/receipts/vendor"
 CURRENT_STRATEGY_CONTRACT_SOURCE = (
     "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py"
@@ -503,7 +511,7 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         return
 
     index = load_json(index_path)
-    expected_code_status = "READY_DEVELOPMENT_RUNTIME_PENDING_REAL_COMMAND_RECEIPT"
+    expected_code_status = RUNNER_COMMAND_CONSUMER_STATUS
     if index.get("status") != expected_code_status:
         errors.append("runner command consumer code status differs")
     model = index.get("consumer_model")
@@ -551,25 +559,55 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
     producer = index.get("producer_authority")
     if not isinstance(producer, dict):
         errors.append("runner command consumer producer authority is missing")
-    elif producer.get("receipt") is not None:
-        errors.append("runner command consumer cannot pin an unpublished producer receipt")
     elif (
         producer.get("contract") != "CrucibleRunnerDeploymentCommandV1"
-        or producer.get("status") != "CONTRACT_V1_PINNED_RUNTIME_RECEIPT_PENDING"
+        or producer.get("status") != "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_PINNED"
         or producer.get("producer_commit") != RUNNER_COMMAND_PRODUCER_COMMIT
         or producer.get("subject_template") != "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
     ):
         errors.append("runner command consumer V1 producer contract differs")
+    else:
+        resolution_pin = producer.get("strategy_resolution_receipt")
+        resolution_path = resolve(RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH)
+        if not resolution_path.is_file():
+            errors.append("runner strategy resolution producer receipt is missing")
+        else:
+            resolution_bytes = resolution_path.read_bytes()
+            resolution_receipt = load_json(resolution_path)
+            expected_resolution_pin = {
+                "producer_commit": RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT,
+                "receipt_commit": RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT,
+                "path": RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
+                "sha256": hashlib.sha256(resolution_bytes).hexdigest(),
+                "size_bytes": len(resolution_bytes),
+                "status": resolution_receipt.get("status"),
+            }
+            if resolution_pin != expected_resolution_pin:
+                errors.append("runner strategy resolution producer receipt pin differs")
+            if (
+                resolution_receipt.get("receipt_id")
+                != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-V1"
+                or resolution_receipt.get("authority_coordinate")
+                != "crucible.runner-strategy-resolution.v1"
+                or resolution_receipt.get("producer_commit")
+                != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
+                or resolution_receipt.get("runtime_ready") is not False
+                or resolution_receipt.get("production_ready") is not False
+            ):
+                errors.append("runner strategy resolution producer receipt semantics differ")
     if index.get("command_contains_deployment_spec_only") is not True:
         errors.append("runner command consumer command must contain DeploymentSpec only")
     if index.get("command_contract_consumer_ready") is not True:
         errors.append("runner command consumer exact command contract must be ready")
     if index.get("development_material_resolution_ready") is not True:
         errors.append("runner command consumer development material resolution must be ready")
+    if index.get("strategy_release_resolution_contract_ready") is not True:
+        errors.append("runner strategy resolution receipt must be consumed")
     if index.get("consumer_scope") != [
         "deployment_spec_command",
         "durable_runner_intake",
         "development_material_resolution",
+        "strategy_release_material_resolution",
     ]:
         errors.append("runner command consumer scope differs")
 
@@ -586,6 +624,8 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         errors.append("runner command consumer cannot claim runtime or production readiness")
     if receipt.get("development_material_resolution_ready") is not True:
         errors.append("runner command receipt development material resolution differs")
+    if receipt.get("strategy_release_resolution_contract_ready") is not True:
+        errors.append("runner command receipt lacks the strategy resolution producer pin")
 
     source = source_path.read_text(encoding="utf-8")
     required = (

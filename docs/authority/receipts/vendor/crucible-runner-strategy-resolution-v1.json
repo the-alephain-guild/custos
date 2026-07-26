@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "receipt_id": "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-V1",
+  "owner": "crucible-rust",
+  "consumer": "custos",
+  "status": "LOCAL_SANDBOX_HTTP_PG_VERIFIED_CUSTOS_CONSUMER_RECEIPT_OPEN",
+  "authority_coordinate": "crucible.runner-strategy-resolution.v1",
+  "producer_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
+  "route": {
+    "method": "POST",
+    "path": "/api/v1/runner-material/resolve",
+    "authentication": "CR100-MACHINE-REQUEST-V1",
+    "human_or_arx_relay": false
+  },
+  "runtime_identity": [
+    "tenant_id",
+    "runner_id",
+    "trading_mode",
+    "deployment_instance_id",
+    "deployment_spec_id",
+    "deployment_spec_digest",
+    "generation",
+    "command_fingerprint"
+  ],
+  "strategy_release_binding": {
+    "release_version_semantics": "StrategyRelease.release_number",
+    "lifecycle_evidence_fence": "StrategyReleaseSnapshot.snapshot_digest",
+    "complete_artifact_binding_returned": true,
+    "complete_artifact_evidence_returned": true,
+    "artifact_evidence_digest_input_returned": true,
+    "credential_or_attestation_bundle_bytes_returned": false
+  },
+  "publication_fence": {
+    "mode_outbox_event_required": true,
+    "published_at_required": true,
+    "repository_claim_pending_exercised": true,
+    "repository_mark_published_exercised": true,
+    "unpublished_projection_treated_as_resolvable": false
+  },
+  "machine_request_replay": {
+    "consumed_request_id_rejected": true,
+    "fresh_request_id_and_signature_required_for_retry": true,
+    "fresh_retry_returns_identical_material": true
+  },
+  "failure_matrix": {
+    "wrong_command_fingerprint": "conflict",
+    "non_current_generation": "not_found",
+    "wrong_runner_principal": "unauthorized"
+  },
+  "acceptance": {
+    "command": "cargo test -p server-http --test runner_strategy_release_resolution_integration -- --nocapture",
+    "result": "1 passed",
+    "verified_at": "2026-07-26",
+    "real_postgresql": true,
+    "physical_control_database": true,
+    "physical_live_database": true,
+    "physical_sim_database": true,
+    "trading_mode": "sandbox",
+    "receipt_gated_0113_to_0116_operator_chain_exercised": true,
+    "strategy_release_attestation_policy_exercised": true,
+    "deployment_spec_projection_exercised": true,
+    "production_http_router_exercised": true,
+    "production_machine_request_auth_exercised": true,
+    "real_nats_jetstream": false,
+    "custos_daemon_launched": false,
+    "immutable_strategy_release_materialized_in_daemon": false
+  },
+  "source": {
+    "path": "crates/server-http/tests/runner_strategy_release_resolution_integration.rs",
+    "sha256": "f8939a11682a1d0dde3fd88b39c10b8b3f21284f9482d76e65e883ff394f42dd",
+    "size_bytes": 32604
+  },
+  "runtime_ready": false,
+  "live_ready": false,
+  "production_ready": false,
+  "open_blockers": [
+    "Custos exact-byte consumer receipt",
+    "protected PS OCI publication and immutable daemon materialization",
+    "same-event NATS command to engine to RunnerFact acceptance with StrategyRelease material",
+    "deployed testnet and live acceptance"
+  ]
+}
