@@ -78,7 +78,9 @@ route.
 
 - Input binds the authenticated runner, tenant, trading mode, exact
   `deployment_instance_id`, `deployment_spec_id`, spec digest, generation,
-  signed command fingerprint and `strategy_release_id`.
+  and signed command fingerprint. It MUST NOT accept `strategy_release_id`:
+  Crucible derives the sole authorized release from the persisted exact
+  DeploymentSpec, so the runner cannot select or substitute release authority.
 - The response returns strict V1 StrategyRelease snapshot fields, exact
   canonical ArtifactRef/BOM/statement/detached-reference bytes, Crucible
   evidence plus its exact digest-input bytes, and the command-specific
@@ -721,6 +723,8 @@ git commit -m "docs(custos): mark plan 18 as completed"
 - [x] Speculum 不属于 START/STOP、candidate/final acceptance 或 close-out gate
 - [x] PS legacy `build-image.sh` -> Crucible Python image 链保留为独立 compatibility lane，且不作为 team fallback 或验收证据
 - [x] toolkit advisory risk 不冒充 Custos/Crucible authority
+- [x] Crucible Plan 89 runner-resolution receipt、strict sole-V1 schema 与 exact
+      golden 已逐字锁定；请求不允许携带 `strategy_release_id`
 - [ ] final 重新锁定并重新验证
 - [x] `make check-authority` 覆盖并通过 toolkit schema/BOM/ownership drift
 - [ ] 18a-d 每个 slice 有独立 DoD、stop gate 和 handoff packet
@@ -734,6 +738,7 @@ git commit -m "docs(custos): mark plan 18 as completed"
 | Old contract/runtime generations | removed | old runtime module and command-owned evidence path are absent |
 | PS V1 handoff | pending final pins | PS source uses the sole V1 OCI topology |
 | Crucible V1 handoff | Custos contract exact; artifact acceptance open | final Custos producer receipt is pinned at Crucible `014edd4`; real PS publication and Plan 88 C6 native acceptance remain open |
+| Crucible Plan 89 runner resolution | local exact-byte gate pass | Runtime `34e0f13`, contract `e36c6cd`, producer receipt `3aecba7` and Custos relock `cdb2655` bind one persisted DeploymentSpec-derived release; immutable daemon materialization and deployed acceptance remain open |
 | Runtime activation | sandbox ready; production clone-local path ready | development-source runtime passes; Crucible `10b85e4` exposes complete production authority; Custos `4ad12b2` validates it and `d926ab0` composes immutable OCI acquisition, cache, trust policy and activation; real publication and launched receipts remain open |
 | Production/live | STOP | requires final exact-byte receipts and real runtime evidence |
 
@@ -818,3 +823,24 @@ This proves clone-local parsing, acquisition, cache, quarantine and composition;
 it does not prove a real registry pull, Sigstore verification, Crucible HTTP/PG
 lookup, engine activation or RunnerFact publication. T5e and production/live
 remain open until those launched receipts exist.
+
+## 2026-07-26 exact runner-resolution contract checkpoint
+
+Crucible runtime `34e0f139c64b5e1ed8fe5136a432e7b00aeea9df`, sole-V1 contract
+`e36c6cd11008542c63fb21f8837afcb02d31ac70` and producer receipt
+`3aecba7933ec84bd57fc40d3d9f2da0d71f6a653` now publish one strict direct-machine
+request/response schema and one exact golden. The input binds the authenticated
+runner and exact persisted instance/spec/generation/command fingerprint but has
+no `strategy_release_id`; Crucible alone derives the authorized release from the
+persisted DeploymentSpec.
+
+Custos `cdb2655` vendors the schema, golden, both digest sidecars and producer
+receipt byte-for-byte. Its generator and independent authority checker recompute
+every digest/size and reject a changed producer/runtime/contract commit or a
+request contract that restores caller-selected release authority. Focused
+command/material tests pass 16/16 and the standalone authority gate passes.
+
+This closes the local T5d-B exact-contract consumer checkpoint only. T5e remains
+open for real protected PS OCI bytes, immutable launched-daemon materialization,
+same-event NATS command -> engine -> RunnerFact evidence and deployed
+testnet/live acceptance.
