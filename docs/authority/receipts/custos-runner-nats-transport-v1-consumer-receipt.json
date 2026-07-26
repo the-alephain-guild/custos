@@ -106,7 +106,7 @@
     },
     "authenticated_runtime_projection_gate": {
       "command": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
-      "custos_code_commit": "cdc4112000874116a2eb6f9eb7c33d457fb3f8b9",
+      "custos_code_commit": "a84ff9c544a064bc046eb0972e03dde2993a14a7",
       "crucible_code_commit": "79b5acb9a97bf9639b46ad8be4c25e03412f8092",
       "status": "PASS",
       "tests_passed": 1,
@@ -122,8 +122,11 @@
       "same_batch_accepted_by_crucible": true,
       "postgresql_projection_work_count": 1,
       "dynamic_capability_authority_matched": true,
+      "authenticated_policy_consumed": true,
+      "policy_durable_before_command_ack": true,
       "immutable_artifact_materialization": false,
       "production_authority_issued": false,
+      "production_policy_issued": false,
       "production_services_launched": false
     },
     "real_nats_integration_passed": false,
@@ -142,12 +145,13 @@
     "real_nats_receipt_reused": true,
     "launched_authenticated_publisher_process": true,
     "launched_authenticated_custos_daemon": true,
+    "authenticated_policy_consumed": true,
     "launched_cross-process_round_trip": true
   },
   "open_blockers": [
     "the isolated Crucible signer, provisioner and server worker have not issued the clone-local test credentials as one production-service receipt",
     "production tenant runner mode durables have no deployed exact SIM/LIVE runtime readback receipt",
-    "Custos has not consumed the signed CR99 runner policy in a launched runtime",
+    "the launched runtime has not consumed a production-service-issued CR99 runner policy",
     "the immutable StrategyRelease has not been materialized and activated by a launched engine"
   ]
 }

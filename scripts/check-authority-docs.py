@@ -1505,7 +1505,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
                 "CRUCIBLE_REPO=<crucible-rust> "
                 "make verify-authenticated-runtime-projection"
             ),
-            "custos_code_commit": "cdc4112000874116a2eb6f9eb7c33d457fb3f8b9",
+            "custos_code_commit": "a84ff9c544a064bc046eb0972e03dde2993a14a7",
             "crucible_code_commit": "79b5acb9a97bf9639b46ad8be4c25e03412f8092",
             "status": "PASS",
             "tests_passed": 1,
@@ -1521,8 +1521,11 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "same_batch_accepted_by_crucible": True,
             "postgresql_projection_work_count": 1,
             "dynamic_capability_authority_matched": True,
+            "authenticated_policy_consumed": True,
+            "policy_durable_before_command_ack": True,
             "immutable_artifact_materialization": False,
             "production_authority_issued": False,
+            "production_policy_issued": False,
             "production_services_launched": False,
         }:
             errors.append("authenticated runtime projection evidence differs")
@@ -1628,8 +1631,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("same_batch_accepted_by_crucible_postgresql") is not True
         or snapshot.get("custos_daemon_launched_in_authenticated_gate") is not True
         or snapshot.get("durable_puback_receipt_recorded") is not True
+        or snapshot.get("authenticated_runner_policy_consumed") is not True
         or snapshot.get("immutable_artifact_materialization_in_gate") is not False
         or snapshot.get("production_authority_issued_in_gate") is not False
+        or snapshot.get("production_policy_issued_in_gate") is not False
         or snapshot.get("crucible_projection_in_authenticated_gate") is not True
         or snapshot.get("sqlite_outbox_empty_after_puback") is not True
     ):
