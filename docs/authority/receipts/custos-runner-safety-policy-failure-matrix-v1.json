@@ -5,7 +5,7 @@
   "status": "LOCAL_FAILURE_MATRIX_VERIFIED_RUNTIME_ACCEPTANCE_OPEN",
   "producer_code_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
   "producer_handoff_commit": "fe930088ea158f8fee057da79aa900674e48b2d3",
-  "consumer_implementation_commit": "ab5038cf11a7dff6ca79264e6cb91b32758c1357",
+  "consumer_implementation_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
   "consumer_handoff_commit": "7e045f61c3985953fef4221051cbd24c9c668932",
   "failure_matrix_test_commit": "001288de08d123824bc8243921d2eb640386be4c",
   "verified_semantics": {
@@ -25,8 +25,8 @@
   },
   "source": {
     "path": "tests/test_runner_policy_runtime.py",
-    "sha256": "72c94ff27c03926643b3f50cefd36cf2d72ff0685e793abe6e090265ac67d90f",
-    "size_bytes": 17695
+    "sha256": "777552794064bf0b4e31caf56bef3db3927c6a4f7f83a05630c4c22865c7dac0",
+    "size_bytes": 18104
   },
   "validation": {
     "command": "uv run pytest -q tests/test_runner_policy_runtime.py tests/test_runner_fact_store.py tests/test_order_reservation.py",
@@ -34,9 +34,8 @@
     "status": "FOCUSED_RUNNER_POLICY_LOCAL_FAILURE_MATRIX_PASS"
   },
   "runtime_acceptance_open": [
-    "physical sim and live database execution of migration 0117",
-    "launched signed policy publication and PubAck",
-    "real daemon policy consumption over the exact per-mode durable",
+    "deployed testnet and live database execution of migration 0117",
+    "production-service-issued policy through the same consumer chain",
     "broker outage with committed outbox retained pending",
     "testnet and live launched fail-closed readiness"
   ],

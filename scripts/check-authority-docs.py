@@ -1242,6 +1242,27 @@ def verify_portfolio_semantics(manifest: dict[str, Any], errors: list[str]) -> N
             errors.append(f"portfolio semantics must not promote {section_name}")
 
 
+def _runner_policy_runtime_receipt() -> dict[str, Any]:
+    return {
+        "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
+        "command": (
+            "CRUCIBLE_REPO=<crucible-rust> "
+            "make verify-authenticated-runtime-projection"
+        ),
+        "result": "1 passed",
+        "verified_at": "2026-07-26",
+        "crucible_code_commit": "40a43fbf146006bb90053c446bd15f529418b45e",
+        "custos_code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
+        "same_policy_from_crucible_pg_outbox": True,
+        "production_signed_publisher_path_exercised": True,
+        "production_daemon_path_exercised": True,
+        "policy_durable_before_command_ack": True,
+        "runner_fact_puback_and_projection": True,
+        "production_service_processes_launched": False,
+        "production_policy_issued": False,
+    }
+
+
 def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -> None:
     index_path = resolve(RUNNER_POLICY_CONSUMER_INDEX_PATH)
     receipt_path = resolve(RUNNER_POLICY_RECEIPT_PATH)
@@ -1251,7 +1272,7 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
         return
 
     index = load_json(index_path)
-    expected_status = "READY_PRODUCER_HANDOFF_PENDING_RUNTIME_PUBLICATION_RECEIPT"
+    expected_status = "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN"
     if index.get("schema_version") != 1 or index.get("status") != expected_status:
         errors.append("runner policy consumer asset index status differs")
     expected_assets = {
@@ -1293,7 +1314,7 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
         or not re.fullmatch(r"[0-9a-f]{40}", str(producer.get("producer_receipt_commit") or ""))
         or producer.get("producer_receipt")
         != "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json"
-        or producer.get("runtime_receipt") is not None
+        or producer.get("runtime_receipt") != _runner_policy_runtime_receipt()
     ):
         errors.append("runner policy producer authority binding differs")
     if index.get("policy_revision_axis") != "revision":
@@ -1324,6 +1345,10 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
         "producer_receipt_commit"
     ):
         errors.append("runner policy receipt producer handoff commit differs from asset index")
+    if receipt.get("producer_authority", {}).get(
+        "runtime_receipt"
+    ) != _runner_policy_runtime_receipt():
+        errors.append("runner policy receipt runtime handoff differs from asset index")
     if (ROOT / "docs/authority/vendor/crucible-plan-99").exists():
         errors.append("superseded Crucible runner policy vendor pins must be deleted")
 
@@ -1340,13 +1365,31 @@ def verify_runner_policy_runtime(manifest: dict[str, Any], errors: list[str]) ->
         "command": "uv run pytest -q tests/test_runner_policy_runtime.py "
         "tests/test_runner_fact_store.py "
         "tests/test_order_reservation.py",
-        "passed": 20,
+        "passed": 22,
         "required_before_runtime_ready": True,
-        "status": "FOCUSED_RUNNER_POLICY_PRODUCER_HANDOFF_PASS",
+        "status": "FOCUSED_RUNNER_POLICY_V1_PASS",
     }:
         errors.append("runner policy V1 focused validation evidence differs")
-    if receipt.get("runtime_policy_consumed") is not False:
-        errors.append("runner policy V1 must remain fail-closed before owner policy consumption")
+    if receipt.get("runtime_validation") != {
+        "command": (
+            "CRUCIBLE_REPO=<crucible-rust> "
+            "make verify-authenticated-runtime-projection"
+        ),
+        "passed": 1,
+        "status": "AUTHENTICATED_SAME_POLICY_CONSUMED",
+        "production_service_processes_launched": False,
+        "production_policy_issued": False,
+    }:
+        errors.append("runner policy V1 authenticated runtime evidence differs")
+    if receipt.get("runtime_policy_consumed") is not True:
+        errors.append("runner policy V1 owner policy consumption evidence differs")
+    for source, digest in receipt.get("sources", {}).items():
+        source_path = resolve(source)
+        if (
+            not source_path.is_file()
+            or hashlib.sha256(source_path.read_bytes()).hexdigest() != digest
+        ):
+            errors.append(f"runner policy V1 source digest differs: {source}")
     if receipt.get("runtime_ready") is not False or receipt.get("production_ready") is not False:
         errors.append("runner policy V1 cannot claim runtime or production readiness")
 
@@ -1505,7 +1548,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
                 "CRUCIBLE_REPO=<crucible-rust> "
                 "make verify-authenticated-runtime-projection"
             ),
-            "custos_code_commit": "a84ff9c544a064bc046eb0972e03dde2993a14a7",
+            "custos_code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
             "crucible_code_commit": "79b5acb9a97bf9639b46ad8be4c25e03412f8092",
             "status": "PASS",
             "tests_passed": 1,
@@ -1523,6 +1566,10 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "dynamic_capability_authority_matched": True,
             "authenticated_policy_consumed": True,
             "policy_durable_before_command_ack": True,
+            "same_policy_from_crucible_pg_outbox": True,
+            "crucible_policy_publisher_code_commit": (
+                "40a43fbf146006bb90053c446bd15f529418b45e"
+            ),
             "immutable_artifact_materialization": False,
             "production_authority_issued": False,
             "production_policy_issued": False,
@@ -1632,6 +1679,9 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("custos_daemon_launched_in_authenticated_gate") is not True
         or snapshot.get("durable_puback_receipt_recorded") is not True
         or snapshot.get("authenticated_runner_policy_consumed") is not True
+        or snapshot.get("same_policy_from_crucible_pg_outbox") is not True
+        or snapshot.get("crucible_policy_publisher_code_commit")
+        != "40a43fbf146006bb90053c446bd15f529418b45e"
         or snapshot.get("immutable_artifact_materialization_in_gate") is not False
         or snapshot.get("production_authority_issued_in_gate") is not False
         or snapshot.get("production_policy_issued_in_gate") is not False

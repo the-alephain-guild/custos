@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "READY_PRODUCER_HANDOFF_PENDING_RUNTIME_PUBLICATION_RECEIPT",
+  "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
     "producer_commit": "d52bb16cc307ccd784e0a615a997253d0ca07763",
@@ -10,7 +10,21 @@
     "subject_template": "crucible.runner.policy.v1.<tenant>.<runner>.<mode>",
     "signature_profile": "crucible-domain-event-v1-exact-bytes",
     "producer_receipt": "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json",
-    "runtime_receipt": null
+    "runtime_receipt": {
+      "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
+      "command": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
+      "result": "1 passed",
+      "verified_at": "2026-07-26",
+      "crucible_code_commit": "40a43fbf146006bb90053c446bd15f529418b45e",
+      "custos_code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
+      "same_policy_from_crucible_pg_outbox": true,
+      "production_signed_publisher_path_exercised": true,
+      "production_daemon_path_exercised": true,
+      "policy_durable_before_command_ack": true,
+      "runner_fact_puback_and_projection": true,
+      "production_service_processes_launched": false,
+      "production_policy_issued": false
+    }
   },
   "producer_assets": [
     {
@@ -44,8 +58,8 @@
   ],
   "consumer_model": {
     "path": "src/custos/contracts/crucible_runner_safety_policy.py",
-    "sha256": "6d977f19084437a0cef0f5b3ba04323e438af50c22a4d965a31f6166d37822ca",
-    "size_bytes": 18358
+    "sha256": "3b9a49479d2f47b92f9e9b1250b208a5b18dd69b75fb0d71d7bf1ebd1fab6806",
+    "size_bytes": 19130
   },
   "signed_envelope_fields": [
     "schema_version",

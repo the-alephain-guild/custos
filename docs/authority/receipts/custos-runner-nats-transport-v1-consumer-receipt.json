@@ -106,7 +106,7 @@
     },
     "authenticated_runtime_projection_gate": {
       "command": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
-      "custos_code_commit": "a84ff9c544a064bc046eb0972e03dde2993a14a7",
+      "custos_code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
       "crucible_code_commit": "79b5acb9a97bf9639b46ad8be4c25e03412f8092",
       "status": "PASS",
       "tests_passed": 1,
@@ -124,6 +124,8 @@
       "dynamic_capability_authority_matched": true,
       "authenticated_policy_consumed": true,
       "policy_durable_before_command_ack": true,
+      "same_policy_from_crucible_pg_outbox": true,
+      "crucible_policy_publisher_code_commit": "40a43fbf146006bb90053c446bd15f529418b45e",
       "immutable_artifact_materialization": false,
       "production_authority_issued": false,
       "production_policy_issued": false,
@@ -146,6 +148,7 @@
     "launched_authenticated_publisher_process": true,
     "launched_authenticated_custos_daemon": true,
     "authenticated_policy_consumed": true,
+    "same_policy_from_crucible_pg_outbox": true,
     "launched_cross-process_round_trip": true
   },
   "open_blockers": [

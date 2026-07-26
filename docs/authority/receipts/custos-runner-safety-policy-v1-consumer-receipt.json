@@ -1,13 +1,13 @@
 {
   "receipt_version": 1,
-  "receipt_status": "READY_PRODUCER_HANDOFF_PENDING_RUNTIME_PUBLICATION_RECEIPT",
+  "receipt_status": "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
   "repository": "tesseract-trading/custos",
   "generated_at": "2026-07-23",
-  "code_commit": "ab5038cf11a7dff6ca79264e6cb91b32758c1357",
+  "code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-safety-policy-consumer-assets-v1.json",
-    "sha256": "2ac64476636c8f2002febe1ce273eea753d4b367cf97d0eb95b6c35cbe709c33",
-    "size_bytes": 2674
+    "sha256": "7c662a99e0ef8aeda64d6896d221379f230f25646d8c8bf7680f914fab2b9865",
+    "size_bytes": 3410
   },
   "producer_authority": {
     "repository": "tesseract-trading/crucible-rust",
@@ -19,10 +19,25 @@
     "subject_template": "crucible.runner.policy.v1.<tenant>.<runner>.<mode>",
     "schema_sha256": "2029b02dbf5f415c13f539cb807bf72c45b1be712fb0922a66f7d10bf4e8ac89",
     "golden_sha256": "ebd5c7679ff1182ea991fb72417ffa379180a4b8a50103552d06500842c7054a",
-    "runtime_receipt": null,
+    "runtime_receipt": {
+      "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_PRODUCTION_ISSUANCE_OPEN",
+      "command": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
+      "result": "1 passed",
+      "verified_at": "2026-07-26",
+      "crucible_code_commit": "40a43fbf146006bb90053c446bd15f529418b45e",
+      "custos_code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
+      "same_policy_from_crucible_pg_outbox": true,
+      "production_signed_publisher_path_exercised": true,
+      "production_daemon_path_exercised": true,
+      "policy_durable_before_command_ack": true,
+      "runner_fact_puback_and_projection": true,
+      "production_service_processes_launched": false,
+      "production_policy_issued": false
+    },
     "contract_authority_ready": true,
     "runtime_authority_ready": false
   },
+  "runtime_publication_path_verified": true,
   "runner_state_schema_version": 1,
   "policy_revision_axis": "revision",
   "immutable_policy_id_per_revision": true,
@@ -53,29 +68,37 @@
   "single_outbox": "runner_fact_outbox",
   "reservation_event_dedup_table": "runner_order_reservation_event",
   "runtime_identity": "deployment_instance_id",
-  "command_intake_authority_composed": false,
-  "runtime_policy_consumed": false,
+  "command_intake_authority_composed": true,
+  "runtime_policy_consumed": true,
   "runner_policy_capability_ready": false,
   "team_daemon_enabled": false,
   "runtime_ready": false,
   "live_ready": false,
   "production_ready": false,
   "open_blockers": [
-    "0117 execution receipts from the physical sim and live databases",
-    "launched signed policy publication, PubAck and real owner-policy consumption",
+    "deployed 0117 receipts from testnet and live physical databases",
+    "production-service-issued policy receipt through the same runtime chain",
     "live runtime and production promotion"
   ],
   "sources": {
-    "src/custos/contracts/crucible_runner_safety_policy.py": "6d977f19084437a0cef0f5b3ba04323e438af50c22a4d965a31f6166d37822ca",
-    "src/custos/core/runner_fact.py": "3b57ded85a3e7ee31ebc2000fab083e4030a7b2d2600fc7ece4cde54bfd49ce1",
-    "tests/test_runner_policy_runtime.py": "ffcc3f045e67ad25a7fc69efa0a01d3ed02736fa1a37802f271b9a3fa010e872",
+    "src/custos/contracts/crucible_runner_safety_policy.py": "3b9a49479d2f47b92f9e9b1250b208a5b18dd69b75fb0d71d7bf1ebd1fab6806",
+    "src/custos/core/runner_fact.py": "0e5bf2ea1c7c65f256a283bc8047a2e16b0be4be7286be108628439dd49a8ffc",
+    "tests/test_runner_policy_runtime.py": "777552794064bf0b4e31caf56bef3db3927c6a4f7f83a05630c4c22865c7dac0",
+    "tests/integration/test_nats_revocation.py": "66479283c584518935b7557c310f67741c84f764e31d9d7d39714b55e253f485",
     "tests/test_runner_fact_store.py": "3f2a5a1bf134913660b46712e3361db479533b219a72b3efc0d3faa3f680417d",
     "tests/test_order_reservation.py": "774fb53aec057f1979373e49b9e6e095ed581fe43b402e18b28ee3e5bf46ad2d"
   },
   "validation": {
     "command": "uv run pytest -q tests/test_runner_policy_runtime.py tests/test_runner_fact_store.py tests/test_order_reservation.py",
-    "passed": 20,
+    "passed": 22,
     "required_before_runtime_ready": true,
-    "status": "FOCUSED_RUNNER_POLICY_PRODUCER_HANDOFF_PASS"
+    "status": "FOCUSED_RUNNER_POLICY_V1_PASS"
+  },
+  "runtime_validation": {
+    "command": "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection",
+    "passed": 1,
+    "status": "AUTHENTICATED_SAME_POLICY_CONSUMED",
+    "production_service_processes_launched": false,
+    "production_policy_issued": false
   }
 }
