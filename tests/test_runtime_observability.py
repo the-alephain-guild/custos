@@ -69,6 +69,23 @@ async def test_runtime_metrics_project_store_health_without_a_second_journal(
                 (now - timedelta(seconds=40)).isoformat(),
             ),
         )
+        connection.execute(
+            """
+            INSERT INTO runner_fact_publication_receipt (
+                batch_id, stream_key, subject, source_seq_start, source_seq_end,
+                batch_payload_sha256, broker_stream, broker_sequence,
+                broker_domain, duplicate, publish_attempts, published_at
+            ) VALUES (?, 'stream-b',
+                      'crucible.runner.fact.v1.tenant-a.runner-a.sandbox',
+                      2, 2, ?, 'CRUCIBLE_RUNNER_FACT_V1', 19,
+                      'SIM', 0, 1, ?)
+            """,
+            (
+                "00000000-0000-4000-8000-000000000002",
+                "9" * 64,
+                (now - timedelta(seconds=3)).isoformat(),
+            ),
+        )
         _insert_desired(
             connection,
             instance_id="00000000-0000-4000-8000-000000000010",
@@ -171,6 +188,8 @@ async def test_runtime_metrics_project_store_health_without_a_second_journal(
     assert metrics.pending_fact_batches == 1
     assert metrics.oldest_pending_fact_age_seconds == 40
     assert metrics.fact_publish_attempts == 3
+    assert metrics.published_fact_batches == 1
+    assert metrics.last_fact_puback_age_seconds == 3
     assert metrics.desired_deployments == 2
     assert metrics.desired_applied_drift == 1
     assert metrics.oldest_desired_applied_drift_age_seconds == 35
@@ -243,6 +262,8 @@ def test_readiness_rejects_a_hidden_failed_transport_mode(tmp_path: Path) -> Non
         "pending_fact_batches": 0,
         "oldest_pending_fact_age_seconds": None,
         "fact_publish_attempts": 0,
+        "published_fact_batches": 0,
+        "last_fact_puback_age_seconds": None,
         "desired_deployments": 0,
         "desired_applied_drift": 0,
         "oldest_desired_applied_drift_age_seconds": None,

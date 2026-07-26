@@ -1013,6 +1013,22 @@ class PendingRunnerFactBatch:
 
 
 @dataclass(frozen=True, slots=True)
+class RunnerFactPublicationReceipt:
+    batch_id: UUID
+    stream_key: str
+    subject: str
+    source_seq_start: int
+    source_seq_end: int
+    batch_payload_sha256: str
+    broker_stream: str
+    broker_sequence: int
+    broker_domain: str | None
+    duplicate: bool
+    publish_attempts: int
+    published_at: str
+
+
+@dataclass(frozen=True, slots=True)
 class RunnerRuntimeMetricsV1:
     """Operational projection read atomically from the sole RunnerFact store."""
 
@@ -1025,6 +1041,8 @@ class RunnerRuntimeMetricsV1:
     pending_fact_batches: int
     oldest_pending_fact_age_seconds: float | None
     fact_publish_attempts: int
+    published_fact_batches: int
+    last_fact_puback_age_seconds: float | None
     desired_deployments: int
     desired_applied_drift: int
     oldest_desired_applied_drift_age_seconds: float | None
@@ -1115,6 +1133,28 @@ class RunnerFactOutbox:
                 );
                 CREATE INDEX IF NOT EXISTS runner_fact_outbox_delivery_order
                     ON runner_fact_outbox(stream_key, source_seq_start);
+                CREATE TABLE IF NOT EXISTS runner_fact_publication_receipt (
+                    batch_id TEXT PRIMARY KEY,
+                    stream_key TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    source_seq_start INTEGER NOT NULL CHECK (source_seq_start > 0),
+                    source_seq_end INTEGER NOT NULL CHECK (
+                        source_seq_end >= source_seq_start
+                    ),
+                    batch_payload_sha256 TEXT NOT NULL CHECK (
+                        length(batch_payload_sha256) = 64
+                    ),
+                    broker_stream TEXT NOT NULL,
+                    broker_sequence INTEGER NOT NULL CHECK (broker_sequence > 0),
+                    broker_domain TEXT,
+                    duplicate INTEGER NOT NULL CHECK (duplicate IN (0, 1)),
+                    publish_attempts INTEGER NOT NULL CHECK (publish_attempts >= 0),
+                    published_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS runner_fact_publication_receipt_stream_sequence
+                    ON runner_fact_publication_receipt(
+                        stream_key, source_seq_start, source_seq_end
+                    );
                 CREATE TABLE IF NOT EXISTS runner_state_schema (
                     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
                     schema_version INTEGER NOT NULL CHECK (schema_version > 0),
@@ -1531,6 +1571,14 @@ class RunnerFactOutbox:
                 FROM runner_fact_outbox
                 """
             ).fetchone()
+            publications = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS published_count,
+                    MAX(published_at) AS latest_published_at
+                FROM runner_fact_publication_receipt
+                """
+            ).fetchone()
             deployments = connection.execute(
                 f"""
                 SELECT
@@ -1598,6 +1646,20 @@ class RunnerFactOutbox:
             if oldest_pending is not None
             else None
         )
+        latest_published = publications["latest_published_at"]
+        last_puback_age = (
+            max(
+                0.0,
+                (
+                    observed_at
+                    - datetime.fromisoformat(str(latest_published).replace("Z", "+00:00")).astimezone(
+                        UTC
+                    )
+                ).total_seconds(),
+            )
+            if latest_published is not None
+            else None
+        )
 
         def age_seconds(value: Any) -> float | None:
             if value is None:
@@ -1615,6 +1677,8 @@ class RunnerFactOutbox:
             pending_fact_batches=int(outbox["pending_count"]),
             oldest_pending_fact_age_seconds=oldest_pending_age,
             fact_publish_attempts=int(outbox["publish_attempts"]),
+            published_fact_batches=int(publications["published_count"]),
+            last_fact_puback_age_seconds=last_puback_age,
             desired_deployments=int(deployments["desired_count"]),
             desired_applied_drift=int(deployments["drift_count"]),
             oldest_desired_applied_drift_age_seconds=age_seconds(deployments["oldest_drift_at_ns"]),
@@ -1634,14 +1698,148 @@ class RunnerFactOutbox:
             ),
         )
 
-    async def acknowledge(self, batch_id: UUID) -> None:
-        await asyncio.to_thread(self._acknowledge, batch_id)
+    async def commit_puback(
+        self,
+        batch_id: UUID,
+        *,
+        broker_stream: str,
+        broker_sequence: int,
+        broker_domain: str | None,
+        duplicate: bool,
+    ) -> RunnerFactPublicationReceipt:
+        return await asyncio.to_thread(
+            self._commit_puback,
+            batch_id,
+            broker_stream,
+            broker_sequence,
+            broker_domain,
+            duplicate,
+        )
 
-    def _acknowledge(self, batch_id: UUID) -> None:
-        with self._connect() as connection:
-            connection.execute(
-                "DELETE FROM runner_fact_outbox WHERE batch_id = ?", (str(batch_id),)
+    def _commit_puback(
+        self,
+        batch_id: UUID,
+        broker_stream: str,
+        broker_sequence: int,
+        broker_domain: str | None,
+        duplicate: bool,
+    ) -> RunnerFactPublicationReceipt:
+        if not broker_stream.strip():
+            raise RunnerStateDurabilityError("RunnerFact PubAck stream is required")
+        if type(broker_sequence) is not int or broker_sequence < 1:
+            raise RunnerStateDurabilityError("RunnerFact PubAck sequence must be positive")
+        if broker_domain is not None and not broker_domain.strip():
+            raise RunnerStateDurabilityError("RunnerFact PubAck domain must be non-empty")
+        if not isinstance(duplicate, bool):
+            raise RunnerStateDurabilityError("RunnerFact PubAck duplicate flag must be boolean")
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT
+                    stream_key, subject, source_seq_start, source_seq_end,
+                    payload, attempts
+                FROM runner_fact_outbox
+                WHERE batch_id = ?
+                """,
+                (str(batch_id),),
+            ).fetchone()
+            if row is None:
+                raise RunnerStateDurabilityError(
+                    "RunnerFact PubAck has no matching durable outbox batch"
+                )
+            published_at = _utc_now()
+            receipt = RunnerFactPublicationReceipt(
+                batch_id=batch_id,
+                stream_key=str(row["stream_key"]),
+                subject=str(row["subject"]),
+                source_seq_start=int(row["source_seq_start"]),
+                source_seq_end=int(row["source_seq_end"]),
+                batch_payload_sha256=_sha256_hex(bytes(row["payload"])),
+                broker_stream=broker_stream,
+                broker_sequence=broker_sequence,
+                broker_domain=broker_domain,
+                duplicate=duplicate,
+                publish_attempts=int(row["attempts"]),
+                published_at=published_at,
             )
+            connection.execute(
+                """
+                INSERT INTO runner_fact_publication_receipt (
+                    batch_id, stream_key, subject, source_seq_start, source_seq_end,
+                    batch_payload_sha256, broker_stream, broker_sequence,
+                    broker_domain, duplicate, publish_attempts, published_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(receipt.batch_id),
+                    receipt.stream_key,
+                    receipt.subject,
+                    receipt.source_seq_start,
+                    receipt.source_seq_end,
+                    receipt.batch_payload_sha256,
+                    receipt.broker_stream,
+                    receipt.broker_sequence,
+                    receipt.broker_domain,
+                    int(receipt.duplicate),
+                    receipt.publish_attempts,
+                    receipt.published_at,
+                ),
+            )
+            deleted = connection.execute(
+                "DELETE FROM runner_fact_outbox WHERE batch_id = ?",
+                (str(batch_id),),
+            )
+            if deleted.rowcount != 1:
+                raise RunnerStateDurabilityError(
+                    "RunnerFact PubAck could not retire its durable outbox batch"
+                )
+            connection.commit()
+            return receipt
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    async def publication_receipt(
+        self,
+        batch_id: UUID,
+    ) -> RunnerFactPublicationReceipt | None:
+        return await asyncio.to_thread(self._publication_receipt, batch_id)
+
+    def _publication_receipt(
+        self,
+        batch_id: UUID,
+    ) -> RunnerFactPublicationReceipt | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT *
+                FROM runner_fact_publication_receipt
+                WHERE batch_id = ?
+                """,
+                (str(batch_id),),
+            ).fetchone()
+        if row is None:
+            return None
+        return RunnerFactPublicationReceipt(
+            batch_id=UUID(str(row["batch_id"])),
+            stream_key=str(row["stream_key"]),
+            subject=str(row["subject"]),
+            source_seq_start=int(row["source_seq_start"]),
+            source_seq_end=int(row["source_seq_end"]),
+            batch_payload_sha256=str(row["batch_payload_sha256"]),
+            broker_stream=str(row["broker_stream"]),
+            broker_sequence=int(row["broker_sequence"]),
+            broker_domain=(
+                str(row["broker_domain"]) if row["broker_domain"] is not None else None
+            ),
+            duplicate=bool(row["duplicate"]),
+            publish_attempts=int(row["publish_attempts"]),
+            published_at=str(row["published_at"]),
+        )
 
     async def record_failure(self, batch_id: UUID, error: BaseException) -> None:
         await asyncio.to_thread(self._record_failure, batch_id, type(error).__name__)
@@ -4316,13 +4514,31 @@ class RunnerFactJetStreamPublisher:
                     headers={"Nats-Msg-Id": str(batch.batch_id)},
                     timeout=self._publish_timeout,
                 )
-                if not getattr(ack, "stream", None):
+                broker_stream = getattr(ack, "stream", None)
+                broker_sequence = getattr(ack, "seq", None)
+                broker_domain = getattr(ack, "domain", None)
+                duplicate_value = getattr(ack, "duplicate", None)
+                if not isinstance(broker_stream, str) or not broker_stream:
                     raise RunnerFactError("JetStream publish returned no stream acknowledgement")
+                if type(broker_sequence) is not int or broker_sequence < 1:
+                    raise RunnerFactError("JetStream publish returned no sequence acknowledgement")
+                if broker_domain is not None and not isinstance(broker_domain, str):
+                    raise RunnerFactError("JetStream publish returned an invalid domain")
+                if duplicate_value is not None and not isinstance(duplicate_value, bool):
+                    raise RunnerFactError("JetStream publish returned an invalid duplicate flag")
+                broker_domain = broker_domain or None
+                duplicate = bool(duplicate_value)
             except Exception as exc:
                 await self._outbox.record_failure(batch.batch_id, exc)
                 blocked_streams.add(batch.stream_key)
                 continue
-            await self._outbox.acknowledge(batch.batch_id)
+            await self._outbox.commit_puback(
+                batch.batch_id,
+                broker_stream=broker_stream,
+                broker_sequence=broker_sequence,
+                broker_domain=broker_domain,
+                duplicate=duplicate,
+            )
             delivered += 1
         return delivered
 

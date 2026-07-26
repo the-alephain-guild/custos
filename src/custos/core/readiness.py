@@ -180,6 +180,8 @@ _RUNTIME_METRIC_FIELDS = (
     "pending_fact_batches",
     "oldest_pending_fact_age_seconds",
     "fact_publish_attempts",
+    "published_fact_batches",
+    "last_fact_puback_age_seconds",
     "desired_deployments",
     "desired_applied_drift",
     "oldest_desired_applied_drift_age_seconds",
