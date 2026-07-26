@@ -78,12 +78,22 @@ async def _publish(connection_profile: object, database: Path) -> dict[str, obje
         delivered = await publisher.drain_once()
     finally:
         await publisher.close()
+    publication_receipt = await outbox.publication_receipt(batch_id)
+    if publication_receipt is None:
+        raise RuntimeError("JetStream PubAck did not create a durable publication receipt")
     return {
         "batch_id": str(batch_id),
         "subject": authority.subject,
         "payload_sha256": payload_sha256,
         "delivered": delivered,
         "pending_after": len(await RunnerFactOutbox(database).pending()),
+        "publication_receipt_payload_sha256": (
+            publication_receipt.batch_payload_sha256
+        ),
+        "broker_stream": publication_receipt.broker_stream,
+        "broker_sequence": publication_receipt.broker_sequence,
+        "broker_domain": publication_receipt.broker_domain,
+        "puback_duplicate": publication_receipt.duplicate,
     }
 
 

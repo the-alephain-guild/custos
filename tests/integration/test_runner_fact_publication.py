@@ -83,12 +83,25 @@ async def _exercise_publication(nats_url: str, database: Path) -> None:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await process.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=15)
+    except TimeoutError as error:
+        process.terminate()
+        stdout, stderr = await process.communicate()
+        raise AssertionError(
+            "RunnerFact publication process did not exit after PubAck: "
+            f"{stderr.decode() or stdout.decode()}"
+        ) from error
     assert process.returncode == 0, stderr.decode()
     publication = json.loads(stdout)
     assert publication["delivered"] == 1
     assert publication["pending_after"] == 0
     assert publication["subject"] == subject
+    assert publication["publication_receipt_payload_sha256"] == publication["payload_sha256"]
+    assert publication["broker_stream"] == _STREAM
+    assert publication["broker_sequence"] == 1
+    assert publication["broker_domain"] is None
+    assert publication["puback_duplicate"] is False
     try:
         subscription = await jetstream.pull_subscribe(
             subject,
