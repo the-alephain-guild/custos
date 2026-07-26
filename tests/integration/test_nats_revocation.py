@@ -36,7 +36,7 @@ _TENANT = "acme"
 _RUNNER = UUID("10000000-0000-4000-8000-000000000001")
 _MODE = "sandbox"
 _DOMAIN = "sim"
-_FACT_STREAM = "CRUCIBLE_RUNNER_FACT_SIM_V1"
+_FACT_STREAM = "CRUCIBLE_RUNNER_FACT_V1"
 _CONTROL_STREAM = "CRUCIBLE_RUNNER_CONTROL_SIM_V1"
 _COMMAND_FIXTURE = (
     Path(__file__).resolve().parents[2] / "docs/authority/runner-deployment-command-golden-v1.json"
