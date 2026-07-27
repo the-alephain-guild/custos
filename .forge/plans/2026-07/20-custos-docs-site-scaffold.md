@@ -1,6 +1,6 @@
 # 20 - custos.alephain.com docs site scaffold (Docusaurus + i18n + versioning)
 
-> **Status**: 🔲 Draft — awaiting CEO approval
+> **Status**: ⏳ In progress — CEO decisions ratified 2026-07-19 (see §CEO Decisions); Sessions 1-3 landed 6/12 tasks (T1-T5 + T9 ✅, T6 at 4/46 chapters, T7/T8/T10/T11/T12 open)
 > **Created**: 2026-07-19
 > **Project**: Custos
 > **Source**: Ecosystem-wide landing discovery Track α close-out (2026-07-19); the Guild landing, Alchymia landing and Tesseract landing all link to `custos.alephain.com` as the docs surface; the domain has no site yet.
