@@ -5,7 +5,7 @@ sidebar_position: 4
 
 # Contributing
 
-:::info Stub — pending Plan 20 T5 migration
+:::info This chapter is still being written.
 **Audience**: Contributors
 
 **TODO**: Inline of CONTRIBUTING.md + forge workflow pointer.

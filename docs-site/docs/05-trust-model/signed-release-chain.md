@@ -3,7 +3,6 @@ title: "Signed Release Chain"
 sidebar_position: 6
 ---
 
-<!-- source: docs/reproducible-build.md -->
 
 # Signed Release Chain
 
@@ -35,7 +34,7 @@ locally built Docker image.
 
 ```bash
 # 1. clone the repo at the release tag you want to verify
-git clone https://github.com/the-alephain-guild/custos.git
+git clone https://github.com/alchymia-labs/custos.git
 cd custos
 git checkout <release-tag>
 
@@ -87,6 +86,6 @@ served by:
   identity, and cosign signature against the published digest.
 
 A follow-up plan (tracked in
-[`upgrade-path.md`](upgrade-path.md#follow-up)) will pin the image
+[`upgrade-path.md`](/release-governance/upgrade-paths)) will pin the image
 build to a specific buildkit + `SOURCE_DATE_EPOCH` combination for
 bit-for-bit image reproducibility as well.

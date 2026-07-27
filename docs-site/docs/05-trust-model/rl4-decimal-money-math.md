@@ -5,7 +5,7 @@ sidebar_position: 5
 
 # Red Line #4 · Decimal Money Math
 
-:::info Stub — pending Plan 20 T5 migration
+:::info This chapter is still being written.
 **Audience**: Auditors
 
 **TODO**: Money path uses Decimal; wire uses str. No float() involvement.

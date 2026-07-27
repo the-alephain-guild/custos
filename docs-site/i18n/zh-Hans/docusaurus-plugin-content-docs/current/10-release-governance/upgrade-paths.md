@@ -3,12 +3,11 @@ title: "Upgrade Paths"
 sidebar_position: 2
 ---
 
-<!-- source: docs/upgrade-path.md -->
 
 # Upgrade Paths
 
-:::warning 🔄 中文翻译进行中 · PLAN 20 T6
-本章中文正文将在 Plan 20 T6 完成。当前显示英文占位。
+:::warning 中文翻译尚未完成
+本章暂时显示英文原文。
 :::
 
 The authoritative upgrade guide. Every minor / major release adds a section
@@ -28,18 +27,18 @@ Nautilus the default, validates every desired-state message through the strict
    `--engine noop` only for non-live contract tests.
 3. Add `generation >= 1`, `lifecycle_state`, and `strategy_config` to every
    spec; validate with `arx-runner deployment validate --spec-file <path>`.
-4. Provision the Crucible-owned JetStream topology and install the exact
-   Crucible domain-event public key on each runner. Custos does not create
+4. Provision the control-plane-owned JetStream topology and install the exact
+   the control plane domain-event public key on each runner. Custos does not create
    business streams.
-5. Submit desired state through Crucible. Custos only validates local files
+5. Submit desired state through the control plane. Custos only validates local files
    offline and consumes signed commands; gate readiness with `arx-runner health`.
 
-PS Plan 49 remains blocked until this upgrade is complete. PS consumes the
+Downstream strategy repositories remain blocked until this upgrade is complete. They consume the
 verified local image directly, maintains no derived Custos Dockerfile, and
 owns only strategy code plus `strategy_config` assembly. Remote release is
 deferred and is not a prerequisite for local PS integration.
 
-## 0.1.x → 0.2.0 (Plan 11 + 12 breaking release)
+## 0.1.x → 0.2.0 (breaking release)
 
 0.2.0 is the first clean-break release since the 0.1.x extraction. The
 `CHANGELOG.md` 0.2.0 entry is the canonical summary; the exact operator
@@ -79,7 +78,7 @@ docker run --rm \
   ghcr.io/the-alephain-guild/custos:v0.2.0
 ```
 
-See [`ops/05-deployment.md`](ops/05-deployment.md) §Docker Runtime Volume
+See [`ops/05-deployment.md`](/operator-guide/deployment) §Docker Runtime Volume
 Mount for the full pattern including `--user "$(id -u):$(id -g)"` when
 mounting a host directory whose ownership doesn't match container UID/GID.
 
@@ -87,7 +86,7 @@ mounting a host directory whose ownership doesn't match container UID/GID.
 
 The 0.x → 1.0 promote is contractually gated on ALL of:
 
-- [ ] Crucible command and fact wires are production ready: signed deployment
+- [ ] the control plane command and fact wires are production ready: signed deployment
       commands reach exact runner subjects and signed RunnerFacts are durably
       ingested without an ARX business-fact relay.
 - [ ] Three consecutive minor releases (`0.Y.0`, `0.Y+1.0`, `0.Y+2.0`)

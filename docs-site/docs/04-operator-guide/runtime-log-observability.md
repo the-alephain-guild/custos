@@ -3,7 +3,6 @@ title: "Runtime Log & Observability"
 sidebar_position: 4
 ---
 
-<!-- source: docs/design/runtime_log_fact.md -->
 
 # Runtime Log & Observability
 
@@ -16,10 +15,10 @@ The fact is stored inside the existing `RunnerFactBatchV1` envelope and uses
 the existing subject:
 
 ```text
-crucible.runner_fact.{mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
+crucible.runner_fact.{mode}.{tenant_id}.{runner_id}.{deployment_instance_id}  <!-- disclosure-ok: published subject an integrator must subscribe to -->
 ```
 
-The fact shape before the outbox allocates `seq` is:
+The fact shape before the durable local queue allocates `seq` is:
 
 ```json
 {
@@ -45,17 +44,17 @@ The deterministic event UUIDv5 preimage contains tenant, mode, runner,
 deployment instance, correlation ID and the digest of the sanitized structured
 content. Identical content within one stream is idempotent, while the same
 content in another tenant/mode/runner/instance stream cannot collide in the
-global outbox event-deduplication table.
+global durable local queue event-deduplication table.
 
 ## Shared authority and delivery
 
 - `RunnerRuntimeLogFact.v1` uses the same Ed25519 identity, capability receipt,
-  `RunnerFactAuthority`, source sequence, event deduplication, SQLite outbox,
-  subject, and `CRUCIBLE-RUNNER-FACT-BATCH-V1\0` signing domain as settlement,
+  `RunnerFactAuthority`, source sequence, event deduplication, SQLite durable local queue,
+  subject, and `CRUCIBLE-RUNNER-FACT-BATCH-V1\0` signing domain as settlement, <!-- disclosure-ok: published signing domain required to verify batches -->
   reconciliation, risk, and health facts.
 - A deployment does not enter Vault/G6/host when its runtime-log health binding
   cannot be resolved exactly from the validated capability receipt.
-- The outbox commits the fact before publish. A JetStream PubAck is required
+- The durable local queue commits the fact before publish. A JetStream PubAck is required
   before the batch is deleted, which is the producer delivery checkpoint. A
   crash between PubAck and deletion replays the same `batch_id`; consumer dedup
   makes this safe.

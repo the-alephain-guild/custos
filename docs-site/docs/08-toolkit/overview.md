@@ -3,7 +3,6 @@ title: "Strategy Toolkit Overview"
 sidebar_position: 1
 ---
 
-<!-- source: docs/design/strategy-toolkit.md -->
 
 # Strategy Toolkit Overview
 
@@ -12,13 +11,13 @@ sidebar_position: 1
 ## Ownership
 
 Custos owns the strategy execution ABI, toolkit implementation, pre-sign
-`StrategyArtifactRefV1`, and local fail-closed verifier. Philosophers-Stone owns
+`StrategyArtifactRefV1`, and local fail-closed verifier. the strategy publisher owns
 strategy source, canonical `StrategyReleaseBomV1`, the signed
-`StrategyReleaseStatementV1`, and detached `ArtifactAttestationRefV1`. Crucible
+`StrategyReleaseStatementV1`, and detached `ArtifactAttestationRefV1`. The control plane
 owns `ArtifactEvidenceV1`, acceptance receipts, StrategyRelease, artifact
 selection, DeploymentSpec, effective configuration, and business risk policy.
 
-The legacy Philosophers-Stone `build-image.sh` to Crucible Python publication
+The legacy the strategy publisher `build-image.sh` to the control plane Python publication
 and deployment path remains an independent compatibility lane. It cannot
 produce a v1.team receipt or act as a fallback for this contract.
 
@@ -29,7 +28,7 @@ produce a v1.team receipt or act as a fallback for this contract.
 Catalog aliases never authorize or address execution. The fixed entry-point
 group is `alephain.strategy_runtime.v1`.
 
-The adapter receives final effective config from a verified signed Crucible
+The adapter receives final effective config from a verified signed the control plane
 command. Custos parses JSON numbers as `Decimal`, rejects duplicates and
 non-finite numbers, recursively freezes containers, and recomputes
 `effective_config_digest`. Adapters cannot merge defaults or mutate config.
@@ -58,7 +57,7 @@ table may become a second authority.
 
 The PS in-toto/DSSE statement signs producer claims over fixed BOM, artifact and
 manifest subjects. After the bundle is immutable, `ArtifactAttestationRefV1`
-binds its coordinate/digest. Crucible then verifies the bundle with local policy
+binds its coordinate/digest. The control plane then verifies the bundle with local policy
 and produces post-bundle evidence; that composite evidence digest is not and
 cannot be claimed as a subject of the same bundle.
 
@@ -83,23 +82,23 @@ The `custos-strategy-toolkit` base/contracts distribution supports Python
 `Python >=3.12,<3.13` — exact matching base version, and `nautilus-trader==1.230.0`;
 Python 3.11 resolution must fail rather than omit NT.
 
-`docs/authority/strategy-toolkit-inventory-v1.json` classifies every current
+A published inventory classifies every current
 deterministic input below legacy `shared/` and `vendor/`. There are 241 inputs:
 36 platform-neutral, 55 Nautilus-specific, and 150 private-vendor files. Earlier
 Plan prose counted 459 general filesystem entries; that is not the deterministic
 extraction set.
 
-Plan 18 T4 maps those inputs one-to-one into `custos_toolkit`,
+The extraction step maps those inputs one-to-one into `custos_toolkit`,
 `custos_toolkit_nautilus.adapter`, and the private
 `custos_toolkit_nautilus._vendor.pandas_ta` namespace. The legacy implementation
 tree is removed; its package marker is implementation-free. Extraction may not
 publish top-level `shared`/`pandas_ta`, mutate `sys.path`, fake a distribution,
 or leave two writable canonical copies. Runtime verifier activation remains T5.
 
-Plan 18 T3 moves the exact reviewed execution-contract source bytes to
+The distribution step moves the exact reviewed execution-contract source bytes to
 `packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py`.
 The canonical V1 receipt declares that source path and pins the coordinated
-Custos, Philosophers-Stone, and Crucible handoff bytes. No second source or
+Custos, the strategy publisher, and the control plane handoff bytes. No second source or
 re-export shim is retained.
 
 Run `make strategy-contract-assets` to regenerate the sole canonical V1
@@ -114,7 +113,7 @@ signal/order-intent and private-vendor indicator behavior.
 package shell must pass strict mypy, while inventory-extracted implementation is
 checked against the machine-readable exact debt baseline in
 `strategy-toolkit-typing-baseline-v1.json`. The current 75 platform-neutral and
-289 Nautilus-adapter errors are acknowledged debt, not a strict PASS. Plan 18
+289 Nautilus-adapter errors are acknowledged debt, not a strict PASS. The toolkit work
 Task 4b must reduce that baseline to zero before the distributions or 18b may be
 called strict or production-ready. Private third-party vendor code stays outside
 mypy and remains guarded by exact digests plus fixed-input parity.
@@ -122,5 +121,5 @@ mypy and remains guarded by exact digests plus fixed-input parity.
 The current authority record is
 `custos-strategy-contract-v1-producer-receipt.json`. It remains
 `CANONICAL_V1_PENDING_PRODUCER_RECEIPTS`, with handoff/runtime/production false.
-Custos must not fabricate PS or Crucible receipts; those owners must consume and
+Custos must not fabricate PS or the control plane receipts; those owners must consume and
 pin the same exact V1 bytes before the coordinated production handoff closes.

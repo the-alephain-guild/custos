@@ -5,7 +5,7 @@ sidebar_position: 2
 
 # Red Line #1 · Key/KEK Never Leaves Process
 
-:::info Stub — pending Plan 20 T5 migration
+:::info This chapter is still being written.
 **Audience**: Auditors
 
 **TODO**: Code anchors + grep checklist for the key material boundary.

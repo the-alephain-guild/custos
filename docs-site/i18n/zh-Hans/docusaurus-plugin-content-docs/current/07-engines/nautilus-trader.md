@@ -3,17 +3,16 @@ title: "NautilusTrader Engine"
 sidebar_position: 1
 ---
 
-<!-- source: docs/engines/nautilus.md -->
 
 # NautilusTrader Engine
 
-:::warning 🔄 中文翻译进行中 · PLAN 20 T6
-本章中文正文将在 Plan 20 T6 完成。当前显示英文占位。
+:::warning 中文翻译尚未完成
+本章暂时显示英文原文。
 :::
 
 > Status: **implemented** (`src/custos/engines/nautilus/`). This page is an
 > overview and index — the full design (process lifecycle, G6 gate, venue
-> adapters) lives in [`docs/design/nautilus_host.md`](../design/nautilus_host.md)
+> adapters) lives in [`docs/design/nautilus_host.md`](/engines/nautilus-trader)
 > and is not duplicated here.
 
 ## What it is
@@ -36,16 +35,16 @@ already satisfies.
   `TradingNode` process across `sandbox` / `testnet` / `live` trading modes.
 
 Both satisfy the Tier-1 contract in
-[`docs/design/engine_protocol.md`](../design/engine_protocol.md); the mapping
+[`docs/design/engine_protocol.md`](/engines/engine-roadmap); the mapping
 from each Tier-1 method to the underlying NT SDK call is documented in
-[`docs/design/nautilus_host.md`](../design/nautilus_host.md).
+[`docs/design/nautilus_host.md`](/engines/nautilus-trader).
 
 ## Where to look next
 
 | Topic | Doc |
 |-------|-----|
-| Process lifecycle, G6 gate, venue adapters | [`docs/design/nautilus_host.md`](../design/nautilus_host.md) |
-| `ExecutionEngineProtocol` Tier-1/Tier-2 contract | [`docs/design/engine_protocol.md`](../design/engine_protocol.md) |
+| Process lifecycle, G6 gate, venue adapters | [`docs/design/nautilus_host.md`](/engines/nautilus-trader) |
+| `ExecutionEngineProtocol` Tier-1/Tier-2 contract | [`docs/design/engine_protocol.md`](/engines/engine-roadmap) |
 | Strategy loading (vendored toolkit) | `src/custos/engines/nautilus/strategy_loader.py` |
 | Binance venue adapter | `src/custos/engines/nautilus/venue_binance.py` |
 | Optional dependency | `pyproject.toml` → `[project.optional-dependencies].nautilus` |

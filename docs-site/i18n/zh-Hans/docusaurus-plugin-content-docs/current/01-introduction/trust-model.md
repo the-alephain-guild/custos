@@ -3,7 +3,6 @@ title: "信任模型"
 sidebar_position: 2
 ---
 
-<!-- source: docs/design/00-overview.md -->
 
 # 信任模型
 
@@ -12,7 +11,7 @@ sidebar_position: 2
 
 ## 是什么
 
-**custos** (拉丁语: *guardian*) 是 [The Alephain Guild](https://github.com/the-alephain-guild)
+**custos** (拉丁语: *guardian*) 是 the Alephain Guild
 生态的**非托管、自托管**执行 runner. 用户在自己基础设施上运行本 daemon,
 跑经过回测的 NautilusTrader 策略, 本地持交易所 API Key, **永不上云端**.
 
@@ -25,8 +24,7 @@ custos 是 Apache-2.0 开源, day 1 公开. 这不是偶然, 是生态非托管�
 2. 用户理性信任此 daemon 的**唯一条件**是: 能读代码验证它对 Key 的处理
 3. 开源把 "Key 和策略只在本地" 从**设计声明**升级为**外部审计员逐行可查的工程事实**
 
-见 [ADR-012 v4 §Custos](https://github.com/the-alephain-guild) 与
-[ADR-014 v6 §Non-Custodial Trust Model].
+见 the published ownership boundary 与。
 
 ## 信任边界 (custos 承担的红线)
 
@@ -51,16 +49,16 @@ custos 由六个核心模块组成:
 | **enrollment** | 一次性 `EnrollmentToken` 配对; `runner_id`; `paper_only` 默认 | Token 一次性 (防重放) |
 | **reconcile** | 声明式循环: 拉取 `DeploymentSpec` → 启停 NT → 上报 `DeploymentStatus` | 失联 ≠ 停止 |
 | **nautilus_host** | NT 进程监督 + `ExecutionEngineAdapter` (CEX/NT) + **G6 host gate** | **G6 live 发布门** |
-| **runner_fact** | NT MessageBus → 封闭 typed facts → 签名持久出站信箱 → Crucible | Key 不出进程;unsigned fallback 禁止 |
+| **runner_fact** | NT MessageBus → 封闭 typed facts → 签名持久出站信箱 → the control plane | Key 不出进程;unsigned fallback 禁止 |
 | **credential_vault** | sops+age 本地 KEK vault; `trade_no_withdraw` 权限范围 | KEK / API key 不出进程 |
 | **nats_client** | JetStream 客户端 + envelope schema + subject 命名 | Wire schema 版本化 + 契约防漂移 |
 
 各模块设计详情见本目录下同名 `.md` 文件.
 
-## 与 arx / Crucible 的边界
+## 与 arx / the control plane 的边界
 
 - **custos → arx**: 拉取 `DeploymentSpec` + 推送遥测 / heartbeat / 对账状态
-- **custos ↛ Crucible**: 从不直接对话, 由 arx 中介 (arx 是 gateway)
+- **custos ↛ the control plane**: 从不直接对话, 由 arx 中介 (arx 是 gateway)
 - **单一外部入口**: 所有外部访问 custos 状态必须经 arx 的 `gatekeeper` + `CustosGateway`
 - **custos 未暴露 API**: custos 不给终端用户 / API 客户端 / dashboard 提供任何直接接口
 

@@ -5,7 +5,7 @@ sidebar_position: 6
 
 # Changelog
 
-:::info Stub — pending Plan 20 T5 migration
+:::info This chapter is still being written.
 **Audience**: All
 
 **TODO**: Link + rendered CHANGELOG.md.

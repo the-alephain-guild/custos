@@ -3,12 +3,11 @@ title: "Credential Vault Operations"
 sidebar_position: 2
 ---
 
-<!-- source: docs/design/credential_vault.md -->
 
 # Credential Vault Operations
 
-:::warning 🔄 中文翻译进行中 · PLAN 20 T6
-本章中文正文将在 Plan 20 T6 完成。当前显示英文占位。
+:::warning 中文翻译尚未完成
+本章暂时显示英文原文。
 :::
 
 > Custos 六件套之一。源码：`src/custos/core/credential_vault.py`。**Key 本地金库承重墙**
@@ -18,8 +17,7 @@ sidebar_position: 2
 
 `credential_vault` 是 Custos 持有 operator 交易所凭证和 Runner machine principal 的本地金库。它把加密的凭证在
 runner 本地解密成交易所 API key，交给 `nautilus_host` 下单——**KEK（age 私钥）永不
-出主机，云端产品面 schema 永不持有 key**。这是 CLAUDE.md「Key/策略逻辑只在 runner
-本地」红线的工程兑现点，也是 custos 必须开源的根本原因：operator 能审计这段代码，才
+出主机，云端产品面 schema 永不持有 key**。这是「Key 与策略逻辑只在 runner 本地」这条保证的工程兑现点，也是 custos 必须开源的根本原因：operator 能审计这段代码，才
 敢把 key 交给 daemon。
 
 0.2.0+ 实现（clean-break，CEO 2026-07-10 directive）：
@@ -69,12 +67,12 @@ JSON payload、文件 mode 与 `trade_no_withdraw` permission scope。手工调�
   的旧模型。CEO clean-break directive (2026-07-10)：**无 fallback read path，无
   自动迁移命令**。旧用户升级路径：手工
   `sops --decrypt --input-type json --output-type json` 老 JSON → 逐个 `arx-runner vault put`
-  建 per-key `.enc`。理由：消除 lesson #35 dual-source
-  boundary constant + write-path race in the JSON multi-credential model。
+  建 per-key `.enc`。理由：旧的单文件 JSON 多凭证模型存在双写竞态，
+  按 key 拆分文件后不再有该竞态。
 
 ## 关键接口
 
-> **对外暴露口径（DEV-60-R3-ARX-SINGLE-EXIT）**：本模块**绝不**对任何外部方暴露 key
+> **对外暴露口径**：本模块**绝不**对任何外部方暴露 key
 > 或解密接口；`decrypt` 只被本地 `DeploymentReconciler` 调用。runner 出网只有遥测 +
 > 状态，plaintext 永不上 NATS / HTTP。*This module's API surface is consumed
 > exclusively by the arx coordination layer (audit signals only); no direct external

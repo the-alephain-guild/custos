@@ -3,27 +3,26 @@ title: "Consuming RunnerFact"
 sidebar_position: 3
 ---
 
-<!-- source: docs/design/runner_fact.md -->
 
 # Consuming RunnerFact
 
-:::warning 🔄 中文翻译进行中 · PLAN 20 T6
-本章中文正文将在 Plan 20 T6 完成。当前显示英文占位。
+:::warning 中文翻译尚未完成
+本章暂时显示英文原文。
 :::
 
 ## Ownership
 
-Custos observes the local engine. Crucible owns canonical business and lifecycle
+Custos observes the local engine. The control plane owns canonical business and lifecycle
 facts. ARX may consume audit projections but is not in the publication path.
 
     engine / watchdog / breaker
       -> typed local fact adapter
       -> RunnerFactOutbox
       -> signed RunnerFact batch
-      -> Crucible ingestion and projection
+      -> control-plane ingestion
 
 There is no generic unsigned NATS telemetry actor. Engine observations must map
-to an explicitly versioned fact type before entering the durable outbox.
+to an explicitly versioned fact type before entering the durable local queue.
 
 ## Required identity
 
@@ -37,13 +36,13 @@ The subject and durable stream identity are stable across spec and generation
 changes:
 
 ```text
-crucible.runner_fact.{mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
+crucible.runner_fact.{mode}.{tenant_id}.{runner_id}.{deployment_instance_id}  <!-- disclosure-ok: published subject an integrator must subscribe to -->
 tenant_id + mode + runner_id + deployment_instance_id
 ```
 
 `deployment_spec_id`, `deployment_spec_digest`, and `generation` are signed batch
 fences. They never split the stream and never reset its source sequence. The v1
-signing domain is `CRUCIBLE-RUNNER-FACT-BATCH-V1\0`.
+signing domain is `CRUCIBLE-RUNNER-FACT-BATCH-V1\0`. <!-- disclosure-ok: published signing domain required to verify batches -->
 
 The signing header is a closed 18-field object in this order:
 `schema_version`, `batch_id`, `tenant_id`, `trading_mode`, `runner_id`,
@@ -63,7 +62,7 @@ exact bytes, digest, synthetic key and signature for cross-language consumers.
 The immutable v1 candidate retains the existing 13 wire kind names. Unknown
 kinds are terminal contract violations; they cannot fall back to unsigned logs.
 
-| Projector | Accepted `facts[].kind` |
+| Consumer | Accepted `facts[].kind` |
 |---|---|
 | settlement | `execution_fill`, `fill`, `position_closed`, `fee`, `period_closed` |
 | risk | `equity_snapshot`, `position_snapshot` |
@@ -87,7 +86,7 @@ do not depend on language-specific number rendering.
 - seq, allocated exclusively by RunnerFactOutbox when the fact enters the
   signed batch `facts[]` array.
 
-Emission requires an exact `deployment_lifecycle` capability projector binding
+Emission requires an exact `deployment_lifecycle` capability binding
 for the same mode, instance, spec digest and strategy. A health-only authority
 cannot emit lifecycle facts.
 
@@ -102,12 +101,12 @@ persists the signed batch.
 
 ## Failure semantics
 
-Outbox enqueue success is the reporting durability boundary. Reconciliation
+Durable-queue enqueue success is the reporting durability boundary. Reconciliation
 keeps separate applied_generation and reported_generation watermarks. If enqueue
 fails, Custos NAKs the command; redelivery retries only the fact and does not
 repeat the successful engine action.
 
-Local safety continues while Crucible is unavailable. Custos never downgrades a
+Local safety continues while the control plane is unavailable. Custos never downgrades a
 fact to an unsigned compatibility topic.
 
 ## Candidate readiness ceiling
@@ -116,6 +115,6 @@ fact to an unsigned compatibility topic.
 candidate and supersedes `.1`, whose receipt remains immutable historical
 evidence with status `NON_CURRENT_SUPERSEDED` in the current authority index.
 Its synthetic Ed25519 key and signature are cross-language golden evidence only;
-they are not runtime identity evidence. Until Crucible Plan 90 Phase A returns a
-receipt over the exact candidate bytes, projector compatibility, runtime RC,
+they are not runtime identity evidence. Until the control plane returns a
+receipt over the exact candidate bytes, consumer compatibility, runtime RC,
 real round-trip, live, runtime and production readiness remain false.

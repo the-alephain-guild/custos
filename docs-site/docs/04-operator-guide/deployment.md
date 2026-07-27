@@ -5,7 +5,7 @@ sidebar_position: 1
 
 # Systemd / Docker / K8s Deployment
 
-:::info Stub — pending Plan 20 T5 migration
+:::info This chapter is still being written.
 **Audience**: Operators
 
 **TODO**: Production runbook for three deployment shapes.

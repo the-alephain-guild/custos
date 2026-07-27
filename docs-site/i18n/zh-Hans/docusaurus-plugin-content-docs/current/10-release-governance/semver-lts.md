@@ -3,24 +3,23 @@ title: "SEMVER & LTS Commitment"
 sidebar_position: 1
 ---
 
-<!-- source: docs/lts-commitment.md -->
 
 # SEMVER & LTS Commitment
 
-:::warning 🔄 中文翻译进行中 · PLAN 20 T6
-本章中文正文将在 Plan 20 T6 完成。当前显示英文占位。
+:::warning 中文翻译尚未完成
+本章暂时显示英文原文。
 :::
 
 This document is the authoritative statement of the Long-Term Support (LTS)
 window, security patch SLA, release cadence, and key-rotation protocol for
 `custos-runner`. It is deliberately hand-maintained (rather than generated
 from an LTS-status page) at the 0.x stage — an automated status page is a
-follow-up plan tracked in [`upgrade-path.md`](upgrade-path.md).
+follow-up plan tracked in [`upgrade-path.md`](/release-governance/upgrade-paths).
 
 The concrete numbers below are contractual — a change to any row must go
 through a MINOR bump (loosening) or a MAJOR bump (tightening) plus a
-matching `CHANGELOG.md` entry. See [`../CHANGELOG.md`](../CHANGELOG.md) and
-the SEMVER contract table in the Plan 12 spec for the full envelope.
+matching `CHANGELOG.md` entry. See [`../CHANGELOG.md`](https://github.com/alchymia-labs/custos/blob/main/CHANGELOG.md) and
+the SEMVER contract table below for the full envelope.
 
 ## EOL Window
 
@@ -45,8 +44,8 @@ Security fixes ship as a patch release (`0.Y.z+1`) within **30 days** of
 public CVE disclosure (best-effort; a note in this doc's Deviations log
 covers any miss).
 
-- Report via [GitHub Security Advisories](https://github.com/the-alephain-guild/custos/security/advisories)
-  — see [`SECURITY.md`](../SECURITY.md) for the disclosure protocol.
+- Report via [GitHub Security Advisories](https://github.com/alchymia-labs/custos/security/advisories)
+  — see [`SECURITY.md`](https://github.com/alchymia-labs/custos/blob/main/SECURITY.md) for the disclosure protocol.
 - Public advisories go live within 24 hours of the patch release.
 - Backport policy: security fixes land on every active LTS line. Critical
   functional-bug backports need a CEO override.
@@ -83,12 +82,12 @@ An identity break that only affects re-verification of prior tags
 does *not* affect the artifact contents — auditors can still verify
 via the tag-time cert-identity that was in effect when the tag was
 cut. Verification instructions live in
-[`../.github/workflows/scripts/verify-release.sh`](../.github/workflows/scripts/verify-release.sh).
+[`../.github/workflows/scripts/verify-release.sh`](https://github.com/alchymia-labs/custos/blob/main/.github/workflows/scripts/verify-release.sh).
 
 ## Upgrade Path
 
 Concrete upgrade steps for each minor bump live in
-[`upgrade-path.md`](upgrade-path.md), including the 0.x → 1.0 promote
+[`upgrade-path.md`](/release-governance/upgrade-paths), including the 0.x → 1.0 promote
 checklist (arx-side gateway wire ready + 3 consecutive minor releases
 without breaking changes + gateway-contract v1 covered 100%).
 

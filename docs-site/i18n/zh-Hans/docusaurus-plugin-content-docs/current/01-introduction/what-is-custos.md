@@ -3,7 +3,6 @@ title: "什么是 custos"
 sidebar_position: 1
 ---
 
-<!-- source: docs/domain.md §Bounded context -->
 
 # 什么是 custos
 
@@ -12,7 +11,7 @@ sidebar_position: 1
 custos 只承担本地执行机制:
 
 - runner enrollment 材料与本地机器凭据;
-- Crucible 签名指令的验证;
+- the control plane 签名指令的验证;
 - 期望部署态到本地引擎的对账 (reconcile);
 - 进程监督、看门狗与本地安全熔断器;
 - 观察到的 runner facts 的签名与发布.

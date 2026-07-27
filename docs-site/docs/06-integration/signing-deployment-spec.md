@@ -5,7 +5,7 @@ sidebar_position: 2
 
 # Signing DeploymentSpec
 
-:::info Stub — pending Plan 20 T5 migration
+:::info This chapter is still being written.
 **Audience**: Integrators
 
 **TODO**: Ed25519 preimage. Canonical serialisation.

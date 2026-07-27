@@ -5,7 +5,7 @@ sidebar_position: 3
 
 # Security Policy
 
-:::info Stub — pending Plan 20 T5 migration
+:::info This chapter is still being written.
 **Audience**: Auditors, contributors
 
 **TODO**: Vulnerability disclosure. Inline of SECURITY.md.

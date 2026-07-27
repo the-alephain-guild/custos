@@ -5,8 +5,8 @@ sidebar_position: 4
 
 # Your First DeploymentSpec
 
-:::info Stub — pending Plan 20 T5 migration
+:::info This chapter is still being written.
 **Audience**: Integrators
 
-**TODO**: End-to-end: sign a DeploymentSpec on the Crucible side, deliver via NATS, watch custos reconcile.
+**TODO**: End-to-end: sign a DeploymentSpec on the control plane side, deliver via NATS, watch custos reconcile.
 :::

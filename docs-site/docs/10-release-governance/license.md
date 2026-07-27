@@ -5,7 +5,7 @@ sidebar_position: 5
 
 # License & NOTICE
 
-:::info Stub — pending Plan 20 T5 migration
+:::info This chapter is still being written.
 **Audience**: All
 
 **TODO**: Apache-2.0 + attribution.

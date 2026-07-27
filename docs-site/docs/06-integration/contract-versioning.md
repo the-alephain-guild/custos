@@ -5,7 +5,7 @@ sidebar_position: 4
 
 # Contract Versioning
 
-:::info Stub — pending Plan 20 T5 migration
+:::info This chapter is still being written.
 **Audience**: Integrators
 
 **TODO**: v1..v4 compatibility strategy. Deprecation policy.

@@ -3,12 +3,11 @@ title: "Signed Release Chain"
 sidebar_position: 6
 ---
 
-<!-- source: docs/reproducible-build.md -->
 
 # Signed Release Chain
 
-:::warning 🔄 中文翻译进行中 · PLAN 20 T6
-本章中文正文将在 Plan 20 T6 完成。当前显示英文占位。
+:::warning 中文翻译尚未完成
+本章暂时显示英文原文。
 :::
 
 `custos-runner` supports byte-for-byte reproducible wheel builds so an external
@@ -39,7 +38,7 @@ locally built Docker image.
 
 ```bash
 # 1. clone the repo at the release tag you want to verify
-git clone https://github.com/the-alephain-guild/custos.git
+git clone https://github.com/alchymia-labs/custos.git
 cd custos
 git checkout <release-tag>
 
@@ -91,6 +90,6 @@ served by:
   identity, and cosign signature against the published digest.
 
 A follow-up plan (tracked in
-[`upgrade-path.md`](upgrade-path.md#follow-up)) will pin the image
+[`upgrade-path.md`](/release-governance/upgrade-paths)) will pin the image
 build to a specific buildkit + `SOURCE_DATE_EPOCH` combination for
 bit-for-bit image reproducibility as well.

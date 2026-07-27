@@ -3,15 +3,14 @@ title: "Red Line #3 · Reconcile Disconnect ≠ Stop"
 sidebar_position: 4
 ---
 
-<!-- source: docs/design/runner_safety_policy.md -->
 
 # Red Line #3 · Reconcile Disconnect ≠ Stop
 
-:::warning 🔄 中文翻译进行中 · PLAN 20 T6
-本章中文正文将在 Plan 20 T6 完成。当前显示英文占位。
+:::warning 中文翻译尚未完成
+本章暂时显示英文原文。
 :::
 
-Crucible-rust owns the versioned aggregate runner-cap policy. Its authority key
+The control plane-rust owns the versioned aggregate runner-cap policy. Its authority key
 is tenant id + logical trading mode + runner UUID. `live`, `sandbox` and
 `testnet` are logical modes; the physical sim database role is not a mode.
 ARX authorization, DeploymentSpec `risk_config`, deployment commands, Custos
@@ -38,7 +37,7 @@ policy fails closed.
 T7B advances the local implementation to `READY_CONTRACT_CONSUMER_CODE_ONLY`.
 After signature verification, exact policy and verification material are stored
 in the existing RunnerFact SQLite database. Schema v3 adds one scoped policy
-head; it does not add a second database or outbox. A successor must advance
+head; it does not add a second database or durable local queue. A successor must advance
 version and generation by exactly one and match the durable prior fence.
 Restart recovery rejects missing, inactive, premature and expired policy.
 
@@ -50,7 +49,7 @@ limits. Risk-reducing intents remain permitted by the local cap contract.
 ## Current readiness
 
 The producer chain is currently on `codex/cr99-runner-policy`, not
-crucible-rust main. Migration 0117 is prepared but not executed, runtime
+the control plane. The aggregate-cap rollout is prepared but not yet executed, so runtime
 publication is false, and the daemon has not consumed a real signed policy.
 The native engine-boundary order interceptor and full reservation lifecycle are
 also open. Therefore code-only readiness does not enable the team daemon, live,

@@ -3,12 +3,11 @@ title: "Strategy Artifact Signing & Verification"
 sidebar_position: 2
 ---
 
-<!-- source: docs/design/engine_protocol.md -->
 
 # Strategy Artifact Signing & Verification
 
-:::warning 🔄 中文翻译进行中 · PLAN 20 T6
-本章中文正文将在 Plan 20 T6 完成。当前显示英文占位。
+:::warning 中文翻译尚未完成
+本章暂时显示英文原文。
 :::
 
 The engine adapter is a local deep module. It hides process and framework
@@ -78,17 +77,17 @@ Nautilus conversion path.
 ## Failure contract
 
 Adapter errors are local execution outcomes. The reconciler decides ACK or NAK
-and emits a signed RunnerFact; the adapter cannot mutate Crucible business
+and emits a signed RunnerFact; the adapter cannot mutate the control plane business
 state or ask ARX to authorize a recovery action.
 
-The Plan 19 lifecycle supervisor persists its bounded restart counter in the
+The lifecycle supervisor persists its bounded restart counter in the
 existing RunnerFact SQLite `command_in_progress_lease`. It probes a matching
 durably applied engine before deploying on redelivery, uses exponential backoff,
 and commits ready or retry-exhausted/quarantine through the T4 atomic lifecycle
-transaction. It creates no database, journal or outbox.
+transaction. It creates no database, journal or durable local queue.
 
 Current authority status is `PREPARED_BLOCKED_ARTIFACT_RUNTIME_CAPABILITY`.
 The adapter contract is implemented, but the v1.team daemon remains disabled
-while the real Plan 18 T5e artifact capability is false. Live readiness is false.
+while no verified artifact capability is present. Live readiness is false.
 Portfolio valuation is independently `READY_RELIABLE_PORTFOLIO_SEMANTICS_ONLY`;
 that scoped receipt does not satisfy the signed runner-policy or runtime gates.

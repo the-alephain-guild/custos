@@ -40,9 +40,23 @@ jobs:
         working-directory: docs-site
         run: npm ci
 
+      # Disclosure runs first and gates everything after it. A leak that reaches
+      # gh-pages is irreversible, so it must fail before anything is built.
+      - name: Disclosure gate (self-test)
+        working-directory: docs-site
+        run: npm run test:disclosure
+
+      - name: Disclosure gate (site content)
+        working-directory: docs-site
+        run: npm run check:disclosure
+
       - name: Build (all locales)
         working-directory: docs-site
         run: npm run build
+
+      - name: Typecheck
+        working-directory: docs-site
+        run: npm run typecheck
 
       - name: Deploy to gh-pages branch
         # Only deploy on main; PR builds compile-verify but do not publish.

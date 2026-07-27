@@ -3,9 +3,9 @@ import type {ReactNode} from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 
-// NOTE: Plan 20 T7 rewrites this into a full editorial homepage
-// (hero + Two Faces ARX section + red-lines callout + getting-started cards).
-// This stub gives the site a valid `/` route for the T2-T4 slice.
+// Placeholder landing page. The editorial homepage — hero, the ARX/Custos
+// layering section, the guarantees callout and getting-started cards — replaces
+// this once the chapter content it links into is complete.
 
 export default function Home(): ReactNode {
   return (
@@ -94,14 +94,15 @@ export default function Home(): ReactNode {
         </div>
         <h2 style={{marginTop: 0}}>Site under construction</h2>
         <p style={{color: 'var(--ifm-color-content-secondary)'}}>
-          The full documentation site is being scaffolded per{' '}
-          <a href="https://github.com/alchymia-labs/custos/blob/main/.forge/plans/2026-07/20-custos-docs-site-scaffold.md">
-            Plan 20
+          This documentation site is still being written. Some chapters are
+          complete, others are outlines, and the Chinese translation covers
+          only the first chapters so far. Start at the{' '}
+          <Link to="/introduction/what-is-custos">Introduction</Link>, and
+          read the source at{' '}
+          <a href="https://github.com/alchymia-labs/custos">
+            alchymia-labs/custos
           </a>
-          . Session 1 (T2–T4) lands this skeleton; content migration (T5) and
-          the full homepage (T7) follow in subsequent sessions. See the{' '}
-          <Link to="/introduction/what-is-custos">Introduction</Link> for the
-          current shape of each chapter.
+          .
         </p>
       </main>
     </Layout>

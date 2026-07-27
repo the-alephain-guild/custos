@@ -3,13 +3,12 @@ title: "架构一览"
 sidebar_position: 3
 ---
 
-<!-- source: docs/design/01-architecture.md -->
 
 # 架构一览
 
-> 从顶层 domain 文档 §0-§2 提炼的**架构视角**: 6 BC 边界 + 非托管分层信任边界的技术兑现.
+> 从顶层 domain 文档 §0-§2 提炼的**架构视角**: 六个模块边界 + 非托管分层信任边界的技术兑现.
 >
-> **v2 canonical boundary**:ARX 只做认证 / 授权;Crucible Rust 是
+> **v2 canonical boundary**:ARX 只做认证 / 授权;the control plane 是
 > DeploymentSpec / DeploymentInstance 与业务投影的 owner;custos 持凭据和执行,
 > 产生 exact-instance signed RunnerFacts(含交易所 fee / funding 证据).
 > mode 仅 sandbox / testnet / live,Python 无 production fallback.
@@ -18,9 +17,9 @@ sidebar_position: 3
 
 ```
     ┌────────────────────────────────────────────┐
-    │  云端控制面 (闭源, 生态 Tier D 商业许可)      │
+    │  云端控制面 (闭源, 商业许可)      │
     │  ┌─────────┐   ┌────────────┐              │
-    │  │  arx    │──▶│  Crucible  │  发布 Spec    │
+    │  │  arx    │──▶│  the control plane  │  发布 Spec    │
     │  │ (SaaS)  │   │            │              │
     │  └─────────┘   └────────────┘              │
     │        ▲                │                   │
@@ -43,7 +42,7 @@ sidebar_position: 3
                      └────────────────────────────┘
 ```
 
-- **控制面**:ARX 提供 ActorAssertion;Crucible Rust 持不可变 spec、mode 本地 instance 并验收 signed facts;二者从不持 Key 明文
+- **控制面**:ARX 提供 ActorAssertion;the control plane 持不可变 spec、mode 本地 instance 并验收 signed facts;二者从不持 Key 明文
 - **数据面** (custos + NT):持 Key + 跑策略 + 直连交易所
 
 ## 2. 数据面 vs 控制面切分 (非托管承重墙)
@@ -51,16 +50,16 @@ sidebar_position: 3
 | 面 | 组成 | 开源状态 | 持有的敏感数据 |
 |----|------|---------|---------------|
 | **数据面** | custos + NautilusTrader | **全部开源 (Apache-2.0 / MIT)** | Key 明文 · 订单簿明细 · Fill 事件明文 · 账户余额明细 |
-| **控制面** | arx · Crucible · 生态其他闭源系统 | 全部闭源 (Tier D) | Key 引用 handle · DeploymentSpec · StatusReport · 遥测摘要 |
+| **控制面** | ARX 与云端控制面 | 全部闭源 | Key 引用 handle · DeploymentSpec · StatusReport · 遥测摘要 |
 
-**关键洞察 (ADR-012 v4)**:只要数据面开源可审,控制面即使完全攻破,用户 Key 依然安全 ——
+**关键洞察**:只要数据面开源可审,控制面即使完全攻破,用户 Key 依然安全 ——
 因为 Key 根本不在控制面.
 
 ## 3. Key 永不上云的技术锚点 (红线 0.1)
 
 | 环节 | 兑现方式 |
 |------|---------|
-| 存储 | ExchangeCredential 密文在 `~/.custos/vault/<tenant>/…` 本地文件系统 (fs 权限 0600) |
+| 存储 | ExchangeCredential 密文在 `~/.arx/vault/` 本地文件系统 (fs 权限 0600) |
 | 加密 | argon2id (KDF) + aes-256-gcm;KEK / MasterKey 派生只在 custos 进程内存 |
 | 使用 | NT 调用交易所 API 时通过 credential_vault 接口即时解密,明文只在**单次请求 lifetime** |
 | 上报 | AlertEvent / telemetry payload 强制脱敏 (`api_key_sha8` / `credential_hint`) |
@@ -75,7 +74,6 @@ Live 交易所部署前必须通过 `NtTradingNodeHost` 的 G6 gate:
 - `LIVE_MODE=true` env 独立开关,与 spec 中 `trading_mode=live` 双守
 - G6 gate deny → 上报 `FailureEvent(reason_code=g6_gate_denied)`
 
-Plan 00c 是 G6 gate 逐级放行的正式落地 plan.
 
 ## 5. 失联 ≠ 停止 (红线 0.3)
 
@@ -94,34 +92,34 @@ Level-triggered 对账的核心不变量:
 - Pydantic 模型 `field_serializer` 或 `json_encoders={Decimal: str}` 统一
 - Contract test:`test_telemetry_money_contract.py` (18 test)
 
-## 7. 六个限界上下文 (BC)
+## 7. 六个模块
 
-| BC | 承担实体 | 状态机 | 详细文档 |
+| 模块 | 承担实体 | 状态机 | 详细文档 |
 |----|---------|-------|---------|
-| **Runner 宿主** | `Runner` / `EnrollmentToken` / `HostIdentity` | offline → online / draining | [Enrollment](../02-getting-started/enrollment) |
-| **声明式对账** | `DeploymentSpec` / `DeploymentStatus` / `DesiredState` / `ActualState` / `ReconcileLoop` | pending → running → degraded → stopped | [Reconcile Loop](../03-concepts/reconcile-loop) |
-| **本地 Vault** | `VaultNamespace` / `EncryptedKey` / `MasterKey` / `KEK` | derived → active → cleared (TTL) | [Credential Vault](../04-operator-guide/credential-vault) |
-| **NT 执行适配** | `NTAdapter` / `TradingNodeConfig` / `StrategyMirror` | INITIALIZED → STARTED → STOPPED → DISPOSED | [G6 Host Gate](../03-concepts/g6-host-gate) |
-| **RunnerFact** | 封闭 13-kind union / 签名 batch / instance-keyed sequence | 持久出站信箱 → PubAck | [RunnerFact](../03-concepts/runner-fact) |
-| **NATS 通道** | `NatsClient` / `EnvelopeSchema` / `build_subject()` | connected → reconnecting (auto) | [Gateway Contract v1](../06-integration/gateway-contract-v1) |
+| **Runner 宿主** | `Runner` / `EnrollmentToken` / `HostIdentity` | offline → online / draining | [Enrollment](/getting-started/enrollment) |
+| **声明式对账** | `DeploymentSpec` / `DeploymentStatus` / `DesiredState` / `ActualState` / `ReconcileLoop` | pending → running → degraded → stopped | [Reconcile Loop](/concepts/reconcile-loop) |
+| **本地 Vault** | `VaultNamespace` / `EncryptedKey` / `MasterKey` / `KEK` | derived → active → cleared (TTL) | [Credential Vault](/operator-guide/credential-vault) |
+| **NT 执行适配** | `NTAdapter` / `TradingNodeConfig` / `StrategyMirror` | INITIALIZED → STARTED → STOPPED → DISPOSED | [G6 Host Gate](/concepts/g6-host-gate) |
+| **RunnerFact** | 封闭 13-kind union / 签名 batch / instance-keyed sequence | 持久出站信箱 → PubAck | [RunnerFact](/concepts/runner-fact) |
+| **NATS 通道** | `NatsClient` / `EnvelopeSchema` / `build_subject()` | connected → reconnecting (auto) | [Gateway Contract v1](/integration/gateway-contract-v1) |
 
 ## 8. 用户验证路径
 
 用户只需审计**两个开源 repo** 即可确认信任模型:
 
 1. **NautilusTrader upstream** (`nautilus-trader/nautilus_trader`, MIT) —— 确认 NT 无偷 Key 或代下单路径
-2. **custos** (`the-alephain-guild/custos`, Apache-2.0) —— 确认 custos 无以下反模式:
-   - 上传 Key 明文到 arx / Crucible / 任何云端
+2. **custos** (`alchymia-labs/custos`, Apache-2.0) —— 确认 custos 无以下反模式:
+   - 上传 Key 明文到 arx / the control plane / 任何云端
    - 接收云端下发的 "代解密" 指令
    - 接收云端下发的 "直接下单" 绕过策略指令
    - Vault 密文格式与算法与文档声明不一致
 
-不需要审计 arx / Crucible / 其他闭源子系统 —— 即使全被攻破,Key 依然不在攻击范围.
+不需要审计 arx / the control plane / 其他闭源子系统 —— 即使全被攻破,Key 依然不在攻击范围.
 
 ## 9. 承重墙原则
 
 custos **不能被 arx 替代** —— 任何 "云端代替 custos 直接下单" 的架构提案都直接击穿
-非托管红线. ADR-012 v4 明文钉死:
+非托管保证。设计上明确:
 
 > Runner 是用户装到自己基础设施上、持自己 Key 的守护进程;用户必须能审计代码才敢信任
 > Key 交给它. 这是 "Key / 策略只在本地" 红线从设计声明升级为工程可验证的唯一路径.
@@ -130,5 +128,6 @@ custos **不能被 arx 替代** —— 任何 "云端代替 custos 直接下单"
 
 ## 参考
 
-- **红线权威声明**:见 GitHub 仓库 [`.claude/rules/mandatory-rules.md`](https://github.com/alchymia-labs/custos/blob/main/.claude/rules/mandatory-rules.md) §0
-- **偏离协议**:见 GitHub 仓库 [`.claude/rules/deviation-protocol.md`](https://github.com/alchymia-labs/custos/blob/main/.claude/rules/deviation-protocol.md)
+- 四条不可绕过的保证: [信任模型](./trust-model)
+- live 执行前的准入校验: [G6 host gate](/concepts/g6-host-gate)
+- 凭证的存放与轮换: [凭证金库](/operator-guide/credential-vault)

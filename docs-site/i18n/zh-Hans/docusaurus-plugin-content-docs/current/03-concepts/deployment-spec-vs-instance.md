@@ -3,12 +3,11 @@ title: "DeploymentSpec vs DeploymentInstance"
 sidebar_position: 1
 ---
 
-<!-- source: docs/domain.md §Core terms -->
 
 # DeploymentSpec vs DeploymentInstance
 
-:::warning 🔄 中文翻译进行中 · PLAN 20 T6
-本章中文正文将在 Plan 20 T6 完成。当前显示英文占位。
+:::warning 中文翻译尚未完成
+本章暂时显示英文原文。
 :::
 
 ## Core terms
@@ -42,4 +41,4 @@ only as provenance in facts and diagnostics.
 
 A signed observation emitted by Custos. A fact states what this runner
 observed or executed. It is not itself the canonical business lifecycle;
-Crucible validates and persists it before changing canonical state.
+The control plane validates and persists it before changing canonical state.

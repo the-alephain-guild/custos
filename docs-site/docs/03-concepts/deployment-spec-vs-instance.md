@@ -3,7 +3,6 @@ title: "DeploymentSpec vs DeploymentInstance"
 sidebar_position: 1
 ---
 
-<!-- source: docs/domain.md §Core terms -->
 
 # DeploymentSpec vs DeploymentInstance
 
@@ -38,4 +37,4 @@ only as provenance in facts and diagnostics.
 
 A signed observation emitted by Custos. A fact states what this runner
 observed or executed. It is not itself the canonical business lifecycle;
-Crucible validates and persists it before changing canonical state.
+The control plane validates and persists it before changing canonical state.

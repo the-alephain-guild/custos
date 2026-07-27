@@ -3,16 +3,15 @@ title: "Reconcile Loop"
 sidebar_position: 4
 ---
 
-<!-- source: docs/design/reconcile.md -->
 
 # Reconcile Loop
 
 ## Input contract
 
-The reconciler consumes a Crucible-signed domain event on:
+The reconciler consumes a control-plane-signed domain event on:
 
 ```
-crucible_rust.domain.<tenant>.<mode>.deployment.
+control-plane.domain.<tenant>.<mode>.deployment.
   DeploymentSpecReadyForRunner.<runner_id>.<deployment_instance_id>
 ```
 
@@ -46,7 +45,7 @@ must never be used as a fallback when the signed-command/store path is blocked.
 2. Validate tenant, mode, runner, instance, spec digest and live evidence.
 3. Compare generation with the accepted generation for that instance.
 4. Load the exact T3-verified command from the T4 durable desired record.
-5. Require the real Plan 18 T5e artifact capability; live remains fail closed.
+5. Require a verified strategy artifact; live remains fail closed without one.
 6. Apply start/reconfigure/stop through `EngineLifecycleSupervisor` using the instance id.
 7. Wait for the typed seven-check `EngineReadyReceipt`; task creation alone is insufficient.
 8. Atomically commit applied state and the deterministic lifecycle fact in the T4 transaction.
@@ -86,7 +85,7 @@ Ready timeout, retryable terminal events and zombie disconnect share one durable
 bounded restart budget with exponential backoff. A non-retryable terminal event
 or exhausted budget atomically quarantines and enqueues the terminal lifecycle.
 The daemon treats any unexpected long-running task exit as fatal, cancels sibling
-tasks, then stops deployments, flushes the RunnerFact outbox and closes transports.
+tasks, then stops deployments, flushes the RunnerFact durable local queue and closes transports.
 
 The fallback breaker reads exactly one `EngineStatus` per instance per tick.
 That status is derived by the canonical Nautilus portfolio snapshot provider, so
@@ -94,5 +93,5 @@ open notional and actual portfolio equity have one valuation boundary. A probe
 exception or typed unreliable status immediately freezes the breaker and requests
 flattening; missing mark or equity can never skip a tick or be treated as zero
 risk. This T6 safety behavior is local execution evidence only. It does not replace
-the Crucible-signed versioned runner policy required by T7, and DeploymentSpec
+the control-plane-signed versioned runner policy required by T7, and DeploymentSpec
 `risk_config` cannot define or override the runner aggregate cap.
