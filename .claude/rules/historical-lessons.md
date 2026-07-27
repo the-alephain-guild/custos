@@ -6,6 +6,34 @@
 
 > **custos 内部 lesson 用 `C1` `C2` … 前缀区分生态数字编号** (见文末"记录新 lesson")。
 
+## C5 verbatim migration 把内部文档搬上公网 — 素材源必须按受众选, 且要有机械 gate (2026-07)
+
+- **事件**: 文档站 T5 迁移把 `docs/**.md` 逐字搬进 `docs-site/`, 模式明写 "content
+  copied verbatim"。审计发现 406 处内部标识跨 45 章 — 其他生态系统名、私有仓库路径、
+  跨服务机制词、内部 plan/DEV/lesson 编号。gh-pages 已于 2026-07-21 发布, 96 页中
+  9 页命中, 属**已发生的对外泄漏**而非险些泄漏。
+- **根因**: 素材源与受众错配。`docs/**.md` 是内部设计文档, 写作目的是在内部系统之间
+  划分职责 — 每句都属实, 而属实正是它不该被发布的内容。"verbatim 迁移"把审阅责任
+  隐式转移给了"反正内容是对的"这个前提, 但对外产出物的判据不是**是否属实**, 是
+  **是否该对这个受众说**。站点自建站起就没有 disclosure gate, 全靠人记。
+- **预防**:
+  - 对外产出物的素材源取自**用户可见的产品面**(CLI / 配置文件 / 可观测事件 / 公开
+    API)。内部文档只能用于**核实事实**, 不能用作**叙事骨架**。
+  - 站点必须有 disclosure gate 且置于 CI 构建**之前** — 泄漏不可逆, 构建失败可逆。
+    gate 必须扫全文含代码块与 HTML 注释: 内部标识贴进示例 payload 与写在正文等价。
+  - gate 需自带回归测试(证伪基线), 否则无法证明它真的会拦。逃生舱
+    `disclosure-ok: <理由>` 要过审, 不是静音开关。
+  - 纪律写进产出物**自身的 README**, 让下一个写作者在动笔处看到。
+  - 章节标题与内容必须匹配 — 本次 "Configuration Reference" 实为贡献者指南,
+    读者点进来拿不到期待的东西, 是与泄漏并存的独立缺陷。
+- **Binding**: `docs-site/scripts/check-disclosure.mjs` + `test-check-disclosure.mjs`
+  (19 用例) + `.github/workflows/docs-deploy.yml` disclosure 前置 +
+  `docs-site/README.md` §"This site is customer-facing"。生态原文见
+  workspace lesson #42 与 `mandatory-rules.md` §9; custos 是该 lesson 的第二次复发,
+  证明"只有 arx/docs-site 有 gate"这个已知缺口会被真实触发。
+
+---
+
 ## C4 mock subprocess + 绕过 public surface 会形成双重假绿 (2026-07)
 
 - **事件**: Plan 17 前，`arx-runner vault verify` 的 unit test mock 了合法 JSON stdout，

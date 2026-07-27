@@ -293,6 +293,30 @@ Not merely tsc / lint / build — real runtime evidence:
 
 ## 偏离与改进日志
 
+### DEVIATION-07: T5 verbatim migration 把内部文档发布上线 (2026-07-27 审计抓)
+
+- **等级**: **高** — 触及 `mandatory-rules.md` §9 对外产出物纪律, 且已实际发布
+- **原因**: T5 的迁移模式定为 "content copied verbatim, `docs/**.md` 保持 SSOT"。
+  但 `docs/**.md` 是**内部设计与规划文档**, 其写作目的是在内部系统之间划分职责。
+  逐字搬运把这层内容整体带上了公网。素材源与受众错配 —— 内容属实, 但不该对这个受众说。
+- **影响**: 406 处内部标识跨 45 章 (含 en + zh)。gh-pages `a60bd8b` (2026-07-21)
+  已发布 96 页, 其中 9 页命中。不是"尚未上线的侥幸", 是**已发生的对外泄漏**。
+- **决定**:
+  1. 建 `docs-site/scripts/check-disclosure.mjs` + 19 条回归测试, 扫全文含代码块与
+     HTML 注释, 置于 CI 构建之前 (泄漏不可逆, 构建失败可逆)
+  2. 三章无"清洗后保留"版本, 整章重写: engine roadmap / G6 host gate /
+     configuration reference (后者标题是配置参考、内容是贡献者指南)
+  3. 上游引用统一归一为 "the control plane"
+  4. 顺带修两个真缺陷: clone URL 指向不存在的仓库; vault 路径停留在 0.2.0 前的命名空间
+  5. 修 T5 迁移遗留的 46 处 broken link; 修 typecheck 配置
+  6. 纪律写进 `docs-site/README.md` 动笔处
+- **验证**: `npm run verify` 全绿 — 19/19 gate 自测 / 94 文件 0 违规 / en+zh build
+  成功 / 0 broken link / typecheck 通过
+- **遗留**: 已发布的 gh-pages 快照仍是旧内容, 需重新部署覆盖 (下次 push 触发);
+  镜像坐标 `ghcr.io/the-alephain-guild/custos` 两个 namespace 均 403, 尚未公开发布,
+  文档承诺了用户当前无法执行的 pull
+- **教训**: 见 `.claude/rules/historical-lessons.md` C5
+
 ### DEVIATION-01: doc-id 引用漏剥 `NN-` 前缀 (Session 1 verify 抓)
 
 - **等级**: 低(单 session 内发现即修,不影响生产)
