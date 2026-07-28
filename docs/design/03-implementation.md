@@ -150,8 +150,8 @@ make test-baseline  # 可绿基线 (排除 wire_shapes)
 ```bash
 # 见 .claude/rules/verification.md §Non-Custodial 4 红线专项检查
 grep -rnE 'log\.(info|debug|warning).*api[_-]?key' src/ tests/
-grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ --exclude=nautilus_host.py
-grep -rn 'stop_all_strategies\|force_shutdown' src/custos/core/reconcile.py
+grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ --exclude=host.py --exclude=venue_binance.py
+grep -rn 'stop_all_strategies\|force_shutdown' src/custos/
 grep -rnE 'float\(.*price|float\(.*amount' src/
 ```
 

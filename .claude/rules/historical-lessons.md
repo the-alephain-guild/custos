@@ -52,7 +52,10 @@
   - 底层工具 smoke 只能作为补充诊断，不能替代 public surface acceptance。
 - **Binding**: `tests/test_cli_vault_put_verify.py::test_vault_verify_uses_explicit_json_sops_types_for_enc_suffix`、
   `tests/test_per_key_vault.py::test_cli_verify_and_runtime_share_json_decrypt_command` 与
-  `tests/integration/test_standalone_runtime.py` 的 public put → verify → runtime lifecycle。
+  `tests/test_cli_vault_put_verify.py` 的 public put → verify roundtrip。
+  (原 binding 指向的 `tests/integration/test_standalone_runtime.py` 已随重构删除;
+  2026-07-28 核实后改指向现存覆盖 — lesson 的 binding 必须指向仍然存在的防护,
+  否则教训看起来已固化, 实际防护已消失。)
 
 ---
 

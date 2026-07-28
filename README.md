@@ -21,6 +21,11 @@ ARX is the platform side. Custos is the part that runs on your own
 infrastructure, and it is open source so that you can audit exactly what it
 does with your credentials before you hand them over.
 
+The split is deliberate and narrow. ARX decides *what* should run and accepts
+proof of what happened; Custos holds the keys and does the running. Neither
+side can do the other's job: Custos has no path to create or approve a
+deployment, and ARX never holds a credential or places an order.
+
 ## Runtime identity
 
 `deployment_instance_id` is the only key for a running deployment. A
@@ -42,6 +47,11 @@ its own; it refuses to act without evidence that one happened.
 
 Runner facts are signed locally and carry tenant, mode, runner and exact
 deployment instance identity.
+
+Authorization is provisioned once, at enrollment, and is then out of the
+delivery path: nothing relays a deployment command or a runner fact on the way
+through. That is why an authorization outage can neither stop a running
+deployment nor be used to inject one.
 
 ## Guarantees
 

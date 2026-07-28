@@ -62,11 +62,11 @@ uv add --extra dev <package>  # 开发依赖
 ### 改代码 → 测试
 
 ```bash
-# 改代码 (src/custos/core/reconcile.py)
-$EDITOR src/custos/core/reconcile.py
+# 改代码 (例: src/custos/core/runner_command_runtime.py)
+$EDITOR src/custos/core/runner_command_runtime.py
 
 # 跑相关测试
-uv run pytest tests/test_reconcile.py -v
+uv run pytest tests/test_runner_command_runtime.py -v
 
 # 全量 verify
 make verify

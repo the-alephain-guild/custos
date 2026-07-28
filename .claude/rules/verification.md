@@ -37,7 +37,7 @@ make verify     # fmt-check + lint + pytest 全绿
 
 ```bash
 uv run pytest tests/ -v
-uv run pytest tests/test_g6_gate.py -v      # G6 gate 单独
+uv run pytest tests/test_nautilus_host_capability.py -v  # live 执行门能力面
 uv run pytest -k "reconcile" -v             # 关键词过滤
 ```
 
@@ -77,11 +77,13 @@ NATS acceptance，并输出 image ID + revision。PS 不得 pull 未发布的 GH
 grep -rnE 'log\.(info|debug|warning).*api[_-]?key' src/ tests/
 grep -rnE 'publish.*password|send.*secret' src/
 
-# 红线 0.2 G6 gate 绕过 (禁在 nautilus_host.py 外自建 venue client)
-grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ --exclude=nautilus_host.py
+# 红线 0.2 live 执行门绕过 (禁在引擎 host 外自建 venue client)
+grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ --exclude=host.py --exclude=venue_binance.py
 
 # 红线 0.3 失联即停止 (禁云端断线时暴力 stop_all)
-grep -rn 'stop_all_strategies\|force_shutdown' src/custos/core/reconcile.py
+# 注意: 必须扫整个 src/custos/ — 指向单一文件的 grep 在该文件被重命名后
+# 只发 warning 且退出码 0, 会静默变成假阴性
+grep -rn 'stop_all_strategies\|force_shutdown' src/custos/
 
 # 红线 0.4 float 用于 money math (禁)
 grep -rnE 'float\(.*price|float\(.*amount|float\(.*notional' src/
@@ -93,7 +95,7 @@ grep -rnE 'float\(.*price|float\(.*amount|float\(.*notional' src/
 
 ```bash
 uv run python scripts/generate_wire_fixtures.py  # 重新生成参考 fixture
-uv run pytest tests/test_wire_shapes.py tests/test_nats_envelope.py -v
+uv run pytest tests/test_runner_fact_contract_v1.py -v
 ```
 
 ## 常见失败诊断
@@ -104,7 +106,7 @@ uv run pytest tests/test_wire_shapes.py tests/test_nats_envelope.py -v
 | `pytest 报 asyncio_mode` | `pyproject.toml` 未配 `asyncio_mode=auto` | 已配, 若跑不通看 pytest 版本 |
 | `ruff check` 大量 UP 报错 | Python 3.11 语法未升级 | `make fmt` + 手动修 |
 | G6 gate test fail | `NtTradingNodeHost` 实现缺失 | Plan 00a 之后才应通过 |
-| telemetry money contract fail | float 混入 Decimal | 修 `src/custos/core/telemetry_actor.py` |
+| money contract fail | float 混入 Decimal | 查 `src/custos/core/local_cap.py` / `fallback_breaker.py` / `runner_fact.py` |
 
 ## 未来验证 target (待落地)
 

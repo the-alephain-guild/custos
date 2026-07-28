@@ -69,22 +69,34 @@ def test_changelog_documents_v030_clean_break() -> None:
 
 
 def test_readme_declares_single_authority_topology() -> None:
-    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-
-    assert "ARX: authenticate actor and authorize intent" in text
-    assert "Crucible: validate business rules, persist state, approve and sign command" in text
-    assert "Custos: verify command, reconcile local runtime, sign execution facts" in text
-    assert "deployment_instance_id is the only key" in text
-    assert "make check-authority" in text
-
-
-def test_readme_forbids_arx_business_fact_relay() -> None:
+    """The README must state who decides and who executes, without naming the
+    services behind ARX. It is the repository's public front page."""
     text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     normalized = " ".join(text.split())
 
-    assert "ARX may consume audit or read-model events" in text
-    assert "never a relay for a DeploymentSpec or a RunnerFact" in normalized
-    assert "Custos does not count human approvals" in text
+    assert "ARX: authorize the intent, approve and sign the deployment command" in text
+    assert "Custos: verify the command, reconcile local runtime, sign execution facts" in text
+    assert "ARX: accept the signed facts and advance the deployment lifecycle" in text
+    assert "`deployment_instance_id` is the only key" in normalized
+    assert "Custos has no path to create or approve a deployment" in normalized
+
+
+def test_readme_does_not_name_services_behind_arx() -> None:
+    """ARX is one commercial product to a reader. Naming what implements it
+    discloses a boundary the reader neither needs nor is entitled to."""
+    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    for name in ("Crucible", "Philosophers-Stone", "Speculum", "Synedrion", "Athanor"):
+        assert name not in text, f"README names an internal system: {name}"
+
+
+def test_readme_forbids_business_fact_relay() -> None:
+    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    normalized = " ".join(text.split())
+
+    assert "nothing relays a deployment command or a runner fact" in normalized
+    assert "Custos does not count approvals" in normalized
+    assert "ARX never holds a credential or places an order" in normalized
 
 
 @pytest.mark.parametrize("path", TEXT_FILES, ids=lambda path: str(path.relative_to(REPO_ROOT)))
