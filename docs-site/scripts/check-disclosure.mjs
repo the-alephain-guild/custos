@@ -99,9 +99,27 @@ const BANNED = [
       /\bADR-\d{3}\b/,
       /\bTier\s+[A-D]\b/,
       /\b\d+\s*BC\b/,
+      /\bG\d+(-[A-Za-z]+)?\b/,
+      /\bG-SoD\b/,
+      /\bvision\s*支柱/,
+      /\b六件套\b/,
+      /\b三件套\b/,
     ],
     guidance:
-      'Internal plan, deviation and lesson numbers are meaningless to readers. Describe the capability or name the guarantee instead.',
+      'Internal plan, gate, deviation and lesson numbers are meaningless to readers. Describe what the check does or name the guarantee instead.',
+  },
+  {
+    group: 'internal process and source layout',
+    patterns: [
+      /\bCEO\b/,
+      /\bdirective\s*\(\d{4}-\d{2}-\d{2}\)/,
+      /\bsrc\/custos\//,
+      /\bpackages\/custos-/,
+      /\btests?\/test_\w+\.py/,
+      /\bscripts\/\w+\.py/,
+    ],
+    guidance:
+      'Who decided what internally, and where the code lives in our tree, are not part of the product. Describe the behaviour the reader can observe or configure.',
   },
 ];
 

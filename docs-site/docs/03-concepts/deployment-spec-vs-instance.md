@@ -37,4 +37,4 @@ only as provenance in facts and diagnostics.
 
 A signed observation emitted by Custos. A fact states what this runner
 observed or executed. It is not itself the canonical business lifecycle;
-The control plane validates and persists it before changing canonical state.
+ARX validates and persists it before changing canonical state.

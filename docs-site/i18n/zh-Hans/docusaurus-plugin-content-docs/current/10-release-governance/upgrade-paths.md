@@ -27,10 +27,10 @@ Nautilus the default, validates every desired-state message through the strict
    `--engine noop` only for non-live contract tests.
 3. Add `generation >= 1`, `lifecycle_state`, and `strategy_config` to every
    spec; validate with `arx-runner deployment validate --spec-file <path>`.
-4. Provision the control-plane-owned JetStream topology and install the exact
-   the control plane domain-event public key on each runner. Custos does not create
+4. Provision ARX-owned JetStream topology and install the exact
+   ARX domain-event public key on each runner. Custos does not create
    business streams.
-5. Submit desired state through the control plane. Custos only validates local files
+5. Submit desired state through ARX. Custos only validates local files
    offline and consumes signed commands; gate readiness with `arx-runner health`.
 
 Downstream strategy repositories remain blocked until this upgrade is complete. They consume the
@@ -86,7 +86,7 @@ mounting a host directory whose ownership doesn't match container UID/GID.
 
 The 0.x → 1.0 promote is contractually gated on ALL of:
 
-- [ ] the control plane command and fact wires are production ready: signed deployment
+- [ ] ARX command and fact wires are production ready: signed deployment
       commands reach exact runner subjects and signed RunnerFacts are durably
       ingested without an ARX business-fact relay.
 - [ ] Three consecutive minor releases (`0.Y.0`, `0.Y+1.0`, `0.Y+2.0`)

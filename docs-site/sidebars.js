@@ -32,7 +32,7 @@ const sidebars = {
       items: [
         'concepts/deployment-spec-vs-instance',
         'concepts/trading-modes',
-        'concepts/g6-host-gate',
+        'concepts/live-execution-gate',
         'concepts/reconcile-loop',
         'concepts/runner-fact',
       ],
@@ -55,7 +55,7 @@ const sidebars = {
       items: [
         'trust-model/red-lines',
         'trust-model/rl1-key-kek-never-leaves',
-        'trust-model/rl2-g6-gate-cannot-bypass',
+        'trust-model/rl2-live-execution-gate',
         'trust-model/rl3-reconcile-disconnect',
         'trust-model/rl4-decimal-money-math',
         'trust-model/signed-release-chain',

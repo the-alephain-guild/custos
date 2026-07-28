@@ -72,10 +72,17 @@ not claim it.
 
 **2. Never name what is not public.**
 
-Custos and ARX are the only public names. Do not name other systems in the
-ecosystem, internal storage or migration identifiers, cross-service mechanism
-vocabulary, private repository paths, or internal plan / deviation / lesson
-numbers.
+Custos and ARX are the only public names. ARX is presented as one product —
+whatever implements it behind the scenes is not something a reader needs to
+model, so do not introduce a separate "control plane" actor alongside it.
+
+Do not name other systems in the ecosystem, internal storage or migration
+identifiers, cross-service mechanism vocabulary, private repository paths,
+internal plan / gate / deviation / lesson numbers (`G6`, `DEV-…`, `Plan 20 T5`),
+who decided something internally, or where a file lives in our source tree.
+
+Also drop the framing that says which internal document a chapter was distilled
+from. It reads as an editing note and tells a customer nothing.
 
 Do NOT surface `docs/authority/*` receipts on the site — those are internal
 artifacts. They may be referenced by digest.

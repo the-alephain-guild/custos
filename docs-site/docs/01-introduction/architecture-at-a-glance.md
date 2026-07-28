@@ -6,9 +6,8 @@ sidebar_position: 3
 
 # Architecture at a Glance
 
-> 从 `../domain.md` §0-§2 提炼的**架构视角**: 六个模块边界 + Non-Custodial 分层信任边界的技术兑现.
 >
-> **v2 canonical boundary**：ARX 只认证/授权；the control plane 是
+> **v2 canonical boundary**：ARX 只认证/授权；ARX 是
 > DeploymentSpec/DeploymentInstance 与业务投影 owner；Custos 持凭据和执行，
 > 产生 exact-instance signed RunnerFacts（含 venue fee/funding evidence）。
 > mode 仅 sandbox/testnet/live，Python 无 production fallback。
@@ -17,9 +16,9 @@ sidebar_position: 3
 
 ```
     ┌────────────────────────────────────────────┐
-    │  云端控制面 (闭源, 商业许可)      │
+    │  ARX (闭源, 商业许可)      │
     │  ┌─────────┐   ┌────────────┐              │
-    │  │  arx    │──▶│  the control plane  │  发布 Spec    │
+    │  │  arx    │──▶│  ARX  │  发布 Spec    │
     │  │ (SaaS)  │   │            │              │
     │  └─────────┘   └────────────┘              │
     │        ▲                │                   │
@@ -42,18 +41,18 @@ sidebar_position: 3
                      └────────────────────────────┘
 ```
 
-- **控制面**：ARX 提供 ActorAssertion；the control plane 持 immutable spec、mode-local instance 并验收 signed facts；二者从不持 Key 明文
+- **ARX**：ARX 提供 ActorAssertion；ARX 持 immutable spec、mode-local instance 并验收 signed facts；二者从不持 Key 明文
 - **数据面** (custos + NT): 持 Key + 跑策略 + 直连交易所
 
-## 2. 数据面 vs 控制面切分 (Non-Custodial 承重墙)
+## 2. 数据面 vs ARX切分 (Non-Custodial 承重墙)
 
 | 面 | 组成 | 开源状态 | 持有的敏感数据 |
 |----|------|---------|---------------|
 | **数据面** | custos + NautilusTrader | **全部开源 (Apache-2.0 / MIT)** | Key 明文 · 订单簿明细 · Fill 事件明文 · 账户余额明细 |
-| **控制面** | ARX 与云端控制面 | 全部闭源 | Key 引用 handle · DeploymentSpec · StatusReport · 遥测摘要 |
+| **ARX** | ARX 与ARX | 全部闭源 | Key 引用 handle · DeploymentSpec · StatusReport · 遥测摘要 |
 
-**关键洞察**: 只要数据面开源可审, 控制面即使完全攻破, 用户 Key 依然安全 —
-因为 Key 根本不在控制面.
+**关键洞察**: 只要数据面开源可审, ARX即使完全攻破, 用户 Key 依然安全 —
+因为 Key 根本不在ARX.
 
 ## 3. Key 永不上云的技术锚点 (红线 0.1)
 
@@ -65,14 +64,14 @@ sidebar_position: 3
 | 上报 | AlertEvent / telemetry payload 强制脱敏 (`api_key_sha8` / `credential_hint`) |
 | 审计 | Vault 解密路径带 `AuditLog` (`last_accessed_at` 更新触发) |
 
-## 4. G6 host gate (红线 0.2)
+## 4. live execution gate (红线 0.2)
 
-Live venue 部署前必须过 `NtTradingNodeHost` 的 G6 gate:
+Live venue 部署前必须过 `NtTradingNodeHost` 的 live execution gate:
 
 - `NoopHost` 只允许 `sandbox` / `testnet`
 - 真 `NtTradingNodeHost` 才可申请 `live` capability
 - `LIVE_MODE=true` env 独立开关, 与 spec 中 `trading_mode=live` 双守
-- G6 gate deny → 上报 `FailureEvent(reason_code=g6_gate_denied)`
+- live execution gate deny → 上报 `FailureEvent(reason_code=g6_gate_denied)`
 
 
 ## 5. 失联 ≠ 停止 (红线 0.3)
@@ -109,12 +108,12 @@ Level-triggered reconcile 的核心不变量:
 
 1. **NautilusTrader upstream** (`nautilus-trader/nautilus_trader`, MIT) — 确认 NT 无偷 Key 或代下单路径
 2. **custos** (`the-alephain-guild/custos`, Apache-2.0) — 确认 custos 无以下反模式:
-   - 上传 Key 明文到 arx / the control plane / 任何云端
+   - 上传 Key 明文到 arx / ARX / 任何云端
    - 接收云端下发的 "代解密" 指令
    - 接收云端下发的 "直接下单" 绕过策略指令
    - Vault 密文格式与算法与文档声明不一致
 
-不需要审计 arx / the control plane / 其他闭源子系统 — 即使全被攻破, Key 依然不在攻击范围.
+不需要审计 arx / ARX / 其他闭源子系统 — 即使全被攻破, Key 依然不在攻击范围.
 
 ## 9. 承重墙原则
 
@@ -129,5 +128,5 @@ non-custodial 保证。设计上明确:
 ## 参考
 
 - 四条不可绕过的保证: [信任模型](./trust-model)
-- live 执行前的准入校验: [G6 host gate](/concepts/g6-host-gate)
+- live 执行前的准入校验: [live execution gate](/concepts/live-execution-gate)
 - 凭证的存放与轮换: [凭证金库](/operator-guide/credential-vault)

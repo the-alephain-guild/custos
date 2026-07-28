@@ -325,5 +325,44 @@
   "theme.tags.tagsPageTitle": {
     "message": "标签",
     "description": "The title of the tag list page"
+  },
+  "home.meta.title": {
+    "message": "custos —— 非托管执行 runner"
+  },
+  "home.meta.description": {
+    "message": "在你自己的机器上持有密钥、运行策略，并上报带签名的执行事实。Apache-2.0 开源。"
+  },
+  "home.eyebrow": {
+    "message": "The Alephain Guild 生态的一部分"
+  },
+  "home.hero.tagline": {
+    "message": "非托管执行 runner"
+  },
+  "home.hero.lede": {
+    "message": "在本地持有你的密钥、运行你的策略，并上报带签名的执行事实。它跑在你自己的机器上，我们不为你托管。"
+  },
+  "home.cta.start": {
+    "message": "开始使用 →"
+  },
+  "home.cta.trust": {
+    "message": "了解信任模型"
+  },
+  "home.cta.github": {
+    "message": "GitHub ↗"
+  },
+  "home.notice.eyebrow": {
+    "message": "说明"
+  },
+  "home.notice.title": {
+    "message": "站点仍在建设中"
+  },
+  "home.notice.body": {
+    "message": "本文档站仍在编写中。部分章节已完成，部分还只是提纲，中文翻译目前只覆盖了靠前的章节。"
+  },
+  "home.notice.links": {
+    "message": "可以从{introduction}开始阅读，源码在 {repository}。"
+  },
+  "home.notice.link.introduction": {
+    "message": "简介"
   }
 }

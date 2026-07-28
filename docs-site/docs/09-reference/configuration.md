@@ -75,7 +75,7 @@ The age identity used to decrypt these files is supplied through
 
 | Option | Default | Effect |
 |---|---|---|
-| `--engine nautilus` | default | Real execution. Sandbox, testnet and live are all available, subject to the [G6 host gate](/concepts/g6-host-gate). |
+| `--engine nautilus` | default | Real execution. Sandbox, testnet and live are all available, subject to the [live execution gate](/concepts/live-execution-gate). |
 | `--engine noop` | — | No-op host for sandbox rehearsal and contract tests. Live specs are refused. |
 | `--wal-path <path>` | platform default | Location of the durable local queue backing at-least-once fact delivery. |
 

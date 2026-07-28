@@ -11,7 +11,7 @@ sidebar_position: 1
 Custos owns local execution mechanics only:
 
 - runner enrollment material and local machine credentials;
-- verification of control-plane-signed commands;
+- verification of ARX-signed commands;
 - reconciliation of desired deployment state into a local engine;
 - process supervision, watchdogs and local safety circuit breakers;
 - signing and publishing observed runner facts.

@@ -14,9 +14,9 @@ The current runner contract contains two local validation schemas:
 
 - `enrollment.schema.json` for locally provisioned machine enrollment material;
 - `deployment_spec.schema.json` for the validated execution view translated
-  from a control-plane-signed canonical DeploymentSpec.
+  from an ARX-signed canonical DeploymentSpec.
 
-Production deployment publication is not a Custos CLI operation. The control plane
+Production deployment publication is not a Custos CLI operation. ARX
 publishes `DeploymentSpecReadyForRunner` and
 `DeploymentInstanceDesiredStateChanged`; Custos verifies exact subject, exact
 event bytes, canonical digest, runner binding and instance binding.
@@ -27,7 +27,7 @@ command envelope.
 
 `deployment_spec.schema.json` is generated from
 `custos.contracts.DeploymentSpec.model_json_schema()`. The canonical business
-payload remains control-plane-owned; this schema covers only the narrow local engine
+payload remains ARX-owned; this schema covers only the narrow local engine
 view after signature and digest verification.
 
 Runner lifecycle observations use `RunnerDeploymentLifecycleFact.v1` through

@@ -12,7 +12,7 @@ manual `runner.toml`, default tenant, or plaintext RunnerFact key fallback.
 
 ## Ownership
 
-- the control plane owns enrollment token state, one-time consumption, Runner
+- ARX owns enrollment token state, one-time consumption, Runner
   machine credentials, expiry, version, rotation, revocation, immutable public
   key evidence, and health projections.
 - ARX exposes the public typed URL and applies identity/tenant/RBAC policy. It
@@ -31,7 +31,7 @@ manual `runner.toml`, default tenant, or plaintext RunnerFact key fallback.
    and public-key digest.
 4. Custos sends the one-time token, public key, nonce, key ID, and signature to
    ARX `POST /api/v1/enrollments`. The private key is never sent.
-5. The control plane verifies the token authority and proof, consumes the token once,
+5. ARX verifies the token authority and proof, consumes the token once,
    persists immutable public evidence, and issues a tenant-bearing opaque
    `rkc1` credential with `credential_id`, version, and expiry.
 6. Custos encrypts the credential and private key together with sops+age. Only
@@ -126,6 +126,6 @@ new process does not start from unverifiable authority.
 
 ## Migration order
 
-The control plane control migration `0024` must land and be populated before ARX
+ARX control migration `0024` must land and be populated before ARX
 migration `0067` removes the source tables. The sequence is: target migration,
 semantic lift and retirement permit, then source drop. Never run `0067` first.

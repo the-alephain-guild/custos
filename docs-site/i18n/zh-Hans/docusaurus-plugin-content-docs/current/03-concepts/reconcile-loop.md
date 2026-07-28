@@ -12,10 +12,10 @@ sidebar_position: 4
 
 ## Input contract
 
-The reconciler consumes a control-plane-signed domain event on:
+The reconciler consumes an ARX-signed domain event on:
 
 ```
-control-plane.domain.<tenant>.<mode>.deployment.
+ARX.domain.<tenant>.<mode>.deployment.
   DeploymentSpecReadyForRunner.<runner_id>.<deployment_instance_id>
 ```
 
@@ -97,5 +97,5 @@ open notional and actual portfolio equity have one valuation boundary. A probe
 exception or typed unreliable status immediately freezes the breaker and requests
 flattening; missing mark or equity can never skip a tick or be treated as zero
 risk. This T6 safety behavior is local execution evidence only. It does not replace
-the control-plane-signed versioned runner policy required by T7, and DeploymentSpec
+ARX-signed versioned runner policy required by T7, and DeploymentSpec
 `risk_config` cannot define or override the runner aggregate cap.

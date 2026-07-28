@@ -35,8 +35,7 @@ copied to the `CHANGELOG.md` `### Deprecated` section (audit-non-silence).
 | 0.2.x      | 2026-07-11    | 2027-07-11 (best-effort ≥ 12 months) |
 
 Additional lines will be appended as they cut. Each row is a hard commitment
-— removing a line before its EOL requires a CEO override entry in
-`historical-lessons.md`.
+— a line is not dropped before its published end-of-life date.
 
 ## Security Patch SLA
 
@@ -47,8 +46,8 @@ covers any miss).
 - Report via [GitHub Security Advisories](https://github.com/the-alephain-guild/custos/security/advisories)
   — see [`SECURITY.md`](https://github.com/the-alephain-guild/custos/blob/main/SECURITY.md) for the disclosure protocol.
 - Public advisories go live within 24 hours of the patch release.
-- Backport policy: security fixes land on every active LTS line. Critical
-  functional-bug backports need a CEO override.
+- Backport policy: security fixes land on every active LTS line. Critical functional-bug
+  backports are assessed case by case and announced with the release.
 
 ## Release Cadence
 

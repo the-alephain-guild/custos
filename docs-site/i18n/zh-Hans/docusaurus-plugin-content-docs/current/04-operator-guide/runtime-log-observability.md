@@ -56,7 +56,7 @@ global durable local queue event-deduplication table.
   `RunnerFactAuthority`, source sequence, event deduplication, SQLite durable local queue,
   subject, and `CRUCIBLE-RUNNER-FACT-BATCH-V1\0` signing domain as settlement, <!-- disclosure-ok: published signing domain required to verify batches -->
   reconciliation, risk, and health facts.
-- A deployment does not enter Vault/G6/host when its runtime-log health binding
+- A deployment does not enter vault, gate and host when its runtime-log health binding
   cannot be resolved exactly from the validated capability receipt.
 - The durable local queue commits the fact before publish. A JetStream PubAck is required
   before the batch is deleted, which is the producer delivery checkpoint. A

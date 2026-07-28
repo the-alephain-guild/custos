@@ -6,8 +6,6 @@ sidebar_position: 2
 
 # The Trust Model
 
-> 从 `../../README.md` §Why Public + §Trust Boundary + §Modules 提炼的**设计视角总览**.
-> README 是对外门面, 本文档是内部实施设计导论.
 
 ## 是什么
 
@@ -48,17 +46,17 @@ custos 由六个核心模块组成:
 |------|------|-------------|
 | **enrollment** | 一次性 `EnrollmentToken` 配对; `runner_id`; `paper_only` 默认 | Token 一次性 (防重放) |
 | **reconcile** | Declarative loop: pull `DeploymentSpec` → start/stop NT → report `DeploymentStatus` | 失联≠停止 |
-| **nautilus_host** | NT 进程监督 + `ExecutionEngineAdapter` (CEX/NT) + **G6 host gate** | **G6 live release gate** |
-| **runner_fact** | NT MessageBus → closed typed facts → signed durable local queue → the control plane | Key 不出进程；unsigned fallback 禁止 |
+| **nautilus_host** | NT 进程监督 + `ExecutionEngineAdapter` (CEX/NT) + **live execution gate** | **live execution gate live release gate** |
+| **runner_fact** | NT MessageBus → closed typed facts → signed durable local queue → ARX | Key 不出进程；unsigned fallback 禁止 |
 | **credential_vault** | sops+age 本地 KEK vault; `trade_no_withdraw` scope | KEK / API key 不出进程 |
 | **nats_client** | JetStream client + envelope schema + subject naming | Wire schema 版本化 + 契约防漂移 |
 
 各模块设计详情见本目录下同名 `.md` 文件.
 
-## 与 arx / the control plane 的边界
+## 与 arx / ARX 的边界
 
 - **custos → arx**: pull `DeploymentSpec` + push 遥测/heartbeat/reconcile status
-- **custos ↛ the control plane**: 从不直接对话, arx 中介 (arx 是 gateway)
+- **custos ↛ ARX**: 从不直接对话, arx 中介 (arx 是 gateway)
 - **单一外部入口**: 所有外部访问 custos 状态必须经 arx 的 `gatekeeper` + `CustosGateway`
 - **custos 未暴露 API**: custos 不给终端用户 / API 客户端 / dashboard 提供任何直接接口
 

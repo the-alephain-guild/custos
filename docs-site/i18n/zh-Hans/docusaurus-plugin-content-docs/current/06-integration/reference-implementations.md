@@ -12,20 +12,20 @@ sidebar_position: 5
 
 ## Inbound desired state
 
-The control plane directly publishes signed domain-event envelopes for both creation and
+ARX directly publishes signed domain-event envelopes for both creation and
 later desired-state changes:
 
 ```
-control-plane.domain.<tenant>.<mode>.deployment.
+ARX.domain.<tenant>.<mode>.deployment.
   DeploymentSpecReadyForRunner.<runner_id>.<deployment_instance_id>
 
-control-plane.domain.<tenant>.<mode>.deployment.
+ARX.domain.<tenant>.<mode>.deployment.
   DeploymentInstanceDesiredStateChanged.<runner_id>.<deployment_instance_id>
 ```
 
 Custos uses a durable, runner-scoped JetStream consumer and manual ACK/NAK. The
 verifier binds the exact subject and exact event bytes to the provisioned
-The control plane's Ed25519 key. Tenant, mode, runner, instance, canonical spec id and
+ARX's Ed25519 key. Tenant, mode, runner, instance, canonical spec id and
 canonical digest must agree across subject, event and payload.
 
 Both event types carry a complete canonical DeploymentSpec plus explicit
@@ -43,7 +43,7 @@ are hashed. Cross-language golden fixtures must accompany any algorithm change.
 
 The NATS command client has no outbound business publication API. Custos writes
 typed facts to RunnerFactOutbox; the separate RunnerFact publisher signs and
-publishes batches directly for control-plane ingestion.
+publishes batches directly for ARX.
 
 ARX does not publish or relay deployment commands and is not a destination for
 Custos business facts. Its availability is irrelevant to command delivery and

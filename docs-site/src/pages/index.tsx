@@ -2,6 +2,7 @@ import React from 'react';
 import type {ReactNode} from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
+import Translate, {translate} from '@docusaurus/Translate';
 
 // Placeholder landing page. The editorial homepage — hero, the ARX/Custos
 // layering section, the guarantees callout and getting-started cards — replaces
@@ -10,8 +11,15 @@ import Layout from '@theme/Layout';
 export default function Home(): ReactNode {
   return (
     <Layout
-      title="custos — the non-custodial execution runner"
-      description="Local daemon that holds your keys, runs your strategies, and reports signed execution facts. Apache-2.0.">
+      title={translate({
+        id: 'home.meta.title',
+        message: 'custos — the non-custodial execution runner',
+      })}
+      description={translate({
+        id: 'home.meta.description',
+        message:
+          'Local daemon that holds your keys, runs your strategies, and reports signed execution facts. Apache-2.0.',
+      })}>
       <main
         style={{
           maxWidth: 860,
@@ -27,7 +35,9 @@ export default function Home(): ReactNode {
             color: 'var(--ifm-color-content-secondary)',
             marginBottom: 32,
           }}>
-          Part of The Alephain Guild ecosystem
+          <Translate id="home.eyebrow">
+            Part of The Alephain Guild ecosystem
+          </Translate>
         </div>
 
         <h1
@@ -40,7 +50,9 @@ export default function Home(): ReactNode {
             margin: 0,
           }}>
           custos <em style={{color: 'var(--ifm-color-primary)', fontStyle: 'italic'}}>—</em>{' '}
-          the non-custodial execution runner
+          <Translate id="home.hero.tagline">
+            the non-custodial execution runner
+          </Translate>
         </h1>
 
         <p
@@ -50,9 +62,11 @@ export default function Home(): ReactNode {
             marginTop: 28,
             color: 'var(--ifm-color-content-secondary)',
           }}>
-          Local daemon that holds your keys, runs your strategies, and reports
-          signed execution facts. Runs on your machine; never hosted by the
-          Guild.
+          <Translate id="home.hero.lede">
+            Local daemon that holds your keys, runs your strategies, and reports
+            signed execution facts. It runs on your own machine and is never
+            hosted for you.
+          </Translate>
         </p>
 
         <div
@@ -65,17 +79,17 @@ export default function Home(): ReactNode {
           <Link
             className="button button--primary button--lg"
             to="/getting-started/installation">
-            Get started →
+            <Translate id="home.cta.start">Get started →</Translate>
           </Link>
           <Link
             className="button button--outline button--lg"
             to="/trust-model/red-lines">
-            Read the trust model
+            <Translate id="home.cta.trust">Read the trust model</Translate>
           </Link>
           <a
             className="button button--outline button--lg"
             href="https://github.com/the-alephain-guild/custos">
-            GitHub ↗
+            <Translate id="home.cta.github">GitHub ↗</Translate>
           </a>
         </div>
 
@@ -90,19 +104,35 @@ export default function Home(): ReactNode {
             color: 'var(--ifm-color-content-secondary)',
             marginBottom: 12,
           }}>
-          Notice
+          <Translate id="home.notice.eyebrow">Notice</Translate>
         </div>
-        <h2 style={{marginTop: 0}}>Site under construction</h2>
+        <h2 style={{marginTop: 0}}>
+          <Translate id="home.notice.title">Site under construction</Translate>
+        </h2>
         <p style={{color: 'var(--ifm-color-content-secondary)'}}>
-          This documentation site is still being written. Some chapters are
-          complete, others are outlines, and the Chinese translation covers
-          only the first chapters so far. Start at the{' '}
-          <Link to="/introduction/what-is-custos">Introduction</Link>, and
-          read the source at{' '}
-          <a href="https://github.com/the-alephain-guild/custos">
-            the-alephain-guild/custos
-          </a>
-          .
+          <Translate id="home.notice.body">
+            This documentation site is still being written. Some chapters are
+            complete, others are outlines, and the Chinese translation covers
+            only the first chapters so far.
+          </Translate>{' '}
+          <Translate
+            id="home.notice.links"
+            values={{
+              introduction: (
+                <Link to="/introduction/what-is-custos">
+                  <Translate id="home.notice.link.introduction">
+                    Introduction
+                  </Translate>
+                </Link>
+              ),
+              repository: (
+                <a href="https://github.com/the-alephain-guild/custos">
+                  the-alephain-guild/custos
+                </a>
+              ),
+            }}>
+            {'Start at the {introduction}, and read the source at {repository}.'}
+          </Translate>
         </p>
       </main>
     </Layout>

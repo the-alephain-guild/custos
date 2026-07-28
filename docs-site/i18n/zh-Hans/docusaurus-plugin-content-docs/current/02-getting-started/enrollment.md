@@ -11,7 +11,7 @@ sidebar_position: 2
 
 ## 归属
 
-- **the control plane** 拥有 enrollment token 状态、一次性消费、Runner 机器凭据、过期、
+- **ARX** 拥有 enrollment token 状态、一次性消费、Runner 机器凭据、过期、
   版本、轮换、撤销、不可变公钥证据以及健康投影.
 - **ARX** 暴露公开 typed URL 并施加身份 / tenant / RBAC 策略. 它不持久化或重建 Runner
   的业务状态.
@@ -20,13 +20,13 @@ sidebar_position: 2
 
 ## Enrollment v2
 
-1. Operator 从授权的控制面获取一次性 enrollment token.
+1. Operator 从授权的ARX获取一次性 enrollment token.
 2. custos 在内存中生成 Ed25519 密钥对和一个新鲜的挑战 nonce.
 3. custos 对规范化 `arx.runner.enrollment.pop.v1` 证明签名. 证明绑定 token digest、
    声称的 tenant、Runner UUID、nonce、机器 key ID 以及公钥 digest.
 4. custos 把一次性 token、公钥、nonce、key ID 和签名发给 ARX `POST /api/v1/enrollments`.
    **私钥永不外发**.
-5. The control plane 验证 token 权威与证明,一次性消费该 token,持久化不可变公钥证据,并签发
+5. ARX 验证 token 权威与证明,一次性消费该 token,持久化不可变公钥证据,并签发
    带 tenant 的不透明 `rkc1` 凭据 (含 `credential_id`、版本、过期).
 6. custos 用 sops+age 一起加密凭据与私钥. 只有非敏感的绑定元数据写入 `runner.toml`.
 
@@ -113,6 +113,6 @@ HTTP 仅在本地回环开发中被接受. **重定向不被跟随**, 因为重�
 
 ## 迁移顺序
 
-The control plane 控制面 migration `0024` 必须先落地并被填充, 然后 ARX migration `0067` 才能
+ARX migration `0024` 必须先落地并被填充, 然后 ARX migration `0067` 才能
 移除源表. 顺序是: 目标 migration → 语义抬升与退休 permit → 源表 drop. **永远不要**
 先跑 `0067`.

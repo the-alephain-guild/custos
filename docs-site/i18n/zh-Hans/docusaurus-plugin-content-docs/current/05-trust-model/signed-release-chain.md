@@ -59,7 +59,7 @@ the cert-identity.
 
 ## Automated verification
 
-`tests/test_reproducible_build.py` runs two `uv build` cycles with the
+`tests/test_reproducible_build.py` runs two `uv build` cycles with the <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
 epoch pinned and asserts hash equality. It's `@pytest.mark.slow`
 because a double build takes tens of seconds; it is not part of
 `make verify` but runs on the nightly CI job.

@@ -6,8 +6,8 @@ sidebar_position: 1
 
 # NautilusTrader Engine
 
-> Status: **implemented** (`src/custos/engines/nautilus/`). This page is an
-> overview and index — the full design (process lifecycle, G6 gate, venue
+> Status: **implemented** (`src/custos/engines/nautilus/`). This page is an <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+> overview and index — the full design (process lifecycle, live execution gate, venue
 > adapters) lives in [`docs/design/nautilus_host.md`](/engines/nautilus-trader)
 > and is not duplicated here.
 
@@ -23,10 +23,10 @@ already satisfies.
 
 ## Relationship to `ExecutionEngineProtocol`
 
-`src/custos/engines/nautilus/host.py` provides two implementations:
+`src/custos/engines/nautilus/host.py` provides two implementations: <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
 
 - `NoopHost` — a stub that never touches a real venue; used for paper / dev
-  runs and as the fail-safe target when the G6 gate denies a live deploy.
+  runs and as the fail-safe target when the live execution gate denies a live deploy.
 - `NtTradingNodeHost` — the real implementation, supervising a NautilusTrader
   `TradingNode` process across `sandbox` / `testnet` / `live` trading modes.
 
@@ -39,14 +39,14 @@ from each Tier-1 method to the underlying NT SDK call is documented in
 
 | Topic | Doc |
 |-------|-----|
-| Process lifecycle, G6 gate, venue adapters | [`docs/design/nautilus_host.md`](/engines/nautilus-trader) |
+| Process lifecycle, live execution gate, venue adapters | [`docs/design/nautilus_host.md`](/engines/nautilus-trader) |
 | `ExecutionEngineProtocol` Tier-1/Tier-2 contract | [`docs/design/engine_protocol.md`](/engines/engine-roadmap) |
-| Strategy loading (vendored toolkit) | `src/custos/engines/nautilus/strategy_loader.py` |
-| Binance venue adapter | `src/custos/engines/nautilus/venue_binance.py` |
+| Strategy loading (vendored toolkit) | `src/custos/engines/nautilus/strategy_loader.py` | <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+| Binance venue adapter | `src/custos/engines/nautilus/venue_binance.py` | <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
 | Optional dependency | `pyproject.toml` → `[project.optional-dependencies].nautilus` |
 
 ## Follow-up plans
 
 Strategy migrations onto this engine (e.g. the Supertrend strategy) and the
-vendored indicator toolkit under `src/custos/engines/nautilus/toolkit/` are
+vendored indicator toolkit under `src/custos/engines/nautilus/toolkit/` are <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
 tracked by their own plans, not this stub.

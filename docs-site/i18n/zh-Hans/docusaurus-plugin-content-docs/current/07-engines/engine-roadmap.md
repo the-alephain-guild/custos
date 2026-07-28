@@ -10,7 +10,7 @@ sidebar_position: 3
 :::
 
 Custos does not hard-code a trading engine. Everything above the engine —
-the reconcile loop, the G6 host gate, the safety breaker and signed
+the reconcile loop, the live execution gate, the safety breaker and signed
 RunnerFacts — talks to a single Python interface, `ExecutionEngineProtocol`.
 Any engine that satisfies that interface can be supervised by the runner
 without changing the safety machinery around it.
@@ -26,9 +26,9 @@ and which engines are plausible candidates next.
 | [No-op host](./noop) | `custos.engines.noop` | Supported — sandbox and testnet only, never live |
 
 The no-op host exists so that operators can exercise enrollment, spec
-delivery, reconciliation and telemetry without placing a real order. The G6
+delivery, reconciliation and telemetry without placing a real order. The live execution gate
 host gate refuses to let it run in `live` mode; see
-[G6 host gate](/concepts/g6-host-gate).
+[live execution gate](/concepts/live-execution-gate).
 
 ## What an engine adapter must provide
 
@@ -42,7 +42,7 @@ An adapter implements the Tier-1 surface of `ExecutionEngineProtocol`:
 | `supports_live` | Declare whether this engine may run in `live` mode |
 | `supports_venue` | Declare which venues this engine can reach |
 
-The last two are what the G6 host gate reads. An engine that returns `False`
+The last two are what the live execution gate reads. An engine that returns `False`
 from `supports_live` can never reach a live venue, regardless of what the
 desired state asks for — the gate fails closed rather than degrading.
 
@@ -108,7 +108,7 @@ Whatever runs underneath, the four non-custodial guarantees hold:
   them.
 - Live execution requires an engine that declares live support; the gate
   fails closed otherwise.
-- Local safety enforcement keeps working while the control plane is
+- Local safety enforcement keeps working while ARX is
   unreachable.
 - Money values use decimal arithmetic end to end and cross the wire as
   strings.

@@ -1,15 +1,15 @@
 ---
-title: "G6 Host Gate"
+title: "Live Execution Gate"
 sidebar_position: 3
 ---
 
-# G6 Host Gate
+# Live Execution Gate
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。
 :::
 
-The G6 host gate is the check that stands between a deployment and a real
+The live execution gate is the check that stands between a deployment and a real
 venue. Before Custos will start a strategy in `live` mode it verifies, in
 four independent layers, that the engine underneath is actually capable of
 live execution and that the credential it was handed is scoped correctly.
@@ -45,7 +45,7 @@ code it was approved for. Layer 4 is a backstop — the credential vault
 already refuses to store a withdraw-capable key — because a single enforcement
 point is one mistake away from being bypassed.
 
-The trading mode comparison is case-insensitive. The control plane and the
+The trading mode comparison is case-insensitive. ARX and the
 runner serialize the mode differently, and a case-sensitive comparison here
 would produce a gate that silently never fires.
 
@@ -56,7 +56,7 @@ that the signed spec carries at least two distinct entries in `approved_by`
 before it builds a live execution config; a spec that does not is refused with
 `sod_approval_missing`.
 
-Approval itself is a control-plane decision. Custos does not grant it — it
+Approval itself is an ARX decision. Custos does not grant it — it
 only refuses to act without evidence of it.
 
 ## Host and mode matrix

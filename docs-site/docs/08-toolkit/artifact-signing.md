@@ -73,7 +73,7 @@ Nautilus conversion path.
 ## Failure contract
 
 Adapter errors are local execution outcomes. The reconciler decides ACK or NAK
-and emits a signed RunnerFact; the adapter cannot mutate the control plane business
+and emits a signed RunnerFact; the adapter cannot mutate ARX business
 state or ask ARX to authorize a recovery action.
 
 The lifecycle supervisor persists its bounded restart counter in the

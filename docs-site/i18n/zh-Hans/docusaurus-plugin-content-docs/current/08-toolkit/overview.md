@@ -17,11 +17,11 @@ sidebar_position: 1
 Custos owns the strategy execution ABI, toolkit implementation, pre-sign
 `StrategyArtifactRefV1`, and local fail-closed verifier. the strategy publisher owns
 strategy source, canonical `StrategyReleaseBomV1`, the signed
-`StrategyReleaseStatementV1`, and detached `ArtifactAttestationRefV1`. The control plane
+`StrategyReleaseStatementV1`, and detached `ArtifactAttestationRefV1`. ARX
 owns `ArtifactEvidenceV1`, acceptance receipts, StrategyRelease, artifact
 selection, DeploymentSpec, effective configuration, and business risk policy.
 
-The legacy the strategy publisher `build-image.sh` to the control plane Python publication
+The legacy the strategy publisher `build-image.sh` to ARX Python publication
 and deployment path remains an independent compatibility lane. It cannot
 produce a v1.team receipt or act as a fallback for this contract.
 
@@ -32,7 +32,7 @@ produce a v1.team receipt or act as a fallback for this contract.
 Catalog aliases never authorize or address execution. The fixed entry-point
 group is `alephain.strategy_runtime.v1`.
 
-The adapter receives final effective config from a verified signed the control plane
+The adapter receives final effective config from a verified signed ARX
 command. Custos parses JSON numbers as `Decimal`, rejects duplicates and
 non-finite numbers, recursively freezes containers, and recomputes
 `effective_config_digest`. Adapters cannot merge defaults or mutate config.
@@ -61,7 +61,7 @@ table may become a second authority.
 
 The PS in-toto/DSSE statement signs producer claims over fixed BOM, artifact and
 manifest subjects. After the bundle is immutable, `ArtifactAttestationRefV1`
-binds its coordinate/digest. The control plane then verifies the bundle with local policy
+binds its coordinate/digest. ARX then verifies the bundle with local policy
 and produces post-bundle evidence; that composite evidence digest is not and
 cannot be claimed as a subject of the same bundle.
 
@@ -100,9 +100,9 @@ publish top-level `shared`/`pandas_ta`, mutate `sys.path`, fake a distribution,
 or leave two writable canonical copies. Runtime verifier activation remains T5.
 
 The distribution step moves the exact reviewed execution-contract source bytes to
-`packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py`.
+`packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py`. <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
 The canonical V1 receipt declares that source path and pins the coordinated
-Custos, the strategy publisher, and the control plane handoff bytes. No second source or
+Custos, the strategy publisher, and ARX handoff bytes. No second source or
 re-export shim is retained.
 
 Run `make strategy-contract-assets` to regenerate the sole canonical V1
@@ -125,5 +125,5 @@ mypy and remains guarded by exact digests plus fixed-input parity.
 The current authority record is
 `custos-strategy-contract-v1-producer-receipt.json`. It remains
 `CANONICAL_V1_PENDING_PRODUCER_RECEIPTS`, with handoff/runtime/production false.
-Custos must not fabricate PS or the control plane receipts; those owners must consume and
+Custos must not fabricate PS or ARX receipts; those owners must consume and
 pin the same exact V1 bytes before the coordinated production handoff closes.

@@ -6,7 +6,7 @@ sidebar_position: 4
 
 # Red Line #3 · Reconcile Disconnect ≠ Stop
 
-The control plane-rust owns the versioned aggregate runner-cap policy. Its authority key
+ARX-rust owns the versioned aggregate runner-cap policy. Its authority key
 is tenant id + logical trading mode + runner UUID. `live`, `sandbox` and
 `testnet` are logical modes; the physical sim database role is not a mode.
 ARX authorization, DeploymentSpec `risk_config`, deployment commands, Custos
@@ -45,7 +45,7 @@ limits. Risk-reducing intents remain permitted by the local cap contract.
 ## Current readiness
 
 The producer chain is currently on `codex/cr99-runner-policy`, not
-the control plane. The aggregate-cap rollout is prepared but not yet executed, so runtime
+ARX. The aggregate-cap rollout is prepared but not yet executed, so runtime
 publication is false, and the daemon has not consumed a real signed policy.
 The native engine-boundary order interceptor and full reservation lifecycle are
 also open. Therefore code-only readiness does not enable the team daemon, live,

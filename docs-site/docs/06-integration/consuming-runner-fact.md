@@ -8,14 +8,14 @@ sidebar_position: 3
 
 ## Ownership
 
-Custos observes the local engine. The control plane owns canonical business and lifecycle
+Custos observes the local engine. ARX owns canonical business and lifecycle
 facts. ARX may consume audit projections but is not in the publication path.
 
     engine / watchdog / breaker
       -> typed local fact adapter
       -> RunnerFactOutbox
       -> signed RunnerFact batch
-      -> control-plane ingestion
+      -> ARX
 
 There is no generic unsigned NATS telemetry actor. Engine observations must map
 to an explicitly versioned fact type before entering the durable local queue.
@@ -102,7 +102,7 @@ keeps separate applied_generation and reported_generation watermarks. If enqueue
 fails, Custos NAKs the command; redelivery retries only the fact and does not
 repeat the successful engine action.
 
-Local safety continues while the control plane is unavailable. Custos never downgrades a
+Local safety continues while ARX is unavailable. Custos never downgrades a
 fact to an unsigned compatibility topic.
 
 ## Candidate readiness ceiling
@@ -111,6 +111,6 @@ fact to an unsigned compatibility topic.
 candidate and supersedes `.1`, whose receipt remains immutable historical
 evidence with status `NON_CURRENT_SUPERSEDED` in the current authority index.
 Its synthetic Ed25519 key and signature are cross-language golden evidence only;
-they are not runtime identity evidence. Until the control plane returns a
+they are not runtime identity evidence. Until ARX returns a
 receipt over the exact candidate bytes, consumer compatibility, runtime RC,
 real round-trip, live, runtime and production readiness remain false.
