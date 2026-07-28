@@ -172,6 +172,26 @@ const CASES = [
     expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),
   },
   {
+    name: 'removed prose tree is rejected (design)',
+    body: 'The full design lives in docs/design/reconcile.md.\n',
+    expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),
+  },
+  {
+    name: 'removed prose tree is rejected (guides)',
+    body: 'See docs/guides/dev-guide.md for setup.\n',
+    expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),
+  },
+  {
+    name: 'removed prose tree is rejected (ops and moved files)',
+    body: 'Deployment is in docs/ops/05-deployment.md and docs/lts-commitment.md.\n',
+    expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),
+  },
+  {
+    name: 'surviving machine-asset directories are still allowed',
+    body: 'Schemas live under docs/gateway-contract/v1/ and receipts under docs/authority/.\n',
+    expect: (r) => r.code === 0,
+  },
+  {
     name: 'clean page passes',
     body: 'The runner verifies signed desired state before starting a strategy.\n',
     expect: (r) => r.code === 0,

@@ -117,6 +117,11 @@ const BANNED = [
       /codex\/projects/,
       /ecosystem-authority/,
       /\bthe-alephain-guild\b/,
+      // The repository's prose tree was consolidated into this site. A path
+      // under it is a pointer to a file that no longer exists, and the reader
+      // could not open it even when it did.
+      /\bdocs\/(design|guides|ops)\//,
+      /\bdocs\/(domain|lts-commitment)\.md\b/,
     ],
     guidance:
       'These configure how we build, not how Custos works. Point at the documentation or the code instead.',

@@ -94,7 +94,7 @@ The 0.x → 1.0 promote is contractually gated on ALL of:
       or `[project.scripts]`.
 - [ ] `gateway-contract/v1/` covers the local `DeploymentMessage` decode seam
       and the signed RunnerFact output contract.
-- [ ] `docs/lts-commitment.md` has at least one row already inside its
+- [ ] the [SemVer and LTS](/release-governance/semver-lts) EOL table has at least one row already inside its
       EOL window (i.e. we've kept the LTS promise on a prior line).
 - [ ] Council-level RFC: 1.0 promote is a MAJOR SEMVER bump and
       requires a Council debate + ADR entry per the workspace
@@ -105,7 +105,7 @@ Once all boxes are checked, the promote itself is:
 1. Bump `pyproject.toml [project].version = "1.0.0"`.
 2. Add a `## [1.0.0] - YYYY-MM-DD` section to `CHANGELOG.md`.
 3. Tag `v1.0.0`; the standard release workflow handles the rest.
-4. Update `docs/lts-commitment.md` with a `1.0.x` row.
+4. Add a `1.0.x` row to the [SemVer and LTS](/release-governance/semver-lts) EOL table.
 
 ## Minor-line upgrade template
 
