@@ -30,12 +30,17 @@
     "ToolkitRcCycloneDxSbomV1": {
       "additionalProperties": false,
       "properties": {
-        "artifact": {
-          "$ref": "#/$defs/ImmutableToolkitArtifactBindingV1"
+        "role": {
+          "$ref": "#/$defs/ToolkitRcMemberRole"
         },
         "distribution_name": {
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
           "title": "Distribution Name",
+          "type": "string"
+        },
+        "wheel_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Wheel Sha256",
           "type": "string"
         },
         "format": {
@@ -44,13 +49,8 @@
           "title": "Format",
           "type": "string"
         },
-        "role": {
-          "$ref": "#/$defs/ToolkitRcMemberRole"
-        },
-        "wheel_sha256": {
-          "pattern": "^[0-9a-f]{64}$",
-          "title": "Wheel Sha256",
-          "type": "string"
+        "artifact": {
+          "$ref": "#/$defs/ImmutableToolkitArtifactBindingV1"
         }
       },
       "required": [
@@ -75,19 +75,74 @@
   "additionalProperties": false,
   "description": "Contract-only readiness evidence before the protected release runner executes.",
   "properties": {
-    "build_manifest": {
-      "$ref": "#/$defs/ImmutableToolkitArtifactBindingV1"
-    },
-    "candidate_version": {
-      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+rc[1-9][0-9]*$",
-      "title": "Candidate Version",
-      "type": "string"
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
     },
     "contract_version": {
       "const": "alephain.custos.toolkit-rc-pending-receipt.v1",
       "default": "alephain.custos.toolkit-rc-pending-receipt.v1",
       "title": "Contract Version",
       "type": "string"
+    },
+    "status": {
+      "const": "PENDING_PROTECTED_RELEASE",
+      "default": "PENDING_PROTECTED_RELEASE",
+      "title": "Status",
+      "type": "string"
+    },
+    "ready": {
+      "const": false,
+      "default": false,
+      "title": "Ready",
+      "type": "boolean"
+    },
+    "candidate_version": {
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+rc[1-9][0-9]*$",
+      "title": "Candidate Version",
+      "type": "string"
+    },
+    "source_repository": {
+      "const": "https://github.com/the-alephain-guild/custos",
+      "default": "https://github.com/the-alephain-guild/custos",
+      "title": "Source Repository",
+      "type": "string"
+    },
+    "source_commit": {
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "title": "Source Commit",
+      "type": "string"
+    },
+    "source_date_epoch": {
+      "minimum": 315532800,
+      "title": "Source Date Epoch",
+      "type": "integer"
+    },
+    "release_environment": {
+      "const": "toolkit-rc-release",
+      "default": "toolkit-rc-release",
+      "title": "Release Environment",
+      "type": "string"
+    },
+    "workflow_identity": {
+      "const": "https://github.com/the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main",
+      "default": "https://github.com/the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main",
+      "title": "Workflow Identity",
+      "type": "string"
+    },
+    "oidc_issuer": {
+      "const": "https://token.actions.githubusercontent.com",
+      "default": "https://token.actions.githubusercontent.com",
+      "title": "Oidc Issuer",
+      "type": "string"
+    },
+    "build_manifest": {
+      "$ref": "#/$defs/ImmutableToolkitArtifactBindingV1"
+    },
+    "dependency_lock_evidence": {
+      "$ref": "#/$defs/ImmutableToolkitArtifactBindingV1"
     },
     "cyclonedx_sboms": {
       "items": {
@@ -98,30 +153,8 @@
       "title": "Cyclonedx Sboms",
       "type": "array"
     },
-    "dependency_lock_evidence": {
+    "provenance_statement": {
       "$ref": "#/$defs/ImmutableToolkitArtifactBindingV1"
-    },
-    "dependency_locks_complete": {
-      "const": true,
-      "default": true,
-      "title": "Dependency Locks Complete",
-      "type": "boolean"
-    },
-    "final_blockers": {
-      "items": {
-        "const": "execute the protected production release runner with credentials and register its verified remote receipt",
-        "type": "string"
-      },
-      "maxItems": 1,
-      "minItems": 1,
-      "title": "Final Blockers",
-      "type": "array"
-    },
-    "final_receipt_published": {
-      "const": false,
-      "default": false,
-      "title": "Final Receipt Published",
-      "type": "boolean"
     },
     "formal_sboms_complete": {
       "const": true,
@@ -129,11 +162,17 @@
       "title": "Formal Sboms Complete",
       "type": "boolean"
     },
-    "oidc_issuer": {
-      "const": "https://token.actions.githubusercontent.com",
-      "default": "https://token.actions.githubusercontent.com",
-      "title": "Oidc Issuer",
-      "type": "string"
+    "dependency_locks_complete": {
+      "const": true,
+      "default": true,
+      "title": "Dependency Locks Complete",
+      "type": "boolean"
+    },
+    "provenance_complete": {
+      "const": true,
+      "default": true,
+      "title": "Provenance Complete",
+      "type": "boolean"
     },
     "production_credentials_used": {
       "const": false,
@@ -147,66 +186,27 @@
       "title": "Production Signature Verified",
       "type": "boolean"
     },
-    "provenance_complete": {
-      "const": true,
-      "default": true,
-      "title": "Provenance Complete",
-      "type": "boolean"
-    },
-    "provenance_statement": {
-      "$ref": "#/$defs/ImmutableToolkitArtifactBindingV1"
-    },
-    "ready": {
-      "const": false,
-      "default": false,
-      "title": "Ready",
-      "type": "boolean"
-    },
-    "release_environment": {
-      "const": "toolkit-rc-release",
-      "default": "toolkit-rc-release",
-      "title": "Release Environment",
-      "type": "string"
-    },
     "remote_publication_verified": {
       "const": false,
       "default": false,
       "title": "Remote Publication Verified",
       "type": "boolean"
     },
-    "schema_version": {
-      "const": 1,
-      "default": 1,
-      "title": "Schema Version",
-      "type": "integer"
+    "final_receipt_published": {
+      "const": false,
+      "default": false,
+      "title": "Final Receipt Published",
+      "type": "boolean"
     },
-    "source_commit": {
-      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
-      "title": "Source Commit",
-      "type": "string"
-    },
-    "source_date_epoch": {
-      "minimum": 315532800,
-      "title": "Source Date Epoch",
-      "type": "integer"
-    },
-    "source_repository": {
-      "const": "https://github.com/alchymia-labs/custos",
-      "default": "https://github.com/alchymia-labs/custos",
-      "title": "Source Repository",
-      "type": "string"
-    },
-    "status": {
-      "const": "PENDING_PROTECTED_RELEASE",
-      "default": "PENDING_PROTECTED_RELEASE",
-      "title": "Status",
-      "type": "string"
-    },
-    "workflow_identity": {
-      "const": "https://github.com/alchymia-labs/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main",
-      "default": "https://github.com/alchymia-labs/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main",
-      "title": "Workflow Identity",
-      "type": "string"
+    "final_blockers": {
+      "items": {
+        "const": "execute the protected production release runner with credentials and register its verified remote receipt",
+        "type": "string"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "title": "Final Blockers",
+      "type": "array"
     }
   },
   "required": [

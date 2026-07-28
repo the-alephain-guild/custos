@@ -35,9 +35,9 @@ DISTRIBUTION_ROLES: Final = {
     "custos-strategy-toolkit": ToolkitRcMemberRole.BASE_CONTRACTS_WHEEL,
     "custos-strategy-toolkit-nautilus": ToolkitRcMemberRole.NAUTILUS_WHEEL,
 }
-SOURCE_REPOSITORY: Final = "https://github.com/alchymia-labs/custos"
+SOURCE_REPOSITORY: Final = "https://github.com/the-alephain-guild/custos"
 WORKFLOW_IDENTITY: Final = (
-    "https://github.com/alchymia-labs/custos/.github/workflows/"
+    "https://github.com/the-alephain-guild/custos/.github/workflows/"
     "release-toolkit-rc.yml@refs/heads/main"
 )
 OIDC_ISSUER: Final = "https://token.actions.githubusercontent.com"

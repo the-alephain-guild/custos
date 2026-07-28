@@ -32,11 +32,11 @@ from scripts.toolkit_rc_oci import (
 from scripts.toolkit_rc_publish import ArtifactPublicationError, _validate_build_evidence
 
 WORKFLOW_IDENTITY: Final = (
-    "https://github.com/alchymia-labs/custos/.github/workflows/"
+    "https://github.com/the-alephain-guild/custos/.github/workflows/"
     "release-toolkit-rc.yml@refs/heads/main"
 )
 WORKFLOW_REF: Final = (
-    "alchymia-labs/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"
+    "the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"
 )
 OIDC_ISSUER: Final = "https://token.actions.githubusercontent.com"
 STABLE_READY_PATH: Final = Path("docs/authority/receipts/custos-toolkit-rc-authority-v1.json")
@@ -66,7 +66,7 @@ SHARED_EVIDENCE_FIELDS: Final = (
     "pre_import_verifier_receipt",
 )
 BUILD_TYPE: Final = "https://custos.the-alephain-guild/build-types/toolkit-rc/v1"
-SOURCE_REPOSITORY: Final = "https://github.com/alchymia-labs/custos"
+SOURCE_REPOSITORY: Final = "https://github.com/the-alephain-guild/custos"
 
 
 class ToolkitRcPromotionError(RuntimeError):

@@ -221,7 +221,7 @@ def _promotion_case(
                 "dependencies": dependencies,
                 "wheel": wheel,
                 "sbom": sbom_bindings[role],
-                "source_repository": "https://github.com/alchymia-labs/custos",
+                "source_repository": "https://github.com/the-alephain-guild/custos",
                 "source_commit": SOURCE_COMMIT,
             }
         )
@@ -264,7 +264,7 @@ def _promotion_case(
                 },
                 "resolvedDependencies": [
                     {
-                        "uri": (f"git+https://github.com/alchymia-labs/custos@{SOURCE_COMMIT}"),
+                        "uri": (f"git+https://github.com/the-alephain-guild/custos@{SOURCE_COMMIT}"),
                         "digest": {"gitCommit": SOURCE_COMMIT},
                     },
                     {"uri": "file:uv.lock", "digest": {"sha256": "b" * 64}},
@@ -348,7 +348,7 @@ def _promotion_case(
         {
             "schema_version": "alephain.custos.toolkit-rc-oci-config.v1",
             "candidate_version": VERSION,
-            "source_repository": "https://github.com/alchymia-labs/custos",
+            "source_repository": "https://github.com/the-alephain-guild/custos",
             "source_commit": SOURCE_COMMIT,
             "source_date_epoch": SOURCE_DATE_EPOCH,
             "registry": registry,
@@ -360,7 +360,7 @@ def _promotion_case(
             "production_signature_verified": True,
             "production_context": {
                 "workflow_ref": (
-                    "alchymia-labs/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"
+                    "the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"
                 ),
                 "workflow_identity": WORKFLOW_IDENTITY,
                 "oidc_issuer": OIDC_ISSUER,
@@ -388,7 +388,7 @@ def _promotion_case(
             "config": config.document(),
             "layers": [descriptor.document() for descriptor in layers],
             "annotations": {
-                "org.opencontainers.image.source": "https://github.com/alchymia-labs/custos",
+                "org.opencontainers.image.source": "https://github.com/the-alephain-guild/custos",
                 "org.opencontainers.image.revision": SOURCE_COMMIT,
                 "org.opencontainers.image.version": VERSION,
             },

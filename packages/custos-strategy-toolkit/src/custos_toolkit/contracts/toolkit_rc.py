@@ -101,7 +101,7 @@ class ToolkitRcMemberV1(_StrictFrozenModel):
 
     @model_validator(mode="after")
     def validate_distribution_policy(self) -> Self:
-        if self.source_repository != "https://github.com/alchymia-labs/custos":
+        if self.source_repository != "https://github.com/the-alephain-guild/custos":
             raise ValueError("toolkit RC source repository identity differs")
         if self.role is ToolkitRcMemberRole.BASE_CONTRACTS_WHEEL:
             if (
@@ -182,17 +182,17 @@ class ToolkitRcPendingReceiptV1(_StrictFrozenModel):
     status: Literal["PENDING_PROTECTED_RELEASE"] = "PENDING_PROTECTED_RELEASE"
     ready: Literal[False] = False
     candidate_version: RcVersion
-    source_repository: Literal["https://github.com/alchymia-labs/custos"] = (
-        "https://github.com/alchymia-labs/custos"
+    source_repository: Literal["https://github.com/the-alephain-guild/custos"] = (
+        "https://github.com/the-alephain-guild/custos"
     )
     source_commit: SourceCommit
     source_date_epoch: StrictInt = Field(ge=315_532_800)
     release_environment: Literal["toolkit-rc-release"] = "toolkit-rc-release"
     workflow_identity: Literal[
-        "https://github.com/alchymia-labs/custos/.github/workflows/"
+        "https://github.com/the-alephain-guild/custos/.github/workflows/"
         "release-toolkit-rc.yml@refs/heads/main"
     ] = (
-        "https://github.com/alchymia-labs/custos/.github/workflows/"
+        "https://github.com/the-alephain-guild/custos/.github/workflows/"
         "release-toolkit-rc.yml@refs/heads/main"
     )
     oidc_issuer: Literal["https://token.actions.githubusercontent.com"] = (
@@ -265,8 +265,8 @@ class ToolkitRcOciPublicationReceiptV1(_StrictFrozenModel):
     ready: Literal[False] = False
     handoff_ready: Literal[False] = False
     candidate_version: RcVersion
-    source_repository: Literal["https://github.com/alchymia-labs/custos"] = (
-        "https://github.com/alchymia-labs/custos"
+    source_repository: Literal["https://github.com/the-alephain-guild/custos"] = (
+        "https://github.com/the-alephain-guild/custos"
     )
     source_commit: SourceCommit
     source_date_epoch: StrictInt = Field(ge=315_532_800)
@@ -291,12 +291,12 @@ class ToolkitRcOciPublicationReceiptV1(_StrictFrozenModel):
     production_credentials_used: StrictBool
     production_signature_verified: StrictBool
     workflow_ref: (
-        Literal["alchymia-labs/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"]
+        Literal["the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"]
         | None
     )
     workflow_identity: (
         Literal[
-            "https://github.com/alchymia-labs/custos/.github/workflows/"
+            "https://github.com/the-alephain-guild/custos/.github/workflows/"
             "release-toolkit-rc.yml@refs/heads/main"
         ]
         | None
@@ -375,8 +375,8 @@ class ToolkitRcAuthorityReadyReceiptV1(_StrictFrozenModel):
     ready: Literal[True] = True
     handoff_ready: Literal[True] = True
     candidate_version: RcVersion
-    source_repository: Literal["https://github.com/alchymia-labs/custos"] = (
-        "https://github.com/alchymia-labs/custos"
+    source_repository: Literal["https://github.com/the-alephain-guild/custos"] = (
+        "https://github.com/the-alephain-guild/custos"
     )
     source_commit: SourceCommit
     source_date_epoch: StrictInt = Field(ge=315_532_800)

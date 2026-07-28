@@ -53,7 +53,7 @@ def _member(role: ToolkitRcMemberRole, **overrides: object) -> ToolkitRcMemberV1
         "dependency_lock_evidence": _artifact(f"{role.value}.dependency-locks.json", DIGESTS[4]),
         "slsa_provenance": _artifact(f"{role.value}.intoto.json", DIGESTS[5]),
         "sigstore_attestation": _artifact(f"{role.value}.sigstore.json", DIGESTS[6]),
-        "source_repository": "https://github.com/alchymia-labs/custos",
+        "source_repository": "https://github.com/the-alephain-guild/custos",
         "source_commit": "a" * 40,
         "toolkit_extraction_receipt": _artifact(f"{role.value}.extraction.json", DIGESTS[7]),
         "toolkit_typing_closure_receipt": _artifact(
@@ -102,7 +102,7 @@ def test_receipt_manifest_requires_exact_base_and_nautilus_member_matrix() -> No
     with pytest.raises(ValidationError, match="source repository identity differs"):
         _member(
             ToolkitRcMemberRole.BASE_CONTRACTS_WHEEL,
-            source_repository="https://github.com/the-alephain-guild/custos",
+            source_repository="https://github.com/alchymia-labs/custos",
         )
 
 

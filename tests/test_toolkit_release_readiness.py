@@ -344,7 +344,7 @@ def test_dedicated_production_workflow_is_manual_oidc_and_fail_closed() -> None:
     assert "oci_coordinate=${{ steps.publish.outputs.oci_coordinate }}" in source
     assert "manifest_digest=${{ steps.publish.outputs.manifest_digest }}" in source
     assert "CUSTOS_TOOLKIT_OCI_REGISTRY: ghcr.io" in source
-    assert "CUSTOS_TOOLKIT_OCI_REPOSITORY: alchymia-labs/custos-strategy-toolkit" in source
+    assert "CUSTOS_TOOLKIT_OCI_REPOSITORY: the-alephain-guild/custos-strategy-toolkit" in source
     assert "CUSTOS_TOOLKIT_ARTIFACT_SERVICE" not in source
     assert "self-hosted" not in source
     assert "actions/upload-artifact" not in source

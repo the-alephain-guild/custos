@@ -56,15 +56,15 @@ BUILD_DISTRIBUTIONS: Final = frozenset(
     {"custos-strategy-toolkit", "custos-strategy-toolkit-nautilus"}
 )
 PRODUCTION_WORKFLOW_REF: Final[
-    Literal["alchymia-labs/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"]
-] = "alchymia-labs/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"
+    Literal["the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"]
+] = "the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"
 PRODUCTION_WORKFLOW_IDENTITY: Final = (
-    "https://github.com/alchymia-labs/custos/.github/workflows/"
+    "https://github.com/the-alephain-guild/custos/.github/workflows/"
     "release-toolkit-rc.yml@refs/heads/main"
 )
 PRODUCTION_OIDC_ISSUER: Final = "https://token.actions.githubusercontent.com"
 PRODUCTION_RELEASE_ENVIRONMENT: Final[Literal["toolkit-rc-release"]] = "toolkit-rc-release"
-SOURCE_REPOSITORY: Final = "https://github.com/alchymia-labs/custos"
+SOURCE_REPOSITORY: Final = "https://github.com/the-alephain-guild/custos"
 
 
 class ArtifactPublicationError(RuntimeError):
@@ -662,7 +662,7 @@ def _parser() -> argparse.ArgumentParser:
 def _production_authorization_from_environment() -> ProductionOciAuthorization:
     if (
         os.environ.get("GITHUB_ACTIONS") != "true"
-        or os.environ.get("GITHUB_REPOSITORY") != "alchymia-labs/custos"
+        or os.environ.get("GITHUB_REPOSITORY") != "the-alephain-guild/custos"
         or os.environ.get("GITHUB_REF") != "refs/heads/main"
     ):
         raise ArtifactPublicationError(

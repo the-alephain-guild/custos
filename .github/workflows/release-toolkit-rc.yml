@@ -19,18 +19,18 @@ concurrency:
 
 jobs:
   release-candidate:
-    if: github.repository == 'alchymia-labs/custos' && github.ref == 'refs/heads/main'
+    if: github.repository == 'the-alephain-guild/custos' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     environment: toolkit-rc-release
     env:
       SOURCE_DATE_EPOCH: '1704067200'
       CUSTOS_TOOLKIT_RELEASE_ENVIRONMENT: toolkit-rc-release
       CUSTOS_TOOLKIT_OCI_REGISTRY: ghcr.io
-      CUSTOS_TOOLKIT_OCI_REPOSITORY: alchymia-labs/custos-strategy-toolkit
+      CUSTOS_TOOLKIT_OCI_REPOSITORY: the-alephain-guild/custos-strategy-toolkit
       CUSTOS_TOOLKIT_OCI_USERNAME: ${{ github.actor }}
       CUSTOS_TOOLKIT_OCI_TOKEN: ${{ github.token }}
       EXPECTED_SIGSTORE_IDENTITY: >-
-        https://github.com/alchymia-labs/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main
+        https://github.com/the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main
       EXPECTED_SIGSTORE_ISSUER: https://token.actions.githubusercontent.com
     steps:
       - name: Check out the exact protected-main commit
@@ -59,10 +59,10 @@ jobs:
         run: |
           set -euo pipefail
           [[ "${{ inputs.candidate_version }}" =~ ^0\.1\.0rc[1-9][0-9]*$ ]]
-          test "$GITHUB_REPOSITORY" = "alchymia-labs/custos"
+          test "$GITHUB_REPOSITORY" = "the-alephain-guild/custos"
           test "$GITHUB_REF" = "refs/heads/main"
           test "$CUSTOS_TOOLKIT_OCI_REGISTRY" = "ghcr.io"
-          test "$CUSTOS_TOOLKIT_OCI_REPOSITORY" = "alchymia-labs/custos-strategy-toolkit"
+          test "$CUSTOS_TOOLKIT_OCI_REPOSITORY" = "the-alephain-guild/custos-strategy-toolkit"
           test -n "$CUSTOS_TOOLKIT_OCI_USERNAME"
           test -n "$CUSTOS_TOOLKIT_OCI_TOKEN"
           command -v uv

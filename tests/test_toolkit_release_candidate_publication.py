@@ -153,7 +153,7 @@ def _candidate_inputs(root: Path, version: str) -> CandidateInputs:
                 nautilus_version=None if is_base else "1.230.0",
                 top_level_modules=("custos_toolkit" if is_base else "custos_toolkit_nautilus",),
                 dependencies=dependencies,
-                source_repository="https://github.com/alchymia-labs/custos",
+                source_repository="https://github.com/the-alephain-guild/custos",
                 source_commit=SOURCE_COMMIT,
                 **bindings,
             )

@@ -26,11 +26,11 @@ concurrency:
 
 jobs:
   promote-candidate:
-    if: github.repository == 'alchymia-labs/custos' && github.ref == 'refs/heads/main'
+    if: github.repository == 'the-alephain-guild/custos' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     env:
       CUSTOS_TOOLKIT_OCI_REGISTRY: ghcr.io
-      CUSTOS_TOOLKIT_OCI_REPOSITORY: alchymia-labs/custos-strategy-toolkit
+      CUSTOS_TOOLKIT_OCI_REPOSITORY: the-alephain-guild/custos-strategy-toolkit
       CUSTOS_TOOLKIT_OCI_USERNAME: ${{ github.actor }}
       CUSTOS_TOOLKIT_OCI_TOKEN: ${{ github.token }}
     steps:
