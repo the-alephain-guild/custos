@@ -1,0 +1,104 @@
+"""Example READMEs must only use flags the CLI actually accepts.
+
+The existing example tests assert that certain command names appear in the
+prose. That is a weaker property than it looks: a README can contain the string
+``arx-runner vault put`` while the command below it is missing a required flag,
+or passes one that does not exist. Both shipped that way -- the sandbox example
+told operators to run ``--nats-url``, which argparse rejects outright, and both
+examples omitted the required ``--scope-digest``.
+
+So this checks the commands against the real parser rather than against a list
+of expected substrings. An operator following an example verbatim is the whole
+point of an example; a broken one is worse than none.
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+from pathlib import Path
+
+import pytest
+
+from custos.cli.subcommands import _build_parser
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+EXAMPLE_READMES = (
+    REPO_ROOT / "examples" / "supertrend-sandbox" / "README.md",
+    REPO_ROOT / "examples" / "supertrend-testnet" / "README.md",
+)
+
+# Both invocation forms an example may use: the installed console script, and
+# the published image whose entrypoint is that same script.
+_INVOCATION = re.compile(
+    r"(?:arx-runner|custos-runner:v[\d.]+)\s+"
+    r"(vault\s+\w+|[a-z-]+)"
+    r"((?:[^`]|\n)*?)(?=\n```|\n\n)"
+)
+_FLAG = re.compile(r"--[a-z][a-z-]*")
+
+
+def _subparser(name: str) -> argparse.ArgumentParser | None:
+    """Resolve 'start' or 'vault put' to the parser that owns its flags."""
+    parts = name.split()
+    parser = _build_parser()
+    for part in parts:
+        actions = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+        if not actions or part not in actions[0].choices:
+            return None
+        parser = actions[0].choices[part]
+    return parser
+
+
+def _accepted(parser: argparse.ArgumentParser) -> set[str]:
+    return {opt for action in parser._actions for opt in action.option_strings}
+
+
+def _required(parser: argparse.ArgumentParser) -> set[str]:
+    return {
+        action.option_strings[0]
+        for action in parser._actions
+        if action.required and action.option_strings
+    }
+
+
+def _commands(text: str) -> list[tuple[str, set[str]]]:
+    found = []
+    for match in _INVOCATION.finditer(text):
+        name = " ".join(match.group(1).split())
+        if _subparser(name) is None:
+            continue
+        found.append((name, set(_FLAG.findall(match.group(2)))))
+    return found
+
+
+@pytest.mark.parametrize("readme", EXAMPLE_READMES, ids=lambda p: str(p.relative_to(REPO_ROOT)))
+def test_example_commands_use_only_real_flags(readme: Path) -> None:
+    commands = _commands(readme.read_text(encoding="utf-8"))
+    assert commands, f"no arx-runner commands found in {readme} — has the format changed?"
+
+    for name, used in commands:
+        accepted = _accepted(_subparser(name))
+        unknown = sorted(flag for flag in used if flag not in accepted)
+        assert not unknown, f"{readme.name}: `arx-runner {name}` passes unknown flag(s) {unknown}"
+
+
+@pytest.mark.parametrize("readme", EXAMPLE_READMES, ids=lambda p: str(p.relative_to(REPO_ROOT)))
+def test_example_commands_pass_every_required_flag(readme: Path) -> None:
+    for name, used in _commands(readme.read_text(encoding="utf-8")):
+        parser = _subparser(name)
+        # A mutually exclusive required group is satisfied by any member, so
+        # only single required options are checked here.
+        missing = sorted(flag for flag in _required(parser) if flag not in used)
+        assert not missing, f"{readme.name}: `arx-runner {name}` omits required flag(s) {missing}"
+
+
+def test_probe_detects_a_flag_that_does_not_exist() -> None:
+    """The probe above is only worth having if it can fail."""
+    parser = _subparser("start")
+    assert parser is not None
+    assert "--nats-sim-url" in _accepted(parser)
+    assert "--nats-url" not in _accepted(parser), (
+        "--nats-url was the flag the sandbox example wrongly documented; "
+        "if it now exists this guard needs rethinking"
+    )

@@ -60,9 +60,16 @@ printf '%s\n' '<binance-testnet-api-secret>' | docker run --rm -i \
   --tenant-id "$CUSTOS_TENANT_ID" \
   --api-key '<binance-testnet-api-key>' \
   --api-secret-stdin \
+  --scope-digest '<lowercase-sha256-bound-by-the-deployment-spec>' \
   --age-recipient "$SOPS_AGE_RECIPIENT" \
   --permission-scope trade_no_withdraw
 ```
+
+The `--scope-digest` value is the exact lowercase SHA-256 that the DeploymentSpec
+binds as this credential's scope. It is required: the vault record must prove it
+holds the credential the signed command actually asked for, not merely one with a
+matching key id.
+
 
 ## 3. Run the signed-command consumer
 

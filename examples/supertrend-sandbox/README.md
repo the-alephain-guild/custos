@@ -43,16 +43,23 @@ printf '%s\n' '<sandbox-api-secret>' | uv run arx-runner vault put \
   --tenant-id acme \
   --api-key '<sandbox-api-key>' \
   --api-secret-stdin \
+  --scope-digest '<lowercase-sha256-bound-by-the-deployment-spec>' \
   --age-recipient "$SOPS_AGE_RECIPIENT" \
   --permission-scope trade_no_withdraw
 ```
+
+The `--scope-digest` value is the exact lowercase SHA-256 that the DeploymentSpec
+binds as this credential's scope. It is required: the vault record must prove it
+holds the credential the signed command actually asked for, not merely one with a
+matching key id.
+
 
 ## 3. Start the signed-command consumer
 
 ```bash
 uv run arx-runner start \
   --enabled-mode sandbox \
-  --nats-url nats://crucible-nats.internal:4222 \
+  --nats-sim-url nats://crucible-nats.internal:4222 \
   --crucible-domain-public-key "$HOME/.arx/crucible-domain-event.pub" \
   --crucible-domain-key-id crucible-domain-v1 \
   --engine nautilus
