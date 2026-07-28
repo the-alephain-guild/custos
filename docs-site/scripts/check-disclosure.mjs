@@ -139,6 +139,10 @@ const CONTEXT_EXEMPTIONS = [
   // exact string is product surface even though it embeds a legacy name.
   /^crucible[.-][\w.-]*(pop\.v\d|BATCH-V\d)/i,
   /CRUCIBLE-RUNNER-FACT-BATCH-V\d/,
+  // The fact subject is a real integration point: a third party consuming what
+  // Custos emits has to subscribe to this literal string. Unlike the command
+  // subject, which only ARX publishes to, this one is product surface.
+  /crucible\.runner_fact\.\{mode\}/,
 ];
 
 const ALLOW_MARKER = /disclosure-ok:/;

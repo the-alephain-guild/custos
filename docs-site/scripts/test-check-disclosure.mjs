@@ -157,6 +157,11 @@ const CASES = [
     expect: (r) => r.code === 0,
   },
   {
+    name: 'fact subject an integrator must subscribe to is exempt',
+    body: '```text\ncrucible.runner_fact.{mode}.{tenant_id}.{runner_id}.{deployment_instance_id}\n```\n',
+    expect: (r) => r.code === 0,
+  },
+  {
     name: 'exemption does not cover ordinary prose about that system',
     body: 'Crucible validates the business rules before signing.\n',
     expect: (r) => r.code === 1 && /systems behind ARX/.test(r.out),

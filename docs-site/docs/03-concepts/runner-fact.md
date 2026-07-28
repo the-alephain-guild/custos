@@ -3,114 +3,130 @@ title: "RunnerFact"
 sidebar_position: 5
 ---
 
-
 # RunnerFact
 
-## Ownership
+A RunnerFact is a signed statement about something that happened locally. It is
+the only way execution reality leaves your machine.
 
-Custos observes the local engine. ARX owns canonical business and lifecycle
-facts. ARX may consume audit projections but is not in the publication path.
-
-    engine / watchdog / breaker
-      -> typed local fact adapter
-      -> RunnerFactOutbox
-      -> signed RunnerFact batch
-      -> ARX
-
-There is no generic unsigned NATS telemetry actor. Engine observations must map
-to an explicitly versioned fact type before entering the durable local queue.
-
-## Required identity
-
-Every deployment-scoped signed batch carries tenant, mode, runner,
-deployment_instance_id, deployment_spec_id, deployment_spec_digest, generation,
-strategy/capability provenance, event time, event id and typed payload. Strategy,
-spec, generation or process identifiers cannot replace deployment_instance_id as
-the runtime identity.
-
-The subject and durable stream identity are stable across spec and generation
-changes:
+The direction matters. Custos receives instructions and emits observations;
+those are separate paths and neither can be used as the other. What the runner
+says happened is signed by the runner, so it can be checked rather than
+trusted.
 
 ```text
-crucible.runner_fact.{mode}.{tenant_id}.{runner_id}.{deployment_instance_id}  <!-- disclosure-ok: published subject an integrator must subscribe to -->
+engine / watchdog / breaker
+  -> typed local fact adapter
+  -> fact outbox (durable, local)
+  -> signed batch
+  -> ARX
+```
+
+## Who owns what
+
+Custos observes the local engine and signs what it observed. ARX owns the
+canonical business and lifecycle record built from those observations.
+
+Custos does not decide what a fact *means* for the business — it reports what
+the engine did. That separation is why a compromised runner cannot rewrite
+history: it can only produce signed statements, and a statement that conflicts
+with its own prior sequence is detectable.
+
+There is no generic unsigned telemetry path. An engine observation must map to
+an explicitly versioned fact type before it can enter the outbox at all.
+
+## Identity
+
+Every deployment-scoped batch carries tenant, mode, runner,
+`deployment_instance_id`, `deployment_spec_id`, `deployment_spec_digest`,
+generation, strategy and capability provenance, event time, event id and a
+typed payload.
+
+`deployment_instance_id` is the runtime identity. Strategy, spec, generation
+and process identifiers cannot substitute for it — they describe *what* was
+configured, not *which running thing* did something.
+
+The stream identity is stable across spec and generation changes:
+
+```text
 tenant_id + mode + runner_id + deployment_instance_id
 ```
 
-`deployment_spec_id`, `deployment_spec_digest`, and `generation` are signed batch
-fences. They never split the stream and never reset its source sequence. The v1
-signing domain is `CRUCIBLE-RUNNER-FACT-BATCH-V1\0`. <!-- disclosure-ok: published signing domain required to verify batches -->
+`deployment_spec_id`, `deployment_spec_digest` and `generation` are signed
+fences within a batch. They never split the stream and never reset its source
+sequence. A configuration change is a fence, not a new stream — otherwise a
+consumer would see gaps that look like lost facts.
 
-The signing header is a closed 18-field object in this order:
-`schema_version`, `batch_id`, `tenant_id`, `trading_mode`, `runner_id`,
-`deployment_instance_id`, `deployment_spec_id`, `deployment_spec_digest`,
-`generation`, `strategy_id`, `capability_version_id`, `capability_version`,
-`capability_manifest_digest`, `key_id`, `emitted_at`, `source_seq_start`,
-`source_seq_end`, `payload_digest`. `facts` and `signature` are excluded from
-the header; `payload_digest = sha256(canonical_json(facts))`. The bytes signed
-are exactly `DOMAIN || canonical_json(header)`. Canonical JSON is UTF-8,
-compact, sorts object members by ascending Unicode code point, preserves array
-order, does not ASCII-escape ordinary Unicode, rejects NaN and binary floats,
-and has no trailing newline. The candidate signing-preimage golden fixes the
-exact bytes, digest, synthetic key and signature for cross-language consumers.
+## Sequence
 
-## Closed fact union
+Sequence numbers are allocated exclusively by the outbox, in the same
+transaction that persists the signed batch.
 
-The immutable v1 candidate retains the existing 13 wire kind names. Unknown
-kinds are terminal contract violations; they cannot fall back to unsigned logs.
+Typed fact builders must not pre-populate a sequence; the outbox rejects such
+input. A caller-supplied sequence would be a second allocator, and two
+allocators eventually collide.
+
+## The closed union
+
+Thirteen fact kinds exist. Unknown kinds are terminal contract violations —
+they cannot fall back to an unsigned log, because a fact that cannot be
+expressed in the union is a fact the consumer cannot verify.
 
 | Consumer | Accepted `facts[].kind` |
 |---|---|
-| settlement | `execution_fill`, `fill`, `position_closed`, `fee`, `period_closed` |
+| settlement | `fill`, `position_closed`, `fee`, `period_closed` |
 | risk | `equity_snapshot`, `position_snapshot` |
 | health | `heartbeat`, `RunnerRuntimeLogFact.v1` |
-| reconciliation | `venue_ledger_snapshot_manifest`, `venue_ledger_snapshot_chunk`, `reconciliation_period_closed` |
+| reconciliation | `execution_fill`, `venue_ledger_snapshot_manifest`, `venue_ledger_snapshot_chunk`, `reconciliation_period_closed` |
 | deployment lifecycle | `RunnerDeploymentLifecycleFact.v1` |
 
-Payload numbers are either JSON integers or canonical decimal strings. Python
-binary floats are rejected recursively before SQLite persistence so signatures
-do not depend on language-specific number rendering.
+`period_closed` is a calendar settlement fact whose `period` is exactly
+`YYYY-MM`, emitted only by the durable settlement lifecycle. The reconciliation
+loop may emit venue-ledger evidence and `reconciliation_period_closed`, but it
+must never translate an arbitrary retry or snapshot interval into a settlement
+close.
 
-`RunnerDeploymentLifecycleFact.v1` records an applied desired generation with:
+If an independent venue ledger is unavailable, that loop emits **no** close
+fact and records the unavailable capability locally. A settlement close that
+was not independently corroborated would be an assertion dressed as evidence.
 
-- tenant_id and mode;
-- runner_id;
-- deployment_instance_id;
-- deployment_spec_id and deployment_spec_digest;
-- generation and lifecycle_state;
-- command_fingerprint and terminal apply outcome;
-- observed_at;
-- seq, allocated exclusively by RunnerFactOutbox when the fact enters the
-  signed batch `facts[]` array.
+## Numbers
 
-Emission requires an exact `deployment_lifecycle` capability binding
-for the same mode, instance, spec digest and strategy. A health-only authority
-cannot emit lifecycle facts.
+Payload numbers are JSON integers or canonical decimal strings. Python binary
+floats are rejected recursively before persistence, so a signature never
+depends on how one language happens to render a float.
 
-The lifecycle event ID excludes `observed_at`. Its UUIDv5 preimage contains the
-complete stream identity, spec id/digest, generation, lifecycle state, stable
-command/apply fingerprint and outcome. Retry or restart of the same apply keeps
-one event ID; changing any stable identity component produces a different ID.
+See [money arithmetic is exact](/trust-model/exact-money-arithmetic).
 
-Typed fact builders must not pre-populate seq. RunnerFactOutbox rejects such an
-input and assigns the stream-monotonic sequence in the same transaction that
-persists the signed batch.
+## Lifecycle facts
+
+`RunnerDeploymentLifecycleFact.v1` records an applied desired generation:
+tenant and mode, runner, deployment instance, spec id and digest, generation
+and lifecycle state, command fingerprint and terminal outcome, `observed_at`,
+and the outbox-allocated `seq`.
+
+Emission requires an exact `deployment_lifecycle` capability binding for the
+same mode, instance, spec digest and strategy. A health-only authority cannot
+emit lifecycle facts.
+
+The lifecycle event id **excludes** `observed_at`. Its UUIDv5 preimage contains
+the stream identity, spec id and digest, generation, lifecycle state, the
+stable command fingerprint and the outcome. A retry or restart of the same
+apply therefore keeps one event id, while changing any stable component
+produces a different one — which is what makes redelivery idempotent for the
+consumer rather than merely for the runner.
 
 ## Failure semantics
 
-Durable-queue enqueue success is the reporting durability boundary. Reconciliation
-keeps separate applied_generation and reported_generation watermarks. If enqueue
-fails, Custos NAKs the command; redelivery retries only the fact and does not
-repeat the successful engine action.
+Enqueue success into the outbox is the reporting durability boundary.
+Reconciliation keeps separate applied and reported watermarks.
 
-Local safety continues while ARX is unavailable. Custos never downgrades a
-fact to an unsigned compatibility topic.
+If enqueue fails, the command is not acknowledged. Redelivery retries the
+**fact** and does not repeat the successful engine action — the engine work and
+the reporting of it are separately recoverable.
 
-## Candidate readiness ceiling
+Local safety keeps working while ARX is unavailable, and a fact is never
+downgraded to an unsigned topic to get it delivered. An undeliverable fact
+waits; it does not become a weaker fact.
 
-`custos.runner-fact.v1/candidate-2026-07-15.2` is the current producer contract
-candidate and supersedes `.1`, whose receipt remains immutable historical
-evidence with status `NON_CURRENT_SUPERSEDED` in the current authority index.
-Its synthetic Ed25519 key and signature are cross-language golden evidence only;
-they are not runtime identity evidence. Until ARX returns a
-receipt over the exact candidate bytes, consumer compatibility, runtime RC,
-real round-trip, live, runtime and production readiness remain false.
+For subjects, the signing preimage and verification steps, see
+[consuming RunnerFact](/integration/consuming-runner-fact).
