@@ -122,6 +122,11 @@ const CASES = [
     expect: (r) => r.code === 0,
   },
   {
+    name: 'published repository coordinate is exempt',
+    body: 'Clone it: `git clone https://github.com/the-alephain-guild/custos.git`\n',
+    expect: (r) => r.code === 0,
+  },
+  {
     name: 'exemption does not whitelist other org paths',
     body: 'See the-alephain-guild/synedrion for the council design notes.\n',
     expect: (r) => r.code === 1 && /private repository paths/.test(r.out),

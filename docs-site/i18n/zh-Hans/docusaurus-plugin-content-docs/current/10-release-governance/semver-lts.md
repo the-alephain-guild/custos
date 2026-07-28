@@ -18,7 +18,7 @@ follow-up plan tracked in [`upgrade-path.md`](/release-governance/upgrade-paths)
 
 The concrete numbers below are contractual — a change to any row must go
 through a MINOR bump (loosening) or a MAJOR bump (tightening) plus a
-matching `CHANGELOG.md` entry. See [`../CHANGELOG.md`](https://github.com/alchymia-labs/custos/blob/main/CHANGELOG.md) and
+matching `CHANGELOG.md` entry. See [`../CHANGELOG.md`](https://github.com/the-alephain-guild/custos/blob/main/CHANGELOG.md) and
 the SEMVER contract table below for the full envelope.
 
 ## EOL Window
@@ -44,8 +44,8 @@ Security fixes ship as a patch release (`0.Y.z+1`) within **30 days** of
 public CVE disclosure (best-effort; a note in this doc's Deviations log
 covers any miss).
 
-- Report via [GitHub Security Advisories](https://github.com/alchymia-labs/custos/security/advisories)
-  — see [`SECURITY.md`](https://github.com/alchymia-labs/custos/blob/main/SECURITY.md) for the disclosure protocol.
+- Report via [GitHub Security Advisories](https://github.com/the-alephain-guild/custos/security/advisories)
+  — see [`SECURITY.md`](https://github.com/the-alephain-guild/custos/blob/main/SECURITY.md) for the disclosure protocol.
 - Public advisories go live within 24 hours of the patch release.
 - Backport policy: security fixes land on every active LTS line. Critical
   functional-bug backports need a CEO override.
@@ -82,7 +82,7 @@ An identity break that only affects re-verification of prior tags
 does *not* affect the artifact contents — auditors can still verify
 via the tag-time cert-identity that was in effect when the tag was
 cut. Verification instructions live in
-[`../.github/workflows/scripts/verify-release.sh`](https://github.com/alchymia-labs/custos/blob/main/.github/workflows/scripts/verify-release.sh).
+[`../.github/workflows/scripts/verify-release.sh`](https://github.com/the-alephain-guild/custos/blob/main/.github/workflows/scripts/verify-release.sh).
 
 ## Upgrade Path
 

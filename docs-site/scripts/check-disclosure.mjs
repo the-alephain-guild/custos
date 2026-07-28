@@ -107,10 +107,16 @@ const BANNED = [
 
 /**
  * Lines that legitimately carry an otherwise-banned token because they are part
- * of the public product surface. A published container coordinate is something
- * an operator must type to pull the image, so it is not disclosure.
+ * of the public product surface. The published repository and container
+ * coordinates are things an operator must type to clone or pull, so they are
+ * not disclosure. The exemption is scoped to the `custos` project — it does not
+ * whitelist other paths under the same organisation.
  */
-const CONTEXT_EXEMPTIONS = [/ghcr\.io\/the-alephain-guild\/custos/];
+const CONTEXT_EXEMPTIONS = [
+  /ghcr\.io\/the-alephain-guild\/custos/,
+  /github\.com\/the-alephain-guild\/custos/,
+  /the-alephain-guild\/custos\b/,
+];
 
 const ALLOW_MARKER = /disclosure-ok:/;
 

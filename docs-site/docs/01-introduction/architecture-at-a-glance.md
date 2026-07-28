@@ -108,7 +108,7 @@ Level-triggered reconcile 的核心不变量:
 用户只需审计**两个开源 repo** 即可确认信任模型:
 
 1. **NautilusTrader upstream** (`nautilus-trader/nautilus_trader`, MIT) — 确认 NT 无偷 Key 或代下单路径
-2. **custos** (`alchymia-labs/custos`, Apache-2.0) — 确认 custos 无以下反模式:
+2. **custos** (`the-alephain-guild/custos`, Apache-2.0) — 确认 custos 无以下反模式:
    - 上传 Key 明文到 arx / the control plane / 任何云端
    - 接收云端下发的 "代解密" 指令
    - 接收云端下发的 "直接下单" 绕过策略指令

@@ -13,12 +13,12 @@ const config = {
   url: 'https://custos.alephain.com',
   baseUrl: '/',
 
-  organizationName: 'alchymia-labs',
+  organizationName: 'the-alephain-guild',
   projectName: 'custos',
   trailingSlash: false,
 
-  onBrokenLinks: 'warn',
-  onBrokenMarkdownLinks: 'warn',
+  onBrokenLinks: 'throw',
+  onBrokenMarkdownLinks: 'throw',
 
   i18n: {
     defaultLocale: 'en',
@@ -38,7 +38,7 @@ const config = {
           routeBasePath: '/',
           sidebarPath: require.resolve('./sidebars.js'),
           editUrl:
-            'https://github.com/alchymia-labs/custos/tree/main/docs-site/',
+            'https://github.com/the-alephain-guild/custos/tree/main/docs-site/',
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
         },
@@ -73,7 +73,7 @@ const config = {
             label: 'Docs',
           },
           {
-            href: 'https://github.com/alchymia-labs/custos',
+            href: 'https://github.com/the-alephain-guild/custos',
             label: 'GitHub',
             position: 'right',
           },
@@ -111,18 +111,18 @@ const config = {
           {
             title: 'Code',
             items: [
-              {label: 'GitHub', href: 'https://github.com/alchymia-labs/custos'},
+              {label: 'GitHub', href: 'https://github.com/the-alephain-guild/custos'},
               {
                 label: 'CHANGELOG',
-                href: 'https://github.com/alchymia-labs/custos/blob/main/CHANGELOG.md',
+                href: 'https://github.com/the-alephain-guild/custos/blob/main/CHANGELOG.md',
               },
               {
                 label: 'License · Apache-2.0',
-                href: 'https://github.com/alchymia-labs/custos/blob/main/LICENSE',
+                href: 'https://github.com/the-alephain-guild/custos/blob/main/LICENSE',
               },
               {
                 label: 'Security policy',
-                href: 'https://github.com/alchymia-labs/custos/blob/main/SECURITY.md',
+                href: 'https://github.com/the-alephain-guild/custos/blob/main/SECURITY.md',
               },
             ],
           },

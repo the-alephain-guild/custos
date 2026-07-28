@@ -34,7 +34,7 @@ locally built Docker image.
 
 ```bash
 # 1. clone the repo at the release tag you want to verify
-git clone https://github.com/alchymia-labs/custos.git
+git clone https://github.com/the-alephain-guild/custos.git
 cd custos
 git checkout <release-tag>
 

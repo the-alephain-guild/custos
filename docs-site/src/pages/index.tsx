@@ -74,7 +74,7 @@ export default function Home(): ReactNode {
           </Link>
           <a
             className="button button--outline button--lg"
-            href="https://github.com/alchymia-labs/custos">
+            href="https://github.com/the-alephain-guild/custos">
             GitHub ↗
           </a>
         </div>
@@ -99,8 +99,8 @@ export default function Home(): ReactNode {
           only the first chapters so far. Start at the{' '}
           <Link to="/introduction/what-is-custos">Introduction</Link>, and
           read the source at{' '}
-          <a href="https://github.com/alchymia-labs/custos">
-            alchymia-labs/custos
+          <a href="https://github.com/the-alephain-guild/custos">
+            the-alephain-guild/custos
           </a>
           .
         </p>
