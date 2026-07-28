@@ -56,9 +56,19 @@ the cert-identity.
 ## Automated verification
 
 `tests/test_reproducible_build.py` runs two `uv build` cycles with the <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
-epoch pinned and asserts hash equality. It's `@pytest.mark.slow`
-because a double build takes tens of seconds; it is not part of
-`make verify` but runs on the nightly CI job.
+epoch pinned and asserts hash equality. It is `@pytest.mark.slow`
+because a double build takes tens of seconds, and it is **not** part of
+`make verify`.
+
+Run it deliberately:
+
+```bash
+uv run pytest tests/test_reproducible_build.py -m slow
+```
+
+There is currently no scheduled job that runs it for you. Treat reproducibility
+as something you verify when it matters — before trusting a published artifact —
+rather than as something already checked on your behalf.
 
 A companion test (`test_wheel_bytes_differ_without_epoch`) is
 `xfail(strict=True)` today because hatchling ≥ 1.20 is natively

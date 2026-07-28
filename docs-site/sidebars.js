@@ -67,7 +67,6 @@ const sidebars = {
       label: 'VI · Integration Guide',
       items: [
         'integration/gateway-contract-v1',
-        'integration/signing-deployment-spec',
         'integration/consuming-runner-fact',
         'integration/contract-versioning',
         'integration/reference-implementations',
@@ -88,7 +87,7 @@ const sidebars = {
       items: [
         'toolkit/overview',
         'toolkit/artifact-signing',
-        'toolkit/registry-mode-loading',
+        'toolkit/artifact-materialization',
       ],
     },
     {
