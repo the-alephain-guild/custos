@@ -34,8 +34,8 @@ simulated.
 Select one for the lifetime of the process:
 
 ```bash
-arx-runner start --engine nautilus     # default, real execution
-arx-runner start --engine sandbox-sim  # simulation, sandbox only
+arx-runner start --enabled-mode sandbox --engine nautilus     # real execution
+arx-runner start --enabled-mode sandbox --engine sandbox-sim  # simulation only
 ```
 
 If the NautilusTrader runtime is not installed, `--engine nautilus` fails at

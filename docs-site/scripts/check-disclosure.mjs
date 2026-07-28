@@ -148,6 +148,12 @@ const CONTEXT_EXEMPTIONS = [
   // Custos emits has to subscribe to this literal string. Unlike the command
   // subject, which only ARX publishes to, this one is product surface.
   /crucible\.runner_fact\.\{mode\}/,
+  // CLI flags and the default key path an operator types verbatim to start the
+  // runner. A doc that renames them to look tidy documents a command that
+  // argparse rejects -- which is how `--arx-domain-public-key` reached these
+  // pages. The flag name is product surface; only its spelling is legacy.
+  /--crucible-domain-(public-key|key-id)\b/,
+  /crucible-domain-event\.pub\b/,
 ];
 
 const ALLOW_MARKER = /disclosure-ok:/;

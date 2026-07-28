@@ -29,8 +29,8 @@ testnet 或 live 部署会在准入处被拒绝，而不是被悄悄模拟掉。
 宿主在进程生命周期内二选一：
 
 ```bash
-arx-runner start --engine nautilus     # 默认，真实执行
-arx-runner start --engine sandbox-sim  # 模拟，仅 sandbox
+arx-runner start --enabled-mode sandbox --engine nautilus     # 真实执行
+arx-runner start --enabled-mode sandbox --engine sandbox-sim  # 仅模拟
 ```
 
 若 NautilusTrader 运行时未安装，`--engine nautilus` 会在启动时失败。它**不会**回落到

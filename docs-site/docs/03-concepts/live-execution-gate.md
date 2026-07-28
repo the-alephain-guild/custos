@@ -91,8 +91,8 @@ list of forbidden combinations maintained somewhere else.
 Host selection is bound for the lifetime of the process:
 
 ```bash
-arx-runner start --engine nautilus     # default
-arx-runner start --engine sandbox-sim
+arx-runner start --enabled-mode sandbox --engine nautilus
+arx-runner start --enabled-mode sandbox --engine sandbox-sim
 ```
 
 If the NautilusTrader runtime is not installed, `--engine nautilus` fails at

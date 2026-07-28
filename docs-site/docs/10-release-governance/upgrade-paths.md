@@ -53,15 +53,16 @@ mv ~/.custos/state           ~/.arx/state            # if present
 #    single sops JSON; there is deliberately no auto-migration)
 sops --decrypt ~/.old-vault/vault.json > /tmp/legacy.json
 # read /tmp/legacy.json, then for each { key_id, key_material } pair:
-arx-runner vault put --key-id <id>
+arx-runner vault put --key-id <id> --tenant-id <tenant> \
+  --api-key <api-key> --api-secret-stdin --scope-digest <lowercase-sha256>
 # ... and after the last one:
 shred -u /tmp/legacy.json
 
 # 4. drop the old --sops-file / --age-key-file CLI flags
 #    from any systemd unit / launchd plist / docker-compose service.
 
-# 5. verify a paper reconcile before enabling live
-arx-runner start --paper-only
+# 5. verify a sandbox reconcile before enabling live
+arx-runner start --enabled-mode sandbox --engine sandbox-sim
 ```
 
 Docker operators must additionally mount the new `~/.arx` volume so

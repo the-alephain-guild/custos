@@ -86,7 +86,7 @@ arx-runner credential verify
 ## 轮换与吊销
 
 ```bash
-arx-runner credential rotate
+arx-runner credential rotate --reason "<why>"
 arx-runner credential revoke
 ```
 

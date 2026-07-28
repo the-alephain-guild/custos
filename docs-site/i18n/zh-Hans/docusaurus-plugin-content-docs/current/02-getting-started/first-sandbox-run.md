@@ -36,7 +36,7 @@ printf '%s\n' '<sandbox-api-secret>' | arx-runner vault put \
 确认 runner 真的读得回来：
 
 ```bash
-arx-runner vault verify binance-sandbox
+arx-runner vault verify --key-id binance-sandbox --tenant-id acme
 ```
 
 它跑的是真实解密路径，而不是它的模拟。手工调 `sops` 证明的是另一回事 —— 见

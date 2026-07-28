@@ -38,7 +38,7 @@ non-interactive contexts, but a secret passed as `--api-secret` is visible in
 Confirm the runner can actually read it back:
 
 ```bash
-arx-runner vault verify binance-sandbox
+arx-runner vault verify --key-id binance-sandbox --tenant-id acme
 ```
 
 This runs the real decrypt path rather than a simulation of it. Calling `sops`

@@ -35,7 +35,13 @@ sandbox 也不例外——开发用户必须用 `vault put` provision 一份真�
 ## 写入凭据
 
 ```bash
-arx-runner vault put <key-id> --permission-scope trade_no_withdraw
+arx-runner vault put \
+  --key-id <key-id> \
+  --tenant-id <tenant> \
+  --api-key <api-key> \
+  --api-secret-stdin \
+  --scope-digest <lowercase-sha256> \
+  --permission-scope trade_no_withdraw
 ```
 
 密文经 stdin 传给 sops，从不作为命令行参数，因此不会出现在 shell 历史或进程列表里。
@@ -46,7 +52,7 @@ arx-runner vault put <key-id> --permission-scope trade_no_withdraw
 ## 验证凭据
 
 ```bash
-arx-runner vault verify <key-id>
+arx-runner vault verify --key-id <key-id> --tenant-id <tenant>
 ```
 
 它端到端跑真实解密路径：经 sops 解密、解析 payload、检查文件权限、复检权限范围。这是

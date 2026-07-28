@@ -75,8 +75,8 @@ arx-runner start \
   --nats-sim-ca "$HOME/.arx/certs/arx-nats-ca.pem" \
   --nats-sim-server-name arx-nats.internal \
   --nats-sim-issuer-public-key "$ARX_NATS_SIM_ISSUER_PUBLIC_KEY" \
-  --arx-domain-public-key "$HOME/.arx/arx-domain-event.pub" \
-  --arx-domain-key-id arx-domain-v1 \
+  --crucible-domain-public-key "$HOME/.arx/crucible-domain-event.pub" \
+  --crucible-domain-key-id arx-domain-v1 \
   --engine nautilus
 ```
 
@@ -95,8 +95,8 @@ explicit loopback sandbox session:
 ```bash
 arx-runner start --enabled-mode sandbox --reconcile \
   --development-local-nats-url nats://127.0.0.1:24222 \
-  --arx-domain-public-key /tmp/demo/arx-domain-event.pub \
-  --arx-domain-key-id arx-domain-v1 \
+  --crucible-domain-public-key /tmp/demo/crucible-domain-event.pub \
+  --crucible-domain-key-id arx-domain-v1 \
   --engine sandbox-sim
 ```
 

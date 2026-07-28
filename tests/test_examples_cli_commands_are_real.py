@@ -28,14 +28,39 @@ EXAMPLE_READMES = (
     REPO_ROOT / "examples" / "supertrend-testnet" / "README.md",
 )
 
-# Both invocation forms an example may use: the installed console script, and
-# the published image whose entrypoint is that same script.
+
+def _documentation_pages() -> list[Path]:
+    """Every published page, in both locales."""
+    return sorted(
+        list((REPO_ROOT / "docs-site" / "docs").rglob("*.md"))
+        + list((REPO_ROOT / "docs-site" / "i18n").rglob("*.md"))
+    )
+
+
+# Both invocation forms a page may use: the installed console script, and the
+# published image whose entrypoint is that same script.
 _INVOCATION = re.compile(
     r"(?:arx-runner|custos-runner:v[\d.]+)\s+"
-    r"(vault\s+\w+|[a-z-]+)"
-    r"((?:[^`]|\n)*?)(?=\n```|\n\n)"
+    r"(vault\s+\w+|credential\s+\w+|nats-transport\s+\w+|[a-z-]+)"
 )
 _FLAG = re.compile(r"--[a-z][a-z-]*")
+
+
+def _invocation_body(lines: list[str], start: int) -> str:
+    """Collect one command, following shell line continuations.
+
+    A command ends at the first line that does not end in a backslash. Reading
+    to the next blank line instead would swallow the commands that follow it in
+    the same block, and report their flags against this one.
+    """
+    body: list[str] = []
+    index = start
+    while index < len(lines):
+        body.append(lines[index])
+        if not lines[index].rstrip().endswith("\\"):
+            break
+        index += 1
+    return "\n".join(body)
 
 
 def _subparser(name: str) -> argparse.ArgumentParser | None:
@@ -63,12 +88,21 @@ def _required(parser: argparse.ArgumentParser) -> set[str]:
 
 
 def _commands(text: str) -> list[tuple[str, set[str]]]:
+    lines = text.splitlines()
     found = []
-    for match in _INVOCATION.finditer(text):
+    for index, line in enumerate(lines):
+        match = _INVOCATION.search(line)
+        if not match:
+            continue
+        # `arx-runner enroll` inside a sentence names the command; it is not an
+        # invocation, and has no obligation to carry the required flags.
+        if match.start() > 0 and line[match.start() - 1] == "`":
+            continue
         name = " ".join(match.group(1).split())
         if _subparser(name) is None:
             continue
-        found.append((name, set(_FLAG.findall(match.group(2)))))
+        body = _invocation_body(lines, index)[match.end() :]
+        found.append((name, set(_FLAG.findall(body))))
     return found
 
 
@@ -91,6 +125,29 @@ def test_example_commands_pass_every_required_flag(readme: Path) -> None:
         # only single required options are checked here.
         missing = sorted(flag for flag in _required(parser) if flag not in used)
         assert not missing, f"{readme.name}: `arx-runner {name}` omits required flag(s) {missing}"
+
+
+def test_documentation_uses_only_real_flags() -> None:
+    """A flag that does not exist is wrong wherever it appears.
+
+    Only unknown flags are checked here, not omitted required ones: a page may
+    legitimately show `arx-runner start --engine nautilus` while discussing what
+    `--engine` selects. An invented flag has no such excuse, and that is the
+    failure that reached these pages -- renaming an internal name inside the
+    published documentation produced `--arx-domain-public-key`, which argparse
+    rejects.
+    """
+    offenders = []
+    for page in _documentation_pages():
+        for name, used in _commands(page.read_text(encoding="utf-8")):
+            accepted = _accepted(_subparser(name))
+            unknown = sorted(flag for flag in used if flag not in accepted)
+            if unknown:
+                offenders.append(f"{page.relative_to(REPO_ROOT)}: `{name}` {unknown}")
+
+    assert not offenders, "documented commands pass flags the CLI does not accept:\n" + "\n".join(
+        offenders
+    )
 
 
 def test_probe_detects_a_flag_that_does_not_exist() -> None:

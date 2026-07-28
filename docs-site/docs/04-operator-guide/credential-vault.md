@@ -40,7 +40,13 @@ page conditional on configuration.
 ## Adding a credential
 
 ```bash
-arx-runner vault put <key-id> --permission-scope trade_no_withdraw
+arx-runner vault put \
+  --key-id <key-id> \
+  --tenant-id <tenant> \
+  --api-key <api-key> \
+  --api-secret-stdin \
+  --scope-digest <lowercase-sha256> \
+  --permission-scope trade_no_withdraw
 ```
 
 The secret is passed to sops on stdin, never as a command-line argument, so it
@@ -53,7 +59,7 @@ scope — see [permission scope](#permission-scope) below.
 ## Verifying a credential
 
 ```bash
-arx-runner vault verify <key-id>
+arx-runner vault verify --key-id <key-id> --tenant-id <tenant>
 ```
 
 This runs the real decrypt path end to end: it decrypts through sops, parses

@@ -99,11 +99,21 @@ responsibility for delivering.
 Enrollment and vault management are separate subcommands:
 
 ```bash
-arx-runner enroll --token <enrollment-token>
-arx-runner vault put <key-id>
-arx-runner vault verify <key-id>
+arx-runner enroll \
+  --token <enrollment-token> \
+  --backend https://arx.example.com \
+  --tenant-id <tenant> \
+  --runner-id <uuid>
+
+arx-runner vault put \
+  --key-id <key-id> \
+  --tenant-id <tenant> \
+  --api-key <api-key> \
+  --api-secret-stdin \
+  --scope-digest <lowercase-sha256>
+arx-runner vault verify --key-id <key-id> --tenant-id <tenant>
 arx-runner vault list
-arx-runner start --engine nautilus
+arx-runner start --enabled-mode sandbox --engine nautilus
 ```
 
 ## Environment

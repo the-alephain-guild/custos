@@ -192,6 +192,16 @@ const CASES = [
     expect: (r) => r.code === 0,
   },
   {
+    name: 'CLI flag an operator must type verbatim is exempt',
+    body: 'Run `arx-runner start --crucible-domain-public-key ~/.arx/crucible-domain-event.pub`.\n',
+    expect: (r) => r.code === 0,
+  },
+  {
+    name: 'flag exemption does not whitelist prose about that system',
+    body: 'The crucible domain service signs each command before delivery.\n',
+    expect: (r) => r.code === 1 && /systems behind ARX/.test(r.out),
+  },
+  {
     name: 'clean page passes',
     body: 'The runner verifies signed desired state before starting a strategy.\n',
     expect: (r) => r.code === 0,

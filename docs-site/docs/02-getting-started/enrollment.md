@@ -99,7 +99,7 @@ it across the trust boundary the token exists to establish.
 ## Rotation and revocation
 
 ```bash
-arx-runner credential rotate
+arx-runner credential rotate --reason "<why>"
 arx-runner credential revoke
 ```
 
