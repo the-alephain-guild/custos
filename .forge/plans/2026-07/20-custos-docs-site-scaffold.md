@@ -7,7 +7,7 @@
 > **For Claude**: Use `/forge:execute` per canonical slice. Multiple sessions expected — see multi_session_scope.
 > **multi_session_scope**: `true`
 > **Depends on**: none — Custos 0.3.0 code + docs/ authoritative material already landed (Plans 14-17); this plan surfaces existing docs, does not rewrite them
-> **Soft depends on**: `alchymia-labs/custos` GitHub org access for Pages settings and CNAME
+> **Soft depends on**: `the-alephain-guild/custos` GitHub org access for Pages settings and CNAME
 > **Hard gates**: none (documentation only; no red-line risk)
 > **Non-goals**:
 > - Rewriting or forking authoritative content in `docs/domain.md` / `docs/design/*` — the site consumes these as source of truth
@@ -16,10 +16,10 @@
 
 ## CEO Decisions (ratified 2026-07-19)
 
-- **D1 — Deploy repo**: `alchymia-labs/custos` main repo, `gh-pages` branch. No
+- **D1 — Deploy repo**: `the-alephain-guild/custos` main repo, `gh-pages` branch. No
   separate `custos-docs` repo. Single-repo self-sufficiency preserved.
 - **D2 — DNS ownership**: CEO owns the Cloudflare CNAME record
-  (`custos.alephain.com CNAME alchymia-labs.github.io.`); T10 emits a runbook
+  (`custos.alephain.com CNAME the-alephain-guild.github.io.`); T10 emits a runbook
   but does not run DNS changes.
 - **D3 — Homepage narrative**: Follow the Guild landing "Two Faces of one
   product" narrative (ARX kernel + custos edge) — consistent with the ecosystem
@@ -181,7 +181,7 @@ Grep-verified 现状:
   branch. CNAME file at `docs-site/static/CNAME` = `custos.alephain.com`
 - **T10 — DNS handoff to operator**: emit runbook file
   `.forge/handoff/2026-07/20-cnAME-dns-setup.md` documenting what Cloudflare
-  record to add (`custos.alephain.com CNAME alchymia-labs.github.io.`) and
+  record to add (`custos.alephain.com CNAME the-alephain-guild.github.io.`) and
   verification steps (`dig` + `curl -I`); operator applies manually
 - **T11 — Versioning enable**: after content stable, run `npm run docusaurus
   docs:version 0.3.0` to snapshot current docs as v0.3.0; future minor/major
@@ -266,7 +266,7 @@ Not merely tsc / lint / build — real runtime evidence:
 - **T9 acceptance**: GitHub Action runs green on a test commit; `gh-pages`
   branch updated; GitHub Pages URL returns HTTP 200
 - **T10 acceptance**: after operator adds DNS record, `dig custos.alephain.com`
-  returns CNAME to `alchymia-labs.github.io`; `curl -I https://custos.alephain.com`
+  returns CNAME to `the-alephain-guild.github.io`; `curl -I https://custos.alephain.com`
   returns 200 + valid TLS cert
 - **T11 acceptance**: `docs-site/versioned_docs/version-0.3.0/` exists;
   version dropdown in navbar shows `0.3.0` as current
@@ -293,6 +293,29 @@ Not merely tsc / lint / build — real runtime evidence:
 
 ## 偏离与改进日志
 
+### DEVIATION-08: 仓库迁移到 the-alephain-guild org (CEO 2026-07-28 执行)
+
+- **等级**: 中 — 改变发布身份与 Pages 服务源, 但不触及红线
+- **原因**: `the-alephain-guild/custos` 是 custos 的 canonical 归属。D1 起草时写
+  `alchymia-labs`, CEO 2026-07-28 在 GitHub 完成 org 迁移。
+- **影响**:
+  1. **Pages 服务源变更** — CNAME 目标从 `alchymia-labs.github.io` 变为
+     `the-alephain-guild.github.io`。**Cloudflare 记录不更新则 `custos.alephain.com`
+     解析到旧 org 会 404**。D2 / T10 runbook / T2 验收项已同步更正。
+  2. **发布身份变更** — `toolkit_rc` 契约用单值 `Literal` pin `source_repository`
+     与 `workflow_identity`, 无兼容别名 (符合 first-production V1 in-place 规则)。
+     新 org 下的 workflow 若不改常量, 会在自身 repository guard 处失败。
+  3. **已发布 `0.1.0rc5` 失效** — 其 Sigstore 证书 subject 绑定旧 org 的 workflow
+     identity, 无法通过新契约验证。`docs/authority/` 下的 receipt 与 golden **有意
+     不改** (证书是外部不可变事实, 改 JSON 不改变证书), 需在新身份下重发 RC。
+- **决定**: 只改活引用 (git remote / workflows / scripts / packages / 测试正例),
+  重新生成两份 source-generated schema, 负例换成旧坐标以继续断言异身份被拒。
+- **验证**: `make test-baseline` 644 passed — 与迁移前基线逐项一致
+  (既有 2 failed 未变多也未变少)
+- **遗留**: RC 需重发; `docs/gateway-contract/v1/toolkit_rc_t6d_pending_receipt_v1.schema.json`
+  经 grep 确认无任何代码/测试/manifest 引用, 疑似孤儿文件 (且文件名含内部 task 编号),
+  未擅自删除, 待确认
+
 ### DEVIATION-07: T5 verbatim migration 把内部文档发布上线 (2026-07-27 审计抓)
 
 - **等级**: **高** — 触及 `mandatory-rules.md` §9 对外产出物纪律, 且已实际发布
@@ -307,9 +330,12 @@ Not merely tsc / lint / build — real runtime evidence:
   2. 三章无"清洗后保留"版本, 整章重写: engine roadmap / G6 host gate /
      configuration reference (后者标题是配置参考、内容是贡献者指南)
   3. 上游引用统一归一为 "the control plane"
-  4. 顺带修两个真缺陷: clone URL 指向不存在的仓库; vault 路径停留在 0.2.0 前的命名空间
-  5. 修 T5 迁移遗留的 46 处 broken link; 修 typecheck 配置
-  6. 纪律写进 `docs-site/README.md` 动笔处
+  4. 顺带修一个真缺陷: vault 路径停留在 0.2.0 前的命名空间
+  5. **更正**: 本轮曾把 clone URL 由 `the-alephain-guild/custos` 改为 `alchymia-labs/custos`,
+     依据是前者当时不可达。判断错误 —— 那是迁移目标而非笔误。CEO 2026-07-28 完成 org
+     迁移后已全部改回, 见 DEVIATION-08
+  6. 修 T5 迁移遗留的 46 处 broken link; 修 typecheck 配置
+  7. 纪律写进 `docs-site/README.md` 动笔处
 - **验证**: `npm run verify` 全绿 — 19/19 gate 自测 / 94 文件 0 违规 / en+zh build
   成功 / 0 broken link / typecheck 通过
 - **遗留**: 已发布的 gh-pages 快照仍是旧内容, 需重新部署覆盖 (下次 push 触发);
@@ -456,7 +482,7 @@ Documentation-only plan; no red-line risk.
 - **CI 生效条件**(user 需在 GitHub UI 完成):
   - `Settings → Pages → Source = Deploy from a branch → gh-pages / (root)` 或 `Source = GitHub Actions`(前者与 peaceiris workflow 匹配,推荐)
   - `Settings → Pages → Custom domain = custos.alephain.com`(+ Enforce HTTPS,cert 15-60 min)
-  - DNS: CNAME `custos` → `alchymia-labs.github.io`,Cloudflare proxy 关闭
+  - DNS: CNAME `custos` → `the-alephain-guild.github.io`,Cloudflare proxy 关闭
 - **首次 deploy**: push origin/main → workflow 触发 → `gh-pages` branch 自动生成 → GitHub Pages 拉起 → CNAME 生效后 `custos.alephain.com` 上线
 
 ### Session 3 (T6 partial — Part I-II first slice) — 2026-07-20
