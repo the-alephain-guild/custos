@@ -89,7 +89,7 @@ The gate protects the boundary between a deployment and a venue. It is not a
 risk engine and does not evaluate whether a trade is a good idea. Position
 and exposure limits are enforced separately and continuously — see
 [reconcile loop](./reconcile-loop) and
-[disconnect behaviour](/trust-model/rl3-reconcile-disconnect).
+[disconnect behaviour](/trust-model/safety-survives-disconnect).
 
 Credentials handed to a host are used to construct the venue client and are
 never retained in host state, written to logs, or published upstream. The

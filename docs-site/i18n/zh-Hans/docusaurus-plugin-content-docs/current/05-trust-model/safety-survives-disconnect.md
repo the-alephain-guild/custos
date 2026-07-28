@@ -1,10 +1,10 @@
 ---
-title: "Red Line #3 · Reconcile Disconnect ≠ Stop"
+title: "Safety Survives a Disconnect"
 sidebar_position: 4
 ---
 
 
-# Red Line #3 · Reconcile Disconnect ≠ Stop
+# Safety Survives a Disconnect
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

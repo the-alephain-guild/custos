@@ -1,13 +1,9 @@
 ---
-title: "Red Line #1 · Key/KEK Never Leaves Process"
+title: "Keys Never Leave the Host"
 sidebar_position: 2
 ---
 
-# Red Line #1 · Key/KEK Never Leaves Process
-
-:::warning 中文翻译尚未完成
-本章暂时显示英文原文。
-:::
+# Keys Never Leave the Host
 
 :::info This chapter is still being written.
 **Audience**: Auditors

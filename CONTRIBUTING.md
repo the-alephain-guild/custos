@@ -9,19 +9,21 @@ philosophical shape is in [`docs/domain.md`](docs/domain.md) and
 
 ## Ground rules
 
-- **Non-Custodial 4 red lines are unnegotiable.** They live in
-  [`.claude/rules/mandatory-rules.md`](.claude/rules/mandatory-rules.md) §0
-  and are enforced in review. Any PR that even looks like it might loosen
-  one of them needs an explicit design discussion before code review.
+- **The four guarantees are unnegotiable.** Keys never leave the host,
+  live execution is always gated, local safety survives a disconnect, and
+  money arithmetic is exact. They are described at
+  [custos.alephain.com/trust-model/red-lines](https://custos.alephain.com/trust-model/red-lines)
+  and enforced in review. Any PR that even looks like it might loosen one of
+  them needs an explicit design discussion before code review.
 - **English source artifacts.** Comments, log strings, exception
   messages, commit messages, and identifiers are English. The rationale
-  is in [`.claude/rules/code-style.md`](.claude/rules/code-style.md)
-  §Language Policy. A pre-commit hook (`scripts/check-code-english.py`)
+  is that deployment hosts do not reliably render CJK and log output must
+  stay greppable across the ecosystem. A pre-commit hook (`scripts/check-code-english.py`)
   refuses to stage CJK characters in newly-added lines.
 - **TDD is the flow, not a suggestion.** Every behavioural change lands
-  with a failing test first, then the minimal implementation. See
-  [`.claude/rules/verification.md`](.claude/rules/verification.md) for
-  the make targets we use.
+  with a failing test first, then the minimal implementation. Run
+  `make help` for the available targets; `make verify` is the gate a PR has
+  to pass.
 
 ## Local setup
 
@@ -42,7 +44,7 @@ make verify                # fmt-check + lint + baseline pytest
 ```
 
 `uv` is the sole Python package manager; do NOT reach for `pip` or
-`poetry`. See `.claude/rules/tech-stack.md` for the constraint.
+`poetry`. `uv.lock` is committed so builds are reproducible.
 
 ## Running tests
 

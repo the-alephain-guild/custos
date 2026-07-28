@@ -1,9 +1,9 @@
 ---
-title: "Red Line #4 · Decimal Money Math"
+title: "Money Arithmetic Is Exact"
 sidebar_position: 5
 ---
 
-# Red Line #4 · Decimal Money Math
+# Money Arithmetic Is Exact
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

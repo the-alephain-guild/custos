@@ -1,10 +1,10 @@
 ---
-title: "Red Line #3 · Reconcile Disconnect ≠ Stop"
+title: "Safety Survives a Disconnect"
 sidebar_position: 4
 ---
 
 
-# Red Line #3 · Reconcile Disconnect ≠ Stop
+# Safety Survives a Disconnect
 
 ARX-rust owns the versioned aggregate runner-cap policy. Its authority key
 is tenant id + logical trading mode + runner UUID. `live`, `sandbox` and

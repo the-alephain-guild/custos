@@ -1,9 +1,9 @@
 ---
-title: "Red Line #2 · Live Execution Cannot Be Bypassed"
+title: "Live Execution Is Always Gated"
 sidebar_position: 3
 ---
 
-# Red Line #2 · Live Execution Cannot Be Bypassed
+# Live Execution Is Always Gated
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

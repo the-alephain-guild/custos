@@ -51,26 +51,31 @@ recommended path).
 ## Backport policy
 
 Security fixes are backported to every still-supported minor line
-listed in the LTS commitment. Critical functional-bug backports need a
-CEO override; see the LTS commitment for the process.
+listed in the LTS commitment. Critical functional-bug backports are assessed case by case and
+announced with the release.
 
 ## Scope
 
 The `custos-runner` daemon, its bundled `arx-runner` CLI, its Dockerfile,
 its `.github/workflows/release.yml` release pipeline, and any code
-under `src/custos/` are in scope. Third-party dependencies (NautilusTrader,
+under `src/custos/` are in scope. <!-- disclosure-ok: researchers need the exact code scope --> Third-party dependencies (NautilusTrader,
 `nats-py`, sigstore-python, etc.) should be reported directly to their
 upstreams; if a downstream integration bug in this repo can be triggered
 by a well-behaved upstream, it is in scope.
 
 ## Non-custodial red lines
 
-The four
-[Non-Custodial red lines](.claude/rules/mandatory-rules.md#0-non-custodial-4-红线-承重墙-违反critical)
-(key never leaves the process, G6 host gate not bypassed, reconcile
-disconnection ≠ stop, money math is `Decimal` never `float`) are the
-security backbone of this daemon. A finding that breaks any of them is
-categorically Critical and will get an expedited fix.
+Four properties are the security backbone of this daemon:
+
+1. Keys never leave the host process.
+2. Live execution is always gated and the gate fails closed.
+3. Local safety enforcement survives losing the platform connection.
+4. Money arithmetic is exact — decimal end to end, never floating point.
+
+They are described in full at
+[custos.alephain.com/trust-model/red-lines](https://custos.alephain.com/trust-model/red-lines).
+A finding that breaks any of them is categorically Critical and will get an
+expedited fix.
 
 ## Warranty disclaimer
 

@@ -49,7 +49,7 @@ GHCR publication event.
   Docker behavior.
 - Engine selection is the closed enum `--engine nautilus|noop`; `nautilus` is
   the default and `noop` is an explicit non-live contract-test host.
-- Deployment payloads are validated at the runtime boundary before Vault, G6,
+- Deployment payloads are validated at the runtime boundary before vault, gate
   or host code runs. Successful `stopped` and `archived` desired state now
   reports `phase=stopped` rather than claiming the deployment is running.
 - Subscription failure uses bounded exponential retry while local guard ticks
@@ -73,7 +73,7 @@ GHCR publication event.
 - Live checks use `trading_mode == "live"` instead of conflating execution mode
   with lifecycle state.
 - A higher-generation active spec after `stopped` now creates a fresh engine
-  deployment and re-runs Vault/G6 checks instead of reconfiguring a removed one.
+  deployment and re-runs vault and gate checks instead of reconfiguring a removed one.
 
 ### Security
 
@@ -84,8 +84,8 @@ GHCR publication event.
 
 ## [0.2.0] - 2026-07-11
 
-The 0.2.0 release combines the Plan 11 clean-break CLI redesign with the
-Plan 12 distribution-and-contract-versioning work. Existing 0.1.x operators
+The 0.2.0 release combines a clean-break CLI redesign with the
+distribution-and-contract-versioning work. Existing 0.1.x operators
 must run through [`docs/upgrade-path.md`](docs/upgrade-path.md) — the state
 namespace has moved from `~/.custos/` to `~/.arx/` and the legacy
 `SopsAgeVault` multi-credential-in-one-JSON sops file has been replaced by
@@ -131,26 +131,24 @@ per-key `.enc` files under `~/.arx/vault/`.
 - Pytest markers `docker` / `ci_only` / `slow` — registered for the
   distribution-level gates so unregistered marks no longer emit warnings.
 
-### Changed (BREAKING — Plan 11)
+### Changed (BREAKING)
 
 - State namespace `~/.custos/` → `~/.arx/`. `~/.custos/enrollment.json`
   and `~/.custos/state/` must be moved before the first `arx-runner
-  start` on 0.2.0; the daemon does NOT auto-migrate (CEO clean-break
-  directive 2026-07-10).
+  start` on 0.2.0; the daemon does NOT auto-migrate.
 - Vault storage model: the multi-credential-in-one-JSON `SopsAgeVault`
   file is replaced by per-key `.enc` files under `~/.arx/vault/`.
   Existing operators must `sops --decrypt` their old vault manually and
   re-add each key via `arx-runner vault put`.
 
-### Removed (BREAKING — Plan 11)
+### Removed (BREAKING)
 
 - Legacy `python -m custos` entry point — now `sys.exit(2)` with a
   pointer to `arx-runner start`.
 - Legacy `custos` console script — removed to avoid long-term dual-CLI
   drift; `arx-runner` is the single entry.
-- `SopsAgeVault` class + supporting code paths in
-  `src/custos/core/credential_vault.py` (`_BaseVault` / `AuditEvent`
-  preserved; only the sops-file model is retired).
+- `SopsAgeVault` class and its supporting code paths (the shared vault
+  base and audit events are preserved; only the sops-file model is retired).
 - `--sops-file` and `--age-key-file` CLI flags.
 
 ### Fixed

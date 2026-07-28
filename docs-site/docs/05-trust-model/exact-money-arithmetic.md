@@ -1,9 +1,9 @@
 ---
-title: "Red Line #4 · Decimal Money Math"
+title: "Money Arithmetic Is Exact"
 sidebar_position: 5
 ---
 
-# Red Line #4 · Decimal Money Math
+# Money Arithmetic Is Exact
 
 :::info This chapter is still being written.
 **Audience**: Auditors
