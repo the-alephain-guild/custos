@@ -58,11 +58,15 @@ jobs:
           make verify-nt
 
       - name: Build reproducible wheel + sdist
-        env:
-          # Pin epoch to the tagger date so rebuilds produce byte-identical
-          # Python artifacts.
-          SOURCE_DATE_EPOCH: ${{ github.event.head_commit.timestamp && github.event.head_commit.timestamp || '' }}
         run: |
+          # SOURCE_DATE_EPOCH must be an integer count of seconds. The commit
+          # timestamp from the event payload is ISO 8601, which hatchling
+          # rejects outright -- so it is derived here instead, by the same
+          # command an auditor runs to reproduce the build. Deriving it also
+          # covers a manual dispatch, where no push payload exists at all.
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          export SOURCE_DATE_EPOCH
+          echo "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}"
           make dist
 
       - name: Record wheel sha256 (provenance)

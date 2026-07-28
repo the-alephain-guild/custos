@@ -116,6 +116,31 @@ def test_release_verifies_clean_base_before_nautilus_runtime() -> None:
     assert base_gate < install_nt < verify_nt
 
 
+def test_source_date_epoch_is_an_integer_derivation() -> None:
+    """The epoch must be seconds, and hatchling enforces that with int().
+
+    The workflow used to pass the push payload's commit timestamp, which is an
+    ISO 8601 string. hatchling raises `ValueError: invalid literal for int()`
+    on it, so the very first release job would have failed -- unnoticed,
+    because no tag has ever been pushed. A manual dispatch was worse: no push
+    payload exists there, so the value was the empty string and the build was
+    silently not reproducible at all.
+    """
+    text = _read()
+
+    assert 'SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"' in text, (
+        "the epoch must be derived as integer seconds, by the same command an "
+        "auditor runs to reproduce the build"
+    )
+    # Not a ban on the payload timestamp itself: it is the correct value for
+    # the OCI `image.created` label, which wants RFC 3339. What must not come
+    # back is binding any workflow expression to the epoch.
+    assert not re.search(r"SOURCE_DATE_EPOCH:\s*\$\{\{", text), (
+        "SOURCE_DATE_EPOCH must not be bound to a workflow expression; "
+        "derive it in the run block so it is integer seconds"
+    )
+
+
 def test_release_gates_complete_runtime_before_stable_tag_promotion() -> None:
     text = _read()
 

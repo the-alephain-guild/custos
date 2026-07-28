@@ -6,12 +6,17 @@ sidebar_position: 6
 
 # Signed Release Chain
 
-`custos-runner` supports byte-for-byte reproducible wheel builds so an external
-auditor can rebuild from source and compare hashes when a remote artifact is
-published. This is the technical foundation for the Non-Custodial red line
-"audit-able open source": the distributed wheel must be what the source audit
-covers. **Remote release: deferred** for 0.3.0; the current consumer gate is a
-locally built Docker image.
+Wheel builds are byte-for-byte reproducible, so an auditor can rebuild from
+source and compare hashes against a published artifact.
+
+This is what makes the source being open worth anything. Reading the code tells
+you what the runner would do if the binary you are running were built from it —
+reproducibility is how you establish that it was. Without it, an audit covers a
+source tree and the operator runs something else.
+
+**Remote release is deferred** for 0.3.0. There is nothing published to compare
+against yet; the current consumer gate is an image you build and verify
+locally.
 
 ## The three knobs
 
@@ -55,29 +60,29 @@ the cert-identity.
 
 ## Automated verification
 
-`tests/test_reproducible_build.py` runs two `uv build` cycles with the <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
-epoch pinned and asserts hash equality. It is `@pytest.mark.slow`
-because a double build takes tens of seconds, and it is **not** part of
-`make verify`.
+`tests/test_reproducible_build.py` runs two `uv build` cycles with the epoch <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+pinned and asserts the two wheels hash identically. It is marked slow because a
+double build takes tens of seconds, but it is not deselected: `make verify`
+runs it, so the property is checked on every release gate rather than only when
+someone remembers to ask.
 
-Run it deliberately:
+To run it alone:
 
 ```bash
-uv run pytest tests/test_reproducible_build.py -m slow
+uv run pytest tests/test_reproducible_build.py
 ```
 
-There is currently no scheduled job that runs it for you. Treat reproducibility
-as something you verify when it matters — before trusting a published artifact —
-rather than as something already checked on your behalf.
+A companion test, `test_wheel_bytes_differ_without_epoch`, asserts the
+*opposite* — that dropping the epoch changes the bytes. It is
+`xfail(strict=True)` because it does not: hatchling ≥ 1.20 is natively
+deterministic, so an epoch-less rebuild already produces identical wheels.
 
-A companion test (`test_wheel_bytes_differ_without_epoch`) is
-`xfail(strict=True)` today because hatchling ≥ 1.20 is natively
-deterministic — an epoch-less rebuild already produces identical wheel
-bytes on the currently pinned hatchling. This is why the epoch pin
-here is *defence-in-depth* rather than the sole knob: it defends
-against a future hatchling regression that reintroduces host-clock
-leakage. If such a regression lands, the epoch-less test would then
-correctly differ, the xfail would fire, and we'd notice.
+That inversion is deliberate, and worth following. If a future hatchling
+reintroduces host-clock leakage, this test starts passing — and a strict xfail
+that passes is reported as a failure. So the day reproducibility silently
+depends on the epoch pin again is the day the suite goes red, rather than a day
+nobody notices. The pin is defence-in-depth, and this is how we would find out
+it had become load-bearing.
 
 ## Docker image reproducibility
 
@@ -91,11 +96,12 @@ served by:
   standalone NATS gates.
 - The printed image ID and revision label provide local provenance evidence
   for downstream development.
-- A future remote release uses cosign and `verify-release.sh` to re-pull the image and verify the CLI command matrix,
-  Nautilus/PyYAML imports, sops/age executables, readiness probe, non-root
-  identity, and cosign signature against the published digest.
+- A remote release additionally re-pulls the published image and verifies the
+  command matrix, the Nautilus and PyYAML imports, the `sops` and `age`
+  executables, the readiness probe, the non-root identity, and the cosign
+  signature against the published digest.
 
-A follow-up plan (tracked in
-[upgrade paths](/release-governance/upgrade-paths)) will pin the image
-build to a specific buildkit + `SOURCE_DATE_EPOCH` combination for
-bit-for-bit image reproducibility as well.
+Bit-for-bit image reproducibility — pinning the build to a specific buildkit and
+`SOURCE_DATE_EPOCH` combination — is not done. It is worth saying so rather than
+implying the image has the same property the wheel does: today the image's
+provenance is its revision label and the gate it passed, which is weaker.

@@ -103,9 +103,9 @@ custos-strategy-toolkit-nautilus = { workspace = true }
 asyncio_mode = "auto"
 markers = [
     "integration: requires provisioned external infrastructure (real testnet credential, network reachability); skips cleanly if unmet",
-    "docker: requires a functional Docker daemon reachable from the test host; Plan 12 T2 Docker image contract gates",
-    "ci_only: requires GitHub Actions OIDC (sigstore keyless signing); Plan 12 T3 wheel-signature contract; local runs skip",
-    "slow: expensive (double `uv build` reproducibility test, minutes-scale); Plan 12 T8 nightly CI job",
+    "docker: requires a functional Docker daemon reachable from the test host; gates the official image contract",
+    "ci_only: requires GitHub Actions OIDC (sigstore keyless signing); wheel-signature contract; local runs skip",
+    "slow: expensive (double `uv build` reproducibility test, tens of seconds)",
 ]
 
 [tool.ruff]

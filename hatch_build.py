@@ -1,4 +1,4 @@
-"""Reproducible-build hook (Plan 12 T8).
+"""Reproducible-build hook.
 
 hatchling >= 1.20 honours ``SOURCE_DATE_EPOCH`` natively when producing the
 wheel, so this hook is intentionally minimal. Its purpose is defence-in-depth:
