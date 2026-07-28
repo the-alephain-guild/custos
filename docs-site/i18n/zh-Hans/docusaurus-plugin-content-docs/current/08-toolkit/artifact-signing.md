@@ -1,93 +1,89 @@
 ---
-title: "策略产物签名与验证"
+title: "产物签名与验证"
 sidebar_position: 2
 ---
 
+# 产物签名与验证
 
-# 策略产物签名与验证
+在**任何一行**策略代码被导入之前，runner 必须先被说服：这个产物就是当初被发布的那一个。
+本页讲它检查什么、拒绝什么。
 
-:::warning 中文翻译尚未完成
-本章暂时显示英文原文。
-:::
+## 被检查的主张是什么
 
-The engine adapter is a local deep module. It hides process and framework
-details from reconciliation while preserving exact deployment identity.
+已发布的产物携带一份分离的 Sigstore bundle：一份签名的 in-toto 声明，其 subject 是产物各
+成员的**精确 digest**。
 
-## Identity rule
+验证回答的是一个问题 —— *这些确切的字节，是否由我们预期的那个 workflow 签名，且该签名
+是否在透明性日志中？* 而**不是**「有没有签名」—— 后者任何攻击者也能满足。
 
-Every lifecycle, risk, snapshot, watchdog and breaker operation is keyed by
-deployment_instance_id. deployment_spec_id is immutable configuration
-provenance and must not address a running process.
+## 哪些必须成立
 
-## Conceptual interface
+验证针对 bundle **离线**进行，且每一步都 fail closed：
 
-    class EngineProtocol(Protocol):
-        async def deploy(
-            self,
-            spec: RuntimeSpec,  # contains deployment_instance_id
-            credential: LocalCredential,
-        ) -> EngineHandle: ...
+| 步骤 | 何时拒绝 |
+|---|---|
+| 读取 bundle | 不是一个稳定的常规文件 |
+| 解析 bundle | 格式错误，或注入的信任根无效 |
+| Subject | 所需 digest 未全部出现，或某个 subject 重复 |
+| 身份 | 证书不匹配任何一个被接受的 workflow 身份与 issuer |
+| 仓库 | 该身份的源仓库坐标不匹配 |
+| DSSE | payload 签名验证不通过 |
+| 透明性 | bundle 内的日志证明验证不通过 |
 
-        async def reconfigure(
-            self,
-            spec: RuntimeSpec,  # contains deployment_instance_id
-        ) -> None: ...
+**重复的 JSON 键被拒绝**，而不是「后者覆盖前者」。一份在两个实现里解析结果不同的 payload，
+是一份两方可以各执一词、却都相信自己验证过了的 payload。
 
-        async def stop(self, deployment_instance_id: UUID) -> None: ...
-        async def flatten(self, deployment_instance_id: UUID) -> None: ...
-        async def snapshot(self, deployment_instance_id: UUID) -> EngineSnapshot: ...
-        async def wait_ready(
-            self,
-            authority: EngineLifecycleAuthority,
-            *,
-            timeout_secs: float,
-        ) -> EngineReadyReceipt: ...
-        async def wait_terminal(
-            self,
-            authority: EngineLifecycleAuthority,
-        ) -> EngineTerminalEvent: ...
+## 是身份，不只是签名
 
-The concrete Nautilus adapter may use framework-specific trader or node ids,
-but those ids must be deterministically derived from and mapped back to the
-deployment instance. It must never collapse two instances of one spec into a
-single handle.
+一个被接受的身份**同时**指明 workflow、它的 issuer 与它的源仓库。三者必须全部匹配。
 
-`EngineReadyReceipt` binds the exact instance, spec, spec digest and generation.
-It is valid only after the node task, data and execution connectivity, portfolio,
-reconciliation, strategy lifecycle and mandatory mode capabilities are all ready.
-Creating an asyncio task is not readiness. `EngineTerminalEvent` binds the same
-instance/spec/generation and carries a typed reason plus retryability.
+正是这个组合让检查有意义。来自**另一个** workflow、或来自预期 workflow 的一个 fork 的
+有效签名，仍然是签名 —— 它只是不是授权这个产物的那一个。
 
-## Portfolio valuation contract
+## 信任根不能由产物挑选
 
-`NautilusPortfolioSnapshotProvider` is the single Nautilus valuation adapter for
-engine status, marked positions, breaker inputs and RunnerFact risk rows. Equity
-comes only from `portfolio.equity(venue)`. Each open position uses one trusted
-cache mark, passes that exact mark object to `position.unrealized_pnl(mark_price)`,
-and derives gross notional from absolute quantity times the current mark. Entry
-price plus unrealized PnL is not an equity proxy.
+信任根与被接受的身份来自**签名且不可变**的本地发布配置：
 
-A missing or invalid venue, equity or mark produces a typed unreliable snapshot;
-it never substitutes a guessed financial value. Engine status exposes reliability
-and its reason. The reconciler obtains breaker notional and equity from that one
-status snapshot per tick and freezes/flattens fail closed when it is unreliable.
-RunnerFact risk observations use the same provider and cannot retain a divergent
-Nautilus conversion path.
+| Flag | 提供 |
+|---|---|
+| `--artifact-sigstore-trusted-root` | 验证所用的信任根 |
+| `--artifact-release-policy-envelope` | 指明被接受身份的签名策略 |
+| `--artifact-release-policy-key-id` | 预期的策略签名 key id |
+| `--artifact-release-policy-public-key` | 用于验证该策略的公钥 |
 
-## Failure contract
+产物元数据可以**引用**信任根，但永远不能**选择**信任根。一个能挑选「验证它自己的权威」的
+产物等于在自证，整条链也就什么都证明不了。
 
-Adapter errors are local execution outcomes. The reconciler decides ACK or NAK
-and emits a signed RunnerFact; the adapter cannot mutate ARX business
-state or ask ARX to authorize a recovery action.
+策略本身在被使用之前先被签名并验证，因此「哪些身份可接受」不是改一个本地文件就能变的。
 
-The lifecycle supervisor persists its bounded restart counter in the
-existing RunnerFact SQLite `command_in_progress_lease`. It probes a matching
-durably applied engine before deploying on redelivery, uses exponential backoff,
-and commits ready or retry-exhausted/quarantine through the atomic lifecycle
-transaction. It creates no database, journal or durable local queue.
+## 哪些**不是**验证路径
 
-Current authority status is `PREPARED_BLOCKED_ARTIFACT_RUNTIME_CAPABILITY`.
-The adapter contract is implemented, but the v1.team daemon remains disabled
-while no verified artifact capability is present. Live readiness is false.
-Portfolio valuation is independently `READY_RELIABLE_PORTFOLIO_SEMANTICS_ONLY`;
-that scoped receipt does not satisfy the signed runner-policy or runtime gates.
+以下在生产中一律不被接受，且每一条都是**刻意排除**，而非仅仅尚未实现：
+
+- 跳过或覆盖开关；
+- 外壳调用 `cosign`，或调用 Python 子进程；
+- sidecar 或 HTTP 验证器；
+- 一个仅仅「结构上看起来合理」的 bundle。
+
+最后一条最微妙。一个能解析、形状正确、且含有签名的 bundle **不是**一个已验证的 bundle ——
+它是一个看起来令人安心的**未验证** bundle。
+
+## 次序
+
+```text
+验证 → 安全解包 → 激活 → 导入
+```
+
+验证与安全解包都在**任何导入之前**完成。随后 loader 会证明它导入的模块来自激活根，
+并拒绝一个从**另一次**激活缓存下来的模块。
+
+第二项检查比看起来更要紧：如果 import 系统端出一个它此前从别处缓存的模块，那么验证磁盘上
+的字节什么也证明不了。见[产物物化](/zh-Hans/toolkit/artifact-materialization)。
+
+## 当前状态
+
+验证器已实现、契约资产已固定，但端到端的产物能力**尚未启用**：在没有已验证的产物能力之前，
+消费它的守护进程保持禁用，实盘就绪为 false。
+
+读本页时值得把这个区分记清楚 —— 这里描述的检查**存在且有测试**；尚不成立的是「生产 runner
+正在通过它们执行产物」。回执状态见[策略工具包](/zh-Hans/toolkit/overview)。

@@ -1,89 +1,105 @@
 ---
-title: "Strategy Artifact Signing & Verification"
+title: "Artifact Signing & Verification"
 sidebar_position: 2
 ---
 
+# Artifact Signing & Verification
 
-# Strategy Artifact Signing & Verification
+Before a single line of strategy code is imported, the runner has to be
+convinced the artifact is the one that was released. This page is what it checks
+and what it refuses.
 
-The engine adapter is a local deep module. It hides process and framework
-details from reconciliation while preserving exact deployment identity.
+## The claim being checked
 
-## Identity rule
+A published artifact carries a detached Sigstore bundle: a signed in-toto
+statement whose subjects are the exact digests of the artifact's members.
 
-Every lifecycle, risk, snapshot, watchdog and breaker operation is keyed by
-deployment_instance_id. deployment_spec_id is immutable configuration
-provenance and must not address a running process.
+Verification answers one question — *were these exact bytes signed by the
+workflow we expect, and is that signature in the transparency log?* Not "is
+there a signature", which any attacker can also satisfy.
 
-## Conceptual interface
+## What must hold
 
-    class EngineProtocol(Protocol):
-        async def deploy(
-            self,
-            spec: RuntimeSpec,  # contains deployment_instance_id
-            credential: LocalCredential,
-        ) -> EngineHandle: ...
+Verification is offline against the bundle and fails closed at every step:
 
-        async def reconfigure(
-            self,
-            spec: RuntimeSpec,  # contains deployment_instance_id
-        ) -> None: ...
+| Step | Rejected if |
+|---|---|
+| Bundle read | Not a stable regular file |
+| Bundle parse | Malformed, or the injected trust root is invalid |
+| Subjects | The required digests are not all present, or a subject is duplicated |
+| Identity | The certificate does not match an accepted workflow identity and issuer |
+| Repository | The identity's source repository coordinate does not match |
+| DSSE | The payload signature does not verify |
+| Transparency | The bundled log proof does not verify |
 
-        async def stop(self, deployment_instance_id: UUID) -> None: ...
-        async def flatten(self, deployment_instance_id: UUID) -> None: ...
-        async def snapshot(self, deployment_instance_id: UUID) -> EngineSnapshot: ...
-        async def wait_ready(
-            self,
-            authority: EngineLifecycleAuthority,
-            *,
-            timeout_secs: float,
-        ) -> EngineReadyReceipt: ...
-        async def wait_terminal(
-            self,
-            authority: EngineLifecycleAuthority,
-        ) -> EngineTerminalEvent: ...
+Duplicate JSON keys are rejected rather than last-one-wins. A payload that
+parses differently in two implementations is a payload two parties can disagree
+about while both believing they verified it.
 
-The concrete Nautilus adapter may use framework-specific trader or node ids,
-but those ids must be deterministically derived from and mapped back to the
-deployment instance. It must never collapse two instances of one spec into a
-single handle.
+## Identity, not just signature
 
-`EngineReadyReceipt` binds the exact instance, spec, spec digest and generation.
-It is valid only after the node task, data and execution connectivity, portfolio,
-reconciliation, strategy lifecycle and mandatory mode capabilities are all ready.
-Creating an asyncio task is not readiness. `EngineTerminalEvent` binds the same
-instance/spec/generation and carries a typed reason plus retryability.
+An accepted identity names the **workflow**, its **issuer** and its **source
+repository** together. All three must match.
 
-## Portfolio valuation contract
+That combination is what makes the check meaningful. A valid signature from
+some other workflow, or from the expected workflow in a fork, is still a
+signature — it just is not the one that authorises this artifact.
 
-`NautilusPortfolioSnapshotProvider` is the single Nautilus valuation adapter for
-engine status, marked positions, breaker inputs and RunnerFact risk rows. Equity
-comes only from `portfolio.equity(venue)`. Each open position uses one trusted
-cache mark, passes that exact mark object to `position.unrealized_pnl(mark_price)`,
-and derives gross notional from absolute quantity times the current mark. Entry
-price plus unrealized PnL is not an equity proxy.
+## Trust roots cannot be chosen by the artifact
 
-A missing or invalid venue, equity or mark produces a typed unreliable snapshot;
-it never substitutes a guessed financial value. Engine status exposes reliability
-and its reason. The reconciler obtains breaker notional and equity from that one
-status snapshot per tick and freezes/flattens fail closed when it is unreliable.
-RunnerFact risk observations use the same provider and cannot retain a divergent
-Nautilus conversion path.
+The trusted root and the accepted identities come from signed, immutable local
+release configuration:
 
-## Failure contract
+| Flag | Supplies |
+|---|---|
+| `--artifact-sigstore-trusted-root` | The trust root used for verification |
+| `--artifact-release-policy-envelope` | The signed policy naming accepted identities |
+| `--artifact-release-policy-key-id` | Expected policy signing key id |
+| `--artifact-release-policy-public-key` | Key the policy is verified against |
 
-Adapter errors are local execution outcomes. The reconciler decides ACK or NAK
-and emits a signed RunnerFact; the adapter cannot mutate ARX business
-state or ask ARX to authorize a recovery action.
+Artifact metadata may *reference* a trust root; it can never *select* one. An
+artifact that chose the authority verifying it would be verifying itself, and
+the whole chain would prove nothing.
 
-The lifecycle supervisor persists its bounded restart counter in the
-existing RunnerFact SQLite `command_in_progress_lease`. It probes a matching
-durably applied engine before deploying on redelivery, uses exponential backoff,
-and commits ready or retry-exhausted/quarantine through the atomic lifecycle
-transaction. It creates no database, journal or durable local queue.
+The policy itself is signed and verified before it is used, so "which identities
+are acceptable" is not something a local file edit can change.
 
-Current authority status is `PREPARED_BLOCKED_ARTIFACT_RUNTIME_CAPABILITY`.
-The adapter contract is implemented, but the v1.team daemon remains disabled
-while no verified artifact capability is present. Live readiness is false.
-Portfolio valuation is independently `READY_RELIABLE_PORTFOLIO_SEMANTICS_ONLY`;
-that scoped receipt does not satisfy the signed runner-policy or runtime gates.
+## What is not a verification path
+
+None of the following is accepted in production, and each is excluded
+deliberately rather than merely unimplemented:
+
+- a skip or override flag;
+- shelling out to `cosign`, or to a Python subprocess;
+- a sidecar or HTTP verifier;
+- a bundle that is merely structurally plausible.
+
+The last one is the subtle one. A bundle that parses, has the right shape and
+contains a signature is not a verified bundle — it is an unverified bundle that
+looks reassuring.
+
+## Ordering
+
+```text
+verify → safe extraction → activate → import
+```
+
+Verification and safe extraction both complete before any import. The loader
+then proves the module it imported came from the activation root, and rejects a
+module cached from a different activation.
+
+That second check matters more than it looks: verifying bytes on disk proves
+nothing if the import system serves a module it cached earlier from somewhere
+else. See [artifact materialization](/toolkit/artifact-materialization).
+
+## Current status
+
+The verifier is implemented and the contract assets are pinned, but the
+end-to-end artifact capability is **not** enabled: the daemon that would consume
+it stays disabled while no verified artifact capability is present, and live
+readiness is false.
+
+That distinction is worth keeping straight when reading this page — the checks
+described here exist and are tested; what is not yet true is that a production
+runner is executing artifacts through them. See
+[the strategy toolkit](/toolkit/overview) for the receipt state.

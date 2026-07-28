@@ -5,112 +5,90 @@ sidebar_position: 3
 
 # 引擎路线图
 
-:::warning 中文翻译尚未完成
-本章暂时显示英文原文。
-:::
+Custos 不硬编码交易引擎。引擎之上的一切 —— reconcile 循环、实盘执行门、安全熔断器与签名
+RunnerFact —— 只与一个 Python 接口对话：`ExecutionEngineProtocol`。任何满足该接口的引擎
+都能被 runner 监督，而**无需改动**周边的安全机制。
 
-Custos does not hard-code a trading engine. Everything above the engine —
-the reconcile loop, the live execution gate, the safety breaker and signed
-RunnerFacts — talks to a single Python interface, `ExecutionEngineProtocol`.
-Any engine that satisfies that interface can be supervised by the runner
-without changing the safety machinery around it.
+本页讲：今天随发布提供什么、一个引擎适配器必须提供什么、以及接下来哪些引擎是合理候选。
 
-This page describes what ships today, what an engine adapter has to provide,
-and which engines are plausible candidates next.
+## 今天随发布提供什么
 
-## What ships today
-
-| Engine | Module | Status |
+| 宿主 | 模块 | 模式 |
 |---|---|---|
-| [NautilusTrader](./nautilus-trader) | `custos.engines.nautilus` | Supported — the default production engine |
-| [No-op host](./noop) | `custos.engines.noop` | Supported — sandbox and testnet only, never live |
+| `NtTradingNodeHost` | `custos.engines.nautilus` | `sandbox` · `testnet` · `live` |
+| `SandboxSimulationHost` | `custos.engines.nautilus` | 仅 `sandbox` |
 
-The no-op host exists so that operators can exercise enrollment, spec
-delivery, reconciliation and telemetry without placing a real order. The live execution gate
-host gate refuses to let it run in `live` mode; see
-[live execution gate](/concepts/live-execution-gate).
+两者位于**同一个模块**；它们是同一个协议的两个实现，不是两个引擎。见
+[NautilusTrader](/zh-Hans/engines/nautilus-trader) 与
+[Sandbox 模拟宿主](/zh-Hans/engines/sandbox-simulation-host)。
 
-## What an engine adapter must provide
+模拟宿主的存在，是为了让运维能在**不下单**的前提下演练注册、指令投递、reconcile 与事实
+发布。它只声明 `sandbox`，因此准入会在 `testnet` 与 `live` 时拒绝它 —— 拒绝来自宿主**自己
+的声明**，而不是来自别处维护的一份「禁止组合」清单。见
+[实盘执行门](/zh-Hans/concepts/live-execution-gate)。
 
-An adapter implements the Tier-1 surface of `ExecutionEngineProtocol`:
+## 一个引擎适配器必须提供什么
 
-| Method | Responsibility |
+适配器实现 `ExecutionEngineProtocol` 的 Tier-1 表面：
+
+| 方法 | 职责 |
 |---|---|
-| `deploy` | Start a strategy for one deployment instance |
-| `reconfigure` | Apply a new desired state to a running instance |
-| `stop` | Stop an instance and release its resources |
-| `supports_trading_mode` | Declare which trading modes this engine may run |
-| `supports_venue` | Declare which venues this engine can reach |
+| `deploy` | 为一个部署实例启动策略 |
+| `reconfigure` | 把新的期望状态应用到运行中的实例 |
+| `stop` | 停止实例并释放其资源 |
+| `supports_trading_mode` | 声明本引擎可运行哪些交易模式 |
+| `supports_venue` | 声明本引擎可触达哪些交易场所 |
 
-The last two are what the live execution gate reads. An engine that does not
-declare a mode can never be admitted for it, regardless of what the desired
-state asks for — the gate fails closed rather than degrading.
+后两个正是实盘执行门所读取的。一个未声明某模式的引擎，无论期望状态怎么要求，都**永远
+不会**被准入该模式 —— 门 fail closed，而不是降级。
 
-Because the reconciler and the gate only ever see the protocol, adding an
-engine does not require changes to either.
+因为 reconciler 与门只看得见协议，新增一个引擎**不需要**改动它们中的任何一个。
 
-## Candidate engines
+## 候选引擎
 
-These are open-source engines whose programming models are compatible enough
-with the runner to be worth evaluating. None of them is scheduled; each entry
-records what integration would actually involve.
+以下是编程模型与 runner 足够契合、值得评估的开源引擎。**没有一个已排期**；每一条记录的是
+「集成实际上要做什么」。
 
 ### Hummingbot
 
-[Hummingbot](https://github.com/hummingbot/hummingbot) is a Python framework
-for market-making and liquidity provision across centralized and
-decentralized venues.
+[Hummingbot](https://github.com/hummingbot/hummingbot) 是一个用于中心化与去中心化场所做市
+与流动性提供的 Python 框架。
 
-- **Fits well**: Python-native and async, so an adapter runs inside the
-  existing daemon with no process bridge.
-- **Fits poorly**: a Hummingbot deployment is conventionally a standalone bot
-  instance with its own config and strategy conventions, rather than a
-  library embedded in a host process. Supervision would look closer to
-  process management than to the in-process model used for NautilusTrader.
-- **Not portable**: Hummingbot strategies cannot be moved across from
-  NautilusTrader strategies without a rewrite.
+- **契合之处**：Python 原生且 async，适配器可跑在现有守护进程内，无需进程桥。
+- **不契合之处**：Hummingbot 部署惯例上是一个带自己配置与策略约定的**独立 bot 实例**，
+  而不是嵌入宿主进程的库。监督形态会更接近进程管理，而非 NautilusTrader 那种进程内模型。
+- **不可移植**：Hummingbot 策略无法从 NautilusTrader 策略平移过来，必须重写。
 
 ### Freqtrade
 
-[Freqtrade](https://github.com/freqtrade/freqtrade) is a Python crypto
-trading bot with a DataFrame-based strategy interface and its own
-backtesting engine.
+[Freqtrade](https://github.com/freqtrade/freqtrade) 是一个 Python 加密交易 bot，采用基于
+DataFrame 的策略接口，并自带回测引擎。
 
-- **Fits well**: Python-native, and its declarative strategy shape maps
-  cleanly onto the existing desired-state and telemetry pipeline.
-- **Fits poorly**: Freqtrade normally runs behind a REST API for its own UI.
-  Custos exposes no inbound network surface by design, so an adapter would
-  have to run it without that surface rather than proxy it.
-- **Not portable**: the indicator-driven strategy interface is a different
-  programming model from event-driven `on_bar` / `on_trade` handlers.
+- **契合之处**：Python 原生，且其声明式策略形态能干净地映射到现有的期望状态与遥测管道。
+- **不契合之处**：Freqtrade 通常在一个供自身 UI 使用的 REST API 之后运行。Custos **按设计
+  不暴露任何入站网络面**，因此适配器只能在没有该表面的情况下运行它，而不是把它代理出来。
+- **不可移植**：指标驱动的策略接口，与事件驱动的 `on_bar` / `on_trade` 处理器是不同的
+  编程模型。
 
-### A native Rust binding
+### 原生 Rust 绑定
 
-NautilusTrader's execution core is progressively moving to Rust. A second,
-Rust-native binding to that core — distinct from today's adapter, which
-consumes the Python SDK — is conceivable.
+NautilusTrader 的执行内核正逐步迁往 Rust。一个**第二套**、Rust 原生的内核绑定 ——
+区别于今天这个消费 Python SDK 的适配器 —— 是可以设想的。
 
-Two bridge shapes are possible: an in-process extension module built with
-`pyo3`, which keeps the runner's single-process async model intact; or a
-supervised child process communicating over a local socket.
+两种桥接形态可选：用 `pyo3` 构建的进程内扩展模块，保持 runner 单进程 async 模型不变；
+或是通过本地 socket 通信的受监督子进程。
 
-This one is performance-motivated rather than feature-motivated, and is only
-worth scoping if profiling shows the current Python SDK path is a real
-bottleneck under production load.
+这一条的动机是**性能**而非功能，只有当 profiling 显示当前 Python SDK 路径在生产负载下确实
+构成瓶颈时，才值得立项。
 
-## Red lines apply to every engine
+## 红线适用于每一个引擎
 
-Whatever runs underneath, the four non-custodial guarantees hold:
+无论底下跑的是什么，四条 non-custodial 保证都成立：
 
-- Credentials are decrypted inside the runner process and are never written
-  to logs, published upstream, or passed to a child process as environment
-  variables or command-line arguments where a process listing would expose
-  them.
-- Live execution requires an engine that declares live support; the gate
-  fails closed otherwise.
-- Local safety enforcement keeps working while ARX is
-  unreachable.
-- Money values use decimal arithmetic end to end and cross the wire as
-  strings.
+- 凭据在 runner 进程**内部**解密，从不写日志、不上传，也不以环境变量或命令行参数的形式
+  传给子进程 —— 那会让进程列表暴露它们。
+- 实盘执行要求引擎**声明**支持实盘；否则门 fail closed。
+- 本地安全防护在 ARX 不可达时继续生效。
+- 金额全程使用十进制运算，并以**字符串**跨越 wire。
 
-An adapter that cannot honour these is not a candidate.
+一个无法兑现这些的适配器，不是候选。

@@ -16,15 +16,21 @@ and which engines are plausible candidates next.
 
 ## What ships today
 
-| Engine | Module | Status |
+| Host | Module | Modes |
 |---|---|---|
-| [NautilusTrader](./nautilus-trader) | `custos.engines.nautilus` | Supported — the default production engine |
-| [No-op host](./noop) | `custos.engines.noop` | Supported — sandbox and testnet only, never live |
+| `NtTradingNodeHost` | `custos.engines.nautilus` | `sandbox`, `testnet`, `live` |
+| `SandboxSimulationHost` | `custos.engines.nautilus` | `sandbox` only |
 
-The no-op host exists so that operators can exercise enrollment, spec
-delivery, reconciliation and telemetry without placing a real order. The live execution gate
-host gate refuses to let it run in `live` mode; see
-[live execution gate](/concepts/live-execution-gate).
+Both ship in the same module; they are two implementations of one protocol, not
+two engines. See [NautilusTrader](/engines/nautilus-trader) and
+[the sandbox simulation host](/engines/sandbox-simulation-host).
+
+The simulation host exists so an operator can exercise enrollment, command
+delivery, reconciliation and fact publication without placing an order. It
+declares `sandbox` and nothing else, so admission refuses it for `testnet` and
+`live` — the refusal comes from the host's own declaration rather than from a
+list of forbidden combinations maintained elsewhere. See
+[the live execution gate](/concepts/live-execution-gate).
 
 ## What an engine adapter must provide
 

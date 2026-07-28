@@ -77,7 +77,7 @@ const sidebars = {
       label: 'VII · Engines',
       items: [
         'engines/nautilus-trader',
-        'engines/noop',
+        'engines/sandbox-simulation-host',
         'engines/engine-roadmap',
       ],
     },
