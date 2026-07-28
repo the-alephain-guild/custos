@@ -1,25 +1,35 @@
-"""Plan 12 T4 contract: release workflow shape (permissions + 8-job DAG).
+"""Release workflow shape: permissions, job DAG, and the post-publish gate.
 
-CI workflows only really exercise at tag push, so this test locks the
-shape locally with plain-text assertions. That trades some strictness
-(we can't verify structural relationships as tightly as a YAML parse)
-for the property that we don't depend on `pyyaml` — which isn't in the
-`dev` extra and would bloat the default test env just for this gate.
+A release workflow only really runs at tag push, which is the worst possible
+moment to discover it is wrong. This locks the shape locally with plain-text
+assertions. That is weaker than parsing the YAML, but it keeps `pyyaml` out of
+the default test environment, where it exists for nothing else.
 
-The assertions cover the four regressions Plan 12 R1 review called out:
+What is asserted, and why each one was worth asserting:
 
-- H2: `permissions:` (plural) with `id-token: write` + `packages: write`
-  + `contents: write`.
-- H5: 8-job DAG, all documented job names present.
-- M6: stable-only tag pattern (`v[0-9]+.[0-9]+.[0-9]+`), no `v*` wildcard.
-- H1: `build-docker` `needs:` includes both `build-wheel` and `sign-wheel`
-  so the image is always built on the signed wheel, never on a PyPI
-  fetch.
+- `permissions:` (plural) carrying `id-token: write`, `packages: write` and
+  `contents: write` — the singular spelling is silently ignored.
+- The full job DAG, by name.
+- A stable-only tag pattern, so a pre-release tag cannot trigger a publish.
+- `build-docker` needing both the wheel build and its signature, so the image
+  is always built on the signed wheel rather than on whatever a later fetch
+  returns.
 """
 
 from __future__ import annotations
 
+import argparse
+import re
 from pathlib import Path
+
+from custos.cli.subcommands import _build_parser
+
+
+def _top_level_subcommands() -> list[str]:
+    parser = _build_parser()
+    actions = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+    return sorted(actions[0].choices)
+
 
 WORKFLOW = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "release.yml"
 VERIFY_RELEASE = WORKFLOW.parent / "scripts" / "verify-release.sh"
@@ -193,11 +203,7 @@ def test_post_publish_verifies_complete_runtime_contract() -> None:
 
     required_fragments = (
         '"${IMAGE_NAME}:v${VERSION}" --help',
-        '"${IMAGE_NAME}:v${VERSION}" start --help',
-        '"${IMAGE_NAME}:v${VERSION}" enroll --help',
         '"${IMAGE_NAME}:v${VERSION}" vault put --help',
-        '"${IMAGE_NAME}:v${VERSION}" deployment validate --help',
-        '"${IMAGE_NAME}:v${VERSION}" health --help',
         "import nautilus_trader, yaml",
         'sops "${IMAGE_NAME}:v${VERSION}" --version',
         'age "${IMAGE_NAME}:v${VERSION}" --version',
@@ -206,6 +212,25 @@ def test_post_publish_verifies_complete_runtime_contract() -> None:
     )
     for fragment in required_fragments:
         assert fragment in text, f"post-publish runtime gate missing: {fragment}"
+
+
+def test_post_publish_command_matrix_matches_the_real_cli() -> None:
+    """Derived from the parser, because a hard-coded list goes stale silently.
+
+    It did: the gate probed `deployment validate`, which was removed from the
+    CLI, so the published image would have been checked with a command that
+    exits 2 — aborting the post-publish verify after the stable tags were
+    already public. Three commands that do exist were never probed at all.
+    """
+    text = VERIFY_RELEASE.read_text()
+
+    for name in _top_level_subcommands():
+        fragment = f'"${{IMAGE_NAME}}:v${{VERSION}}" {name} --help'
+        assert fragment in text, f"post-publish gate does not probe `{name}`"
+
+    probed = set(re.findall(r'"\$\{IMAGE_NAME\}:v\$\{VERSION\}" ([a-z][a-z-]*) --help', text))
+    unknown = sorted(probed - set(_top_level_subcommands()))
+    assert not unknown, f"post-publish gate probes commands the CLI does not have: {unknown}"
 
 
 def test_dockerfile_consumes_the_frozen_runtime_lock() -> None:

@@ -54,11 +54,15 @@ cosign verify "${IMAGE_NAME}:v${VERSION}" \
 
 echo "== Layer 3: published image command matrix =="
 docker run --rm "${IMAGE_NAME}:v${VERSION}" --help >/dev/null
-docker run --rm "${IMAGE_NAME}:v${VERSION}" start --help >/dev/null
+docker run --rm "${IMAGE_NAME}:v${VERSION}" credential --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" enroll --help >/dev/null
-docker run --rm "${IMAGE_NAME}:v${VERSION}" vault put --help >/dev/null
-docker run --rm "${IMAGE_NAME}:v${VERSION}" deployment validate --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" health --help >/dev/null
+docker run --rm "${IMAGE_NAME}:v${VERSION}" nats-transport --help >/dev/null
+docker run --rm "${IMAGE_NAME}:v${VERSION}" publish-capability --help >/dev/null
+docker run --rm "${IMAGE_NAME}:v${VERSION}" start --help >/dev/null
+docker run --rm "${IMAGE_NAME}:v${VERSION}" vault --help >/dev/null
+# One nested command too: a subparser can resolve while its children do not.
+docker run --rm "${IMAGE_NAME}:v${VERSION}" vault put --help >/dev/null
 
 echo "== Layer 3: published image Python runtime =="
 docker run --rm --entrypoint python "${IMAGE_NAME}:v${VERSION}" \

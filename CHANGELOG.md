@@ -5,12 +5,30 @@ All notable changes to `custos-runner` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The complete versioning contract — what is allowed / forbidden per MAJOR /
-MINOR / PATCH bump, LTS window, security patch SLA, key-rotation protocol —
-lives in [`docs/lts-commitment.md`](docs/lts-commitment.md) and
-[`docs/upgrade-path.md`](docs/upgrade-path.md).
+The complete versioning contract — what is allowed and forbidden per MAJOR /
+MINOR / PATCH bump, the LTS window, the security patch SLA and the key-rotation
+protocol — is published at
+[SemVer and LTS](https://custos.alephain.com/release-governance/semver-lts) and
+[upgrade paths](https://custos.alephain.com/release-governance/upgrade-paths).
 
 ## [Unreleased]
+
+### Changed
+
+- Deployment authority moved upstream. The runner consumes signed desired-state
+  commands and no longer produces them, so `arx-runner deployment validate`,
+  `arx-runner deployment publish` and `arx-runner nats bootstrap` are gone with
+  no replacement: publishing a command and bootstrapping stream topology are not
+  runner operations. There is correspondingly no offline spec validation — a
+  spec is validated after its signature is verified, on arrival.
+- The simulation engine is selected with `--engine sandbox-sim`. The
+  `--engine noop` spelling from the 0.3.0 entry below never shipped under that
+  name.
+- `arx-runner credential`, `arx-runner nats-transport` and
+  `arx-runner publish-capability` are the current machine-authority commands.
+
+Nothing above has been released as an artifact. No version has been published as
+a wheel or an image, so these are changes between source revisions.
 
 ## [0.3.0] - 2026-07-12
 
