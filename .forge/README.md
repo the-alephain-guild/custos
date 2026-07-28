@@ -119,6 +119,54 @@ Plan close-out 后 (Status: ✅ Completed):
 
 ## 后续 plan 规划
 
+### 内部系统名对外收敛 — 两项 deferred (CEO 2026-07-28 决定先记录不做)
+
+**背景**: 仓库 public。docs-site 有 disclosure gate、README 已清理, 但 `src/` 与
+wire 层仍带内部系统名。2026-07-28 清理时只完成了**未被资产 pin 的 7 个源文件**的
+散文改名 (commit `0d20b49`), 另两项判定为契约动作而非文档清理, 暂缓。
+
+#### Deferred 1 — pinned 资产内的措辞改名
+
+`docs/authority/**` 的资产索引按 **path + size_bytes + commit** 固定了 16 个
+`src/custos/**` 文件。为措辞修改它们会让证据链对不上 —— 2026-07-28 实测:
+改 `machine_credential_vault.py` 一句 docstring 即触发
+`test_machine_request_consumer_assets_are_exactly_pinned` 失败 (26599 != 26594)。
+
+**结论**: 这批改名必须与下一次 receipt 重新签发**同批**做, 单独改 = 破坏 pin。
+识别命令:
+
+```bash
+grep -rho '"src/custos/[^"]*\.py"' docs/authority/ | sort -u
+```
+
+**副作用 (同源)**: pin 同时把这些文件冻结在 formatter 之外。
+`src/custos/core/runner_fact.py` 与 2 个 pinned integration test 当前不是
+format-clean, 所以 `make fmt-check` (进而 `make verify`) 在主干上就是红的。
+另有 2 个未 pin 的 test 文件 (`test_runner_fact_contract_v1.py` /
+`test_toolkit_release_authority.py`) 可以直接 `make fmt` 修掉, 与 pin 无关。
+
+#### Deferred 2 — wire 层标识改名
+
+以下都是对端按字面读取的契约表面, 改动需要**双方协同的 V1 迁移**, 且
+`CLAUDE.md` §First-production V1 contract rule 不允许留兼容别名:
+
+| 标识 | 位置 |
+|------|------|
+| 签名域 `CRUCIBLE-RUNNER-FACT-BATCH-V1\0` | 签名前像, golden 锁定 |
+| NATS subject `crucible.runner_fact.*` / `crucible.runner.enrollment.pop.v1` | wire |
+| HTTP header `X-Crucible-*` (11 个) | `machine_credential_vault.py` / `enroll.py` |
+| env var `CRUCIBLE_*` · CLI flag `--crucible-*` | 运维产品面, 测试断言 |
+| 类型名 `Crucible*V1` | authority 登记的消费者类型 |
+
+**结论**: 属协议迁移, 不属清理。起 plan 时须同时排 producer 侧配合与迁移窗口。
+
+#### Deferred 3 — `docs/` 剩余散文
+
+剩余 19 篇中约 86 处内部名, 但多数文件是待 DEEPEN / MOVE 的合并目标
+(见 `.forge/handoff/2026-07/docs-consolidation-map.md`), **跟随合并步骤自然清除**,
+不单独处理。
+
+
 Plan 01 close-out 之后:
 
 - **02+**: 按需起 (如 `pyright` 集成 / OKX venue 支持 / 签名 release pipeline /

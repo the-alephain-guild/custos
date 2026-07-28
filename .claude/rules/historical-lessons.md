@@ -6,6 +6,40 @@
 
 > **custos 内部 lesson 用 `C1` `C2` … 前缀区分生态数字编号** (见文末"记录新 lesson")。
 
+## C6 签名资产把源文件冻结成契约 — 措辞级改动也会毁证据链 (2026-07)
+
+- **事件**: 为把内部系统名从 public 仓库里收敛掉, 对 `src/` 做纯措辞改名
+  (docstring / 错误消息, 不含任何 wire 标识)。22 个文件里 16 个被
+  `docs/authority/**` 的资产索引按 **path + size_bytes + commit** pin 住。改一句
+  docstring 即触发 `test_machine_request_consumer_assets_are_exactly_pinned`
+  失败 (`assert 26599 == 26594`) —— 一个**字节大小**断言。回退 15 个 pinned 文件后
+  恢复基线。
+- **根因**: "源文件" 与 "签名证据" 在这些路径上是同一份东西。资产索引记录的是字节,
+  不是语义, 所以 formatter 换行、typo 修正、注释改写与逻辑改动**在 pin 面前等价**。
+  改动者按 "这只是措辞" 判断风险, 而 pin 按字节判断。两者永远不会一致。
+- **同源副作用**: pin 把文件冻结在 formatter 之外。`src/custos/core/runner_fact.py`
+  与 2 个 pinned integration test 当前不是 format-clean, 使 `make fmt-check`
+  (进而 `make verify`) 在主干上恒红。这不是疏忽, 是两个约束互斥的必然结果 ——
+  跑 `make fmt` 会修好 gate 但破坏 pin。
+- **预防**:
+  - 动 `src/` 前先查是否被 pin:
+    `grep -rho '"src/custos/[^"]*\.py"' docs/authority/ | sort -u`
+  - pinned 文件的任何改动 (含纯措辞 / 纯格式) 都必须与 **receipt 重新签发同批**提交,
+    不可作为独立的清理 / 格式化 commit
+  - 批量改名类操作先做 pinned / free 切分, 只对 free 集合执行; 已误改的用
+    `git stash push -- <pinned files>` 隔离而非 `git checkout --` 丢弃 (可恢复,
+    且 guardrail 会拦后者)
+  - 恒红的 gate 要显式记录成 known-red 并说明互斥原因, 否则下一个人会以为是自己弄坏的,
+    或者跑 `make fmt` "顺手修好" 从而破坏 pin
+- **与 C3 区分**: C3 是 "pre-publish shape gate 不等于 artifact identity gate"
+  (**发布链**上把顺序当身份), 本条是 "源文件同时是签名资产" (**开发期**把措辞当无风险)。
+  两者共同点: artifact identity 由字节定义, 不由意图定义。
+- **Binding**: `.forge/README.md` §后续 plan 规划 "内部系统名对外收敛 — 两项 deferred"
+  记录了受影响文件集与解冻条件; `test_machine_request_consumer_assets_are_exactly_pinned`
+  是该约束的自动化探针 (2026-07-28 首次 dogfood 命中)。
+
+---
+
 ## C5 verbatim migration 把内部文档搬上公网 — 素材源必须按受众选, 且要有机械 gate (2026-07)
 
 - **事件**: 文档站 T5 迁移把 `docs/**.md` 逐字搬进 `docs-site/`, 模式明写 "content
