@@ -151,7 +151,7 @@ const CONTEXT_EXEMPTIONS = [
   // The fact subject is a real integration point: a third party consuming what
   // Custos emits has to subscribe to this literal string. Unlike the command
   // subject, which only ARX publishes to, this one is product surface.
-  /crucible\.runner_fact\.\{mode\}/,
+  /crucible\.runner_fact\.\{trading_mode\}/,
   // CLI flags and the default key path an operator types verbatim to start the
   // runner. A doc that renames them to look tidy documents a command that
   // argparse rejects -- which is how `--arx-domain-public-key` reached these

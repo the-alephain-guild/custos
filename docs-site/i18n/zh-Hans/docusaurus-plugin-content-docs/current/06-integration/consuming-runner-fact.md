@@ -11,7 +11,7 @@ sidebar_position: 3
 ## Subject
 
 ```text
-crucible.runner_fact.{mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
+crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
 ```
 
 subject 跨 spec 与 generation 变更保持稳定。配置变更不会搬走一条流，因此订阅了某个部署

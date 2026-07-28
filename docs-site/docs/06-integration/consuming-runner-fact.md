@@ -12,7 +12,7 @@ fact is and why the union is closed — see [RunnerFact](/concepts/runner-fact).
 ## Subject
 
 ```text
-crucible.runner_fact.{mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
+crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
 ```
 
 The subject is stable across spec and generation changes. A configuration
