@@ -5,12 +5,82 @@ sidebar_position: 2
 
 # 交易模式
 
-:::warning 中文翻译尚未完成
-本章暂时显示英文原文。
-:::
+恰好三个模式，且集合封闭：
 
-:::info This chapter is still being written.
-**Audience**: Operators, auditors
+```text
+sandbox    testnet    live
+```
 
-**TODO**: sandbox / testnet / live boundaries. Mode-lock invariants.
-:::
+不存在第四个值 —— 没有 "paper"，没有 "production"，也没有空的默认值。一个可以省略的
+模式等于一个没有任何人选择过的模式，而这里的选择决定的是**真金白银是否处于风险中**。
+
+## 各自意味着什么
+
+| 模式 | 行情 | 成交 | 资金 |
+|---|---|---|---|
+| `sandbox` | 真实或无，取决于引擎 | 本地模拟 | 无 |
+| `testnet` | 交易所 testnet | 交易所 testnet | 测试资金 |
+| `live` | 真实交易所 | 真实交易所 | **真实** |
+
+`sandbox` 覆盖两种有用的组合。`--engine sandbox-sim` 完全不连接交易场所；
+`--engine nautilus` 则是真实行情 + 本地模拟撮合。两者都安全，区别只在于价格是否真实。
+
+## 一个进程一个模式
+
+`arx-runner start` 的 `--enabled-mode` 是必填的，且恰取一个值。runner 不在运行期切换
+模式，也不同时服务两个模式。
+
+这正是模式属于**进程**而非某个部署的原因：一台同时处理 testnet 与 live 的 runner，
+在测试资金与真实资金之间就只隔着一个 bug。
+
+## 模式被签名，且被校验两次
+
+模式出现在 subject、envelope 与 payload 三处，且三者必须一致。随后准入再把签名指令里的
+模式与本地运行时即将据以行动的模式作比对。
+
+这次比对能抓住「runner 即将执行的模式与被授权的模式不同」——任何单边检查都发现不了它。
+见[实盘执行门](/zh-Hans/concepts/live-execution-gate)。
+
+## 各模式的要求
+
+要求是**累加**的，往下走没有任何一项被放宽。
+
+| | sandbox | testnet | live |
+|---|---|---|---|
+| 签名指令 | ✅ | ✅ | ✅ |
+| 引擎声明该模式 | ✅ | ✅ | ✅ |
+| 引擎声明该连接器 | ✅ | ✅ | ✅ |
+| 凭据范围为 `trade_no_withdraw` | | ✅ | ✅ |
+| 该构建启用了实盘执行 | | | ✅ |
+| 携带签名的放行证据 | | | ✅ |
+
+最后两项让 `live` 在**性质**上而非程度上不同。实盘执行默认关闭，除非构建来自完整的发布链；
+它不是环境变量也不是配置项 —— 因此不是运维在压力下能打开的东西，**包括来自他人的压力**。
+
+## 传输随模式而定
+
+只有 `live` 使用 live 传输。`sandbox` 与 `testnet` **都**走模拟传输，所以一台 testnet
+runner 是用 `--nats-sim-*` 系列配置的，不是 `--nats-live-*`。
+
+这一点常让人意外，值得直说：**testnet 不在 live 传输上。** 测试资金依然不是真实资金，
+传输的切分跟着**钱**走，不跟着交易所走。
+
+## 不能被静默跨越的边界
+
+DeploymentSpec 无法在「模拟」与「真实资金」执行之间移动而不被察觉：模式是签名材料的一部分，
+改动它就改变了被签名的内容。
+
+runner 内部**不存在**提升路径。一个部署不会在本地从 testnet「毕业」到 live —— 一个 live
+部署是另一条签名指令，携带着「上游做过决策」的证据。
+
+## 怎么选
+
+| 你想要 | 用 |
+|---|---|
+| 验证注册、凭据与 reconcile 跑得通 | `sandbox` + `--engine sandbox-sim` |
+| 用真实行情演练策略且零风险 | `sandbox` + `--engine nautilus` |
+| 用测试资金跑通完整的场所往返 | `testnet` |
+| 交易 | `live` |
+
+从上往下走。每一行都覆盖了它上面各行所做的一切，所以任何一层出问题，下面那层其实已经
+替你排除过了。
