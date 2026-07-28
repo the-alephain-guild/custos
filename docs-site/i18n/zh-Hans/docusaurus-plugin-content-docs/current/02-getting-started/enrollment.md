@@ -1,9 +1,9 @@
 ---
-title: "Enrollment"
+title: "注册"
 sidebar_position: 2
 ---
 
-# Enrollment
+# 注册
 
 Enrollment 是 runner 取得一个"可自证"身份的过程。`arx-runner enroll` 是唯一受支持的
 路径。不存在 NATS enrollment、本地未签名 bootstrap token、手写 `runner.toml`、默认
