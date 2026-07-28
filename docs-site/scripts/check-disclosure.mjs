@@ -1,16 +1,25 @@
 #!/usr/bin/env node
 /**
- * CI gate: keep internal implementation detail out of the public custos site.
+ * CI gate: keep the boundary between what Custos is and what sits above it.
  *
- * The published product surface is Custos, the self-hosted execution runner,
- * together with ARX as the control plane it enrolls against. Every other system
- * in the ecosystem is internal implementation: which service owns a slice of
- * state, how storage is partitioned, and where the private planning documents
- * live are all detail that must not reach customer-facing documentation.
+ * Custos is open on purpose. Operators are expected to audit it, and many of
+ * them become contributors — so its own implementation is not a secret. Source
+ * paths, module names and internal mechanisms of the runner are exactly what an
+ * auditor came to read, and they belong in the documentation.
+ *
+ * What must not appear is the layer above. ARX is a commercial, closed product
+ * presented as one thing: this documentation may describe the contract Custos
+ * holds with it — what is signed, what is verified, what is exchanged — but not
+ * which services implement it, how its state is partitioned, or how it consumes
+ * what Custos emits.
+ *
+ * The third category is not about layers at all: plan numbers, gate numbers,
+ * lesson references and assistant configuration are development process. They
+ * are meaningless to a reader regardless of which layer they describe.
  *
  * Unlike a prose-only linter this gate scans the FULL file including code
- * blocks and HTML comments: an internal identifier pasted into a sample payload
- * or a `<!-- source: ... -->` provenance marker discloses just as much as one
+ * blocks and HTML comments: an identifier pasted into a sample payload or a
+ * `<!-- source: ... -->` provenance marker discloses just as much as one
  * written in body text.
  *
  * Escape hatch: append a same-line comment `disclosure-ok: <reason>` when a term
@@ -39,11 +48,12 @@ const SCANNED_EXTENSIONS = new Set(['.md', '.mdx', '.tsx', '.ts', '.jsx', '.js']
  * Banned patterns grouped by what they would reveal. Each entry carries the
  * guidance an author needs to rewrite the line, not just a refusal.
  *
- * Custos and ARX are the two public names and are deliberately absent here.
+ * Deliberately absent: anything belonging to Custos itself. Its source paths,
+ * module names, tests and internal mechanisms are what an auditor came to read.
  */
 const BANNED = [
   {
-    group: 'internal system names',
+    group: 'systems behind ARX',
     patterns: [
       /\bCrucible\b/i,
       /\bcrucible[-_ ]rust\b/i,
@@ -58,38 +68,25 @@ const BANNED = [
       /\bScriptorium\b/i,
     ],
     guidance:
-      'Describe the capability, not the system that provides it. Custos and ARX are the only public names.',
+      'ARX is one product to a reader. Name the contract Custos holds with ARX, not the services implementing it.',
   },
   {
-    group: 'internal storage and topology identifiers',
-    patterns: [/\bsearch_path\b/, /\bDSN\b/, /\bmigration\s+0\d{3}\b/i, /\barx_(live|sim|control)\b/],
-    guidance:
-      'Storage partitioning and migration numbering are implementation detail. Describe the guarantee, not the topology.',
-  },
-  {
-    group: 'internal mechanism vocabulary',
-    patterns: [/\boutbox\b/i, /\binbox\b/i, /\bsaga\b/i, /\bPostgreSQL projection\b/i, /\bprojector\b/i],
-    guidance:
-      'Describe the observable behaviour instead — what the operator can rely on, not how it is delivered upstream.',
-  },
-  {
-    group: 'private repository paths and commands',
+    group: 'ARX-side storage and mechanism',
     patterns: [
-      /CLAUDE\.md/,
-      /\.claude\/rules/,
-      /\.forge\//,
-      /codex\/projects/,
-      /ecosystem-authority/,
-      /authority-manifest/,
-      /make\s+check-authority/,
-      /\bthe-alephain-guild\b/,
-      /\bdocs\/authority\//,
+      /\bsearch_path\b/,
+      /\bDSN\b/,
+      /\bmigration\s+0\d{3}\b/i,
+      /\barx_(live|sim|control)\b/,
+      /\bprojector\b/i,
+      /\b(PostgreSQL|Postgres|database|read[- ]model)\s+projection\b/i,
+      /\bprojects?\s+(the\s+)?facts?\b/i,
+      /\bsaga\b/i,
     ],
     guidance:
-      'External readers cannot open our private material. Link to public documentation or point at the in-product location.',
+      'How ARX stores or consumes what Custos emits is closed. State the contract — what is sent, signed and acknowledged.',
   },
   {
-    group: 'internal tracking identifiers',
+    group: 'development process',
     patterns: [
       /\bplan\s+\d{1,3}[a-z]?\s*T\d/i,
       /\bplan\s+\d{1,3}[a-z]?\b/i,
@@ -104,22 +101,24 @@ const BANNED = [
       /\bvision\s*支柱/,
       /\b六件套\b/,
       /\b三件套\b/,
-    ],
-    guidance:
-      'Internal plan, gate, deviation and lesson numbers are meaningless to readers. Describe what the check does or name the guarantee instead.',
-  },
-  {
-    group: 'internal process and source layout',
-    patterns: [
       /\bCEO\b/,
       /\bdirective\s*\(\d{4}-\d{2}-\d{2}\)/,
-      /\bsrc\/custos\//,
-      /\bpackages\/custos-/,
-      /\btests?\/test_\w+\.py/,
-      /\bscripts\/\w+\.py/,
     ],
     guidance:
-      'Who decided what internally, and where the code lives in our tree, are not part of the product. Describe the behaviour the reader can observe or configure.',
+      'Plan, gate, lesson and decision references are development process. Describe what the code does or name the guarantee.',
+  },
+  {
+    group: 'assistant and workflow configuration',
+    patterns: [
+      /CLAUDE\.md/,
+      /\.claude\/rules/,
+      /\.forge\//,
+      /codex\/projects/,
+      /ecosystem-authority/,
+      /\bthe-alephain-guild\b/,
+    ],
+    guidance:
+      'These configure how we build, not how Custos works. Point at the documentation or the code instead.',
   },
 ];
 

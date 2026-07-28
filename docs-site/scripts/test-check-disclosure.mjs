@@ -36,55 +36,90 @@ async function runGate(body, filename = 'fixture.md') {
 
 const CASES = [
   {
-    name: 'internal system name is rejected',
+    name: 'system behind ARX is rejected',
     body: 'Signed desired state is produced by Crucible Rust before delivery.\n',
-    expect: (r) => r.code === 1 && /internal system names/.test(r.out),
+    expect: (r) => r.code === 1 && /systems behind ARX/.test(r.out),
   },
   {
     name: 'strategy research repository name is rejected',
     body: 'Strategies are authored in philosophers-stone and vendored here.\n',
-    expect: (r) => r.code === 1 && /internal system names/.test(r.out),
+    expect: (r) => r.code === 1 && /systems behind ARX/.test(r.out),
   },
   {
-    name: 'future engine codename is rejected',
+    name: 'sibling engine codename is rejected',
     body: 'A future adapter will supervise the Athanor binary as a subprocess.\n',
-    expect: (r) => r.code === 1 && /internal system names/.test(r.out),
+    expect: (r) => r.code === 1 && /systems behind ARX/.test(r.out),
   },
   {
-    name: 'internal migration numbering is rejected',
+    name: 'ARX-side migration numbering is rejected',
     body: 'Aggregate caps arrive with migration 0117 upstream.\n',
-    expect: (r) => r.code === 1 && /internal storage and topology identifiers/.test(r.out),
+    expect: (r) => r.code === 1 && /ARX-side storage and mechanism/.test(r.out),
   },
   {
-    name: 'internal mechanism vocabulary is rejected',
-    body: 'Facts are drained from the outbox and reach a PostgreSQL projection.\n',
-    expect: (r) => r.code === 1 && /internal mechanism vocabulary/.test(r.out),
+    name: 'how ARX consumes facts is rejected',
+    body: 'Each fact reaches a projector and lands in a PostgreSQL projection.\n',
+    expect: (r) => r.code === 1 && /ARX-side storage and mechanism/.test(r.out),
   },
   {
-    name: 'private planning path is rejected',
+    name: "custos's own durable queue is allowed",
+    body: 'Facts are written to the durable outbox before the transport is touched.\n',
+    expect: (r) => r.code === 0,
+  },
+  {
+    name: "custos's own source path is allowed",
+    body: 'The reconciler lives in `src/custos/core/deployment_reconciler.py`.\n',
+    expect: (r) => r.code === 0,
+  },
+  {
+    name: "custos's own test path is allowed",
+    body: 'Covered by `tests/test_reconcile.py` and the failure-mode suite.\n',
+    expect: (r) => r.code === 0,
+  },
+  {
+    name: 'internal plan number is rejected',
+    body: ':::warning\n本章中文正文将在 Plan 20 T6 完成。\n:::\n',
+    expect: (r) => r.code === 1 && /development process/.test(r.out),
+  },
+  {
+    name: 'internal gate number is rejected',
+    body: 'Live deployment must pass the G6 gate before reaching a venue.\n',
+    expect: (r) => r.code === 1 && /development process/.test(r.out),
+  },
+  {
+    name: 'internal deviation id is rejected',
+    body: 'See DEV-08-RENUMBER-FROM-06B for the rationale.\n',
+    expect: (r) => r.code === 1 && /development process/.test(r.out),
+  },
+  {
+    name: 'internal decision attribution is rejected',
+    body: 'The namespace moved per a CEO clean-break decision.\n',
+    expect: (r) => r.code === 1 && /development process/.test(r.out),
+  },
+  {
+    name: 'assistant configuration path is rejected',
+    body: 'The four guarantees are defined in CLAUDE.md and .claude/rules/.\n',
+    expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),
+  },
+  {
+    name: 'planning directory is rejected',
     body: 'See .forge/plans/2026-07/20-custos-docs-site-scaffold.md for scope.\n',
-    expect: (r) => r.code === 1 && /private repository paths/.test(r.out),
-  },
-  {
-    name: 'private rules path is rejected',
-    body: 'The four red lines are defined in CLAUDE.md and .claude/rules/.\n',
-    expect: (r) => r.code === 1 && /private repository paths/.test(r.out),
+    expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),
   },
   {
     name: 'code blocks are scanned, not just prose',
     body: '```json\n{ "upstream": "crucible-rust" }\n```\n',
-    expect: (r) => r.code === 1 && /internal system names/.test(r.out),
+    expect: (r) => r.code === 1 && /systems behind ARX/.test(r.out),
   },
   {
     name: 'HTML provenance comments are scanned',
     body: '<!-- source: docs/engines/athanor.md -->\n\nEngine roadmap.\n',
-    expect: (r) => r.code === 1 && /internal system names/.test(r.out),
+    expect: (r) => r.code === 1 && /systems behind ARX/.test(r.out),
   },
   {
     name: 'TSX pages are scanned',
     body: 'export default () => <a href=".forge/plans/x.md">plan</a>;\n',
     filename: 'page.tsx',
-    expect: (r) => r.code === 1 && /private repository paths/.test(r.out),
+    expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),
   },
   {
     name: 'escape marker suppresses a reviewed hit',
@@ -95,21 +130,6 @@ const CASES = [
     name: 'public names Custos and ARX are allowed',
     body: 'Custos enrolls against ARX and holds venue credentials locally.\n',
     expect: (r) => r.code === 0,
-  },
-  {
-    name: 'internal plan number is rejected',
-    body: ':::warning\n本章中文正文将在 Plan 20 T6 完成。\n:::\n',
-    expect: (r) => r.code === 1 && /internal tracking identifiers/.test(r.out),
-  },
-  {
-    name: 'internal deviation id is rejected',
-    body: 'See DEV-08-RENUMBER-FROM-06B for the rationale.\n',
-    expect: (r) => r.code === 1 && /internal tracking identifiers/.test(r.out),
-  },
-  {
-    name: 'internal red-line numbering is rejected',
-    body: 'This is required by red line 0.1 of the mandatory rules.\n',
-    expect: (r) => r.code === 1 && /internal tracking identifiers/.test(r.out),
   },
   {
     name: 'ordinary version numbers are not mistaken for plan numbers',
@@ -129,7 +149,7 @@ const CASES = [
   {
     name: 'exemption does not whitelist other org paths',
     body: 'See the-alephain-guild/synedrion for the council design notes.\n',
-    expect: (r) => r.code === 1 && /private repository paths/.test(r.out),
+    expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),
   },
   {
     name: 'clean page passes',
