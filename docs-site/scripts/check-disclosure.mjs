@@ -122,6 +122,10 @@ const BANNED = [
       // could not open it even when it did.
       /\bdocs\/(design|guides|ops)\//,
       /\bdocs\/(domain|lts-commitment)\.md\b/,
+      // The same pointers also appear without the `docs/` prefix, as link text
+      // like `ops/05-deployment.md`. One survived a full audit because the
+      // pattern above required the prefix.
+      /\b(design|guides|ops)\/\d{2}-[a-z0-9-]+\.md\b/,
     ],
     guidance:
       'These configure how we build, not how Custos works. Point at the documentation or the code instead.',

@@ -38,12 +38,16 @@ def _documentation_pages() -> list[Path]:
 
 
 # Both invocation forms a page may use: the installed console script, and the
-# published image whose entrypoint is that same script.
+# published image whose entrypoint is that same script. The subcommand must
+# start with a letter so that `arx-runner --help` is not read as a subcommand
+# named `--help`.
 _INVOCATION = re.compile(
     r"(?:arx-runner|custos-runner:v[\d.]+)\s+"
-    r"(vault\s+\w+|credential\s+\w+|nats-transport\s+\w+|[a-z-]+)"
+    r"(vault\s+\w+|credential\s+\w+|nats-transport\s+\w+|[a-z][a-z-]*)"
 )
 _FLAG = re.compile(r"--[a-z][a-z-]*")
+_INLINE_CODE = re.compile(r"`([^`]+)`")
+_FENCE = re.compile(r"^\s*```")
 
 
 def _invocation_body(lines: list[str], start: int) -> str:
@@ -104,6 +108,67 @@ def _commands(text: str) -> list[tuple[str, set[str]]]:
         body = _invocation_body(lines, index)[match.end() :]
         found.append((name, set(_FLAG.findall(body))))
     return found
+
+
+def _named_subcommands(text: str) -> list[str]:
+    """Every subcommand the page names, wherever a reader would copy it from.
+
+    Only code counts -- a fenced block, or an inline span that begins with the
+    tool name. Free prose is excluded so that an ordinary sentence containing
+    the word `arx-runner` cannot be read as an invocation.
+
+    This is deliberately separate from the flag checks above, which skip any
+    name the parser does not recognise. Skipping was how `arx-runner deployment
+    validate` survived on a published page for the entire life of the command's
+    absence: an unknown flag was an error, but an entire unknown subcommand was
+    treated as prose.
+    """
+    named: list[str] = []
+    fenced = False
+    for line in text.splitlines():
+        if _FENCE.match(line):
+            fenced = not fenced
+            continue
+        candidates = (
+            [line]
+            if fenced
+            else [
+                span
+                for span in _INLINE_CODE.findall(line)
+                if span.startswith(("arx-runner", "custos-runner:v"))
+            ]
+        )
+        for candidate in candidates:
+            match = _INVOCATION.search(candidate)
+            if match:
+                named.append(" ".join(match.group(1).split()))
+    return named
+
+
+def test_documentation_names_only_real_subcommands() -> None:
+    offenders = []
+    scanned = 0
+    for page in _documentation_pages():
+        for name in _named_subcommands(page.read_text(encoding="utf-8")):
+            scanned += 1
+            if _subparser(name) is None:
+                offenders.append(f"{page.relative_to(REPO_ROOT)}: `arx-runner {name}`")
+
+    # A regex that stops matching would leave this test passing on nothing.
+    assert scanned > 50, (
+        f"only {scanned} invocations found across the site — has the format changed?"
+    )
+    assert not offenders, "documented commands the CLI does not have:\n" + "\n".join(offenders)
+
+
+def test_probe_detects_a_subcommand_that_does_not_exist() -> None:
+    """The probe above is only worth having if it can fail."""
+    page = "Run `arx-runner deployment validate --spec-file spec.json` first.\n"
+    named = _named_subcommands(page)
+
+    assert named == ["deployment"]
+    assert _subparser("deployment") is None
+    assert _named_subcommands("The `arx-runner` CLI is the only interface.\n") == []
 
 
 @pytest.mark.parametrize("readme", EXAMPLE_READMES, ids=lambda p: str(p.relative_to(REPO_ROOT)))

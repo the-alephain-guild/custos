@@ -3,110 +3,118 @@ title: "Upgrade Paths"
 sidebar_position: 2
 ---
 
-
 # Upgrade Paths
 
-The authoritative upgrade guide. Every minor / major release adds a section
-here in reverse-chronological order; the top of the file always describes
-the current recommended path.
+What changes between version lines, and what you have to do about it. Sections
+are in reverse-chronological order, so the top of the page is always the most
+recent move.
 
-## 0.2.x → 0.3.0 (complete runtime clean break)
+:::note No published artifact to upgrade from yet
+No version has been published as a wheel or an image. Every runner in existence
+was installed from source or built locally, so there is no `pip install
+--upgrade` to run and no image tag to pull — see
+[installation](/getting-started/installation).
 
-0.3.0 replaces the boolean engine switch with `--engine nautilus|noop`, makes
-Nautilus the default, validates every desired-state message through the strict
-`DeploymentSpec`, and provides the complete runtime as a verified local image.
+That does not make this page hypothetical. The changes below are real, and if
+you move a runner from one source revision to the next you still have to make
+them. What is deferred is the packaging, not the work.
+:::
 
-1. From the Custos checkout, run `make verify-local-v030` to build and gate
-   `custos-runner:v0.3.0`; remove any derived Custos Dockerfile used only to
-   add NautilusTrader, PyYAML, sops, or age.
-2. Replace the removed boolean engine flag with `--engine nautilus`. Use
-   `--engine sandbox-sim` only for non-live contract tests.
-3. Add `generation >= 1`, `lifecycle_state`, and `strategy_config` to every
-   spec; validate with `arx-runner deployment validate --spec-file <path>`.
-4. Provision ARX-owned JetStream topology and install the exact
-   ARX domain-event public key on each runner. Custos does not create
-   business streams.
-5. Submit desired state through ARX. Custos only validates local files
-   offline and consumes signed commands; gate readiness with `arx-runner health`.
+## 0.2.x → 0.3.0
 
-Downstream strategy repositories remain blocked until this upgrade is complete. They consume the
-verified local image directly, maintains no derived Custos Dockerfile, and
-owns only strategy code plus `strategy_config` assembly. Remote release is
-deferred and is not a prerequisite for local PS integration.
+0.3.0 makes NautilusTrader the default engine, validates every desired-state
+message through a strict contract before any vault, gate or host code runs, and
+delivers the complete runtime as an image you build and verify locally.
 
-## 0.1.x → 0.2.0 (breaking release)
+1. **Build and gate the image.** From your checkout, `make verify-local-v030`
+   builds `custos-runner:v0.3.0` and runs the full runtime contract against it.
+   Delete any Dockerfile of your own that existed only to add NautilusTrader,
+   PyYAML, `sops` or `age` — the image now carries them.
+2. **Replace the removed boolean engine switch.** Engine selection is a closed
+   enum: `--engine nautilus` (the default) or `--engine sandbox-sim`. The
+   simulation host declares `sandbox` only, so it will refuse a testnet or live
+   deployment rather than quietly running one without a venue.
+3. **Update every spec.** `generation` must be `>= 1`, `lifecycle_state` is now
+   separate from `trading_mode`, and `strategy_config` is passed through
+   untouched. Unknown fields are rejected rather than ignored.
+4. **Install the domain-event public key on each runner** and provision the
+   stream topology upstream. Custos verifies signed commands; it does not create
+   streams, and it will not accept an unsigned one. The flags are in
+   [the CLI reference](/reference/cli).
+5. **Gate rollout on readiness**, not on the process starting —
+   `arx-runner health` exits non-zero until the runner is genuinely in service.
+   See [readiness and health](/operator-guide/readiness-health).
 
-0.2.0 is the first clean-break release since the 0.1.x extraction. The
-`CHANGELOG.md` 0.2.0 entry is the canonical summary; the exact operator
-steps are:
+There is no offline spec-validation command. A spec is validated when it
+arrives, after its signature is verified, because validating unsigned material
+locally would tell you a message is well-formed without telling you whether it
+is authentic — and the second question is the one that matters.
+
+Strategy repositories consume the verified image directly. Deriving your own
+image from it puts you back in the position the image exists to remove: an
+artifact nobody verified.
+
+## 0.1.x → 0.2.0
+
+0.2.0 was the first clean break. Two things move, and neither is automatic.
+
+**State moves to `~/.arx`.**
 
 ```bash
-# 1. install the new wheel
-pip install --upgrade custos-runner              # or: uv sync --extra dev
-
-# 2. move state
 mkdir -p ~/.arx
 mv ~/.custos/enrollment.json ~/.arx/enrollment.json  # if present
 mv ~/.custos/state           ~/.arx/state            # if present
+```
 
-# 3. re-provision every key one at a time (per-key .enc replaces the
-#    single sops JSON; there is deliberately no auto-migration)
+**Each venue key is re-provisioned individually.** The single sops JSON file is
+replaced by one encrypted file per key. There is deliberately no automatic
+migration: the old file is a single blob holding every secret you have, and a
+migration would have to decrypt all of them at once to rewrite them.
+
+```bash
 sops --decrypt ~/.old-vault/vault.json > /tmp/legacy.json
-# read /tmp/legacy.json, then for each { key_id, key_material } pair:
+# then, for each key in that file:
 arx-runner vault put --key-id <id> --tenant-id <tenant> \
   --api-key <api-key> --api-secret-stdin --scope-digest <lowercase-sha256>
-# ... and after the last one:
 shred -u /tmp/legacy.json
+```
 
-# 4. drop the old --sops-file / --age-key-file CLI flags
-#    from any systemd unit / launchd plist / docker-compose service.
+Then drop the retired `--sops-file` and `--age-key-file` flags from any systemd
+unit, launchd plist or Compose service, and prove the runner still works before
+going anywhere near real money:
 
-# 5. verify a sandbox reconcile before enabling live
+```bash
 arx-runner start --enabled-mode sandbox --engine sandbox-sim
 ```
 
-Docker operators must additionally mount the new `~/.arx` volume so
-per-key `.enc` files persist across container restarts. The Dockerfile
-declares `VOLUME ["/home/custos/.arx"]`; the operator side is:
+Container operators must mount `~/.arx`. The Dockerfile declares
+`VOLUME ["/home/custos/.arx"]`; an ephemeral mount loses machine authority and
+venue credentials, and the runner will refuse to start without them. See the
+[container example](/operator-guide/deployment).
 
-```bash
-docker run --rm \
-  -v ~/.arx:/home/custos/.arx \
-  ghcr.io/the-alephain-guild/custos:v0.2.0
-```
+## Promoting 0.x to 1.0
 
-See [`ops/05-deployment.md`](/operator-guide/deployment) §Docker Runtime Volume
-Mount for the full pattern including `--user "$(id -u):$(id -g)"` when
-mounting a host directory whose ownership doesn't match container UID/GID.
+1.0 is a promise about compatibility, so it is gated on evidence that the
+promise can be kept rather than on a date:
 
-## 0.x → 1.0 Promote Checklist
+- [ ] The command and fact wires are production ready: signed commands reach
+      exact runner subjects, and signed facts are durably ingested.
+- [ ] Three consecutive minor releases with no breaking change to the published
+      schemas or the console entry point.
+- [ ] The published schemas cover the command decode seam and the signed fact
+      output contract.
+- [ ] The [EOL table](/release-governance/semver-lts) has at least one line
+      already inside its window — that is, the support promise has been kept
+      once in practice before it is made permanently.
 
-The 0.x → 1.0 promote is contractually gated on ALL of:
+The last one is the point of the exercise. A 1.0 declared before any line has
+been carried through its own support window is a promise with no evidence
+behind it.
 
-- [ ] ARX command and fact wires are production ready: signed deployment
-      commands reach exact runner subjects and signed RunnerFacts are durably
-      ingested without an ARX business-fact relay.
-- [ ] Three consecutive minor releases (`0.Y.0`, `0.Y+1.0`, `0.Y+2.0`)
-      with zero breaking changes to `gateway-contract/v1/*.schema.json`
-      or `[project.scripts]`.
-- [ ] `gateway-contract/v1/` covers the local `DeploymentMessage` decode seam
-      and the signed RunnerFact output contract.
-- [ ] the [SemVer and LTS](/release-governance/semver-lts) EOL table has at least one row already inside its
-      EOL window (i.e. we've kept the LTS promise on a prior line).
-- [ ] Council-level RFC: 1.0 promote is a MAJOR SEMVER bump and
-      requires a Council debate + ADR entry per the workspace
-      `deviation-protocol.md`.
+Once the boxes are checked the promote itself is mechanical: bump the version,
+add the changelog section, tag it, and add the new line to the EOL table.
 
-Once all boxes are checked, the promote itself is:
-
-1. Bump `pyproject.toml [project].version = "1.0.0"`.
-2. Add a `## [1.0.0] - YYYY-MM-DD` section to `CHANGELOG.md`.
-3. Tag `v1.0.0`; the standard release workflow handles the rest.
-4. Add a `1.0.x` row to the [SemVer and LTS](/release-governance/semver-lts) EOL table.
-
-## Minor-line upgrade template
-
-Copy this into a new section for each minor bump:
+## Template for a minor bump
 
 ```
 ## `0.<prev>.x` → `0.<next>.0`
@@ -121,6 +129,6 @@ Copy this into a new section for each minor bump:
 
 ### Rollback
 
-- `pip install "custos-runner==0.<prev>.*"` — configuration remains
-  backward-compatible within a minor line, so rollback is a wheel bump.
+- Reinstall the previous minor line. Configuration stays backward-compatible
+  within a minor line, so a rollback is a version change and nothing else.
 ```

@@ -187,6 +187,11 @@ const CASES = [
     expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),
   },
   {
+    name: 'removed prose tree is rejected without the docs/ prefix',
+    body: 'See [`ops/05-deployment.md`](/operator-guide/deployment) for the mount.\n',
+    expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),
+  },
+  {
     name: 'surviving machine-asset directories are still allowed',
     body: 'Schemas live under docs/gateway-contract/v1/ and receipts under docs/authority/.\n',
     expect: (r) => r.code === 0,

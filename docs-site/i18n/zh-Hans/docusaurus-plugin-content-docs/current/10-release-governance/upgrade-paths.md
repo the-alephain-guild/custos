@@ -3,128 +3,114 @@ title: "升级路径"
 sidebar_position: 2
 ---
 
-
 # 升级路径
 
-:::warning 中文翻译尚未完成
-本章暂时显示英文原文。
+版本线之间变了什么，以及你需要为此做什么。章节按倒序排列，页面顶部始终是最近的一次
+变更。
+
+:::note 目前还没有可供升级的已发布产物
+尚未有任何版本以 wheel 或镜像形式发布。现存的每个 runner 都是从源码安装或本地构建的，
+因此没有 `pip install --upgrade` 可跑，也没有镜像 tag 可拉取 —— 见
+[安装](/zh-Hans/getting-started/installation)。
+
+但这并不意味着本页是假设性的。下面列出的变更是真实的：把一个 runner 从一个源码版本
+挪到下一个，你仍然要做这些事。延后的是打包发布，不是这些工作。
 :::
 
-The authoritative upgrade guide. Every minor / major release adds a section
-here in reverse-chronological order; the top of the file always describes
-the current recommended path.
+## 0.2.x → 0.3.0
 
-## 0.2.x → 0.3.0 (complete runtime clean break)
+0.3.0 把 NautilusTrader 设为默认引擎，让每条期望状态消息在触及 vault、执行门或宿主
+代码之前先过严格契约校验，并把完整运行时交付为一个你自己构建并验证的镜像。
 
-0.3.0 replaces the boolean engine switch with `--engine nautilus|noop`, makes
-Nautilus the default, validates every desired-state message through the strict
-`DeploymentSpec`, and provides the complete runtime as a verified local image.
+1. **构建并验证镜像。** 在你的 checkout 中，`make verify-local-v030` 会构建
+   `custos-runner:v0.3.0` 并对它跑完整的运行时契约。删掉你自己那份仅仅为了加
+   NautilusTrader、PyYAML、`sops` 或 `age` 而存在的 Dockerfile —— 镜像现在自带它们。
+2. **替换掉已移除的布尔引擎开关。** 引擎选择是一个封闭枚举：`--engine nautilus`
+   （默认）或 `--engine sandbox-sim`。模拟宿主只声明 `sandbox`，因此它会拒绝 testnet
+   或 live 部署，而不是在没有交易所连接的情况下悄悄把它跑起来。
+3. **更新每一份 spec。** `generation` 必须 `>= 1`，`lifecycle_state` 现在与
+   `trading_mode` 分离，`strategy_config` 原样透传。未声明的字段会被拒绝，而不是被忽略。
+4. **在每个 runner 上装好域事件公钥**，并在上游把流拓扑准备好。Custos 验证已签名的
+   命令；它不创建流，也不会接受一条未签名的命令。相关参数见
+   [CLI 参考](/zh-Hans/reference/cli)。
+5. **以就绪状态而非进程启动作为放量的判据** —— 在 runner 真正可服务之前，
+   `arx-runner health` 会以非零退出。见
+   [就绪与健康探针](/zh-Hans/operator-guide/readiness-health)。
 
-1. From the Custos checkout, run `make verify-local-v030` to build and gate
-   `custos-runner:v0.3.0`; remove any derived Custos Dockerfile used only to
-   add NautilusTrader, PyYAML, sops, or age.
-2. Replace the removed boolean engine flag with `--engine nautilus`. Use
-   `--engine sandbox-sim` only for non-live contract tests.
-3. Add `generation >= 1`, `lifecycle_state`, and `strategy_config` to every
-   spec; validate with `arx-runner deployment validate --spec-file <path>`.
-4. Provision ARX-owned JetStream topology and install the exact
-   ARX domain-event public key on each runner. Custos does not create
-   business streams.
-5. Submit desired state through ARX. Custos only validates local files
-   offline and consumes signed commands; gate readiness with `arx-runner health`.
+没有离线的 spec 校验命令。spec 是在到达之后、签名验证通过之后才被校验的：在本地校验
+未签名的材料，只会告诉你这条消息格式正确，却不会告诉你它是否可信 —— 而后一个问题才
+是重要的那个。
 
-Downstream strategy repositories remain blocked until this upgrade is complete. They consume the
-verified local image directly, maintains no derived Custos Dockerfile, and
-owns only strategy code plus `strategy_config` assembly. Remote release is
-deferred and is not a prerequisite for local PS integration.
+策略仓库直接消费这个已验证的镜像。基于它再派生一个自己的镜像，会让你退回到该镜像本
+就是为了消除的那种处境：一个没有人验证过的产物。
 
-## 0.1.x → 0.2.0 (breaking release)
+## 0.1.x → 0.2.0
 
-0.2.0 is the first clean-break release since the 0.1.x extraction. The
-`CHANGELOG.md` 0.2.0 entry is the canonical summary; the exact operator
-steps are:
+0.2.0 是第一次彻底断开兼容。有两样东西发生位移，且都不是自动的。
+
+**状态迁到 `~/.arx`。**
 
 ```bash
-# 1. install the new wheel
-pip install --upgrade custos-runner              # or: uv sync --extra dev
-
-# 2. move state
 mkdir -p ~/.arx
-mv ~/.custos/enrollment.json ~/.arx/enrollment.json  # if present
-mv ~/.custos/state           ~/.arx/state            # if present
+mv ~/.custos/enrollment.json ~/.arx/enrollment.json  # 若存在
+mv ~/.custos/state           ~/.arx/state            # 若存在
+```
 
-# 3. re-provision every key one at a time (per-key .enc replaces the
-#    single sops JSON; there is deliberately no auto-migration)
+**每个交易所 key 逐个重新配置。** 单个 sops JSON 文件被"一 key 一文件"的加密文件取
+代。这里刻意不做自动迁移：旧文件是一个装着你全部密钥的整块 blob，而迁移意味着要把它
+们一次性全部解密再重写。
+
+```bash
 sops --decrypt ~/.old-vault/vault.json > /tmp/legacy.json
-# read /tmp/legacy.json, then for each { key_id, key_material } pair:
+# 然后对该文件中的每个 key：
 arx-runner vault put --key-id <id> --tenant-id <tenant> \
   --api-key <api-key> --api-secret-stdin --scope-digest <lowercase-sha256>
-# ... and after the last one:
 shred -u /tmp/legacy.json
+```
 
-# 4. drop the old --sops-file / --age-key-file CLI flags
-#    from any systemd unit / launchd plist / docker-compose service.
+随后从任何 systemd unit、launchd plist 或 Compose service 中删掉已退役的
+`--sops-file` 与 `--age-key-file` 参数，并在靠近真实资金之前先证明 runner 仍然可用：
 
-# 5. verify a sandbox reconcile before enabling live
+```bash
 arx-runner start --enabled-mode sandbox --engine sandbox-sim
 ```
 
-Docker operators must additionally mount the new `~/.arx` volume so
-per-key `.enc` files persist across container restarts. The Dockerfile
-declares `VOLUME ["/home/custos/.arx"]`; the operator side is:
+容器操作者必须挂载 `~/.arx`。Dockerfile 声明了 `VOLUME ["/home/custos/.arx"]`；临时挂
+载会丢失机器身份与交易所凭据，而缺了它们 runner 会拒绝启动。见
+[容器示例](/zh-Hans/operator-guide/deployment)。
 
-```bash
-docker run --rm \
-  -v ~/.arx:/home/custos/.arx \
-  ghcr.io/the-alephain-guild/custos:v0.2.0
-```
+## 把 0.x 提升到 1.0
 
-See [`ops/05-deployment.md`](/operator-guide/deployment) §Docker Runtime Volume
-Mount for the full pattern including `--user "$(id -u):$(id -g)"` when
-mounting a host directory whose ownership doesn't match container UID/GID.
+1.0 是一个关于兼容性的承诺，所以它的门禁是"有证据表明这个承诺守得住"，而不是某个日期：
 
-## 0.x → 1.0 Promote Checklist
+- [ ] 命令与事实两条链路达到生产就绪：已签名的命令抵达精确的 runner subject，已签名
+      的事实被可靠地摄入。
+- [ ] 连续三个 minor 版本，对已发布 schema 与控制台入口没有破坏性变更。
+- [ ] 已发布的 schema 覆盖命令解码缝与已签名事实的输出契约。
+- [ ] [EOL 表](/zh-Hans/release-governance/semver-lts) 中至少有一行已经处于自己的支持
+      窗口之内 —— 也就是说，在把这个承诺永久化之前，它已经在实践中被兑现过一次。
 
-The 0.x → 1.0 promote is contractually gated on ALL of:
+最后一条才是这套门禁的意义所在。若某条版本线尚未走完过自己的支持窗口就宣布 1.0，那
+是一个背后没有证据的承诺。
 
-- [ ] ARX command and fact wires are production ready: signed deployment
-      commands reach exact runner subjects and signed RunnerFacts are durably
-      ingested without an ARX business-fact relay.
-- [ ] Three consecutive minor releases (`0.Y.0`, `0.Y+1.0`, `0.Y+2.0`)
-      with zero breaking changes to `gateway-contract/v1/*.schema.json`
-      or `[project.scripts]`.
-- [ ] `gateway-contract/v1/` covers the local `DeploymentMessage` decode seam
-      and the signed RunnerFact output contract.
-- [ ] the [SemVer and LTS](/release-governance/semver-lts) EOL table has at least one row already inside its
-      EOL window (i.e. we've kept the LTS promise on a prior line).
-- [ ] Council-level RFC: 1.0 promote is a MAJOR SEMVER bump and
-      requires a Council debate + ADR entry per the workspace
-      `deviation-protocol.md`.
+各项勾选完毕后，提升本身只是机械动作：升版本号、加 changelog 章节、打 tag、在 EOL 表
+里加上新的一行。
 
-Once all boxes are checked, the promote itself is:
-
-1. Bump `pyproject.toml [project].version = "1.0.0"`.
-2. Add a `## [1.0.0] - YYYY-MM-DD` section to `CHANGELOG.md`.
-3. Tag `v1.0.0`; the standard release workflow handles the rest.
-4. Add a `1.0.x` row to the [SemVer and LTS](/release-governance/semver-lts) EOL table.
-
-## Minor-line upgrade template
-
-Copy this into a new section for each minor bump:
+## minor 版本的模板
 
 ```
 ## `0.<prev>.x` → `0.<next>.0`
 
-### What changed
+### 变更内容
 
-- {feature | fix | breaking? summary}
+- {功能 | 修复 | 是否破坏性变更}
 
-### Migration steps
+### 迁移步骤
 
-- {commands the operator must run}
+- {操作者需要执行的命令}
 
-### Rollback
+### 回滚
 
-- `pip install "custos-runner==0.<prev>.*"` — configuration remains
-  backward-compatible within a minor line, so rollback is a wheel bump.
+- 重新安装上一条 minor 线。同一条 minor 线内配置保持向后兼容，因此回滚只是换个版本，
+  不涉及其他改动。
 ```
