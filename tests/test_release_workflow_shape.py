@@ -274,3 +274,10 @@ def test_release_identity_prevention_is_documented() -> None:
     assert "must not rebuild" in verification
     assert "C3" in lessons
     assert "artifact identity gate" in lessons
+
+    # The gate assertions themselves are derived rather than hard-coded, which
+    # is only obvious to someone who knows why. Losing the reason is how the
+    # hard-coded matrix comes back.
+    assert "Release gate assertions" in verification
+    assert "SOURCE_DATE_EPOCH" in verification
+    assert "C7" in lessons

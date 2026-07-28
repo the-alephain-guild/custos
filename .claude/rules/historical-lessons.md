@@ -6,6 +6,54 @@
 
 > **custos 内部 lesson 用 `C1` `C2` … 前缀区分生态数字编号** (见文末"记录新 lesson")。
 
+## C7 硬编码矩阵 + 同期陈旧产物 = 自洽的假绿; 从未跑过的流水线, 形状测试再多也不是验证 (2026-07)
+
+- **事件**: 核对一页升级文档的声明时, 连带挖出**三处发布链缺陷**, 都活了两周以上:
+  1. `verify-release.sh` 对已发布镜像跑 `deployment validate --help`。该子命令在
+     "deployment authority 上移" 那次重构里被删了, 现在退出码 2, 而脚本在 `set -e` 下
+     —— 稳定 tag **已经公开之后**才中止。同时 `credential` / `nats-transport` /
+     `publish-capability` 三个真实命令从未被探测。
+  2. `test_docker_runtime_contract.py` 的硬编码矩阵要求镜像暴露 `nats bootstrap` 与
+     `deployment publish`, **而且它是绿的** —— 本地 `custos-runner:test` 构建于
+     `536983931699` (2026-07-13), 早于删掉这两个命令的重构。陈旧的清单和陈旧的镜像
+     互相印证。
+  3. `SOURCE_DATE_EPOCH` 绑到 `github.event.head_commit.timestamp`, 那是 ISO 8601;
+     hatchling 对它调 `int()`。**实测**: `ValueError: invalid literal for int() with
+     base 10: '2026-07-12T10:33:00+00:00'` —— 首个 job 必崩, 整条发布从来跑不起来。
+     `workflow_dispatch` 下更隐蔽: 没有 push payload, 表达式静默求值为空字符串,
+     构建照常成功但不再可复现。
+- **根因**: `git tag` = **0** —— 这条流水线从未执行过。所有测试断言的是它的**形状**
+  (文本片段、步骤先后), 不是它的**行为**; 而形状测试与被测对象同期编写、同期陈旧,
+  于是彼此一致、全绿。硬编码矩阵是第二个放大器: 清单与产物同龄时, 漂移不产生任何症状。
+  绿色来自两个同源错误互相印证, 而不是来自与真相比对。
+- **预防**:
+  - **命令矩阵 / 子命令清单 / 端点清单类断言一律从权威源推导**(parser / router /
+    schema), 不硬编码。硬编码清单唯一能证明的是"有人曾经这么写过"。
+  - **针对产物的契约测试必须先校验产物身份**: 比对 `org.opencontainers.image.revision`
+    与 HEAD, 不匹配就跳过并**指名 revision**。对陈旧产物跑出来的绿是无意义的绿, 且比
+    红更危险 —— 它看起来像证据。
+  - **env 注入值若有格式契约就要有断言**: `SOURCE_DATE_EPOCH` 是整数秒, OCI
+    `image.created` 是 RFC 3339 —— 同一个时间戳在两处格式相反, 照搬必错。优先在 run
+    块里推导, 且**用与文档教给审计者的同一条命令**推导, 顺带消灭文档与 CI 的分歧。
+  - **GitHub 表达式在事件不匹配时静默求值为空字符串**, 不报错。凡 `${{ github.event.* }}`
+    注入的关键值, 都要问一句"换一种触发方式时它是什么"。
+  - **从未跑过的流水线 = 未验证**。形状测试必要但不充分; 首次发布前应在 fork 或预发
+    tag 上真跑一次完整 workflow。
+  - **文档核对是发现流水线漂移的有效入口** —— 本次三处缺陷全部由"核对升级文档的一句
+    声明"连带发现。文档和流水线引用的是同一批命令名, 文档有人读, 流水线没人跑。
+- **与 C3 / C4 区分**: C3 是发布链上**把步骤顺序当身份**(shape gate ≠ artifact
+  identity); C4 是 **mock 结果 + 绕过 public surface** 的双重假绿; 本条是**硬编码清单
+  与同龄陈旧产物互证** + **形状测试断言一个从未运行过的流水线**。三者同一个家族:
+  绿色由两个同源错误互相印证得出, 没有任何一处与权威源比对过。
+- **Binding**: `tests/test_release_workflow_shape.py::test_post_publish_command_matrix_matches_the_real_cli`
+  与 `::test_source_date_epoch_is_an_integer_derivation`;
+  `tests/test_docker_runtime_contract.py` 的 `_command_matrix()` (从 parser 推导) 与
+  `_require_image()` revision guard; 文档侧对应探针
+  `tests/test_examples_cli_commands_are_real.py::test_documentation_names_only_real_subcommands`;
+  `.claude/rules/verification.md` §Release gate assertions。2026-07-28 首次 dogfood。
+
+---
+
 ## C6 签名资产把源文件冻结成契约 — 措辞级改动也会毁证据链 (2026-07)
 
 - **事件**: 为把内部系统名从 public 仓库里收敛掉, 对 `src/` 做纯措辞改名

@@ -55,6 +55,24 @@ Runtime gate 与稳定 tag promotion 之间 **must not rebuild**。仅检查 wor
 `verify-runtime` 文本出现在 `push: true` 前不足以证明 artifact identity；shape test 必须
 同时锁定 signed input、candidate digest、gate target 与 promotion source。
 
+### Release gate assertions
+
+发布门禁里的**清单类断言**(命令矩阵、子命令、端点)必须从权威源推导 —— parser、router、
+schema —— 不得硬编码。硬编码清单与被它检查的产物同期陈旧时会互相印证成绿色: 曾有一份
+矩阵要求镜像暴露两个早已删除的命令, 而它一直是绿的, 因为本地镜像比那次删除更早。
+
+配套要求:
+
+- 针对产物的契约测试**先校验产物身份**: `org.opencontainers.image.revision` 与 HEAD
+  不匹配即跳过, 并在跳过原因里指名两个 revision。
+- env 注入值有格式契约的要有断言。`SOURCE_DATE_EPOCH` 是**整数秒**, OCI `image.created`
+  是 **RFC 3339** —— 同一个时间戳在两处格式相反。epoch 在 run 块内用
+  `git log -1 --format=%ct` 推导, 与文档教给审计者的命令保持同一条。
+- `${{ github.event.* }}` 在事件不匹配时静默求值为空字符串, 不报错。
+
+形状测试不能替代真跑: 一条从未执行过的流水线是未验证的, 无论它有多少断言。见
+`historical-lessons.md` C7。
+
 ### Local consumer artifact gate
 
 远端发布递延期间，下游开发只消费同一本机 Docker daemon 中的验证后镜像：
