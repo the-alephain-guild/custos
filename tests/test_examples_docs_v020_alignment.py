@@ -200,17 +200,25 @@ def test_examples_do_not_duplicate_crucible_owned_deployment_specs() -> None:
     ).exists()
 
 
-def test_gateway_docs_teach_crucible_owned_deployment_seam() -> None:
+def test_gateway_docs_name_the_events_the_examples_rely_on() -> None:
+    """The wording of the ownership boundary is asserted in one place.
+
+    `test_gateway_contract_v1_samples.py` owns that, including the guard
+    against naming the upstream service in prose. Duplicating the phrases here
+    made a rewording fail in two files for one reason, which is how a phrase
+    ends up pinned by accident rather than on purpose.
+
+    What belongs here is the part the examples depend on: the command events
+    they describe must be the ones the contract names.
+    """
     text = " ".join(
         (REPO_ROOT / "docs" / "gateway-contract" / "v1" / "README.md")
         .read_text(encoding="utf-8")
         .split()
     )
 
-    assert "does not publish a DeploymentSpec schema" in text
-    assert "Crucible owns the canonical DeploymentSpec" in text
     assert "DeploymentSpecReadyForRunner" in text
-    assert "authenticated Crucible `StrategyRelease` authority" in text
+    assert "DeploymentInstanceDesiredStateChanged" in text
     assert "arx-runner deployment" not in text
 
 

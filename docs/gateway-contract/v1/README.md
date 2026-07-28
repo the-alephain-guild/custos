@@ -1,8 +1,10 @@
 # Custos runner contract V1
 
 This directory contains contracts owned and published by Custos. It does not
-publish a DeploymentSpec schema. Crucible owns the canonical DeploymentSpec,
-its exact-byte command schema, its golden and the producer receipt.
+publish a DeploymentSpec schema: the canonical DeploymentSpec is owned
+upstream, along with its exact-byte command schema, its golden and the producer
+receipt. Publishing a schema for the runner's local view would invite a
+producer to build against that view instead of the signed original.
 
 Custos consumes only the two signed, runner-scoped command events:
 
@@ -14,7 +16,11 @@ bytes, canonical digest, tenant, runner, instance, spec and generation. The
 canonical payload contains one typed `execution_config`; it contains no source
 path, artifact path, `code_hash` or generic `parameters` fallback.
 
-Strategy code material is resolved from authenticated Crucible
+That type name keeps a legacy spelling. It is the symbol in the source and in
+the pinned authority assets, so it is reproduced verbatim here — a tidier name
+in this file would point at something that does not exist.
+
+Strategy code material is resolved from the authenticated upstream
 `StrategyRelease` authority, verified locally against the signed release,
 snapshot, artifact and manifest digests, activated atomically, then passed to
 the engine as an `ActivatedEngineArtifactV1`. The engine never imports a path
@@ -29,8 +35,8 @@ and exact content bytes. The directory must be
 `<configured-root>/sha256/<source_sha256>`, contain only stable regular files and
 no symlinks, and is accepted only for sandbox with `promotable=false`.
 
-The reference is returned by Crucible's authenticated preview-material resolver;
-it is never carried in the signed command and never represented as a
+The reference is returned by the authenticated upstream preview-material
+resolver; it is never carried in the signed command and never represented as a
 `StrategyRelease`. Development evidence cannot satisfy testnet, live, promotion,
 runtime-RC or production-readiness gates.
 
