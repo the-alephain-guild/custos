@@ -1,10 +1,10 @@
 ---
-title: "Upgrade Paths"
+title: "升级路径"
 sidebar_position: 2
 ---
 
 
-# Upgrade Paths
+# 升级路径
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

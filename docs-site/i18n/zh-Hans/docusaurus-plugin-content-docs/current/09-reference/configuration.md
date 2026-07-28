@@ -1,9 +1,9 @@
 ---
-title: "Configuration Reference"
+title: "配置参考"
 sidebar_position: 2
 ---
 
-# Configuration Reference
+# 配置参考
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

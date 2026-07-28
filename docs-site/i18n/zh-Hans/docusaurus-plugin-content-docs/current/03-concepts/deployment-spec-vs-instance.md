@@ -1,10 +1,10 @@
 ---
-title: "DeploymentSpec vs DeploymentInstance"
+title: "DeploymentSpec 与 DeploymentInstance"
 sidebar_position: 1
 ---
 
 
-# DeploymentSpec vs DeploymentInstance
+# DeploymentSpec 与 DeploymentInstance
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

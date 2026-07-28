@@ -1,9 +1,9 @@
 ---
-title: "Readiness & Health Probes"
+title: "就绪与健康探针"
 sidebar_position: 3
 ---
 
-# Readiness & Health Probes
+# 就绪与健康探针
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

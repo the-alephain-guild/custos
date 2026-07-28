@@ -1,9 +1,9 @@
 ---
-title: "Contract Versioning"
+title: "契约版本化"
 sidebar_position: 4
 ---
 
-# Contract Versioning
+# 契约版本化
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

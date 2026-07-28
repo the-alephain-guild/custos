@@ -1,10 +1,10 @@
 ---
-title: "Signed Release Chain"
+title: "签名发布链"
 sidebar_position: 6
 ---
 
 
-# Signed Release Chain
+# 签名发布链
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

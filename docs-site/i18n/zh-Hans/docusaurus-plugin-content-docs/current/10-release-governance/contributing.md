@@ -1,9 +1,9 @@
 ---
-title: "Contributing"
+title: "参与贡献"
 sidebar_position: 4
 ---
 
-# Contributing
+# 参与贡献
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

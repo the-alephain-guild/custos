@@ -1,9 +1,9 @@
 ---
-title: "License & NOTICE"
+title: "许可证与 NOTICE"
 sidebar_position: 5
 ---
 
-# License & NOTICE
+# 许可证与 NOTICE
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

@@ -1,9 +1,9 @@
 ---
-title: "JSON Schema Reference"
+title: "JSON Schema 参考"
 sidebar_position: 3
 ---
 
-# JSON Schema Reference
+# JSON Schema 参考
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

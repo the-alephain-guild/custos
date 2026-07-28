@@ -1,10 +1,10 @@
 ---
-title: "Strategy Artifact Signing & Verification"
+title: "策略产物签名与验证"
 sidebar_position: 2
 ---
 
 
-# Strategy Artifact Signing & Verification
+# 策略产物签名与验证
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

@@ -1,9 +1,9 @@
 ---
-title: "Changelog"
+title: "变更日志"
 sidebar_position: 6
 ---
 
-# Changelog
+# 变更日志
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

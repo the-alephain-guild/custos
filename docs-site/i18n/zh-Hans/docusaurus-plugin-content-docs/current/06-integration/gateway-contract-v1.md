@@ -1,10 +1,10 @@
 ---
-title: "Gateway Contract v1"
+title: "网关契约 v1"
 sidebar_position: 1
 ---
 
 
-# Gateway Contract v1
+# 网关契约 v1
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

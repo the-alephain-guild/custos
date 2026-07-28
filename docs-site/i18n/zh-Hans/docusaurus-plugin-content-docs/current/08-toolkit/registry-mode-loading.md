@@ -1,9 +1,9 @@
 ---
-title: "Registry-Mode Loading"
+title: "Registry 模式加载"
 sidebar_position: 3
 ---
 
-# Registry-Mode Loading
+# Registry 模式加载
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。

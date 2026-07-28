@@ -1,10 +1,10 @@
 ---
-title: "SEMVER & LTS Commitment"
+title: "SemVer 与 LTS 承诺"
 sidebar_position: 1
 ---
 
 
-# SEMVER & LTS Commitment
+# SemVer 与 LTS 承诺
 
 :::warning 中文翻译尚未完成
 本章暂时显示英文原文。
