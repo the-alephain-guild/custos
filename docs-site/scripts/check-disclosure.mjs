@@ -90,6 +90,7 @@ const BANNED = [
     patterns: [
       /\bplan\s+\d{1,3}[a-z]?\s*T\d/i,
       /\bplan\s+\d{1,3}[a-z]?\b/i,
+      /\bT\d{1,2}[a-z]?\b(?![-\w])/,
       /\bDEV-\d{2,3}[A-Z-]/,
       /\blesson\s+#\d+/i,
       /\bred[- ]line\s+0\.\d\b/i,

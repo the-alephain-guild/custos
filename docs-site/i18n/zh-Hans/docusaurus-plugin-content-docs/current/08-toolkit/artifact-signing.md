@@ -83,7 +83,7 @@ state or ask ARX to authorize a recovery action.
 The lifecycle supervisor persists its bounded restart counter in the
 existing RunnerFact SQLite `command_in_progress_lease`. It probes a matching
 durably applied engine before deploying on redelivery, uses exponential backoff,
-and commits ready or retry-exhausted/quarantine through the T4 atomic lifecycle
+and commits ready or retry-exhausted/quarantine through the atomic lifecycle
 transaction. It creates no database, journal or durable local queue.
 
 Current authority status is `PREPARED_BLOCKED_ARTIFACT_RUNTIME_CAPABILITY`.

@@ -86,6 +86,11 @@ const CASES = [
     expect: (r) => r.code === 1 && /development process/.test(r.out),
   },
   {
+    name: 'bare internal task number is rejected',
+    body: 'Applied state commits in the T4 transaction after the T3 verification.\n',
+    expect: (r) => r.code === 1 && /development process/.test(r.out),
+  },
+  {
     name: 'internal deviation id is rejected',
     body: 'See DEV-08-RENUMBER-FROM-06B for the rationale.\n',
     expect: (r) => r.code === 1 && /development process/.test(r.out),
@@ -133,7 +138,7 @@ const CASES = [
   },
   {
     name: 'ordinary version numbers are not mistaken for plan numbers',
-    body: 'Custos 0.3.0 ships the T1 connector and supports v1 of the gateway contract.\n',
+    body: 'Custos 0.3.0 supports v1 of the gateway contract and pins Python 3.12.\n',
     expect: (r) => r.code === 0,
   },
   {

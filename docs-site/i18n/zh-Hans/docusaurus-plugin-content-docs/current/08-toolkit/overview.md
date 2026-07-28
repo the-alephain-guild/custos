@@ -97,7 +97,7 @@ The extraction step maps those inputs one-to-one into `custos_toolkit`,
 `custos_toolkit_nautilus._vendor.pandas_ta` namespace. The legacy implementation
 tree is removed; its package marker is implementation-free. Extraction may not
 publish top-level `shared`/`pandas_ta`, mutate `sys.path`, fake a distribution,
-or leave two writable canonical copies. Runtime verifier activation remains T5.
+or leave two writable canonical copies.
 
 The distribution step moves the exact reviewed execution-contract source bytes to
 `packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py`. <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
@@ -109,7 +109,7 @@ Run `make strategy-contract-assets` to regenerate the sole canonical V1
 ArtifactRef schema, pre-sign golden, verification receipt assets, contract
 receipt, and digest index. The command rejects predecessor tracks rather than
 preserving them. `make check-toolkit-extraction`
-reconstructs every T4 target from the pinned T3 Git blob, and
+reconstructs every extraction target from the pinned source blob, and
 `strategy-toolkit-parity-golden-v1.json` independently freezes pre-move fixed-input
 signal/order-intent and private-vendor indicator behavior.
 
