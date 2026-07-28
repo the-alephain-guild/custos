@@ -23,6 +23,20 @@ identity that decrypts them is located through `SOPS_AGE_KEY_FILE` and stays on
 the host. Directory mode is `0700`, files are `0600`, and the runner warns on
 startup if it finds anything looser.
 
+The two kinds of file are handled by two different components, and the split is
+worth knowing because it explains why one of them is never optional:
+
+| File | Component | Written by | Read by |
+|---|---|---|---|
+| `runner-machine.enc` | machine credential vault | `enroll`, `credential rotate` | startup, transport auth, fact signing |
+| `<key-id>.enc` | per-key vault | `vault put` | the reconciler at deploy time |
+
+The runtime always constructs the per-key vault. There is no mock or in-memory
+substitute reachable from a running daemon, including in sandbox — a dev user
+provisions a real credential with `vault put` or the deployment fails. A vault
+that could be swapped for a stub at runtime would make every guarantee on this
+page conditional on configuration.
+
 ## Adding a credential
 
 ```bash
@@ -47,6 +61,22 @@ the payload, checks the file mode, and re-checks the permission scope. It is
 the acceptance surface an operator should use before a deployment — invoking
 `sops` by hand tests a different code path and does not prove the runner can
 read the credential.
+
+That distinction is not theoretical. The decrypt command is built in exactly
+one place and passes the format explicitly:
+
+```bash
+sops --decrypt --input-type json --output-type json <key-id>.enc
+```
+
+Without those flags, sops 3.13+ infers the store from the file suffix and reads
+`.enc` as a binary store, so the decrypt fails on a file that is perfectly
+valid. `.enc` is a storage naming convention here, not a format declaration.
+
+Both the CLI and the runtime call the same command builder rather than each
+assembling their own flags. When they were allowed to differ, a passing unit
+test and a passing hand-run of `sops` coexisted with a public CLI that could
+not decrypt at all.
 
 ```bash
 arx-runner vault list
@@ -79,6 +109,8 @@ the ARX side; it cannot be done by editing an encrypted payload.
   requests, which is unavoidable. The guarantee is about the I/O boundary.
 - **Every decrypt is audited.** A `CredentialDecrypted` event records that a
   credential was used, by ID only. The plaintext is never part of the record.
+  The event names are a closed enumeration, so renaming one breaks the build
+  rather than silently producing an audit trail nothing downstream matches.
 - **Startup fails closed.** A missing, expired or revoked machine credential
   stops the runner rather than degrading it. There is no unsigned bootstrap
   path, and no sandbox exception.
@@ -95,10 +127,22 @@ the vault directory through path separators, dots or control characters.
 
 ## Rotation and upgrade
 
-Rotation writes a new credential generation, persists it before the network is
-touched, and only then promotes it. If the promotion does not complete, the
-previous generation stays authoritative — there is no window where the runner
-holds no usable credential.
+Rotation applies to the machine credential, and the ordering is deliberate:
+
+1. A new keypair is generated in memory.
+2. A rotation proof is signed with the **old** key, binding the new key id and
+   public key to a fresh nonce.
+3. The proof is sent upstream.
+4. Only after an accepted response is the new credential written to the vault,
+   and the public metadata in `runner.toml` updated.
+
+Nothing is written locally until the authority has accepted the rotation. If
+step 3 fails for any reason, the previous credential is still on disk and still
+valid — there is no window in which the runner holds no usable credential, and
+no partially-rotated state to repair by hand.
+
+Continuity is proven rather than asserted: the new key is only trusted because
+the old key vouched for it.
 
 Upgrading from 0.1.x, where several credentials shared one encrypted JSON file,
 is manual and deliberate: decrypt the old file, then `vault put` each

@@ -1,118 +1,126 @@
 ---
-title: "Credential Vault Operations"
+title: "凭据金库运维"
 sidebar_position: 2
 ---
 
-# Credential Vault Operations
+# 凭据金库运维
 
-:::warning 中文翻译尚未完成
-本章暂时显示英文原文。
-:::
+Custos 在你自己机器上、在它自己的进程内解密场所凭据。加密密钥从不离开本机，ARX 的
+任何部分都不持有你的明文 API key。本页讲怎么写入凭据、怎么验证、怎么轮换，以及 runner
+在持有它们期间保证了什么。
 
-Custos decrypts venue credentials inside its own process, on your machine. The
-encryption key never leaves the host, and no part of ARX ever holds your
-plaintext API keys. This page covers how to put credentials in, verify them,
-rotate them, and what the runner guarantees while it holds them.
-
-## Layout
+## 布局
 
 ```
 ~/.arx/vault/
-├── runner-machine.enc       # runner signing key + machine credential
-└── <key-id>.enc             # one file per venue credential
+├── runner-machine.enc       # runner 签名密钥 + 机器凭据
+└── <key-id>.enc             # 每个场所凭据一个文件
 ```
 
-One credential per file. Each file is encrypted with sops and age; the age
-identity that decrypts them is located through `SOPS_AGE_KEY_FILE` and stays on
-the host. Directory mode is `0700`, files are `0600`, and the runner warns on
-startup if it finds anything looser.
+一凭据一文件。每个文件由 sops+age 加密；解密所需的 age 身份通过 `SOPS_AGE_KEY_FILE`
+定位，且始终留在本机。目录权限 `0700`，文件 `0600`，启动时若发现更宽松的权限会告警。
 
-## Adding a credential
+这两类文件由两个不同组件负责。这个切分值得了解，因为它解释了其中之一为什么永远不是
+可选项：
+
+| 文件 | 组件 | 写入方 | 读取方 |
+|---|---|---|---|
+| `runner-machine.enc` | 机器凭据金库 | `enroll`、`credential rotate` | 启动、传输认证、事实签名 |
+| `<key-id>.enc` | per-key 金库 | `vault put` | 部署时的 reconciler |
+
+运行时**总是**构造 per-key 金库。运行中的守护进程不存在可达的 mock 或内存替身，
+sandbox 也不例外——开发用户必须用 `vault put` provision 一份真实凭据，否则部署失败。
+一个能在运行期被换成桩的金库，会让本页所有保证都变成「取决于配置」。
+
+## 写入凭据
 
 ```bash
 arx-runner vault put <key-id> --permission-scope trade_no_withdraw
 ```
 
-The secret is passed to sops on stdin, never as a command-line argument, so it
-does not appear in your shell history or in a process listing.
+密文经 stdin 传给 sops，从不作为命令行参数，因此不会出现在 shell 历史或进程列表里。
 
-`--permission-scope` accepts exactly one value today, `trade_no_withdraw`, and
-that is also the default. The runner refuses any credential declaring a wider
-scope — see [permission scope](#permission-scope) below.
+`--permission-scope` 目前只接受一个值 `trade_no_withdraw`，同时也是默认值。声明更宽
+范围的凭据一律被拒——见下方[权限范围](#权限范围)。
 
-## Verifying a credential
+## 验证凭据
 
 ```bash
 arx-runner vault verify <key-id>
 ```
 
-This runs the real decrypt path end to end: it decrypts through sops, parses
-the payload, checks the file mode, and re-checks the permission scope. It is
-the acceptance surface an operator should use before a deployment — invoking
-`sops` by hand tests a different code path and does not prove the runner can
-read the credential.
+它端到端跑真实解密路径：经 sops 解密、解析 payload、检查文件权限、复检权限范围。这是
+运维人员在部署前应当使用的验收面——手工调 `sops` 走的是另一条代码路径，**不能**证明
+runner 读得到这份凭据。
+
+这个区别不是理论上的。解密命令只在一个地方构造，且显式传入格式：
+
+```bash
+sops --decrypt --input-type json --output-type json <key-id>.enc
+```
+
+缺了这两个 flag，sops 3.13+ 会按文件后缀推断存储格式，把 `.enc` 当作 binary store 读，
+于是一个完全合法的文件解密失败。`.enc` 在这里是存储命名约定，不是格式声明。
+
+CLI 与运行时调用的是同一个命令构造器，而不是各自拼 flag。当两者被允许不一致时，曾出现
+「单元测试全绿 + 手工 `sops` 也能跑」与「公开 CLI 根本解不开」同时成立的局面。
 
 ```bash
 arx-runner vault list
 ```
 
-Lists the key IDs present and warns on stderr about any file whose mode is
-group- or world-readable.
+列出现有的 key ID，并对任何 group / world 可读的文件在 stderr 告警。
 
-## Permission scope
+## 权限范围
 
-`trade_no_withdraw` is the only scope Custos accepts.
+`trade_no_withdraw` 是 Custos 接受的唯一范围。
 
-The check runs twice: once when you write the credential, and again on every
-decrypt at runtime. Two enforcement points rather than one, because a single
-point is one mistake away from being bypassed. A credential that can withdraw
-is refused outright — the guarantee is enforced at the key's own permissions,
-not by trusting the runner to never call a withdraw endpoint.
+这项检查执行两次：写入凭据时一次，运行期每次解密时再一次。两个执行点而非一个，因为
+单一执行点永远只差一次失误就等于没有。具备提币能力的凭据直接被拒——这项保证兑现在
+**密钥自身的权限**上，而不是寄望于 runner 永远不去调提币接口。
 
-Widening this set would change a public CLI contract and a cross-system
-permission boundary. It requires a minor version and a coordinated update on
-the ARX side; it cannot be done by editing an encrypted payload.
+扩充这个集合等于变更公开 CLI 契约与跨系统权限边界。它需要发布一个 minor 版本并在 ARX
+侧协同更新；无法通过编辑加密 payload 达成。
 
-## What the runner guarantees
+## Runner 保证了什么
 
-- **The decryption key never leaves the host.** The age identity is read from
-  local disk. It is never transmitted, never logged, and never included in any
-  message the runner publishes.
-- **Plaintext never reaches a log, a message, or an HTTP body.** Credentials
-  exist in process memory long enough to construct a venue client and sign
-  requests, which is unavoidable. The guarantee is about the I/O boundary.
-- **Every decrypt is audited.** A `CredentialDecrypted` event records that a
-  credential was used, by ID only. The plaintext is never part of the record.
-- **Startup fails closed.** A missing, expired or revoked machine credential
-  stops the runner rather than degrading it. There is no unsigned bootstrap
-  path, and no sandbox exception.
-- **One identity, one place.** Enrollment proof, transport authentication and
-  fact signing all use the same signing key from the same encrypted file.
-  There is no second plaintext key file anywhere.
+- **解密密钥不出本机。** age 身份从本地磁盘读取，从不被传输、从不写日志，也从不出现在
+  runner 发布的任何消息里。
+- **明文不进日志、不进消息、不进 HTTP body。** 凭据在进程内存中存在的时间，恰好够构造
+  场所客户端并对请求签名，这不可避免。保证针对的是 I/O 边界。
+- **每次解密都留审计。** `CredentialDecrypted` 事件只按 ID 记录某凭据被使用过，明文永远
+  不进记录。事件名是闭合枚举，因此改名会让构建失败，而不是悄悄产出一份下游对不上的
+  审计轨迹。
+- **启动 fail closed。** 机器凭据缺失、过期或已吊销时 runner 停止，而不是降级运行。
+  不存在未签名的 bootstrap 路径，也没有 sandbox 例外。
+- **一个身份，一个地方。** 注册证明、传输认证与事实签名使用同一个加密文件里的同一把
+  签名密钥。任何地方都不存在第二份明文密钥文件。
 
-## Deployment references
+## 部署如何引用
 
-A deployment names the credential it needs by ID. That ID resolves to a file
-name under the vault directory, so it must match `^[a-zA-Z0-9_-]{1,64}$`. The
-restriction is what stops a deployment received over the network from escaping
-the vault directory through path separators, dots or control characters.
+部署按 ID 指名它需要的凭据。该 ID 会解析成金库目录下的文件名，因此必须匹配
+`^[a-zA-Z0-9_-]{1,64}$`。正是这条限制，阻止了一份来自网络的部署通过路径分隔符、点号或
+控制字符逃出金库目录。
 
-## Rotation and upgrade
+## 轮换与升级
 
-Rotation writes a new credential generation, persists it before the network is
-touched, and only then promotes it. If the promotion does not complete, the
-previous generation stays authoritative — there is no window where the runner
-holds no usable credential.
+轮换针对的是机器凭据，其顺序是刻意设计的：
 
-Upgrading from 0.1.x, where several credentials shared one encrypted JSON file,
-is manual and deliberate: decrypt the old file, then `vault put` each
-credential individually. There is no automatic migration and no fallback read
-path for the old layout. The single-file model had a write race between
-concurrent updates; per-key files remove it.
+1. 在内存中生成新密钥对。
+2. 用**旧**密钥对轮换证明签名，把新 key id 与新公钥绑定到一个新鲜 nonce 上。
+3. 把证明发往上游。
+4. **只有在收到接受响应之后**，新凭据才被写入金库，`runner.toml` 里的公开元数据才被更新。
 
-## Roadmap
+在权威方接受轮换之前，本地不写入任何东西。若第 3 步因任何原因失败，此前的凭据仍在磁盘上
+且依然有效——不存在 runner 手中没有可用凭据的时间窗，也没有需要手工修复的半轮换状态。
 
-A Hashicorp Vault provider is planned for team deployments — the Vault token
-would still live only on the runner. Hardware-backed signing is the longer-term
-direction, moving the encryption key behind a boundary it cannot be exported
-from at all.
+连续性是被**证明**的而不是被断言的：新密钥之所以被信任，是因为旧密钥为它背书。
+
+从 0.1.x 升级（那时多个凭据共用一个加密 JSON 文件）是手工且刻意的：先解密旧文件，再对每
+一条凭据分别 `vault put`。不存在自动迁移，也不存在对旧布局的兜底读取路径。单文件模型在
+并发更新之间存在写竞争，per-key 文件消除了它。
+
+## 路线图
+
+面向团队部署的 Hashicorp Vault provider 在计划中——Vault token 同样只存在于 runner 上。
+更长期的方向是硬件签名，把加密密钥下沉到一个根本无法导出的边界之后。
