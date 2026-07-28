@@ -1,80 +1,102 @@
 ---
-title: "live 执行始终受门控"
+title: "实盘执行始终受门控"
 sidebar_position: 3
 ---
 
-# live 执行始终受门控
+# 实盘执行始终受门控
 
-在 Custos 向真实交易所下单之前，四道独立校验必须全部通过。任何一道失败，部署即被拒绝。
-这道门从不降级到更弱的模式，也从不静默接受。
+在 Custos 让一个部署对接真实场所运行之前，一组固定的条件必须成立。任何一项不成立，
+部署即被拒绝。这道门从不降级到更弱的模式，也从不静默接受。
 
-机制细节见 [live 执行门](/concepts/live-execution-gate)。本页讲的是它为什么是一条保证
-而不是一个特性，以及如何验证它确实成立。
+机制细节见[实盘执行门](/zh-Hans/concepts/live-execution-gate)。本页讲的是：它为什么
+是一项**保证**而不是一个功能，以及你要怎么核实它确实成立。
 
-## 它防的是什么
+## 它防的是哪种失败
 
-Custos 提供不止一个执行 host。noop host 会接受部署、报告健康、但不下任何单 —— 这正是
-演练 enrollment 与 reconcile 时想要的。
+Custos 随发布提供不止一个执行宿主。其中一个是模拟宿主：它接受部署、把本地生命周期
+完整跑一遍、但从不连接场所 —— 这正是你演练注册与 reconcile 时想要的。
 
-在 `live` 模式下，同样的行为就成了危险的那个。一笔被投给"悄悄什么都不做"的 host 的订单，
-从外部看与成功下单毫无区别。状态显示 running，日志显示健康，而你在对账时才发现什么都
-没发生。
+到了真实场所模式，同样的行为就成了危险的那个。一个被路由到「不交易的宿主」的部署，
+从外部看和一个交易正常的部署毫无区别：状态显示 running，日志显示健康，而你要到对账
+时才发现一单都没发出去。
 
-所以这道门选择拒绝而非降级。被拒绝的部署是响亮且可恢复的；被静默忽略的两者都不是。
+所以这道门选择拒绝，而不是降级。被拒绝的部署是响亮且可恢复的；被静默模拟掉的部署
+两者皆非。
 
-## 四道校验
+## 实际校验了什么
 
-| 层 | 问题 | 拒绝事件 |
-|---|---|---|
-| 1 | 该引擎是否声明支持 live？ | `g6_gate_live_capability_denied` |
-| 2 | 它是否支持部署中指定的交易所？ | `g6_gate_venue_unsupported` |
-| 3 | 策略 code hash 是否与本地源码一致？ | `g6_gate_code_hash_mismatch` |
-| 4 | 凭证 scope 是否为 `trade_no_withdraw`？ | `g6_gate_credential_scope_violation` |
+七项条件，在引擎被构造之前于同一处完成。其中四项适用于所有部署，三项专门针对真实
+场所与实盘模式。
 
-每层发出各自的事件，因此运维能从日志直接看出是哪一层拒绝的，不必猜。
+| 条件 | 适用范围 |
+|---|---|
+| artifact 运行时能力为 `READY` | 全部模式 |
+| 运行时模式与签名模式一致 | 全部模式 |
+| 引擎声明支持该模式 | 全部模式 |
+| 引擎声明支持签名指定的连接器 | 全部模式 |
+| 凭据权限范围为 `trade_no_withdraw` | `testnet` · `live` |
+| 该构建启用了实盘执行 | `live` |
+| 携带签名的放行证据 | `live` |
 
-第 3 层阻止一个签名部署去跑"不是它被批准的那份"代码。第 4 层是兜底 —— 金库本来就拒绝
-存储带提币权限的凭证 —— 因为单一强制点距离被绕过只有一次失误。
+其中两项值得强调，因为它们正是这项保证难以被绕开的原因。
 
-## 职责分离
+**实盘能力由构建携带。** 实盘执行默认关闭，只在消费最终镜像回执的组装根处被打开。
+它不是环境变量，也不是配置项，因此不是运维人员在压力下能打开的东西 ——
+包括来自他人的压力。
 
-live 部署另外要求签名部署中记录至少两个不同的审批人。没有则以 `sod_approval_missing`
-拒绝。
+**凭据范围被独立校验。** 即便金库本身已经拒绝存入具备提币权限的凭据，这里仍会再拒
+一次。两个执行点，因为一个执行点永远只差一次失误就等于没有。
 
-审批是 ARX 的决定。Custos 不授予审批，也不判断谁算审批人 —— 它只是拒绝在没有"审批确实
-发生过"的证据时行动。
+## 批准留在上游
 
-## 如何验证
+实盘部署携带由 ARX 签发的放行证据。Custos 验证该证据存在且绑定到本部署，但不评判
+是谁批准的、有几个批准人，也不评判这次批准是否稳妥。
 
-有意思的问题不是这些校验存不存在，而是它们是**活的**还是死代码。一道永远不会触发的校验，
-在一份全绿的测试套件里，和一道每次都通过的校验长得一模一样。
+这个切分正是要点所在：Custos 拒绝在缺少「决策发生过」的证据时行动，同时对决策本身
+不持立场 —— 因此攻破 runner 并不能凭空造出一个批准，攻破批准路径也不能在没有一台
+愿意执行的 runner 的情况下抵达场所。
+
+## 核实
+
+有意思的问题不是「这些检查是否存在」，而是它们究竟是**活的**还是死代码。一项永远
+不会触发的检查，在一份全绿的测试套件里，和一项永远通过的检查长得一模一样。
+
+去读 `src/custos/core/engine_lifecycle.py` 里的 `_require_authorized_runtime`。
+这一个函数就是整道门 —— 不存在第二条准入路径，也没有任何调用方能绕过它抵达引擎构造。
+请自己核实，而不是采信本页的说法：一台开源 runner 的价值就在于主张与代码在同一个仓库里。
+<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+
+它所查询的宿主能力面在 `src/custos/engines/nautilus/host.py`。
+`SandboxSimulationHost.supports_trading_mode` 只对 `sandbox` 返回真；
+`NtTradingNodeHost` 三种模式全接受。正是这条声明拒绝了落到模拟宿主上的实盘部署 ——
+宿主自己说明它能做什么，准入采信它，而不是另外维护一份可能漂移的清单。
+<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+
+然后确认根本不存在绕过这道门的路径：
 
 ```bash
-# 引擎 host 之外没有构造交易所客户端
-grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ --exclude=host.py --exclude=venue_binance.py
+grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ \
+  --exclude=host.py --exclude=venue_binance.py
 ```
 
-在干净的树上没有输出。在别处构造的交易所客户端，等于整体绕开了这道门。
-
-读 `src/custos/engines/nautilus/host.py` 里的 `supports_live` 与 `supports_venue` ——
-那是准入查询的能力面。noop host 声明 `supports_live() -> False`，这正是第 1 层读取的
-东西。
-<!-- disclosure-ok: auditable source location -->
+干净的代码树上应无输出。在别处构造的场所客户端等于完全绕开准入，此时门内部再正确
+也无法弥补。
 
 覆盖情况：
 
 | 内容 | 测试 |
 |---|---|
-| 各 host 的能力声明 | `tests/test_nautilus_host_capability.py` |
-| 某模式允许绑定哪个 host | `tests/test_main_host_selection.py` |
-| 交易所适配与凭证接线 | `tests/test_nt_binance_venue.py` |
+| 各宿主的模式与连接器声明 | `tests/test_nautilus_host_capability.py` |
+| 给定选择绑定哪个宿主 | `tests/test_main_host_selection.py` |
+| 能力受阻与实盘模式在任何引擎动作前被拒 | `tests/test_engine_lifecycle.py` |
+| 场所适配器与凭据接线 | `tests/test_nt_binance_venue.py` |
+<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
 
-<!-- disclosure-ok: auditable source location -->
-
-读的时候有个细节值得留意：交易模式比较是大小写不敏感的。ARX 与 runner 对模式的序列化
-方式不同，大小写敏感的比较会造出一道**永远不触发**的门 —— 正是本节讲的那种死校验。
+第三行对本页最关键。它断言的是：能力受阻与实盘拒绝都发生在**任何引擎动作之前** ——
+这正是它是一道准入门、而非一段善后逻辑的原因。
 
 ## 这道门不做什么
 
-它守的是部署与交易所之间的边界。它不是风控引擎，对某笔交易是否明智没有意见。敞口限额
-由另一套机制持续强制 —— 见[失联时安全防护依然生效](./safety-survives-disconnect)。
+它管准入，不管行为，对某笔交易是否明智不持立场。敞口上限与回撤熔断由不关心底层是
+哪个引擎的模块独立且持续地执行 —— 见
+[失联不等于停止](./safety-survives-disconnect)。

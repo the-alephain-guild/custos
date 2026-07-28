@@ -5,94 +5,158 @@ sidebar_position: 3
 
 # Live Execution Gate
 
-The live execution gate is the check that stands between a deployment and a real
-venue. Before Custos will start a strategy in `live` mode it verifies, in
-four independent layers, that the engine underneath is actually capable of
-live execution and that the credential it was handed is scoped correctly.
+The live execution gate is the admission check that stands between a verified
+deployment and a running engine. It runs once per deployment, before any engine
+process is constructed, and it fails closed: a deployment that cannot satisfy
+every applicable condition is refused rather than started in a weaker form.
 
-If any layer fails, the deployment is refused. The gate never degrades to a
-weaker mode and never silently accepts.
+Admission is not a risk check. It does not ask whether a trade is a good idea —
+it asks whether this runner is permitted to execute this deployment, on this
+venue, in this mode, with this credential, at all.
 
-## Why the gate exists
+## Why it runs before the engine exists
 
-Custos ships more than one execution host. The no-op host is useful for
-rehearsing enrollment, spec delivery and reconciliation without touching a
-venue — it accepts a deployment and reports healthy without placing orders.
+The expensive failure is not a refused deployment. It is a deployment that
+starts, reports healthy, and does something other than what was approved.
 
-That behaviour is exactly what makes it dangerous in `live` mode: a live
-order routed to a host that quietly does nothing would be indistinguishable
-from a live order that succeeded. The gate makes that failure impossible
-rather than unlikely.
+Every check below therefore runs before the engine is built, not after. A gate
+that ran afterwards would have to stop something already connected to a venue,
+and "stop it quickly" is a weaker guarantee than "never start it".
 
-## The four layers
+## The seven conditions
 
-Every layer runs on each `live` deployment. Each emits a distinct structured
-event so an operator can tell from the log which one refused.
+Admission is a single function. Each failure raises the same typed refusal, with
+a distinct reason:
 
-| Layer | Check | Refusal event |
+| # | Condition | Applies to |
 |---|---|---|
-| 1 | The host declares live support (`supports_live()`) | `g6_gate_live_capability_denied` |
-| 2 | The host supports the venue the spec names (`supports_venue()`) | `g6_gate_venue_unsupported` |
-| 3 | The strategy code hash in the spec matches the local source tree | `g6_gate_code_hash_mismatch` |
-| 4 | The credential's permission scope is `trade_no_withdraw` | `g6_gate_credential_scope_violation` |
+| 1 | The artifact runtime capability is `READY` | every mode |
+| 2 | The runtime mode equals the mode in the signed command | every mode |
+| 3 | The engine declares support for that mode | every mode |
+| 4 | The engine declares support for the signed connector | every mode |
+| 5 | The credential is scoped `trade_no_withdraw` | `testnet`, `live` |
+| 6 | Live execution is enabled in this build | `live` |
+| 7 | The command carries signed promotion evidence | `live` |
 
-Layer 3 is what stops a signed deployment from running code other than the
-code it was approved for. Layer 4 is a backstop — the credential vault
-already refuses to store a withdraw-capable key — because a single enforcement
-point is one mistake away from being bypassed.
+Conditions 1–4 apply everywhere, including `sandbox`. There is no mode in which
+admission is skipped — sandbox simply has fewer conditions to satisfy, not a
+different code path.
 
-The trading mode comparison is case-insensitive. ARX and the
-runner serialize the mode differently, and a case-sensitive comparison here
-would produce a gate that silently never fires.
+### On condition 2
 
-## Separation of duties
+The mode is checked twice deliberately: once as the signed value that was
+authorized, once as the value the local runtime is about to act on. Comparing
+them catches the case where the runner is about to execute against a different
+mode than the one that was approved, which no single-sided check can detect.
 
-Live deployments additionally require two distinct approvers. Custos verifies
-that the signed spec carries at least two distinct entries in `approved_by`
-before it builds a live execution config; a spec that does not is refused with
-`sod_approval_missing`.
+### On condition 6
 
-Approval itself is an ARX decision. Custos does not grant it — it
-only refuses to act without evidence of it.
+Live execution is disabled by default. The flag becomes true only in the
+composition root that consumes the final image receipt — it is not an operator
+switch, an environment variable, or a configuration file setting.
 
-## Host and mode matrix
+That is why "enable live" is not something you can do to a running deployment.
+The capability is a property of the build you are running, and a build that was
+not produced through the release chain does not have it.
 
-Host selection (`--engine`) and the spec's `trading_mode` form a six-cell
-space. The two `live` cells are the load-bearing ones.
+### On condition 7
 
-| `trading_mode` | Engine | Behaviour |
+Promotion evidence is issued by ARX and travels inside the signed command.
+Custos verifies that it is present and bound to this deployment; it does not
+evaluate who approved it or whether the approval was reasonable.
+
+That division is deliberate. Custos refuses to act without evidence that the
+decision happened, and has no opinion about the decision itself.
+
+## Hosts
+
+Two execution hosts ship, and their declared capabilities are what conditions 3
+and 4 read:
+
+| Host | Modes | Purpose |
 |---|---|---|
-| `sandbox` | `noop` | Accepted as a no-op; reports `phase=running`, `health=healthy` |
-| `sandbox` | `nautilus` | Real sandbox session against live market data with local simulated matching |
-| `testnet` | `noop` | Gate does not apply below live; accepted as a no-op |
-| `testnet` | `nautilus` | Real venue testnet endpoints with test funds |
-| `live` | `noop` | **Refused at layer 1** (`g6_gate_live_capability_denied`); the deployment reports `phase=degraded` |
-| `live` | `nautilus` | Runs only after all four layers and the two-approver check pass |
+| `NtTradingNodeHost` | `sandbox`, `testnet`, `live` | Real execution against a venue |
+| `SandboxSimulationHost` | `sandbox` only | Exercises the full lifecycle without connecting to a venue |
 
-`phase` reports lifecycle state and `health` reports condition. They are not
-interchangeable: a deployment can be `running` and unhealthy, and a refused
-live deployment is `degraded` rather than absent.
+The simulation host is useful because it runs artifact activation, credential
+resolution, lifecycle durability, readiness and fact publication for real — only
+the venue connection is absent. That makes it a rehearsal of everything except
+the trade.
 
-## Choosing an engine
+It declares `sandbox` and nothing else. A `testnet` or `live` deployment
+therefore cannot reach it: condition 3 refuses before anything else is
+attempted. The refusal comes from the host's own declaration rather than from a
+list of forbidden combinations maintained somewhere else.
 
-`arx-runner start` binds one host for the lifetime of the process:
+Host selection is bound for the lifetime of the process:
 
-- `--engine nautilus` (default) enables real sandbox, testnet and live
-  execution. If the Nautilus runtime is not installed, deployment fails fast
-  rather than falling back.
-- `--engine noop` selects the no-op host for sandbox and contract rehearsal.
-  A live spec is still refused at layer 1.
+```bash
+arx-runner start --engine nautilus     # default
+arx-runner start --engine sandbox-sim
+```
+
+If the NautilusTrader runtime is not installed, `--engine nautilus` fails at
+startup rather than silently falling back to simulation. A runner that quietly
+degraded to simulation would report healthy while placing no orders.
+
+## Venues
+
+Connector support is declared per host and is currently `binance` and
+`binance_perpetual`. The comparison is case-insensitive; a signed connector the
+host does not declare is refused at condition 4.
+
+## What refusal looks like
+
+A blocked deployment produces a typed terminal outcome and a lifecycle fact. It
+does not retry, because none of the seven conditions become true by waiting — an
+unsupported venue is still unsupported on the second attempt.
+
+This is the opposite of the transient path: an engine that fails to start for a
+recoverable reason is retried under a durable restart budget. Admission failures
+and runtime failures are deliberately not the same kind of event. See
+[reconcile loop](/concepts/reconcile-loop) for the full disposition table.
+
+## Verifying it yourself
+
+The interesting question is not whether the checks exist but whether they can
+fire. A condition that can never fail looks identical, in a passing suite, to
+one that always passes.
+
+Read `_require_authorized_runtime` in `src/custos/core/engine_lifecycle.py` —
+that single function is the whole gate. There is no second admission path, and
+no caller reaches engine construction without passing through it.
+<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+
+Then confirm no venue client is constructed anywhere outside the engine host:
+
+```bash
+grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ \
+  --exclude=host.py --exclude=venue_binance.py
+```
+
+Returns nothing on a clean tree. A venue client built elsewhere would be a path
+around the gate entirely, and no amount of correctness inside the gate would
+compensate.
+
+Coverage:
+
+| What | Test |
+|---|---|
+| Per-host mode and connector declarations | `tests/test_nautilus_host_capability.py` |
+| Which host a given selection binds | `tests/test_main_host_selection.py` |
+| Blocked capability and live mode refuse before any engine action | `tests/test_engine_lifecycle.py` |
+| Venue adapter and credential wiring | `tests/test_nt_binance_venue.py` |
+<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
 
 ## What the gate does not do
 
-The gate protects the boundary between a deployment and a venue. It is not a
-risk engine and does not evaluate whether a trade is a good idea. Position
-and exposure limits are enforced separately and continuously — see
-[reconcile loop](./reconcile-loop) and
-[disconnect behaviour](/trust-model/safety-survives-disconnect).
+It governs admission, not conduct. Exposure limits, drawdown breakers and the
+notional cap are enforced continuously while a deployment runs, by modules that
+know nothing about which engine is underneath — see
+[safety survives a disconnect](/trust-model/safety-survives-disconnect).
 
 Credentials handed to a host are used to construct the venue client and are
-never retained in host state, written to logs, or published upstream. The
-runner holds keys in memory to sign venue requests, which is unavoidable and
-in scope; the guarantee is about the I/O boundary, not about memory. See
+never retained in host state, written to logs, or published upstream. The runner
+holds keys in memory to sign venue requests, which is unavoidable and in scope;
+the guarantee is about the I/O boundary, not about memory. See
 [credential vault](/operator-guide/credential-vault).

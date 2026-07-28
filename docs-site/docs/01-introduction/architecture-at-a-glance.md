@@ -3,130 +3,138 @@ title: "Architecture at a Glance"
 sidebar_position: 3
 ---
 
-
 # Architecture at a Glance
 
->
-> **v2 canonical boundary**：ARX 只认证/授权；ARX 是
-> DeploymentSpec/DeploymentInstance 与业务投影 owner；Custos 持凭据和执行，
-> 产生 exact-instance signed RunnerFacts（含 venue fee/funding evidence）。
-> mode 仅 sandbox/testnet/live，Python 无 production fallback。
+Custos is a daemon you run on your own machine. It receives signed instructions,
+executes them against a venue using credentials that never leave that machine,
+and reports back what happened in signed statements.
 
-## 1. 上下游图
+This page is the shape of the whole thing in one read. Each section links to the
+chapter that goes deeper.
 
-```
-    ┌────────────────────────────────────────────┐
-    │  ARX (闭源, 商业许可)      │
-    │  ┌─────────┐   ┌────────────┐              │
-    │  │  arx    │──▶│  ARX  │  发布 Spec    │
-    │  │ (SaaS)  │   │            │              │
-    │  └─────────┘   └────────────┘              │
-    │        ▲                │                   │
-    └────────┼────────────────┼───────────────────┘
-             │                │
-   NATS      │                │  DeploymentSpec + EnrollmentToken 配对
-   Status/   │                ▼
-   遥测摘要   │       ┌────────────────────────────┐
-             │       │  用户本地基础设施 (开源)      │
-             │       │  ┌──────────────────────┐   │
-             └───────│──│      custos          │   │
-                     │  │  ┌────────────────┐  │   │
-                     │  │  │  Vault (Key)   │  │   │
-                     │  │  ├────────────────┤  │   │
-                     │  │  │  ReconcileLoop │  │   │
-                     │  │  ├────────────────┤  │   │
-                     │  │  │  NT Adapter    │──┼───┼──▶ 交易所 (Binance/OKX)
-                     │  │  └────────────────┘  │   │
-                     │  └──────────────────────┘   │
-                     └────────────────────────────┘
+## The split
+
+```text
+  ARX  ──── signed deployment command ────▶  Custos
+   ▲                                          │
+   │                                          ├─▶ credential vault (local)
+   └──── signed runner facts ─────────────────┤
+                                              └─▶ venue (Binance, …)
 ```
 
-- **ARX**：ARX 提供 ActorAssertion；ARX 持 immutable spec、mode-local instance 并验收 signed facts；二者从不持 Key 明文
-- **数据面** (custos + NT): 持 Key + 跑策略 + 直连交易所
+**ARX** authenticates who you are, authorizes what you asked for, owns the
+deployment record, and decides what should be running. It never holds a venue
+credential and never places an order.
 
-## 2. 数据面 vs ARX切分 (Non-Custodial 承重墙)
+**Custos** verifies the instruction, resolves credentials locally, runs the
+strategy, enforces local safety, and signs statements about what the engine
+actually did. It never decides what *should* run and cannot approve its own
+deployment.
 
-| 面 | 组成 | 开源状态 | 持有的敏感数据 |
-|----|------|---------|---------------|
-| **数据面** | custos + NautilusTrader | **全部开源 (Apache-2.0 / MIT)** | Key 明文 · 订单簿明细 · Fill 事件明文 · 账户余额明细 |
-| **ARX** | ARX 与ARX | 全部闭源 | Key 引用 handle · DeploymentSpec · StatusReport · 遥测摘要 |
+Two directions, two signature checks, and no shared secret between them. That is
+the entire trust model; everything below is how it is held up.
 
-**关键洞察**: 只要数据面开源可审, ARX即使完全攻破, 用户 Key 依然安全 —
-因为 Key 根本不在ARX.
+## Why the boundary is where it is
 
-## 3. Key 永不上云的技术锚点 (红线 0.1)
+The runner is open source because that is the only way the credential claim can
+be checked. A closed runner asking to hold your exchange keys is asking for
+trust it cannot demonstrate.
 
-| 环节 | 兑现方式 |
-|------|---------|
-| 存储 | ExchangeCredential 密文在 `~/.arx/vault/` 本地文件系统 (fs 权限 0600) |
-| 加密 | argon2id (KDF) + aes-256-gcm; KEK / MasterKey 派生只在 custos 进程内存 |
-| 使用 | NT 调用交易所 API 时通过 credential_vault 接口即时解密, 明文只在**单次请求 lifetime** |
-| 上报 | AlertEvent / telemetry payload 强制脱敏 (`api_key_sha8` / `credential_hint`) |
-| 审计 | Vault 解密路径带 `AuditLog` (`last_accessed_at` 更新触发) |
+So the question a reader should be able to answer is not "do I believe this
+document" but "does the code do what it says". Every guarantee chapter on this
+site names the file and the test, so you can confirm rather than accept — see
+the [audit checklist](/trust-model/audit-checklist) for the guided version.
 
-## 4. live execution gate (红线 0.2)
+## The four guarantees
 
-Live venue 部署前必须过 `NtTradingNodeHost` 的 live execution gate:
+These four are structural. They are not features that can be toggled, and each
+one has a chapter explaining how it is held.
 
-- `NoopHost` 只允许 `sandbox` / `testnet`
-- 真 `NtTradingNodeHost` 才可申请 `live` capability
-- `LIVE_MODE=true` env 独立开关, 与 spec 中 `trading_mode=live` 双守
-- live execution gate deny → 上报 `FailureEvent(reason_code=g6_gate_denied)`
+| Guarantee | Where it is held |
+|---|---|
+| Credentials never leave the host | [keys never leave the host](/trust-model/keys-never-leave-the-host) |
+| Live execution is always gated | [live execution is gated](/trust-model/live-execution-is-gated) |
+| Safety survives a disconnect | [safety survives a disconnect](/trust-model/safety-survives-disconnect) |
+| Money arithmetic is exact | [money arithmetic is exact](/trust-model/exact-money-arithmetic) |
 
+### Credentials never leave the host
 
-## 5. 失联 ≠ 停止 (红线 0.3)
+Venue credentials live in `sops`+`age` encrypted files under `~/.arx/vault/`,
+one file per key. Decryption happens in-process at the moment a venue client is
+constructed; the plaintext is never written to state, logs, commands or facts.
 
-Level-triggered reconcile 的核心不变量:
+The machine identity works the same way. The Ed25519 private key is generated
+locally during enrollment, proves possession without being transmitted, and is
+stored in the same encrypted vault.
 
-- **reconcile loop 失去云端**: 按上次缓存的 `DeploymentSpec` 继续跑 NT
-- **本地 safety breaker 独立守护**: 每策略 / 每账户 drawdown breaker + 结构性
-  `max_notional_per_runner` cap 在本地判断, 不依赖云端
-- **云端 outage 生存期**: 数天 (Spec 有 TTL, 但 Key + NT 本地)
-- **重新连上后**: `observed_generation` 单调对齐, 无跳跃
+### Live execution is always gated
 
-## 6. Money math Decimal + wire str (红线 0.4)
+Admission runs before any engine is constructed, and checks seven conditions —
+artifact readiness, mode agreement, engine mode support, connector support,
+credential scope, whether this build has live execution enabled at all, and
+whether the command carries signed promotion evidence.
 
-- 所有价格 / 数量 / notional 计算路径用 `decimal.Decimal`
-- Wire 序列化 (NATS envelope) 用 `str(Decimal)`, 非 `float`
-- Pydantic 模型 `field_serializer` 或 `json_encoders={Decimal: str}` 统一
-- Contract test: `test_telemetry_money_contract.py` (18 test)
+The live capability belongs to the build, not to a configuration file. It cannot
+be switched on at runtime.
 
-## 7. 六个模块
+### Safety survives a disconnect
 
-| 模块 | 承担实体 | 状态机 | 详细文档 |
-|----|---------|-------|---------|
-| **Runner 宿主** | `Runner` / `EnrollmentToken` / `HostIdentity` | offline → online / draining | [`enrollment.md`](/getting-started/enrollment) |
-| **声明式 reconcile** | `DeploymentSpec` / `DeploymentStatus` / `DesiredState` / `ActualState` / `ReconcileLoop` | pending → running → degraded → stopped | [`reconcile.md`](/concepts/reconcile-loop) |
-| **本地 Vault** | `VaultNamespace` / `EncryptedKey` / `MasterKey` / `KEK` | derived → active → cleared (TTL) | [`credential_vault.md`](/operator-guide/credential-vault) |
-| **NT 执行适配** | `NTAdapter` / `TradingNodeConfig` / `StrategyMirror` | INITIALIZED → STARTED → STOPPED → DISPOSED | [`nautilus_host.md`](/engines/nautilus-trader) |
-| **RunnerFact** | closed 13-kind union / signed batch / instance-keyed sequence | durable local queue → PubAck | [`runner_fact.md`](/concepts/runner-fact) |
-| **NATS 通道** | `NatsClient` / `EnvelopeSchema` / `build_subject()` | connected → reconnecting (auto) | [`nats_client.md`](/reference/nats-subjects) |
+If ARX becomes unreachable, running deployments keep running from durable
+applied state, and the local guards keep enforcing: the aggregate notional cap,
+the drawdown breaker, and the zombie watchdog all evaluate locally.
 
-## 8. 用户验证路径
+Losing the ability to receive new instructions is not the same as losing the
+ability to protect the account. Conflating them would mean an upstream outage
+either stops a working strategy or removes its supervision.
 
-用户只需审计**两个开源 repo** 即可确认信任模型:
+### Money arithmetic is exact
 
-1. **NautilusTrader upstream** (`nautilus-trader/nautilus_trader`, MIT) — 确认 NT 无偷 Key 或代下单路径
-2. **custos** (`the-alephain-guild/custos`, Apache-2.0) — 确认 custos 无以下反模式:
-   - 上传 Key 明文到 arx / ARX / 任何云端
-   - 接收云端下发的 "代解密" 指令
-   - 接收云端下发的 "直接下单" 绕过策略指令
-   - Vault 密文格式与算法与文档声明不一致
+Prices, quantities and notionals are `Decimal` end to end, serialized as strings
+on the wire. Python binary floats are rejected recursively before anything is
+persisted, so a signature never depends on how one language renders a float.
 
-不需要审计 arx / ARX / 其他闭源子系统 — 即使全被攻破, Key 依然不在攻击范围.
+## The modules
 
-## 9. 承重墙原则
+Six modules carry the guarantees. Each has its own chapter; this table is the
+map.
 
-custos **不能被 arx 替代** — 任何 "云端代替 custos 直接下单" 的架构提案都直接击穿
-non-custodial 保证。设计上明确:
+| Module | Responsibility | Chapter |
+|---|---|---|
+| Enrollment | Nonce-bound proof of possession, encrypted machine credential, rotation and revocation | [enrollment](/getting-started/enrollment) |
+| Command intake and reconcile | Verify signed desired state, converge local runtime, record outcomes durably | [reconcile loop](/concepts/reconcile-loop) |
+| Engine host | Supervise the trading engine, configure venue clients, enforce admission | [NautilusTrader engine](/engines/nautilus-trader) |
+| Credential vault | Decrypt venue credentials in-process, bound to signed scope | [credential vault](/operator-guide/credential-vault) |
+| RunnerFact | Typed signed statements through a durable local queue | [RunnerFact](/concepts/runner-fact) |
+| Transport | Subscribe to signed desired state; publish signed facts | [NATS subjects](/reference/nats-subjects) |
 
-> Runner 是用户装到自己基础设施上、持自己 Key 的守护进程; 用户必须能审计代码才敢信任
-> Key 交给它. 这是 "Key/策略只在本地" 红线从设计声明升级为工程可验证的唯一路径.
+The engine host is deliberately the only module that knows which trading engine
+is underneath. Everything else speaks to it through a protocol, which is why the
+safety guards work identically regardless of engine.
 
----
+## Runtime identity
 
-## 参考
+One identifier keys everything at runtime: `deployment_instance_id`. The
+reconciler, engine, watchdog, breaker, credential resolution and fact streams are
+all indexed by it.
 
-- 四条不可绕过的保证: [信任模型](./trust-model)
-- live 执行前的准入校验: [live execution gate](/concepts/live-execution-gate)
-- 凭证的存放与轮换: [凭证金库](/operator-guide/credential-vault)
+The spec identifier is configuration provenance — it records *what* was
+configured, not *which running thing* did something. Two instances of the same
+immutable spec are two separate things, and a retry that acted on the wrong one
+would be a real incident.
+
+See [spec vs instance](/concepts/deployment-spec-vs-instance).
+
+## Modes
+
+Three, and only three: `sandbox`, `testnet`, `live`. There is no implicit
+fallback mode and no fourth value that means "production". Mode is part of the
+signed command, part of the subject, and part of every fact.
+
+See [trading modes](/concepts/trading-modes).
+
+## What to read next
+
+- Running it for the first time: [installation](/getting-started/installation)
+- The guarantees in depth: [trust model](/introduction/trust-model)
+- Consuming what it emits: [consuming RunnerFact](/integration/consuming-runner-fact)
+- Checking the claims yourself: [audit checklist](/trust-model/audit-checklist)

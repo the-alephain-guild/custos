@@ -76,7 +76,7 @@ The age identity used to decrypt these files is supplied through
 | Option | Default | Effect |
 |---|---|---|
 | `--engine nautilus` | default | Real execution. Sandbox, testnet and live are all available, subject to the [live execution gate](/concepts/live-execution-gate). |
-| `--engine noop` | — | No-op host for sandbox rehearsal and contract tests. Live specs are refused. |
+| `--engine sandbox-sim` | — | Simulation host: full local lifecycle, no venue connection. Declares `sandbox` only, so testnet and live deployments are refused. |
 | `--wal-path <path>` | platform default | Location of the durable local queue backing at-least-once fact delivery. |
 
 Enrollment and vault management are separate subcommands:

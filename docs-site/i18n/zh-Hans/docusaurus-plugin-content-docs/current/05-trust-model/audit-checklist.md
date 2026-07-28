@@ -59,13 +59,17 @@ grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ --exclude=host.py --exclude=ven
 
 应该没有输出 —— 在别处构造的交易所客户端就是一条绕过门的路径。
 
-读 `src/custos/engines/nautilus/host.py` 里的门 —— `supports_live` 与 `supports_venue`
-是准入查询的能力面 —— 然后确认每一层都有测试证明它是活的而非死代码。这个区分很重要：
-一道永远不会触发的校验，看起来和一道每次都通过的校验一模一样。四层分别是什么见
-[live 执行门](/concepts/live-execution-gate)。
+去读 `src/custos/core/engine_lifecycle.py` 里的 `_require_authorized_runtime` ——
+这道门的全部就在这一个函数里，没有任何调用方能绕过它抵达引擎构造。它所查询的能力面是
+`src/custos/engines/nautilus/host.py` 中的 `supports_trading_mode` 与 `supports_venue`。
+
+然后确认每项条件都有测试证明它是活的而非死代码。这个区分很重要：一道永远不会触发的
+校验，看起来和一道每次都通过的校验一模一样。七项条件分别是什么见
+[实盘执行门](/zh-Hans/concepts/live-execution-gate)。
 
 `tests/test_nautilus_host_capability.py` 覆盖能力声明，
-`tests/test_main_host_selection.py` 覆盖某个模式允许绑定哪个 host。
+`tests/test_main_host_selection.py` 覆盖某个选择绑定哪个宿主，
+`tests/test_engine_lifecycle.py` 断言能力受阻与实盘拒绝都发生在任何引擎动作之前。
 
 ## 第 4 步 —— 失联时安全防护依然生效
 

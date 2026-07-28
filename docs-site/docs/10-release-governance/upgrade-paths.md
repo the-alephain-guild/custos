@@ -20,7 +20,7 @@ Nautilus the default, validates every desired-state message through the strict
    `custos-runner:v0.3.0`; remove any derived Custos Dockerfile used only to
    add NautilusTrader, PyYAML, sops, or age.
 2. Replace the removed boolean engine flag with `--engine nautilus`. Use
-   `--engine noop` only for non-live contract tests.
+   `--engine sandbox-sim` only for non-live contract tests.
 3. Add `generation >= 1`, `lifecycle_state`, and `strategy_config` to every
    spec; validate with `arx-runner deployment validate --spec-file <path>`.
 4. Provision ARX-owned JetStream topology and install the exact

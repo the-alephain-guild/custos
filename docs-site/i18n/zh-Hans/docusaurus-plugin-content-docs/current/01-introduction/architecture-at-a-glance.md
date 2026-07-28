@@ -3,130 +3,118 @@ title: "架构一览"
 sidebar_position: 3
 ---
 
-
 # 架构一览
 
->
-> **v2 canonical boundary**:ARX 只做认证 / 授权;ARX 是
-> DeploymentSpec / DeploymentInstance 与业务投影的 owner;custos 持凭据和执行,
-> 产生 exact-instance signed RunnerFacts(含交易所 fee / funding 证据).
-> mode 仅 sandbox / testnet / live,Python 无 production fallback.
+Custos 是一个跑在你自己机器上的守护进程。它接收签名指令，用**从不离开这台机器**的
+凭据对接交易场所执行，并以签名声明的形式回报实际发生了什么。
 
-## 1. 上下游图
+本页用一次阅读给出整体形状。每一节都链到更深入的章节。
 
-```
-    ┌────────────────────────────────────────────┐
-    │  ARX (闭源, 商业许可)      │
-    │  ┌─────────┐   ┌────────────┐              │
-    │  │  arx    │──▶│  ARX  │  发布 Spec    │
-    │  │ (SaaS)  │   │            │              │
-    │  └─────────┘   └────────────┘              │
-    │        ▲                │                   │
-    └────────┼────────────────┼───────────────────┘
-             │                │
-   NATS      │                │  DeploymentSpec + EnrollmentToken 配对
-   Status/   │                ▼
-   遥测摘要   │       ┌────────────────────────────┐
-             │       │  用户本地基础设施 (开源)      │
-             │       │  ┌──────────────────────┐   │
-             └───────│──│      custos          │   │
-                     │  │  ┌────────────────┐  │   │
-                     │  │  │  Vault (Key)   │  │   │
-                     │  │  ├────────────────┤  │   │
-                     │  │  │  ReconcileLoop │  │   │
-                     │  │  ├────────────────┤  │   │
-                     │  │  │  NT Adapter    │──┼───┼──▶ 交易所 (Binance/OKX)
-                     │  │  └────────────────┘  │   │
-                     │  └──────────────────────┘   │
-                     └────────────────────────────┘
+## 切分
+
+```text
+  ARX  ──── 签名的部署指令 ────▶  Custos
+   ▲                              │
+   │                              ├─▶ 凭据金库（本地）
+   └──── 签名的 runner 事实 ───────┤
+                                  └─▶ 交易场所（Binance…）
 ```
 
-- **ARX**:ARX 提供 ActorAssertion;ARX 持不可变 spec、mode 本地 instance 并验收 signed facts;二者从不持 Key 明文
-- **数据面** (custos + NT):持 Key + 跑策略 + 直连交易所
+**ARX** 认证你是谁、授权你所请求的事、持有部署记录、决定什么应该在跑。它从不持有场所
+凭据，也从不下单。
 
-## 2. 数据面 vs ARX切分 (非托管承重墙)
+**Custos** 验证指令、在本地解析凭据、运行策略、执行本地安全约束，并对引擎实际做了什么
+签名作证。它从不决定什么**应该**跑，也无法批准自己的部署。
 
-| 面 | 组成 | 开源状态 | 持有的敏感数据 |
-|----|------|---------|---------------|
-| **数据面** | custos + NautilusTrader | **全部开源 (Apache-2.0 / MIT)** | Key 明文 · 订单簿明细 · Fill 事件明文 · 账户余额明细 |
-| **ARX** | ARX 与ARX | 全部闭源 | Key 引用 handle · DeploymentSpec · StatusReport · 遥测摘要 |
+两个方向，两次签名校验，两者之间没有共享秘密。这就是全部信任模型；下面的内容都是它
+如何被撑住的。
 
-**关键洞察**:只要数据面开源可审,ARX即使完全攻破,用户 Key 依然安全 ——
-因为 Key 根本不在ARX.
+## 边界为什么划在这里
 
-## 3. Key 永不上云的技术锚点 (红线 0.1)
+Runner 之所以开源，是因为这是「凭据不出机」这项主张唯一能被核实的方式。一个闭源的
+runner 要求你把交易所密钥交给它，等于在索取它无法证明的信任。
 
-| 环节 | 兑现方式 |
-|------|---------|
-| 存储 | ExchangeCredential 密文在 `~/.arx/vault/` 本地文件系统 (fs 权限 0600) |
-| 加密 | argon2id (KDF) + aes-256-gcm;KEK / MasterKey 派生只在 custos 进程内存 |
-| 使用 | NT 调用交易所 API 时通过 credential_vault 接口即时解密,明文只在**单次请求 lifetime** |
-| 上报 | AlertEvent / telemetry payload 强制脱敏 (`api_key_sha8` / `credential_hint`) |
-| 审计 | Vault 解密路径带 `AuditLog` (`last_accessed_at` 更新触发) |
+所以读者应该能回答的问题不是「我信不信这份文档」，而是「代码是否真的照它说的做」。
+本站每一章保证都点名了文件与测试，让你可以**核实**而不是**采信** ——
+引导版本见[审计清单](/zh-Hans/trust-model/audit-checklist)。
 
-## 4. live execution gate (红线 0.2)
+## 四条保证
 
-Live 交易所部署前必须通过 `NtTradingNodeHost` 的 live execution gate:
+这四条是结构性的。它们不是可开关的功能，每一条都有独立章节说明它如何被撑住。
 
-- `NoopHost` 只允许 `sandbox` / `testnet`
-- 真 `NtTradingNodeHost` 才可申请 `live` capability
-- `LIVE_MODE=true` env 独立开关,与 spec 中 `trading_mode=live` 双守
-- live execution gate deny → 上报 `FailureEvent(reason_code=g6_gate_denied)`
+| 保证 | 在哪里撑住 |
+|---|---|
+| 凭据不出本机 | [密钥不出本机](/zh-Hans/trust-model/keys-never-leave-the-host) |
+| 实盘执行始终受门控 | [实盘执行始终受门控](/zh-Hans/trust-model/live-execution-is-gated) |
+| 失联不等于停止 | [失联不等于停止](/zh-Hans/trust-model/safety-survives-disconnect) |
+| 金额运算精确 | [金额运算精确](/zh-Hans/trust-model/exact-money-arithmetic) |
 
+### 凭据不出本机
 
-## 5. 失联 ≠ 停止 (红线 0.3)
+场所凭据以 `sops`+`age` 加密文件形式存放在 `~/.arx/vault/` 下，一把密钥一个文件。解密
+在构造场所客户端的那一刻于进程内完成；明文从不写入状态、日志、指令或事实。
 
-Level-triggered 对账的核心不变量:
+机器身份同理。Ed25519 私钥在注册时于本地生成，在不被传输的前提下证明持有，并存放在
+同一个加密金库中。
 
-- **对账循环失去云端**:按上次缓存的 `DeploymentSpec` 继续跑 NT
-- **本地安全熔断器独立守护**:每策略 / 每账户回撤熔断器 + 结构性
-  `max_notional_per_runner` cap 在本地判断,不依赖云端
-- **云端 outage 生存期**:数天 (Spec 有 TTL,但 Key + NT 本地)
-- **重新连上后**:`observed_generation` 单调对齐,无跳跃
+### 实盘执行始终受门控
 
-## 6. Money math Decimal + wire str (红线 0.4)
+准入在任何引擎被构造之前运行，校验七项条件 —— artifact 就绪、模式一致、引擎支持该
+模式、引擎支持该连接器、凭据范围、该构建是否根本启用了实盘执行，以及指令是否携带签名的
+放行证据。
 
-- 所有价格 / 数量 / notional 计算路径用 `decimal.Decimal`
-- Wire 序列化 (NATS envelope) 用 `str(Decimal)`,非 `float`
-- Pydantic 模型 `field_serializer` 或 `json_encoders={Decimal: str}` 统一
-- Contract test:`test_telemetry_money_contract.py` (18 test)
+实盘能力属于**构建**，不属于配置文件。它无法在运行期被打开。
 
-## 7. 六个模块
+### 失联不等于停止
 
-| 模块 | 承担实体 | 状态机 | 详细文档 |
-|----|---------|-------|---------|
-| **Runner 宿主** | `Runner` / `EnrollmentToken` / `HostIdentity` | offline → online / draining | [Enrollment](/getting-started/enrollment) |
-| **声明式对账** | `DeploymentSpec` / `DeploymentStatus` / `DesiredState` / `ActualState` / `ReconcileLoop` | pending → running → degraded → stopped | [Reconcile Loop](/concepts/reconcile-loop) |
-| **本地 Vault** | `VaultNamespace` / `EncryptedKey` / `MasterKey` / `KEK` | derived → active → cleared (TTL) | [Credential Vault](/operator-guide/credential-vault) |
-| **NT 执行适配** | `NTAdapter` / `TradingNodeConfig` / `StrategyMirror` | INITIALIZED → STARTED → STOPPED → DISPOSED | [live execution gate Host Gate](/concepts/live-execution-gate) |
-| **RunnerFact** | 封闭 13-kind union / 签名 batch / instance-keyed sequence | 持久出站信箱 → PubAck | [RunnerFact](/concepts/runner-fact) |
-| **NATS 通道** | `NatsClient` / `EnvelopeSchema` / `build_subject()` | connected → reconnecting (auto) | [Gateway Contract v1](/integration/gateway-contract-v1) |
+若 ARX 变得不可达，运行中的部署会依据持久化的已应用状态继续运行，本地守卫继续生效：
+总名义本金上限、回撤熔断器与僵尸看门狗全部在本地判断。
 
-## 8. 用户验证路径
+失去「接收新指令」的能力，与失去「保护账户」的能力不是一回事。把两者混为一谈，意味着
+上游一次故障要么停掉一个正常工作的策略，要么撤掉它的监管。
 
-用户只需审计**两个开源 repo** 即可确认信任模型:
+### 金额运算精确
 
-1. **NautilusTrader upstream** (`nautilus-trader/nautilus_trader`, MIT) —— 确认 NT 无偷 Key 或代下单路径
-2. **custos** (`the-alephain-guild/custos`, Apache-2.0) —— 确认 custos 无以下反模式:
-   - 上传 Key 明文到 arx / ARX / 任何云端
-   - 接收云端下发的 "代解密" 指令
-   - 接收云端下发的 "直接下单" 绕过策略指令
-   - Vault 密文格式与算法与文档声明不一致
+价格、数量与名义本金全程使用 `Decimal`，在 wire 上序列化为字符串。Python 二进制浮点在
+任何持久化之前被递归拒绝，因此签名绝不依赖某种语言碰巧如何渲染浮点数。
 
-不需要审计 arx / ARX / 其他闭源子系统 —— 即使全被攻破,Key 依然不在攻击范围.
+## 六个模块
 
-## 9. 承重墙原则
+六个模块承载这些保证。每个都有自己的章节；本表是地图。
 
-custos **不能被 arx 替代** —— 任何 "云端代替 custos 直接下单" 的架构提案都直接击穿
-非托管保证。设计上明确:
+| 模块 | 职责 | 章节 |
+|---|---|---|
+| 注册 | nonce 绑定的持有证明、加密的机器凭据、轮换与吊销 | [注册](/zh-Hans/getting-started/enrollment) |
+| 指令接收与 reconcile | 验证签名的期望状态、收敛本地运行时、持久记录结果 | [reconcile 循环](/zh-Hans/concepts/reconcile-loop) |
+| 引擎宿主 | 监督交易引擎、配置场所客户端、执行准入 | [NautilusTrader 引擎](/zh-Hans/engines/nautilus-trader) |
+| 凭据金库 | 在进程内解密场所凭据，并绑定签名范围 | [凭据金库](/zh-Hans/operator-guide/credential-vault) |
+| RunnerFact | 经由持久本地队列发出的带类型签名声明 | [RunnerFact](/zh-Hans/concepts/runner-fact) |
+| 传输 | 订阅签名的期望状态；发布签名事实 | [NATS subject](/zh-Hans/reference/nats-subjects) |
 
-> Runner 是用户装到自己基础设施上、持自己 Key 的守护进程;用户必须能审计代码才敢信任
-> Key 交给它. 这是 "Key / 策略只在本地" 红线从设计声明升级为工程可验证的唯一路径.
+引擎宿主被刻意设计为唯一知道底层是哪个交易引擎的模块。其余一切都通过协议与它对话 ——
+这正是安全守卫在任何引擎下表现一致的原因。
 
----
+## 运行时身份
 
-## 参考
+运行期一切都由一个标识键入：`deployment_instance_id`。reconciler、引擎、看门狗、
+熔断器、凭据解析与事实流全部按它索引。
 
-- 四条不可绕过的保证: [信任模型](./trust-model)
-- live 执行前的准入校验: [live execution gate](/concepts/live-execution-gate)
-- 凭证的存放与轮换: [凭证金库](/operator-guide/credential-vault)
+spec 标识是配置来源的凭证 —— 它记录的是**配置了什么**，而不是**哪个正在运行的东西**做了
+某件事。同一份不可变 spec 的两个实例是两个独立的东西，一次作用到错误实例上的重试是一次
+真实事故。
+
+见 [spec 与 instance](/zh-Hans/concepts/deployment-spec-vs-instance)。
+
+## 模式
+
+三个，且只有三个：`sandbox`、`testnet`、`live`。不存在隐式回落模式，也不存在第四个
+表示「生产」的值。模式是签名指令的一部分、subject 的一部分，也是每条事实的一部分。
+
+见[交易模式](/zh-Hans/concepts/trading-modes)。
+
+## 接下来读什么
+
+- 第一次跑起来：[安装](/zh-Hans/getting-started/installation)
+- 深入四条保证：[信任模型](/zh-Hans/introduction/trust-model)
+- 消费它发出的事实：[消费 RunnerFact](/zh-Hans/integration/consuming-runner-fact)
+- 自己核实这些主张：[审计清单](/zh-Hans/trust-model/audit-checklist)

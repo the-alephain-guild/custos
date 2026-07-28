@@ -35,12 +35,12 @@ An adapter implements the Tier-1 surface of `ExecutionEngineProtocol`:
 | `deploy` | Start a strategy for one deployment instance |
 | `reconfigure` | Apply a new desired state to a running instance |
 | `stop` | Stop an instance and release its resources |
-| `supports_live` | Declare whether this engine may run in `live` mode |
+| `supports_trading_mode` | Declare which trading modes this engine may run |
 | `supports_venue` | Declare which venues this engine can reach |
 
-The last two are what the live execution gate reads. An engine that returns `False`
-from `supports_live` can never reach a live venue, regardless of what the
-desired state asks for — the gate fails closed rather than degrading.
+The last two are what the live execution gate reads. An engine that does not
+declare a mode can never be admitted for it, regardless of what the desired
+state asks for — the gate fails closed rather than degrading.
 
 Because the reconciler and the gate only ever see the protocol, adding an
 engine does not require changes to either.

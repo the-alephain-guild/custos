@@ -1,102 +1,139 @@
 ---
-title: "Live Execution Gate"
+title: "实盘执行门"
 sidebar_position: 3
 ---
 
-# Live Execution Gate
+# 实盘执行门
 
-:::warning 中文翻译尚未完成
-本章暂时显示英文原文。
-:::
+实盘执行门是横在「已验证的部署」与「运行中的引擎」之间的准入检查。它对每个部署
+只跑一次，在任何引擎进程被构造**之前**，并且 fail closed：凡是无法满足全部适用
+条件的部署，一律拒绝，而不是降级后放行。
 
-The live execution gate is the check that stands between a deployment and a real
-venue. Before Custos will start a strategy in `live` mode it verifies, in
-four independent layers, that the engine underneath is actually capable of
-live execution and that the credential it was handed is scoped correctly.
+准入不是风控。它不判断某笔交易划不划算，它判断的是：这台 runner 究竟有没有资格
+在这个模式、这个场所、用这份凭据执行这个部署。
 
-If any layer fails, the deployment is refused. The gate never degrades to a
-weaker mode and never silently accepts.
+## 为什么在引擎存在之前跑
 
-## Why the gate exists
+代价高的失败不是「部署被拒绝」，而是「部署起来了、报告健康、干的却不是被批准的
+那件事」。
 
-Custos ships more than one execution host. The no-op host is useful for
-rehearsing enrollment, spec delivery and reconciliation without touching a
-venue — it accepts a deployment and reports healthy without placing orders.
+因此下面每一项检查都在引擎构造之前完成，而不是之后。跑在之后的门必须去停掉一个
+已经连上场所的东西，而「尽快停掉」是比「根本不启动」弱得多的保证。
 
-That behaviour is exactly what makes it dangerous in `live` mode: a live
-order routed to a host that quietly does nothing would be indistinguishable
-from a live order that succeeded. The gate makes that failure impossible
-rather than unlikely.
+## 七项条件
 
-## The four layers
+准入是一个函数。每项失败都抛出同一种带类型的拒绝，附带各自的原因：
 
-Every layer runs on each `live` deployment. Each emits a distinct structured
-event so an operator can tell from the log which one refused.
-
-| Layer | Check | Refusal event |
+| # | 条件 | 适用范围 |
 |---|---|---|
-| 1 | The host declares live support (`supports_live()`) | `g6_gate_live_capability_denied` |
-| 2 | The host supports the venue the spec names (`supports_venue()`) | `g6_gate_venue_unsupported` |
-| 3 | The strategy code hash in the spec matches the local source tree | `g6_gate_code_hash_mismatch` |
-| 4 | The credential's permission scope is `trade_no_withdraw` | `g6_gate_credential_scope_violation` |
+| 1 | artifact 运行时能力为 `READY` | 全部模式 |
+| 2 | 运行时模式与签名指令中的模式一致 | 全部模式 |
+| 3 | 引擎声明支持该模式 | 全部模式 |
+| 4 | 引擎声明支持签名指定的连接器 | 全部模式 |
+| 5 | 凭据的权限范围为 `trade_no_withdraw` | `testnet` · `live` |
+| 6 | 该构建启用了实盘执行 | `live` |
+| 7 | 指令携带签名的放行证据 | `live` |
 
-Layer 3 is what stops a signed deployment from running code other than the
-code it was approved for. Layer 4 is a backstop — the credential vault
-already refuses to store a withdraw-capable key — because a single enforcement
-point is one mistake away from being bypassed.
+条件 1–4 对所有模式生效，`sandbox` 也不例外。不存在「跳过准入」的模式 ——
+sandbox 只是需要满足的条件更少，而不是走了另一条代码路径。
 
-The trading mode comparison is case-insensitive. ARX and the
-runner serialize the mode differently, and a case-sensitive comparison here
-would produce a gate that silently never fires.
+### 关于条件 2
 
-## Separation of duties
+模式被刻意检查了两次：一次是被授权的签名值，一次是本地运行时即将据以行动的值。
+两者比对能抓住「runner 即将执行的模式与被批准的模式不同」这种情况 ——
+任何单边检查都发现不了它。
 
-Live deployments additionally require two distinct approvers. Custos verifies
-that the signed spec carries at least two distinct entries in `approved_by`
-before it builds a live execution config; a spec that does not is refused with
-`sod_approval_missing`.
+### 关于条件 6
 
-Approval itself is an ARX decision. Custos does not grant it — it
-only refuses to act without evidence of it.
+实盘执行默认关闭。这个开关只在消费最终镜像回执的组装根处被置为 true ——
+它不是运维开关，不是环境变量，也不是配置文件里的一项。
 
-## Host and mode matrix
+所以「打开实盘」不是你能对一个运行中的部署做的操作。这项能力是你所运行的**构建**
+本身的属性，而没有走完发布链产出的构建不具备它。
 
-Host selection (`--engine`) and the spec's `trading_mode` form a six-cell
-space. The two `live` cells are the load-bearing ones.
+### 关于条件 7
 
-| `trading_mode` | Engine | Behaviour |
+放行证据由 ARX 签发，随签名指令一同下发。Custos 只验证它存在、且绑定到本部署；
+它不评判是谁批准的，也不评判这次批准是否合理。
+
+这个分工是刻意的：Custos 拒绝在「没有决策发生过的证据」时行动，同时对决策本身
+不持立场。
+
+## 执行宿主
+
+随发布提供两个执行宿主，条件 3 与条件 4 读的正是它们各自声明的能力：
+
+| 宿主 | 模式 | 用途 |
 |---|---|---|
-| `sandbox` | `noop` | Accepted as a no-op; reports `phase=running`, `health=healthy` |
-| `sandbox` | `nautilus` | Real sandbox session against live market data with local simulated matching |
-| `testnet` | `noop` | Gate does not apply below live; accepted as a no-op |
-| `testnet` | `nautilus` | Real venue testnet endpoints with test funds |
-| `live` | `noop` | **Refused at layer 1** (`g6_gate_live_capability_denied`); the deployment reports `phase=degraded` |
-| `live` | `nautilus` | Runs only after all four layers and the two-approver check pass |
+| `NtTradingNodeHost` | `sandbox` · `testnet` · `live` | 对接真实场所执行 |
+| `SandboxSimulationHost` | 仅 `sandbox` | 跑通完整生命周期，但不连接场所 |
 
-`phase` reports lifecycle state and `health` reports condition. They are not
-interchangeable: a deployment can be `running` and unhealthy, and a refused
-live deployment is `degraded` rather than absent.
+模拟宿主之所以有价值，是因为 artifact 激活、凭据解析、生命周期持久化、就绪判定与
+事实发布都是**真跑**的，缺的只有场所连接。它等于把除了交易之外的一切都演练一遍。
 
-## Choosing an engine
+它只声明 `sandbox`，别的都不声明。因此 `testnet` 或 `live` 部署根本到不了它面前：
+条件 3 会在其他任何动作之前拒绝。拒绝来自宿主自己的声明，而不是来自别处维护的一份
+「禁止组合」清单。
 
-`arx-runner start` binds one host for the lifetime of the process:
+宿主选择在进程生命周期内固定：
 
-- `--engine nautilus` (default) enables real sandbox, testnet and live
-  execution. If the Nautilus runtime is not installed, deployment fails fast
-  rather than falling back.
-- `--engine noop` selects the no-op host for sandbox and contract rehearsal.
-  A live spec is still refused at layer 1.
+```bash
+arx-runner start --engine nautilus     # 默认
+arx-runner start --engine sandbox-sim
+```
 
-## What the gate does not do
+若 NautilusTrader 运行时未安装，`--engine nautilus` 会在启动时失败，而不是悄悄回落到
+模拟。一台悄悄降级为模拟的 runner 会一边报告健康、一边一单不发。
 
-The gate protects the boundary between a deployment and a venue. It is not a
-risk engine and does not evaluate whether a trade is a good idea. Position
-and exposure limits are enforced separately and continuously — see
-[reconcile loop](./reconcile-loop) and
-[disconnect behaviour](/trust-model/safety-survives-disconnect).
+## 场所
 
-Credentials handed to a host are used to construct the venue client and are
-never retained in host state, written to logs, or published upstream. The
-runner holds keys in memory to sign venue requests, which is unavoidable and
-in scope; the guarantee is about the I/O boundary, not about memory. See
-[credential vault](/operator-guide/credential-vault).
+连接器支持由各宿主自行声明，当前为 `binance` 与 `binance_perpetual`。比对不区分
+大小写；宿主未声明的签名连接器会在条件 4 处被拒。
+
+## 被拒绝是什么样
+
+被拦下的部署产出一个带类型的终态结果与一条生命周期事实。它**不重试** ——
+因为七项条件没有一项会因为等待而变为真：不支持的场所在第二次尝试时依然不支持。
+
+这与瞬时路径正好相反：引擎因可恢复原因启动失败时，会在持久化的重启预算下重试。
+准入失败与运行期失败被刻意归为两类事件。完整处置表见
+[reconcile 循环](/zh-Hans/concepts/reconcile-loop)。
+
+## 自己验证
+
+有意思的问题不是「检查是否存在」，而是「它是否**可能**触发」。一项永远不会失败的
+检查，在一份全绿的测试套件里，和一项永远通过的检查长得一模一样。
+
+去读 `src/custos/core/engine_lifecycle.py` 里的 `_require_authorized_runtime` ——
+这一个函数就是整个门。不存在第二条准入路径，也没有任何调用方能绕过它抵达引擎构造。
+<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+
+然后确认引擎宿主之外没有任何地方构造场所客户端：
+
+```bash
+grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ \
+  --exclude=host.py --exclude=venue_binance.py
+```
+
+干净的代码树上应无输出。在别处构造的场所客户端等于完全绕开这道门，此时门内部再正确
+也无济于事。
+
+覆盖情况：
+
+| 内容 | 测试 |
+|---|---|
+| 各宿主的模式与连接器声明 | `tests/test_nautilus_host_capability.py` |
+| 给定选择绑定哪个宿主 | `tests/test_main_host_selection.py` |
+| 能力受阻与实盘模式在任何引擎动作前被拒 | `tests/test_engine_lifecycle.py` |
+| 场所适配器与凭据接线 | `tests/test_nt_binance_venue.py` |
+<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+
+## 这道门不做什么
+
+它管准入，不管行为。敞口上限、回撤熔断与名义本金上限是在部署运行期间持续执行的，
+由不关心底层是哪个引擎的模块负责 —— 见
+[失联不等于停止](/zh-Hans/trust-model/safety-survives-disconnect)。
+
+交给宿主的凭据只用于构造场所客户端，从不留存在宿主状态里、不写日志、不上报。Runner
+需要在内存中持有密钥以对场所请求签名，这不可避免且在范围之内；保证针对的是 I/O
+边界，不是内存。见 [凭据金库](/zh-Hans/operator-guide/credential-vault)。

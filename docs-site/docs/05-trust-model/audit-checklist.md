@@ -68,14 +68,21 @@ grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ --exclude=host.py --exclude=ven
 Should return nothing — a venue client built anywhere else would be a path
 around the gate.
 
-Read the gate in `src/custos/engines/nautilus/host.py` — `supports_live` and
-`supports_venue` are the capability surface admission queries — then check that
-each layer has a test proving it is live rather than dead code. The distinction
-matters: a check that can never fire looks identical to a check that passes.
-See [live execution gate](/concepts/live-execution-gate) for the four layers.
+Read the gate itself in `src/custos/core/engine_lifecycle.py` —
+`_require_authorized_runtime` is the whole of it, and no caller reaches engine
+construction without passing through it. The capability surface it queries is
+`supports_trading_mode` and `supports_venue` in
+`src/custos/engines/nautilus/host.py`.
 
-`tests/test_nautilus_host_capability.py` covers the capability declarations and
-`tests/test_main_host_selection.py` covers which host a given mode may bind.
+Then check that each condition has a test proving it is live rather than dead
+code. The distinction matters: a check that can never fire looks identical to a
+check that always passes. See
+[live execution gate](/concepts/live-execution-gate) for all seven conditions.
+
+`tests/test_nautilus_host_capability.py` covers the capability declarations,
+`tests/test_main_host_selection.py` covers which host a given selection binds,
+and `tests/test_engine_lifecycle.py` asserts that a blocked capability and a
+live-mode refusal both happen before any engine action.
 
 ## Step 4 — Safety survives a disconnect
 
