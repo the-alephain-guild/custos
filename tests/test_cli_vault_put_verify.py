@@ -168,28 +168,27 @@ def test_vault_put_never_logs_secret(
 def test_vault_put_emits_credential_encrypted_audit_event(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """The put path must emit an audit-writer event mirroring the decrypt
-    signal at credential_vault.py:64-81, but never with plaintext."""
+    signal, with its fields actually present, but never with plaintext."""
+    import structlog.testing
+
     from custos.core.credential_vault import AuditEvent
 
     vault_dir = tmp_path / "vault"
     run_mock = _fake_sops_encrypt()
     monkeypatch.setattr("custos.cli.subcommands.vault.subprocess.run", run_mock)
-    with caplog.at_level(logging.INFO, logger="custos.credential_vault"):
+    with structlog.testing.capture_logs() as records:
         main(_put_argv(vault_dir))
-    audit_records = [
-        r
-        for r in caplog.records
-        if getattr(r, "audit_event", None) == AuditEvent.CREDENTIAL_ENCRYPTED.value
-    ]
-    assert len(audit_records) == 1
-    rec = audit_records[0]
-    assert rec.key_id == "binance-paper"
-    assert rec.tenant_id == "acme"
-    for v in vars(rec).values():
-        assert "super-secret-value" not in str(v)
+    audit = [r for r in records if r.get("audit_event") == AuditEvent.CREDENTIAL_ENCRYPTED.value]
+    assert len(audit) == 1
+    rec = audit[0]
+    assert rec["event"] == "credential_encrypted"
+    assert rec["key_id"] == "binance-paper"
+    assert rec["tenant_id"] == "acme"
+    assert rec["permission_scope"] == "trade_no_withdraw"
+    for value in rec.values():
+        assert "super-secret-value" not in str(value)
 
 
 def test_vault_put_secret_stdin_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

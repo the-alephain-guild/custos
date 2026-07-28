@@ -264,7 +264,9 @@ def _promotion_case(
                 },
                 "resolvedDependencies": [
                     {
-                        "uri": (f"git+https://github.com/the-alephain-guild/custos@{SOURCE_COMMIT}"),
+                        "uri": (
+                            f"git+https://github.com/the-alephain-guild/custos@{SOURCE_COMMIT}"
+                        ),
                         "digest": {"gitCommit": SOURCE_COMMIT},
                     },
                     {"uri": "file:uv.lock", "digest": {"sha256": "b" * 64}},

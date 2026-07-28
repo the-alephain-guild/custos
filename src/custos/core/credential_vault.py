@@ -23,15 +23,12 @@ still stays on the runner host.
 from __future__ import annotations
 
 import enum
-import logging
 from datetime import UTC, datetime
 from typing import Protocol
 
-# Use stdlib logging so existing test_credential_vault.py caplog assertions
-# on extra={...} attributes (audit_event / credential_id / tenant_id) still
-# work. Other runner modules use structlog; this one keeps stdlib to avoid
-# breaking Plan 01 audit signal contract test.
-_log = logging.getLogger("custos.credential_vault")
+from custos.core.log import get_logger
+
+_log = get_logger("custos.credential_vault")
 
 
 class AuditEvent(enum.Enum):
@@ -64,19 +61,17 @@ class _BaseVault:
         """Emit canonical CredentialDecrypted audit event.
 
         Plaintext credentials NEVER appear in audit logs — only the
-        credential_id reference. Audit writer downstream consumes the
-        structured log event and chains it (Plan 07 audit triad).
+        credential_id reference. The downstream audit writer consumes the
+        structured log event and chains it.
         """
         timestamp = datetime.now(UTC).isoformat()
         _log.info(
             "credential_decrypted",
-            extra={
-                "audit_event": AuditEvent.CREDENTIAL_DECRYPTED.value,
-                "credential_id": credential_id,
-                "tenant_id": self._tenant_id,
-                "initiator": self._initiator,
-                "timestamp": timestamp,
-            },
+            audit_event=AuditEvent.CREDENTIAL_DECRYPTED.value,
+            credential_id=credential_id,
+            tenant_id=self._tenant_id,
+            initiator=self._initiator,
+            timestamp=timestamp,
         )
 
     @staticmethod
@@ -86,10 +81,8 @@ class _BaseVault:
         if scope != "trade_no_withdraw":
             _log.error(
                 "credential_scope_violation",
-                extra={
-                    "credential_id": credential_id,
-                    "got_scope": scope,
-                },
+                credential_id=credential_id,
+                got_scope=scope,
             )
             raise ValueError(
                 f"credential {credential_id!r} has unsafe permission_scope "

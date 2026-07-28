@@ -11,14 +11,14 @@ non-``trade_no_withdraw`` scopes and emits the canonical
 from __future__ import annotations
 
 import json
-import logging
 import os
 import subprocess
 from pathlib import Path
 
 from custos.core.credential_vault import _BaseVault
+from custos.core.log import get_logger
 
-_log = logging.getLogger("custos.credential_vault")
+_log = get_logger("custos.credential_vault")
 _SOPS_TIMEOUT_SECS = 30
 
 
@@ -60,22 +60,20 @@ class PerKeyVault(_BaseVault):
                 timeout=_SOPS_TIMEOUT_SECS,
             )
         except FileNotFoundError as exc:
-            _log.error("sops_binary_not_found", extra={"error": str(exc)})
+            _log.error("sops_binary_not_found", error=str(exc))
             raise RuntimeError("sops CLI not installed on runner host") from exc
         except subprocess.CalledProcessError as exc:
             # stderr may carry sops error info but never plaintext (sops
             # design). Length only for the audit trail.
             _log.error(
                 "sops_decrypt_failed",
-                extra={
-                    "credential_id": credential_id,
-                    "returncode": exc.returncode,
-                    "stderr_len": len(exc.stderr or b""),
-                },
+                credential_id=credential_id,
+                returncode=exc.returncode,
+                stderr_len=len(exc.stderr or b""),
             )
             raise RuntimeError("sops decryption failed") from exc
         except subprocess.TimeoutExpired:
-            _log.error("sops_decrypt_timeout", extra={"credential_id": credential_id})
+            _log.error("sops_decrypt_timeout", credential_id=credential_id)
             raise RuntimeError("sops decryption timed out") from None
 
         try:
@@ -83,7 +81,8 @@ class PerKeyVault(_BaseVault):
         except json.JSONDecodeError as exc:
             _log.error(
                 "sops_output_parse_failed",
-                extra={"credential_id": credential_id, "error": str(exc)},
+                credential_id=credential_id,
+                error=str(exc),
             )
             raise RuntimeError("sops output is not valid JSON") from exc
 
@@ -91,10 +90,8 @@ class PerKeyVault(_BaseVault):
         if cred is None:
             _log.error(
                 "credential_not_in_enc_file",
-                extra={
-                    "credential_id": credential_id,
-                    "vault_dir": str(self._vault_dir),
-                },
+                credential_id=credential_id,
+                vault_dir=str(self._vault_dir),
             )
             raise KeyError(f"credential {credential_id!r} not present in {enc_path.name}")
 

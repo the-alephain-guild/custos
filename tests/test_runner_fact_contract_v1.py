@@ -32,8 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 INDEX_PATH = ROOT / "docs/authority/runner-fact-contract-assets-v1.json"
 RECEIPT_PATH = ROOT / "docs/authority/receipts/custos-runner-fact-v1-producer-receipt.json"
 CRUCIBLE_CONSUMER_RECEIPT_PATH = (
-    ROOT
-    / "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json"
+    ROOT / "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json"
 )
 SCHEMA_PATH = ROOT / "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json"
 GOLDEN_PATH = ROOT / "docs/authority/runner-fact-golden-v1.json"
@@ -168,12 +167,10 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
             "repository": "tesseract-trading/crucible-rust",
             "commit": "818242c5708d055b2c4b1e5dc9d6a9e5570667fe",
             "producer_path": (
-                "docs/authority/receipts/"
-                "crucible-runner-fact-v1-consumer-receipt.json"
+                "docs/authority/receipts/crucible-runner-fact-v1-consumer-receipt.json"
             ),
             "local_path": (
-                "docs/authority/receipts/vendor/"
-                "crucible-runner-fact-v1-consumer-receipt.json"
+                "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json"
             ),
             "sha256": hashlib.sha256(crucible_payload).hexdigest(),
             "size_bytes": len(crucible_payload),
@@ -182,8 +179,7 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
     }
     crucible_receipt = _json(CRUCIBLE_CONSUMER_RECEIPT_PATH)
     assert (
-        crucible_receipt["producer"]["asset_commit"]
-        == "cce76931884de36c9606db02d94cf4124e7164b5"
+        crucible_receipt["producer"]["asset_commit"] == "cce76931884de36c9606db02d94cf4124e7164b5"
     )
     assert "producer_receipt" not in crucible_receipt["producer"]
     assert receipt["asset_index"] == {

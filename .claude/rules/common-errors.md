@@ -29,6 +29,21 @@ contract 多个技术边界; 以下是历次开发中命中的典型陷阱, 修�
 - **原因**: `Decimal(float)` 保留 float 二进制精度 (0.1000000000000000055...)
 - **修**: 一律 `Decimal(str(value))`, 参考 `code-style.md` §Money math
 
+### stdlib `extra={...}` 在本仓配置下静默丢字段
+
+- **症状**: 日志事件名出现在 stdout, 但所有结构化字段消失; 而断言字段的单测全绿
+- **原因**: `core/log.py` 的 `configure()` 用
+  `logging.basicConfig(format="%(message)s")`, 只渲染 message。stdlib 的
+  `extra={...}` 挂在 LogRecord 属性上, `%(message)s` 不会输出它们。
+  `caplog.records` 读的正是这些属性, 所以测试看得见、运维看不见。
+- **实测**: `CredentialDecrypted` 审计事件曾只输出 `credential_decrypted` 一行,
+  不含 credential_id / tenant_id / initiator —— 而红线要求"每次 decrypt 必发审计事件"
+- **修**: 用 `from custos.core.log import get_logger` + kwargs
+  (`_log.info("evt", credential_id=cid)`); 测试改用
+  `structlog.testing.capture_logs()` 断言渲染后的事件字典
+- **注意**: 有人曾为了让 caplog 测试继续通过而**刻意**保留 stdlib logging (源码注释留有
+  记录)。测试通过不是保留错误实现的理由 —— 应该改测试去测真实输出路径
+
 ## NautilusTrader (NT) lifecycle
 
 ### `TradingNode` stop 后无法重启

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-import logging
 import subprocess
 from pathlib import Path
 from unittest import mock
 
 import pytest
+import structlog.testing
 
 from custos.cli.subcommands import main
 
@@ -93,13 +93,10 @@ def test_permission_scope_written_to_encrypted_payload(
 def test_permission_scope_in_audit_event(
     tmp_path: Path,
     sops_encrypt: mock.MagicMock,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    with caplog.at_level(logging.INFO, logger="custos.credential_vault"):
+    with structlog.testing.capture_logs() as records:
         main(_put_argv(tmp_path / "vault", "trade_no_withdraw"))
     audit_record = next(
-        record
-        for record in caplog.records
-        if getattr(record, "audit_event", None) == "CredentialEncrypted"
+        record for record in records if record.get("audit_event") == "CredentialEncrypted"
     )
-    assert audit_record.permission_scope == "trade_no_withdraw"
+    assert audit_record["permission_scope"] == "trade_no_withdraw"

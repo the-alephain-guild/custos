@@ -14,6 +14,7 @@ from pathlib import Path
 from unittest import mock
 
 import pytest
+import structlog.testing
 
 
 def test_per_key_vault_missing_enc_file_clear_error(tmp_path: Path) -> None:
@@ -81,10 +82,8 @@ def test_per_key_vault_sops_fail_no_silent_return(
 def test_per_key_vault_happy_path_emits_audit(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Happy path returns credential dict + emits CredentialDecrypted audit."""
-    import logging
 
     from custos.core.credential_vault import AuditEvent
     from custos.core.per_key_vault import PerKeyVault
@@ -114,7 +113,7 @@ def test_per_key_vault_happy_path_emits_audit(
     )
     monkeypatch.setattr("custos.core.per_key_vault.subprocess.run", run_mock)
     vault = PerKeyVault(vault_dir=vault_dir, tenant_id="acme", initiator="runner-7")
-    with caplog.at_level(logging.INFO, logger="custos.credential_vault"):
+    with structlog.testing.capture_logs() as records:
         cred = vault.decrypt("binance-paper")
     assert cred["permission_scope"] == "trade_no_withdraw"
     assert run_mock.call_args.args[0] == [
@@ -126,13 +125,10 @@ def test_per_key_vault_happy_path_emits_audit(
         "json",
         str(enc),
     ]
-    audit_records = [
-        r
-        for r in caplog.records
-        if getattr(r, "audit_event", None) == AuditEvent.CREDENTIAL_DECRYPTED.value
-    ]
-    assert len(audit_records) == 1
-    assert audit_records[0].credential_id == "binance-paper"
+    audit = [r for r in records if r.get("audit_event") == AuditEvent.CREDENTIAL_DECRYPTED.value]
+    assert len(audit) == 1
+    assert audit[0]["credential_id"] == "binance-paper"
+    assert audit[0]["tenant_id"] == "acme"
 
 
 def test_cli_verify_and_runtime_share_json_decrypt_command(

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,12 +13,13 @@ from custos.contracts.crucible_runner_safety_policy import (
     CrucibleRunnerSafetyPolicyAuthenticator,
     RunnerSafetyPolicyVerificationError,
 )
+from custos.core.log import get_logger
 from custos.core.nats_client import CrucibleNatsClient
 from custos.core.nats_transport import RunnerNatsTransportError
 from custos.core.runner_command_runtime import RunnerCommandRuntimeCoordinator
 from custos.core.runner_fact import RunnerStateStore
 
-log = logging.getLogger("custos.runner-control")
+log = get_logger("custos.runner-control")
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,10 +88,10 @@ class RunnerControlConsumerV1:
             delivery = JetStreamCommandDelivery(message)
             result = await self._command_runtime.process(delivery)
             log.info(
-                "runner_command_processed status=%s reason=%s delivery_count=%s",
-                result.status.value,
-                result.reason_code or "none",
-                delivery.delivered_count,
+                "runner_command_processed",
+                status=result.status.value,
+                reason_code=result.reason_code or "none",
+                delivery_count=delivery.delivered_count,
             )
 
     async def _process_policy(self, client: CrucibleNatsClient, message: Any) -> None:
@@ -104,9 +104,9 @@ class RunnerControlConsumerV1:
         except (RunnerSafetyPolicyVerificationError, RunnerNatsTransportError, ValueError) as exc:
             reason_code = getattr(exc, "reason_code", "transport_binding_invalid")
             log.error(
-                "runner_safety_policy_rejected reason=%s error_type=%s",
-                reason_code,
-                type(exc).__name__,
+                "runner_safety_policy_rejected",
+                reason_code=reason_code,
+                error_type=type(exc).__name__,
             )
             await message.term()
             return
@@ -115,7 +115,7 @@ class RunnerControlConsumerV1:
         except Exception as exc:  # noqa: BLE001 - local durability failure is retryable
             log.warning(
                 "runner_safety_policy_commit_failed",
-                extra={"error_type": type(exc).__name__},
+                error_type=type(exc).__name__,
             )
             await message.nak(delay=10.0)
             return

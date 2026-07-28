@@ -39,18 +39,29 @@ Python 单栈项目, ruff 承担格式化 + lint 双职. custos 特化风格约�
 
 ## 日志规范 (custos 特化)
 
-- **统一用 structlog**, 禁用裸 `print()` 和 `logging.getLogger()`
+- **统一用 `custos.core.log.get_logger`**, 禁用裸 `print()` 和 `logging.getLogger()`
   ```python
-  import structlog
-  log = structlog.get_logger()
-  log.info("enrollment_completed", runner_id=runner_id, paper_only=True)
+  from custos.core.log import get_logger
+  _log = get_logger("custos.enrollment")
+  _log.info("enrollment_completed", runner_id=runner_id, tenant_id=tenant_id)
   ```
-- **字段名**: 全英文 snake_case (非中文, 便于 arx / 生态其他系统消费)
-- **事件名**: 动词过去时 / 状态名词, 如 `enrollment_completed` / `g6_gate_denied` /
-  `reconcile_loop_iteration` / `nats_disconnected`
+- **字段用 kwargs, 禁 `extra={...}`**. 这不是风格偏好: `configure()` 里
+  `logging.basicConfig(format="%(message)s")` **不渲染** stdlib record 的 `extra`
+  属性, 所以 `logging.getLogger(...).info("evt", extra={...})` 在生产中只输出一个
+  事件名, 字段全部丢失。structlog 的 kwargs 才会进 JSON。
+- **字段名**: 全英文 snake_case (非中文, 便于生态其他系统消费)
+- **事件名**: 动词过去时 / 状态名词, 如 `credential_decrypted` / `sops_decrypt_failed` /
+  `runner_command_processed` / `credential_scope_violation`
 - **禁字段**: `api_key`, `secret`, `password`, `token` (原文), `age_key`, `kek`,
   `venue_credentials` (原文) — 红线 0.1
 - 若必须记录 key 相关事件, 用哈希 / prefix: `log.info("key_loaded", key_hash=sha256_first8(key))`
+- **测试断言日志必须读渲染后的事件**, 用 `structlog.testing.capture_logs()`;
+  **禁**用 `caplog.records` 断言 record 属性 —— 属性存在不等于输出里有, 这正是上面那条
+  丢字段缺陷能长期全绿的原因。
+- **例外 (不可修)**: `cli/_daemon.py` 与 `core/runner_command_runtime.py` 仍用 stdlib
+  logging 且共 11 处 `extra={...}` 丢字段。二者被 `docs/authority/**` 资产索引按字节
+  pin 住, 改动会破坏证据链 —— 见 `historical-lessons.md` C6 与 `.forge/README.md`
+  §后续 plan 规划。**不要顺手修它们**, 必须与 receipt 重新签发同批进行。
 
 ## async 规范
 

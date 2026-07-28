@@ -5,17 +5,15 @@ single-file per credential replacing the legacy multi-credential JSON
 ``SopsAgeVault``.
 
 The audit event contract mirrors the decrypt path in
-``custos.core.credential_vault``: put emits ``CredentialEncrypted`` via
-stdlib ``logging.getLogger("custos.credential_vault")``. Plaintext api
-secrets never appear in log records, only the key_id / tenant_id
-reference.
+``custos.core.credential_vault``: put emits ``CredentialEncrypted`` on the
+same structured logger. Plaintext api secrets never appear in log records,
+only the key_id / tenant_id reference.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import logging
 import os
 import re
 import stat
@@ -27,6 +25,7 @@ from pathlib import Path
 from custos.cli.validators import validate_id
 from custos.core import per_key_vault
 from custos.core.credential_vault import AuditEvent
+from custos.core.log import get_logger
 
 DEFAULT_VAULT_DIR = Path.home() / ".arx" / "vault"
 
@@ -35,9 +34,9 @@ _FILE_MODE = 0o600
 _SOPS_TIMEOUT_SECS = 30
 _LOWER_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
-# Stdlib logger — matches the decrypt audit event sink so caplog +
-# downstream audit-writer pattern-match code stays uniform.
-_log = logging.getLogger("custos.credential_vault")
+# Same sink as the decrypt audit event, so the downstream audit writer sees
+# one uniform stream for both halves of the credential lifecycle.
+_log = get_logger("custos.credential_vault")
 
 
 def register(subparsers: argparse._SubParsersAction) -> None:
@@ -209,7 +208,7 @@ def _put(args: argparse.Namespace) -> int:
             "https://github.com/getsops/sops/releases",
             file=sys.stderr,
         )
-        _log.error("sops_binary_not_found", extra={"error": str(exc)})
+        _log.error("sops_binary_not_found", error=str(exc))
         return 1
     except subprocess.CalledProcessError as exc:
         # stderr from sops is safe to surface: sops does not echo plaintext
@@ -218,7 +217,8 @@ def _put(args: argparse.Namespace) -> int:
         print(f"sops encrypt failed: {stderr_text}", file=sys.stderr)
         _log.error(
             "sops_encrypt_failed",
-            extra={"key_id": args.key_id, "returncode": exc.returncode},
+            key_id=args.key_id,
+            returncode=exc.returncode,
         )
         return 1
 
@@ -286,13 +286,11 @@ def _emit_encrypt_audit(key_id: str, tenant_id: str, permission_scope: str) -> N
     timestamp = datetime.now(UTC).isoformat()
     _log.info(
         "credential_encrypted",
-        extra={
-            "audit_event": AuditEvent.CREDENTIAL_ENCRYPTED.value,
-            "key_id": key_id,
-            "tenant_id": tenant_id,
-            "permission_scope": permission_scope,
-            "timestamp": timestamp,
-        },
+        audit_event=AuditEvent.CREDENTIAL_ENCRYPTED.value,
+        key_id=key_id,
+        tenant_id=tenant_id,
+        permission_scope=permission_scope,
+        timestamp=timestamp,
     )
 
 
