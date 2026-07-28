@@ -54,7 +54,7 @@ credential_id = "b0e4a8f2-9a11-4d3e-8f77-1c2b3d4e5f60"
 credential_version = 2
 credential_valid_until = "2026-12-31T23:59:59Z"
 machine_key_id = "ed25519-7f3a1c"
-machine_vault_path = "/home/operator/.arx/vault/machine.enc"
+machine_vault_path = "/home/operator/.arx/vault/runner-machine.enc"
 enrolled_at = "2026-07-01T09:14:22Z"
 ```
 
@@ -66,7 +66,7 @@ for provisioning, rotation and verification.
 
 ```
 ~/.arx/vault/
-├── machine.enc              # machine credential + Ed25519 signing key
+├── runner-machine.enc       # machine credential + Ed25519 signing key
 └── <venue-key-id>.enc       # one file per venue API credential
 ```
 
@@ -81,7 +81,13 @@ The age identity used to decrypt these files is supplied through
 |---|---|---|
 | `--engine nautilus` | default | Real execution. Sandbox, testnet and live are all available, subject to the [live execution gate](/concepts/live-execution-gate). |
 | `--engine sandbox-sim` | — | Simulation host: full local lifecycle, no venue connection. Declares `sandbox` only, so testnet and live deployments are refused. |
-| `--wal-path <path>` | platform default | Location of the durable local queue backing at-least-once fact delivery. |
+| `--runner-fact-outbox <path>` | `~/.arx/state/runner-fact-outbox.db` | 支撑持久事实投递的 SQLite 数据库 |
+| `--vault-dir <path>` | `~/.arx/vault` | 存放 per-key 加密凭据的目录 |
+| `--ready-file <path>` | `~/.arx/state/runner-ready.json` | 供 `arx-runner health` 读取的就绪标记 |
+| `--runner-capability <path>` | `~/.arx/runner-capability.json` | 绑定到 runner 密钥的已验证能力回执 |
+
+需要跨重启存活的状态位于 `~/.arx/state/`。它**不是缓存**：删掉 outbox 数据库等于丢弃
+runner 已经承诺投递的事实。
 
 Enrollment and vault management are separate subcommands:
 

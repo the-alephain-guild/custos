@@ -3,123 +3,159 @@ title: "Strategy Toolkit Overview"
 sidebar_position: 1
 ---
 
-
 # Strategy Toolkit Overview
 
-**Status:** authoritative for Custos execution ABI and artifact verification.
+The toolkit is the boundary between a strategy artifact and the runner that
+executes it. It defines the execution ABI, the shape of the artifact reference
+Custos signs before release, and the verifier that decides whether an artifact
+may be imported at all.
 
-## Ownership
+## What Custos owns here
 
-Custos owns the strategy execution ABI, toolkit implementation, pre-sign
-`StrategyArtifactRefV1`, and local fail-closed verifier. the strategy publisher owns
-strategy source, canonical `StrategyReleaseBomV1`, the signed
-`StrategyReleaseStatementV1`, and detached `ArtifactAttestationRefV1`. ARX
-owns `ArtifactEvidenceV1`, acceptance receipts, StrategyRelease, artifact
-selection, DeploymentSpec, effective configuration, and business risk policy.
+Custos owns four things and deliberately not the rest:
 
-The legacy the strategy publisher `build-image.sh` to ARX Python publication
-and deployment path remains an independent compatibility lane. It cannot
-produce a v1.team receipt or act as a fallback for this contract.
+- the strategy **execution ABI**;
+- the **toolkit implementation**;
+- the pre-sign **`StrategyArtifactRefV1`**;
+- the local **fail-closed verifier**.
 
-## Runtime and configuration
+Everything upstream of that belongs to ARX: strategy source, the release bill of
+materials, the signed release statement, the detached attestation reference,
+artifact evidence, acceptance receipts, artifact selection, the DeploymentSpec,
+effective configuration, and business risk policy.
 
-`deployment_instance_id` is the only runtime address. `deployment_spec_id`,
-`deployment_spec_digest`, and `generation` are provenance and ordering inputs.
-Catalog aliases never authorize or address execution. The fixed entry-point
-group is `alephain.strategy_runtime.v1`.
+The split matters because it decides what a compromised runner can do. It can
+refuse to execute. It cannot select a different artifact, approve one, or
+declare one released.
 
-The adapter receives final effective config from a verified signed ARX
-command. Custos parses JSON numbers as `Decimal`, rejects duplicates and
-non-finite numbers, recursively freezes containers, and recomputes
-`effective_config_digest`. Adapters cannot merge defaults or mutate config.
+## The execution ABI
 
-`sha256-canonical-json-v1` uses UTF-8, recursively sorted object keys, preserved
-array order, finite Decimal numbers, and no insignificant whitespace.
+The entry-point group is fixed:
 
-## Artifact boundary
+```text
+alephain.strategy_runtime.v1
+```
 
-`StrategyManifestV1` is artifact-local compatibility metadata.
-`StrategyArtifactRefV1` (`schema_version: 1`) describes only exact executable
-and manifest bytes, runtime artifacts, SBOM, and contract schema available before signing. It has no
-bundle coordinate/digest, certificate/transparency proof, trust-policy identity,
-release, deployment, approval, or selection state.
+`deployment_instance_id` is the only runtime address. Spec id, spec digest and
+generation are provenance and ordering inputs — they say what was configured and
+in what order, never which running thing to talk to. Catalog aliases never
+authorize or address execution.
 
-Custos does not define canonical `StrategyReleaseBomV1`. It consumes the strict
-PS BOM object and requires a lossless in-memory member projection with
-base/contracts, Nautilus, and strategy wheels plus manifest, SBOM, contract
-schema, normalized source tree, and every runtime artifact. An attestation
-bundle is detached and is never a BOM or ArtifactRef member.
+An adapter receives its final effective configuration from the verified signed
+command. It cannot merge defaults, read a config file, or mutate what it was
+given. Custos parses JSON numbers as `Decimal`, rejects duplicate keys and
+non-finite values, recursively freezes the containers, and recomputes
+`effective_config_digest`.
 
-The signed command binds runtime identity, spec provenance, generation,
-StrategyRelease id, full BOM object/digest, pre-sign ArtifactRef, accepted
-ArtifactEvidence, and effective config digest. No separately serialized member
-table may become a second authority.
+Freezing is what makes the digest meaningful. A configuration an adapter could
+mutate after the digest was computed would be a digest of something that no
+longer ran.
 
-The PS in-toto/DSSE statement signs producer claims over fixed BOM, artifact and
-manifest subjects. After the bundle is immutable, `ArtifactAttestationRefV1`
-binds its coordinate/digest. ARX then verifies the bundle with local policy
-and produces post-bundle evidence; that composite evidence digest is not and
-cannot be claimed as a subject of the same bundle.
+### Canonical JSON
 
-Trust roots and expected issuer/workflow/policy come from signed immutable local
-Custos release configuration. Artifact metadata may reference, but cannot
-select, trust roots. Verification and safe extraction precede import.
+`sha256-canonical-json-v1` is UTF-8, with object keys recursively sorted, array
+order preserved, finite `Decimal` numbers, and no insignificant whitespace.
 
-Verification is fail closed across the certificate chain, Fulcio identity and
-validity, SCT, DSSE PAE/signature, Rekor entry/body/SET, inclusion proof and
-checkpoint. No skip flag, Python or `cosign` subprocess, sidecar, HTTP verifier,
-or structurally plausible bundle fallback is a production verification path.
+Implement against those rules rather than against a language's default encoder —
+most differ in at least one of them.
 
-This is the first production contract. There is one active V1 parser, dataclass,
-schema, golden set, asset index, and authority entry. Superseded pre-production
-shapes are deleted rather than accepted as aliases or fallbacks. Git history
-and immutable OCI digests retain audit evidence; runtime code does not.
+## The artifact boundary
 
-## Python and inventory
+`StrategyArtifactRefV1` (`schema_version: 1`) describes **only** what exists
+before signing: exact executable and manifest bytes, runtime artifacts, SBOM,
+and contract schema.
 
-The `custos-strategy-toolkit` base/contracts distribution supports Python
->=3.11. The separate `custos-strategy-toolkit-nautilus` distribution requires
-`Python >=3.12,<3.13` — exact matching base version, and `nautilus-trader==1.230.0`;
-Python 3.11 resolution must fail rather than omit NT.
+It deliberately carries no bundle coordinate or digest, no certificate or
+transparency proof, no trust-policy identity, and no release, deployment,
+approval or selection state. Those come into existence later, and a reference
+that claimed them would be asserting facts that had not happened yet.
 
-A published inventory classifies every current
-deterministic input below legacy `shared/` and `vendor/`. There are 241 inputs:
-36 platform-neutral, 55 Nautilus-specific, and 150 private-vendor files. Earlier
-Plan prose counted 459 general filesystem entries; that is not the deterministic
-extraction set.
+`StrategyManifestV1` is artifact-local compatibility metadata, nothing more.
 
-The extraction step maps those inputs one-to-one into `custos_toolkit`,
-`custos_toolkit_nautilus.adapter`, and the private
-`custos_toolkit_nautilus._vendor.pandas_ta` namespace. The legacy implementation
-tree is removed; its package marker is implementation-free. Extraction may not
-publish top-level `shared`/`pandas_ta`, mutate `sys.path`, fake a distribution,
-or leave two writable canonical copies.
+Custos does not define the canonical release BOM. It consumes the strict BOM
+object and requires a lossless in-memory projection of every member: the base,
+contracts, Nautilus and strategy wheels, plus manifest, SBOM, contract schema,
+normalized source tree and every runtime artifact. An attestation bundle is
+detached — it is never a BOM or ArtifactRef member.
 
-The distribution step moves the exact reviewed execution-contract source bytes to
-`packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py`. <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
-The canonical V1 receipt declares that source path and pins the coordinated
-Custos, the strategy publisher, and ARX handoff bytes. No second source or
-re-export shim is retained.
+The signed command binds runtime identity, spec provenance, generation, release
+id, the full BOM object and digest, the pre-sign ArtifactRef, accepted evidence,
+and the effective config digest. No separately serialized member table is
+allowed to become a second authority on what the release contains.
 
-Run `make strategy-contract-assets` to regenerate the sole canonical V1
-ArtifactRef schema, pre-sign golden, verification receipt assets, contract
-receipt, and digest index. The command rejects predecessor tracks rather than
-preserving them. `make check-toolkit-extraction`
-reconstructs every extraction target from the pinned source blob, and
-`strategy-toolkit-parity-golden-v1.json` independently freezes pre-move fixed-input
-signal/order-intent and private-vendor indicator behavior.
+## Verification is fail closed
 
-`make toolkit-typecheck` reports two distinct results: Custos-owned contracts and
-package shell must pass strict mypy, while inventory-extracted implementation is
-checked against the machine-readable exact debt baseline in
-`strategy-toolkit-typing-baseline-v1.json`. The current 75 platform-neutral and
-289 Nautilus-adapter errors are acknowledged debt, not a strict PASS. The toolkit work
-Task 4b must reduce that baseline to zero before the distributions or 18b may be
-called strict or production-ready. Private third-party vendor code stays outside
-mypy and remains guarded by exact digests plus fixed-input parity.
+Verification covers the certificate chain, Fulcio identity and validity, the SCT,
+the DSSE PAE and signature, the Rekor entry, body and SET, the inclusion proof
+and the checkpoint. Verification and safe extraction both complete before import.
 
-The current authority record is
-`custos-strategy-contract-v1-producer-receipt.json`. It remains
-`CANONICAL_V1_PENDING_PRODUCER_RECEIPTS`, with handoff/runtime/production false.
-Custos must not fabricate PS or ARX receipts; those owners must consume and
-pin the same exact V1 bytes before the coordinated production handoff closes.
+None of the following is a production verification path: a skip flag, a Python or
+`cosign` subprocess, a sidecar, an HTTP verifier, or a bundle that is merely
+structurally plausible.
+
+Trust roots and the expected issuer, workflow and policy come from signed
+immutable local release configuration. Artifact metadata may *reference* a trust
+root; it can never *select* one. An artifact that could choose the authority
+verifying it would be verifying itself.
+
+## Two distributions
+
+| Distribution | Python | Notes |
+|---|---|---|
+| `custos-strategy-toolkit` | `>=3.11` | Base and contracts |
+| `custos-strategy-toolkit-nautilus` | `>=3.12,<3.13` | Exact matching base version, `nautilus-trader==1.230.0` |
+
+On Python 3.11, resolving the Nautilus distribution must **fail** rather than
+quietly install without NautilusTrader. A silent omission would produce an
+environment that imports cleanly and cannot trade.
+
+## Inventory and typing debt
+
+The published inventory classifies every deterministic input: **241** files —
+36 platform-neutral, 55 Nautilus-specific, 150 private-vendor. Extraction maps
+those one-to-one into `custos_toolkit`, `custos_toolkit_nautilus.adapter`, and
+the private `custos_toolkit_nautilus._vendor.pandas_ta` namespace.
+
+Extraction may not publish a top-level `shared` or `pandas_ta`, mutate
+`sys.path`, fake a distribution, or leave two writable canonical copies.
+
+Typing is reported honestly rather than as a single pass/fail:
+
+| Scope | Standard |
+|---|---|
+| Custos-owned contracts and package shell | strict mypy, must pass |
+| Inventory-extracted implementation | checked against an exact recorded baseline |
+| Private third-party vendor code | outside mypy; guarded by exact digests and fixed-input parity |
+
+The baseline currently records **75** platform-neutral and **289**
+Nautilus-adapter errors. That is acknowledged debt, not a strict pass, and it is
+published rather than rounded off — a baseline you cannot see is one you cannot
+hold anyone to.
+
+## Reproducing the assets
+
+```bash
+make strategy-contract-assets   # regenerate schema, golden, receipt assets, digest index
+make check-toolkit-extraction   # reconstruct every extraction target from the pinned source
+make toolkit-typecheck          # strict where required, baseline-checked elsewhere
+```
+
+`strategy-contract-assets` rejects predecessor tracks rather than preserving
+them. A separate parity golden independently freezes fixed-input signal and
+order-intent behaviour, plus private-vendor indicator behaviour, from before the
+extraction — so the move can be shown not to have changed results.
+
+## Current status
+
+The producer receipt is `CANONICAL_V1_PENDING_CONSUMER_RECEIPTS`. Handoff,
+runtime and production readiness are all **false**.
+
+Custos publishes the execution ABI; the consuming owners must pin the same exact
+V1 bytes before the coordinated handoff closes. Custos does not author receipts
+on their behalf, and a receipt Custos wrote for a counterparty would prove
+nothing about whether that counterparty can actually read the bytes.
+
+This is a first-production contract: one active V1 parser, dataclass, schema,
+golden set, asset index and authority entry. Superseded shapes are deleted, not
+kept as aliases or fallbacks. Git history and immutable digests retain the audit
+evidence; runtime code does not carry it.

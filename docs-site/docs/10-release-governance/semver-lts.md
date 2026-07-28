@@ -17,6 +17,30 @@ through a MINOR bump (loosening) or a MAJOR bump (tightening) plus a
 matching `CHANGELOG.md` entry. See [`../CHANGELOG.md`](https://github.com/the-alephain-guild/custos/blob/main/CHANGELOG.md) and
 the SEMVER contract table below for the full envelope.
 
+## The SEMVER contract
+
+What counts as which bump is fixed, so that a version number tells you whether
+you have to do anything before upgrading.
+
+| Bump | Covers | Explicitly **not** covered |
+|---|---|---|
+| **MAJOR** | Cutting the gateway contract to a new version directory; renaming or removing a console-script entry point; tightening `requires-python`; renaming or removing an `ExecutionEngineProtocol` Tier-1 field or method; a breaking change to the `~/.arx/` state layout; **adding a required gateway-contract field** | Anything that leaves existing callers working |
+| **MINOR** | Additive only: a new entry point, a new **optional** gateway-contract field, a new optional-dependency extra, a new subcommand, a new CI job that does not replace an old one; a dependency **major** upgrade | Making an existing field required, removing a field, renaming an entry point, tightening `requires-python` |
+| **PATCH** | Fixes, security patches, documentation corrections, internal refactors with no externally observable change; dependency **patch/minor** upgrades with `uv.lock` updated in the same commit | Any change to a field, entry point, schema or documented semantic; a dependency major upgrade |
+
+Two rows deserve a note because integrators get them wrong.
+
+**Adding an optional field is MINOR, adding a required one is MAJOR.** The
+schemas are strict (`additionalProperties: false`), so a new field is rejected by
+a consumer that has not been updated — an optional addition still needs both
+sides deployed. A *required* addition is worse: an old producer that does not
+send it fails validation outright, which is a break rather than a coordination
+problem.
+
+**A dependency major upgrade is MINOR, not PATCH.** It can pull a transitive
+breaking change into your environment even when none of our own surfaces moved,
+so it does not belong in a bump you are meant to be able to take blindly.
+
 ## EOL Window
 
 Each minor release line (`0.Y.x`) is supported for **at least 12 months**

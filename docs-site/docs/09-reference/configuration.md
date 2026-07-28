@@ -40,6 +40,16 @@ Every field is validated on load. A malformed value is a startup failure, not
 a warning — a runner that cannot prove its own identity must not reach a
 venue.
 
+Specifically: `runner_id` and `credential_id` must parse as UUIDs and must not
+be nil; `credential_version` must be a positive integer; both timestamps must be
+RFC 3339 **with a timezone**; `backend_url` must have a scheme and a host; and
+`machine_vault_path` must be absolute.
+
+The file is written atomically — to a temporary file in the same directory,
+fsynced, chmodded to `0600`, then renamed over the target. A crash mid-write
+leaves the previous file intact rather than a half-written one, which matters
+because this file is read at every startup.
+
 ### Example
 
 ```toml
@@ -50,7 +60,7 @@ credential_id = "b0e4a8f2-9a11-4d3e-8f77-1c2b3d4e5f60"
 credential_version = 2
 credential_valid_until = "2026-12-31T23:59:59Z"
 machine_key_id = "ed25519-7f3a1c"
-machine_vault_path = "/home/operator/.arx/vault/machine.enc"
+machine_vault_path = "/home/operator/.arx/vault/runner-machine.enc"
 enrolled_at = "2026-07-01T09:14:22Z"
 ```
 
@@ -62,7 +72,7 @@ for provisioning, rotation and verification.
 
 ```
 ~/.arx/vault/
-├── machine.enc              # machine credential + Ed25519 signing key
+├── runner-machine.enc       # machine credential + Ed25519 signing key
 └── <venue-key-id>.enc       # one file per venue API credential
 ```
 
@@ -77,7 +87,14 @@ The age identity used to decrypt these files is supplied through
 |---|---|---|
 | `--engine nautilus` | default | Real execution. Sandbox, testnet and live are all available, subject to the [live execution gate](/concepts/live-execution-gate). |
 | `--engine sandbox-sim` | — | Simulation host: full local lifecycle, no venue connection. Declares `sandbox` only, so testnet and live deployments are refused. |
-| `--wal-path <path>` | platform default | Location of the durable local queue backing at-least-once fact delivery. |
+| `--runner-fact-outbox <path>` | `~/.arx/state/runner-fact-outbox.db` | SQLite database backing durable fact delivery. |
+| `--vault-dir <path>` | `~/.arx/vault` | Directory holding the per-key encrypted credentials. |
+| `--ready-file <path>` | `~/.arx/state/runner-ready.json` | Readiness marker consumed by `arx-runner health`. |
+| `--runner-capability <path>` | `~/.arx/runner-capability.json` | Validated capability receipt bound to the runner key. |
+
+State that must survive a restart lives under `~/.arx/state/`. It is not a cache:
+deleting the outbox database discards facts the runner has accepted
+responsibility for delivering.
 
 Enrollment and vault management are separate subcommands:
 

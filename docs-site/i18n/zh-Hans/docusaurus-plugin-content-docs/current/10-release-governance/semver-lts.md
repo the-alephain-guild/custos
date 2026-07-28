@@ -21,6 +21,26 @@ through a MINOR bump (loosening) or a MAJOR bump (tightening) plus a
 matching `CHANGELOG.md` entry. See [`../CHANGELOG.md`](https://github.com/the-alephain-guild/custos/blob/main/CHANGELOG.md) and
 the SEMVER contract table below for the full envelope.
 
+## SEMVER 契约
+
+哪种改动算哪一级是固定的 —— 这样版本号本身就能告诉你升级前是否需要做什么。
+
+| 级别 | 覆盖 | 明确**不**覆盖 |
+|---|---|---|
+| **MAJOR** | 把 gateway 契约切到新版本目录；重命名或移除 console-script 入口点；收紧 `requires-python`；重命名或移除 `ExecutionEngineProtocol` Tier-1 的字段或方法；`~/.arx/` 状态布局的破坏性变更；**新增 required gateway-contract 字段** | 任何让现有调用方继续工作的改动 |
+| **MINOR** | 仅新增：新入口点、新的**可选** gateway-contract 字段、新的 optional-dependency extra、新子命令、不替换旧 job 的新 CI job；依赖 **major** 升级 | 把现有字段改为 required、删除字段、重命名入口点、收紧 `requires-python` |
+| **PATCH** | 修复、安全补丁、文档订正、无外部可观测变化的内部重构；依赖 **patch/minor** 升级（`uv.lock` 同 commit 更新） | 任何字段 / 入口点 / schema / 已文档化语义的变化；依赖 major 升级 |
+
+其中两行值得说明，因为集成方常弄错。
+
+**新增可选字段是 MINOR，新增必填字段是 MAJOR。** schema 是严格的
+（`additionalProperties: false`），所以未更新的消费方会拒绝一个新字段 —— 即便是可选新增，
+也需要两侧都部署。而**必填**新增更糟：不发送该字段的旧生产方会直接校验失败，那是破坏，
+不只是协调问题。
+
+**依赖 major 升级算 MINOR，不算 PATCH。** 即便我方表面一处未动，它也可能把传递性破坏
+带进你的环境，因此不属于「可以闭眼升」的那一级。
+
 ## EOL Window
 
 Each minor release line (`0.Y.x`) is supported for **at least 12 months**
