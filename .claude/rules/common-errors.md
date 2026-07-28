@@ -75,7 +75,7 @@ contract 多个技术边界; 以下是历次开发中命中的典型陷阱, 修�
 - **原因**: 若 `nats.connect()` 未配 `reconnect_time_wait` 或 `max_reconnect_attempts=-1`,
   只重试一次或不重试
 - **修**: `nats_client.py` 显式配 `reconnect_time_wait=2, max_reconnect_attempts=-1`
-- **参考**: `docs/design/nats_client.md` §连接管理
+- **参考**: `docs/authority/nats-transport-contract.md` §连接管理
 
 ### async 任务 exception silent drop
 

@@ -44,10 +44,10 @@
 |------|------|---------|---------|
 | **enrollment** | nonce-bound Ed25519 PoP; encrypted `rkc1` credential; rotate/revoke | [`docs-site/docs/02-getting-started/enrollment.md`](docs-site/docs/02-getting-started/enrollment.md) | 私钥不出机 + startup fail closed |
 | **reconcile** | Verify signed desired state → start/stop NT → enqueue typed lifecycle RunnerFact | [`docs-site/docs/03-concepts/reconcile-loop.md`](docs-site/docs/03-concepts/reconcile-loop.md) | 失联≠停止 (红线 0.3) |
-| **engine host** | NT 进程监督 + `ExecutionEngineProtocol` + **live execution admission** | [`docs/design/nautilus_host.md`](docs/design/nautilus_host.md) | **执行门不绕过 (红线 0.2)** |
+| **engine host** | NT 进程监督 + `ExecutionEngineProtocol` + **live execution admission** | [`docs/authority/nautilus-host-contract.md`](docs/authority/nautilus-host-contract.md) | **执行门不绕过 (红线 0.2)** |
 | **runner_fact** | NT MessageBus → typed signed RunnerFact outbox → Crucible | [`docs-site/docs/03-concepts/runner-fact.md`](docs-site/docs/03-concepts/runner-fact.md) | Key 不出进程 (红线 0.1) + Decimal (0.4) |
 | **credential_vault** | sops+age exchange key + machine principal vault | [`docs-site/docs/04-operator-guide/credential-vault.md`](docs-site/docs/04-operator-guide/credential-vault.md) | KEK/机器私钥不出进程 (红线 0.1) |
-| **nats_client** | Crucible signed desired-state subscriber only | [`docs/design/nats_client.md`](docs/design/nats_client.md) | schema 版本化 |
+| **nats_client** | Crucible signed desired-state subscriber only | [`docs/authority/nats-transport-contract.md`](docs/authority/nats-transport-contract.md) | schema 版本化 |
 
 顶层 domain 词汇: [`docs-site/docs/01-introduction/what-is-custos.md`](docs-site/docs/01-introduction/what-is-custos.md).
 

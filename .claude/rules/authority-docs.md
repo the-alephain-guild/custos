@@ -18,7 +18,7 @@ Custos owns local execution and signed observations only.
 deployment_instance_id is the runtime key. ARX authorization and Crucible
 business decisions must not be reimplemented in the runner.
 
-`docs/design/strategy-toolkit.md` and
+`docs/authority/strategy-toolkit-contract.md` and
 `docs/authority/strategy-contract-assets-v1.json` are authoritative for the
 sole first-production Custos ArtifactRef ABI. The current type is
 `StrategyArtifactRefV1` with `schema_version: 1`. There is one parser,

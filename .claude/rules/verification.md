@@ -91,7 +91,7 @@ grep -rnE 'float\(.*price|float\(.*amount|float\(.*notional' src/
 
 ### wire contract 一致性
 
-若改 envelope schema (`docs/design/nats_client.md` §schema versioning):
+若改 envelope schema (`docs/authority/nats-transport-contract.md` §schema versioning):
 
 ```bash
 uv run python scripts/generate_wire_fixtures.py  # 重新生成参考 fixture

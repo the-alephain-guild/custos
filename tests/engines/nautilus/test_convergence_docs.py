@@ -1,7 +1,7 @@
 """Contract tests for ps convergence documentation.
 
 These tests read the real philosophers-stone `shared/README.md` and the
-custos-side `docs/design/nautilus_host.md`, verifying the bilateral
+custos-side `docs/authority/nautilus-host-contract.md`, verifying the bilateral
 convergence documentation lands: Custos packages are declared as the execution
 toolkit authority, ps `shared/` is documented as a non-destructively
 preserved research copy, and the crucible Docker preservation hard
@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[2].parent
-_NAUTILUS_HOST_DOC = _REPO_ROOT / "docs" / "design" / "nautilus_host.md"
+_NAUTILUS_HOST_DOC = _REPO_ROOT / "docs" / "authority" / "nautilus-host-contract.md"
 
 
 def test_ps_convergence_documentation_no_destructive_delete() -> None:
@@ -49,7 +49,7 @@ def test_ps_convergence_documentation_no_destructive_delete() -> None:
 
 
 def test_crucible_docker_preservation_window_documented() -> None:
-    """custos-side docs/design/nautilus_host.md must name the crucible Docker
+    """custos-side docs/authority/nautilus-host-contract.md must name the crucible Docker
     preservation hard constraint with its Dockerfile-line evidence and point
     at the future crucible-runtime-migration candidate plan."""
     text = _NAUTILUS_HOST_DOC.read_text(encoding="utf-8")

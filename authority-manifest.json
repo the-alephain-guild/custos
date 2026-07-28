@@ -24,7 +24,7 @@
     },
     {
       "role": "strategy_toolkit_authority",
-      "path": "docs/design/strategy-toolkit.md"
+      "path": "docs/authority/strategy-toolkit-contract.md"
     },
     {
       "role": "strategy_toolkit_inventory",
@@ -132,7 +132,7 @@
     },
     {
       "role": "local_nats_contract",
-      "path": "docs/design/nats_client.md"
+      "path": "docs/authority/nats-transport-contract.md"
     },
     {
       "role": "strategy_toolkit_provenance",
@@ -415,11 +415,11 @@
       "docs/authority/strategy-toolkit-typing-baseline-v1.json",
       "docs/authority/strategy-toolkit-typing-closure-v1.json",
       "docs-site/docs/07-engines/engine-roadmap.md",
-      "docs/design/nautilus_host.md",
+      "docs/authority/nautilus-host-contract.md",
       "docs-site/docs/07-engines/nautilus-trader.md",
       "docs-site/docs/03-concepts/reconcile-loop.md",
       "docs-site/docs/05-trust-model/safety-survives-disconnect.md",
-      "docs/design/strategy-toolkit.md",
+      "docs/authority/strategy-toolkit-contract.md",
       "docs-site/docs/08-toolkit/overview.md",
       "docs-site/i18n/zh-Hans/docusaurus-plugin-content-docs/current/08-toolkit/overview.md",
       "docs/gateway-contract/v1/README.md",
@@ -538,7 +538,7 @@
       ]
     },
     {
-      "path": "docs/design/nats_client.md",
+      "path": "docs/authority/nats-transport-contract.md",
       "must_contain": [
         "exact subject",
         "Crucible",
@@ -546,7 +546,7 @@
       ]
     },
     {
-      "path": "docs/design/strategy-toolkit.md",
+      "path": "docs/authority/strategy-toolkit-contract.md",
       "must_contain": [
         "deployment_instance_id",
         "StrategyReleaseBomV1",

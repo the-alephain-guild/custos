@@ -36,7 +36,7 @@ custos 单栈 Python daemon 项目进度跟踪规范.
 对于涉及 6 模块契约或红线的 Plan, 关键检查点:
 
 ```
-[起草] → 6 模块契约影响面已列 (docs/design/<module>.md 更新点)?
+[起草] → 6 模块契约影响面已列 (docs-site/docs/ 对应章节 + docs/authority/ 记录的更新点)?
     ↓
 [实施] → TDD 每 Task 先写失败测试? Non-Custodial 4 红线 grep 通过?
     ↓
@@ -71,7 +71,7 @@ Plan 执行完毕后, 在 plan 文件末尾追加:
 - **偏离数**: {N} (详见偏离日志)
 - **验证结果**: 全部通过 / 部分通过
 - **实施 commit 范围**: {first_sha}..{last_sha}
-- **契约影响**: {列出更新的 docs/design/*.md 或 "无"}
+- **契约影响**: {列出更新的站点章节 / `docs/authority/` 记录, 或 "无"}
 - **红线守护**: Non-Custodial 4 红线全数守住 (grep 记录) / 触发某条 (走偏离协议)
 - **失败模式覆盖**: {新增测试列表}
 - **遗留项**: {列表或"无"}

@@ -1,4 +1,4 @@
-"""Failing-first tests for the Plan 11 clean-break of the legacy CLI.
+"""Contract tests for the clean-break removal of the legacy CLI.
 
 Contract:
 - ``python -m custos ...`` prints a stderr pointer at ``arx-runner start``
@@ -27,7 +27,12 @@ def test_python_m_custos_exits_nonzero_with_pointer(tmp_path) -> None:
     )
     assert result.returncode == 2, f"expected exit 2, got {result.returncode}: {result.stderr}"
     assert "arx-runner start" in result.stderr
-    assert "team-self-hosted-lifecycle.md" in result.stderr
+    # The pointer must be reachable by the user running the command: a help
+    # flag on the shipped binary and a public URL, never a doc in another
+    # repository they have no access to.
+    assert "arx-runner --help" in result.stderr
+    assert "custos.alephain.com" in result.stderr
+    assert "team-self-hosted-lifecycle" not in result.stderr
     assert "DeprecationWarning" not in result.stderr
     assert "DeprecationWarning" not in result.stdout
 

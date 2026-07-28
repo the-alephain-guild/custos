@@ -24,7 +24,7 @@
 
 **处理**:
 1. 在 PR / commit message 中说明变更原因和影响
-2. 更新 `docs/design/<module>.md` 相关章节
+2. 更新 `docs-site/docs/` 对应章节; 若涉及跨仓协调契约, 同步 `docs/authority/` 记录
 3. 更新 `docs-site/docs/01-introduction/what-is-custos.md` (如涉及核心词汇或不变量)
 4. 更新受影响的 test (wire contract test / envelope test)
 5. `.forge/plans/.../NN.md` 偏离日志追加一条
