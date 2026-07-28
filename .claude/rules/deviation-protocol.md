@@ -25,7 +25,7 @@
 **处理**:
 1. 在 PR / commit message 中说明变更原因和影响
 2. 更新 `docs/design/<module>.md` 相关章节
-3. 更新 `docs/domain.md` (如涉及 6 BC 契约)
+3. 更新 `docs-site/docs/01-introduction/what-is-custos.md` (如涉及核心词汇或不变量)
 4. 更新受影响的 test (wire contract test / envelope test)
 5. `.forge/plans/.../NN.md` 偏离日志追加一条
 
@@ -38,7 +38,7 @@
   - G6 gate 绕过或降级
   - 失联降级策略调整
   - Money math 从 Decimal 松动到 float
-- 顶层 `docs/domain.md` 结构性变更 (新增 / 删除 BC)
+- 顶层领域词汇结构性变更 (`docs-site/docs/01-introduction/what-is-custos.md`)
 - 技术栈根本性变更 (语言 / 主框架 / 数据模型库)
 - 新增 6 模块之外的 core module
 - LICENSE / NOTICE 变更
@@ -46,7 +46,7 @@
 **处理**:
 1. 发起 peer review (workspace 内: 走 forge:peer-reviewing skill; 独立场景: 邮件 / issue 讨论)
 2. 讨论结论记录到 `.forge/reviews/YYYY-MM/` 目录 (workspace 内) 或 `.forge/deviations/` (独立场景)
-3. 更新顶层文档 (`README.md` / `CLAUDE.md` / `docs/domain.md` / `mandatory-rules.md`)
+3. 更新顶层文档 (`README.md` / `CLAUDE.md` / 站点 introduction 章节 / `mandatory-rules.md`)
 4. Plan 偏离日志同步
 
 ## 偏离记录模板

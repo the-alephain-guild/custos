@@ -13,7 +13,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-DOC = Path(__file__).resolve().parent.parent / "docs" / "lts-commitment.md"
+DOC = (
+    Path(__file__).resolve().parent.parent
+    / "docs-site"
+    / "docs"
+    / "10-release-governance"
+    / "semver-lts.md"
+)
 
 
 def test_lts_doc_exists():
@@ -42,6 +48,6 @@ def test_lts_doc_has_eol_date_row():
     rows = re.findall(r"\|\s*0\.\d+\.x\s*\|\s*\d{4}-\d{2}-\d{2}", text)
     assert len(rows) >= 1, (
         "no EOL rows of the form `| 0.X.x | YYYY-MM-DD` in "
-        "`docs/lts-commitment.md`; the section header is present but the "
+        "the LTS chapter; the section header is present but the "
         "actual commitment is empty — audit-non-silence red-line (FM10)."
     )

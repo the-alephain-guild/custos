@@ -25,7 +25,7 @@ TEXT_FILES = (
 )
 ACTIVE_RUNTIME_DOCS = (
     REPO_ROOT / "README.md",
-    REPO_ROOT / "docs" / "ops" / "05-deployment.md",
+    REPO_ROOT / "docs-site" / "docs" / "04-operator-guide" / "deployment.md",
     SANDBOX_DIR / "README.md",
     TESTNET_DIR / "README.md",
 )

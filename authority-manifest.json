@@ -12,15 +12,15 @@
     },
     {
       "role": "local_domain",
-      "path": "docs/domain.md"
+      "path": "docs-site/docs/01-introduction/what-is-custos.md"
     },
     {
       "role": "local_reconciliation",
-      "path": "docs/design/reconcile.md"
+      "path": "docs-site/docs/03-concepts/reconcile-loop.md"
     },
     {
       "role": "local_engine_protocol",
-      "path": "docs/design/engine_protocol.md"
+      "path": "docs-site/docs/07-engines/engine-roadmap.md"
     },
     {
       "role": "strategy_toolkit_authority",
@@ -96,7 +96,7 @@
     },
     {
       "role": "local_runner_fact",
-      "path": "docs/design/runner_fact.md"
+      "path": "docs-site/docs/03-concepts/runner-fact.md"
     },
     {
       "role": "runner_fact_batch_schema_v1",
@@ -156,7 +156,7 @@
     },
     {
       "role": "local_runner_safety_policy_consumer",
-      "path": "docs/design/runner_safety_policy.md"
+      "path": "docs-site/docs/05-trust-model/safety-survives-disconnect.md"
     },
     {
       "path": "docs/authority/strategy-artifact-ref-v1.golden.json",
@@ -414,10 +414,11 @@
       "docs/authority/strategy-toolkit-provenance.md",
       "docs/authority/strategy-toolkit-typing-baseline-v1.json",
       "docs/authority/strategy-toolkit-typing-closure-v1.json",
-      "docs/design/engine_protocol.md",
+      "docs-site/docs/07-engines/engine-roadmap.md",
       "docs/design/nautilus_host.md",
-      "docs/design/reconcile.md",
-      "docs/design/runner_safety_policy.md",
+      "docs-site/docs/07-engines/nautilus-trader.md",
+      "docs-site/docs/03-concepts/reconcile-loop.md",
+      "docs-site/docs/05-trust-model/safety-survives-disconnect.md",
       "docs/design/strategy-toolkit.md",
       "docs-site/docs/08-toolkit/overview.md",
       "docs-site/i18n/zh-Hans/docusaurus-plugin-content-docs/current/08-toolkit/overview.md",
@@ -529,7 +530,7 @@
       ]
     },
     {
-      "path": "docs/domain.md",
+      "path": "docs-site/docs/01-introduction/what-is-custos.md",
       "must_contain": [
         "DeploymentSpec",
         "DeploymentInstance",

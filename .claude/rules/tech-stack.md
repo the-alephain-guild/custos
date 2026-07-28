@@ -69,7 +69,7 @@ implementation。新 artifact chain 只接受独立 Nautilus distribution；base
 - **同步 HTTP 客户端** (`requests` / `urllib.request`): custos 是 async daemon,
   同步网络调用会阻塞 asyncio loop
 - **明文密钥库** (`keyring` / 明文文件读 API key): credential_vault 只走 sops+age
-  (见 `docs/design/credential_vault.md`)
+  (见 `docs-site/docs/04-operator-guide/credential-vault.md`)
 - **未审计的 NT MessageBus 序列化 sink**: telemetry_actor 是唯一出口
   (脱敏 + 白名单 + envelope schema)
 - **cloud SDK** (aws-cli / gcloud / azure): non-custodial 承重墙 — custos daemon 只在

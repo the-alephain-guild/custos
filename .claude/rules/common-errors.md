@@ -52,7 +52,7 @@ contract 多个技术边界; 以下是历次开发中命中的典型陷阱, 修�
 - **原因**: NT 状态机: `STARTED` → `stop()` → `STOPPED`, 需 `dispose()` + `TradingNodeConfig`
   重新构造才能重启
 - **修**: `nautilus_host.py` 用 `_recreate_node()` 而非直接重跑 `start()`
-- **参考**: `docs/design/nautilus_host.md` §状态机
+- **参考**: `docs-site/docs/07-engines/nautilus-trader.md`
 
 ### G6 gate 检查通不过 (`NoopHost` 上 live)
 
@@ -105,7 +105,7 @@ contract 多个技术边界; 以下是历次开发中命中的典型陷阱, 修�
 - **症状**: `sops --decrypt` 报 `no key could decrypt`
 - **原因**: sops encrypt 时使用的 recipient (age public key) 与解密用的 age private key 不匹配
 - **修**: 用户 `age-keygen` 时输出的 public key 需 encrypt 时用 `--age <pub-key>`; 参考
-  `docs/design/credential_vault.md` §KEK provisioning
+  `docs-site/docs/04-operator-guide/credential-vault.md`
 
 ## Pydantic v2
 

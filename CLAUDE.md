@@ -34,7 +34,7 @@
 - Gateway contracts are versioned under `docs/gateway-contract/`; accepted mode
   values are only `sandbox`, `testnet`, and `live`.
 
-详见 [`README.md#production-topology`](README.md#production-topology) 与 [`docs/domain.md`](docs/domain.md).
+详见 [`README.md#production-topology`](README.md#production-topology) 与 [`docs-site/docs/01-introduction/what-is-custos.md`](docs-site/docs/01-introduction/what-is-custos.md).
 
 ---
 
@@ -42,14 +42,14 @@
 
 | 模块 | 职责 | 设计文档 | 承担红线 |
 |------|------|---------|---------|
-| **enrollment** | nonce-bound Ed25519 PoP; encrypted `rkc1` credential; rotate/revoke | [`docs/design/enrollment.md`](docs/design/enrollment.md) | 私钥不出机 + startup fail closed |
-| **reconcile** | Verify signed desired state → start/stop NT → enqueue typed lifecycle RunnerFact | [`docs/design/reconcile.md`](docs/design/reconcile.md) | 失联≠停止 (红线 0.3) |
-| **nautilus_host** | NT 进程监督 + `ExecutionEngineAdapter` (CEX/NT) + **G6 host gate** | [`docs/design/nautilus_host.md`](docs/design/nautilus_host.md) | **G6 不绕过 (红线 0.2)** |
-| **runner_fact** | NT MessageBus → typed signed RunnerFact outbox → Crucible | [`docs/design/runner_fact.md`](docs/design/runner_fact.md) | Key 不出进程 (红线 0.1) + Decimal (0.4) |
-| **credential_vault** | sops+age exchange key + machine principal vault | [`docs/design/credential_vault.md`](docs/design/credential_vault.md) | KEK/机器私钥不出进程 (红线 0.1) |
+| **enrollment** | nonce-bound Ed25519 PoP; encrypted `rkc1` credential; rotate/revoke | [`docs-site/docs/02-getting-started/enrollment.md`](docs-site/docs/02-getting-started/enrollment.md) | 私钥不出机 + startup fail closed |
+| **reconcile** | Verify signed desired state → start/stop NT → enqueue typed lifecycle RunnerFact | [`docs-site/docs/03-concepts/reconcile-loop.md`](docs-site/docs/03-concepts/reconcile-loop.md) | 失联≠停止 (红线 0.3) |
+| **engine host** | NT 进程监督 + `ExecutionEngineProtocol` + **live execution admission** | [`docs/design/nautilus_host.md`](docs/design/nautilus_host.md) | **执行门不绕过 (红线 0.2)** |
+| **runner_fact** | NT MessageBus → typed signed RunnerFact outbox → Crucible | [`docs-site/docs/03-concepts/runner-fact.md`](docs-site/docs/03-concepts/runner-fact.md) | Key 不出进程 (红线 0.1) + Decimal (0.4) |
+| **credential_vault** | sops+age exchange key + machine principal vault | [`docs-site/docs/04-operator-guide/credential-vault.md`](docs-site/docs/04-operator-guide/credential-vault.md) | KEK/机器私钥不出进程 (红线 0.1) |
 | **nats_client** | Crucible signed desired-state subscriber only | [`docs/design/nats_client.md`](docs/design/nats_client.md) | schema 版本化 |
 
-顶层 domain 词汇: [`docs/domain.md`](docs/domain.md).
+顶层 domain 词汇: [`docs-site/docs/01-introduction/what-is-custos.md`](docs-site/docs/01-introduction/what-is-custos.md).
 
 ---
 
@@ -74,7 +74,7 @@
 
 Signed runtime observability uses `RunnerRuntimeLogFact.v1` inside the existing
 RunnerFact stream. It must use explicit structured events and
-[`docs/design/runtime_log_fact.md`](docs/design/runtime_log_fact.md) redaction;
+[`docs-site/docs/04-operator-guide/runtime-log-observability.md`](docs-site/docs/04-operator-guide/runtime-log-observability.md) redaction;
 tailing stdout or forwarding raw exception text is forbidden.
 
 紧急预案是**停止新建 live instance，并使用 sandbox/testnet**, 不是绕过红线. 见 [`.claude/rules/deviation-protocol.md`](.claude/rules/deviation-protocol.md) §紧急偏离.
@@ -144,7 +144,7 @@ custos 是**独立仓库**, 外部审计员会 clone 单仓查代码:
 
 ---
 
-*方法论权威在 [`docs/domain.md`](docs/domain.md), 红线权威在 [`.claude/rules/mandatory-rules.md`](.claude/rules/mandatory-rules.md).*
+*方法论权威在 [`docs-site/docs/01-introduction/what-is-custos.md`](docs-site/docs/01-introduction/what-is-custos.md), 红线权威在 [`.claude/rules/mandatory-rules.md`](.claude/rules/mandatory-rules.md).*
 
 ---
 
