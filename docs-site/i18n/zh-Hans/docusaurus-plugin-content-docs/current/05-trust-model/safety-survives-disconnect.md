@@ -1,56 +1,65 @@
 ---
-title: "Safety Survives a Disconnect"
+title: "失联时安全防护依然生效"
 sidebar_position: 4
 ---
 
+# 失联时安全防护依然生效
 
-# Safety Survives a Disconnect
+与 ARX 失去连接既不会停掉你的策略，也不会让它们失去防护。这句话的两半都是承重的。
 
-:::warning 中文翻译尚未完成
-本章暂时显示英文原文。
-:::
+失联即停止本身就是一种故障模式：一次网络抖动会平掉没人要求平的仓。而无限制地继续更糟。
+所以 runner 会按它最后校验通过的期望状态继续执行，同时本地强制继续盯着。
 
-ARX-rust owns the versioned aggregate runner-cap policy. Its authority key
-is tenant id + logical trading mode + runner UUID. `live`, `sandbox` and
-`testnet` are logical modes; the physical sim database role is not a mode.
-ARX authorization, DeploymentSpec `risk_config`, deployment commands, Custos
-defaults and toolkit manifests cannot create or override this owner policy.
+## 离线时仍在工作的部分
 
-## Exact contract boundary
+- **聚合敞口上限**。达到 runner 自身限额后，增加风险的订单会被拒绝。
+- **fallback 熔断器**。回撤与名义敞口阈值在每个 tick 本地评估。
+- **zombie watchdog**。引擎断连超过宽限期的部署会被升级，而不是被默认当作健康。
+- **签名事实 outbox**。观测结果持久累积，连接恢复后发布，身份与序号不变。
 
-Custos byte-vendors the current CR99 schema, golden, sidecars and producer-v3
-receipt. `CrucibleRunnerSafetyPolicyAuthenticator` verifies the Rust struct-order
-compact JSON policy digest, exact event bytes, derived subject, event bindings,
-fingerprint and Ed25519 signature before validating tenant/mode/runner scope.
-This is not key-sorted JCS. The golden signature is synthetic contract evidence
-and is never accepted as runtime signature evidence.
+**降低**风险的意图全程放行。一个连平仓都拦的上限，是把你困在仓位里的上限。
 
-The immutable revision is policy id, policy version, generation, digest,
-previous-policy fence, effective time and expiry. Initial policy version and
-generation are 1 with no prior. Every successor advances both values by exactly
-one and binds the prior id/version/generation/digest. Missing, stale, conflicting,
-downgraded, wrong-scope, inactive, not-yet-effective, expired or invalidly signed
-policy fails closed.
+## 限额从哪来
 
-## Durable code boundary
+限额不是本地默认值，也不是部署配置。它来自上游拥有的签名策略，以 tenant、逻辑交易模式
+与 runner 为键。
 
-T7B advances the local implementation to `READY_CONTRACT_CONSUMER_CODE_ONLY`.
-After signature verification, exact policy and verification material are stored
-in the existing RunnerFact SQLite database. Schema v3 adds one scoped policy
-head; it does not add a second database or durable local queue. A successor must advance
-version and generation by exactly one and match the durable prior fence.
-Restart recovery rejects missing, inactive, premature and expired policy.
+`sandbox`、`testnet`、`live` 是逻辑模式。没有任何其他东西能创建或覆盖这条策略 —— 部署
+自己的 `risk_config` 不行，指令不行，toolkit manifest 不行，Custos 默认值也不行。
+reconciler 根本不会为这些限额去读 `risk_config`。
 
-`LocalCapConfig` and `FallbackBreakerConfig` can only be built from that verified
-policy or from the explicit strictest sandbox/testnet fallback. Live has no
-fallback. The reconciler never reads DeploymentSpec `risk_config` for these
-limits. Risk-reducing intents remain permitted by the local cap contract.
+### 校验
 
-## Current readiness
+在接受一条策略之前，Custos 会校验策略摘要、精确事件字节、派生 subject、事件绑定、
+指纹与 Ed25519 签名 —— 然后确认 tenant、mode 与 runner scope 确实匹配本 runner。
 
-The producer chain is currently on `codex/cr99-runner-policy`, not
-ARX. The aggregate-cap rollout is prepared but not yet executed, so runtime
-publication is false, and the daemon has not consumed a real signed policy.
-The native engine-boundary order interceptor and full reservation lifecycle are
-also open. Therefore code-only readiness does not enable the team daemon, live,
-runtime or production capability.
+### 版本围栏
+
+每个不可变修订携带唯一 policy id、一个单调的 `revision`、摘要、生效时间、过期时间，以及
+精确指明上一修订 id、修订号与摘要的围栏。
+
+修订 1 没有前驱。每个后继只把 `revision` 加一，并绑定它之前的那一版。被取代关系是从这条
+后继边**推导**出来的，而不是存成可变状态 —— 不存在某个字段能被攻击者翻转来作废一条策略。
+唯二的终态是 `revoked` 与 `expired`。
+
+缺失、陈旧、冲突、降级、scope 不符、未激活、尚未生效、已过期或签名非法的策略，一律
+**fail closed**。
+
+## 重启后依然成立
+
+校验通过后，策略及其校验材料存入 runner 既有的事实数据库 —— 一个受 scope 约束的策略头，
+不新增第二个数据库，也不新增第二个队列。
+
+重启恢复时套用同一套规则：缺失、未激活、尚未生效或已过期的策略在启动路径上同样被拒，
+与进入路径完全一致。重启不是让弱策略蒙混过关的途径。
+
+## live 没有降级通路
+
+`sandbox` 与 `testnet` 可以回落到显式的最严格本地配置，好让演练环境保持可用。
+
+**live 没有降级通路**。缺失、被吊销或已过期的持久权威会直接阻断增加风险的执行。没有
+编译期开关，也没有本地逃生舱 —— 因为你最想绕过限额的处境，恰恰就是限额最要紧的处境。
+
+## 运维视角
+
+真实中断时的阈值、告警与恢复步骤，见[应急手册](/operator-guide/emergency-playbook)。
