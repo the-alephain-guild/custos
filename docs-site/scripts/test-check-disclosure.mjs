@@ -152,6 +152,16 @@ const CASES = [
     expect: (r) => r.code === 0,
   },
   {
+    name: 'signing preimage constant is exempt',
+    body: '```text\ncrucible.runner.enrollment.pop.v1\ntenant_id=<tenant>\n```\n',
+    expect: (r) => r.code === 0,
+  },
+  {
+    name: 'exemption does not cover ordinary prose about that system',
+    body: 'Crucible validates the business rules before signing.\n',
+    expect: (r) => r.code === 1 && /systems behind ARX/.test(r.out),
+  },
+  {
     name: 'exemption does not whitelist other org paths',
     body: 'See the-alephain-guild/synedrion for the council design notes.\n',
     expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),

@@ -1,39 +1,44 @@
 ---
-title: "注册 (Enrollment)"
+title: "Enrollment"
 sidebar_position: 2
 ---
 
+# Enrollment
 
-# 注册 (Enrollment)
+Enrollment 是 runner 取得一个"可自证"身份的过程。`arx-runner enroll` 是唯一受支持的
+路径。不存在 NATS enrollment、本地未签名 bootstrap token、手写 `runner.toml`、默认
+tenant，也不存在明文签名密钥的降级通路。
 
-`arx-runner enroll` 是创建 runner 机器主体的**唯一**支持路径. 不存在 NATS 注册路径、
-本地 unsigned 引导 token、手写 `runner.toml`、默认 tenant, 或明文 RunnerFact key fallback.
+这份清单是刻意封闭的。上面每一项，都是一条"在权威没签发的情况下取得 runner 身份"的路。
 
-## 归属
+## 各自负责什么
 
-- **ARX** 拥有 enrollment token 状态、一次性消费、Runner 机器凭据、过期、
-  版本、轮换、撤销、不可变公钥证据以及健康投影.
-- **ARX** 暴露公开 typed URL 并施加身份 / tenant / RBAC 策略. 它不持久化或重建 Runner
-  的业务状态.
-- **custos** 生成并保管 Ed25519 私钥,执行所有权证明 (PoP),存储返回的不透明机器凭据,
-  在权威不可用时**失败关闭** (fail closed).
+**ARX** 签发并拥有 enrollment token、恰好消费它一次，并拥有由此产生的机器凭据 —— 它的
+有效期、版本、轮换、吊销与不可变公钥证据。它同时在端点上施加身份、tenant 与访问策略。
 
-## Enrollment v2
+**Custos** 生成 Ed25519 密钥对、证明自己持有私钥、把返回的不透明凭据加密存储，并在权威
+不可用时 fail closed。
 
-1. Operator 从授权的ARX获取一次性 enrollment token.
-2. custos 在内存中生成 Ed25519 密钥对和一个新鲜的挑战 nonce.
-3. custos 对规范化 `arx.runner.enrollment.pop.v1` 证明签名. 证明绑定 token digest、
-   声称的 tenant、Runner UUID、nonce、机器 key ID 以及公钥 digest.
-4. custos 把一次性 token、公钥、nonce、key ID 和签名发给 ARX `POST /api/v1/enrollments`.
-   **私钥永不外发**.
-5. ARX 验证 token 权威与证明,一次性消费该 token,持久化不可变公钥证据,并签发
-   带 tenant 的不透明 `rkc1` 凭据 (含 `credential_id`、版本、过期).
-6. custos 用 sops+age 一起加密凭据与私钥. 只有非敏感的绑定元数据写入 `runner.toml`.
+私钥在本地生成，从不发送。ARX 从来看不到它 —— 这正是那份"持有证明"有意义的原因。
 
-规范化证明是 newline 分隔的 UTF-8, 严格按此顺序:
+## 交换过程
+
+1. 你从 ARX 取得一次性 enrollment token。
+2. Custos 在内存中生成 Ed25519 密钥对和一个新的挑战 nonce。
+3. Custos 签署一份 canonical 证明，绑定 token 摘要、声称的 tenant、runner UUID、nonce、
+   机器 key id 与公钥摘要。
+4. Custos 把 token、公钥、nonce、key id 与签名发往
+   `POST /api/v1/runner-enrollments`。私钥留在你的机器上。
+5. ARX 校验 token 与证明、消费 token 一次、持久化公开证据，并签发带 tenant 的不透明
+   凭据，含 id、版本与有效期。
+6. Custos 用 sops+age 把该凭据与私钥一起加密。只有非敏感的绑定元数据写入
+   `runner.toml`。
+
+证明是换行分隔的 UTF-8，且字段顺序严格如下 —— 顺序是契约的一部分，因为两边算不出同一份
+canonical 形式时，产出的签名谁也验不了。
 
 ```text
-arx.runner.enrollment.pop.v1
+crucible.runner.enrollment.pop.v1
 tenant_id=<tenant>
 runner_id=<uuid>
 challenge_nonce=<uuid>
@@ -42,27 +47,20 @@ public_key_sha256=<lowercase-sha256>
 enrollment_token_sha256=<lowercase-sha256>
 ```
 
-## 本地权威文件
+## 落到磁盘上的东西
 
-`~/.arx/vault/runner-machine.enc` 是 sops+age JSON 文档, 内含不透明机器凭据与 Ed25519
-私钥. 必须为权限 `0600`;父目录与 age identity 目录必须为 `0700`. 运行时解密要求
-`SOPS_AGE_KEY_FILE` 环境变量.
+`~/.arx/vault/runner-machine.enc` 是一份 sops+age 文档，把不透明机器凭据与 Ed25519 私钥
+放在一起。模式 `0600`；父目录与 age 身份目录为 `0700`。运行时解密需要
+`SOPS_AGE_KEY_FILE`。
 
-`~/.arx/runner.toml` **不含任何凭据或私钥**. 只记录以下字段:
+`~/.arx/runner.toml` 不含凭据、也不含密钥。它只记录 `tenant_id`、`runner_id`、
+`backend_url`、`credential_id`、`credential_version`、`credential_valid_until`、
+`machine_key_id`、`machine_vault_path` 与 `enrolled_at`。
 
-- `tenant_id`
-- `runner_id`
-- `backend_url`
-- `credential_id`
-- `credential_version`
-- `credential_valid_until`
-- `machine_key_id`
-- `machine_vault_path`
-- `enrolled_at`
+这些字段与解密后的 vault 有任何不一致，都是启动错误，不是告警。字段参考见
+[配置参考](/reference/configuration)。
 
-这些字段与解密后 vault 的任何不一致都是启动错误.
-
-## Operator 流程
+## 实际执行
 
 ```bash
 mkdir -p "$HOME/.arx/vault" "$HOME/.arx/state"
@@ -74,45 +72,43 @@ export SOPS_AGE_KEY_FILE="$HOME/.arx/age.key"
 export SOPS_AGE_RECIPIENT='age1...'
 
 arx-runner enroll \
-  --token '<one-time-token>' \
+  --token '<一次性 token>' \
   --backend https://arx.internal:8000 \
   --tenant-id acme \
   --runner-id 018f8b5f-6f7d-7e23-8c31-bd34ab9d0d41
 
 arx-runner credential verify
-arx-runner onboard --manifest runner-capability.json
-arx-runner start --nats-url nats://arx.internal:4222
 ```
 
-HTTP 仅在本地回环开发中被接受. **重定向不被跟随**, 因为重定向 enrollment token 或
-机器凭据会跨越预定的信任边界.
+明文 HTTP 只在 loopback 开发场景被接受。重定向从不跟随 —— 把 enrollment token 或机器
+凭据重定向出去，等于把它带过它本来要建立的那条信任边界。
 
-## 轮换与撤销
+## 轮换与吊销
 
-`arx-runner credential rotate` 生成一对新密钥,并用旧密钥签名一个 nonce 绑定的证明
-把新公钥送去. 权威返回新的不透明凭据、递增的版本、过期以及新 key 绑定. custos 只在
-接受响应后**原子替换**加密 vault 与公开元数据.
+```bash
+arx-runner credential rotate
+arx-runner credential revoke
+```
 
-`arx-runner credential revoke` 发送一个由当前密钥签名的 nonce 绑定证明. 权威确认
-`state=revoked` 后, custos 立即删除加密的机器 vault 与 `runner.toml`;执行循环
-**无法**以已撤销的主体启动.
+**轮换**会生成新密钥对，并用**旧**密钥签署的 nonce 绑定证明把新公钥发出去 —— 身份的
+连续性是被证明的，不是被声称的。Custos 只在收到接受响应之后，才原子替换加密 vault 与
+公开元数据。轮换失败时，先前的凭据保持完好可用。
+
+**吊销**用当前密钥发送 nonce 绑定证明。权威确认吊销状态后，Custos 立即删除加密 vault 与
+`runner.toml`。执行循环无法用已吊销的主体启动，本地也没有把它复活的路径。
 
 ## 启动与就绪
 
-在连接 NATS 或构造执行 host 之前, 启动要求:
+在连接传输或构造执行 host 之前，启动要求：
 
-- 加密的机器 vault 与 age identity 存在;
-- 一个未过期的 `rkc1` 凭据;
-- tenant、Runner、凭据 ID / 版本 / 过期以及 key-ID 绑定完全一致;
-- 服务端验证凭据仍然有效;
-- 一份经校验的、绑定同一公钥的 Runner capability 收据.
+- 加密机器 vault 与 age 身份；
+- 一份未过期的凭据；
+- tenant、runner、凭据 id、版本、有效期与 key-id 绑定逐项精确一致；
+- 服务端确认该凭据仍然有效；
+- 一份绑定到同一公钥的、已校验的能力回执。
 
-就绪 (readiness) 文件只重复公开凭据元数据与其过期. `arx-runner health` 对缺失、
-过期、已撤销或权威不一致的情况返回非零. 云端 outage **不会**停止一个已在跑的本地引擎,
-但一个新进程**不会**从不可验证的权威启动.
+就绪输出只重复公开的凭据元数据及其有效期。`arx-runner health` 在权威缺失、过期、被吊销
+或不匹配时返回非零。
 
-## 迁移顺序
-
-ARX migration `0024` 必须先落地并被填充, 然后 ARX migration `0067` 才能
-移除源表. 顺序是: 目标 migration → 语义抬升与退休 permit → 源表 drop. **永远不要**
-先跑 `0067`.
+有一处不对称值得明说：中断不会停掉已经在跑的引擎，但新进程不会从"无法校验的权威"启动。
+对已经被信任的东西保持连续性；这份连续性绝不外延到未经证明的东西上。

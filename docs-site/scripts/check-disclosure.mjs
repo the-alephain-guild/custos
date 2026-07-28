@@ -134,6 +134,11 @@ const CONTEXT_EXEMPTIONS = [
   /ghcr\.io\/the-alephain-guild\/custos/,
   /github\.com\/the-alephain-guild\/custos/,
   /the-alephain-guild\/custos\b/,
+  // Signing-domain constants are literal bytes of a signing preimage. An
+  // auditor who retypes them differently cannot verify the signature, so the
+  // exact string is product surface even though it embeds a legacy name.
+  /^crucible[.-][\w.-]*(pop\.v\d|BATCH-V\d)/i,
+  /CRUCIBLE-RUNNER-FACT-BATCH-V\d/,
 ];
 
 const ALLOW_MARKER = /disclosure-ok:/;

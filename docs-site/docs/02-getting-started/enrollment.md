@@ -3,44 +3,51 @@ title: "Enrollment"
 sidebar_position: 2
 ---
 
-
 # Enrollment
 
-`arx-runner enroll` is the only supported path for creating a runner machine
-principal. There is no NATS enrollment path, local unsigned bootstrap token,
-manual `runner.toml`, default tenant, or plaintext RunnerFact key fallback.
+Enrollment is how a runner acquires an identity it can prove. `arx-runner
+enroll` is the only supported path. There is no NATS enrollment, no local
+unsigned bootstrap token, no hand-written `runner.toml`, no default tenant and
+no plaintext signing-key fallback.
 
-## Ownership
+That list is deliberately closed. Every entry on it would be a way to obtain a
+runner identity without the authority having issued one.
 
-- ARX owns enrollment token state, one-time consumption, Runner
-  machine credentials, expiry, version, rotation, revocation, immutable public
-  key evidence, and health projections.
-- ARX exposes the public typed URL and applies identity/tenant/RBAC policy. It
-  does not persist or reconstruct Runner business state.
-- Custos generates and retains the Ed25519 private key, performs proof of
-  possession, stores the returned opaque machine credential, and fails closed
-  when the authority is unusable.
+## Who does what
 
-## Enrollment v2
+**ARX** issues and owns the enrollment token, consumes it exactly once, and
+owns the resulting machine credential — its expiry, version, rotation,
+revocation and the immutable public-key evidence. It also applies identity,
+tenant and access policy at the endpoint.
 
-1. An operator obtains a one-time enrollment token from the authorized control
-   plane.
+**Custos** generates the Ed25519 keypair, proves possession of the private key,
+stores the returned opaque credential encrypted, and fails closed when that
+authority is unusable.
+
+The private key is generated locally and never sent. ARX never sees it, which
+is what makes the proof meaningful.
+
+## The exchange
+
+1. You obtain a one-time enrollment token from ARX.
 2. Custos generates an Ed25519 keypair in memory and a fresh challenge nonce.
-3. Custos signs the canonical `arx.runner.enrollment.pop.v1` proof. The proof
-   binds the token digest, claimed tenant, Runner UUID, nonce, machine key ID,
-   and public-key digest.
-4. Custos sends the one-time token, public key, nonce, key ID, and signature to
-   ARX `POST /api/v1/enrollments`. The private key is never sent.
-5. ARX verifies the token authority and proof, consumes the token once,
-   persists immutable public evidence, and issues a tenant-bearing opaque
-   `rkc1` credential with `credential_id`, version, and expiry.
-6. Custos encrypts the credential and private key together with sops+age. Only
-   non-secret binding metadata is written to `runner.toml`.
+3. Custos signs a canonical proof binding the token digest, claimed tenant,
+   runner UUID, nonce, machine key id and public-key digest.
+4. Custos sends the token, public key, nonce, key id and signature to
+   `POST /api/v1/runner-enrollments`. The private key stays on your machine.
+5. ARX verifies the token and the proof, consumes the token once, persists the
+   public evidence, and issues a tenant-bearing opaque credential with an id,
+   version and expiry.
+6. Custos encrypts that credential together with the private key using
+   sops+age. Only non-secret binding metadata reaches `runner.toml`.
 
-The canonical proof is newline-delimited UTF-8 in this exact order:
+The proof is newline-delimited UTF-8 in exactly this order — field order is
+part of the contract, because a canonical form that both sides do not compute
+identically produces a signature neither can verify.
+<!-- disclosure-ok: exact signing preimage; an auditor cannot verify a signature without the literal domain string -->
 
 ```text
-arx.runner.enrollment.pop.v1
+crucible.runner.enrollment.pop.v1
 tenant_id=<tenant>
 runner_id=<uuid>
 challenge_nonce=<uuid>
@@ -49,28 +56,23 @@ public_key_sha256=<lowercase-sha256>
 enrollment_token_sha256=<lowercase-sha256>
 ```
 
-## Local authority files
+## What lands on disk
 
-`~/.arx/vault/runner-machine.enc` is a sops+age JSON document containing the
-opaque machine credential and Ed25519 private key. It must be mode `0600`; the
-parent directory and age identity directory must be `0700`. Runtime decryption
-requires `SOPS_AGE_KEY_FILE`.
+`~/.arx/vault/runner-machine.enc` is a sops+age document holding the opaque
+machine credential and the Ed25519 private key together. Mode `0600`; the
+parent and the age identity directory `0700`. Decryption at runtime needs
+`SOPS_AGE_KEY_FILE`.
 
-`~/.arx/runner.toml` contains no credential or private key. It records only:
+`~/.arx/runner.toml` contains no credential and no key. It records only
+`tenant_id`, `runner_id`, `backend_url`, `credential_id`,
+`credential_version`, `credential_valid_until`, `machine_key_id`,
+`machine_vault_path` and `enrolled_at`.
 
-- `tenant_id`
-- `runner_id`
-- `backend_url`
-- `credential_id`
-- `credential_version`
-- `credential_valid_until`
-- `machine_key_id`
-- `machine_vault_path`
-- `enrolled_at`
+Any mismatch between those fields and the decrypted vault is a startup error,
+not a warning. See [configuration](/reference/configuration) for the field
+reference.
 
-Any mismatch between these fields and the decrypted vault is a startup error.
-
-## Operator flow
+## Running it
 
 ```bash
 mkdir -p "$HOME/.arx/vault" "$HOME/.arx/state"
@@ -88,44 +90,46 @@ arx-runner enroll \
   --runner-id 018f8b5f-6f7d-7e23-8c31-bd34ab9d0d41
 
 arx-runner credential verify
-arx-runner onboard --manifest runner-capability.json
-arx-runner start --nats-url nats://arx.internal:4222
 ```
 
-HTTP is accepted only for loopback development. Redirects are not followed,
-because redirecting an enrollment token or machine credential would cross the
-intended trust boundary.
+Plain HTTP is accepted only for loopback development. Redirects are never
+followed — redirecting an enrollment token or a machine credential would move
+it across the trust boundary the token exists to establish.
 
 ## Rotation and revocation
 
-`arx-runner credential rotate` generates a new keypair and sends the new public
-key with a nonce-bound proof signed by the old key. The authority returns a new
-opaque credential, incremented version, expiry, and new key binding. Custos
-atomically replaces the encrypted vault and public metadata only after an
-accepted response.
+```bash
+arx-runner credential rotate
+arx-runner credential revoke
+```
 
-`arx-runner credential revoke` sends a nonce-bound proof signed by the current
-key. After the authority confirms `state=revoked`, Custos immediately deletes
-the encrypted machine vault and `runner.toml`; the execution loop cannot be
-started with the revoked principal.
+**Rotate** generates a new keypair and sends the new public key with a
+nonce-bound proof signed by the *old* key — continuity of identity is proven
+rather than asserted. Custos replaces the encrypted vault and public metadata
+atomically, and only after an accepted response. A failed rotation leaves the
+previous credential intact and usable.
+
+**Revoke** sends a nonce-bound proof signed by the current key. Once the
+authority confirms the revoked state, Custos immediately deletes the encrypted
+vault and `runner.toml`. The execution loop cannot start from a revoked
+principal, and there is no path to resurrect one locally.
 
 ## Startup and readiness
 
-Before connecting NATS or constructing the execution host, startup requires:
+Before connecting transport or constructing an execution host, startup
+requires:
 
-- the encrypted machine vault and age identity;
-- an unexpired `rkc1` credential;
-- exact tenant, Runner, credential ID/version/expiry, and key-ID binding;
-- server verification that the credential remains active;
-- a validated Runner capability receipt bound to the same public key.
+- the encrypted machine vault and the age identity;
+- an unexpired credential;
+- exact tenant, runner, credential id, version, expiry and key-id binding;
+- server verification that the credential is still active;
+- a validated capability receipt bound to the same public key.
 
-The readiness file repeats only public credential metadata and its expiry.
-`arx-runner health` returns non-zero for missing, expired, revoked, or mismatched
-authority. A cloud outage does not stop an already-running local engine, but a
-new process does not start from unverifiable authority.
+Readiness output repeats only public credential metadata and its expiry.
+`arx-runner health` returns non-zero for missing, expired, revoked or
+mismatched authority.
 
-## Migration order
-
-ARX control migration `0024` must land and be populated before ARX
-migration `0067` removes the source tables. The sequence is: target migration,
-semantic lift and retirement permit, then source drop. Never run `0067` first.
+One asymmetry is worth stating plainly: an outage does not stop an
+already-running engine, but a new process will not start from authority it
+cannot verify. Continuity is preserved for what is already trusted; it is never
+extended to something unproven.
