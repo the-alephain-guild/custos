@@ -6,16 +6,15 @@ sidebar_position: 1
 
 # SEMVER & LTS Commitment
 
-This document is the authoritative statement of the Long-Term Support (LTS)
-window, security patch SLA, release cadence, and key-rotation protocol for
-`custos-runner`. It is deliberately hand-maintained (rather than generated
-from an LTS-status page) at the 0.x stage — an automated status page is a
-follow-up plan tracked in [upgrade paths](/release-governance/upgrade-paths).
+This page is the authoritative statement of the Long-Term Support (LTS) window,
+security patch SLA, release cadence and key-rotation protocol for
+`custos-runner`. It is hand-maintained at the 0.x stage rather than generated
+from a status page.
 
-The concrete numbers below are contractual — a change to any row must go
-through a MINOR bump (loosening) or a MAJOR bump (tightening) plus a
-matching `CHANGELOG.md` entry. See [`../CHANGELOG.md`](https://github.com/the-alephain-guild/custos/blob/main/CHANGELOG.md) and
-the SEMVER contract table below for the full envelope.
+The numbers below are contractual: changing any row requires a MINOR bump to
+loosen or a MAJOR bump to tighten, plus a matching
+[changelog](https://github.com/the-alephain-guild/custos/blob/main/CHANGELOG.md)
+entry.
 
 ## The SEMVER contract
 
@@ -46,16 +45,27 @@ so it does not belong in a bump you are meant to be able to take blindly.
 Each minor release line (`0.Y.x`) is supported for **at least 12 months**
 from the first `0.Y.0` tag. During that window the line receives security
 patches (see next section) and — best-effort — bug-fix patches. EOL is
-announced at least 30 days in advance in the GitHub release notes and
-copied to the `CHANGELOG.md` `### Deprecated` section (audit-non-silence).
+announced at least 30 days in advance in the GitHub release notes and copied
+into the changelog's `### Deprecated` section — in two places, so that an
+operator who reads only one of them still finds out.
+
+:::warning No line has started its window yet
+The table below is empty on purpose. Nothing has been released — there is no
+tag, no wheel and no published image — so no support window has begun. The
+changelog carries dated `0.2.0` and `0.3.0` entries, but a changelog entry is a
+record of changes, not a release.
+
+A row appears here when a line is actually cut, and the window is measured from
+that date. Publishing a window for an unreleased version would be a commitment
+with no start date and nobody to hold it.
+:::
 
 | Minor line | First release | EOL |
 | ---------- | ------------- | --- |
-| 0.3.x      | 2026-07-12    | 2027-07-12 (best-effort ≥ 12 months) |
-| 0.2.x      | 2026-07-11    | 2027-07-11 (best-effort ≥ 12 months) |
+| — | — | first row appears when a line is cut |
 
-Additional lines will be appended as they cut. Each row is a hard commitment
-— a line is not dropped before its published end-of-life date.
+Each row, once present, is a hard commitment: a line is not dropped before its
+published end-of-life date.
 
 ## Security Patch SLA
 
@@ -80,9 +90,9 @@ target cadence.
 
 Any field, entry point, or observable behaviour marked `deprecated` in
 one minor release stays available for at least the following minor
-release (≥ 3 months in practice) before it can be removed. Every minor
-release notes emit a reminder for still-deprecated items so nothing
-falls off quietly (audit-non-silence).
+release (≥ 3 months in practice) before it can be removed. Every minor release
+note repeats the reminder for anything still deprecated, so a removal is never
+the first time you hear about it.
 
 ## Key Rotation Protocol
 
@@ -106,15 +116,17 @@ cut. Verification instructions live in
 ## Upgrade Path
 
 Concrete upgrade steps for each minor bump live in
-[upgrade paths](/release-governance/upgrade-paths), including the 0.x → 1.0 promote
-checklist (arx-side gateway wire ready + 3 consecutive minor releases
-without breaking changes + gateway-contract v1 covered 100%).
+[upgrade paths](/release-governance/upgrade-paths), together with the 0.x → 1.0
+promote checklist.
 
-## Follow-up
+One item on that checklist belongs here: 1.0 requires that at least one line has
+already been carried through its own support window. A 1.0 declared before that
+would be a support promise with no evidence that the promise can be kept.
 
-- Automated LTS status page (0.x → 1.0 timeline) — separate follow-up
-  plan; not scoped into 0.3.0.
-- Machine-readable EOL feed (`docs/lts-commitment.json`) — same follow-up.
+## Not built yet
+
+An automated status page and a machine-readable EOL feed would both be useful
+and neither exists. This page is the only source, and it is maintained by hand.
 
 ## Deviations log
 

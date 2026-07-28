@@ -45,6 +45,11 @@ be nil; `credential_version` must be a positive integer; both timestamps must be
 RFC 3339 **with a timezone**; `backend_url` must have a scheme and a host; and
 `machine_vault_path` must be absolute.
 
+The field set must match exactly. A missing key and an unexpected key are the
+same class of failure, and the error names both — an extra field means the file
+was written by something that does not agree with this runner about what a
+runner identity is.
+
 The file is written atomically — to a temporary file in the same directory,
 fsynced, chmodded to `0600`, then renamed over the target. A crash mid-write
 leaves the previous file intact rather than a half-written one, which matters
@@ -122,13 +127,19 @@ arx-runner start --enabled-mode sandbox --engine nautilus
 |---|---|---|
 | `SOPS_AGE_KEY_FILE` | yes | Path to the age identity that decrypts the vault. |
 
-Custos deliberately reads no venue credentials from the environment. Keys
-enter the process only by decrypting a vault file, so that a process listing
-or an inherited environment cannot leak them.
+The running daemon reads no venue credentials from the environment. A key
+enters the process only by decrypting a vault file, so neither a process listing
+nor an inherited environment can leak one.
+
+Provisioning is the one place an environment variable may carry a secret:
+`vault put --api-secret-env` reads from a named variable, as an alternative to
+`--api-secret-stdin`. Prefer stdin. Both keep the secret off the command line,
+but an environment variable is inherited by whatever that shell starts next.
 
 ## Running in Docker
 
-The published image expects the two host paths to be mounted, and the age
-identity to be provided at runtime. Mount `~/.arx` read-write — the runner
-needs to persist credential rotations. See
-[deployment](/operator-guide/deployment) for the full invocation.
+The image expects the two host paths to be mounted and the age identity to be
+provided at runtime. Mount `~/.arx` read-write — the runner needs to persist
+credential rotations. See [deployment](/operator-guide/deployment) for the full
+invocation, and [installation](/getting-started/installation) for building the
+image, which is currently the only way to obtain one.

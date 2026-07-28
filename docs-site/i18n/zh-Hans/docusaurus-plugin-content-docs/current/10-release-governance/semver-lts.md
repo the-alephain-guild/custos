@@ -3,121 +3,109 @@ title: "SemVer 与 LTS 承诺"
 sidebar_position: 1
 ---
 
-
 # SemVer 与 LTS 承诺
 
-:::warning 中文翻译尚未完成
-本章暂时显示英文原文。
+本页是 `custos-runner` 关于长期支持（LTS）窗口、安全补丁 SLA、发布节奏与密钥轮换协议的
+权威声明。在 0.x 阶段它由人工维护，而不是由某个状态页生成。
+
+下面的数字是契约性的：修改任何一行都需要一次 MINOR（放宽）或 MAJOR（收紧）版本跳变，
+并配一条对应的
+[changelog](https://github.com/the-alephain-guild/custos/blob/main/CHANGELOG.md) 记录。
+
+## SemVer 契约
+
+哪种改动算哪一级跳变是固定的，这样版本号本身就能告诉你：升级之前你是否需要做点什么。
+
+| 跳变 | 涵盖 | 明确**不**涵盖 |
+|---|---|---|
+| **MAJOR** | 把 gateway 契约切到新的版本目录；重命名或移除控制台入口点；收紧 `requires-python`；重命名或移除 `ExecutionEngineProtocol` 的 Tier-1 字段或方法；`~/.arx/` 状态布局的破坏性变更；**新增必填的 gateway 契约字段** | 任何让既有调用方继续可用的改动 |
+| **MINOR** | 仅新增：新的入口点、新的**可选** gateway 契约字段、新的可选依赖 extra、新的子命令、不替代旧任务的新 CI 任务；依赖的**大版本**升级 | 把既有字段改为必填、移除字段、重命名入口点、收紧 `requires-python` |
+| **PATCH** | 修复、安全补丁、文档订正、无外部可观测变化的内部重构；在同一个 commit 里更新 `uv.lock` 的依赖 **patch/minor** 升级 | 任何对字段、入口点、schema 或已文档化语义的改动；依赖的大版本升级 |
+
+其中两行值得额外说明，因为集成方常常弄错。
+
+**新增可选字段是 MINOR，新增必填字段是 MAJOR。** 这些 schema 是严格的
+（`additionalProperties: false`），因此未升级的消费者会拒绝新字段 —— 即便是"可选"的新增，
+也仍然要求两侧都已部署。**必填**的新增更糟：不发送该字段的旧生产方会直接校验失败，那是
+一次破坏，而不是一个协同问题。
+
+**依赖的大版本升级是 MINOR，不是 PATCH。** 即便我们自己的任何接口都没动，它也可能把一个
+传递性的破坏性变更带进你的环境，因此它不该被放进一个"你本应可以闭着眼升"的跳变里。
+
+## EOL 窗口
+
+:::warning 目前还没有任何一条版本线开始它的窗口
+下面的表格是刻意留空的。什么都还没发布 —— 没有 tag、没有 wheel、也没有已发布的镜像 ——
+因此没有任何支持窗口开始计时。changelog 里确实有标注日期的 `0.2.0` 与 `0.3.0` 条目，但
+changelog 条目是变更记录，不是一次发布。
+
+某条线真正被切出来时，这里才会出现一行，窗口从那个日期起算。为一个尚未发布的版本公布支持
+窗口，是一个没有起始日期、也没有对象可以追责的承诺。
 :::
 
-This document is the authoritative statement of the Long-Term Support (LTS)
-window, security patch SLA, release cadence, and key-rotation protocol for
-`custos-runner`. It is deliberately hand-maintained (rather than generated
-from an LTS-status page) at the 0.x stage — an automated status page is a
-follow-up plan tracked in [upgrade paths](/release-governance/upgrade-paths).
+每条 minor 版本线（`0.Y.x`）自首个 `0.Y.0` tag 起，受支持**至少 12 个月**。在该窗口内，
+这条线会收到安全补丁（见下一节），以及尽力而为的缺陷修复补丁。EOL 至少提前 30 天在
+GitHub 发布说明中公告，并抄写进 changelog 的 `### Deprecated` 段 —— 放在两处，好让只读
+其中一处的操作者也能知道。
 
-The concrete numbers below are contractual — a change to any row must go
-through a MINOR bump (loosening) or a MAJOR bump (tightening) plus a
-matching `CHANGELOG.md` entry. See [`../CHANGELOG.md`](https://github.com/the-alephain-guild/custos/blob/main/CHANGELOG.md) and
-the SEMVER contract table below for the full envelope.
+| minor 线 | 首次发布 | EOL |
+| ---- | ---- | ---- |
+| — | — | 某条线被切出来时出现第一行 |
 
-## SEMVER 契约
+一旦某行出现，它就是硬承诺：在公布的生命周期终止日期之前，这条线不会被放弃。
 
-哪种改动算哪一级是固定的 —— 这样版本号本身就能告诉你升级前是否需要做什么。
+## 安全补丁 SLA
 
-| 级别 | 覆盖 | 明确**不**覆盖 |
-|---|---|---|
-| **MAJOR** | 把 gateway 契约切到新版本目录；重命名或移除 console-script 入口点；收紧 `requires-python`；重命名或移除 `ExecutionEngineProtocol` Tier-1 的字段或方法；`~/.arx/` 状态布局的破坏性变更；**新增 required gateway-contract 字段** | 任何让现有调用方继续工作的改动 |
-| **MINOR** | 仅新增：新入口点、新的**可选** gateway-contract 字段、新的 optional-dependency extra、新子命令、不替换旧 job 的新 CI job；依赖 **major** 升级 | 把现有字段改为 required、删除字段、重命名入口点、收紧 `requires-python` |
-| **PATCH** | 修复、安全补丁、文档订正、无外部可观测变化的内部重构；依赖 **patch/minor** 升级（`uv.lock` 同 commit 更新） | 任何字段 / 入口点 / schema / 已文档化语义的变化；依赖 major 升级 |
+安全修复以 patch 版本（`0.Y.z+1`）形式发布，时间在公开 CVE 披露后 **30 天**内（尽力而为；
+任何未达成的情况都会记入本页下方的偏离日志）。
 
-其中两行值得说明，因为集成方常弄错。
+- 通过 [GitHub Security Advisories](https://github.com/the-alephain-guild/custos/security/advisories)
+  上报 —— 披露流程见
+  [`SECURITY.md`](https://github.com/the-alephain-guild/custos/blob/main/SECURITY.md)。
+- 公开公告在补丁发布后 24 小时内上线。
+- 回合策略：安全修复会落到每一条仍在支持期内的 LTS 线。关键功能缺陷的回合逐案评估，并随
+  发布一同公告。
 
-**新增可选字段是 MINOR，新增必填字段是 MAJOR。** schema 是严格的
-（`additionalProperties: false`），所以未更新的消费方会拒绝一个新字段 —— 即便是可选新增，
-也需要两侧都部署。而**必填**新增更糟：不发送该字段的旧生产方会直接校验失败，那是破坏，
-不只是协调问题。
+## 发布节奏
 
-**依赖 major 升级算 MINOR，不算 PATCH。** 即便我方表面一处未动，它也可能把传递性破坏
-带进你的环境，因此不属于「可以闭眼升」的那一级。
+尽力做到**每季度**一次 minor 发布。节奏不是硬契约 —— 错过某个季度会记入下方偏离日志，
+而且 LTS 窗口按**实际发布日期**计算，不按目标节奏计算。
 
-## EOL Window
+## 弃用宽限
 
-Each minor release line (`0.Y.x`) is supported for **at least 12 months**
-from the first `0.Y.0` tag. During that window the line receives security
-patches (see next section) and — best-effort — bug-fix patches. EOL is
-announced at least 30 days in advance in the GitHub release notes and
-copied to the `CHANGELOG.md` `### Deprecated` section (audit-non-silence).
+任何在某个 minor 版本中被标记 `deprecated` 的字段、入口点或可观测行为，至少要在下一个
+minor 版本中继续可用（实践中 ≥ 3 个月）才能被移除。每一份 minor 发布说明都会重复提醒仍处
+于弃用状态的条目，因此"移除"绝不会是你第一次听说这件事。
 
-| Minor line | First release | EOL |
-| ---------- | ------------- | --- |
-| 0.3.x      | 2026-07-12    | 2027-07-12 (best-effort ≥ 12 months) |
-| 0.2.x      | 2026-07-11    | 2027-07-11 (best-effort ≥ 12 months) |
+## 密钥轮换协议
 
-Additional lines will be appended as they cut. Each row is a hard commitment
-— a line is not dropped before its published end-of-life date.
+Sigstore + cosign 是无密钥的（由 OIDC 背书），所以并不存在一把需要轮换的 "custos 签名
+密钥"。真正的轮换面是 CI 流水线的 `cert-identity` 模板 —— 如果 workflow 文件挪了位置，
+或者 tag 命名规则变了，既有的 bundle 就不再能通过验证。处理方式：
 
-## Security Patch SLA
+1. 在下一份发布说明中、以及 `CHANGELOG.md` 的 `## [Unreleased]` 段中公告身份变更。
+2. 发一个后续 patch 版本，其 bundle 使用新的身份。
+3. 在本页偏离日志中加一行，链接到受影响的 tag。
 
-Security fixes ship as a patch release (`0.Y.z+1`) within **30 days** of
-public CVE disclosure (best-effort; a note in this doc's Deviations log
-covers any miss).
+只影响"对既往 tag 重新验证"的身份变更**不会**影响产物内容 —— 审计者仍然可以用打 tag 当时
+生效的 cert-identity 来验证。验证步骤见
+[`verify-release.sh`](https://github.com/the-alephain-guild/custos/blob/main/.github/workflows/scripts/verify-release.sh)。
 
-- Report via [GitHub Security Advisories](https://github.com/the-alephain-guild/custos/security/advisories)
-  — see [`SECURITY.md`](https://github.com/the-alephain-guild/custos/blob/main/SECURITY.md) for the disclosure protocol.
-- Public advisories go live within 24 hours of the patch release.
-- Backport policy: security fixes land on every active LTS line. Critical functional-bug
-  backports are assessed case by case and announced with the release.
+## 升级路径
 
-## Release Cadence
+每次 minor 跳变的具体升级步骤，连同 0.x → 1.0 的提升清单，都在
+[升级路径](/zh-Hans/release-governance/upgrade-paths)。
 
-Best-effort **quarterly** minor releases. The cadence is not a hard
-contract — a missed quarter is annotated in the Deviations log below,
-and the LTS window is measured from actual release dates, not from the
-target cadence.
+清单中有一项属于本页：1.0 要求至少有一条版本线**已经**走完过它自己的支持窗口。在此之前
+宣布 1.0，就是一个没有任何证据表明它守得住的支持承诺。
 
-## Deprecation Grace
+## 尚未构建
 
-Any field, entry point, or observable behaviour marked `deprecated` in
-one minor release stays available for at least the following minor
-release (≥ 3 months in practice) before it can be removed. Every minor
-release notes emit a reminder for still-deprecated items so nothing
-falls off quietly (audit-non-silence).
+自动化的状态页与机器可读的 EOL 订阅源都会有用，而两者都不存在。本页是唯一来源，且由人工
+维护。
 
-## Key Rotation Protocol
+## 偏离日志
 
-Sigstore + cosign are keyless (OIDC-backed), so there is no "custos
-signing key" to rotate. The rotation surface is the CI workflow's
-`cert-identity` template — if the workflow file moves or the tag
-naming scheme changes, existing bundles will no longer verify. Handle
-that by:
-
-1. Announce the identity change in the next release notes and in the
-   `## [Unreleased]` section of `CHANGELOG.md`.
-2. Ship a follow-up patch release whose bundles use the new identity.
-3. Add a Deviations-log row here linking to the affected tag.
-
-An identity break that only affects re-verification of prior tags
-does *not* affect the artifact contents — auditors can still verify
-via the tag-time cert-identity that was in effect when the tag was
-cut. Verification instructions live in
-[`../.github/workflows/scripts/verify-release.sh`](https://github.com/the-alephain-guild/custos/blob/main/.github/workflows/scripts/verify-release.sh).
-
-## Upgrade Path
-
-Concrete upgrade steps for each minor bump live in
-[upgrade paths](/release-governance/upgrade-paths), including the 0.x → 1.0 promote
-checklist (arx-side gateway wire ready + 3 consecutive minor releases
-without breaking changes + gateway-contract v1 covered 100%).
-
-## Follow-up
-
-- Automated LTS status page (0.x → 1.0 timeline) — separate follow-up
-  plan; not scoped into 0.3.0.
-- Machine-readable EOL feed (`docs/lts-commitment.json`) — same follow-up.
-
-## Deviations log
-
-| Date | Line | Deviation | Notes |
-| ---- | ---- | --------- | ----- |
-| — | — | — | first entry appears here when a deviation ships |
+| 日期 | 版本线 | 偏离 | 备注 |
+| ---- | ---- | ---- | ---- |
+| — | — | — | 第一条偏离发生时出现在这里 |
