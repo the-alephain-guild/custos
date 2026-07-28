@@ -1,4 +1,4 @@
-"""Verified Crucible command identity and inbound delivery policy.
+"""Verified control-plane command identity and inbound delivery policy.
 
 This module intentionally stops before engine apply and before SQLite storage.
 The command intake boundary implements :class:`CommandIntakeDurability` with the existing
@@ -291,7 +291,7 @@ class CrucibleRunnerCommandAuthenticator:
         except InvalidSignature as exc:
             raise CommandVerificationError(
                 UntrustedCommandReason.INVALID_SIGNATURE,
-                "Crucible runner command signature verification failed",
+                "control-plane runner command signature verification failed",
                 raw_envelope_digest=raw_digest,
             ) from exc
 
@@ -303,25 +303,25 @@ class CrucibleRunnerCommandAuthenticator:
         except (KeyError, TypeError, ValueError) as exc:
             raise CommandVerificationError(
                 UntrustedCommandReason.INVALID_SCHEMA,
-                f"Crucible runner command schema or binding is invalid: {exc}",
+                f"control-plane runner command schema or binding is invalid: {exc}",
                 raw_envelope_digest=raw_digest,
             ) from exc
         if command.tenant_id != self.expected_tenant_id:
             raise CommandVerificationError(
                 UntrustedCommandReason.INVALID_SCHEMA,
-                "Crucible runner command tenant differs from runner authority",
+                "control-plane runner command tenant differs from runner authority",
                 raw_envelope_digest=raw_digest,
             )
         if command.runner_id != self.expected_runner_id:
             raise CommandVerificationError(
                 UntrustedCommandReason.INVALID_SCHEMA,
-                "Crucible runner command runner id differs from runner authority",
+                "control-plane runner command runner id differs from runner authority",
                 raw_envelope_digest=raw_digest,
             )
         if command.trading_mode not in self.allowed_trading_modes:
             raise CommandVerificationError(
                 UntrustedCommandReason.INVALID_SCHEMA,
-                "Crucible runner command mode is not enabled by this runner",
+                "control-plane runner command mode is not enabled by this runner",
                 raw_envelope_digest=raw_digest,
             )
 
@@ -332,7 +332,7 @@ class CrucibleRunnerCommandAuthenticator:
         if command.command_fingerprint != command_fingerprint:
             raise CommandVerificationError(
                 UntrustedCommandReason.INVALID_SCHEMA,
-                "Crucible runner command fingerprint differs from exact event bytes",
+                "control-plane runner command fingerprint differs from exact event bytes",
                 raw_envelope_digest=raw_digest,
             )
         receipt = CommandVerificationReceipt(

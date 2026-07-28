@@ -14,7 +14,7 @@ This document is the authoritative statement of the Long-Term Support (LTS)
 window, security patch SLA, release cadence, and key-rotation protocol for
 `custos-runner`. It is deliberately hand-maintained (rather than generated
 from an LTS-status page) at the 0.x stage — an automated status page is a
-follow-up plan tracked in [`upgrade-path.md`](/release-governance/upgrade-paths).
+follow-up plan tracked in [upgrade paths](/release-governance/upgrade-paths).
 
 The concrete numbers below are contractual — a change to any row must go
 through a MINOR bump (loosening) or a MAJOR bump (tightening) plus a
@@ -86,7 +86,7 @@ cut. Verification instructions live in
 ## Upgrade Path
 
 Concrete upgrade steps for each minor bump live in
-[`upgrade-path.md`](/release-governance/upgrade-paths), including the 0.x → 1.0 promote
+[upgrade paths](/release-governance/upgrade-paths), including the 0.x → 1.0 promote
 checklist (arx-side gateway wire ready + 3 consecutive minor releases
 without breaking changes + gateway-contract v1 covered 100%).
 

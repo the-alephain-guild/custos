@@ -3,74 +3,90 @@ title: "信任模型"
 sidebar_position: 2
 ---
 
-
 # 信任模型
 
+Custos（拉丁语：*守卫者*）是一个 non-custodial、自托管的执行 runner。你在自己的
+基础设施上运行这个守护进程，它在本地持有你的交易所凭据，并代你对接场所执行策略。
 
-## 是什么
+这个安排要求的信任不小。本页讲的是：为什么这个安排站得住，以及你具体在信任什么。
 
-**custos** (拉丁语: *guardian*) 是 the Alephain Guild
-生态的**非托管、自托管**执行 runner. 用户在自己基础设施上运行本 daemon,
-跑经过回测的 NautilusTrader 策略, 本地持交易所 API Key, **永不上云端**.
+## 它为什么开源
 
-## 为什么必须公开开源
+这个 runner 持有你的交易所凭据并下真实订单。让「信任它」成为理性选择的条件只有
+一个：你能读代码，核实它对这些凭据做了什么。
 
-custos 是 Apache-2.0 开源, day 1 公开. 这不是偶然, 是生态非托管红线的
-**可验证兑现**:
+所以开源在这里不是许可证偏好，而是**机制**——它把「凭据只留在你的机器上」从文档里的
+一句主张，变成外部审计员可以逐行核实的属性。一个闭源的 runner 要求同等信任，等于
+要求你采信它的说法。
 
-1. 用户机器上跑的 daemon 持交易所 Key + 下真实订单
-2. 用户理性信任此 daemon 的**唯一条件**是: 能读代码验证它对 Key 的处理
-3. 开源把 "Key 和策略只在本地" 从**设计声明**升级为**外部审计员逐行可查的工程事实**
+Apache-2.0，自首个版本起公开。见
+[`LICENSE`](https://github.com/the-alephain-guild/custos/blob/main/LICENSE)。
 
-见 the published ownership boundary 与。
+## 什么会跨越边界
 
-## 信任边界 (custos 承担的红线)
+有三条性质定义了 Custos 所守的边界。
 
-生态整体信任边界的**承重墙**是 *the custos line*:
+**凭据与策略代码留在本地。** 离开 runner 的只有签名的观测结果——关于引擎做了什么的
+声明。任何凭据、任何密钥材料及其明文，都不会被发布、写日志或上传。
 
-1. **Key / 策略永不离开用户机器**. 唯一出 custos 边界的数据是**执行遥测 + 状态报告**
-2. **控制是声明式 (declarative) 而非命令式 (imperative)**. custos *拉取*期望态并对账
-   本地 NT 进程去匹配; 产品面**写期望态**, 不会 `docker run` 进用户机器. 这是 custos
-   作为**真自托管** runner 而非**远程受控 agent** 的边界
-3. **云端断线优雅降级**. 组织级跨账户熔断在云端可达时聚合; 每 runner 保留本地
-   fallback breaker (每策略/每账户回撤) + 结构性 `max_notional_per_runner` cap.
-   云端 outage **永不停**本地交易或移除本地防护
+**控制是声明式的，不是命令式的。** Custos 收到的是「什么应该在运行」的签名声明，
+然后把本地现实向它收敛。没有任何东西伸进你的机器去启动进程。这正是「你托管的 runner」
+与「别人驱动的 agent」之间的区别，也是为什么一条消息丢失退化为「重启后收敛」，
+而不是「指令丢了」。
 
-红线的技术兑现分层见 [架构一览](./architecture-at-a-glance).
+**断连是优雅降级。** 若上游权威变得不可达，运行中的部署依据持久化的本地状态继续运行，
+本地防护继续生效——总名义本金上限、回撤熔断器与僵尸看门狗全部在本地判断。一次外部
+故障永远不会停掉本地交易，也永远不会撤掉本地防护。
 
-## 六模块 (六件套)
+由此得出的四条保证，连同撑住每一条的代码与测试，列在
+[信任模型章节](/zh-Hans/trust-model/red-lines)。
 
-custos 由六个核心模块组成:
+## 谁决定，谁执行
 
-| 模块 | 职责 | 承担红线锚点 |
-|------|------|-------------|
-| **enrollment** | 一次性 `EnrollmentToken` 配对; `runner_id`; `paper_only` 默认 | Token 一次性 (防重放) |
-| **reconcile** | 声明式循环: 拉取 `DeploymentSpec` → 启停 NT → 上报 `DeploymentStatus` | 失联 ≠ 停止 |
-| **nautilus_host** | NT 进程监督 + `ExecutionEngineAdapter` (CEX/NT) + **live execution gate** | **live execution gate live 发布门** |
-| **runner_fact** | NT MessageBus → 封闭 typed facts → 签名持久出站信箱 → ARX | Key 不出进程;unsigned fallback 禁止 |
-| **credential_vault** | sops+age 本地 KEK vault; `trade_no_withdraw` 权限范围 | KEK / API key 不出进程 |
-| **nats_client** | JetStream 客户端 + envelope schema + subject 命名 | Wire schema 版本化 + 契约防漂移 |
+ARX 决定，Custos 执行。两者都做不了对方的事。
 
-各模块设计详情见本目录下同名 `.md` 文件.
+| | ARX | Custos |
+|---|---|---|
+| 认证操作者 | ✅ | ✗ |
+| 持有部署记录 | ✅ | ✗ |
+| 批准实盘放行 | ✅ | ✗ |
+| 持有场所凭据 | ✗ | ✅ |
+| 下单 | ✗ | ✅ |
+| 对执行事实签名 | ✗ | ✅ |
 
-## 与 arx / ARX 的边界
+两次签名校验，方向相反，彼此之间没有共享秘密。攻破 runner 无法凭空造出一个批准；
+攻破批准路径也无法在没有一台愿意执行的 runner 的情况下抵达场所。
 
-- **custos → arx**: 拉取 `DeploymentSpec` + 推送遥测 / heartbeat / 对账状态
-- **custos ↛ ARX**: 从不直接对话, 由 arx 中介 (arx 是 gateway)
-- **单一外部入口**: 所有外部访问 custos 状态必须经 arx 的 `gatekeeper` + `CustosGateway`
-- **custos 未暴露 API**: custos 不给终端用户 / API 客户端 / dashboard 提供任何直接接口
+Custos 不向终端用户、dashboard 或 API 客户端暴露任何 API。它只订阅和发布，不存在
+可供攻击的入站控制面。
 
-详见顶层 domain 文档 §3 跨系统契约.
+## 六个模块
 
-## 独立开源纪律
+| 模块 | 职责 | 锚定的保证 |
+|---|---|---|
+| **enrollment** | nonce 绑定的持有证明；加密的机器凭据；轮换与吊销 | 私钥从不被传输 |
+| **reconcile** | 验证签名期望状态、收敛本地运行时、持久记录结果 | 失联不等于停止 |
+| **engine host** | 监督交易引擎、配置场所客户端、执行准入 | 实盘执行始终受门控 |
+| **runner_fact** | 经持久本地队列发出的带类型签名声明 | 不存在未签名的回落路径 |
+| **credential_vault** | `sops`+`age` 本地金库；强制 `trade_no_withdraw` 范围 | 凭据不出进程 |
+| **transport** | 签名期望状态订阅；签名事实发布 | wire 契约版本化 |
 
-- 仓库自足: 外部审计员单仓 clone 即可读全部代码, 不需要访问闭源云端
-- License: Apache-2.0 (LICENSE + NOTICE)
-- SemVer + 长期支持 (LTS, EOL ≥ 12 月)
-- 规则集 / 权威文档 / 验证入口皆在本仓库内, 不依赖 workspace root
+每个模块都有独立章节——地图从
+[架构一览](/zh-Hans/introduction/architecture-at-a-glance) 开始。
 
-## 下一步阅读
+## 独立性
 
-- **架构与信任边界详情**: [架构一览](./architecture-at-a-glance)
-- **模块导航**: 各限界上下文章节 (Part III 核心概念 + Part IV 运维指南)
-- **技术实现细节**: 见对应 BC 章节
+本仓库刻意做到自足。外部审计员只需 clone 一个仓库，就能读到全部内容：代码、它所受
+约束的规则集、契约资产，以及证明这些主张的测试。
+
+这次审计不需要访问任何闭源内容。若需要，上面那条可验证性论证就会垮掉——一个必须对
+其中一部分采信的审计员，等于对全部都只能采信。
+
+发布遵循 SemVer，每条 minor 线至少支持 12 个月。见
+[SemVer 与 LTS](/zh-Hans/release-governance/semver-lts)。
+
+## 接下来
+
+- 深入四条保证：[红线](/zh-Hans/trust-model/red-lines)
+- 各部分如何拼合：[架构一览](/zh-Hans/introduction/architecture-at-a-glance)
+- 自己核实这些主张：[审计清单](/zh-Hans/trust-model/audit-checklist)

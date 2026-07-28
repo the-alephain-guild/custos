@@ -1,6 +1,6 @@
-"""Crucible-signed DeploymentSpec consumer contract.
+"""Control-plane-signed DeploymentSpec consumer contract.
 
-ARX authorizes human intent but never signs or relays runner commands. Crucible
+ARX authorizes human intent but never signs or relays runner commands. The control plane
 publishes an exact-instance command as a signed domain event. Custos verifies the
 original event bytes and subject before translating the canonical payload into
 the local execution-engine shape.
@@ -155,7 +155,7 @@ _ARTIFACT_SOURCE_ADAPTER = TypeAdapter(DeploymentArtifactSourceV1)
 
 
 class DeploymentSpec(BaseModel):
-    """Validated local engine view of a canonical Crucible DeploymentSpec V1."""
+    """Validated local engine view of a canonical control-plane DeploymentSpec V1."""
 
     model_config = ConfigDict(extra="forbid", title="DeploymentSpecPayload v1")
 
@@ -182,7 +182,7 @@ class DeploymentSpec(BaseModel):
     def validate_mode_requirements(self) -> Self:
         if self.trading_mode is TradingMode.LIVE:
             if self.promotion_id is None or self.promotion_evidence_digest is None:
-                raise ValueError("live deployment requires Crucible-signed promotion evidence")
+                raise ValueError("live deployment requires control-plane-signed promotion evidence")
         if self.trading_mode is TradingMode.SANDBOX and self.sandbox is None:
             raise ValueError("sandbox deployment requires sandbox.starting_balances")
         return self
@@ -207,29 +207,29 @@ class CrucibleDomainEventVerifier:
     @classmethod
     def from_file(cls, path: str | Path, *, key_id: str) -> CrucibleDomainEventVerifier:
         if not key_id.strip():
-            raise ValueError("Crucible domain-event key id is required")
+            raise ValueError("control-plane domain-event key id is required")
         encoded = Path(path).expanduser().read_text(encoding="utf-8").strip()
         try:
             raw = bytes.fromhex(encoded) if len(encoded) == 64 else _decode_base64url(encoded)
             public_key = Ed25519PublicKey.from_public_bytes(raw)
         except (ValueError, TypeError) as exc:
             raise ValueError(
-                "Crucible domain-event public key must encode 32 Ed25519 bytes"
+                "control-plane domain-event public key must encode 32 Ed25519 bytes"
             ) from exc
         return cls(key_id=key_id, public_key=public_key)
 
     def verify(self, *, subject: str, data: bytes) -> bytes:
         envelope = _SignedDomainEventEnvelope.model_validate_json(data)
         if envelope.signature_profile != DOMAIN_EVENT_SIGNATURE_PROFILE:
-            raise ValueError("unsupported Crucible domain-event signature profile")
+            raise ValueError("unsupported control-plane domain-event signature profile")
         if envelope.event_encoding != DOMAIN_EVENT_ENCODING:
-            raise ValueError("unsupported Crucible domain-event encoding")
+            raise ValueError("unsupported control-plane domain-event encoding")
         if envelope.signature_key_id != self.key_id:
-            raise ValueError("Crucible domain-event signing key id does not match authority")
+            raise ValueError("control-plane domain-event signing key id does not match authority")
         event_bytes = _decode_base64url(envelope.event_bytes)
         signature = _decode_base64url(envelope.signature)
         if len(signature) != 64:
-            raise ValueError("Crucible domain-event signature must be 64 bytes")
+            raise ValueError("control-plane domain-event signature must be 64 bytes")
         subject_bytes = subject.encode("utf-8")
         framed = b"".join(
             (
@@ -243,7 +243,7 @@ class CrucibleDomainEventVerifier:
         try:
             self.public_key.verify(signature, framed)
         except InvalidSignature as exc:
-            raise ValueError("Crucible domain-event signature verification failed") from exc
+            raise ValueError("control-plane domain-event signature verification failed") from exc
         return event_bytes
 
 
@@ -319,7 +319,7 @@ def _decode_base64url(value: str) -> bytes:
 
 
 def canonical_deployment_spec_digest(canonical: dict[str, Any]) -> str:
-    """Match Crucible `sha256-canonical-json-v1` over the canonical spec only.
+    """Match the control plane's `sha256-canonical-json-v1` over the canonical spec only.
 
     The digest field and command envelope are intentionally excluded. Exact
     field-set validation prevents an additive producer change from silently
@@ -342,7 +342,7 @@ def canonical_deployment_spec_digest(canonical: dict[str, Any]) -> str:
 
 
 def validate_risk_policy_snapshot(canonical: dict[str, Any]) -> None:
-    """Verify the opaque Crucible-owned policy bytes without interpreting them."""
+    """Verify the opaque control-plane-owned policy bytes without interpreting them."""
 
     policy = canonical.get("risk_policy")
     expected = canonical.get("risk_policy_digest")

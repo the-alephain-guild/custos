@@ -1,6 +1,6 @@
 """Pure local Nautilus risk configuration.
 
-Risk policy is owned and signed by Crucible. Custos compiles the accepted
+Risk policy is owned and signed by the control plane. Custos compiles the accepted
 DeploymentSpec policy into local engine limits and never publishes an ARX
 business event from the trade path.
 """

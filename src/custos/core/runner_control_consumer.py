@@ -1,4 +1,4 @@
-"""Consume the one signed Crucible runner-control stream."""
+"""Consume the one signed control-plane runner-control stream."""
 
 from __future__ import annotations
 

@@ -73,9 +73,9 @@ def data_environment_for_mode(mode: str) -> BinanceEnvironment:
 
 
 def require_live_owner_evidence(spec: dict) -> None:
-    """Require immutable Crucible promotion evidence, not human approval logic.
+    """Require immutable control-plane promotion evidence, not human approval logic.
 
-    ARX authenticates actors and Crucible owns SoD. Custos verifies only that the
+    ARX authenticates actors and the control plane owns SoD. Custos verifies only that the
     signed owner command carries the exact promotion receipt required for live.
     """
     promotion_id = str(spec.get("promotion_id") or "")
@@ -241,6 +241,6 @@ def build_exec_client_config_testnet(spec: dict, credential: dict) -> BinanceExe
 
 
 def build_exec_client_config_live(spec: dict, credential: dict) -> BinanceExecClientConfig:
-    """Real Binance exec against live, gated by signed Crucible owner evidence."""
+    """Real Binance exec against live, gated by signed control-plane owner evidence."""
     require_live_owner_evidence(spec)
     return _build_binance_exec_config(spec, credential, BinanceEnvironment.LIVE)

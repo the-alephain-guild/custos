@@ -72,7 +72,7 @@ def test_wheel_bytes_identical_across_rebuild():
         "already produces identical wheel bytes on the currently pinned "
         "hatchling. The epoch pin is defence-in-depth (defends against a "
         "future hatchling regression that reintroduces host-clock leakage), "
-        "not the sole reproducibility knob. See docs/reproducible-build.md "
+        "not the sole reproducibility knob. See the signed release chain chapter "
         "§'The three knobs' for the rationale. If a hatchling upgrade "
         "regresses on determinism this test will unexpectedly-PASS and the "
         "xfail marker itself will fail, alerting us to a real regression."
@@ -97,6 +97,6 @@ def test_wheel_bytes_differ_without_epoch():
             "No SOURCE_DATE_EPOCH pin, yet two rebuilds produced the same"
             " wheel bytes. hatchling looks natively deterministic — the epoch"
             " is now defence-in-depth rather than the sole knob. Update"
-            " docs/reproducible-build.md and consider `@pytest.mark.xfail`"
+            " the signed release chain chapter and consider `@pytest.mark.xfail`"
             " on this test rather than removing the epoch pin."
         )

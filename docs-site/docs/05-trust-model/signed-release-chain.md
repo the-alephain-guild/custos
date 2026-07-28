@@ -86,6 +86,6 @@ served by:
   identity, and cosign signature against the published digest.
 
 A follow-up plan (tracked in
-[`upgrade-path.md`](/release-governance/upgrade-paths)) will pin the image
+[upgrade paths](/release-governance/upgrade-paths)) will pin the image
 build to a specific buildkit + `SOURCE_DATE_EPOCH` combination for
 bit-for-bit image reproducibility as well.

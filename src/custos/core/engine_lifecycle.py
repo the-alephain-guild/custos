@@ -410,7 +410,7 @@ class EngineLifecycleSupervisor:
                 "promotion_evidence_digest"
             ):
                 raise EngineLifecycleBlocked(
-                    "live execution lacks signed Crucible promotion evidence"
+                    "live execution lacks signed control-plane promotion evidence"
                 )
         return authority
 

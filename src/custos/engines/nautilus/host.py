@@ -397,7 +397,7 @@ class NtTradingNodeHost:
         sandbox fills locally against live prices (no exchange contact); testnet /
         live place real orders on the Binance testnet / live endpoints. Real venues
         reconcile against exchange account state, the sandbox has none. A live plan
-        requires Crucible-signed promotion evidence inside the accepted spec.
+        requires control-plane-signed promotion evidence inside the accepted spec.
         """
         if trading_mode == "sandbox":
             starting_balances = (spec.get("sandbox") or {}).get(

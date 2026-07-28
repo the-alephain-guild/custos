@@ -13,7 +13,7 @@ wheel, so this hook is intentionally minimal. Its purpose is defence-in-depth:
 
 External audit invariant: this hook must never modify wheel content — the
 whole point of reproducibility is that the wheel is a deterministic function
-of the source tree + the epoch. See ``docs/reproducible-build.md``.
+of the source tree + the epoch. See the signed release chain chapter.
 """
 
 from __future__ import annotations
