@@ -251,6 +251,78 @@ def test_no_credential_is_read_for_a_mode_the_lane_refuses(tmp_path: Path) -> No
         read(live)
 
 
+def _mounted(tmp_path: Path, name: str = "supertrend") -> Any:
+    from custos.offline.daemon import BindMountedStrategy
+
+    return BindMountedStrategy(strategy_path=tmp_path / name, registry_name=name, digest="a" * 64)
+
+
+def _unbound_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Start from a process where nothing has bound strategy discovery yet.
+
+    Other suites import the toolkit registry, and once imported it has already read
+    the variable. Without pinning both, these tests would pass or fail on whatever
+    ran before them.
+    """
+
+    import sys
+
+    monkeypatch.delenv("STRATEGY_INJECT_PATH", raising=False)
+    monkeypatch.delitem(sys.modules, "custos_toolkit_nautilus.adapter.registry", raising=False)
+
+
+def test_the_activation_identity_follows_the_mounted_digest(tmp_path: Path) -> None:
+    from custos.offline.daemon import BindMountedStrategy
+
+    one = _mounted(tmp_path)
+    other = BindMountedStrategy(
+        strategy_path=tmp_path / "supertrend", registry_name="supertrend", digest="b" * 64
+    )
+
+    assert one.activation_id != other.activation_id
+    assert one.activation_id == _mounted(tmp_path).activation_id
+
+
+def test_choosing_the_same_directory_twice_is_harmless(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _unbound_registry(monkeypatch)
+    mounted = _mounted(tmp_path)
+
+    mounted.select_discovery_path()
+    mounted.select_discovery_path()
+
+    import os
+
+    assert os.environ["STRATEGY_INJECT_PATH"] == str(tmp_path / "supertrend")
+
+
+def test_a_second_strategy_directory_is_refused_rather_than_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Serving the first deployment's strategy to the second is silent and wrong."""
+
+    _unbound_registry(monkeypatch)
+    _mounted(tmp_path, "first").select_discovery_path()
+
+    with pytest.raises(RuntimeError, match="cannot also serve"):
+        _mounted(tmp_path, "second").select_discovery_path()
+
+
+def test_choosing_after_the_registry_is_imported_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The registry reads the variable once, at import; setting it later is a no-op."""
+
+    import sys
+
+    monkeypatch.delenv("STRATEGY_INJECT_PATH", raising=False)
+    monkeypatch.setitem(sys.modules, "custos_toolkit_nautilus.adapter.registry", object())
+
+    with pytest.raises(RuntimeError, match="imported before"):
+        _mounted(tmp_path).select_discovery_path()
+
+
 def test_start_offers_the_flag_the_consumer_passes() -> None:
     """`deploy/custos/docker-compose.yaml` starts the runner with these flags."""
 

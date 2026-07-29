@@ -474,11 +474,11 @@ Filled at close-out, one row per red line, per lesson #40 — `code_coverage` an
 | `tests/test_cli_deployment.py` | 15 |
 | `tests/test_offline_nats_bootstrap.py` | 17 |
 | `tests/test_offline_reconciler.py` | 22 |
-| `tests/test_offline_lane_daemon.py` | 10 |
+| `tests/test_offline_lane_daemon.py` | 14 |
 | `tests/test_gateway_contract_v1_samples.py` | 7 |
 
-上表合计 125 条。末行那个文件早于本 plan 存在，其 7 条里 3 条是既有的，本 plan 在其中加了
-4 条面存在性断言 —— 故本 plan 净增 122 条（其中 5 条来自审查后的 H1 修复）。
+上表合计 129 条。末行那个文件早于本 plan 存在，其 7 条里 3 条是既有的，本 plan 在其中加了
+4 条面存在性断言 —— 故本 plan 净增 126 条（其中 9 条来自审查后的 H1/H2 修复）。
 
 含两类"证明门会咬人"的 relaxed-double：
 `verify_offline_lane` 的绕过/未分类用例，以及 reconciler 自身 live 拒绝（模型永不产出 live

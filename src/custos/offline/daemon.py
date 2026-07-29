@@ -16,6 +16,7 @@ import asyncio
 import contextlib
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Any, Final
 
@@ -34,6 +35,9 @@ _log = get_logger("custos.offline.daemon")
 # Read back by `custos.core.readiness`, which rejects a health document carrying
 # anything else. That rejection is what keeps this copy honest.
 RUNNER_RUNTIME_METRICS_SCHEMA_V1: Final = "alephain.custos.runner-runtime-metrics.v1"
+
+_DISCOVERY_PATH_VARIABLE: Final = "STRATEGY_INJECT_PATH"
+_REGISTRY_MODULE: Final = "custos_toolkit_nautilus.adapter.registry"
 
 
 class BindMountedStrategy:
@@ -56,14 +60,37 @@ class BindMountedStrategy:
 
     @property
     def strategy(self) -> object:
+        self.select_discovery_path()
         # Imported lazily: the toolkit registry pulls in NautilusTrader.
-        os.environ.setdefault("STRATEGY_INJECT_PATH", str(self._strategy_path))
         from custos_toolkit_nautilus.adapter import create_strategy
 
         return create_strategy(
             self._registry_name,
             config_path=self._strategy_path / "config.yaml",
         )
+
+    def select_discovery_path(self) -> None:
+        """Point strategy discovery at this directory, or refuse to guess.
+
+        The registry reads ``STRATEGY_INJECT_PATH`` once, at import. Setting it
+        afterwards changes nothing, and setting it only when unset would silently
+        serve a second deployment the first one's strategy. Both cases used to pass
+        quietly and load the wrong code, so both now stop.
+        """
+
+        wanted = str(self._strategy_path)
+        current = os.environ.get(_DISCOVERY_PATH_VARIABLE)
+        if current is not None and current != wanted:
+            raise RuntimeError(
+                f"strategy discovery is already pointed at {current!r}; this runner cannot "
+                f"also serve {wanted!r} in the same process"
+            )
+        if current is None and _REGISTRY_MODULE in sys.modules:
+            raise RuntimeError(
+                "the strategy registry was imported before a strategy directory was chosen, "
+                f"so {wanted!r} would be ignored in favour of its built-in discovery paths"
+            )
+        os.environ[_DISCOVERY_PATH_VARIABLE] = wanted
 
 
 async def run_offline_lane(
