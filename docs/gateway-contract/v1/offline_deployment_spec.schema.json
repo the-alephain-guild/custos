@@ -1,0 +1,178 @@
+{
+  "$defs": {
+    "LifecycleState": {
+      "enum": [
+        "running",
+        "paused",
+        "stopped",
+        "archived"
+      ],
+      "title": "LifecycleState",
+      "type": "string"
+    },
+    "ProvenanceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "credential_id": {
+          "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+          "title": "Credential Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "credential_id"
+      ],
+      "title": "ProvenanceRef",
+      "type": "object"
+    },
+    "SandboxConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "starting_balances": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Starting Balances",
+          "type": "array"
+        }
+      },
+      "required": [
+        "starting_balances"
+      ],
+      "title": "SandboxConfig",
+      "type": "object"
+    },
+    "TradingMode": {
+      "enum": [
+        "sandbox",
+        "testnet",
+        "live"
+      ],
+      "title": "TradingMode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Desired state accepted on the offline lane, in the shape PS renders.",
+  "properties": {
+    "approved_by": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Approved By",
+      "type": "array"
+    },
+    "code_hash": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Code Hash"
+    },
+    "connector": {
+      "minLength": 1,
+      "title": "Connector",
+      "type": "string"
+    },
+    "generation": {
+      "minimum": 1,
+      "title": "Generation",
+      "type": "integer"
+    },
+    "leverage": {
+      "minimum": 1,
+      "title": "Leverage",
+      "type": "integer"
+    },
+    "lifecycle_state": {
+      "$ref": "#/$defs/LifecycleState"
+    },
+    "log_level": {
+      "default": "INFO",
+      "title": "Log Level",
+      "type": "string"
+    },
+    "nautilus_config": {
+      "additionalProperties": true,
+      "title": "Nautilus Config",
+      "type": "object"
+    },
+    "pairs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Pairs",
+      "type": "array"
+    },
+    "provenance_ref": {
+      "$ref": "#/$defs/ProvenanceRef"
+    },
+    "risk_config": {
+      "additionalProperties": true,
+      "title": "Risk Config",
+      "type": "object"
+    },
+    "sandbox": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SandboxConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "spec_id": {
+      "pattern": "^[a-zA-Z0-9_-]{1,64}$",
+      "title": "Spec Id",
+      "type": "string"
+    },
+    "strategy_config": {
+      "additionalProperties": true,
+      "title": "Strategy Config",
+      "type": "object"
+    },
+    "strategy_path": {
+      "minLength": 1,
+      "title": "Strategy Path",
+      "type": "string"
+    },
+    "strategy_registry_name": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Strategy Registry Name"
+    },
+    "trading_mode": {
+      "$ref": "#/$defs/TradingMode"
+    }
+  },
+  "required": [
+    "spec_id",
+    "generation",
+    "trading_mode",
+    "lifecycle_state",
+    "strategy_path",
+    "provenance_ref",
+    "connector",
+    "pairs",
+    "leverage"
+  ],
+  "title": "OfflineDeploymentSpec v1",
+  "type": "object"
+}

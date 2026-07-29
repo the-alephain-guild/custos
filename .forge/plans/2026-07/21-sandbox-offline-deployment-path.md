@@ -346,8 +346,16 @@ Filled at close-out, one row per red line, per lesson #40 — `code_coverage` an
   `git show 514c130:src/custos/cli/subcommands/deployment.py` has only `validate`, and its
   docstring reads *"The runner CLI intentionally has no command-publish operation."*
   `publish` died at `324da6e`, a week earlier.
-- **Decision**: restore source is `324da6e^` for `publish`, `nats bootstrap` and the
-  standalone transport; `8c4454f^` for `validate`.
+- **Correction (Task 3)**: this entry's own first answer — `324da6e^`, i.e. `cd41bbb` — was
+  also wrong, and reached by inference rather than by reading. `cd41bbb` already requires
+  `deployment_instance_id` and `deployment_spec_digest`, which the consumer's renderer
+  never emits. The shape PS actually renders is the one at `cec0f8a`, the revision Plan 17
+  closed out and PS pins; `5cf7340` added the two fields afterwards.
+- **Decision**: the offline spec shape is restored from `cec0f8a`; the publish action,
+  `nats bootstrap` and the standalone transport come from `324da6e^`, where they last
+  existed. `compute_strategy_code_hash` is restored self-contained, because the module it
+  used to live in (`custos.engines.nautilus.strategy_loader`) no longer exists and is
+  itself a banned import today.
 
 ### DEVIATION: DEV-21-SCOPE-EXPANSION
 - **Level**: medium
