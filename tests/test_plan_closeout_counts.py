@@ -1,0 +1,104 @@
+"""Test counts written into a close-out must be counts, not estimates.
+
+Plan 21's close-out claimed 91 new tests. The real number was 117, its own
+breakdown summed to 108, and one whole suite was missing from the list — three
+different ways of being wrong in one sentence, none of which required anyone to
+lie, only to write a number without counting it.
+
+So the numbers get counted here instead. A close-out states one row per test
+file; this collects each file and compares. A bare total with no rows behind it
+is refused, because that is the shape the wrong number came in.
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from collections import Counter
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+PLANS = ROOT / ".forge/plans"
+
+_ROW = re.compile(r"^\|\s*`(tests/[\w/]+\.py)`\s*\|\s*(\d+)\s*\|", re.MULTILINE)
+# Plan close-outs are written in Chinese by convention, so the phrases a total can
+# appear in are Chinese. This is a pattern over that prose, not prose of its own.
+_BARE_TOTAL = re.compile(r"(?:新增\s*(?P<a>\d+)\s*个测试|上表合计\s*(?P<b>\d+)\s*条)")  # noqa: language
+
+
+def _plans_with_test_tables() -> list[Path]:
+    return sorted(
+        path for path in PLANS.rglob("*.md") if _ROW.search(path.read_text(encoding="utf-8"))
+    )
+
+
+def _collected_counts(files: list[str]) -> Counter[str]:
+    """Ask pytest itself how many tests each file has."""
+
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "--no-header", *files],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        pytest.fail(f"collection failed for {files}:\n{result.stdout}\n{result.stderr}")
+    counts: Counter[str] = Counter()
+    for line in result.stdout.splitlines():
+        node, separator, _ = line.partition("::")
+        if separator and node.endswith(".py"):
+            counts[node] += 1
+    return counts
+
+
+@pytest.mark.parametrize("plan", _plans_with_test_tables(), ids=lambda p: p.name)
+def test_a_close_out_test_table_matches_what_pytest_collects(plan: Path) -> None:
+    text = plan.read_text(encoding="utf-8")
+    claimed = {path: int(count) for path, count in _ROW.findall(text)}
+
+    missing = [path for path in claimed if not (ROOT / path).is_file()]
+    assert not missing, f"{plan.name} counts test files that do not exist: {missing}"
+
+    collected = _collected_counts(sorted(claimed))
+    wrong = {
+        path: (count, collected.get(path, 0))
+        for path, count in claimed.items()
+        if collected.get(path, 0) != count
+    }
+    assert not wrong, (
+        f"{plan.name} states test counts pytest disagrees with (claimed, collected): {wrong}"
+    )
+
+
+@pytest.mark.parametrize("plan", _plans_with_test_tables(), ids=lambda p: p.name)
+def test_a_close_out_states_no_total_its_rows_do_not_support(plan: Path) -> None:
+    """A total nobody can check is exactly how the wrong one survived review."""
+
+    text = plan.read_text(encoding="utf-8")
+    rows = sum(int(count) for _, count in _ROW.findall(text))
+
+    for match in _BARE_TOTAL.finditer(text):
+        total = match.group("a") or match.group("b")
+        assert int(total) == rows, (
+            f"{plan.name} claims {total} tests while its rows account for {rows}; "
+            "state a total its own table supports, or drop the total"
+        )
+
+
+def test_the_probe_notices_a_count_that_drifted(tmp_path: Path) -> None:
+    """Proves this file can fail rather than passing on whatever it is given."""
+
+    target = tmp_path / "fake_plan.md"
+    target.write_text("| `tests/test_plan_closeout_counts.py` | 999 |\n", encoding="utf-8")
+    claimed = {path: int(count) for path, count in _ROW.findall(target.read_text())}
+
+    collected = _collected_counts(sorted(claimed))
+
+    assert (
+        collected["tests/test_plan_closeout_counts.py"]
+        != claimed["tests/test_plan_closeout_counts.py"]
+    )

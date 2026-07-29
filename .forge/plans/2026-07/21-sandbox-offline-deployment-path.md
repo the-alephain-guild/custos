@@ -462,8 +462,25 @@ Filled at close-out, one row per red line, per lesson #40 — `code_coverage` an
 
 ### 失败模式覆盖
 
-新增 91 个测试，分布：mode guard 22、离线契约 23、CLI 15、bootstrap 17、reconcile 17（含
-`--reconcile-strategy-id` 组合 10）、面存在性 4。含两类"证明门会咬人"的 relaxed-double：
+下表由 `tests/test_plan_closeout_counts.py` 逐行核对 —— 数字来自 pytest 实际 collect，
+不是手写。（初版这里写的是"新增 91 个"，实际 117；自列分项之和 108 与自报总数也不自洽，
+且整组漏掉了权威门那 8 条。审计以 C3 记之，本表是修正。）
+
+| 测试文件 | 条数 |
+|---|---|
+| `tests/test_offline_lane_authority.py` | 8 |
+| `tests/test_offline_mode_guard.py` | 23 |
+| `tests/test_offline_deployment_contract.py` | 23 |
+| `tests/test_cli_deployment.py` | 15 |
+| `tests/test_offline_nats_bootstrap.py` | 17 |
+| `tests/test_offline_reconciler.py` | 17 |
+| `tests/test_offline_lane_daemon.py` | 10 |
+| `tests/test_gateway_contract_v1_samples.py` | 7 |
+
+上表合计 120 条。末行那个文件早于本 plan 存在，其 7 条里 3 条是既有的，本 plan 在其中加了
+4 条面存在性断言 —— 故本 plan 净增 117 条。
+
+含两类"证明门会咬人"的 relaxed-double：
 `verify_offline_lane` 的绕过/未分类用例，以及 reconciler 自身 live 拒绝（模型永不产出 live
 spec，所以用跳过校验的 spec 证明该分支不是死代码）。
 

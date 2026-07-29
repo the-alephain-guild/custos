@@ -77,6 +77,20 @@ Plan 执行完毕后, 在 plan 文件末尾追加:
 - **遗留项**: {列表或"无"}
 ```
 
+### 数字类声明必须来自实跑
+
+完成报告里的测试条数**不得手写**。按下表逐文件列出，数字取自 `pytest --collect-only`：
+
+```markdown
+| 测试文件 | 条数 |
+|---|---|
+| `tests/test_xxx.py` | 12 |
+```
+
+`tests/test_plan_closeout_counts.py` 会逐行核对这张表，并拒绝任何该表支撑不了的合计数。
+写"约"、"共计"或凭印象的数字等于没数 —— plan 21 的 close-out 一句话里错了三处
+（总数、分项之和、整组漏计），见 `historical-lessons.md` C8。
+
 ## Roadmap
 
 高层里程碑跟踪在:
