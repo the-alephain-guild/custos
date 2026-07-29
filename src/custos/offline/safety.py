@@ -110,32 +110,41 @@ class OfflineExposureGuard:
 
         return not any(watched.latched for watched in self._watched.values())
 
-    def watch(self, spec: OfflineDeploymentSpec, deployment_instance_id: str) -> None:
-        """Guard this deployment under the ceilings its spec asks for."""
+    def watch(
+        self,
+        spec_id: str,
+        deployment_instance_id: str,
+        limits: FallbackBreakerConfig,
+    ) -> None:
+        """Guard this deployment under ceilings the caller has already read.
 
-        config = resolve_breaker_config(spec)
-        watched = self._watched.get(spec.spec_id)
+        Taking them resolved rather than reading them here is deliberate: ceilings
+        that cannot be read must stop a deployment before it starts, and that
+        decision belongs where the deployment is decided.
+        """
+
+        watched = self._watched.get(spec_id)
         if watched is None:
-            self._watched[spec.spec_id] = _Watched(
+            self._watched[spec_id] = _Watched(
                 deployment_instance_id=deployment_instance_id,
                 supervisor=EngineSafetySupervisor(
-                    engine=self._engine, breaker=FallbackBreaker(config)
+                    engine=self._engine, breaker=FallbackBreaker(limits)
                 ),
             )
             _log.info(
                 "offline_exposure_guard_watching",
-                spec_id=spec.spec_id,
-                max_notional=str(config.max_notional),
-                max_drawdown_pct=str(config.max_drawdown_pct),
-                limit_source=config.source,
+                spec_id=spec_id,
+                max_notional=str(limits.max_notional),
+                max_drawdown_pct=str(limits.max_drawdown_pct),
+                limit_source=limits.source,
             )
             return
-        if watched.supervisor.breaker.apply_config(config):
+        if watched.supervisor.breaker.apply_config(limits):
             _log.info(
                 "offline_exposure_limits_changed",
-                spec_id=spec.spec_id,
-                max_notional=str(config.max_notional),
-                max_drawdown_pct=str(config.max_drawdown_pct),
+                spec_id=spec_id,
+                max_notional=str(limits.max_notional),
+                max_drawdown_pct=str(limits.max_drawdown_pct),
             )
 
     def release(self, spec_id: str) -> None:

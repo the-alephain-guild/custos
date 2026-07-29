@@ -473,6 +473,34 @@ async def test_the_refusal_is_terminal_because_redelivery_will_not_clear_it() ->
     assert any(entry["event"] == "offline_generation_refused_after_trip" for entry in logs)
 
 
+async def test_a_spec_whose_ceilings_cannot_be_read_is_refused_before_it_is_deployed() -> None:
+    """Deploying first and failing afterwards would leave a strategy nobody is guarding."""
+
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    guard = OfflineExposureGuard(engine=engine, interval=0.001)
+    reconciler = _reconciler(engine, publisher, guard=guard)
+
+    settlement = await reconciler.apply(_spec(risk_config={"max_total_notional": "lots"}))
+
+    assert settlement is Settlement.REJECTED
+    assert engine.deployed == []
+    assert publisher.payloads[-1]["health"] == "unhealthy"
+    assert await guard.evaluate_once() == []
+
+
+async def test_unreadable_ceilings_are_refused_even_with_no_guard_composed() -> None:
+    """The ceilings are part of accepting desired state, not a feature of the guard."""
+
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+
+    settlement = await _reconciler(engine, publisher).apply(
+        _spec(risk_config={"max_drawdown_pct": "-5"})
+    )
+
+    assert settlement is Settlement.REJECTED
+    assert engine.deployed == []
+
+
 async def test_a_guard_within_its_ceiling_changes_nothing() -> None:
     engine = _FakeEngine()
     publisher = _RecordingPublisher()

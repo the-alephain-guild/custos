@@ -24,9 +24,10 @@ from uuid import UUID, uuid5
 import uuid6
 
 from custos.contracts import LifecycleState
+from custos.core.fallback_breaker import FallbackBreakerConfig
 from custos.core.log import get_logger
 from custos.offline.mode_guard import refuse_live
-from custos.offline.safety import OfflineExposureGuard
+from custos.offline.safety import OfflineExposureGuard, resolve_breaker_config
 from custos.offline.spec import (
     OfflineDeploymentMessage,
     OfflineDeploymentSpec,
@@ -201,6 +202,20 @@ class OfflineReconciler:
             await self._report(spec, healthy=False)
             return Settlement.REJECTED
 
+        try:
+            limits = resolve_breaker_config(spec)
+        except ValueError as exc:
+            # Terminal: the same spec will not read any better on redelivery, and
+            # starting it under ceilings nobody could read is the worse answer.
+            _log.error(
+                "offline_exposure_limits_rejected",
+                spec_id=spec.spec_id,
+                generation=spec.generation,
+                error=str(exc),
+            )
+            await self._report(spec, healthy=False)
+            return Settlement.REJECTED
+
         applied = self._applied.setdefault(spec.spec_id, _Applied())
 
         if spec.generation < applied.generation:
@@ -240,14 +255,17 @@ class OfflineReconciler:
 
         applied.generation = spec.generation
         self._remember(spec.spec_id, applied)
-        self._guard_from_now_on(spec, identity)
+        self._update_guard(spec, identity, limits)
         await self._report(spec, healthy=True)
         return Settlement.APPLIED
 
-    def _guard_from_now_on(
-        self, spec: OfflineDeploymentSpec, identity: OfflineRuntimeIdentity
+    def _update_guard(
+        self,
+        spec: OfflineDeploymentSpec,
+        identity: OfflineRuntimeIdentity,
+        limits: FallbackBreakerConfig,
     ) -> None:
-        """Hand the guard what it needs, once the engine is in the asked-for state.
+        """Tell the guard what changed, once the engine is in the asked-for state.
 
         There is no await between the engine reaching that state and this call, so
         the tick cannot observe a running deployment nobody is watching.
@@ -258,7 +276,7 @@ class OfflineReconciler:
         if spec.lifecycle_state in _TERMINAL_STATES:
             self._guard.release(spec.spec_id)
             return
-        self._guard.watch(spec, str(identity.deployment_instance_id))
+        self._guard.watch(spec.spec_id, str(identity.deployment_instance_id), limits)
 
     def _remember(self, spec_id: str, applied: _Applied) -> None:
         if self._store is None:

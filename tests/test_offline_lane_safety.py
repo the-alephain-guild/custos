@@ -175,6 +175,10 @@ def _guard(engine: _SafetyEngine, **overrides: Any) -> OfflineExposureGuard:
     return OfflineExposureGuard(engine=engine, interval=0.001, **overrides)
 
 
+def _watch(guard: OfflineExposureGuard, spec: OfflineDeploymentSpec) -> None:
+    guard.watch(spec.spec_id, INSTANCE, resolve_breaker_config(spec))
+
+
 async def test_nothing_is_evaluated_before_a_deployment_is_watched() -> None:
     engine = _SafetyEngine()
 
@@ -185,7 +189,7 @@ async def test_nothing_is_evaluated_before_a_deployment_is_watched() -> None:
 async def test_a_snapshot_within_the_ceiling_leaves_the_position_alone() -> None:
     engine = _SafetyEngine()
     guard = _guard(engine)
-    guard.watch(_spec(risk_config={"max_total_notional": "25000"}), INSTANCE)
+    _watch(guard, _spec(risk_config={"max_total_notional": "25000"}))
 
     await guard.evaluate_once()
 
@@ -197,7 +201,7 @@ async def test_a_snapshot_within_the_ceiling_leaves_the_position_alone() -> None
 async def test_a_snapshot_beyond_the_ceiling_flattens_and_latches() -> None:
     engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
     guard = _guard(engine)
-    guard.watch(_spec(), INSTANCE)
+    _watch(guard, _spec())
 
     await guard.evaluate_once()
 
@@ -208,7 +212,7 @@ async def test_a_snapshot_beyond_the_ceiling_flattens_and_latches() -> None:
 async def test_an_unreadable_snapshot_fails_closed_rather_than_assuming_safety() -> None:
     engine = _SafetyEngine(RuntimeError("the engine is not answering"))
     guard = _guard(engine)
-    guard.watch(_spec(), INSTANCE)
+    _watch(guard, _spec())
 
     await guard.evaluate_once()
 
@@ -219,7 +223,7 @@ async def test_an_unreadable_snapshot_fails_closed_rather_than_assuming_safety()
 async def test_an_untrustworthy_snapshot_fails_closed_too() -> None:
     engine = _SafetyEngine(_status(reliable=False, unreliable_reason="no_mark_for_position"))
     guard = _guard(engine)
-    guard.watch(_spec(), INSTANCE)
+    _watch(guard, _spec())
 
     await guard.evaluate_once()
 
@@ -229,7 +233,7 @@ async def test_an_untrustworthy_snapshot_fails_closed_too() -> None:
 async def test_a_latched_guard_does_not_flatten_the_same_position_every_tick() -> None:
     engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
     guard = _guard(engine)
-    guard.watch(_spec(), INSTANCE)
+    _watch(guard, _spec())
 
     await guard.evaluate_once()
     await guard.evaluate_once()
@@ -242,7 +246,7 @@ async def test_the_ceiling_the_spec_named_is_the_one_enforced() -> None:
 
     engine = _SafetyEngine(_status(open_notional=Decimal("9000")))
     guard = _guard(engine)
-    guard.watch(_spec(risk_config={"max_total_notional": "25000"}), INSTANCE)
+    _watch(guard, _spec(risk_config={"max_total_notional": "25000"}))
 
     await guard.evaluate_once()
 
@@ -255,7 +259,7 @@ async def test_a_stopped_deployment_is_no_longer_evaluated() -> None:
     engine = _SafetyEngine()
     guard = _guard(engine)
     spec = _spec()
-    guard.watch(spec, INSTANCE)
+    _watch(guard, spec)
 
     guard.release(spec.spec_id)
     await guard.evaluate_once()
@@ -266,7 +270,7 @@ async def test_a_stopped_deployment_is_no_longer_evaluated() -> None:
 async def test_the_tick_keeps_evaluating_until_it_is_stopped() -> None:
     engine = _SafetyEngine()
     guard = _guard(engine)
-    guard.watch(_spec(risk_config={"max_total_notional": "25000"}), INSTANCE)
+    _watch(guard, _spec(risk_config={"max_total_notional": "25000"}))
     stop = asyncio.Event()
 
     async def stop_after_three() -> None:
@@ -284,7 +288,7 @@ async def test_the_tick_ends_once_every_watched_deployment_is_latched() -> None:
 
     engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
     guard = _guard(engine)
-    guard.watch(_spec(), INSTANCE)
+    _watch(guard, _spec())
 
     await asyncio.wait_for(guard.run(asyncio.Event()), timeout=2)
 
@@ -297,7 +301,7 @@ async def test_the_tick_does_not_swallow_a_failure_to_flatten() -> None:
     engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
     engine.flatten_error = RuntimeError("the venue refused the close")
     guard = _guard(engine)
-    guard.watch(_spec(), INSTANCE)
+    _watch(guard, _spec())
 
     with pytest.raises(RuntimeError, match="refused the close"):
         await asyncio.wait_for(guard.run(asyncio.Event()), timeout=2)
