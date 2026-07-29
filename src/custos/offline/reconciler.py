@@ -190,6 +190,17 @@ class OfflineReconciler:
 
     async def apply(self, spec: OfflineDeploymentSpec) -> Settlement:
         refuse_live(spec.trading_mode.value, source="deployment spec")
+        if self._guard is not None and not self._guard.allows_new_generations():
+            # Terminal: redelivering this generation will not unfreeze the breaker,
+            # and admitting it would hand back the exposure the guard just flattened.
+            _log.error(
+                "offline_generation_refused_after_trip",
+                spec_id=spec.spec_id,
+                generation=spec.generation,
+            )
+            await self._report(spec, healthy=False)
+            return Settlement.REJECTED
+
         applied = self._applied.setdefault(spec.spec_id, _Applied())
 
         if spec.generation < applied.generation:

@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from decimal import Decimal
 from typing import Any
 
 import pytest
 from structlog.testing import capture_logs
 
 from custos.contracts import TradingMode
+from custos.core.engine_protocol import EngineStatus
 from custos.offline.mode_guard import OfflineModeRefused
 from custos.offline.reconciler import (
     OfflineReconciler,
@@ -22,6 +24,7 @@ from custos.offline.reconciler import (
     runtime_identity,
     runtime_spec,
 )
+from custos.offline.safety import OfflineExposureGuard
 from custos.offline.spec import OfflineDeploymentMessage, OfflineDeploymentSpec
 
 TENANT = "local"
@@ -53,12 +56,38 @@ def _message(spec: OfflineDeploymentSpec) -> bytes:
 
 
 class _FakeEngine:
-    def __init__(self, *, supported: tuple[str, ...] = ("sandbox", "testnet")) -> None:
+    def __init__(
+        self,
+        *,
+        supported: tuple[str, ...] = ("sandbox", "testnet"),
+        open_notional: str = "100",
+    ) -> None:
         self.supported = supported
         self.deployed: list[dict[str, Any]] = []
         self.reconfigured: list[dict[str, Any]] = []
         self.stopped: list[str] = []
+        self.flattened: list[tuple[str, str]] = []
         self.deploy_error: Exception | None = None
+        self.open_notional = Decimal(open_notional)
+
+    async def get_engine_status(self, deployment_instance_id: str) -> EngineStatus:
+        return EngineStatus(
+            phase="running",
+            position_count=1,
+            order_count=0,
+            open_notional=self.open_notional,
+            peak_equity=Decimal("10000"),
+            current_equity=Decimal("10000"),
+            drawdown_pct=Decimal("0"),
+        )
+
+    async def flatten_positions(self, deployment_instance_id: str, reason: str) -> None:
+        self.flattened.append((deployment_instance_id, reason))
+
+    def forget_what_it_was_asked_to_do(self) -> None:
+        self.deployed.clear()
+        self.reconfigured.clear()
+        self.stopped.clear()
 
     async def deploy(self, spec: dict, credential: dict, artifact: Any) -> str:
         if self.deploy_error is not None:
@@ -91,7 +120,11 @@ class _RecordingPublisher:
         return [body["payload"] for _, body in self.published]
 
 
-def _reconciler(engine: _FakeEngine, publisher: _RecordingPublisher) -> OfflineReconciler:
+def _reconciler(
+    engine: _FakeEngine,
+    publisher: _RecordingPublisher,
+    guard: OfflineExposureGuard | None = None,
+) -> OfflineReconciler:
     return OfflineReconciler(
         tenant_id=TENANT,
         runner_id=RUNNER,
@@ -100,6 +133,7 @@ def _reconciler(engine: _FakeEngine, publisher: _RecordingPublisher) -> OfflineR
         publish=publisher,
         artifact_for=lambda spec: object(),
         credential_for=lambda spec: {"api_key": "k", "api_secret": "s"},
+        guard=guard,
     )
 
 
@@ -386,6 +420,101 @@ async def test_a_delivery_that_cannot_be_settled_says_so() -> None:
 
     assert len(engine.deployed) == 1
     assert any(event["event"] == "offline_delivery_not_settled" for event in events), events
+
+
+async def _latched(engine: _FakeEngine, publisher: _RecordingPublisher) -> OfflineReconciler:
+    """One applied generation, then a tick that finds it beyond its ceiling."""
+
+    guard = OfflineExposureGuard(engine=engine, interval=0.001)
+    reconciler = _reconciler(engine, publisher, guard=guard)
+    await reconciler.apply(_spec())
+    await guard.evaluate_once()
+
+    assert not guard.allows_new_generations(), "the tick did not trip on the breach"
+    engine.forget_what_it_was_asked_to_do()
+    return reconciler
+
+
+async def test_a_new_generation_is_refused_once_the_guard_has_tripped() -> None:
+    """Flattening alone is undone by the next generation, so the lane stops taking them."""
+
+    engine = _FakeEngine(open_notional="10000")
+    publisher = _RecordingPublisher()
+    reconciler = await _latched(engine, publisher)
+
+    settlement = await reconciler.apply(_spec(generation=2))
+
+    assert settlement is Settlement.REJECTED
+    assert (engine.deployed, engine.reconfigured, engine.stopped) == ([], [], [])
+    assert publisher.payloads[-1]["health"] == "unhealthy"
+
+
+async def test_a_redelivered_generation_is_refused_too_rather_than_reported_healthy() -> None:
+    """The operator's harness polls this status; a stale healthy would mislead it."""
+
+    engine = _FakeEngine(open_notional="10000")
+    publisher = _RecordingPublisher()
+    reconciler = await _latched(engine, publisher)
+
+    settlement = await reconciler.apply(_spec())
+
+    assert settlement is Settlement.REJECTED
+    assert publisher.payloads[-1]["health"] == "unhealthy"
+
+
+async def test_the_refusal_is_terminal_because_redelivery_will_not_clear_it() -> None:
+    engine = _FakeEngine(open_notional="10000")
+    publisher = _RecordingPublisher()
+    reconciler = await _latched(engine, publisher)
+
+    with capture_logs() as logs:
+        await reconciler.apply(_spec(generation=2))
+
+    assert any(entry["event"] == "offline_generation_refused_after_trip" for entry in logs)
+
+
+async def test_a_guard_within_its_ceiling_changes_nothing() -> None:
+    engine = _FakeEngine()
+    publisher = _RecordingPublisher()
+    guard = OfflineExposureGuard(engine=engine, interval=0.001)
+    reconciler = _reconciler(engine, publisher, guard=guard)
+
+    await reconciler.apply(_spec())
+    await guard.evaluate_once()
+
+    assert await reconciler.apply(_spec(generation=2)) is Settlement.APPLIED
+    assert engine.flattened == []
+
+
+async def test_a_reconciler_without_a_guard_behaves_as_it_always_did() -> None:
+    engine, publisher = _FakeEngine(open_notional="10000"), _RecordingPublisher()
+
+    assert await _reconciler(engine, publisher).apply(_spec()) is Settlement.APPLIED
+
+
+async def test_a_restart_starts_from_an_unlatched_guard() -> None:
+    """The latch lives in memory on purpose: restarting is how an operator clears it."""
+
+    engine = _FakeEngine(open_notional="10000")
+    publisher = _RecordingPublisher()
+    await _latched(engine, publisher)
+
+    restarted = _reconciler(engine, publisher, guard=OfflineExposureGuard(engine=engine))
+
+    assert await restarted.apply(_spec(generation=2)) is Settlement.APPLIED
+
+
+async def test_a_stopped_deployment_is_released_from_the_guard() -> None:
+    """A stopped instance cannot answer, and failing closed on that would be noise."""
+
+    engine = _FakeEngine()
+    guard = OfflineExposureGuard(engine=engine, interval=0.001)
+    reconciler = _reconciler(engine, _RecordingPublisher(), guard=guard)
+    await reconciler.apply(_spec())
+
+    await reconciler.apply(_spec(generation=2, lifecycle_state="stopped"))
+
+    assert await guard.evaluate_once() == []
 
 
 async def test_the_loop_survives_a_message_it_cannot_read() -> None:
