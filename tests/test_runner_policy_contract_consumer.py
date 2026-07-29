@@ -10,24 +10,37 @@ RECEIPT = ROOT / "docs/authority/receipts/custos-runner-safety-policy-v1-consume
 
 def test_runner_policy_pins_one_v1_producer_handoff() -> None:
     receipt = json.loads(RECEIPT.read_text(encoding="utf-8"))
+    producer = receipt["producer_authority"]
 
     assert receipt["receipt_version"] == 1
     assert receipt["runner_state_schema_version"] == 1
-    assert receipt["receipt_status"] == "READY_PRODUCER_HANDOFF_PENDING_RUNTIME_PUBLICATION_RECEIPT"
-    assert receipt["code_commit"] == "ab5038cf11a7dff6ca79264e6cb91b32758c1357"
-    assert receipt["producer_authority"]["producer_commit"] == (
-        "d52bb16cc307ccd784e0a615a997253d0ca07763"
-    )
-    assert receipt["producer_authority"]["producer_receipt_commit"] == (
-        "fe930088ea158f8fee057da79aa900674e48b2d3"
-    )
-    assert receipt["validation"]["status"] == "FOCUSED_RUNNER_POLICY_PRODUCER_HANDOFF_PASS"
-    assert receipt["validation"]["passed"] == 20
+    assert receipt["receipt_status"] == "AUTHENTICATED_SAME_POLICY_CONSUMED_DEPLOYED_ISSUANCE_OPEN"
+    assert receipt["code_commit"] == "81982761bff68b98893ee38f2159ee7c5656293b"
+    assert producer["producer_commit"] == "d52bb16cc307ccd784e0a615a997253d0ca07763"
+    assert producer["producer_receipt_commit"] == "2a851b210707c9eb86b5f244def4629081d3e3b0"
+    assert receipt["validation"]["status"] == "FOCUSED_RUNNER_POLICY_V1_PASS"
+    assert receipt["validation"]["passed"] == 22
     assert receipt["producer_handoff_consumed"] is True
-    assert receipt["runtime_policy_consumed"] is False
+    assert receipt["runtime_policy_consumed"] is True
     assert receipt["runner_policy_capability_ready"] is False
     assert receipt["runtime_ready"] is False
     assert receipt["production_ready"] is False
+
+
+def test_producer_authority_digests_match_the_vendored_bytes() -> None:
+    receipt = json.loads(RECEIPT.read_text(encoding="utf-8"))
+    producer = receipt["producer_authority"]
+
+    def digest(relative_path: str) -> str:
+        return hashlib.sha256((ROOT / relative_path).read_bytes()).hexdigest()
+
+    assert producer["producer_receipt_sha256"] == digest(producer["producer_receipt_path"])
+    assert producer["schema_sha256"] == digest(
+        "docs/authority/vendor/crucible-runner-safety-policy-v1.schema.json"
+    )
+    assert producer["golden_sha256"] == digest(
+        "docs/authority/vendor/crucible-runner-safety-policy-golden-v1.json"
+    )
 
 
 def test_runner_policy_assets_are_exact_and_single_revision_v1() -> None:

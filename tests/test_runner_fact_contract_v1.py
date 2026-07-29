@@ -165,7 +165,7 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
     assert receipt["consumer_receipts"] == {
         "crucible_rust": {
             "repository": "tesseract-trading/crucible-rust",
-            "commit": "818242c5708d055b2c4b1e5dc9d6a9e5570667fe",
+            "commit": "491c632bd9395363a22543f3592a8eea6bd0be09",
             "producer_path": (
                 "docs/authority/receipts/crucible-runner-fact-v1-consumer-receipt.json"
             ),
