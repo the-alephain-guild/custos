@@ -29,7 +29,7 @@ from custos.core.runner_nats_authority import (
     RunnerNatsTransportAuthorityClient,
     RunnerNatsTransportOperationCompletion,
 )
-from custos.core.runner_toml import RunnerToml
+from custos.core.runner_toml import RunnerToml, require_attested
 
 DEFAULT_TRANSPORT_VAULT_DIR = Path.home() / ".arx" / "vault" / "runner-nats-transport"
 DEFAULT_NATS_CA = Path.home() / ".arx" / "certs" / "crucible-nats-ca.pem"
@@ -129,7 +129,9 @@ def _add_identity_arguments(parser: argparse.ArgumentParser) -> None:
 
 def run(args: argparse.Namespace) -> int:
     try:
-        metadata = RunnerToml.read(args.runner_toml)
+        metadata = require_attested(
+            RunnerToml.read(args.runner_toml), action="load a transport authority"
+        )
         machine_vault_path = Path(metadata.machine_vault_path).expanduser().resolve()
         if (
             args.machine_vault is not None

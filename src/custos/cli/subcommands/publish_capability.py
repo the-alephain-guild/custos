@@ -23,7 +23,7 @@ from custos.core.runner_fact import (
     capability_scope_binding_values,
     normalize_capability_scope_bindings,
 )
-from custos.core.runner_toml import RunnerToml
+from custos.core.runner_toml import RunnerToml, require_attested
 
 _PUBLICATION_PATH = "/api/v1/runner/capability-publications"
 
@@ -48,7 +48,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def run(args: argparse.Namespace) -> int:
     try:
-        runner = RunnerToml.read(args.runner_toml)
+        runner = require_attested(
+            RunnerToml.read(args.runner_toml), action="publish a capability receipt"
+        )
         credential = MachineCredentialVault(Path(runner.machine_vault_path)).load()
         credential.assert_binding(runner)
         MachineCredentialHttpClient(runner.backend_url, credential).verify_active()

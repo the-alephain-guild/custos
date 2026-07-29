@@ -21,7 +21,7 @@ from custos.core.machine_credential_vault import (
     generate_machine_identity,
     resolve_age_recipient,
 )
-from custos.core.runner_toml import RunnerToml
+from custos.core.runner_toml import RunnerToml, require_attested
 
 _DEFAULT_RUNNER_TOML = Path.home() / ".arx" / "runner.toml"
 
@@ -68,7 +68,9 @@ def _dispatch(args: argparse.Namespace) -> int:
 
 
 def _load(args: argparse.Namespace) -> tuple[RunnerToml, MachineCredentialVault, MachineCredential]:
-    metadata = RunnerToml.read(args.runner_toml)
+    metadata = require_attested(
+        RunnerToml.read(args.runner_toml), action="manage a machine credential"
+    )
     vault = MachineCredentialVault(Path(metadata.machine_vault_path))
     credential = vault.load()
     credential.assert_binding(metadata)

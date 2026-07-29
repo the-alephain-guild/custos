@@ -13,12 +13,19 @@ from __future__ import annotations
 
 import os
 import stat
+from dataclasses import asdict
 from pathlib import Path
 from unittest import mock
 
 import pytest
 
-from custos.core.runner_toml import RunnerToml
+from custos.core.runner_toml import (
+    STANDALONE_BACKEND_URL,
+    RunnerToml,
+    UnattestedRunnerIdentity,
+    is_attested,
+    require_attested,
+)
 
 
 def _sample_record() -> RunnerToml:
@@ -119,3 +126,66 @@ def test_read_rejects_missing_required_field(tmp_path: Path) -> None:
         match=r"not a v1 runner authority document.*machine_vault_path",
     ):
         RunnerToml.read(target)
+
+
+def _standalone_record() -> RunnerToml:
+    record = _sample_record()
+    return RunnerToml(**{**asdict(record), "backend_url": STANDALONE_BACKEND_URL})
+
+
+def test_a_standalone_identity_is_a_valid_v1_document() -> None:
+    """The offline lane's identity satisfies the same contract, not a laxer one."""
+
+    assert _standalone_record().backend_url == STANDALONE_BACKEND_URL
+
+
+def test_a_standalone_identity_survives_a_write_and_read(tmp_path: Path) -> None:
+    target = tmp_path / "arx" / "runner.toml"
+    RunnerToml.write(target, _standalone_record())
+
+    assert not is_attested(RunnerToml.read(target))
+
+
+def test_an_enrolled_identity_reads_as_attested() -> None:
+    assert is_attested(_sample_record())
+
+
+@pytest.mark.parametrize(
+    "backend_url",
+    [
+        "http://standalone.invalid",
+        "http://standalone.invalid/",
+        "https://standalone.invalid",
+        "http://anything.else.invalid",
+        "http://invalid",
+        "http://STANDALONE.INVALID",
+    ],
+)
+def test_any_reserved_invalid_host_is_unattested(backend_url: str) -> None:
+    """A near-miss must fail closed. RFC 2606 keeps .invalid out of the real DNS,
+    so no host under it can ever be a backend that attested anything."""
+
+    record = RunnerToml(**{**asdict(_sample_record()), "backend_url": backend_url})
+
+    assert not is_attested(record)
+
+
+def test_enroll_cannot_produce_the_sentinel_it_is_being_distinguished_from() -> None:
+    """The two sets are disjoint by a check that already exists, not by convention."""
+
+    from custos.cli.subcommands.enroll import _require_secure_backend
+    from custos.core.machine_credential_vault import MachineCredentialError
+
+    with pytest.raises(MachineCredentialError, match="HTTPS outside loopback"):
+        _require_secure_backend(STANDALONE_BACKEND_URL)
+
+
+def test_the_attested_path_refuses_an_unattested_identity() -> None:
+    with pytest.raises(UnattestedRunnerIdentity, match="backend_url"):
+        require_attested(_standalone_record(), action="start the signed lane")
+
+
+def test_the_attested_path_accepts_an_enrolled_identity() -> None:
+    record = _sample_record()
+
+    assert require_attested(record, action="start the signed lane") is record

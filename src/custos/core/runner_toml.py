@@ -20,6 +20,42 @@ _DIR_MODE = 0o700
 _FILE_MODE = 0o600
 _WORLD_GROUP_BITS = 0o077
 
+STANDALONE_BACKEND_URL = "http://standalone.invalid"
+_RESERVED_HOST = "invalid"
+
+
+class UnattestedRunnerIdentity(ValueError):
+    """The identity was generated locally and no authority has vouched for it."""
+
+
+def is_attested(record: RunnerToml) -> bool:
+    """Whether some authority issued this identity, decided without asking one.
+
+    The answer lives in ``backend_url`` because that field already exists, already
+    round-trips, and already carries exactly this meaning: the authority the runner
+    answers to. RFC 2606 reserves ``.invalid`` so that it can never be delegated,
+    so a host under it cannot be a backend that attested anything — and enrolment
+    cannot write one either, since it admits only HTTPS or loopback HTTP.
+
+    Reading the host rather than matching the literal sentinel keeps near misses —
+    a trailing slash, https, a different label — on the unattested side.
+    """
+
+    host = (urllib.parse.urlsplit(record.backend_url).hostname or "").lower()
+    return not (host == _RESERVED_HOST or host.endswith(f".{_RESERVED_HOST}"))
+
+
+def require_attested(record: RunnerToml, *, action: str) -> RunnerToml:
+    """Admit only an identity an authority issued, and name the field if not."""
+
+    if is_attested(record):
+        return record
+    raise UnattestedRunnerIdentity(
+        f"cannot {action} with a standalone identity: backend_url is "
+        f"{record.backend_url!r}, which names no authority and therefore attests "
+        "nothing; run `arx-runner enroll` against a real backend"
+    )
+
 
 @dataclass(frozen=True, slots=True)
 class RunnerToml:

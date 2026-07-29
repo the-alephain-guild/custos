@@ -14,7 +14,11 @@ from custos.core.machine_credential_vault import (
     MachineCredentialVault,
 )
 from custos.core.nats_transport import RunnerNatsTransportError
-from custos.core.runner_toml import RunnerToml
+from custos.core.runner_toml import (
+    RunnerToml,
+    UnattestedRunnerIdentity,
+    require_attested,
+)
 
 DEFAULT_RUNNER_TOML = Path.home() / ".arx" / "runner.toml"
 DEFAULT_VAULT_DIR = Path.home() / ".arx" / "vault"
@@ -249,6 +253,12 @@ def run(args: argparse.Namespace) -> int:
 
     if args.reconcile_strategy_id:
         return _run_offline_lane(args, metadata, credential)
+
+    try:
+        require_attested(metadata, action="start the signed lane")
+    except UnattestedRunnerIdentity as exc:
+        print(f"Runner startup authority check failed: {exc}", file=sys.stderr)
+        return 1
 
     if not args.enabled_mode:
         print(
