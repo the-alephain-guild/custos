@@ -58,6 +58,7 @@ docker run --rm "${IMAGE_NAME}:v${VERSION}" credential --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" deployment --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" enroll --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" health --help >/dev/null
+docker run --rm "${IMAGE_NAME}:v${VERSION}" identity --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" nats --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" nats-transport --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" publish-capability --help >/dev/null
