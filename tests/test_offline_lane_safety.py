@@ -105,6 +105,14 @@ def test_a_ceiling_that_cannot_be_read_is_refused_rather_than_defaulted(value: o
         resolve_breaker_config(_spec(risk_config={"max_total_notional": value}))
 
 
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "sNaN"])
+def test_a_ceiling_decimal_accepts_but_arithmetic_cannot_is_refused(value: str) -> None:
+    """These parse. Comparing exposure against them is the part that does not work."""
+
+    with pytest.raises(ValueError, match="max_total_notional"):
+        resolve_breaker_config(_spec(risk_config={"max_total_notional": value}))
+
+
 def test_a_float_ceiling_is_refused_because_money_is_not_binary_fractions() -> None:
     with pytest.raises(ValueError, match="max_total_notional"):
         resolve_breaker_config(_spec(risk_config={"max_total_notional": 25000.0}))
