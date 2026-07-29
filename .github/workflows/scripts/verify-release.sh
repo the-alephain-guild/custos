@@ -55,8 +55,10 @@ cosign verify "${IMAGE_NAME}:v${VERSION}" \
 echo "== Layer 3: published image command matrix =="
 docker run --rm "${IMAGE_NAME}:v${VERSION}" --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" credential --help >/dev/null
+docker run --rm "${IMAGE_NAME}:v${VERSION}" deployment --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" enroll --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" health --help >/dev/null
+docker run --rm "${IMAGE_NAME}:v${VERSION}" nats --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" nats-transport --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" publish-capability --help >/dev/null
 docker run --rm "${IMAGE_NAME}:v${VERSION}" start --help >/dev/null

@@ -162,12 +162,16 @@ def test_documentation_names_only_real_subcommands() -> None:
 
 
 def test_probe_detects_a_subcommand_that_does_not_exist() -> None:
-    """The probe above is only worth having if it can fail."""
-    page = "Run `arx-runner deployment validate --spec-file spec.json` first.\n"
+    """The probe above is only worth having if it can fail.
+
+    The control has to be a name the CLI will not grow later. `deployment` served
+    here while it was absent, and stopped being a control the moment it came back.
+    """
+    page = "Run `arx-runner teleport --destination mars` first.\n"
     named = _named_subcommands(page)
 
-    assert named == ["deployment"]
-    assert _subparser("deployment") is None
+    assert named == ["teleport"]
+    assert _subparser("teleport") is None
     assert _named_subcommands("The `arx-runner` CLI is the only interface.\n") == []
 
 
