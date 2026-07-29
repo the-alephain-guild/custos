@@ -92,7 +92,7 @@ artifacts. They may be referenced by digest.
 ```bash
 npm run check:disclosure     # scan the site
 npm run test:disclosure      # regression-test the gate itself
-npm run verify               # disclosure → build → typecheck
+npm run verify               # disclosure → CJK wrapping → build → typecheck
 ```
 
 The gate scans the **full file including code blocks and HTML comments** — an
@@ -104,6 +104,24 @@ If a banned term genuinely belongs on the page — a published container
 coordinate, a wire subject an integrator must subscribe to — append
 `disclosure-ok: <reason>` on that line. The reason is reviewed; the escape
 hatch is not a way to silence the gate.
+
+## Writing Chinese: one paragraph, one line
+
+Do not hard-wrap Chinese paragraphs. A newline inside a Markdown paragraph is a
+soft break and renders as a space, which is right for English and wrong here: a
+wrap between two Han characters publishes a gap inside a word — `只 会由` rather
+than `只会由`.
+
+It is invisible in the source and in review, and obvious to every reader of the
+page. The site shipped 470 of them before anyone looked at the rendered output.
+
+```bash
+npm run check:cjk            # scan the Chinese locale
+npm run test:cjk             # regression-test that check
+```
+
+Wrapping between a Latin word and Han text is fine and stays — there the space
+belongs. Only Han-to-Han wraps are the defect.
 
 ## Naming discipline
 

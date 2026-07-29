@@ -60,7 +60,7 @@ the cert-identity.
 
 ## Automated verification
 
-`tests/test_reproducible_build.py` runs two `uv build` cycles with the epoch <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+`tests/test_reproducible_build.py` runs two `uv build` cycles with the epoch
 pinned and asserts the two wheels hash identically. It is marked slow because a
 double build takes tens of seconds, but it is not deselected: `make verify`
 runs it, so the property is checked on every release gate rather than only when

@@ -13,8 +13,7 @@ sidebar_position: 5
 
 **[报告漏洞](https://github.com/the-alephain-guild/custos/security/advisories/new)**
 
-请**不要**为疑似漏洞开公开 issue。一份公开报告在告知我们的同时，也同时告知了每一位正在运行
-受影响版本的运维 —— 而在补丁存在之前，他们无法据以行动。
+请**不要**为疑似漏洞开公开 issue。一份公开报告在告知我们的同时，也同时告知了每一位正在运行受影响版本的运维 —— 而在补丁存在之前，他们无法据以行动。
 
 ## 我们的承诺
 
@@ -45,6 +44,4 @@ sidebar_position: 5
 
 ## 若你是想审计而非报告
 
-如果你想核实这些主张、而不是报告其中一条被破坏，
-[审计清单](/zh-Hans/trust-model/audit-checklist)会带你走同样的边界，并给出覆盖每一条的
-命令与测试。
+如果你想核实这些主张、而不是报告其中一条被破坏，[审计清单](/zh-Hans/trust-model/audit-checklist)会带你走同样的边界，并给出覆盖每一条的命令与测试。

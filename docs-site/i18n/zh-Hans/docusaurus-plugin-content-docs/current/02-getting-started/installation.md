@@ -10,8 +10,7 @@ sidebar_position: 1
 
 :::note 0.3.0 尚无已发布产物
 0.3.0 的远端发布处于 deferred 状态。**没有**可 `pip install` 的 wheel，也**没有**可
-`docker pull` 的镜像 —— 本版本的消费门是你自己构建并验证的镜像。下面的说明如实反映
-这一点，而不是描述一个并不存在的软件包。
+`docker pull` 的镜像 —— 本版本的消费门是你自己构建并验证的镜像。下面的说明如实反映这一点，而不是描述一个并不存在的软件包。
 :::
 
 ## 前置条件
@@ -44,8 +43,7 @@ uv run arx-runner --help
 make verify
 ```
 
-`make verify` 跑格式化、lint 与基线测试套件。在配置任何东西之前先跑一次，能把日后的
-「我的环境不对」与「我的配置不对」区分开。
+`make verify` 跑格式化、lint 与基线测试套件。在配置任何东西之前先跑一次，能把日后的「我的环境不对」与「我的配置不对」区分开。
 
 ## 作为容器
 
@@ -53,11 +51,9 @@ make verify
 make verify-local-v030
 ```
 
-它构建 `custos-runner:v0.3.0`，打上当前 Git revision 标签，并针对构建出的镜像跑完整
-运行时契约与独立验收，成功时打印 image ID 与 revision。
+它构建 `custos-runner:v0.3.0`，打上当前 Git revision 标签，并针对构建出的镜像跑完整运行时契约与独立验收，成功时打印 image ID 与 revision。
 
-**不要**在此镜像之上再写一个派生 Dockerfile 去加 NautilusTrader、sops 或 age。被门覆盖
-的产物是那个已验证镜像，它的派生物不是。
+**不要**在此镜像之上再写一个派生 Dockerfile 去加 NautilusTrader、sops 或 age。被门覆盖的产物是那个已验证镜像，它的派生物不是。
 
 ## 命令面
 
@@ -82,8 +78,7 @@ runner 能自行签发的：
 2. 本机上的一份 **age 身份**，由你在本地生成；
 3. 权限范围为 `trade_no_withdraw` 的**场所 API 凭据**。
 
-这种不对称正是设计要点 —— 见[信任模型](/zh-Hans/introduction/trust-model)。一个能自己
-造出授权的 runner，不值得把凭据交给它。
+这种不对称正是设计要点 —— 见[信任模型](/zh-Hans/introduction/trust-model)。一个能自己造出授权的 runner，不值得把凭据交给它。
 
 ## 下一步
 

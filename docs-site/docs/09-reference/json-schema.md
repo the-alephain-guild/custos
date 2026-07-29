@@ -5,7 +5,7 @@ sidebar_position: 3
 
 # JSON Schema Reference
 
-Eleven schemas, all under `docs/gateway-contract/v1/` in the repository. This <!-- disclosure-ok: auditable machine-asset location in the public repository -->
+Eleven schemas, all under `docs/gateway-contract/v1/` in the repository. This
 page says what each one is for and what the set does not cover.
 
 Every schema is `additionalProperties: false`. An unknown field is a rejection,

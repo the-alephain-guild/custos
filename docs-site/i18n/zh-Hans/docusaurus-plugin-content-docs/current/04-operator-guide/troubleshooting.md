@@ -5,16 +5,13 @@ sidebar_position: 6
 
 # 排障
 
-面向"起不来、收不了部署、连不上交易所"的症状式诊断。连接中断与恢复见
-[应急手册](./emergency-playbook)。
+面向"起不来、收不了部署、连不上交易所"的症状式诊断。连接中断与恢复见[应急手册](./emergency-playbook)。
 
 ## 读日志
 
-日志是结构化 JSON。运行时事件以 `deployment_instance_id` 为键；`spec_id` 只作为来源
-出现，不是运行时句柄。
+日志是结构化 JSON。运行时事件以 `deployment_instance_id` 为键；`spec_id` 只作为来源出现，不是运行时句柄。
 
-Custos 从不记录 API secret、不透明机器凭据、私钥、enrollment token 或解密后的 vault 值。
-若你在日志里看到其中任何一项，请按安全问题处理，见
+Custos 从不记录 API secret、不透明机器凭据、私钥、enrollment token 或解密后的 vault 值。若你在日志里看到其中任何一项，请按安全问题处理，见
 [SECURITY.md](https://github.com/the-alephain-guild/custos/blob/main/SECURITY.md)。
 
 ## 启动身份校验失败
@@ -28,8 +25,7 @@ Custos 从不记录 API secret、不透明机器凭据、私钥、enrollment tok
 3. `SOPS_AGE_KEY_FILE` 存在、模式为 `0600`，且确实能解开那个 vault。
 4. 凭据 ID、版本、有效期、tenant、runner 与机器密钥与元数据**逐项**一致。
 
-不要手工编辑身份文件。请在上游吊销或轮换，或用新的一次性 token 重新 enroll 一个机器
-主体。被手工改过的 runner 无法自证任何东西 —— 而自证正是这道校验的全部意义。
+不要手工编辑身份文件。请在上游吊销或轮换，或用新的一次性 token 重新 enroll 一个机器主体。被手工改过的 runner 无法自证任何东西 —— 而自证正是这道校验的全部意义。
 
 ## 交易所凭证失败
 
@@ -56,8 +52,7 @@ arx-runner vault verify --key-id binance-testnet --tenant-id acme
 - live 指令缺少 promotion 证据；
 - live 指令被投给不支持 live 的引擎。
 
-修复路径永远在上游：改正 canonical 状态，让上游发出新的签名 generation。**绝不要**
-往传输层直接注入指令 —— Custos 本来就会拒绝，而一条被接受的注入指令是不可验证的。
+修复路径永远在上游：改正 canonical 状态，让上游发出新的签名 generation。**绝不要**往传输层直接注入指令 —— Custos 本来就会拒绝，而一条被接受的注入指令是不可验证的。
 
 ## 引擎或交易所失败
 
@@ -65,11 +60,9 @@ arx-runner vault verify --key-id binance-testnet --tenant-id acme
 `trade_no_withdraw`。
 
 code-hash 类失败：部署与签名部署相匹配的、经过评审的策略字节。不要试图绕过
-[live 执行门](/concepts/live-execution-gate) —— 它拒绝，正是因为它校验的东西
-对不上。
+[live 执行门](/concepts/live-execution-gate) —— 它拒绝，正是因为它校验的东西对不上。
 
-熔断器、本地名义敞口上限与 zombie watchdog 都以 `deployment_instance_id` 为键。一个实例
-触发不得平掉或停掉另一个实例；若观察到这种现象，值得作为 bug 上报。
+熔断器、本地名义敞口上限与 zombie watchdog 都以 `deployment_instance_id` 为键。一个实例触发不得平掉或停掉另一个实例；若观察到这种现象，值得作为 bug 上报。
 
 ## 事件对照
 

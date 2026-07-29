@@ -5,8 +5,7 @@ sidebar_position: 7
 
 # 审计清单
 
-Custos 开源，是为了让把交易所凭证托付给它的人能自己检验这份信任。本页是这个承诺的具体
-版本：跑什么、读什么，以及通过意味着什么。
+Custos 开源，是为了让把交易所凭证托付给它的人能自己检验这份信任。本页是这个承诺的具体版本：跑什么、读什么，以及通过意味着什么。
 
 这里没有任何一步需要我们配合。clone 下来自己走一遍。
 
@@ -22,8 +21,7 @@ uv sync --extra dev
 make verify
 ```
 
-它会跑格式化、lint 与独立测试基线。在一份干净 clone 上、没有凭证、也不需要访问我们的
-基础设施，它必须通过。若通不过就先停 —— 后面每一步都以绿基线为前提。
+它会跑格式化、lint 与独立测试基线。在一份干净 clone 上、没有凭证、也不需要访问我们的基础设施，它必须通过。若通不过就先停 —— 后面每一步都以绿基线为前提。
 
 只跑测试不跑风格门用 `make test-baseline`。
 
@@ -41,12 +39,9 @@ grep -rnE 'publish.*password|send.*secret' src/
 
 两条都应该没有输出。
 
-然后读金库本身 —— `src/custos/core/per_key_vault.py` 与 `machine_credential_vault.py`。
-要看的是：secret 通过 stdin 而非 argv 递给 `sops`；解密结果用于构造客户端而不被留存；
-每次解密发出的审计事件只带标识符。
+然后读金库本身 —— `src/custos/core/per_key_vault.py` 与 `machine_credential_vault.py`。要看的是：secret 通过 stdin 而非 argv 递给 `sops`；解密结果用于构造客户端而不被留存；每次解密发出的审计事件只带标识符。
 
-相关测试是 `tests/test_per_key_vault.py` 与 `tests/test_credential_lifecycle.py`。后者
-更有意思：它遍历构造出来的引擎对象图，断言从中触达不到任何凭证。
+相关测试是 `tests/test_per_key_vault.py` 与 `tests/test_credential_lifecycle.py`。后者更有意思：它遍历构造出来的引擎对象图，断言从中触达不到任何凭证。
 
 ## 第 3 步 —— live 执行始终受门控
 
@@ -63,9 +58,7 @@ grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ --exclude=host.py --exclude=ven
 这道门的全部就在这一个函数里，没有任何调用方能绕过它抵达引擎构造。它所查询的能力面是
 `src/custos/engines/nautilus/host.py` 中的 `supports_trading_mode` 与 `supports_venue`。
 
-然后确认每项条件都有测试证明它是活的而非死代码。这个区分很重要：一道永远不会触发的
-校验，看起来和一道每次都通过的校验一模一样。七项条件分别是什么见
-[实盘执行门](/zh-Hans/concepts/live-execution-gate)。
+然后确认每项条件都有测试证明它是活的而非死代码。这个区分很重要：一道永远不会触发的校验，看起来和一道每次都通过的校验一模一样。七项条件分别是什么见[实盘执行门](/zh-Hans/concepts/live-execution-gate)。
 
 `tests/test_nautilus_host_capability.py` 覆盖能力声明，
 `tests/test_main_host_selection.py` 覆盖某个选择绑定哪个宿主，
@@ -90,8 +83,7 @@ grep -rn 'stop_all_strategies\|force_shutdown' src/custos/
 | fallback 熔断器 | `src/custos/core/fallback_breaker.py` | `tests/core/test_fallback_breaker.py` |
 | zombie watchdog | `src/custos/core/zombie_watchdog.py` | `tests/core/test_zombie_watchdog.py` |
 
-确认每一道都在本地 tick 上评估，而不是响应上游消息 —— 一道需要平台来喊它才运行的防护，
-防不住平台消失。
+确认每一道都在本地 tick 上评估，而不是响应上游消息 —— 一道需要平台来喊它才运行的防护，防不住平台消失。
 
 ## 第 5 步 —— 金额运算精确
 
@@ -103,8 +95,7 @@ grep -rnE 'float\(.*price|float\(.*amount|float\(.*notional' src/
 
 应该没有输出。
 
-`tests/test_nt_risk_engine.py` 与 `tests/test_runner_fact_store.py` 覆盖 decimal 路径及
-其 wire 表示。读的时候要盯的是：数值是用 `Decimal(str(x))` 而不是 `Decimal(x)` 构造的
+`tests/test_nt_risk_engine.py` 与 `tests/test_runner_fact_store.py` 覆盖 decimal 路径及其 wire 表示。读的时候要盯的是：数值是用 `Decimal(str(x))` 而不是 `Decimal(x)` 构造的
 —— 后者会静默继承二进制浮点误差，而两者扫一眼看不出区别。
 
 ## 第 6 步 —— 验证你真正要跑的那份制品
@@ -115,16 +106,13 @@ grep -rnE 'float\(.*price|float\(.*amount|float\(.*notional' src/
 make verify-local-v030
 ```
 
-它会构建镜像、记录 revision label，并跑完整的 Docker 运行时契约以及针对真实 broker 的
-独立验收。
+它会构建镜像、记录 revision label，并跑完整的 Docker 运行时契约以及针对真实 broker 的独立验收。
 
-发布制品见[签名发布链](./signed-release-chain) —— wheel 有签名、镜像 digest 被记录，
-且运行时门是针对那个精确 digest 跑的，之后稳定 tag 才会指向它。
+发布制品见[签名发布链](./signed-release-chain) —— wheel 有签名、镜像 digest 被记录，且运行时门是针对那个精确 digest 跑的，之后稳定 tag 才会指向它。
 
 ## 第 7 步 —— 核对边界声明
 
-读[什么是 custos](/introduction/what-is-custos) 与[信任模型](/introduction/trust-model)，
-然后对照代码确认 runner：
+读[什么是 custos](/introduction/what-is-custos) 与[信任模型](/introduction/trust-model)，然后对照代码确认 runner：
 
 - 除了自己发起的订阅之外，不暴露任何入站网络面；
 - 没有本地创建或审批部署的路径；
@@ -137,8 +125,6 @@ make verify-local-v030
 
 ## 通过意味着什么
 
-每一步都通过，意味着你 clone 到的这棵树里的代码守住了四条保证，且由它构建出的制品行为
-一致。
+每一步都通过，意味着你 clone 到的这棵树里的代码守住了四条保证，且由它构建出的制品行为一致。
 
-它**不**意味着你的部署是安全的。Custos 无法替你挡住：带提币权限的凭证、没有 IP 限制的
-交易所账户、别人能读的主机，或者一个正确地在亏钱的策略。这些仍然是你的责任。
+它**不**意味着你的部署是安全的。Custos 无法替你挡住：带提币权限的凭证、没有 IP 限制的交易所账户、别人能读的主机，或者一个正确地在亏钱的策略。这些仍然是你的责任。

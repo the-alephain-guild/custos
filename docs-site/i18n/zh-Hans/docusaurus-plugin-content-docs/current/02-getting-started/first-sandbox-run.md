@@ -5,16 +5,13 @@ sidebar_position: 3
 
 # 第一次 sandbox 运行
 
-目标是：runner 启动、证明身份、报告就绪，且**不接触任何交易场所**。本章里没有任何一步
-能下单。
+目标是：runner 启动、证明身份、报告就绪，且**不接触任何交易场所**。本章里没有任何一步能下单。
 
-你应当已完成[注册](/zh-Hans/getting-started/enrollment) —— `~/.arx/runner.toml` 与加密
-的机器金库必须已存在。
+你应当已完成[注册](/zh-Hans/getting-started/enrollment) —— `~/.arx/runner.toml` 与加密的机器金库必须已存在。
 
 ## 1. 写入一份凭据
 
-即便是 sandbox 运行也会解析凭据，因为走的是与真实部署完全相同的那条路径。在这里先演练
-一遍，意味着「第一次真正要紧」不会同时是「第一次运行」。
+即便是 sandbox 运行也会解析凭据，因为走的是与真实部署完全相同的那条路径。在这里先演练一遍，意味着「第一次真正要紧」不会同时是「第一次运行」。
 
 ```bash
 export SOPS_AGE_KEY_FILE="$HOME/.arx/age.key"
@@ -39,8 +36,7 @@ printf '%s\n' '<sandbox-api-secret>' | arx-runner vault put \
 arx-runner vault verify --key-id binance-sandbox --tenant-id acme
 ```
 
-它跑的是真实解密路径，而不是它的模拟。手工调 `sops` 证明的是另一回事 —— 见
-[凭据金库](/zh-Hans/operator-guide/credential-vault)。
+它跑的是真实解密路径，而不是它的模拟。手工调 `sops` 证明的是另一回事 —— 见[凭据金库](/zh-Hans/operator-guide/credential-vault)。
 
 ## 2. 启动守护进程
 
@@ -50,15 +46,12 @@ arx-runner start \
   --engine sandbox-sim
 ```
 
-`--enabled-mode` 是**必填**的，取值恰为 `sandbox` / `testnet` / `live` 之一。它没有默认值，
-因为默认值等于一个没有任何人选择过的模式。
+`--enabled-mode` 是**必填**的，取值恰为 `sandbox` / `testnet` / `live` 之一。它没有默认值，因为默认值等于一个没有任何人选择过的模式。
 
-`--engine sandbox-sim` 选择模拟宿主：artifact 激活、凭据解析、持久化、就绪判定与事实发布
-全部真跑，且从不连接场所。它只声明 `sandbox`，因此即便误操作也无法被指向真实资金模式 ——
+`--engine sandbox-sim` 选择模拟宿主：artifact 激活、凭据解析、持久化、就绪判定与事实发布全部真跑，且从不连接场所。它只声明 `sandbox`，因此即便误操作也无法被指向真实资金模式 ——
 见[实盘执行门](/zh-Hans/concepts/live-execution-gate)。
 
-若你想要「真实行情 + 本地模拟成交」的 sandbox 会话，改用 `--engine nautilus`。两者都安全，
-区别只在于是否涉及真实行情。
+若你想要「真实行情 + 本地模拟成交」的 sandbox 会话，改用 `--engine nautilus`。两者都安全，区别只在于是否涉及真实行情。
 
 ## 3. 检查就绪
 
@@ -68,18 +61,15 @@ arx-runner health --json
 ```
 
 就绪**不等于**「进程起来了」。它意味着：机器金库与 age 身份已找到、凭据未过期、tenant /
-runner / credential id / version / expiry / key id 全部一致、权威方确认该凭据仍然有效，
-且一份绑定到同一公钥的能力回执已通过验证。
+runner / credential id / version / expiry / key id 全部一致、权威方确认该凭据仍然有效，且一份绑定到同一公钥的能力回执已通过验证。
 
 非零退出码意味着其中一项没过。这是刻意的行为：**无法证明自身授权的 runner 不会启动**。
 
 ## 接下来发生的事不由你做
 
-runner 现在正在等待一条签名的期望状态指令。它**无法自己造一条**。部署在 ARX 侧撰写并
-批准，经由订阅到达 —— 见[你的第一次部署](/zh-Hans/getting-started/first-deployment-spec)。
+runner 现在正在等待一条签名的期望状态指令。它**无法自己造一条**。部署在 ARX 侧撰写并批准，经由订阅到达 —— 见[你的第一次部署](/zh-Hans/getting-started/first-deployment-spec)。
 
-如果什么都没来，runner 会一直等。这是正确的：一个没有指令的空闲 runner 是健康的，不是
-卡住了。
+如果什么都没来，runner 会一直等。这是正确的：一个没有指令的空闲 runner 是健康的，不是卡住了。
 
 ## 起不来的时候
 

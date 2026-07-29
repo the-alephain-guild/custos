@@ -5,8 +5,7 @@ sidebar_position: 1
 
 # 部署
 
-Custos 跑在你自己的基础设施上。ARX 负责授权意图、持有部署业务状态、签发指令并接收
-执行事实；Custos 负责校验这些指令、协调本地运行时，并对上报的事实签名。
+Custos 跑在你自己的基础设施上。ARX 负责授权意图、持有部署业务状态、签发指令并接收执行事实；Custos 负责校验这些指令、协调本地运行时，并对上报的事实签名。
 
 本章覆盖从零到跑起一个部署的完整过程。
 
@@ -18,8 +17,7 @@ Custos 跑在你自己的基础设施上。ARX 负责授权意图、持有部署
 custos-runner:v0.3.0
 ```
 
-用 `make verify-local-v030` 构建并过门。远程发布仍在推迟中。请直接消费该镜像，
-**不要**自行维护派生 Dockerfile —— 派生镜像不是门验证过的那一份制品。
+用 `make verify-local-v030` 构建并过门。远程发布仍在推迟中。请直接消费该镜像，**不要**自行维护派生 Dockerfile —— 派生镜像不是门验证过的那一份制品。
 
 ## 前置条件
 
@@ -78,8 +76,7 @@ arx-runner start \
 就绪判定是 fail-closed 的。只有在机器身份校验通过、且精确的 runner 订阅建立之后，
 `arx-runner health` 才会成功。
 
-`deployment_instance_id` 是运行时主键 —— reconciler 状态、引擎句柄、watchdog、熔断器
-和事实都以它为键。`spec_id` 标识不可变的配置来源，不是运行时句柄。
+`deployment_instance_id` 是运行时主键 —— reconciler 状态、引擎句柄、watchdog、熔断器和事实都以它为键。`spec_id` 标识不可变的配置来源，不是运行时句柄。
 
 ### 工作站演示
 
@@ -93,14 +90,12 @@ arx-runner start --enabled-mode sandbox --reconcile \
   --engine sandbox-sim
 ```
 
-该开发标志会拒绝非 loopback 主机、`testnet`、`live`、URL 内嵌凭证，以及任何同时存在的
-生产端点。它**绝不是** TLS 或密钥权威校验失败后的降级通路 —— 校验失败就是失败。
+该开发标志会拒绝非 loopback 主机、`testnet`、`live`、URL 内嵌凭证，以及任何同时存在的生产端点。它**绝不是** TLS 或密钥权威校验失败后的降级通路 —— 校验失败就是失败。
 
 ## 部署生命周期
 
 部署及其每一次期望状态变更都源自上游。Custos 没有本地创建路径。它会校验签名事件、
-canonical digest、tenant、runner、部署实例与 generation，然后通过带认证的所有权边界
-解析策略发布物料。
+canonical digest、tenant、runner、部署实例与 generation，然后通过带认证的所有权边界解析策略发布物料。
 
 生产策略执行还需要下面这组信任配置，要么完整、要么不启动：
 
@@ -116,21 +111,16 @@ export CUSTOS_ARTIFACT_REGISTRY=ghcr.io
 如果用私有 registry，还需同时设置 `CUSTOS_ARTIFACT_REGISTRY_USERNAME` 与
 `CUSTOS_ARTIFACT_REGISTRY_TOKEN`。token 刻意不提供 CLI flag，因此不会进入进程参数。
 
-Custos 只接受配置的 HTTPS registry 上带签名的 detached 物料坐标，校验完整的快照与证据
-链，并把不可变 blob 存到 `$CUSTOS_ARTIFACT_CACHE_DIR/sha256/<digest>`。信任配置缺失或
-不完整会导致启动失败；解析器不可用时也绝不回落到开发物料。
+Custos 只接受配置的 HTTPS registry 上带签名的 detached 物料坐标，校验完整的快照与证据链，并把不可变 blob 存到 `$CUSTOS_ARTIFACT_CACHE_DIR/sha256/<digest>`。信任配置缺失或不完整会导致启动失败；解析器不可用时也绝不回落到开发物料。
 
-live 执行需要已签发的 `promotion_id` 与 `promotion_evidence_digest`。Custos 校验它们
-存在且绑定正确 —— 它不清点审批人，也不自行实现职责分离策略。
+live 执行需要已签发的 `promotion_id` 与 `promotion_evidence_digest`。Custos 校验它们存在且绑定正确 —— 它不清点审批人，也不自行实现职责分离策略。
 
 已应用的生命周期 generation 通过签名事实 outbox 以
-`RunnerDeploymentLifecycleFact.v1` 上报，序号由 outbox 分配。若事实无法持久入队，
-指令就不会被 ack。重投时会沿用同一实例与激活身份，不会重复执行已提交的引擎动作。
+`RunnerDeploymentLifecycleFact.v1` 上报，序号由 outbox 分配。若事实无法持久入队，指令就不会被 ack。重投时会沿用同一实例与激活身份，不会重复执行已提交的引擎动作。
 
 ## 容器示例
 
-可直接运行的 `examples/supertrend-testnet` Compose 文件只启动 runner；签名指令流是外部
-依赖。
+可直接运行的 `examples/supertrend-testnet` Compose 文件只启动 runner；签名指令流是外部依赖。
 
 ```bash
 make verify-local-v030

@@ -44,9 +44,7 @@ runner 不应该抵达任何交易所。
 字段集合必须完全一致。缺少键和多出键属于同一类失败，错误信息会把两者都列出来 ——
 多出一个字段意味着这份文件是由某个"对 runner 身份的理解与本 runner 不一致"的东西写的。
 
-文件是原子写入的 —— 先写同目录下的临时文件、fsync、chmod 到 `0600`，再 rename 覆盖目标。
-写到一半崩溃留下的是原来那份完好的文件，而不是半截文件；这一点很要紧，因为每次启动都要
-读它。
+文件是原子写入的 —— 先写同目录下的临时文件、fsync、chmod 到 `0600`，再 rename 覆盖目标。写到一半崩溃留下的是原来那份完好的文件，而不是半截文件；这一点很要紧，因为每次启动都要读它。
 
 ### 示例
 
@@ -64,8 +62,7 @@ enrolled_at = "2026-07-01T09:14:22Z"
 
 ## Vault 布局
 
-凭据按"一个 key 一个加密文件"存放，用 sops 与 age 在进程内解密。配置、轮换与验证见
-[凭据 vault](/zh-Hans/operator-guide/credential-vault)。
+凭据按"一个 key 一个加密文件"存放，用 sops 与 age 在进程内解密。配置、轮换与验证见[凭据 vault](/zh-Hans/operator-guide/credential-vault)。
 
 ```
 ~/.arx/vault/
@@ -120,13 +117,9 @@ arx-runner start --enabled-mode sandbox --engine nautilus
 运行中的 daemon 不从环境变量读取任何交易所凭据。密钥进入进程的唯一途径是解密一个 vault
 文件，因此无论是进程列表还是被继承的环境，都泄漏不出密钥。
 
-配置阶段是唯一可能由环境变量携带机密的地方：`vault put --api-secret-env` 会从指定的变量
-读取，作为 `--api-secret-stdin` 的替代。**优先用 stdin。** 两者都能让机密不出现在命令行
-上，但环境变量会被这个 shell 随后启动的任何进程继承。
+配置阶段是唯一可能由环境变量携带机密的地方：`vault put --api-secret-env` 会从指定的变量读取，作为 `--api-secret-stdin` 的替代。**优先用 stdin。**两者都能让机密不出现在命令行上，但环境变量会被这个 shell 随后启动的任何进程继承。
 
 ## 在 Docker 中运行
 
 镜像要求把上述两处宿主路径挂载进来，并在运行时提供 age 身份。`~/.arx` 需要以读写方式挂载
-—— runner 需要持久化凭据轮换的结果。完整调用见[部署](/zh-Hans/operator-guide/deployment)；
-镜像的构建方式见[安装](/zh-Hans/getting-started/installation) —— 目前这也是获得镜像的唯一
-途径。
+—— runner 需要持久化凭据轮换的结果。完整调用见[部署](/zh-Hans/operator-guide/deployment)；镜像的构建方式见[安装](/zh-Hans/getting-started/installation) —— 目前这也是获得镜像的唯一途径。

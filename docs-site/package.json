@@ -17,7 +17,9 @@
     "typecheck": "tsc",
     "check:disclosure": "node scripts/check-disclosure.mjs",
     "test:disclosure": "node scripts/test-check-disclosure.mjs",
-    "verify": "npm run test:disclosure && npm run check:disclosure && npm run build && npm run typecheck"
+    "check:cjk": "node scripts/check-cjk-wrapping.mjs",
+    "test:cjk": "node scripts/test-check-cjk-wrapping.mjs",
+    "verify": "npm run test:disclosure && npm run check:disclosure && npm run test:cjk && npm run check:cjk && npm run build && npm run typecheck"
   },
   "dependencies": {
     "@docusaurus/core": "^3.6.0",

@@ -5,8 +5,7 @@ sidebar_position: 1
 
 # CLI 参考
 
-`arx-runner` 是这个 runner 的**唯一**接口。没有 HTTP 管理 API，没有配置文件驱动模式，
-也没有第二个入口 —— `python -m custos` 会以非零码退出并指回这里。
+`arx-runner` 是这个 runner 的**唯一**接口。没有 HTTP 管理 API，没有配置文件驱动模式，也没有第二个入口 —— `python -m custos` 会以非零码退出并指回这里。
 
 ```text
 arx-runner {enroll,credential,vault,nats-transport,publish-capability,start,health}
@@ -15,8 +14,7 @@ arx-runner {enroll,credential,vault,nats-transport,publish-capability,start,heal
 每个子命令都支持 `--help`。本页是地图，`--help` 才是权威 —— 它由你实际运行的那个
 parser 生成。
 
-标注**必填**的 flag 没有默认值。凡是选择交易模式或指定权威来源的参数都刻意如此：
-默认值等于一个没有任何人做过的选择。
+标注**必填**的 flag 没有默认值。凡是选择交易模式或指定权威来源的参数都刻意如此：默认值等于一个没有任何人做过的选择。
 
 ## enroll
 
@@ -41,8 +39,7 @@ arx-runner enroll \
 | `--machine-vault` | | 覆盖加密金库路径 |
 | `--age-recipient` | | age 公钥接收者；默认取 `SOPS_AGE_RECIPIENT` |
 
-它把公开绑定元数据写入 `runner.toml`，并把凭据与 Ed25519 私钥留在加密的机器金库里。
-私钥在本地生成，**从不被传输**。见[注册](/zh-Hans/getting-started/enrollment)。
+它把公开绑定元数据写入 `runner.toml`，并把凭据与 Ed25519 私钥留在加密的机器金库里。私钥在本地生成，**从不被传输**。见[注册](/zh-Hans/getting-started/enrollment)。
 
 ## credential
 
@@ -60,11 +57,9 @@ arx-runner credential revoke --reason "host decommissioned"
 | `rotate` | `--reason` | `--runner-toml`、`--age-recipient` |
 | `revoke` | `--reason` | `--runner-toml`、`--authority-path`、`--ready-file` |
 
-两个破坏性操作都**必填** `--reason`，且会被记录。一次没有说明的轮换，与攻击者轮换他刚
-偷到的密钥无法区分。
+两个破坏性操作都**必填** `--reason`，且会被记录。一次没有说明的轮换，与攻击者轮换他刚偷到的密钥无法区分。
 
-轮换用**旧密钥**签名的证明发送新公钥，且只在权威方接受之后才写本地。吊销在确认已吊销
-状态后擦除本地金库与元数据。
+轮换用**旧密钥**签名的证明发送新公钥，且只在权威方接受之后才写本地。吊销在确认已吊销状态后擦除本地金库与元数据。
 
 ## vault
 
@@ -102,9 +97,7 @@ arx-runner vault list
 
 ### `vault verify`
 
-必填 `--key-id` 与 `--tenant-id`；另接受 `--vault-dir` 与 `--age-key-file`。它跑真实解密
-路径 —— sops 解密、payload 解析、文件权限、权限范围。**这是验收面**；手工调 `sops` 测的
-是另一回事。
+必填 `--key-id` 与 `--tenant-id`；另接受 `--vault-dir` 与 `--age-key-file`。它跑真实解密路径 —— sops 解密、payload 解析、文件权限、权限范围。**这是验收面**；手工调 `sops` 测的是另一回事。
 
 ### `vault list`
 
@@ -149,7 +142,7 @@ arx-runner start \
   --engine sandbox-sim
 ```
 
-**`--enabled-mode {sandbox,testnet,live}` 必填。** 一个进程一个模式。
+**`--enabled-mode {sandbox,testnet,live}` 必填。**一个进程一个模式。
 
 ### 选择引擎
 
@@ -216,8 +209,7 @@ arx-runner health
 arx-runner health --json
 ```
 
-接受 `--ready-file`。授权缺失、过期、已吊销或不匹配时以非零码退出。就绪**不等于**
-「进程起来了」—— 见[就绪与健康](/zh-Hans/operator-guide/readiness-health)。
+接受 `--ready-file`。授权缺失、过期、已吊销或不匹配时以非零码退出。就绪**不等于**「进程起来了」—— 见[就绪与健康](/zh-Hans/operator-guide/readiness-health)。
 
 ## 退出码
 
@@ -229,5 +221,4 @@ arx-runner health --json
 
 ## 没有哪些命令
 
-**不存在**创建、批准或发布 DeploymentSpec 的命令，也不存在让 runner 给自己授权的命令。
-这些按设计属于 ARX —— 见[信任模型](/zh-Hans/introduction/trust-model)。
+**不存在**创建、批准或发布 DeploymentSpec 的命令，也不存在让 runner 给自己授权的命令。这些按设计属于 ARX —— 见[信任模型](/zh-Hans/introduction/trust-model)。

@@ -50,6 +50,16 @@ jobs:
         working-directory: docs-site
         run: npm run check:disclosure
 
+      # Chinese paragraphs must not be hard-wrapped: a soft break between two
+      # Han characters publishes a space inside a word.
+      - name: CJK wrapping gate (self-test)
+        working-directory: docs-site
+        run: npm run test:cjk
+
+      - name: CJK wrapping gate (site content)
+        working-directory: docs-site
+        run: npm run check:cjk
+
       - name: Build (all locales)
         working-directory: docs-site
         run: npm run build
