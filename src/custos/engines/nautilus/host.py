@@ -732,13 +732,17 @@ class NtTradingNodeHost:
         node, _task = entry
         snapshots: list[OrderSnapshot] = []
         for order in node.kernel.cache.orders_open():
+            # A market order has no ``price`` attribute at all, so reaching for it
+            # raises rather than yielding None. Report the absence instead of
+            # inventing a number a reader could mistake for a limit.
+            raw_price = getattr(order, "price", None)
             snapshots.append(
                 OrderSnapshot(
                     client_order_id=str(order.client_order_id),
                     instrument_id=str(order.instrument_id),
                     side=str(order.side),
                     quantity=Decimal(str(order.quantity)),
-                    price=Decimal(str(order.price)),
+                    price=None if raw_price is None else Decimal(str(raw_price)),
                     status=str(order.status),
                 )
             )

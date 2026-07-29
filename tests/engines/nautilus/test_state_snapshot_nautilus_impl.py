@@ -280,6 +280,45 @@ async def test_nt_host_get_orders_unknown_spec_empty() -> None:
     assert await _host().get_orders("nope") == []
 
 
+class _FakeMarketOrder:
+    """A market order the way Nautilus models one: no ``price`` attribute at all.
+
+    ``MarketOrder`` does not merely leave ``price`` unset — the attribute is absent,
+    so anything reaching for it raises ``AttributeError``. Every other fake order here
+    carries a price, which is why the snapshot path could assume one indefinitely.
+    """
+
+    def __init__(self, client_order_id: str, instrument_id: str, side: str) -> None:
+        self.client_order_id = client_order_id
+        self.instrument_id = instrument_id
+        self.side = side
+        self.quantity = "1"
+        self.status = "ACCEPTED"
+
+
+async def test_nt_host_get_orders_reports_market_orders_without_a_price() -> None:
+    """A market order has no limit price, so the snapshot reports absence, not zero.
+
+    Zero would be indistinguishable from a genuine limit at zero; the field is
+    optional precisely so a reader cannot mistake one for the other.
+    """
+
+    host = _host()
+    node = _FakeSnapshotNode(
+        positions=[],
+        orders=[
+            _FakeMarketOrder("c1", "BTCUSDT", "BUY"),
+            _FakeSnapshotOrder("c2", "ETHUSDT", "SELL", "2", "50", "SUBMITTED"),
+        ],
+    )
+    host._active_nodes["spec-1"] = (node, None)
+
+    orders = await host.get_orders("spec-1")
+
+    assert [snapshot.price for snapshot in orders] == [None, Decimal("50")]
+    assert all(isinstance(snapshot.quantity, Decimal) for snapshot in orders)
+
+
 async def test_nt_host_get_engine_status_decimal_and_tracks_peak() -> None:
     host = _host()
     # First tick: peak = current (initial exposure).

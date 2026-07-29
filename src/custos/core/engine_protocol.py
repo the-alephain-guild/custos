@@ -43,6 +43,12 @@ _MONEY_FIELDS_SHOULD_BE_DECIMAL = frozenset(
     }
 )
 
+# Money fields that may be absent, by owning dataclass. Keeping this narrow means a
+# new nullable money field has to be declared deliberately rather than inherited.
+_OPTIONAL_MONEY_FIELDS: dict[str, frozenset[str]] = {
+    "OrderSnapshot": frozenset({"price"}),
+}
+
 
 @runtime_checkable
 class ActivatedEngineArtifactV1(Protocol):
@@ -62,12 +68,20 @@ class ActivatedEngineArtifactV1(Protocol):
 
 def _reject_float_money(instance: Any) -> None:
     """Raise ``TypeError`` if any money field on ``instance`` is not a
-    ``Decimal``. Called from every snapshot dataclass's ``__post_init__``."""
+    ``Decimal``. Called from every snapshot dataclass's ``__post_init__``.
 
+    ``None`` passes only where the field is declared optional, which today means
+    an order that carries no limit price. That is absence of a price, not a price
+    of zero, so it is represented as absence rather than coerced into money.
+    """
+
+    optional = _OPTIONAL_MONEY_FIELDS.get(type(instance).__name__, frozenset())
     for field in fields(instance):
         if field.name not in _MONEY_FIELDS_SHOULD_BE_DECIMAL:
             continue
         value = getattr(instance, field.name)
+        if value is None and field.name in optional:
+            continue
         if not isinstance(value, Decimal):
             raise TypeError(
                 f"{type(instance).__name__}.{field.name} must be Decimal, "
@@ -103,14 +117,19 @@ class PositionSnapshot:
 
 @dataclass(frozen=True)
 class OrderSnapshot:
-    """A single open order exposed by ``get_orders``. ``quantity`` + ``price``
-    are ``Decimal``; identifier / side / status remain strings."""
+    """A single open order exposed by ``get_orders``. ``quantity`` is ``Decimal``;
+    identifier / side / status remain strings.
+
+    ``price`` is the order's limit price and is ``None`` for order types that have
+    none, such as a market order. Zero is not used as a stand-in, since it would be
+    indistinguishable from a genuine limit at zero.
+    """
 
     client_order_id: str
     instrument_id: str
     side: str
     quantity: Decimal
-    price: Decimal
+    price: Decimal | None
     status: str
 
     def __post_init__(self) -> None:
