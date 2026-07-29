@@ -64,13 +64,15 @@ spec 的 `risk_config` 可抬高。tick 循环是与订阅并行的独立 task�
 | 文件路径 | 操作 | 描述 |
 |---|---|---|
 | `src/custos/offline/safety.py` | Create | 限额解析（live 由 guard 收口）+ 构造 breaker |
-| `src/custos/offline/reconciler.py` | Modify | 接受可选 breaker；frozen 时拒新 generation；暴露活跃 instance id |
-| `src/custos/offline/daemon.py` | Modify | 组合 `EngineSafetySupervisor` + 起 tick task |
+| `src/custos/offline/reconciler.py` | Modify | 接受可选 guard；引擎动作前先读限额，读不出即终局拒绝；跳闸后拒新 generation。活跃 instance 由 guard 持有，不在此暴露 |
+| `src/custos/offline/daemon.py` | Modify | 组合 `OfflineExposureGuard` + 与订阅并行的 tick |
 | `authority-manifest.json` | Modify | `safety.py` 归入 `offline_lane.guarded_modules` |
 | `tests/test_offline_lane_safety.py` | Create | 限额来源与 tick 契约 |
-| `tests/test_offline_reconciler.py` | Modify | 锁死语义 |
+| `tests/test_offline_reconciler.py` | Modify | 锁死语义 + 限额接线 |
 | `tests/test_offline_lane_daemon.py` | Modify | tick 与传输解耦 |
+| `tests/test_plan_closeout_counts.py` | Modify | 计数探针作用域（计划外，见偏离日志） |
 | `.forge/plans/2026-07/21-sandbox-offline-deployment-path.md` | Modify | 红线表 0.3 行更新兑现范围 |
+| `.forge/README.md` | Modify | plan 索引状态（Task 4 动作清单） |
 
 ## 实现任务 (Tasks)
 
