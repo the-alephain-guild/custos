@@ -15,7 +15,7 @@
 | `make check` | fmt-check + lint | 组合 target |
 | `make test` | 跑测试 | `uv run pytest` |
 | `make verify` | check + test (发布级) | 组合 target |
-| `make verify-local-v030` | 构建并验证本机下游镜像 | Docker runtime + standalone NATS gate |
+| `make verify-local-v030` | 构建并验证本机下游镜像 | Docker runtime contract |
 
 ## 详细验证策略
 
@@ -43,8 +43,7 @@ uv run pytest -k "reconcile" -v             # 关键词过滤
 
 ### Release artifact identity
 
-公开稳定镜像 tag 只能指向通过完整 Docker + standalone runtime gate 的 **same verified
-digest**：
+公开稳定镜像 tag 只能指向通过完整 Docker runtime gate 的 **same verified digest**：
 
 1. 下载并固定 release wheel artifact。
 2. 构建只带 SHA-scoped candidate tag 的 image，记录 registry digest。
@@ -82,9 +81,14 @@ make verify-local-v030
 ```
 
 该 target 构建 `custos-runner:v0.3.0`，写入当前 Git SHA 的
-`org.opencontainers.image.revision` label，执行完整 Docker runtime contract 与 standalone
-NATS acceptance，并输出 image ID + revision。PS 不得 pull 未发布的 GHCR tag，也不得维护
-派生 Custos Dockerfile。
+`org.opencontainers.image.revision` label，执行完整 Docker runtime contract，并输出
+image ID + revision。下游不得 pull 未发布的 GHCR tag，也不得维护派生 Dockerfile。
+
+**已知缺口**：standalone 部署链路验收目前**不在**这道门里。原来的
+`tests/integration/test_standalone_runtime.py` 随 `arx-runner deployment publish`
+一并删除——它正是用那条命令注入 spec 的，而"发布 spec"不是 runner 的职责。恢复这份覆盖
+需要一条来自真实生产方的签名指令。在那之前，本 target 只保证镜像契约，不保证端到端
+reconcile。
 
 ### Non-Custodial 4 红线专项检查
 

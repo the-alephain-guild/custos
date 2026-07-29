@@ -216,11 +216,27 @@ def test_publish_ghcr_declares_every_needs_output_source() -> None:
     assert "${{ needs.build-wheel.outputs.version }}" in block
 
 
-def test_verify_runtime_target_covers_docker_and_standalone_contracts() -> None:
+def test_verify_runtime_target_gates_the_image_contract() -> None:
     text = MAKEFILE.read_text()
 
     assert "verify-runtime: test-docker" in text
-    assert "tests/integration/test_standalone_runtime.py" in text
+
+
+def test_every_test_path_the_makefile_runs_exists() -> None:
+    """A gate that runs a deleted test file is not a gate.
+
+    `verify-runtime` invoked `tests/integration/test_standalone_runtime.py` for
+    weeks after the refactor that deleted it, so `make verify-local-v030` --
+    the only consumer gate while remote release is deferred -- exited on a
+    missing file. The assertion above used to require that exact path, which
+    pinned the broken reference in place rather than catching it.
+    """
+    text = MAKEFILE.read_text()
+    referenced = set(re.findall(r"tests/[\w/]+\.py", text))
+    assert referenced, "no test paths found in the Makefile — has the format changed?"
+
+    missing = sorted(path for path in referenced if not (MAKEFILE.parent / path).exists())
+    assert not missing, f"the Makefile runs test files that do not exist: {missing}"
 
 
 def test_post_publish_verifies_complete_runtime_contract() -> None:

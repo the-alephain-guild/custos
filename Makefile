@@ -135,11 +135,14 @@ test-docker-existing:  ## Run runtime contracts against CUSTOS_TEST_IMAGE (defau
 
 test-docker: docker-build test-docker-existing  ## Build local image, then run complete runtime contracts
 
-verify-runtime-existing: test-docker-existing  ## Gate an existing image and standalone deployment wire
-	uv run pytest tests/integration/test_standalone_runtime.py -v
+# These gate the image contract only. The standalone deployment-wire acceptance
+# they used to run was deleted along with `arx-runner deployment publish`, which
+# is how it injected a spec -- publishing is not a runner operation, so the test
+# could not survive the change. Restoring that coverage needs a signed command
+# from a real producer, and until then these targets must not claim it.
+verify-runtime-existing: test-docker-existing  ## Gate an existing image against the runtime contract
 
-verify-runtime: test-docker  ## Gate the complete image and standalone deployment wire
-	uv run pytest tests/integration/test_standalone_runtime.py -v
+verify-runtime: test-docker  ## Build, then gate the image against the runtime contract
 
 verify-local-v030: docker-build-local-v030  ## Build and gate the local downstream image
 	CUSTOS_TEST_IMAGE=$(LOCAL_IMAGE) \
