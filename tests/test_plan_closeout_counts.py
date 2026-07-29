@@ -8,6 +8,12 @@ lie, only to write a number without counting it.
 So the numbers get counted here instead. A close-out states one row per test
 file; this collects each file and compares. A bare total with no rows behind it
 is refused, because that is the shape the wrong number came in.
+
+A close-out records a moment, so the newest plan to count a file is the one held
+to today's number. Rewriting an older close-out's rows every time a later plan
+grows the same file would replace a record of what that plan delivered with a
+rolling figure — and the plan that grows the file has to recount it either way,
+which is the discipline the counting was for.
 """
 
 from __future__ import annotations
@@ -63,22 +69,41 @@ def _collected_counts(files: list[str]) -> Counter[str]:
     return counts
 
 
+def _newest_claim() -> dict[str, tuple[str, int]]:
+    """Each counted file, mapped to the last close-out that counted it."""
+
+    claim: dict[str, tuple[str, int]] = {}
+    for plan in _plans_with_test_tables():
+        for path, count in _ROW.findall(plan.read_text(encoding="utf-8")):
+            claim[path] = (plan.name, int(count))
+    return claim
+
+
 @pytest.mark.parametrize("plan", _plans_with_test_tables(), ids=lambda p: p.name)
-def test_a_close_out_test_table_matches_what_pytest_collects(plan: Path) -> None:
-    text = plan.read_text(encoding="utf-8")
-    claimed = {path: int(count) for path, count in _ROW.findall(text)}
+def test_a_close_out_counts_no_test_file_that_has_since_been_deleted(plan: Path) -> None:
+    """A count of a file nobody kept is the loudest thing a close-out can say."""
+
+    claimed = dict(_ROW.findall(plan.read_text(encoding="utf-8")))
 
     missing = [path for path in claimed if not (ROOT / path).is_file()]
+
     assert not missing, f"{plan.name} counts test files that do not exist: {missing}"
 
-    collected = _collected_counts(sorted(claimed))
+
+def test_the_newest_count_of_every_test_file_matches_what_pytest_collects() -> None:
+    claim = _newest_claim()
+
+    collected = _collected_counts(sorted(claim))
     wrong = {
-        path: (count, collected.get(path, 0))
-        for path, count in claimed.items()
+        path: {"plan": plan, "claimed": count, "collected": collected.get(path, 0)}
+        for path, (plan, count) in claim.items()
         if collected.get(path, 0) != count
     }
+
     assert not wrong, (
-        f"{plan.name} states test counts pytest disagrees with (claimed, collected): {wrong}"
+        f"the newest close-out to count these files disagrees with pytest: {wrong}. "
+        "A plan that grows a counted file recounts it in its own close-out rather "
+        "than editing the older one."
     )
 
 
