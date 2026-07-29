@@ -47,7 +47,7 @@ def _lane_manifest(**overrides: object) -> dict:
     lane = {
         "module_root": "src/custos/offline",
         "guard_module": "mode_guard.py",
-        "guard_symbol": "refuse_live",
+        "guard_reference": "custos.offline.mode_guard",
         "permitted_modes": ["sandbox", "testnet"],
         "excluded_mode": "live",
         "guarded_modules": ["spec.py", "reconciler.py"],

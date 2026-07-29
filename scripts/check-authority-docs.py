@@ -2244,7 +2244,7 @@ def verify_offline_lane(
         return
 
     guard_module = str(lane.get("guard_module", ""))
-    guard_symbol = str(lane.get("guard_symbol", ""))
+    guard_reference = str(lane.get("guard_reference", ""))
     guard = module_root / guard_module
     if not guard.is_file():
         errors.append(f"offline lane exists without its mode guard: {guard}")
@@ -2261,14 +2261,14 @@ def verify_offline_lane(
                 "nor declared mode-agnostic"
             )
             continue
-        if guard_symbol not in module.read_text(encoding="utf-8"):
+        if guard_reference not in module.read_text(encoding="utf-8"):
             errors.append(f"offline lane module bypasses the mode guard: {module}")
 
     for entry_point in lane.get("guarded_entry_points", []):
         path = resolve(str(entry_point), root=root)
         if not path.is_file():
             continue
-        if guard_symbol not in path.read_text(encoding="utf-8"):
+        if guard_reference not in path.read_text(encoding="utf-8"):
             errors.append(f"offline lane entry point bypasses the mode guard: {path}")
 
 

@@ -48,15 +48,21 @@ def refuse_live(mode: object, *, source: str) -> TradingMode:
     return candidate
 
 
-def admit_offline_spec(raw: bytes | str, *, command_mode: object) -> TradingMode:
+def admit_offline_spec(raw: bytes | str, *, command_mode: object = None) -> TradingMode:
     """Refuse on either mode claim before the spec is parsed as a contract.
 
     Returns the single agreed mode. Raises :class:`OfflineModeRefused` if either
     claim is absent, unknown, live, or disagrees with the other.
+
+    ``command_mode=None`` means the caller stated no mode — the spec's own claim
+    then stands alone and must still be non-live. That is not the same as an empty
+    string, which is a caller stating a mode it cannot name and is refused.
     """
 
-    requested = refuse_live(command_mode, source="command line")
     declared = refuse_live(_declared_mode(raw), source=_SPEC_SOURCE)
+    if command_mode is None:
+        return declared
+    requested = refuse_live(command_mode, source="command line")
     if declared is not requested:
         _log.warning(
             "offline_mode_refused",

@@ -63,6 +63,26 @@ def test_admits_an_agreeing_non_live_spec(raw: bytes, mode: str) -> None:
     assert admit_offline_spec(raw, command_mode=mode) == TradingMode(mode)
 
 
+@pytest.mark.parametrize(
+    ("raw", "mode"),
+    [(SANDBOX_SPEC, "sandbox"), (TESTNET_SPEC, "testnet")],
+)
+def test_a_caller_that_states_no_mode_leaves_the_spec_claim_standing(raw: bytes, mode: str) -> None:
+    """PS's validate and publish pass no mode; the spec's own claim then decides."""
+
+    assert admit_offline_spec(raw, command_mode=None) == TradingMode(mode)
+
+
+def test_a_caller_that_states_no_mode_still_cannot_reach_live() -> None:
+    with pytest.raises(OfflineModeRefused, match="live"):
+        admit_offline_spec(LIVE_SPEC, command_mode=None)
+
+
+def test_stating_no_mode_differs_from_stating_an_empty_one() -> None:
+    with pytest.raises(OfflineModeRefused, match="declare"):
+        admit_offline_spec(SANDBOX_SPEC, command_mode="")
+
+
 def test_refuses_live_before_the_rest_of_the_spec_is_looked_at() -> None:
     """A live spec is refused on mode, not on whatever else is wrong with it."""
 
