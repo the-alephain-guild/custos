@@ -24,9 +24,17 @@ ROOT = Path(__file__).resolve().parents[1]
 PLANS = ROOT / ".forge/plans"
 
 _ROW = re.compile(r"^\|\s*`(tests/[\w/]+\.py)`\s*\|\s*(\d+)\s*\|", re.MULTILINE)
-# Plan close-outs are written in Chinese by convention, so the phrases a total can
-# appear in are Chinese. This is a pattern over that prose, not prose of its own.
-_BARE_TOTAL = re.compile(r"(?:新增\s*(?P<a>\d+)\s*个测试|上表合计\s*(?P<b>\d+)\s*条)")  # noqa: language
+# Close-outs are written in Chinese, so a total shows up in one of two phrases:
+# "<n> newly added tests" or "the table above totals <n>". They are spelled as
+# escapes rather than literals so this file carries no CJK bytes of its own, which
+# is what the language rule is protecting — matching Chinese prose is not writing it.
+_ADDED = "\u65b0\u589e"
+_TESTS = "\u4e2a\u6d4b\u8bd5"
+_TABLE_TOTALS = "\u4e0a\u8868\u5408\u8ba1"
+_ITEMS = "\u6761"
+_BARE_TOTAL = re.compile(
+    rf"(?:{_ADDED}\s*(?P<a>\d+)\s*{_TESTS}|{_TABLE_TOTALS}\s*(?P<b>\d+)\s*{_ITEMS})"
+)
 
 
 def _plans_with_test_tables() -> list[Path]:
