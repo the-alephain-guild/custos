@@ -38,6 +38,7 @@ _DRAWDOWN_KEY: Final = "max_drawdown_pct"
 _DECLARED_KEYS: Final = (_NOTIONAL_KEY, _DRAWDOWN_KEY)
 _SPEC_SOURCE: Final = "offline_spec_risk_config"
 TICK_SECS: Final = 5.0
+EVALUATION_DEADLINE_SECS: Final = 10.0
 
 
 def resolve_breaker_config(spec: OfflineDeploymentSpec) -> FallbackBreakerConfig:
@@ -100,9 +101,16 @@ class OfflineExposureGuard:
     operator publishes. Clearing it takes a restart, which is the point.
     """
 
-    def __init__(self, *, engine: EngineSafetyPort, interval: float = TICK_SECS) -> None:
+    def __init__(
+        self,
+        *,
+        engine: EngineSafetyPort,
+        interval: float = TICK_SECS,
+        deadline: float = EVALUATION_DEADLINE_SECS,
+    ) -> None:
         self._engine = engine
         self._interval = interval
+        self._deadline = deadline
         self._watched: dict[str, _Watched] = {}
 
     def allows_new_generations(self) -> bool:
@@ -157,11 +165,40 @@ class OfflineExposureGuard:
         """Evaluate every deployment still worth evaluating."""
 
         ticks = []
-        for watched in tuple(self._watched.values()):
+        for spec_id, watched in tuple(self._watched.items()):
             if watched.latched:
                 continue
-            ticks.append(await watched.supervisor.evaluate_once(watched.deployment_instance_id))
+            tick = await self._evaluate_within_deadline(spec_id, watched)
+            if tick is not None:
+                ticks.append(tick)
         return ticks
+
+    async def _evaluate_within_deadline(
+        self, spec_id: str, watched: _Watched
+    ) -> EngineSafetyTick | None:
+        """Give the engine a bounded chance to answer, and fail closed if it will not.
+
+        An engine that raises is already handled; an engine that simply never
+        returns is the one shape with no exception to catch, and waiting on it
+        would stop both this tick and the lane's own shutdown. Silence is not
+        evidence of safety, so it latches — but nothing was flattened, and the
+        record says so rather than implying containment happened.
+        """
+
+        try:
+            return await asyncio.wait_for(
+                watched.supervisor.evaluate_once(watched.deployment_instance_id),
+                timeout=self._deadline,
+            )
+        except TimeoutError:
+            watched.supervisor.breaker.fail_closed("engine_unresponsive")
+            _log.error(
+                "offline_exposure_containment_unconfirmed",
+                spec_id=spec_id,
+                deployment_instance_id=watched.deployment_instance_id,
+                deadline_seconds=self._deadline,
+            )
+            return None
 
     async def run(self, stop: asyncio.Event) -> None:
         """Tick until asked to stop, or until nothing is left to evaluate."""
@@ -182,4 +219,9 @@ async def _sleep_until_stopped(stop: asyncio.Event, seconds: float) -> None:
         await asyncio.wait_for(stop.wait(), timeout=seconds)
 
 
-__all__ = ["TICK_SECS", "OfflineExposureGuard", "resolve_breaker_config"]
+__all__ = [
+    "EVALUATION_DEADLINE_SECS",
+    "TICK_SECS",
+    "OfflineExposureGuard",
+    "resolve_breaker_config",
+]

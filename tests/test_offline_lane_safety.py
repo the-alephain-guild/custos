@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from structlog.testing import capture_logs
 
 from custos.contracts import TradingMode
 from custos.core.engine_protocol import EngineStatus
@@ -293,6 +294,61 @@ async def test_the_tick_ends_once_every_watched_deployment_is_latched() -> None:
     await asyncio.wait_for(guard.run(asyncio.Event()), timeout=2)
 
     assert len(engine.flattened) == 1
+
+
+class _WedgedEngine(_SafetyEngine):
+    """An engine that accepts the question and never answers it."""
+
+    async def get_engine_status(self, deployment_instance_id: str) -> EngineStatus:
+        self.asked.append(deployment_instance_id)
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+async def test_an_engine_that_never_answers_does_not_hold_the_tick_forever() -> None:
+    engine = _WedgedEngine()
+    guard = _guard(engine, deadline=0.02)
+    _watch(guard, _spec())
+
+    await asyncio.wait_for(guard.evaluate_once(), timeout=2)
+
+    assert engine.asked == [INSTANCE]
+
+
+async def test_an_engine_that_never_answers_fails_closed() -> None:
+    """Silence is not evidence of safety, and it is the one case with no exception."""
+
+    engine = _WedgedEngine()
+    guard = _guard(engine, deadline=0.02)
+    _watch(guard, _spec())
+
+    await guard.evaluate_once()
+
+    assert not guard.allows_new_generations()
+
+
+async def test_a_wedged_engine_is_recorded_as_containment_not_confirmed() -> None:
+    """Nothing flattened the position, so the log must not read as if something had."""
+
+    engine = _WedgedEngine()
+    guard = _guard(engine, deadline=0.02)
+    _watch(guard, _spec())
+
+    with capture_logs() as logs:
+        await guard.evaluate_once()
+
+    assert any(entry["event"] == "offline_exposure_containment_unconfirmed" for entry in logs)
+    assert engine.flattened == []
+
+
+async def test_the_tick_ends_against_an_engine_that_never_answers() -> None:
+    engine = _WedgedEngine()
+    guard = _guard(engine, deadline=0.02)
+    _watch(guard, _spec())
+
+    await asyncio.wait_for(guard.run(asyncio.Event()), timeout=2)
+
+    assert not guard.allows_new_generations()
 
 
 async def test_the_tick_does_not_swallow_a_failure_to_flatten() -> None:
