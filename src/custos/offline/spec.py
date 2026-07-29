@@ -27,9 +27,7 @@ from pydantic import (
     StrictInt,
     StringConstraints,
     field_validator,
-)
-from pydantic import (
-    model_validator as pydantic_model_validator,
+    model_validator,
 )
 
 from custos.contracts import LifecycleState, TradingMode
@@ -82,7 +80,7 @@ class OfflineDeploymentSpec(BaseModel):
     risk_config: dict[str, Any] = Field(default_factory=dict)
     nautilus_config: dict[str, Any] = Field(default_factory=dict)
 
-    @pydantic_model_validator(mode="after")
+    @model_validator(mode="after")
     def enforce_mode_requirements(self) -> Self:
         refuse_live(self.trading_mode.value, source="deployment spec")
         if self.trading_mode is TradingMode.SANDBOX and self.sandbox is None:

@@ -48,26 +48,28 @@ def test_the_offline_lane_keeps_its_entry_points_on_the_cli() -> None:
     deleted in the same commit, so this one is derived from the parser rather
     than from a list that could go stale beside the code it describes.
     """
-    import argparse
+    for command in (
+        ["deployment"],
+        ["deployment", "validate"],
+        ["deployment", "publish"],
+        ["nats"],
+        ["nats", "bootstrap"],
+    ):
+        assert _help_exit_code(command) == 0, f"the offline lane lost `{' '.join(command)}`"
 
-    from custos.cli.subcommands import _build_parser
+    assert _help_exit_code(["teleport"]) != 0, "the probe accepts commands that do not exist"
 
-    actions = [
-        action
-        for action in _build_parser()._actions
-        if isinstance(action, argparse._SubParsersAction)
-    ]
-    surface = actions[0].choices
 
-    assert "deployment" in surface, "the offline lane lost its publish/validate surface"
-    assert "nats" in surface, "the offline lane lost its transport bootstrap"
+def _help_exit_code(command: list[str]) -> int:
+    """Ask the published entry point, not argparse's internals, whether it has this."""
 
-    deployment_actions = [
-        action
-        for action in surface["deployment"]._actions
-        if isinstance(action, argparse._SubParsersAction)
-    ][0].choices
-    assert {"validate", "publish"} <= set(deployment_actions)
+    from custos.cli.subcommands import main
+
+    try:
+        main([*command, "--help"])
+    except SystemExit as stopped:
+        return int(stopped.code or 0)
+    return 0
 
 
 def test_the_offline_spec_contract_is_published() -> None:

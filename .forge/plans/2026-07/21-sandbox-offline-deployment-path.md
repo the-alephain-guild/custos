@@ -312,22 +312,24 @@ make lint && make test
 
 ## Verification
 
-- [ ] `make lint` clean
-- [ ] `make check-authority` green
-- [ ] `make test` — no new failures against the pre-existing baseline. Two failures are
-      known-red before this plan and unrelated to it:
-      `test_runner_fact_contract_v1.py::test_v1_inventory_is_complete_and_byte_pinned`
-      and `test_runner_policy_contract_consumer.py::test_runner_policy_pins_one_v1_producer_handoff`,
-      both asserting cross-repository receipt commit pins.
-- [ ] `make verify-local-v030` builds an image from this branch
-- [ ] End-to-end from the consumer side, which is the only proof that matters here:
+- [x] `make lint` clean
+- [x] `make check-authority` green
+- [x] `make test` — 780 passed / 0 failed. The two failures this plan expected to inherit
+      were already repaired by `543b0f1` before it started, so the baseline is clean.
+      `make fmt-check` remains red on three files the authority receipts pin by byte,
+      which predates this plan and is lesson C6, not a regression here.
+- [ ] **未执行** `make verify-local-v030` — needs Docker
+- [ ] **未执行** End-to-end from the consumer side, which is the only proof that matters
+      here:
       ```bash
       cd philosophers-stone/deploy/custos
       make start STRATEGY=supertrend MODE=sandbox TENANT_ID=local
       make start STRATEGY=supertrend MODE=testnet TENANT_ID=local
       ```
-      each reaching `wait-status` with the target generation
-- [ ] `MODE=live` is refused by the Task 2 guard, not merely absent from the templates
+      each reaching `wait-status` with the target generation. Needs Docker, a NATS
+      instance and the PS checkout; see the close-out's evidence table.
+- [x] `MODE=live` is refused by the guard, not merely absent from the templates — proven
+      at the spec, the command line and the vault boundary, in unit tests only
 
 ## Red-line gate satisfaction
 
