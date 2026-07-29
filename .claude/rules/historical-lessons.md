@@ -36,9 +36,18 @@
   在 G6 之后)。四件套齐: 本条 lesson + Plan 21 偏离日志 `DEV-21-AUTHORITY-AMENDMENT` +
   `.forge/README.md` Offline lane note + `authority-manifest.json` `offline_lane` 机械门。
   与 C1 同型 (custos 独立仓形态的 lesson #38 记录路径), 本条是第二个先例。
+- **同批的第三条 (close-out 数字必须来自实跑)**: 本 plan 的 close-out 写"新增 91 个测试",
+  实际 117; 自列分项之和 108 与自报总数也不自洽; 整组漏掉了 8 个权威门测试。**一句话里错
+  三处, 没有一处需要说谎, 只需要不数就写**。审计以 C3 记之。这是生态 lesson #25 在 custos
+  内首次复发, 形态与它相同 (agent 在 close-out 里写未经计数的数字), 因此不另开条目, 在此
+  合并记录。**防护**: close-out 改为逐文件表格, 由 `tests/test_plan_closeout_counts.py`
+  向 pytest 实际 collect 计数核对, 并拒绝任何该表支撑不了的合计数; 探针本身经扰动验证会红。
 - **Binding**: `tests/test_gateway_contract_v1_samples.py` 的 offline lane 面存在性断言
-  (从 parser 推导, docstring 点名消费者) + `scripts/check-authority-docs.py`
-  `verify_offline_lane` + `.claude/rules/mandatory-rules.md` §Trust 离线通道段。
+  (走公开入口 `main([... , "--help"])` 退出码, 含必然不存在的负对照, docstring 点名消费者)
+  + `scripts/check-authority-docs.py` `verify_offline_lane`
+  + `.claude/rules/mandatory-rules.md` §Trust 离线通道段
+  + `tests/test_plan_closeout_counts.py` 与 `.claude/rules/progress-management.md`
+  §"数字类声明必须来自实跑"。
 
 ---
 
