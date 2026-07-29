@@ -1,6 +1,6 @@
 # 22 — offline-lane-guard-fixes
 
-> **Status**: 🔲 Not started
+> **Status**: ✅ Completed (2026-07-29)
 > **Created**: 2026-07-29
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Plan**: `.forge/plans/2026-07/22-offline-lane-local-exposure-guard.md`
@@ -145,22 +145,58 @@ flatten 且未锁死。
 
 ## 验证清单 (Verification)
 
-- [ ] `make lint` 绿
-- [ ] `make check-authority` 绿
-- [ ] `make test` 无新增失败
-- [ ] 计划文件内 `asyncio.gather` 仅剩偏离条目内的历史引用
-- [ ] Fix 3 的测试经变异证伪（改 `limits` 会红）
-- [ ] Fix 5 的测试在实现前会挂/红，实现后绿
-- [ ] close-out 计数表与实跑一致
+- [x] `make lint` 绿
+- [x] `make check-authority` 绿
+- [x] `make test` 无新增失败
+- [x] 计划文件内 `asyncio.gather` 仅剩偏离条目内的历史引用（`grep -c` = 1）
+- [x] Fix 3 的测试经变异证伪 —— `limits` 换成 strictest 后**只有它一条**变红
+- [x] Fix 5 的测试在实现前红（`deadline` 参数不存在），实现后绿
+- [x] Fix 6 的测试经变异证伪 —— 去掉 `is_finite()` 后 3/4 条变红（`InvalidOperation`）
+- [x] close-out 计数表与实跑一致（探针核对通过）
 
 ## 进度追踪 (Progress)
 
 | Fix | Priority | Status | Completed | Notes |
 |---|---|---|---|---|
-| Fix 1 | P0 | 🔲 | | C1 |
-| Fix 2 | P1 | 🔲 | | H1 |
-| Fix 3 | P2 | 🔲 | | M1 |
-| Fix 4 | P2 | 🔲 | | M2/M3 |
-| Fix 5 | P2 | 🔲 | | M4 |
-| Fix 6 | P3 | 🔲 | | L1 |
-| Fix 7 | — | 🔲 | | 重数收尾 |
+| Fix 1 | P0 | ✅ | `5cb1efb` | C1 — 纯记录，代码未动 |
+| Fix 2 | P1 | ✅ | `d1fdfc8` | H1 — 0.3 声明降级 + 遗留项 5 |
+| Fix 3 | P2 | ✅ | `707d2fc` | M1 — 经变异证伪 |
+| Fix 4 | P2 | ✅ | `ec2ff74` | M2/M3 |
+| Fix 5 | P2 | ✅ | `5cccff5` | M4 — 本轮唯一的代码改动 |
+| Fix 6 | P3 | ✅ | `12d5399` | L1 — 经变异证伪 |
+| Fix 7 | — | ✅ | 本 commit | 重数 + 收尾 |
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-07-29
+- **实施 commit 范围**: `8f7395b`（本计划）→ `5cb1efb` `d1fdfc8` `707d2fc` `ec2ff74`
+  `5cccff5` `12d5399` + 本 commit
+- **验证结果**: 全部通过 —— `make lint` 绿、`make check-authority` 绿、`make test` 全绿
+- **代码改动面**: 只有 Fix 5 一处（`src/custos/offline/safety.py`）。七条 finding 里五条修的是
+  **记录与声明**，这正是本轮的形状 —— 代码基本是对的，说法不够准
+
+### 三处值得记下的
+
+1. **C1 的修法是把计划改向代码，不是反过来。** 计划写 `asyncio.gather`，实现是
+   `_run_together`。`gather` 会把首个异常抛给调用者却不让另一个 loop 停下 —— 恰好是
+   "guard 死了 lane 还在交易"。按计划原文改代码会让它变差，所以改的是计划。与 plan 21 的
+   C1/C2/C4 同型。
+2. **H1 修声明不修代码，是因为"顺手修"会更糟。** 重启后让 guard watch 一个新进程里并不存在
+   的 instance，会让 `get_engine_status` 抛错 → fail closed → 对着空气 flatten 并锁死。真正
+   该决定的是"重启后该不该重新部署"，那是 Plan 21 那条 no-redeploy 设计的问题，已记为遗留项 5。
+3. **M4 从"不修"改判为"修"。** 审查时我判它出范围（`ZombieWatchdog` 是指定负责人）。复看时
+   翻过来了：守卫存在的意义就是东西坏掉时仍然工作，而"引擎收下问题却永不回答"是它当时唯一
+   没有防线的坏法 —— 有异常的路径早就 fail closed 了，沉默这一路没有异常可抓。且
+   `_run_together` 的 `finally` 会跟着一起挂住，连关停都出不去。
+
+### 两条测试的变异证伪
+
+不是"写完跑绿就算数"：Fix 3 把 `_update_guard` 传的 `limits` 换成 strictest，确认**只有**新
+那条变红；Fix 6 去掉 `is_finite()`，确认 4 条里 3 条变红（`NaN` 比较抛 `InvalidOperation`）。
+两次都改回。第一条本来就是为了补"变异不敏感"的洞，自己不做变异检查说不过去。
+
+### 遗留项
+
+- M4 的期限只保证 tick 不被挂住，不替代 `ZombieWatchdog`（两条通道仍零接线，plan 22 遗留项 3）
+- H1 背后的设计问题（重启后该不该重新部署）仍未决，plan 22 遗留项 5
+- plan 22 原有的遗留项 1-4 不受本轮影响
