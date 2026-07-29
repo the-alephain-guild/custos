@@ -183,11 +183,17 @@ PS 侧若要在离线通道跑实际策略，需自行在 `deploy/custos/conf/<s
 |---|---|---|---|
 | 0.1 Key/KEK 不出进程 | 本 plan 未新增任何凭证路径 | 不变 | 不受影响 |
 | 0.2 G6 host gate | 不变 | 不变 | 不受影响 —— 本 plan 不碰执行门 |
-| 0.3 失联 ≠ 停止 | `test_the_exposure_tick_outlives_a_transport_that_has_failed` 断言传输持续抛错期间引擎仍被问了 ≥3 次 | `run_offline_lane` 用 `_run_together` 并行跑订阅与 tick，tick 只调引擎 | **离线通道已兑现**（周期敞口评估 + 越限 flatten + 锁死）。**签名通道仍未接** `EngineSafetySupervisor`，逐单 `RunnerNotionalCap` 与 `ZombieWatchdog` 两条通道皆零接线 |
+| 0.3 失联 ≠ 停止 | `test_the_exposure_tick_outlives_a_transport_that_has_failed` 断言传输持续抛错期间引擎仍被问了 ≥3 次 | `run_offline_lane` 用 `_run_together` 并行跑订阅与 tick，tick 只调引擎 | **离线通道在本进程内部署过的 generation 上已兑现**（周期敞口评估 + 越限 flatten + 锁死）。**不覆盖重启**（见下）。**签名通道仍未接** `EngineSafetySupervisor`，逐单 `RunnerNotionalCap` 与 `ZombieWatchdog` 两条通道皆零接线 |
 | 0.4 Decimal money math | `test_a_float_ceiling_is_refused_because_money_is_not_binary_fractions` + 整数/字符串各一条 | 限额一律 `Decimal(str(...))` 构造 | 已兑现 |
 
 0.3 那格的措辞是刻意分层的：本 plan 兑现的是**离线通道的周期敞口守卫**，不是红线全部。
 签名通道的同名缺口在 Plan 19 范围内，逐单 cap 全生态无 hook（Plan 21 已记为 defer）。
+
+**重启不在覆盖范围内。** 审查（H1）实跑证实：持久化状态里 generation 已是 1 的新进程，收到
+重投的 generation 1 会走 `reconciler.py` 的 `==` 短路分支 —— 报 healthy、不部署、也不 watch。
+把敞口设成 `$9999`、上限 `$200`，守卫一次都没被问过。"不重复部署已应用的 generation" 是
+Plan 21 的既有设计（`test_forgets_nothing_across_a_restart` 明文固定），本 plan 没引入它；
+但本 plan 让它有了新后果 —— 交易所仍持仓，而这条 lane 报 healthy、不守卫。见遗留项 5。
 
 ### 失败模式覆盖
 
@@ -224,3 +230,8 @@ generation、跳闸后新 generation、重启后未锁死。
 4. **未在真 NT 引擎上跑过 tick** —— `get_engine_status` / `flatten_positions` 两个 host 都
    实现了（`engines/nautilus/host.py:170,186,690,751`，已 grep 实证），但本 plan 的验证止于
    fake engine；真跑要 Docker + NATS，与 Plan 21 遗留项 1 同一道门。
+5. **重启后既不部署也不守卫，却报 healthy** —— 见上文红线表 0.3 的说明。修法不是"重启就
+   watch"：那个 instance 在新进程里并不存在，`get_engine_status` 会抛错 → fail closed →
+   对着空气 flatten 并锁死，比不 watch 更糟。真正要决定的是**重启后该不该重新部署**
+   （即 Plan 21 那条 no-redeploy 设计是否仍然正确），那是一个独立的设计问题，不是本轮
+   fix 能顺手带过的。
