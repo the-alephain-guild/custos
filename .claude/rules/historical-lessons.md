@@ -6,6 +6,36 @@
 
 > **custos 内部 lesson 用 `C1` `C2` … 前缀区分生态数字编号** (见文末"记录新 lesson")。
 
+## C9 fail-closed 守的是"错了", 不是"不吭声" — 没有异常可抓的那条路上没人设防 (2026-07)
+
+- **事件**: `EngineSafetySupervisor` 是既有组件、已被审过、对 `get_engine_status` **抛异常**
+  的情形处理得很干净(`except Exception` → `fail_closed` → flatten)。Plan 22 把它接进离线通道
+  后, 审查 M4 发现它对"引擎收下问题却永不返回"完全没有防线 —— 因为没有异常可抓, 而整段防御
+  是围着 `except` 写的。后果不止 tick 停摆: `_run_together` 的 `finally` 里那次
+  `asyncio.wait(tasks)` 也永远等不回来, 连关停都出不去。
+- **根因**: fail-closed 的设计直觉是"出错就按最坏情况处理", 而"出错"在代码里的形状是异常。
+  **挂起不产生异常, 于是它落在防御的视野之外**。审查时我自己第一遍也判它"出范围"(理由是
+  `ZombieWatchdog` 才是指定负责人), 复看才翻过来 —— 指定负责人没接线时, "归它管"等于没人管
+  (grep 实证: `ZombieWatchdog` 全仓零接线)。
+- **教训**: 任何 fail-closed 的守卫都要被问一句 —— **不返回算不算一种坏法**。对外部进程 /
+  引擎 / IO 的每一次 await, 只要它挂住会让守卫本身停摆, 就必须有期限; 超时按"读不出"处理并
+  fail closed, 但记录必须说清 **containment 没有被确认**, 不能写得像已经兜住了。
+- **预防**:
+  - 期限加在**整次评估**上, 不是加在单个调用上 —— 挂在 `flatten` 上和挂在 `get_status` 上
+    都得能退出
+  - 超时后**不做第二次尝试**: 挂住的引擎不会在第二次调用时回答, 堆重试只会新增挂起路径
+  - 超时用独立事件名, 不与"已 flatten"共用一个 —— 否则日志读起来像containment 成功了
+  - "指定负责人在别的 plan 里"不是不设防的理由; 先 grep 那个负责人是否真的接了线
+- **Binding**: `src/custos/offline/safety.py` 的 `_evaluate_within_deadline` +
+  `EVALUATION_DEADLINE_SECS`; 测试 `test_an_engine_that_never_answers_fails_closed` /
+  `test_a_wedged_engine_is_recorded_as_containment_not_confirmed` /
+  `test_the_tick_ends_against_an_engine_that_never_answers`。
+  **期限在离线通道的 wrapper 里, 不在 `core/engine_safety.py`** —— `EngineSafetySupervisor`
+  本身仍无超时(grep 实证 0 处), 它现在唯一的生产消费者就是这个 wrapper; 签名通道将来接它时
+  会原样继承这个缺口。
+
+---
+
 ## C8 删掉一个面时连同它的测试一起删, 就没有任何东西会变红 — 消费者在别的仓库时更看不见 (2026-07)
 
 - **事件**: `deployment publish` / `nats bootstrap` / 未签名 reconcile 环在 `324da6e`
@@ -372,6 +402,15 @@
 - **custos 特化**: plan 模板 "完成报告" 章节固定含 "红线 gate 满足度" 表 —
   每条红线一行: `red_line | code_coverage | runtime_wire | defer_status | follow_up_plan_ref`。
   Plan 03 是本 lesson 落地**模板样本** (`FailureEvent.reason_code` 撤除标注 "契约认知修正" 非 defer)
+- **custos dogfood #2 (Plan 22, 2026-07-29)**: 红线表**已经在用**, 仍然中了 —— 0.3 行写
+  "离线通道已兑现"且不带条件。审查 H1 实跑证实: 持久化状态里 generation 已是 1 的新进程,
+  收到重投的 generation 1 会走 `==` 短路 —— 报 healthy、不部署、也不 watch; 敞口设成 `$9999`、
+  上限 `$200`, 守卫一次都没被问过。修法是把声明降级到"本进程内部署过的 generation", **不改
+  代码**(重启后盲目 watch 一个新进程里不存在的 instance, 会让 `get_engine_status` 抛错 →
+  fail closed → 对着空气 flatten 并锁死, 比不 watch 更糟)。
+  **与 Plan 03 的差别在谁抓到**: 03 是自省抓的, 22 是审查抓的。自评过不了这一关 —— 写声明的
+  人和验声明的人是同一个, 而这条 lesson 防的正是"承袭红线名当兑现声明"这种自己看不见的措辞。
+  有表不等于表里的话被验过。
 - **与 #17/#22/#28 合并适用**: #17 缺失失败模式测试 / #28 分句借位无 guard / #22 dead-branch
   遮蔽 / **#40 unit-test ≠ runtime wire (close-out 声明侧, 接线 defer 时必须显式降级)**
 
