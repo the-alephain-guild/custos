@@ -196,5 +196,5 @@ def test_authority_registers_exact_v1_ready_receipt() -> None:
     receipt_path = ROOT / "docs/authority/receipts/custos-toolkit-rc-authority-v1.json"
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert receipt["status"] == "READY_TOOLKIT_RC"
-    assert receipt["candidate_version"] == "0.1.0rc5"
-    assert receipt["source_commit"] == "a3fd88c4e7e25433b508b2fece94be876630f380"
+    assert receipt["candidate_version"] == "0.1.0rc6"
+    assert receipt["source_commit"] == "ea7e2bf4ef4f59446068752d84ad13d1a62672d4"

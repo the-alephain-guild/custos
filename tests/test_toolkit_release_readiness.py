@@ -235,7 +235,7 @@ def test_pending_contract_is_source_generated_and_has_one_operational_blocker(
     )
     ready_receipt = json.loads(READY_RECEIPT_PATH.read_text(encoding="utf-8"))
     assert ready_receipt["status"] == "READY_TOOLKIT_RC"
-    assert ready_receipt["candidate_version"] == "0.1.0rc5"
+    assert ready_receipt["candidate_version"] == "0.1.0rc6"
 
     authority = json.loads((ROOT / "authority-manifest.json").read_text(encoding="utf-8"))
     assert {
