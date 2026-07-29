@@ -7,6 +7,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from custos.core.machine_credential_vault import (
     MachineCredentialError,
@@ -56,8 +57,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         "--enabled-mode",
         action="append",
         choices=("sandbox", "testnet", "live"),
-        required=True,
-        help="Repeat for every exact mode session hosted by this supervisor.",
+        default=None,
+        help=(
+            "Repeat for every exact mode session hosted by this supervisor. "
+            "Required by the signed lane; the offline lane takes its mode from the spec."
+        ),
     )
     parser.add_argument(
         "--development-local-nats-url",
@@ -89,6 +93,18 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
     parser.add_argument("--vault-dir", type=Path, default=DEFAULT_VAULT_DIR)
     parser.add_argument("--reconcile", action="store_true")
+    parser.add_argument(
+        "--reconcile-strategy-id",
+        default=None,
+        help=(
+            "Run the offline lane for this strategy instead of the signed one. "
+            "Sandbox and testnet only; live is refused."
+        ),
+    )
+    parser.add_argument("--nats-url", default="nats://localhost:4222")
+    parser.add_argument(
+        "--offline-state", type=Path, default=Path.home() / ".arx" / "state" / "offline-lane.db"
+    )
     parser.add_argument(
         "--crucible-domain-public-key",
         type=Path,
@@ -164,6 +180,55 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     )
 
 
+def _run_offline_lane(args: argparse.Namespace, metadata: Any, credential: Any) -> int:
+    """Run the offline lane instead of the signed daemon.
+
+    A separate composition, not a mode of the signed one: there is no control
+    plane to verify against here, and stubbing that check to reuse the signed
+    path would hollow out the check itself.
+    """
+
+    from custos.cli._daemon import _build_host
+    from custos.core.readiness import ReadinessFile
+    from custos.offline.daemon import run_offline_lane
+
+    engine = _build_host(
+        argparse.Namespace(
+            engine=args.engine,
+            tenant_id=metadata.tenant_id,
+            runner_id=metadata.runner_id,
+        )
+    )
+    readiness = ReadinessFile(
+        args.ready_file,
+        tenant_id=metadata.tenant_id,
+        runner_id=metadata.runner_id,
+        credential_id=str(credential.credential_id),
+        credential_version=credential.credential_version,
+        credential_valid_until=metadata.credential_valid_until,
+        machine_key_id=credential.machine_key_id,
+    )
+    try:
+        return asyncio.run(
+            run_offline_lane(
+                tenant_id=metadata.tenant_id,
+                runner_id=metadata.runner_id,
+                strategy_id=args.reconcile_strategy_id,
+                nats_url=args.nats_url,
+                vault_dir=args.vault_dir,
+                engine=engine,
+                ready_file=args.ready_file,
+                state_path=args.offline_state,
+                readiness=readiness,
+            )
+        )
+    except KeyboardInterrupt:
+        return 0
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"offline lane failed: {exc}", file=sys.stderr)
+        return 1
+
+
 def run(args: argparse.Namespace) -> int:
     args.ready_file.expanduser().resolve().unlink(missing_ok=True)
     try:
@@ -181,6 +246,17 @@ def run(args: argparse.Namespace) -> int:
     except (OSError, ValueError, MachineCredentialError) as exc:
         print(f"Runner startup authority check failed: {exc}", file=sys.stderr)
         return 1
+
+    if args.reconcile_strategy_id:
+        return _run_offline_lane(args, metadata, credential)
+
+    if not args.enabled_mode:
+        print(
+            "the signed lane requires at least one --enabled-mode; the offline lane "
+            "is selected with --reconcile-strategy-id",
+            file=sys.stderr,
+        )
+        return 2
 
     namespace = argparse.Namespace(
         tenant_id=metadata.tenant_id,

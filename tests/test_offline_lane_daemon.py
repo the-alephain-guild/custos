@@ -1,0 +1,287 @@
+"""Composing the offline lane, and keeping it out of the signed daemon's way.
+
+`--reconcile-strategy-id` selects a different composition rather than a variant of
+the signed one. The signed daemon verifies a control plane, loads transport
+authorities and publishes RunnerFacts; none of that exists on the operator's own
+machine, and stubbing those checks to reuse the path would hollow them out.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from custos.contracts import TradingMode
+from custos.offline.daemon import run_offline_lane
+from custos.offline.mode_guard import OfflineModeRefused
+from custos.offline.spec import OfflineDeploymentMessage, OfflineDeploymentSpec
+from custos.offline.state import AppliedRecord, OfflineAppliedStore
+
+TENANT = "local"
+RUNNER = "ps-supertrend"
+STRATEGY = "supertrend"
+
+
+def _spec(**overrides: Any) -> OfflineDeploymentSpec:
+    document = {
+        "spec_id": "supertrend-sandbox",
+        "generation": 1,
+        "trading_mode": "sandbox",
+        "lifecycle_state": "running",
+        "strategy_path": "/opt/ps/trend/supertrend",
+        "provenance_ref": {"credential_id": "binance-supertrend"},
+        "connector": "binance_perpetual",
+        "pairs": ["BTC-USDT"],
+        "leverage": 3,
+        "strategy_registry_name": "supertrend",
+        "sandbox": {"starting_balances": ["10_000 USDT"]},
+    }
+    document.update(overrides)
+    return OfflineDeploymentSpec.model_validate(document)
+
+
+class _FakeEngine:
+    def __init__(self) -> None:
+        self.deployed: list[dict[str, Any]] = []
+
+    async def deploy(self, spec: dict, credential: dict, artifact: Any) -> str:
+        self.deployed.append(spec)
+        return "container-1"
+
+    async def reconfigure(self, spec: dict) -> None: ...
+
+    async def stop(self, deployment_instance_id: str) -> None: ...
+
+    def supports_trading_mode(self, mode: str) -> bool:
+        return mode in {"sandbox", "testnet"}
+
+
+class _FakeSubscription:
+    def __init__(self, messages: list[bytes], stop: asyncio.Event) -> None:
+        self._messages = messages
+        self._stop = stop
+
+    async def next_msg(self, timeout: float) -> Any:
+        if not self._messages:
+            self._stop.set()
+            raise TimeoutError
+        return type("_Msg", (), {"data": self._messages.pop(0)})()
+
+
+class _FakeJetStream:
+    def __init__(self, messages: list[bytes], stop: asyncio.Event) -> None:
+        self._messages = messages
+        self._stop = stop
+        self.subscribed: list[str] = []
+        self.published: list[tuple[str, bytes]] = []
+
+    async def subscribe(self, subject: str) -> _FakeSubscription:
+        self.subscribed.append(subject)
+        return _FakeSubscription(self._messages, self._stop)
+
+    async def publish(self, subject: str, payload: bytes) -> object:
+        self.published.append((subject, payload))
+        return object()
+
+
+class _FakeConnection:
+    def __init__(self, jetstream: _FakeJetStream) -> None:
+        self._jetstream = jetstream
+        self.drained = False
+
+    def jetstream(self) -> _FakeJetStream:
+        return self._jetstream
+
+    async def drain(self) -> None:
+        self.drained = True
+
+
+async def _run(tmp_path: Path, messages: list[bytes], **overrides: Any) -> dict[str, Any]:
+    stop = asyncio.Event()
+    jetstream = _FakeJetStream(messages, stop)
+    connection = _FakeConnection(jetstream)
+    engine = overrides.pop("engine", _FakeEngine())
+    overrides.setdefault("credential_for", lambda spec: {"api_key": "k", "api_secret": "s"})
+
+    async def connect(url: str) -> _FakeConnection:
+        return connection
+
+    await asyncio.wait_for(
+        run_offline_lane(
+            tenant_id=TENANT,
+            runner_id=RUNNER,
+            strategy_id=STRATEGY,
+            nats_url="nats://nats:4222",
+            vault_dir=tmp_path / "vault",
+            engine=engine,
+            ready_file=tmp_path / "ready.json",
+            state_path=tmp_path / "state" / "offline.db",
+            connect_factory=connect,
+            stop=stop,
+            **overrides,
+        ),
+        timeout=2,
+    )
+    return {"jetstream": jetstream, "connection": connection, "engine": engine}
+
+
+async def test_subscribes_to_the_strategy_it_was_asked_to_reconcile(tmp_path: Path) -> None:
+    result = await _run(tmp_path, [])
+
+    assert result["jetstream"].subscribed == [f"arx.{TENANT}.deployment_spec.{STRATEGY}"]
+
+
+async def test_applies_desired_state_and_reports_observed_state(tmp_path: Path) -> None:
+    message = OfflineDeploymentMessage.create(
+        tenant_id=TENANT, strategy_id=STRATEGY, spec=_spec()
+    ).to_bytes()
+
+    result = await _run(tmp_path, [message])
+
+    assert len(result["engine"].deployed) == 1
+    (subject, payload) = result["jetstream"].published[0]
+    assert subject == f"arx.{TENANT}.deployment_status.{RUNNER}.supertrend-sandbox"
+    assert json.loads(payload)["payload"]["observed_generation"] == 1
+
+
+async def test_marks_the_runner_ready_so_the_health_probe_can_pass(tmp_path: Path) -> None:
+    """The consumer gates publishing on `arx-runner health`, which reads this file."""
+
+    from custos.core.readiness import ReadinessFile, is_ready_file
+
+    ready_file = tmp_path / "ready.json"
+    seen: list[bool] = []
+
+    readiness = ReadinessFile(
+        ready_file,
+        tenant_id=TENANT,
+        runner_id=RUNNER,
+        credential_id="cred-1",
+        credential_version=1,
+        credential_valid_until="2099-01-01T00:00:00Z",
+        machine_key_id="key-1",
+    )
+
+    class _WatchingSubscription(_FakeSubscription):
+        async def next_msg(self, timeout: float) -> Any:
+            seen.append(is_ready_file(ready_file))
+            return await super().next_msg(timeout)
+
+    stop = asyncio.Event()
+    jetstream = _FakeJetStream([], stop)
+    jetstream.subscribe = lambda subject: _ready(_WatchingSubscription([], stop))  # type: ignore[method-assign]
+    connection = _FakeConnection(jetstream)
+
+    async def connect(url: str) -> _FakeConnection:
+        return connection
+
+    await asyncio.wait_for(
+        run_offline_lane(
+            tenant_id=TENANT,
+            runner_id=RUNNER,
+            strategy_id=STRATEGY,
+            nats_url="nats://nats:4222",
+            vault_dir=tmp_path / "vault",
+            engine=_FakeEngine(),
+            ready_file=ready_file,
+            state_path=tmp_path / "state" / "offline.db",
+            readiness=readiness,
+            connect_factory=connect,
+            credential_for=lambda spec: {},
+            stop=stop,
+        ),
+        timeout=2,
+    )
+
+    assert seen and all(seen), "the runner was never ready while it was subscribed"
+    assert not ready_file.exists(), "readiness outlived the lane that claimed it"
+
+
+async def _ready(value: Any) -> Any:
+    return value
+
+
+async def test_drains_the_connection_it_opened(tmp_path: Path) -> None:
+    result = await _run(tmp_path, [])
+
+    assert result["connection"].drained
+
+
+async def test_forgets_nothing_across_a_restart(tmp_path: Path) -> None:
+    """A restarted runner must not redeploy a generation it already applied."""
+
+    message = OfflineDeploymentMessage.create(
+        tenant_id=TENANT, strategy_id=STRATEGY, spec=_spec()
+    ).to_bytes()
+    await _run(tmp_path, [message])
+
+    second = await _run(tmp_path, [message])
+
+    assert second["engine"].deployed == []
+
+
+def test_the_applied_store_reports_sqlite_own_verdict(tmp_path: Path) -> None:
+    store = OfflineAppliedStore(tmp_path / "state" / "offline.db")
+
+    assert store.quick_check() == "ok"
+
+
+def test_the_applied_store_round_trips(tmp_path: Path) -> None:
+    store = OfflineAppliedStore(tmp_path / "state" / "offline.db")
+    store.save("supertrend-sandbox", AppliedRecord(generation=7, container_id="c1"))
+
+    reopened = OfflineAppliedStore(tmp_path / "state" / "offline.db").load()
+
+    assert reopened["supertrend-sandbox"].generation == 7
+
+
+def test_no_credential_is_read_for_a_mode_the_lane_refuses(tmp_path: Path) -> None:
+    """The vault stays closed for a live spec rather than being read and discarded."""
+
+    from custos.offline.daemon import _credential_reader
+
+    read = _credential_reader(tmp_path / "vault", TENANT, RUNNER)
+    live = _spec().model_copy(update={"trading_mode": TradingMode.LIVE})
+
+    with pytest.raises(OfflineModeRefused, match="live"):
+        read(live)
+
+
+def test_start_offers_the_flag_the_consumer_passes() -> None:
+    """`deploy/custos/docker-compose.yaml` starts the runner with these flags."""
+
+    import argparse
+
+    from custos.cli.subcommands import start
+
+    parser = argparse.ArgumentParser()
+    start.register(parser.add_subparsers())
+    parsed = parser.parse_args(
+        [
+            "start",
+            "--nats-url",
+            "nats://nats:4222",
+            "--reconcile-strategy-id",
+            "supertrend-sandbox",
+            "--engine",
+            "nautilus",
+        ]
+    )
+
+    assert parsed.reconcile_strategy_id == "supertrend-sandbox"
+    assert parsed.nats_url == "nats://nats:4222"
+
+
+def test_the_signed_composition_is_untouched_without_the_flag() -> None:
+    import argparse
+
+    from custos.cli.subcommands import start
+
+    parser = argparse.ArgumentParser()
+    start.register(parser.add_subparsers())
+
+    assert parser.parse_args(["start"]).reconcile_strategy_id is None

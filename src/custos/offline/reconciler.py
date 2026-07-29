@@ -31,6 +31,7 @@ from custos.offline.spec import (
     now_rfc3339_nanos,
     offline_subject,
 )
+from custos.offline.state import AppliedRecord
 
 _log = get_logger("custos.offline.reconciler")
 
@@ -84,6 +85,14 @@ def runtime_spec(spec: OfflineDeploymentSpec, identity: OfflineRuntimeIdentity) 
     return document
 
 
+class AppliedStore(Protocol):
+    """Where applied generations survive a restart."""
+
+    def load(self) -> dict[str, Any]: ...
+
+    def save(self, spec_id: str, record: Any) -> None: ...
+
+
 @dataclass
 class _Applied:
     generation: int = 0
@@ -103,6 +112,7 @@ class OfflineReconciler:
         publish: PublishStatus,
         artifact_for: Callable[[OfflineDeploymentSpec], Any],
         credential_for: Callable[[OfflineDeploymentSpec], dict],
+        applied_store: AppliedStore | None = None,
     ) -> None:
         self._tenant_id = tenant_id
         self._runner_id = runner_id
@@ -111,7 +121,11 @@ class OfflineReconciler:
         self._publish = publish
         self._artifact_for = artifact_for
         self._credential_for = credential_for
-        self._applied: dict[str, _Applied] = {}
+        self._store = applied_store
+        self._applied: dict[str, _Applied] = {
+            spec_id: _Applied(generation=record.generation, container_id=record.container_id)
+            for spec_id, record in (applied_store.load() if applied_store else {}).items()
+        }
 
     async def run(self, subscription: Any, stop: asyncio.Event) -> None:
         """Consume desired state until asked to stop, outliving bad messages."""
@@ -180,8 +194,20 @@ class OfflineReconciler:
             return False
 
         applied.generation = spec.generation
+        self._remember(spec.spec_id, applied)
         await self._report(spec, healthy=True)
         return True
+
+    def _remember(self, spec_id: str, applied: _Applied) -> None:
+        if self._store is None:
+            return
+        try:
+            self._store.save(
+                spec_id,
+                AppliedRecord(generation=applied.generation, container_id=applied.container_id),
+            )
+        except Exception as exc:  # noqa: BLE001 - forgetting is worse than not recording
+            _log.warning("offline_applied_state_not_recorded", spec_id=spec_id, error=str(exc))
 
     async def _engage(self, spec: OfflineDeploymentSpec, applied: _Applied) -> str:
         identity = runtime_identity(spec)

@@ -50,8 +50,8 @@ def _lane_manifest(**overrides: object) -> dict:
         "guard_reference": "custos.offline.mode_guard",
         "permitted_modes": ["sandbox", "testnet"],
         "excluded_mode": "live",
-        "guarded_modules": ["spec.py", "reconciler.py"],
-        "mode_agnostic_modules": ["__init__.py", "mode_guard.py", "transport.py"],
+        "guarded_modules": ["spec.py", "reconciler.py", "daemon.py"],
+        "mode_agnostic_modules": ["__init__.py", "mode_guard.py", "transport.py", "state.py"],
         "guarded_entry_points": ["src/custos/cli/subcommands/deployment.py"],
     }
     lane.update(overrides)

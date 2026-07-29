@@ -220,11 +220,14 @@ def test_documentation_uses_only_real_flags() -> None:
 
 
 def test_probe_detects_a_flag_that_does_not_exist() -> None:
-    """The probe above is only worth having if it can fail."""
+    """The probe above is only worth having if it can fail.
+
+    The control was `--nats-url`, which the sandbox example once documented
+    wrongly. The offline lane gave that flag a real meaning, so it stopped being
+    a control; the replacement is a flag the CLI has no reason to grow.
+    """
     parser = _subparser("start")
     assert parser is not None
     assert "--nats-sim-url" in _accepted(parser)
-    assert "--nats-url" not in _accepted(parser), (
-        "--nats-url was the flag the sandbox example wrongly documented; "
-        "if it now exists this guard needs rethinking"
-    )
+    assert "--nats-url" in _accepted(parser), "the offline lane takes its NATS address here"
+    assert "--nats-telepathy" not in _accepted(parser)
