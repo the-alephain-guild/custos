@@ -291,7 +291,9 @@ class ToolkitRcOciPublicationReceiptV1(_StrictFrozenModel):
     production_credentials_used: StrictBool
     production_signature_verified: StrictBool
     workflow_ref: (
-        Literal["the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"]
+        Literal[
+            "the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"
+        ]
         | None
     )
     workflow_identity: (

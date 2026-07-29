@@ -33,13 +33,11 @@ class ReproducibleBuildHook(BuildHookInterface):
         epoch = os.environ.get("SOURCE_DATE_EPOCH")
         if epoch:
             print(
-                f"[custos hatch-hook] reproducible build engaged: "
-                f"SOURCE_DATE_EPOCH={epoch}",
+                f"[custos hatch-hook] reproducible build engaged: SOURCE_DATE_EPOCH={epoch}",
                 file=sys.stderr,
             )
         else:
             print(
-                "[custos hatch-hook] SOURCE_DATE_EPOCH not set; "
-                "wheel mtime will follow host clock",
+                "[custos hatch-hook] SOURCE_DATE_EPOCH not set; wheel mtime will follow host clock",
                 file=sys.stderr,
             )

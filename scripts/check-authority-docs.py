@@ -580,8 +580,7 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         errors.append("runner command consumer producer authority is missing")
     elif (
         producer.get("contract") != "CrucibleRunnerDeploymentCommandV1"
-        or producer.get("status")
-        != "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED"
+        or producer.get("status") != "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED"
         or producer.get("producer_commit") != RUNNER_COMMAND_PRODUCER_COMMIT
         or producer.get("subject_template") != "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
     ):
@@ -625,8 +624,7 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
             if resolution_pin != expected_resolution_pin:
                 errors.append("runner strategy resolution producer receipt pin differs")
             if (
-                resolution_receipt.get("receipt_id")
-                != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-V1"
+                resolution_receipt.get("receipt_id") != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-V1"
                 or resolution_receipt.get("authority_coordinate")
                 != "crucible.runner-strategy-resolution.v1"
                 or resolution_receipt.get("producer_commit")
@@ -1024,9 +1022,7 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         errors.append("missing artifact runtime V1 artifact runtime authority assets")
         return
     receipt = load_json(receipt_path)
-    expected_status = (
-        "LOCAL_IMMUTABLE_DAEMON_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN"
-    )
+    expected_status = "LOCAL_IMMUTABLE_DAEMON_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN"
     if receipt.get("receipt_status") != expected_status:
         errors.append("artifact runtime receipt status differs")
     expected_receipt = {
@@ -1073,13 +1069,13 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
     )
     if any(marker in source for marker in forbidden):
         errors.append("artifact runtime runtime retains superseded command-owned artifact state")
-    materializer_source = resolve(
-        "src/custos/artifacts/immutable_material.py"
-    ).read_text(encoding="utf-8")
+    materializer_source = resolve("src/custos/artifacts/immutable_material.py").read_text(
+        encoding="utf-8"
+    )
     daemon_source = resolve("src/custos/cli/_daemon.py").read_text(encoding="utf-8")
-    coordinator_source = resolve(
-        "src/custos/core/runner_command_runtime.py"
-    ).read_text(encoding="utf-8")
+    coordinator_source = resolve("src/custos/core/runner_command_runtime.py").read_text(
+        encoding="utf-8"
+    )
     required_composition = (
         (
             materializer_source,
@@ -1249,12 +1245,9 @@ def verify_engine_lifecycle(manifest: dict[str, Any], errors: list[str]) -> None
         "production_ready": False,
     }
     if not isinstance(artifact_runtime, dict) or any(
-        artifact_runtime.get(key) != value
-        for key, value in expected_artifact_runtime.items()
+        artifact_runtime.get(key) != value for key, value in expected_artifact_runtime.items()
     ):
-        errors.append(
-            "engine lifecycle local activation or runtime-candidate boundary differs"
-        )
+        errors.append("engine lifecycle local activation or runtime-candidate boundary differs")
 
     lifecycle_source = lifecycle_path.read_text(encoding="utf-8")
     protocol_source = resolve("src/custos/core/engine_protocol.py").read_text(encoding="utf-8")
@@ -1445,10 +1438,7 @@ def verify_portfolio_semantics(manifest: dict[str, Any], errors: list[str]) -> N
 def _runner_policy_runtime_receipt() -> dict[str, Any]:
     return {
         "status": "AUTHENTICATED_SAME_POLICY_CONSUMED_DEPLOYED_ISSUANCE_OPEN",
-        "command": (
-            "CRUCIBLE_REPO=<crucible-rust> "
-            "make verify-authenticated-runtime-projection"
-        ),
+        "command": ("CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection"),
         "result": "1 passed",
         "verified_at": "2026-07-26",
         "crucible_code_commit": "40a43fbf146006bb90053c446bd15f529418b45e",
@@ -1512,8 +1502,7 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
         or producer.get("authority_coordinate") != "crucible.runner-aggregate-cap-policy.v1"
         or producer.get("subject_template") != "crucible.runner.policy.v1.<tenant>.<runner>.<mode>"
         or not re.fullmatch(r"[0-9a-f]{40}", str(producer.get("producer_commit") or ""))
-        or producer.get("producer_receipt_commit")
-        != "2a851b210707c9eb86b5f244def4629081d3e3b0"
+        or producer.get("producer_receipt_commit") != "2a851b210707c9eb86b5f244def4629081d3e3b0"
         or producer.get("producer_receipt")
         != "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json"
         or producer.get("runtime_receipt") != _runner_policy_runtime_receipt()
@@ -1547,9 +1536,10 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
         "producer_receipt_commit"
     ):
         errors.append("runner policy receipt producer handoff commit differs from asset index")
-    if receipt.get("producer_authority", {}).get(
-        "runtime_receipt"
-    ) != _runner_policy_runtime_receipt():
+    if (
+        receipt.get("producer_authority", {}).get("runtime_receipt")
+        != _runner_policy_runtime_receipt()
+    ):
         errors.append("runner policy receipt runtime handoff differs from asset index")
     if (ROOT / "docs/authority/vendor/crucible-plan-99").exists():
         errors.append("superseded Crucible runner policy vendor pins must be deleted")
@@ -1573,10 +1563,7 @@ def verify_runner_policy_runtime(manifest: dict[str, Any], errors: list[str]) ->
     }:
         errors.append("runner policy V1 focused validation evidence differs")
     if receipt.get("runtime_validation") != {
-        "command": (
-            "CRUCIBLE_REPO=<crucible-rust> "
-            "make verify-authenticated-runtime-projection"
-        ),
+        "command": ("CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection"),
         "passed": 1,
         "status": "AUTHENTICATED_SAME_POLICY_CONSUMED",
         "local_crucible_production_server_acceptance_pinned": True,
@@ -1658,8 +1645,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         errors.append("runner NATS transport producer authority truth differs")
     elif (
         producer.get("producer_commit") != "e2499bb"
-        or producer.get("runtime_receipt_commit")
-        != "d86218d3097de54aef16100b7d9b59a370dda8b4"
+        or producer.get("runtime_receipt_commit") != "d86218d3097de54aef16100b7d9b59a370dda8b4"
         or producer.get("authority_receipt")
         != "tesseract-trading/crucible-rust/docs/authority/receipts/"
         "crucible-runner-nats-broker-authority-v1.json"
@@ -1736,9 +1722,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "pending_operation_persisted_before_network": True,
             "restart_reuses_operation_id_and_seed": True,
             "pending_result_exposes_user_jwt": False,
-            "authority_operation_completion_source": (
-                "Crucible broker revoke/disconnect receipt"
-            ),
+            "authority_operation_completion_source": ("Crucible broker revoke/disconnect receipt"),
             "reverse_client_evidence_callback_present": False,
             "compatibility_lifecycle_routes_present": False,
         }
@@ -1784,8 +1768,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             errors.append("runner NATS transport local real-NATS revocation evidence differs")
         if truth.get("authenticated_runtime_projection_gate") != {
             "command": (
-                "CRUCIBLE_REPO=<crucible-rust> "
-                "make verify-authenticated-runtime-projection"
+                "CRUCIBLE_REPO=<crucible-rust> make verify-authenticated-runtime-projection"
             ),
             "custos_code_commit": "81982761bff68b98893ee38f2159ee7c5656293b",
             "crucible_code_commit": "79b5acb9a97bf9639b46ad8be4c25e03412f8092",
@@ -1806,9 +1789,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "authenticated_policy_consumed": True,
             "policy_durable_before_command_ack": True,
             "same_policy_from_crucible_pg_outbox": True,
-            "crucible_policy_publisher_code_commit": (
-                "40a43fbf146006bb90053c446bd15f529418b45e"
-            ),
+            "crucible_policy_publisher_code_commit": ("40a43fbf146006bb90053c446bd15f529418b45e"),
             "immutable_artifact_materialization": False,
             "production_authority_issued": False,
             "production_policy_issued": False,
@@ -1883,9 +1864,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "command": "make -C <crucible-rust> verify-runner-full-daemon-local",
             "custos_code_commit": "d6ba1bf40818906f81f85e59ef819af25fdfb207",
             "crucible_code_commit": "b696b8a2c31324a9acf34852bc85364cabe002ec",
-            "crucible_runtime_receipt_commit": (
-                "d86218d3097de54aef16100b7d9b59a370dda8b4"
-            ),
+            "crucible_runtime_receipt_commit": ("d86218d3097de54aef16100b7d9b59a370dda8b4"),
             "status": "PASS",
             "tests_passed": 1,
             "real_postgresql": True,
@@ -1998,8 +1977,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     if not isinstance(snapshot, dict):
         errors.append("runner NATS transport ecosystem snapshot is missing")
     elif (
-        snapshot.get("status")
-        != "LOCAL_CRUCIBLE_PRODUCTION_SERVICES_PINNED_JOINT_RUNTIME_OPEN"
+        snapshot.get("status") != "LOCAL_CRUCIBLE_PRODUCTION_SERVICES_PINNED_JOINT_RUNTIME_OPEN"
         or snapshot.get("producer_commit") != "e2499bb"
         or snapshot.get("producer_runtime_receipt")
         != {
@@ -2007,10 +1985,7 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
             "path": "docs/authority/vendor/crucible-runner-nats-transport-runtime-v1.json",
             "sha256": "bac45827a2eeaf036fa6a03bc15093e51626206040b21d44171cd035dbbdcd21",
             "size_bytes": 8660,
-            "status": (
-                "LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_"
-                "DEPLOYED_ACCEPTANCE_OPEN"
-            ),
+            "status": ("LOCAL_PRODUCTION_TRANSPORT_SERVICES_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"),
         }
         or snapshot.get("user_nkey_possession_proof") is not True
         or snapshot.get("pending_operation_persisted_before_network") is not True
@@ -2028,34 +2003,25 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
         or snapshot.get("durable_puback_receipt_recorded") is not True
         or snapshot.get("authenticated_runner_policy_consumed") is not True
         or snapshot.get("same_policy_from_crucible_pg_outbox") is not True
-        or snapshot.get("local_crucible_production_transport_services_verified")
-        is not True
+        or snapshot.get("local_crucible_production_transport_services_verified") is not True
         or snapshot.get("local_crucible_provisioner_tls_verified") is not True
         or snapshot.get("local_crucible_provisioner_pinned_ca_verified") is not True
-        or snapshot.get("local_crucible_provisioner_exact_server_name_verified")
-        is not True
-        or snapshot.get("local_crucible_provisioner_plaintext_runtime_allowed")
-        is not False
-        or snapshot.get("local_crucible_issued_transport_credential_verified")
-        is not True
+        or snapshot.get("local_crucible_provisioner_exact_server_name_verified") is not True
+        or snapshot.get("local_crucible_provisioner_plaintext_runtime_allowed") is not False
+        or snapshot.get("local_crucible_issued_transport_credential_verified") is not True
         or snapshot.get("local_crucible_exact_durable_readback_verified") is not True
-        or snapshot.get(
-            "same_service_issued_transport_event_consumed_by_custos_process"
-        )
+        or snapshot.get("same_service_issued_transport_event_consumed_by_custos_process")
         is not True
         or snapshot.get("custos_transport_consumer_code_commit")
         != "1b2f72df46519768b22c5d9f9d85ecbb618e3856"
         or snapshot.get("joint_custos_daemon_consumed_same_event") is not True
         or snapshot.get("joint_custos_daemon_code_commit")
         != "d6ba1bf40818906f81f85e59ef819af25fdfb207"
-        or snapshot.get("same_event_crucible_runner_fact_projection_observed")
-        is not True
+        or snapshot.get("same_event_crucible_runner_fact_projection_observed") is not True
         or snapshot.get("same_event_runner_fact_projection_work_count") != 1
-        or snapshot.get("joint_deployed_transport_credential_provisioned")
-        is not False
+        or snapshot.get("joint_deployed_transport_credential_provisioned") is not False
         or snapshot.get("joint_deployed_durable_verified") is not False
-        or snapshot.get("local_crucible_full_resolver_integration_passed")
-        is not True
+        or snapshot.get("local_crucible_full_resolver_integration_passed") is not True
         or snapshot.get("joint_runtime_real_nats_integration_passed") is not True
         or snapshot.get("crucible_policy_publisher_code_commit")
         != "40a43fbf146006bb90053c446bd15f529418b45e"
@@ -2085,8 +2051,7 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     index_path = resolve(RUNNER_FACT_CONTRACT_INDEX_PATH)
     receipt_path = resolve(RUNNER_FACT_CONTRACT_RECEIPT_PATH)
     consumer_receipt_path = resolve(
-        "docs/authority/receipts/vendor/"
-        "crucible-runner-fact-v1-consumer-receipt.json"
+        "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json"
     )
     if not index_path.is_file() or not receipt_path.is_file():
         errors.append("canonical RunnerFact V1 index or receipt is missing")
@@ -2140,12 +2105,10 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
             "repository": "tesseract-trading/crucible-rust",
             "commit": "491c632bd9395363a22543f3592a8eea6bd0be09",
             "producer_path": (
-                "docs/authority/receipts/"
-                "crucible-runner-fact-v1-consumer-receipt.json"
+                "docs/authority/receipts/crucible-runner-fact-v1-consumer-receipt.json"
             ),
             "local_path": (
-                "docs/authority/receipts/vendor/"
-                "crucible-runner-fact-v1-consumer-receipt.json"
+                "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json"
             ),
             "sha256": hashlib.sha256(consumer_payload).hexdigest(),
             "size_bytes": len(consumer_payload),
@@ -2157,15 +2120,13 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     producer = consumer_receipt.get("producer")
     consumer = consumer_receipt.get("consumer")
     if not isinstance(producer, dict) or (
-        producer.get("asset_commit")
-        != "cce76931884de36c9606db02d94cf4124e7164b5"
+        producer.get("asset_commit") != "cce76931884de36c9606db02d94cf4124e7164b5"
     ):
         errors.append("Crucible RunnerFact V1 receipt producer asset commit differs")
     if isinstance(producer, dict) and "producer_receipt" in producer:
         errors.append("Crucible RunnerFact V1 receipt must not create a receipt cycle")
     if not isinstance(consumer, dict) or (
-        consumer.get("code_commit")
-        != "506afcdcc6b5342f84810668b0367e983f406857"
+        consumer.get("code_commit") != "506afcdcc6b5342f84810668b0367e983f406857"
     ):
         errors.append("Crucible RunnerFact V1 receipt consumer code commit differs")
     for field in ("runtime_ready", "live_ready", "production_ready"):
@@ -2203,8 +2164,7 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
         "tests_passed": 1,
     }
     if (
-        local_publication.get("status")
-        != "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN"
+        local_publication.get("status") != "DEVELOPMENT_LOCAL_PUBLICATION_ACCEPTED_RUNTIME_OPEN"
         or local_publication.get("source") != expected_source
         or local_publication.get("authority_coordinate") != "custos.runner-fact.v1"
         or local_publication.get("development_only") is not True
@@ -2239,9 +2199,7 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
         "nats_message_id_equals_batch_id",
     ):
         if evidence.get(field) is not True:
-            errors.append(
-                f"RunnerFact V1 development-local publication evidence {field} differs"
-            )
+            errors.append(f"RunnerFact V1 development-local publication evidence {field} differs")
     for field in (
         "custos_daemon_launched",
         "engine_command_applied",
@@ -2253,9 +2211,7 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
         "production_ready",
     ):
         if local_publication.get(field) is not False:
-            errors.append(
-                f"RunnerFact V1 development-local publication {field} must remain false"
-            )
+            errors.append(f"RunnerFact V1 development-local publication {field} must remain false")
 
 
 def verify_runner_fact_authority(errors: list[str]) -> None:
@@ -2273,18 +2229,13 @@ def verify_runner_fact_authority(errors: list[str]) -> None:
     ):
         errors.append("ecosystem RunnerFact V1 producer receipt path differs")
     consumer_path = (
-        ROOT
-        / "docs/authority/receipts/vendor/"
-        "crucible-runner-fact-v1-consumer-receipt.json"
+        ROOT / "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json"
     )
     consumer_payload = consumer_path.read_bytes() if consumer_path.is_file() else b""
     if state.get("consumer_receipt") != {
         "repository": "tesseract-trading/crucible-rust",
         "commit": "491c632bd9395363a22543f3592a8eea6bd0be09",
-        "path": (
-            "docs/authority/receipts/vendor/"
-            "crucible-runner-fact-v1-consumer-receipt.json"
-        ),
+        "path": ("docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json"),
         "sha256": hashlib.sha256(consumer_payload).hexdigest(),
         "size_bytes": len(consumer_payload),
     }:
