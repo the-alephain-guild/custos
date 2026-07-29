@@ -6,6 +6,15 @@
 > `paper`/fallback 文字，但它们不是新实现规范。Custos 仅持本地凭据/执行并产生
 > signed RunnerFacts/venue fee facts；Crucible Rust 验签投影与结算；ARX 只授权。
 > 新契约 mode 仅 sandbox/testnet/live。
+>
+> **Offline lane note (2026-07-29, Plan 21)**：除签名通道外，Custos 另有一条
+> **离线通道**（`src/custos/offline/`），用于操作者在自己完全掌控的机器上验证策略
+> 逻辑。它接收未签名的 desired state，**仅限 sandbox 与 testnet**，live 在边界被
+> `mode_guard` 拒绝；opt-in（`arx-runner start --reconcile-strategy-id`）；
+> 非 promotable，不产生 fact 与 receipt，不解析 canonical command bytes。
+> 权威依据见 `.claude/rules/mandatory-rules.md` §Trust 与 `authority-manifest.json`
+> 的 `offline_lane`，由 `verify_offline_lane` 强制。这条例外是 CEO 2026-07-29 的
+> 高风险偏离决定，四件套记录见 Plan 21 偏离日志 + 本脚注 + `historical-lessons.md` C8。
 
 ## 目录约定
 
@@ -56,7 +65,7 @@
 | [18](plans/2026-07/18-typed-toolkit-strategy-contracts.md) | typed toolkit + strategy execution ABI + verified artifact consumer | ⏳ In progress (business-named RC5 READY; sandbox and production clone-local artifact paths verified; T5e/T7-T9 blocked on real receipts) | Current toolkit code, schemas, Custos↔Crucible handoff, RC5 authority, immutable OCI acquisition/cache and daemon trust composition are focused verified; PS must now publish the immutable team artifact for Crucible acceptance | RC5 ✅ -> PS54 -> CR88 C6 -> T5d-A -> CR89 -> T5d-B/Plan19 T2 -> T5e -> Plan19 T5; no Speculum gate | Custos owns execution ABI and runtime verification. Earlier RC bytes remain registry audit evidence only; clone-local success does not enable testnet/live or replace launched registry, Sigstore and owner receipts. |
 | [19](plans/2026-07/19-crucible-command-runner-fact-runtime-convergence.md) | Crucible command + single RunnerFact state store + production runtime convergence | ⏳ In progress (local immutable full-daemon flow ready; T9-T10 open) | Custos `d6ba1bf` and Crucible `b696b8a` prove one pinned-CA TLS event from isolated authority issuance through encrypted-vault restart/rotation, immutable StrategyRelease activation, policy/command, crash-safe ACK, RunnerFact PubAck and PostgreSQL projection. | Publish and lock the exact PS OCI/Sigstore candidate -> deployed `0029`/`0117` acceptance -> PS56 exact-candidate acceptance | Exact runtime RC, deployed services, Phase-B close-out, live and production readiness remain false. |
 | [20](plans/2026-07/20-custos-docs-site-scaffold.md) | custos.alephain.com 文档站 (Docusaurus + i18n + versioning) | ⏳ In progress (6/12 task; T1-T5 + T9 ✅, T6 翻译 4/46 章, T7/T8/T10/T11/T12 未开) | 无 hard-dep (消费 Plans 14-17 已落地的 `docs/**`) | T10 DNS handoff (CEO 手工 CNAME) | Sessions 1-3 落地 (`9f194a5`..`1c594fd`); gh-pages 已部署 `a60bd8b` (2026-07-21, 96 页)。**⚠️ 未决 CRITICAL**: 已发布站点含内部标识 (mandatory-rules §9 / 生态 lesson #42), 9/96 页命中; 站点无 disclosure gate。处置见 plan 20 §偏离日志。 |
-| [21](plans/2026-07/21-sandbox-offline-deployment-path.md) | sandbox-only offline deployment path: restore `deployment publish`/`validate` + spec schema/sample behind a fail-closed sandbox mode guard, and pin the surface so it cannot be removed silently again | 🔲 Not started | Plan 13 ✅, Plan 17 ✅ | `philosophers-stone/deploy/custos` on any image built after `8c4454f` | `8c4454f` (2026-07-21, one-line message, cites no plan) removed the unsigned path and its covering tests together, so nothing turned red. Plan 19 owns the Crucible-signed path and did not authorize this; the removal reads as incidental. PS ratified the two-lane split on 2026-07-28 (`philosophers-stone/.forge/plans/README.md` lane table + its Plan 56) without noticing the removal a week earlier. Scope is sandbox only — testnet/live are refused at the boundary, and the signed path is untouched. |
+| [21](plans/2026-07/21-sandbox-offline-deployment-path.md) | non-live offline deployment lane: `nats bootstrap` + `deployment publish`/`validate` + offline spec contract + reconcile/observed-state loop, all behind a fail-closed live guard, with the surface pinned so it cannot be removed silently again | ✅ Completed (2026-07-29; `34f7307`..`<T8>`) | Plan 13 ✅, Plan 17 ✅ | `philosophers-stone/deploy/custos` on any image built after `324da6e` | Foundation Scan corrected the premise twice: `publish` died at `324da6e` (2026-07-14), not `8c4454f`, and the harness was broken in five places rather than two. The restore baseline is `cec0f8a` — the revision PS pins — because the commit before the removal already required two fields PS never renders. CEO 2026-07-29 widened scope from sandbox-only to sandbox+testnet and authorised amending the authority layer, since `mandatory-rules.md` §Trust admitted no unsigned lane in any mode and the manifest banned the lane's own subjects. The boundary is drawn at live, where the red lines already draw it. |
 
 > ¹ Plan 00b (telemetry 桥) close-out 前, 由 CEO override 提前放行 00c
 > (`DEV-00c-DEP-SKIP-CEO-OVERRIDE`, lesson #38 CEO override 4 件套记录路径)。

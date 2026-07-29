@@ -6,6 +6,42 @@
 
 > **custos 内部 lesson 用 `C1` `C2` … 前缀区分生态数字编号** (见文末"记录新 lesson")。
 
+## C8 删掉一个面时连同它的测试一起删, 就没有任何东西会变红 — 消费者在别的仓库时更看不见 (2026-07)
+
+- **事件**: `deployment publish` / `nats bootstrap` / 未签名 reconcile 环在 `324da6e`
+  (2026-07-14) 随"consume crucible deployment authority"重构一并删除, 残余的
+  `deployment validate` 与 spec schema 在 `8c4454f` (2026-07-21) 扫尾。两次删除都把
+  **覆盖它们的测试放在同一个 commit 里删掉**, 所以两次都没有任何测试变红。它有一个活着
+  的消费者 —— 另一个仓库的离线 harness —— 而那个仓库在一周后 (2026-07-28) 才刚把这条
+  lane 写成规范, 完全没注意到它已经断了。起 Plan 21 时的一手判断("`8c4454f` 删了两个
+  命令")在实测下崩了两次: 真正的断点是 `324da6e`, 断裂面是**五处不是两处**。
+- **根因**: 删除一段代码时, 覆盖它的测试是"同一次改动的一部分", 顺手一起删是最自然的
+  动作 —— 而这恰好消灭了唯一会报警的东西。跨仓库消费者让这件事更隐蔽: 本仓 CI 全绿,
+  坏掉的是别人的 harness, 而那个仓库不跑本仓的测试。
+- **教训**: 判断"某个面还有没有人用"不能只看本仓。删除**任何**有外部调用者的 CLI 命令 /
+  subject / schema 前, 先 grep 消费仓库的调用点; 删除时若同时删测试, 必须在 commit
+  message 里说明"这个面为什么不再需要被覆盖", 否则等于静默摘掉警报。
+- **预防**:
+  - 对外可调用的面 (CLI 子命令 / subject / 公开 schema) 的存在性断言, **从 parser /
+    router 推导**并在**独立于实现的测试文件**里维护, 这样删实现不会顺手删掉断言 (与 C7
+    同一条: 清单不硬编码、不与被测对象同期陈旧)。
+  - 断言的 docstring 里**写清消费者是谁、删了会坏什么** —— 下一个做收敛重构的人在测试
+    变红时就能读到, 而不是在别的仓库的 CI 里读到。
+  - 跨仓库消费的面在 `.forge/README.md` 索引里标注 Blocks 指向消费方, 让"谁在用"这件事
+    留在会被读到的地方。
+- **同批的第二条 (CEO override 记录路径)**: 恢复这条 lane 需要修改
+  `mandatory-rules.md` §Trust —— 它此前不允许**任何 mode** 接收未签名 desired state。
+  CEO wukai 2026-07-29 决定修权威层而非绕过它, 边界画在 **live**(红线自己画的地方:
+  §Trust 不可让步的一句是 live 无签名晋升证据即 fail closed, 红线 0.2 也只把 live 锁死
+  在 G6 之后)。四件套齐: 本条 lesson + Plan 21 偏离日志 `DEV-21-AUTHORITY-AMENDMENT` +
+  `.forge/README.md` Offline lane note + `authority-manifest.json` `offline_lane` 机械门。
+  与 C1 同型 (custos 独立仓形态的 lesson #38 记录路径), 本条是第二个先例。
+- **Binding**: `tests/test_gateway_contract_v1_samples.py` 的 offline lane 面存在性断言
+  (从 parser 推导, docstring 点名消费者) + `scripts/check-authority-docs.py`
+  `verify_offline_lane` + `.claude/rules/mandatory-rules.md` §Trust 离线通道段。
+
+---
+
 ## C7 硬编码矩阵 + 同期陈旧产物 = 自洽的假绿; 从未跑过的流水线, 形状测试再多也不是验证 (2026-07)
 
 - **事件**: 核对一页升级文档的声明时, 连带挖出**三处发布链缺陷**, 都活了两周以上:

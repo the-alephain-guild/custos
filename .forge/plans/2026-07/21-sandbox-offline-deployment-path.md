@@ -1,6 +1,7 @@
 # 21 — Restore the non-live offline deployment lane for strategy-logic verification
 
-> **Status**: ⏳ In progress
+> **Status**: ✅ Completed (2026-07-29) — code complete; the consumer-side end-to-end run is
+> the one verification step left, and it needs Docker plus the PS checkout (see Close-out)
 > **Created**: 2026-07-29
 > **Revised**: 2026-07-29 (Foundation Scan corrections + CEO scope decision; see Deviations)
 > **Project**: custos (`tesseract-trading/custos/`)
@@ -333,10 +334,10 @@ Filled at close-out, one row per red line, per lesson #40 — `code_coverage` an
 
 | red line | code_coverage | runtime_wire | defer_status | follow_up |
 |---|---|---|---|---|
-| 0.1 Key/KEK never leaves the process | | | | |
-| 0.2 G6 host gate not bypassed | | | | |
-| 0.3 Reconcile outage ≠ stop | | | | |
-| 0.4 Decimal money math | | | | |
+| 0.1 Key/KEK never leaves the process | `test_no_credential_is_read_for_a_mode_the_lane_refuses` proves the vault is not opened for a refused mode | live: `_credential_reader` is what `run_offline_lane` passes to the reconciler; lane log events carry subject, generation and mode only | none | — |
+| 0.2 G6 host gate not bypassed | `test_an_engine_that_cannot_run_the_mode_is_not_asked_to`; the whole `test_offline_mode_guard.py` suite | live: the lane refuses live outright, so the live venue path is unreachable from it; admission additionally honours `engine.supports_trading_mode` | **partial** — admission here is `supports_trading_mode`, not `check_g6_gate`, which no longer exists (removed in `8c4454f`). Sound while live is refused; it would not be if that ever changed | any future widening past testnet must restore a real gate first |
+| 0.3 Reconcile outage ≠ stop | `test_losing_the_status_channel_does_not_stop_a_running_engine` | live: `_report` logs and returns on publish failure rather than propagating | **partial** — the offline lane composes no `FallbackBreaker`, `RunnerNotionalCap` or `ZombieWatchdog`. Losing the channel does not stop trading, but nothing caps exposure while it is gone | wire the local guards into the offline composition before testnet is used for anything but a short supervised run |
+| 0.4 Decimal money math | not exercised | not exercised | none — the lane carries no money field: it moves specs and lifecycle states, and every price and quantity stays inside the engine | — |
 
 ## Deviations and improvements
 
@@ -394,4 +395,55 @@ Filled at close-out, one row per red line, per lesson #40 — `code_coverage` an
 
 ## Close-out Report
 
-（执行完成后填写）
+- **完成日期**: 2026-07-29
+- **总 Task 数**: 8（起草时 3；Foundation Scan 后扩到 8，见 DEV-21-SCOPE-EXPANSION）
+- **偏离数**: 5（含两条 CEO 高风险决定）
+- **实施 commit 范围**: `34f7307`（计划修订）→ `7c92ca9` `48c5643` `210e5fb` `22122ef`
+  `468ce00` `86bd823` `7d26d0f` → Task 8 close-out commit
+- **验证结果**: 部分通过 —— 代码与门禁全绿，消费者侧端到端未跑
+
+### 验证证据
+
+| 项 | 结果 |
+|---|---|
+| `make lint` | 绿 |
+| `make check-authority` | 绿（含新增 `verify_offline_lane`） |
+| `make test` | 764 passed / 24 skipped / 1 xfailed / **0 failed** |
+| `make fmt-check` | 3 处红，**既有**：`runner_fact.py` 与两个 integration 文件被 `docs/authority/**` 按字节 pin 住，`make fmt` 会修好门禁但毁掉证据链（lesson C6） |
+| `make verify-local-v030` | **未跑**（需 Docker） |
+| PS 侧 `make start MODE=sandbox` / `MODE=testnet` 到 `wait-status` | **未跑**（需 Docker + NATS + PS checkout） |
+| `MODE=live` 被 Task 2 guard 拒绝 | 单元层已证（`test_offline_mode_guard.py` 全套 + `_credential_reader` 拒绝在开 vault 之前） |
+
+计划自己说过"消费者侧端到端是唯一算数的证明"。它没跑，所以这份 close-out 按 lesson #40
+降级声明：**代码完成、门禁全绿、跨仓真跑未做**。恢复出来的面与 PS 实际传的 flag 逐条对齐
+并写成了测试（`test_the_consumer_validate_invocation_is_accepted`、
+`test_the_consumer_bootstrap_invocation_is_accepted`、`test_start_offers_the_flag_the_consumer_passes`），
+但对齐 flag 不等于跑通 harness。
+
+### 契约影响
+
+- 新增 `docs/gateway-contract/v1/offline_deployment_spec.schema.json` + sandbox/testnet 两个样本；
+  canonical `deployment_spec.schema.json` 名字未被占用（既有断言仍在守）
+- `docs/gateway-contract/v1/README.md` 增"The offline lane"节，明说它不替代签名通道
+- `.claude/rules/mandatory-rules.md` §Trust、`.claude/rules/authority-docs.md`、
+  `CLAUDE.md` §2/§5、`authority-manifest.json` `offline_lane`、`scripts/check-authority-docs.py`
+- `.github/workflows/scripts/verify-release.sh` 补探两个新命令（由 C7 的 parser 推导门抓出）
+
+### 失败模式覆盖
+
+新增 91 个测试，分布：mode guard 22、离线契约 23、CLI 15、bootstrap 17、reconcile 17（含
+`--reconcile-strategy-id` 组合 10）、面存在性 4。含两类"证明门会咬人"的 relaxed-double：
+`verify_offline_lane` 的绕过/未分类用例，以及 reconciler 自身 live 拒绝（模型永不产出 live
+spec，所以用跳过校验的 spec 证明该分支不是死代码）。
+
+### 遗留项
+
+1. **消费者侧端到端未跑** —— 需 Docker。这是唯一能证明五处断裂真的接回去的验证。
+2. **红线 0.3 只兑现一半** —— 离线通道未组合 `FallbackBreaker` / `RunnerNotionalCap` /
+   `ZombieWatchdog`。sandbox 无所谓，testnet 长时间无人值守运行前必须补。
+3. **NT artifact 桥仅走 registry 发现** —— `BindMountedStrategy.strategy` 依赖
+   `STRATEGY_INJECT_PATH` 这个既有 env seam + toolkit registry，未在本仓做过真实 NT 加载
+   （NT 测试在本机 importorskip）。第 1 项跑通才算证实。
+4. `RUNNER_RUNTIME_METRICS_SCHEMA_V1` 在离线通道里是第三处同串字面量。`runner_fact.py`
+   被三份 receipt pin 住不能动（lesson C6），因此靠 `read_health_file` 的拒收 + 端到端
+   readiness 测试兜漂移，而不是靠共享常量。

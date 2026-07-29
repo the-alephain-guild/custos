@@ -50,3 +50,17 @@ a second stream.
 Readiness is fail closed. Until the authenticated StrategyRelease resolver and
 its exact producer receipt are composed, `arx-runner start --reconcile` refuses
 to start rather than selecting a legacy or unsigned path.
+
+## The offline lane
+
+`offline_deployment_spec.schema.json` and its two samples describe a second,
+separate lane for verifying strategy logic on infrastructure the operator owns
+entirely. It carries unsigned desired state and a strategy directory the
+operator mounts, and it is bounded to sandbox and testnet only — live is refused
+at its boundary, on the mode the spec declares and on the mode the caller passes,
+independently.
+
+This lane is not a fallback and never substitutes for the signed one. Nothing it
+produces is promotion evidence, it emits no facts and no receipts, and it never
+parses or emits the canonical command bytes described above. A producer building
+against the signed original should ignore this schema entirely.
