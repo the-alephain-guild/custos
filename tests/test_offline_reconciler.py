@@ -501,6 +501,24 @@ async def test_unreadable_ceilings_are_refused_even_with_no_guard_composed() -> 
     assert engine.deployed == []
 
 
+async def test_the_ceiling_a_spec_raised_is_the_one_the_guard_ends_up_enforcing() -> None:
+    """The exposure below is nine times the default ceiling and well under the raised one.
+
+    Guard-level tests call ``watch`` directly, so nothing else here notices if the
+    reconciler hands over the default instead of what the spec asked for.
+    """
+
+    engine = _FakeEngine(open_notional="9000")
+    guard = OfflineExposureGuard(engine=engine, interval=0.001)
+    reconciler = _reconciler(engine, _RecordingPublisher(), guard=guard)
+
+    await reconciler.apply(_spec(risk_config={"max_total_notional": "25000"}))
+    await guard.evaluate_once()
+
+    assert engine.flattened == []
+    assert guard.allows_new_generations()
+
+
 async def test_a_guard_within_its_ceiling_changes_nothing() -> None:
     engine = _FakeEngine()
     publisher = _RecordingPublisher()
