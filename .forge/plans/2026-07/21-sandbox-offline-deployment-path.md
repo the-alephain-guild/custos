@@ -235,7 +235,7 @@ refuses a stream that exists but is not owned by the standalone profile, and fai
 named timeout rather than hanging when NATS never becomes ready.
 
 **Implementation**: `src/custos/offline/transport.py` (stream configs plus
-`bootstrap_standalone_nats`) and `src/custos/cli/subcommands/nats.py`, restored from
+`bootstrap_standalone_streams`) and `src/custos/cli/subcommands/nats.py`, restored from
 `324da6e^` and adapted to the current module tree.
 
 **Verify**:
@@ -276,10 +276,12 @@ uv run pytest tests/test_offline_reconciler.py -v
 exactly as it does today; the flag is refused together with live mode; the daemon's
 existing signed-path composition markers are unchanged.
 
-**Implementation**: `src/custos/cli/subcommands/start.py` gains the flag;
-`src/custos/cli/_daemon.py` composes the offline reconciler as one more supervised
-long-running task. `check-authority` asserts required substrings in `_daemon.py`
-(`scripts/check-authority-docs.py:1075,1255`) — those must survive untouched.
+**Implementation**: `src/custos/cli/subcommands/start.py` gains the flag and branches to a
+separate composition in `src/custos/offline/daemon.py`, which connects, subscribes, builds
+the reconciler and marks readiness. `src/custos/cli/_daemon.py` is left untouched — see
+`DEV-21-COMPOSITION-OUTSIDE-SIGNED-DAEMON` for why composing inside it was rejected. Its
+required substrings (`scripts/check-authority-docs.py:1075,1255`) therefore stay intact by
+construction rather than by care.
 
 **Verify**:
 
@@ -392,6 +394,35 @@ Filled at close-out, one row per red line, per lesson #40 — `code_coverage` an
   would be a predecessor parser, which `CLAUDE.md` §First-production V1 contract rule forbids.
 - **Decision**: the offline lane gets `OfflineDeploymentSpec` under `src/custos/offline/`
   and its own contract assets. `src/custos/contracts/deployment.py` keeps owning V1 alone.
+
+### DEVIATION: DEV-21-COMPOSITION-OUTSIDE-SIGNED-DAEMON
+- **Level**: medium
+- **Cause**: Task 7 said `_daemon.py` would compose the offline reconciler as one more
+  supervised task. `run_daemon` first verifies a machine credential against a control-plane
+  backend and loads a transport authority set per mode; the offline lane has neither. Adding
+  it there means stubbing exactly the checks that make the signed lane worth having.
+- **Decision**: a separate composition in `src/custos/offline/daemon.py`, selected by a
+  branch in `start.py`. `_daemon.py` is untouched, so the substrings `check-authority`
+  requires of it survive by construction. Recorded after the fact: the audit found this
+  unlogged, which is a CRITICAL under the deviation rule regardless of the decision's merit.
+
+### DEVIATION: DEV-21-DURABLE-APPLIED-STATE
+- **Level**: medium
+- **Cause**: not in the plan at all. Two things forced it. The readiness document that
+  `arx-runner health` reads requires a SQLite verdict, and reporting one for a database that
+  does not exist is a claim rather than a check. Separately, the reconciler held applied
+  generations in memory only, so a restart redeployed a generation already running.
+- **Decision**: `src/custos/offline/state.py` — one small store keyed by spec id, loaded at
+  construction and written after each applied generation. A recording failure is logged and
+  does not fail the apply, since forgetting is worse than not recording.
+- **Follow-up**: behaviour on a corrupt store file is undefined; `quick_check` reports it but
+  nothing acts on the report.
+
+### DEVIATION: DEV-21-BOOTSTRAP-SYMBOL-NAME
+- **Level**: low
+- **Cause**: Task 5 named `bootstrap_standalone_nats`, carried over from `324da6e^`.
+- **Decision**: the restored function is `bootstrap_standalone_streams`, which says what it
+  reconciles. Task 5's text is corrected; this entry keeps the old name findable.
 
 ## Close-out Report
 
