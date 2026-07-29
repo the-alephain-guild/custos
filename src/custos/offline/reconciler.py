@@ -124,7 +124,7 @@ class OfflineReconciler:
         self,
         *,
         tenant_id: str,
-        runner_id: str,
+        runner_label: str,
         strategy_id: str,
         engine: OfflineEngine,
         publish: PublishStatus,
@@ -134,7 +134,7 @@ class OfflineReconciler:
         guard: OfflineExposureGuard | None = None,
     ) -> None:
         self._tenant_id = tenant_id
-        self._runner_id = runner_id
+        self._runner_label = runner_label
         self._strategy_id = strategy_id
         self._engine = engine
         self._publish = publish
@@ -329,7 +329,7 @@ class OfflineReconciler:
             "payload": payload,
         }
         subject = offline_subject(
-            self._tenant_id, "deployment_status", self._runner_id, spec.spec_id
+            self._tenant_id, "deployment_status", self._runner_label, spec.spec_id
         )
         try:
             await self._publish(subject, json.dumps(envelope, separators=(",", ":")).encode())

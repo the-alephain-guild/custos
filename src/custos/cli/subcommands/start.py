@@ -105,6 +105,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
             "Sandbox and testnet only; live is refused."
         ),
     )
+    parser.add_argument(
+        "--runner-label",
+        default=None,
+        help=(
+            "Name this runner publishes offline status under. Defaults to runner_id, "
+            "which is a UUID; a label lets an operator's probe subscribe without first "
+            "reading generated state."
+        ),
+    )
     parser.add_argument("--nats-url", default="nats://localhost:4222")
     parser.add_argument(
         "--offline-state", type=Path, default=Path.home() / ".arx" / "state" / "offline-lane.db"
@@ -217,6 +226,7 @@ def _run_offline_lane(args: argparse.Namespace, metadata: Any, credential: Any) 
             run_offline_lane(
                 tenant_id=metadata.tenant_id,
                 runner_id=metadata.runner_id,
+                runner_label=args.runner_label,
                 strategy_id=args.reconcile_strategy_id,
                 nats_url=args.nats_url,
                 vault_dir=args.vault_dir,

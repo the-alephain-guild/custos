@@ -127,7 +127,7 @@ def _reconciler(
 ) -> OfflineReconciler:
     return OfflineReconciler(
         tenant_id=TENANT,
-        runner_id=RUNNER,
+        runner_label=RUNNER,
         strategy_id=STRATEGY,
         engine=engine,
         publish=publisher,

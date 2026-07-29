@@ -25,6 +25,7 @@ from custos.offline.state import AppliedRecord, OfflineAppliedStore
 
 TENANT = "local"
 RUNNER = "ps-supertrend"
+RUNNER_ID = "11111111-1111-4111-8111-111111111111"
 STRATEGY = "supertrend"
 
 
@@ -136,7 +137,8 @@ async def _run(tmp_path: Path, messages: list[bytes], **overrides: Any) -> dict[
     await asyncio.wait_for(
         run_offline_lane(
             tenant_id=TENANT,
-            runner_id=RUNNER,
+            runner_id=RUNNER_ID,
+            runner_label=RUNNER,
             strategy_id=STRATEGY,
             nats_url="nats://nats:4222",
             vault_dir=tmp_path / "vault",
@@ -205,7 +207,8 @@ async def test_marks_the_runner_ready_so_the_health_probe_can_pass(tmp_path: Pat
     await asyncio.wait_for(
         run_offline_lane(
             tenant_id=TENANT,
-            runner_id=RUNNER,
+            runner_id=RUNNER_ID,
+            runner_label=RUNNER,
             strategy_id=STRATEGY,
             nats_url="nats://nats:4222",
             vault_dir=tmp_path / "vault",
@@ -269,7 +272,8 @@ async def _run_with_broken_transport(
     await asyncio.wait_for(
         run_offline_lane(
             tenant_id=TENANT,
-            runner_id=RUNNER,
+            runner_id=RUNNER_ID,
+            runner_label=RUNNER,
             strategy_id=STRATEGY,
             nats_url="nats://nats:4222",
             vault_dir=tmp_path / "vault",

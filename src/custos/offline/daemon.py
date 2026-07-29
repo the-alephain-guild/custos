@@ -99,6 +99,7 @@ async def run_offline_lane(
     *,
     tenant_id: str,
     runner_id: str,
+    runner_label: str | None,
     strategy_id: str,
     nats_url: str,
     vault_dir: Path,
@@ -113,6 +114,10 @@ async def run_offline_lane(
 ) -> int:
     """Subscribe to offline desired state and reconcile it until stopped."""
 
+    # The identity is a v1 UUID; the label is what the operator's own probe
+    # subscribes by. Keeping them separate lets the consumer name the runner
+    # without first reading state this command generates.
+    label = runner_label or runner_id
     store = OfflineAppliedStore(state_path)
     connect = connect_factory or nats.connect
     stop_event = stop or asyncio.Event()
@@ -123,7 +128,12 @@ async def run_offline_lane(
         jetstream = connection.jetstream()
         subject = offline_subject(tenant_id, "deployment_spec", strategy_id)
         subscription = await jetstream.subscribe(subject)
-        _log.info("offline_lane_subscribed", subject=subject, runner_id=runner_id)
+        _log.info(
+            "offline_lane_subscribed",
+            subject=subject,
+            runner_id=runner_id,
+            runner_label=label,
+        )
 
         if readiness is not None:
             readiness.mark_ready(
@@ -136,7 +146,7 @@ async def run_offline_lane(
 
         reconciler = OfflineReconciler(
             tenant_id=tenant_id,
-            runner_id=runner_id,
+            runner_label=label,
             strategy_id=strategy_id,
             engine=engine,
             publish=jetstream.publish,
