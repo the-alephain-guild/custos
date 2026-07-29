@@ -93,7 +93,8 @@ spec 的 `risk_config` 可抬高。tick 循环是与订阅并行的独立 task�
 **RED**: NATS 连接持续抛错期间 tick 仍在跑（红线 0.3 的核心断言）；快照不可信即 fail
 closed 并 flatten；已跳闸后不重复 flatten；`stop` 置位后 tick 结束且不吞异常。
 
-**实现**: `run_offline_lane` 用 `asyncio.gather` 并行跑订阅与 tick；tick 只调
+**实现**: `run_offline_lane` 把订阅与 tick 交给 `_run_together` 并行跑，任一侧结束或抛错
+都置位 `stop` 让另一侧收尾，随后重抛第一个失败；tick 只调
 `EngineSafetySupervisor.evaluate_once`，对每个活跃 instance 依次评估。间隔取常量，
 可由参数覆盖以便测试。
 
@@ -155,6 +156,7 @@ unhealthy；未跳闸时行为与今天一致；新进程（重启）恢复可�
 | 改进 | Task 2 | 每个被守护的部署各持一个 breaker，而非共用一个 runner 级 breaker —— 共用会让一个部署的权益高水位混进另一个的回撤 | 低风险，实施记录 |
 | 改进 | 计划外 | Plan 21 的计数探针在本 plan 长出测试时变红。改的是探针作用域：close-out 记录的是一个时刻，只有**最新**认领某文件的 plan 对今天的数字负责 —— 否则要么改写 plan 21 的历史，要么削弱门。见 `b0ad125` | 低风险，实施记录 |
 | 修复 | 自省 Round 1 | `risk_config` 读不出时，原实现先部署再抛错，把引擎留在跑而 lane 已死。改为在任何引擎动作之前读限额，读不出即终局拒绝。见 `b87d763` | 低风险，实施记录 |
+| 偏离 | Task 2 | 计划正文原写「用 `asyncio.gather` 并行跑订阅与 tick」，实际是 `_run_together`（`asyncio.wait(FIRST_EXCEPTION)` + 置位 `stop` + 二次 drain + 重抛）。`gather` 会把首个异常抛给调用者却**不让另一个 loop 停下** —— 那正是"guard 死了 lane 还在交易"的形态。审查 C1 抓出，正文已改 | 低风险，审查后补记 |
 
 ## 已知的下游动作（不在本 plan 范围）
 
