@@ -15,7 +15,12 @@ import pytest
 
 from custos.contracts import TradingMode
 from custos.offline.mode_guard import OfflineModeRefused
-from custos.offline.reconciler import OfflineReconciler, runtime_identity, runtime_spec
+from custos.offline.reconciler import (
+    OfflineReconciler,
+    Settlement,
+    runtime_identity,
+    runtime_spec,
+)
 from custos.offline.spec import OfflineDeploymentMessage, OfflineDeploymentSpec
 
 TENANT = "local"
@@ -206,9 +211,9 @@ async def test_a_message_for_another_tenant_is_refused() -> None:
         tenant_id="someone-else", strategy_id=STRATEGY, spec=_spec()
     ).to_bytes()
 
-    applied = await _reconciler(engine, publisher).handle(foreign)
+    settlement = await _reconciler(engine, publisher).handle(foreign)
 
-    assert applied is False
+    assert settlement is Settlement.REJECTED
     assert engine.deployed == []
 
 
@@ -216,11 +221,11 @@ async def test_an_engine_that_cannot_run_the_mode_is_not_asked_to() -> None:
     engine = _FakeEngine(supported=("sandbox",))
     publisher = _RecordingPublisher()
 
-    applied = await _reconciler(engine, publisher).handle(
+    settlement = await _reconciler(engine, publisher).handle(
         _message(_spec(trading_mode="testnet", sandbox=None))
     )
 
-    assert applied is False
+    assert settlement is Settlement.REJECTED
     assert engine.deployed == []
     assert publisher.payloads[-1]["health"] == "unhealthy"
 
@@ -229,9 +234,9 @@ async def test_a_failed_apply_is_reported_as_unhealthy_and_not_claimed() -> None
     engine, publisher = _FakeEngine(), _RecordingPublisher()
     engine.deploy_error = RuntimeError("engine refused to start")
 
-    applied = await _reconciler(engine, publisher).handle(_message(_spec()))
+    settlement = await _reconciler(engine, publisher).handle(_message(_spec()))
 
-    assert applied is False
+    assert settlement is Settlement.RETRYABLE
     assert publisher.payloads[-1] == {
         "observed_generation": 1,
         "phase": "running",
@@ -246,9 +251,9 @@ async def test_a_failed_apply_can_be_retried_by_the_same_generation() -> None:
     await reconciler.handle(_message(_spec()))
     engine.deploy_error = None
 
-    applied = await reconciler.handle(_message(_spec()))
+    settlement = await reconciler.handle(_message(_spec()))
 
-    assert applied is True
+    assert settlement is Settlement.APPLIED
     assert len(engine.deployed) == 1
 
 
@@ -297,6 +302,85 @@ async def test_the_loop_stops_when_asked() -> None:
     stop.set()
 
     await asyncio.wait_for(task, timeout=1)
+
+
+class _SettleableMessage:
+    """A delivery that records how the loop settled it."""
+
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+        self.acked = False
+        self.naked = False
+
+    async def ack(self) -> None:
+        self.acked = True
+
+    async def nak(self, delay: float | None = None) -> None:
+        self.naked = True
+
+
+async def _deliver(reconciler: OfflineReconciler, message: Any) -> None:
+    stop = asyncio.Event()
+    delivered = [message]
+
+    class _Subscription:
+        async def next_msg(self, timeout: float) -> Any:
+            if not delivered:
+                stop.set()
+                raise TimeoutError
+            return delivered.pop(0)
+
+    await asyncio.wait_for(reconciler.run(_Subscription(), stop), timeout=1)
+
+
+async def test_an_applied_generation_is_acknowledged() -> None:
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    message = _SettleableMessage(_message(_spec()))
+
+    await _deliver(_reconciler(engine, publisher), message)
+
+    assert message.acked and not message.naked
+
+
+async def test_a_failed_apply_is_not_acknowledged() -> None:
+    """Acknowledging a failure tells the stream to forget it; nothing would retry."""
+
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    engine.deploy_error = RuntimeError("engine refused to start")
+    message = _SettleableMessage(_message(_spec()))
+
+    await _deliver(_reconciler(engine, publisher), message)
+
+    assert message.naked and not message.acked
+
+
+async def test_an_unreadable_message_is_terminally_rejected() -> None:
+    """Safety rule: invalid commands are terminal. Redelivery cannot make them parse."""
+
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    message = _SettleableMessage(b"not a deployment message")
+
+    await _deliver(_reconciler(engine, publisher), message)
+
+    assert message.acked and not message.naked
+
+
+async def test_a_mode_the_engine_cannot_run_is_terminally_rejected() -> None:
+    engine, publisher = _FakeEngine(supported=("sandbox",)), _RecordingPublisher()
+    message = _SettleableMessage(_message(_spec(trading_mode="testnet", sandbox=None)))
+
+    await _deliver(_reconciler(engine, publisher), message)
+
+    assert message.acked and not message.naked
+
+
+async def test_a_delivery_that_cannot_be_settled_is_reported_not_ignored() -> None:
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    bare = type("_Bare", (), {"data": _message(_spec())})()
+
+    await _deliver(_reconciler(engine, publisher), bare)
+
+    assert len(engine.deployed) == 1
 
 
 async def test_the_loop_survives_a_message_it_cannot_read() -> None:

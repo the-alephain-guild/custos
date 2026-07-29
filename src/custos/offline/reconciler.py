@@ -17,6 +17,7 @@ import hashlib
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, Final, Protocol
 from uuid import UUID, uuid5
 
@@ -38,8 +39,23 @@ _log = get_logger("custos.offline.reconciler")
 _IDENTITY_NAMESPACE: Final = UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
 _TERMINAL_STATES: Final = frozenset({LifecycleState.STOPPED, LifecycleState.ARCHIVED})
 _POLL_SECS: Final = 0.5
+_RETRY_SECS: Final = 5.0
 
 PublishStatus = Callable[[str, bytes], Awaitable[None]]
+
+
+class Settlement(StrEnum):
+    """How a delivery was disposed of.
+
+    The safety rule draws this line: invalid commands are terminally rejected and
+    audited, while transient engine or delivery failures stay retryable. A message
+    that cannot be parsed will not parse on redelivery either, so asking for it
+    again turns one bad message into an endless one.
+    """
+
+    APPLIED = "applied"
+    REJECTED = "rejected"
+    RETRYABLE = "retryable"
 
 
 class OfflineEngine(Protocol):
@@ -141,22 +157,35 @@ class OfflineReconciler:
                 _log.warning("offline_desired_state_read_failed", error=str(exc))
                 await asyncio.sleep(_POLL_SECS)
                 continue
-            await self.handle(message.data)
-            acknowledge = getattr(message, "ack", None)
-            if acknowledge is not None:
-                await acknowledge()
+            await self._settle(message, await self.handle(message.data))
 
-    async def handle(self, data: bytes) -> bool:
-        """Return whether the desired state in ``data`` is now applied."""
+    async def handle(self, data: bytes) -> Settlement:
+        """Apply the desired state in ``data`` and say how it was disposed of."""
 
         try:
             message = OfflineDeploymentMessage.parse(data, expected_tenant_id=self._tenant_id)
-        except Exception as exc:  # noqa: BLE001 - an unreadable message is reported, not fatal
+        except Exception as exc:  # noqa: BLE001 - unreadable is terminal, not fatal to the loop
             _log.error("offline_desired_state_rejected", error=str(exc))
-            return False
+            return Settlement.REJECTED
         return await self.apply(message.spec)
 
-    async def apply(self, spec: OfflineDeploymentSpec) -> bool:
+    async def _settle(self, message: Any, settlement: Settlement) -> None:
+        """Acknowledge what is finished; ask again only for what could succeed later."""
+
+        if settlement is Settlement.RETRYABLE:
+            negative = getattr(message, "nak", None)
+            if negative is not None:
+                await negative(delay=_RETRY_SECS)
+                return
+            _log.warning("offline_delivery_not_settled", settlement=settlement.value)
+            return
+        acknowledge = getattr(message, "ack", None)
+        if acknowledge is not None:
+            await acknowledge()
+            return
+        _log.warning("offline_delivery_not_settled", settlement=settlement.value)
+
+    async def apply(self, spec: OfflineDeploymentSpec) -> Settlement:
         refuse_live(spec.trading_mode.value, source="deployment spec")
         applied = self._applied.setdefault(spec.spec_id, _Applied())
 
@@ -167,19 +196,20 @@ class OfflineReconciler:
                 generation=spec.generation,
                 applied_generation=applied.generation,
             )
-            return True
+            return Settlement.APPLIED
         if spec.generation == applied.generation:
             await self._report(spec, healthy=True)
-            return True
+            return Settlement.APPLIED
 
         if not self._engine.supports_trading_mode(spec.trading_mode.value):
+            # Terminal: this engine will not grow the capability on redelivery.
             _log.error(
                 "offline_engine_cannot_run_mode",
                 spec_id=spec.spec_id,
                 mode=spec.trading_mode.value,
             )
             await self._report(spec, healthy=False)
-            return False
+            return Settlement.REJECTED
 
         try:
             applied.container_id = await self._engage(spec, applied)
@@ -191,12 +221,12 @@ class OfflineReconciler:
                 error=str(exc),
             )
             await self._report(spec, healthy=False)
-            return False
+            return Settlement.RETRYABLE
 
         applied.generation = spec.generation
         self._remember(spec.spec_id, applied)
         await self._report(spec, healthy=True)
-        return True
+        return Settlement.APPLIED
 
     def _remember(self, spec_id: str, applied: _Applied) -> None:
         if self._store is None:
