@@ -18,7 +18,7 @@ NautilusTrader 存在的部分 —— reconciler、熔断器与事实生产者�
 <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
 
 **`NtTradingNodeHost`** 监督一个真实的 NautilusTrader `TradingNode`。它声明
-`sandbox`、`testnet` 与 `live`，是唯一能抵达交易场所的宿主。
+`sandbox`、`testnet` 与 `live`，是唯一能抵达交易所的宿主。
 
 **`SandboxSimulationHost`** 跑完整的本地生命周期 —— artifact 激活、凭据解析、持久化、就绪判定、事实发布 —— 但不连接任何外部系统。它只声明 `sandbox`，因此
 testnet 或 live 部署会在准入处被拒绝，而不是被悄悄模拟掉。
@@ -34,7 +34,7 @@ arx-runner start --enabled-mode sandbox --engine sandbox-sim  # 仅模拟
 
 ## 宿主拥有什么，不拥有什么
 
-宿主拥有引擎进程构造、场所客户端配置、就绪观测、停止与重配置行为，以及引擎遥测。
+宿主拥有引擎进程构造、交易所客户端配置、就绪观测、停止与重配置行为，以及引擎遥测。
 
 它**不**拥有部署授权、策略发布状态、artifact 验证、凭据范围策略与指令确认。这些属于它上面的层次 —— 这正是为什么更换引擎不会移动任何一条信任边界。
 
@@ -68,9 +68,9 @@ Tier-2 是更有意思的那一半。它正是[失联不等于停止](/zh-Hans/t
 | 文件 | 职责 |
 |---|---|
 | `venue_binance.py` | Binance 行情与执行客户端配置 |
-| `binance_ledger.py` | 供对账使用的独立场所账本证据 |
+| `binance_ledger.py` | 供对账使用的独立交易所账本证据 |
 | `portfolio_snapshot.py` | 权益与持仓估值的单一估值边界 |
-| `runner_safety.py` | 把场所客户端挡在下单预留闸门之后 |
+| `runner_safety.py` | 把交易所客户端挡在下单预留闸门之后 |
 | `risk.py` | 交易前规则配置 |
 | `runtime_loader.py` | 证明策略模块来自不可变的激活根 |
 | `sandbox_runner_fact_host.py` | 模拟宿主的事实发布 |
@@ -80,9 +80,9 @@ Tier-2 是更有意思的那一半。它正是[失联不等于停止](/zh-Hans/t
 
 `portfolio_snapshot.py` 是「未平名义本金与实际权益来自同一个估值边界、而非两个可能互相矛盾的来源」的原因。熔断器每实例每 tick 只读取一份由它派生的引擎状态。
 
-`runner_safety.py` 包住场所执行客户端，使订单在抵达场所之前必须通过预留边界。这个守卫是引擎绕不开的一层门面，而不是一项「请策略记得调用」的检查。
+`runner_safety.py` 包住交易所执行客户端，使订单在抵达交易所之前必须通过预留边界。这个守卫是引擎绕不开的一层门面，而不是一项「请策略记得调用」的检查。
 
-## 交易场所
+## 交易所
 
 `binance` 与 `binance_perpetual`，比对不区分大小写。宿主未声明的签名连接器会在准入处被拒。
 

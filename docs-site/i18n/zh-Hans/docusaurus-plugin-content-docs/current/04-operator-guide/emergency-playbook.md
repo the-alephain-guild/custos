@@ -28,7 +28,7 @@ du -h ~/.arx/state/runner-fact-outbox.db
 ```
 
 JSON 形式是唯一的运行时健康投影。它从事实数据库原子刷新，报告每个已启用的传输模式、
-SQLite quick-check 状态、数据库/WAL/磁盘字节数、指令结果与在途租约、期望与已应用之间的漂移、重启与隔离计数、待发事实与 ack 的年龄、签名策略到期时间、制品缓存与激活字节数，以及传输权威的到期或吊销状态。
+SQLite quick-check 状态、数据库/WAL/磁盘字节数、指令结果与在途租约、期望与已应用之间的漂移、重启与隔离计数、待发事实与 ack 的年龄、签名策略到期时间、产物缓存与激活字节数，以及传输权威的到期或吊销状态。
 
 它是投影，不是第二本账 —— 从不持有业务状态。
 
@@ -64,13 +64,13 @@ SQLite quick check 失败、磁盘耗尽或 WAL 陈旧，都属于需要人工�
 ## 进程恢复
 
 1. 查看 `journalctl -u custos -n 200` 或容器日志。
-2. 保全 `.arx/runner.toml`、机器 vault、交易所 vault、domain-event 公钥与事实 outbox。
+2. 保全 `.arx/runner.toml`、机器金库、交易所金库、domain-event 公钥与事实 outbox。
 3. 重启服务。
 4. 确认 `arx-runner health` 成功。
 5. 检查 `arx-runner health --json` 的漂移、隔离、策略到期与待 ack 年龄。
 6. 确认上游收到了预期的生命周期事实 generation。
 
-runner 从 enroll 得到的机器身份与上游期望状态恢复。`runner.toml` 里没有长期凭证，也没有任何本地文件是部署生命周期的 canonical 记录 —— 所以干净重启是收敛，而不是猜测。
+runner 从 enroll 得到的机器身份与上游期望状态恢复。`runner.toml` 里没有长期凭据，也没有任何本地文件是部署生命周期的 canonical 记录 —— 所以干净重启是收敛，而不是猜测。
 
 ## 停止执行
 

@@ -5,7 +5,7 @@ sidebar_position: 7
 
 # 审计清单
 
-Custos 开源，是为了让把交易所凭证托付给它的人能自己检验这份信任。本页是这个承诺的具体版本：跑什么、读什么，以及通过意味着什么。
+Custos 开源，是为了让把交易所凭据托付给它的人能自己检验这份信任。本页是这个承诺的具体版本：跑什么、读什么，以及通过意味着什么。
 
 这里没有任何一步需要我们配合。clone 下来自己走一遍。
 
@@ -21,19 +21,19 @@ uv sync --extra dev
 make verify
 ```
 
-它会跑格式化、lint 与独立测试基线。在一份干净 clone 上、没有凭证、也不需要访问我们的基础设施，它必须通过。若通不过就先停 —— 后面每一步都以绿基线为前提。
+它会跑格式化、lint 与独立测试基线。在一份干净 clone 上、没有凭据、也不需要访问我们的基础设施，它必须通过。若通不过就先停 —— 后面每一步都以绿基线为前提。
 
 只跑测试不跑风格门用 `make test-baseline`。
 
 ## 第 2 步 —— 密钥不出本机
 
-**声明**：凭证在进程内解密，从不写入日志、发布到上游，或传到任何可被观察到的地方。
+**声明**：凭据在进程内解密，从不写入日志、发布到上游，或传到任何可被观察到的地方。
 
 ```bash
-# 日志调用里没有凭证材料
+# 日志调用里没有凭据材料
 grep -rnE 'log\.(info|debug|warning).*api[_-]?key' src/ tests/
 
-# 出站调用里没有凭证材料
+# 出站调用里没有凭据材料
 grep -rnE 'publish.*password|send.*secret' src/
 ```
 
@@ -41,7 +41,7 @@ grep -rnE 'publish.*password|send.*secret' src/
 
 然后读金库本身 —— `src/custos/core/per_key_vault.py` 与 `machine_credential_vault.py`。要看的是：secret 通过 stdin 而非 argv 递给 `sops`；解密结果用于构造客户端而不被留存；每次解密发出的审计事件只带标识符。
 
-相关测试是 `tests/test_per_key_vault.py` 与 `tests/test_credential_lifecycle.py`。后者更有意思：它遍历构造出来的引擎对象图，断言从中触达不到任何凭证。
+相关测试是 `tests/test_per_key_vault.py` 与 `tests/test_credential_lifecycle.py`。后者更有意思：它遍历构造出来的引擎对象图，断言从中触达不到任何凭据。
 
 ## 第 3 步 —— live 执行始终受门控
 
@@ -98,7 +98,7 @@ grep -rnE 'float\(.*price|float\(.*amount|float\(.*notional' src/
 `tests/test_nt_risk_engine.py` 与 `tests/test_runner_fact_store.py` 覆盖 decimal 路径及其 wire 表示。读的时候要盯的是：数值是用 `Decimal(str(x))` 而不是 `Decimal(x)` 构造的
 —— 后者会静默继承二进制浮点误差，而两者扫一眼看不出区别。
 
-## 第 6 步 —— 验证你真正要跑的那份制品
+## 第 6 步 —— 验证你真正要跑的那份产物
 
 干净的源码树不能证明你部署的那个二进制。
 
@@ -108,7 +108,7 @@ make verify-local-v030
 
 它会构建镜像、记录 revision label，并跑完整的 Docker 运行时契约以及针对真实 broker 的独立验收。
 
-发布制品见[签名发布链](./signed-release-chain) —— wheel 有签名、镜像 digest 被记录，且运行时门是针对那个精确 digest 跑的，之后稳定 tag 才会指向它。
+发布产物见[签名发布链](./signed-release-chain) —— wheel 有签名、镜像 digest 被记录，且运行时门是针对那个精确 digest 跑的，之后稳定 tag 才会指向它。
 
 ## 第 7 步 —— 核对边界声明
 
@@ -117,7 +117,7 @@ make verify-local-v030
 - 除了自己发起的订阅之外，不暴露任何入站网络面；
 - 没有本地创建或审批部署的路径；
 - 缺少 promotion 证据的 live 部署会被拒绝，而不是继续执行；
-- 无法被指使去解密一份凭证并把结果返回。
+- 无法被指使去解密一份凭据并把结果返回。
 
 最后一条值得直接查。`decrypt` 只被本地 reconciler 调用。如果你找到任何一条从网络消息到
 "解密结果离开进程"的路径，那是 critical 级发现 ——
@@ -125,6 +125,6 @@ make verify-local-v030
 
 ## 通过意味着什么
 
-每一步都通过，意味着你 clone 到的这棵树里的代码守住了四条保证，且由它构建出的制品行为一致。
+每一步都通过，意味着你 clone 到的这棵树里的代码守住了四条保证，且由它构建出的产物行为一致。
 
-它**不**意味着你的部署是安全的。Custos 无法替你挡住：带提币权限的凭证、没有 IP 限制的交易所账户、别人能读的主机，或者一个正确地在亏钱的策略。这些仍然是你的责任。
+它**不**意味着你的部署是安全的。Custos 无法替你挡住：带提币权限的凭据、没有 IP 限制的交易所账户、别人能读的主机，或者一个正确地在亏钱的策略。这些仍然是你的责任。

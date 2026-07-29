@@ -60,6 +60,15 @@ jobs:
         working-directory: docs-site
         run: npm run check:cjk
 
+      # One English term, one Chinese rendering. Identifiers stay English.
+      - name: Terminology gate (self-test)
+        working-directory: docs-site
+        run: npm run test:terms
+
+      - name: Terminology gate (site content)
+        working-directory: docs-site
+        run: npm run check:terms
+
       - name: Build (all locales)
         working-directory: docs-site
         run: npm run build

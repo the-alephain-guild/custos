@@ -123,6 +123,32 @@ npm run test:cjk             # regression-test that check
 Wrapping between a Latin word and Han text is fine and stays — there the space
 belongs. Only Han-to-Han wraps are the defect.
 
+## One English term, one Chinese rendering
+
+| English | 中文 | Not |
+|---|---|---|
+| venue, exchange | 交易所 | 场所、交易场所 |
+| artifact | 产物 | 制品 |
+| credential | 凭据 | 凭证 |
+| provenance | 来源记录 | 来源凭证 |
+| vault | 金库 | vault（正文中） |
+| circuit breaker | 熔断器 | 断路器 |
+
+Two words for one thing reads as two things. `凭证` was the worst of these: it
+carried both *credential* and *provenance*, so one page could say 机器凭据 and
+交易所凭证 four lines apart meaning the same kind of thing, while 来源凭证 five
+lines later meant something unrelated.
+
+**Identifiers stay English.** A `vault` in backticks is the CLI subcommand, the
+flag or the path — translating it documents a command that does not exist. The
+check exempts backticked spans and link targets, so putting an identifier in
+backticks is all that is needed.
+
+```bash
+npm run check:terms          # scan the Chinese locale
+npm run test:terms           # regression-test that check
+```
+
 ## Naming discipline
 
 Follow

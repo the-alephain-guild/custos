@@ -74,6 +74,15 @@ fingerprint.
 
 ## Delivery disposition
 
+Three of these are the transport's own acknowledgements, and the difference
+between them is the whole design:
+
+| | Meaning |
+|---|---|
+| `ACK` | handled — do not send it again |
+| `NAK` | not handled yet — send it again |
+| `TERM` | will never be handled — stop sending it |
+
 Every message reaches exactly one of these, and the choice is durable:
 
 | Outcome | Disposition |

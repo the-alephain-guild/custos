@@ -59,7 +59,7 @@ make verify-local-v030
 
 ```bash
 arx-runner enroll                  # 取得可证明的机器身份
-arx-runner vault put|verify|list   # 管理场所凭据
+arx-runner vault put|verify|list   # 管理交易所凭据
 arx-runner credential              # 验证、轮换或吊销机器凭据
 arx-runner publish-capability      # 发布下一个能力修订
 arx-runner nats-transport          # 签发、轮换、吊销或验证传输授权
@@ -76,7 +76,7 @@ runner 能自行签发的：
 
 1. 来自 ARX 的**一次性注册令牌**；
 2. 本机上的一份 **age 身份**，由你在本地生成；
-3. 权限范围为 `trade_no_withdraw` 的**场所 API 凭据**。
+3. 权限范围为 `trade_no_withdraw` 的**交易所 API 凭据**。
 
 这种不对称正是设计要点 —— 见[信任模型](/zh-Hans/introduction/trust-model)。一个能自己造出授权的 runner，不值得把凭据交给它。
 

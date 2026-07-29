@@ -51,7 +51,7 @@ enrollment_token_sha256=<lowercase-sha256>
 `backend_url`、`credential_id`、`credential_version`、`credential_valid_until`、
 `machine_key_id`、`machine_vault_path` 与 `enrolled_at`。
 
-这些字段与解密后的 vault 有任何不一致，都是启动错误，不是告警。字段参考见[配置参考](/reference/configuration)。
+这些字段与解密后的金库有任何不一致，都是启动错误，不是告警。字段参考见[配置参考](/reference/configuration)。
 
 ## 实际执行
 
@@ -82,16 +82,16 @@ arx-runner credential rotate --reason "<why>"
 arx-runner credential revoke
 ```
 
-**轮换**会生成新密钥对，并用**旧**密钥签署的 nonce 绑定证明把新公钥发出去 —— 身份的连续性是被证明的，不是被声称的。Custos 只在收到接受响应之后，才原子替换加密 vault 与公开元数据。轮换失败时，先前的凭据保持完好可用。
+**轮换**会生成新密钥对，并用**旧**密钥签署的 nonce 绑定证明把新公钥发出去 —— 身份的连续性是被证明的，不是被声称的。Custos 只在收到接受响应之后，才原子替换加密金库与公开元数据。轮换失败时，先前的凭据保持完好可用。
 
-**吊销**用当前密钥发送 nonce 绑定证明。权威确认吊销状态后，Custos 立即删除加密 vault 与
+**吊销**用当前密钥发送 nonce 绑定证明。权威确认吊销状态后，Custos 立即删除加密金库与
 `runner.toml`。执行循环无法用已吊销的主体启动，本地也没有把它复活的路径。
 
 ## 启动与就绪
 
 在连接传输或构造执行 host 之前，启动要求：
 
-- 加密机器 vault 与 age 身份；
+- 加密机器金库与 age 身份；
 - 一份未过期的凭据；
 - tenant、runner、凭据 id、版本、有效期与 key-id 绑定逐项精确一致；
 - 服务端确认该凭据仍然有效；

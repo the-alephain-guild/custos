@@ -38,7 +38,7 @@ sidebar_position: 5
 | 保证 | 此处的发现意味着 |
 |---|---|
 | [密钥不出本机](/zh-Hans/trust-model/keys-never-leave-the-host) | 凭据或密钥材料进入了日志、消息或 HTTP body |
-| [实盘执行始终受门控](/zh-Hans/trust-model/live-execution-is-gated) | 存在绕过准入抵达真实场所的路径 |
+| [实盘执行始终受门控](/zh-Hans/trust-model/live-execution-is-gated) | 存在绕过准入抵达真实交易所的路径 |
 | [失联不等于停止](/zh-Hans/trust-model/safety-survives-disconnect) | 本地防护在上游不可达时停止了 |
 | [金额运算精确](/zh-Hans/trust-model/exact-money-arithmetic) | 有 float 进入了金额路径 |
 

@@ -11,7 +11,7 @@ sidebar_position: 1
 
 一份由上游拥有的**不可变**配置。它包含策略产物来源、模式、目标 runner、凭据范围、参数，以及 —— 对 live 模式 —— 放行证据。
 
-`deployment_spec_id` 与 `deployment_spec_digest` 是**来源凭证**。它们记录配置内容，不指向任何正在运行的东西。
+`deployment_spec_id` 与 `deployment_spec_digest` 是**来源记录**。它们记录配置内容，不指向任何正在运行的东西。
 
 ## DeploymentInstance
 
@@ -30,7 +30,7 @@ Custos 把「已应用 generation」与「已上报 generation」分开跟踪。
 ## 引擎句柄
 
 对应**一个**部署实例的本地引擎资源。所有引擎协议操作都接收 `deployment_instance_id`；
-spec 标识只作为来源凭证保留在事实与诊断中。
+spec 标识只作为来源记录保留在事实与诊断中。
 
 ## RunnerFact
 

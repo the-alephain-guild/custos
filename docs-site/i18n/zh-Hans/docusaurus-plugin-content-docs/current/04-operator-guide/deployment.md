@@ -9,27 +9,27 @@ Custos 跑在你自己的基础设施上。ARX 负责授权意图、持有部署
 
 本章覆盖从零到跑起一个部署的完整过程。
 
-## 运行时制品
+## 运行时产物
 
-当前下游开发使用的制品是经过验证的本地镜像：
+当前下游开发使用的产物是经过验证的本地镜像：
 
 ```text
 custos-runner:v0.3.0
 ```
 
-用 `make verify-local-v030` 构建并过门。远程发布仍在推迟中。请直接消费该镜像，**不要**自行维护派生 Dockerfile —— 派生镜像不是门验证过的那一份制品。
+用 `make verify-local-v030` 构建并过门。远程发布仍在推迟中。请直接消费该镜像，**不要**自行维护派生 Dockerfile —— 派生镜像不是门验证过的那一份产物。
 
 ## 前置条件
 
 - 一个 ARX enrollment 端点和一次性 enrollment token。
 - ARX 的 Ed25519 domain-event 公钥及其 key ID（必须精确匹配）。
 - 能连到签名指令流的网络。
-- 每个交易所凭证一个 sops+age 加密文件，scope 均为 `trade_no_withdraw`。
+- 每个交易所凭据一个 sops+age 加密文件，scope 均为 `trade_no_withdraw`。
 
 Custos 从不创建流，也从不发布部署指令。它的 `deployment` CLI 只有一个离线动作
 `validate`。
 
-## Enrollment 与交易所凭证
+## Enrollment 与交易所凭据
 
 ```bash
 mkdir -p "$HOME/.arx/vault" "$HOME/.arx/state"
@@ -90,7 +90,7 @@ arx-runner start --enabled-mode sandbox --reconcile \
   --engine sandbox-sim
 ```
 
-该开发标志会拒绝非 loopback 主机、`testnet`、`live`、URL 内嵌凭证，以及任何同时存在的生产端点。它**绝不是** TLS 或密钥权威校验失败后的降级通路 —— 校验失败就是失败。
+该开发标志会拒绝非 loopback 主机、`testnet`、`live`、URL 内嵌凭据，以及任何同时存在的生产端点。它**绝不是** TLS 或密钥权威校验失败后的降级通路 —— 校验失败就是失败。
 
 ## 部署生命周期
 
@@ -129,7 +129,7 @@ test -f .env || cp .env.example .env
 docker compose up
 ```
 
-务必持久化 `/home/custos/.arx`。临时挂载会丢失机器身份与交易所凭证，缺了它们 runner
+务必持久化 `/home/custos/.arx`。临时挂载会丢失机器身份与交易所凭据，缺了它们 runner
 不会启动。
 
 出问题时见[排障](./troubleshooting)；中断与恢复见[应急手册](./emergency-playbook)。

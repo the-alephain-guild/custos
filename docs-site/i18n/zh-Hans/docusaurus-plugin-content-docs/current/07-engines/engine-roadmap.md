@@ -33,7 +33,7 @@ RunnerFact —— 只与一个 Python 接口对话：`ExecutionEngineProtocol`�
 | `reconfigure` | 把新的期望状态应用到运行中的实例 |
 | `stop` | 停止实例并释放其资源 |
 | `supports_trading_mode` | 声明本引擎可运行哪些交易模式 |
-| `supports_venue` | 声明本引擎可触达哪些交易场所 |
+| `supports_venue` | 声明本引擎可触达哪些交易所 |
 
 后两个正是实盘执行门所读取的。一个未声明某模式的引擎，无论期望状态怎么要求，都**永远不会**被准入该模式 —— 门 fail closed，而不是降级。
 
@@ -45,7 +45,7 @@ RunnerFact —— 只与一个 Python 接口对话：`ExecutionEngineProtocol`�
 
 ### Hummingbot
 
-[Hummingbot](https://github.com/hummingbot/hummingbot) 是一个用于中心化与去中心化场所做市与流动性提供的 Python 框架。
+[Hummingbot](https://github.com/hummingbot/hummingbot) 是一个用于中心化与去中心化交易所做市与流动性提供的 Python 框架。
 
 - **契合之处**：Python 原生且 async，适配器可跑在现有守护进程内，无需进程桥。
 - **不契合之处**：Hummingbot 部署惯例上是一个带自己配置与策略约定的**独立 bot 实例**，而不是嵌入宿主进程的库。监督形态会更接近进程管理，而非 NautilusTrader 那种进程内模型。

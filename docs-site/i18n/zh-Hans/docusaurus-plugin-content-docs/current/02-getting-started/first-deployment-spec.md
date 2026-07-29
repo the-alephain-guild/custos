@@ -48,7 +48,7 @@ arx-runner health --json
 去问 runner 它**应用了什么**，而不是你以为你发了什么：
 
 - `deployment_instance_id` 是运行时身份。同一份 spec 的两个实例是两个独立的东西。
-- spec id 与 digest 作为来源凭证随每一条事实传出，因此事实流本身就能回答「跑的是哪份配置」，无需信任本地状态。
+- spec id 与 digest 作为来源记录随每一条事实传出，因此事实流本身就能回答「跑的是哪份配置」，无需信任本地状态。
 
 见 [spec 与 instance](/zh-Hans/concepts/deployment-spec-vs-instance)。
 

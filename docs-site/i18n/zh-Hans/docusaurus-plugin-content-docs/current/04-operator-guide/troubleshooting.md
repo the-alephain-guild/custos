@@ -11,7 +11,7 @@ sidebar_position: 6
 
 日志是结构化 JSON。运行时事件以 `deployment_instance_id` 为键；`spec_id` 只作为来源出现，不是运行时句柄。
 
-Custos 从不记录 API secret、不透明机器凭据、私钥、enrollment token 或解密后的 vault 值。若你在日志里看到其中任何一项，请按安全问题处理，见
+Custos 从不记录 API secret、不透明机器凭据、私钥、enrollment token 或解密后的金库值。若你在日志里看到其中任何一项，请按安全问题处理，见
 [SECURITY.md](https://github.com/the-alephain-guild/custos/blob/main/SECURITY.md)。
 
 ## 启动身份校验失败
@@ -21,21 +21,21 @@ Custos 从不记录 API secret、不透明机器凭据、私钥、enrollment tok
 依次检查：
 
 1. `runner.toml` 存在、模式为 `0600`、且只含公开元数据。
-2. 其 `machine_vault_path` 指向 enroll 出来的机器 vault。
-3. `SOPS_AGE_KEY_FILE` 存在、模式为 `0600`，且确实能解开那个 vault。
+2. 其 `machine_vault_path` 指向 enroll 出来的机器金库。
+3. `SOPS_AGE_KEY_FILE` 存在、模式为 `0600`，且确实能解开那个金库。
 4. 凭据 ID、版本、有效期、tenant、runner 与机器密钥与元数据**逐项**一致。
 
 不要手工编辑身份文件。请在上游吊销或轮换，或用新的一次性 token 重新 enroll 一个机器主体。被手工改过的 runner 无法自证任何东西 —— 而自证正是这道校验的全部意义。
 
-## 交易所凭证失败
+## 交易所凭据失败
 
-**症状**：引擎部署前出现凭证解密失败或 permission-scope 失败。
+**症状**：引擎部署前出现凭据解密失败或 permission-scope 失败。
 
 ```bash
 arx-runner vault verify --key-id binance-testnet --tenant-id acme
 ```
 
-每个交易所凭证必须是独立的 sops+age 文档，scope 为 `trade_no_withdraw`。用
+每个交易所凭据必须是独立的 sops+age 文档，scope 为 `trade_no_withdraw`。用
 `arx-runner vault put` 替换有问题的条目。**绝不要**把密钥放进 argv、`runner.toml`
 或部署本身。
 
@@ -47,7 +47,7 @@ arx-runner vault verify --key-id binance-testnet --tenant-id acme
 - subject 中的 tenant / runner / 实例与签名载荷不一致；
 - canonical digest 不匹配；
 - generation 过期，或既有实例的策略身份发生变化；
-- 策略发布的快照 / 制品 / manifest 绑定不匹配；
+- 策略发布的快照 / 产物 / manifest 绑定不匹配；
 - 类型化的 `execution_config` 非法，或所选引擎不支持；
 - live 指令缺少 promotion 证据；
 - live 指令被投给不支持 live 的引擎。
@@ -56,7 +56,7 @@ arx-runner vault verify --key-id binance-testnet --tenant-id acme
 
 ## 引擎或交易所失败
 
-认证类失败：检查交易所密钥状态、IP 白名单、时钟同步，以及该凭证确实是
+认证类失败：检查交易所密钥状态、IP 白名单、时钟同步，以及该凭据确实是
 `trade_no_withdraw`。
 
 code-hash 类失败：部署与签名部署相匹配的、经过评审的策略字节。不要试图绕过

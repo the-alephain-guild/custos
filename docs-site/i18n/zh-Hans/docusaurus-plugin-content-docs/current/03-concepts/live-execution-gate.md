@@ -7,13 +7,13 @@ sidebar_position: 3
 
 实盘执行门是横在「已验证的部署」与「运行中的引擎」之间的准入检查。它对每个部署只跑一次，在任何引擎进程被构造**之前**，并且 fail closed：凡是无法满足全部适用条件的部署，一律拒绝，而不是降级后放行。
 
-准入不是风控。它不判断某笔交易划不划算，它判断的是：这台 runner 究竟有没有资格在这个模式、这个场所、用这份凭据执行这个部署。
+准入不是风控。它不判断某笔交易划不划算，它判断的是：这台 runner 究竟有没有资格在这个模式、这个交易所、用这份凭据执行这个部署。
 
 ## 为什么在引擎存在之前跑
 
 代价高的失败不是「部署被拒绝」，而是「部署起来了、报告健康、干的却不是被批准的那件事」。
 
-因此下面每一项检查都在引擎构造之前完成，而不是之后。跑在之后的门必须去停掉一个已经连上场所的东西，而「尽快停掉」是比「根本不启动」弱得多的保证。
+因此下面每一项检查都在引擎构造之前完成，而不是之后。跑在之后的门必须去停掉一个已经连上交易所的东西，而「尽快停掉」是比「根本不启动」弱得多的保证。
 
 ## 七项条件
 
@@ -56,10 +56,10 @@ sandbox 只是需要满足的条件更少，而不是走了另一条代码路径
 
 | 宿主 | 模式 | 用途 |
 |---|---|---|
-| `NtTradingNodeHost` | `sandbox` · `testnet` · `live` | 对接真实场所执行 |
-| `SandboxSimulationHost` | 仅 `sandbox` | 跑通完整生命周期，但不连接场所 |
+| `NtTradingNodeHost` | `sandbox` · `testnet` · `live` | 对接真实交易所执行 |
+| `SandboxSimulationHost` | 仅 `sandbox` | 跑通完整生命周期，但不连接交易所 |
 
-模拟宿主之所以有价值，是因为 artifact 激活、凭据解析、生命周期持久化、就绪判定与事实发布都是**真跑**的，缺的只有场所连接。它等于把除了交易之外的一切都演练一遍。
+模拟宿主之所以有价值，是因为 artifact 激活、凭据解析、生命周期持久化、就绪判定与事实发布都是**真跑**的，缺的只有交易所连接。它等于把除了交易之外的一切都演练一遍。
 
 它只声明 `sandbox`，别的都不声明。因此 `testnet` 或 `live` 部署根本到不了它面前：条件 3 会在其他任何动作之前拒绝。拒绝来自宿主自己的声明，而不是来自别处维护的一份「禁止组合」清单。
 
@@ -72,14 +72,14 @@ arx-runner start --engine sandbox-sim
 
 若 NautilusTrader 运行时未安装，`--engine nautilus` 会在启动时失败，而不是悄悄回落到模拟。一台悄悄降级为模拟的 runner 会一边报告健康、一边一单不发。
 
-## 场所
+## 交易所
 
 连接器支持由各宿主自行声明，当前为 `binance` 与 `binance_perpetual`。比对不区分大小写；宿主未声明的签名连接器会在条件 4 处被拒。
 
 ## 被拒绝是什么样
 
 被拦下的部署产出一个带类型的终态结果与一条生命周期事实。它**不重试** ——
-因为七项条件没有一项会因为等待而变为真：不支持的场所在第二次尝试时依然不支持。
+因为七项条件没有一项会因为等待而变为真：不支持的交易所在第二次尝试时依然不支持。
 
 这与瞬时路径正好相反：引擎因可恢复原因启动失败时，会在持久化的重启预算下重试。准入失败与运行期失败被刻意归为两类事件。完整处置表见
 [reconcile 循环](/zh-Hans/concepts/reconcile-loop)。
@@ -92,14 +92,14 @@ arx-runner start --engine sandbox-sim
 这一个函数就是整个门。不存在第二条准入路径，也没有任何调用方能绕过它抵达引擎构造。
 <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
 
-然后确认引擎宿主之外没有任何地方构造场所客户端：
+然后确认引擎宿主之外没有任何地方构造交易所客户端：
 
 ```bash
 grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ \
   --exclude=host.py --exclude=venue_binance.py
 ```
 
-干净的代码树上应无输出。在别处构造的场所客户端等于完全绕开这道门，此时门内部再正确也无济于事。
+干净的代码树上应无输出。在别处构造的交易所客户端等于完全绕开这道门，此时门内部再正确也无济于事。
 
 覆盖情况：
 
@@ -108,13 +108,13 @@ grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ \
 | 各宿主的模式与连接器声明 | `tests/test_nautilus_host_capability.py` |
 | 给定选择绑定哪个宿主 | `tests/test_main_host_selection.py` |
 | 能力受阻与实盘模式在任何引擎动作前被拒 | `tests/test_engine_lifecycle.py` |
-| 场所适配器与凭据接线 | `tests/test_nt_binance_venue.py` |
+| 交易所适配器与凭据接线 | `tests/test_nt_binance_venue.py` |
 <!-- disclosure-ok: auditable source location, custos is open for exactly this -->
 
 ## 这道门不做什么
 
 它管准入，不管行为。敞口上限、回撤熔断与名义本金上限是在部署运行期间持续执行的，由不关心底层是哪个引擎的模块负责 —— 见[失联不等于停止](/zh-Hans/trust-model/safety-survives-disconnect)。
 
-交给宿主的凭据只用于构造场所客户端，从不留存在宿主状态里、不写日志、不上报。Runner
-需要在内存中持有密钥以对场所请求签名，这不可避免且在范围之内；保证针对的是 I/O
+交给宿主的凭据只用于构造交易所客户端，从不留存在宿主状态里、不写日志、不上报。Runner
+需要在内存中持有密钥以对交易所请求签名，这不可避免且在范围之内；保证针对的是 I/O
 边界，不是内存。见[凭据金库](/zh-Hans/operator-guide/credential-vault)。

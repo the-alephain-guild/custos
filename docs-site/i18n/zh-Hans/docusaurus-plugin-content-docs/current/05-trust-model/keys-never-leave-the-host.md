@@ -5,7 +5,7 @@ sidebar_position: 2
 
 # 密钥不出本机
 
-你的交易所凭证在你的机器上加密，在 runner 进程内解密，用于给交易所请求签名。解密它们的那把密钥同样在你的机器上，从不被传输。
+你的交易所凭据在你的机器上加密，在 runner 进程内解密，用于给交易所请求签名。解密它们的那把密钥同样在你的机器上，从不被传输。
 
 这就是 Custos 开源的原因。我们要求你把 API key 放到一个守护进程上；对"我凭什么信任它"
 这个问题，唯一诚实的回答是：你可以自己读它拿这些 key 干了什么。
@@ -23,15 +23,14 @@ sidebar_position: 2
 ```
 ~/.arx/vault/
 ├── runner-machine.enc       # Ed25519 签名密钥 + 不透明机器凭据
-└── <key-id>.enc             # 每个交易所凭证一个文件
+└── <key-id>.enc             # 每个交易所凭据一个文件
 ```
 
-一个凭证一个文件，各自是独立的 sops+age 文档。解密用的 age 身份通过
+一个凭据一个文件，各自是独立的 sops+age 文档。解密用的 age 身份通过
 `SOPS_AGE_KEY_FILE` 定位，从不离开本机。目录模式 `0700`，文件 `0600`；更宽松的权限
 runner 会告警。
 
-同目录的 `runner.toml` 只保存公开绑定元数据 —— 凭据 id、版本、有效期、key id 与 vault
-引用。没有明文。
+同目录的 `runner.toml` 只保存公开绑定元数据 —— 凭据 id、版本、有效期、key id 与金库引用。没有明文。
 
 ### 写入
 
@@ -49,7 +48,7 @@ runner 会告警。
 
 两个金库类都继承 `_BaseVault`，它在每次读取时强制两条 invariant：
 
-- `_verify_permission_scope` 拒绝任何 scope 不是 `trade_no_withdraw` 的凭证；
+- `_verify_permission_scope` 拒绝任何 scope 不是 `trade_no_withdraw` 的凭据；
 - `_emit_decrypt_audit` 发出 `CredentialDecrypted` 事件，只携带凭据 id。
 
 机器身份存放在 `MachineCredentialVault`
@@ -65,16 +64,16 @@ enrollment 证明、传输认证与事实签名，用的都是同一个加密文
 ## 如何验证
 
 ```bash
-# 日志调用里没有凭证材料
+# 日志调用里没有凭据材料
 grep -rnE 'log\.(info|debug|warning).*api[_-]?key' src/ tests/
 
-# 出站调用里没有凭证材料
+# 出站调用里没有凭据材料
 grep -rnE 'publish.*password|send.*secret' src/
 ```
 
 在干净的树上两条都没有输出。
 
-值得一读的测试是 `tests/test_credential_lifecycle.py`。它按真实部署的方式构造引擎对象图，然后遍历它并断言从中触达不到任何凭证 —— 这能抓住"没有被记录、但被悄悄留存在某处、日后可能被序列化出去"的情形。
+值得一读的测试是 `tests/test_credential_lifecycle.py`。它按真实部署的方式构造引擎对象图，然后遍历它并断言从中触达不到任何凭据 —— 这能抓住"没有被记录、但被悄悄留存在某处、日后可能被序列化出去"的情形。
 <!-- disclosure-ok: auditable source location -->
 
 `tests/test_per_key_vault.py` 覆盖解密路径与 scope invariant。
@@ -84,4 +83,4 @@ grep -rnE 'publish.*password|send.*secret' src/
 
 ## 这条保证不覆盖什么
 
-Custos 无法阻止一份**本身就带提币权限**的凭证 —— 它会拒绝存储，但如果你在别处授予了该权限，那超出 runner 的范围。同样，如果主机本身能被你不信任的人读取，它也帮不上忙：加密文件与 age 身份都在那台机器上，而 `0600` 只有在账户是你的时候才有意义。
+Custos 无法阻止一份**本身就带提币权限**的凭据 —— 它会拒绝存储，但如果你在别处授予了该权限，那超出 runner 的范围。同样，如果主机本身能被你不信任的人读取，它也帮不上忙：加密文件与 age 身份都在那台机器上，而 `0600` 只有在账户是你的时候才有意义。

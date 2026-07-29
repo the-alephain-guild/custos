@@ -5,7 +5,7 @@ sidebar_position: 3
 
 # 第一次 sandbox 运行
 
-目标是：runner 启动、证明身份、报告就绪，且**不接触任何交易场所**。本章里没有任何一步能下单。
+目标是：runner 启动、证明身份、报告就绪，且**不接触任何交易所**。本章里没有任何一步能下单。
 
 你应当已完成[注册](/zh-Hans/getting-started/enrollment) —— `~/.arx/runner.toml` 与加密的机器金库必须已存在。
 
@@ -48,7 +48,7 @@ arx-runner start \
 
 `--enabled-mode` 是**必填**的，取值恰为 `sandbox` / `testnet` / `live` 之一。它没有默认值，因为默认值等于一个没有任何人选择过的模式。
 
-`--engine sandbox-sim` 选择模拟宿主：artifact 激活、凭据解析、持久化、就绪判定与事实发布全部真跑，且从不连接场所。它只声明 `sandbox`，因此即便误操作也无法被指向真实资金模式 ——
+`--engine sandbox-sim` 选择模拟宿主：artifact 激活、凭据解析、持久化、就绪判定与事实发布全部真跑，且从不连接交易所。它只声明 `sandbox`，因此即便误操作也无法被指向真实资金模式 ——
 见[实盘执行门](/zh-Hans/concepts/live-execution-gate)。
 
 若你想要「真实行情 + 本地模拟成交」的 sandbox 会话，改用 `--engine nautilus`。两者都安全，区别只在于是否涉及真实行情。

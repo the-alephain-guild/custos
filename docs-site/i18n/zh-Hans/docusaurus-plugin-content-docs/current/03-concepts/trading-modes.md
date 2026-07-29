@@ -21,7 +21,7 @@ sandbox    testnet    live
 | `testnet` | 交易所 testnet | 交易所 testnet | 测试资金 |
 | `live` | 真实交易所 | 真实交易所 | **真实** |
 
-`sandbox` 覆盖两种有用的组合。`--engine sandbox-sim` 完全不连接交易场所；
+`sandbox` 覆盖两种有用的组合。`--engine sandbox-sim` 完全不连接交易所；
 `--engine nautilus` 则是真实行情 + 本地模拟撮合。两者都安全，区别只在于价格是否真实。
 
 ## 一个进程一个模式
@@ -71,7 +71,7 @@ runner 内部**不存在**提升路径。一个部署不会在本地从 testnet�
 |---|---|
 | 验证注册、凭据与 reconcile 跑得通 | `sandbox` + `--engine sandbox-sim` |
 | 用真实行情演练策略且零风险 | `sandbox` + `--engine nautilus` |
-| 用测试资金跑通完整的场所往返 | `testnet` |
+| 用测试资金跑通完整的交易所往返 | `testnet` |
 | 交易 | `live` |
 
 从上往下走。每一行都覆盖了它上面各行所做的一切，所以任何一层出问题，下面那层其实已经替你排除过了。

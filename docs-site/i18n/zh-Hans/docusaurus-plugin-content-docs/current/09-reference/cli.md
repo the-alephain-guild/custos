@@ -63,7 +63,7 @@ arx-runner credential revoke --reason "host decommissioned"
 
 ## vault
 
-管理场所凭据。一把密钥一个加密文件。
+管理交易所凭据。一把密钥一个加密文件。
 
 ```bash
 printf '%s\n' '<api-secret>' | arx-runner vault put \
@@ -85,7 +85,7 @@ arx-runner vault list
 |---|---|---|
 | `--key-id` | ✅ | 金库条目名；同时是文件名，故须匹配 `^[a-zA-Z0-9_-]{1,64}$` |
 | `--tenant-id` | ✅ | 所属租户 |
-| `--api-key` | ✅ | 场所 API key（非密文） |
+| `--api-key` | ✅ | 交易所 API key（非密文） |
 | `--scope-digest` | ✅ | DeploymentSpec 绑定为该凭据 scope 的小写 SHA-256 |
 | `--api-secret-stdin` / `--api-secret-env` / `--api-secret` | ✅（三选一） | 密文的提供方式 |
 | `--age-recipient` | | age 公钥接收者 |
@@ -149,7 +149,7 @@ arx-runner start \
 | Flag | 默认 | 效果 |
 |---|---|---|
 | `--engine nautilus` | 默认 | 三种模式下的真实执行 |
-| `--engine sandbox-sim` | | 完整本地生命周期、不连场所；只声明 `sandbox` |
+| `--engine sandbox-sim` | | 完整本地生命周期、不连交易所；只声明 `sandbox` |
 
 ### 传输
 

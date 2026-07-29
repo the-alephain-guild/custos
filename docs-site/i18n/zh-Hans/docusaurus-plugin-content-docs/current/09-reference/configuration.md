@@ -13,7 +13,7 @@ Custos 把配置分放在 `~/.arx` 下的两处，按敏感度切分：
 | `~/.arx/vault/<key-id>.enc` | 加密后的凭据与 runner 签名私钥 | `0600`，目录 `0700` |
 
 `runner.toml` 里不存放任何机密。不透明的机器凭据与 Ed25519 私钥一起，存放在
-`machine_vault_path` 指向的加密 vault 中。
+`machine_vault_path` 指向的加密金库中。
 
 只要这两处路径中任何一处对同组或其他用户可访问，Custos 就拒绝启动。
 
@@ -31,7 +31,7 @@ runner 到底持久化了什么。
 | `credential_version` | 整数 ≥ 1 | 机器凭据的代次；轮换时递增。 |
 | `credential_valid_until` | RFC 3339 时间戳 | 当前凭据代次的到期时间。 |
 | `machine_key_id` | string | 签名密钥标识。必须以 `ed25519-` 开头。 |
-| `machine_vault_path` | 绝对路径 | 加密机器 vault 的位置。 |
+| `machine_vault_path` | 绝对路径 | 加密机器金库的位置。 |
 | `enrolled_at` | RFC 3339 时间戳 | 注册完成的时间。 |
 
 每个字段在加载时都会校验。格式错误是**启动失败**，不是警告 —— 一个无法证明自身身份的
@@ -62,7 +62,7 @@ enrolled_at = "2026-07-01T09:14:22Z"
 
 ## Vault 布局
 
-凭据按"一个 key 一个加密文件"存放，用 sops 与 age 在进程内解密。配置、轮换与验证见[凭据 vault](/zh-Hans/operator-guide/credential-vault)。
+凭据按"一个 key 一个加密文件"存放，用 sops 与 age 在进程内解密。配置、轮换与验证见[凭据金库](/zh-Hans/operator-guide/credential-vault)。
 
 ```
 ~/.arx/vault/
@@ -88,7 +88,7 @@ enrolled_at = "2026-07-01T09:14:22Z"
 需要跨重启存活的状态位于 `~/.arx/state/` 下。它**不是**缓存：删掉 outbox 数据库，等于丢弃
 runner 已经承诺要投递的事实。
 
-注册与 vault 管理是各自独立的子命令：
+注册与金库管理是各自独立的子命令：
 
 ```bash
 arx-runner enroll \
@@ -112,10 +112,9 @@ arx-runner start --enabled-mode sandbox --engine nautilus
 
 | 变量 | 必需 | 用途 |
 |---|---|---|
-| `SOPS_AGE_KEY_FILE` | 是 | 解密 vault 所用 age 身份的路径。 |
+| `SOPS_AGE_KEY_FILE` | 是 | 解密金库所用 age 身份的路径。 |
 
-运行中的 daemon 不从环境变量读取任何交易所凭据。密钥进入进程的唯一途径是解密一个 vault
-文件，因此无论是进程列表还是被继承的环境，都泄漏不出密钥。
+运行中的 daemon 不从环境变量读取任何交易所凭据。密钥进入进程的唯一途径是解密一个金库文件，因此无论是进程列表还是被继承的环境，都泄漏不出密钥。
 
 配置阶段是唯一可能由环境变量携带机密的地方：`vault put --api-secret-env` 会从指定的变量读取，作为 `--api-secret-stdin` 的替代。**优先用 stdin。**两者都能让机密不出现在命令行上，但环境变量会被这个 shell 随后启动的任何进程继承。
 
