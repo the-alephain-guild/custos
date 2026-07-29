@@ -1,6 +1,6 @@
 # 23 — Standalone identity for the offline lane
 
-> **Status**: 🔲 Not started
+> **Status**: ⏳ In Progress
 > **Created**: 2026-07-29
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Wave**: independent — completes Plan 21's lane; does not touch the Crucible-signed path
@@ -214,10 +214,47 @@ permissions, and that it never enters a log, an argument vector or a NATS payloa
 
 ## Deviations and improvements
 
-- Record the Task 3 direction decision and why the other option was rejected.
-- Record whether the marker chosen in Task 1 required a new field. If it did, note that a
-  standalone identity is then structurally distinguishable — which is stronger than a
-  sentinel URL, and worth stating.
+### Decisions taken before implementation (CEO, 2026-07-29)
+
+**Task 1 marker — `backend_url` sentinel, not a new field.** A new key cannot exist without
+changing the contract: `runner_toml.py:89` compares `set(document) != set(_FIELDS)`, an exact
+set. Adding to `_FIELDS` invalidates every enrolled document until `enroll` also emits the
+field — which contradicts this plan's own non-goal "No change to `enroll`". The sentinel needs
+neither. It is also not merely a convention: `_require_secure_backend` (`enroll.py:230-236`)
+admits only `https://` or `http://` on loopback, so **`enroll` cannot produce
+`http://standalone.invalid` today**, and `.invalid` is reserved by RFC 2606 so no real backend
+can ever hold that name. The two sets are disjoint by an existing mechanical check rather than
+by agreement. PS already writes and asserts this value (`Makefile:224`,
+`init_runtime.py:114`). The check reads the URL's host, not the literal string, so
+`https://x.invalid` and a trailing slash are unattested too — near-misses fail closed.
+
+**Task 3 direction — a lane-facing label distinct from the UUID.** `start` gains
+`--runner-label`, used only for the offline lane's status subject; `runner_id` stays the v1
+UUID. The consumer keeps naming the runner literally (`RUNNER_ID ?= ps-$(STRATEGY)`,
+`Makefile:23`) and adds one line to the `custos-runner` service. The rejected option — having
+the consumer subscribe by the generated UUID — requires PS to read generated state in three
+places (Makefile, compose, `assert_identity`), which is what this plan's own criterion says to
+avoid.
+
+### Corrections to this plan's context, found by Foundation Scan
+
+1. **`enroll`'s nonce is client-generated, not server-issued.** `enroll.py:86` is
+   `challenge_nonce = uuid4()`. The real backend dependency is `_require_secure_backend` plus
+   `_post_enrollment`, which is what issues the credential and `enrolled_at`. The conclusion
+   stands; the stated reason did not.
+2. **The machine vault is missing too, not just `runner.toml`.** `start.py:246` loads
+   `MachineCredentialVault(...).load()` and calls `assert_binding` **before** the offline
+   branch at `:251`. So the generator must produce a machine credential as well, and PS's
+   `bootstrap-vault` does not cover it — that target creates the *venue* credential.
+3. **The machine credential must be minted locally.** `MachineCredential` requires
+   `machine_credential` to start with `rkc1.` (`machine_credential_vault.py:209`); enrolled
+   runners receive it from the backend. A standalone identity has to generate one, from
+   `secrets`, within the charset `runtime_log_fact.py:81` redacts.
+4. **Two anchors drifted.** `runner_id` reaches the offline lane at `start.py:215`, not `:199`
+   (`:199` passes it to `_build_host`); the subject is built at `reconciler.py:331`.
+
+### To record at close-out
+
 - If PS's `init_runtime.py` needs to change, name the PS-side plan here. Custos does not
   edit that repository.
 
