@@ -17,6 +17,7 @@ import contextlib
 import os
 import shutil
 import sys
+from collections.abc import Coroutine
 from pathlib import Path
 from typing import Any, Final
 
@@ -27,6 +28,7 @@ from custos.core.readiness import ReadinessFile
 from custos.core.runner_fact import RunnerRuntimeMetricsV1
 from custos.offline.mode_guard import PERMITTED_MODES, refuse_live
 from custos.offline.reconciler import OfflineReconciler
+from custos.offline.safety import TICK_SECS, OfflineExposureGuard
 from custos.offline.spec import OfflineDeploymentSpec, now_rfc3339_nanos, offline_subject
 from custos.offline.state import OfflineAppliedStore
 
@@ -106,6 +108,7 @@ async def run_offline_lane(
     readiness: ReadinessFile | None = None,
     connect_factory: Any | None = None,
     credential_for: Any | None = None,
+    safety_interval: float = TICK_SECS,
     stop: asyncio.Event | None = None,
 ) -> int:
     """Subscribe to offline desired state and reconcile it until stopped."""
@@ -113,6 +116,7 @@ async def run_offline_lane(
     store = OfflineAppliedStore(state_path)
     connect = connect_factory or nats.connect
     stop_event = stop or asyncio.Event()
+    guard = OfflineExposureGuard(engine=engine, interval=safety_interval)
 
     connection = await connect(nats_url)
     try:
@@ -139,8 +143,13 @@ async def run_offline_lane(
             artifact_for=_artifact_for,
             credential_for=credential_for or _credential_reader(vault_dir, tenant_id, runner_id),
             applied_store=store,
+            guard=guard,
         )
-        await reconciler.run(subscription, stop_event)
+        await _run_together(
+            reconciler.run(subscription, stop_event),
+            guard.run(stop_event),
+            stop=stop_event,
+        )
     finally:
         if readiness is not None:
             readiness.clear()
@@ -149,6 +158,25 @@ async def run_offline_lane(
         with contextlib.suppress(Exception):
             await connection.drain()
     return 0
+
+
+async def _run_together(*coroutines: Coroutine[Any, Any, Any], stop: asyncio.Event) -> None:
+    """Run the lane's two loops, and let neither outlive a failure in the other.
+
+    Reconciling and guarding are deliberately not the same clock — that is what
+    keeps the guard alive while the transport is down. It also means a guard that
+    dies would leave the lane trading with nothing watching it, so the first
+    failure winds the other loop down and is then raised rather than logged.
+    """
+
+    tasks = [asyncio.create_task(coroutine) for coroutine in coroutines]
+    try:
+        await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+    finally:
+        stop.set()
+        await asyncio.wait(tasks)
+    for task in tasks:
+        task.result()
 
 
 def _servable_modes(engine: Any) -> dict[str, bool]:

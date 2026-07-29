@@ -26,6 +26,7 @@ import uuid6
 from custos.contracts import LifecycleState
 from custos.core.log import get_logger
 from custos.offline.mode_guard import refuse_live
+from custos.offline.safety import OfflineExposureGuard
 from custos.offline.spec import (
     OfflineDeploymentMessage,
     OfflineDeploymentSpec,
@@ -129,6 +130,7 @@ class OfflineReconciler:
         artifact_for: Callable[[OfflineDeploymentSpec], Any],
         credential_for: Callable[[OfflineDeploymentSpec], dict],
         applied_store: AppliedStore | None = None,
+        guard: OfflineExposureGuard | None = None,
     ) -> None:
         self._tenant_id = tenant_id
         self._runner_id = runner_id
@@ -138,6 +140,7 @@ class OfflineReconciler:
         self._artifact_for = artifact_for
         self._credential_for = credential_for
         self._store = applied_store
+        self._guard = guard
         self._applied: dict[str, _Applied] = {
             spec_id: _Applied(generation=record.generation, container_id=record.container_id)
             for spec_id, record in (applied_store.load() if applied_store else {}).items()
@@ -211,8 +214,9 @@ class OfflineReconciler:
             await self._report(spec, healthy=False)
             return Settlement.REJECTED
 
+        identity = runtime_identity(spec)
         try:
-            applied.container_id = await self._engage(spec, applied)
+            applied.container_id = await self._engage(spec, applied, identity)
         except Exception as exc:  # noqa: BLE001 - a failed apply is reported, then retried
             _log.error(
                 "offline_reconcile_failed",
@@ -225,8 +229,25 @@ class OfflineReconciler:
 
         applied.generation = spec.generation
         self._remember(spec.spec_id, applied)
+        self._guard_from_now_on(spec, identity)
         await self._report(spec, healthy=True)
         return Settlement.APPLIED
+
+    def _guard_from_now_on(
+        self, spec: OfflineDeploymentSpec, identity: OfflineRuntimeIdentity
+    ) -> None:
+        """Hand the guard what it needs, once the engine is in the asked-for state.
+
+        There is no await between the engine reaching that state and this call, so
+        the tick cannot observe a running deployment nobody is watching.
+        """
+
+        if self._guard is None:
+            return
+        if spec.lifecycle_state in _TERMINAL_STATES:
+            self._guard.release(spec.spec_id)
+            return
+        self._guard.watch(spec, str(identity.deployment_instance_id))
 
     def _remember(self, spec_id: str, applied: _Applied) -> None:
         if self._store is None:
@@ -239,8 +260,12 @@ class OfflineReconciler:
         except Exception as exc:  # noqa: BLE001 - forgetting is worse than not recording
             _log.warning("offline_applied_state_not_recorded", spec_id=spec_id, error=str(exc))
 
-    async def _engage(self, spec: OfflineDeploymentSpec, applied: _Applied) -> str:
-        identity = runtime_identity(spec)
+    async def _engage(
+        self,
+        spec: OfflineDeploymentSpec,
+        applied: _Applied,
+        identity: OfflineRuntimeIdentity,
+    ) -> str:
         document = runtime_spec(spec, identity)
         if spec.lifecycle_state in _TERMINAL_STATES:
             await self._engine.stop(str(identity.deployment_instance_id))

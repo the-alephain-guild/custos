@@ -10,20 +10,23 @@ force that never was.
 
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 from typing import Any
 
 import pytest
 
 from custos.contracts import TradingMode
+from custos.core.engine_protocol import EngineStatus
 from custos.core.fallback_breaker import FallbackBreakerConfig
 from custos.core.local_cap import RunnerSafetyPolicyUnavailableError
 from custos.offline.mode_guard import OfflineModeRefused
-from custos.offline.safety import resolve_breaker_config
+from custos.offline.safety import OfflineExposureGuard, resolve_breaker_config
 from custos.offline.spec import OfflineDeploymentSpec
 
 STRICTEST_NOTIONAL = Decimal("200")
 STRICTEST_DRAWDOWN_PCT = Decimal("10")
+INSTANCE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
 
 
 def _spec(**overrides: Any) -> OfflineDeploymentSpec:
@@ -131,3 +134,170 @@ def test_the_shared_fallback_refuses_live_on_its_own_account() -> None:
 
     with pytest.raises(RunnerSafetyPolicyUnavailableError):
         FallbackBreakerConfig.strictest_local_fallback("live")
+
+
+def _status(**overrides: Any) -> EngineStatus:
+    document: dict[str, Any] = {
+        "phase": "running",
+        "position_count": 1,
+        "order_count": 0,
+        "open_notional": Decimal("100"),
+        "peak_equity": Decimal("10000"),
+        "current_equity": Decimal("10000"),
+        "drawdown_pct": Decimal("0"),
+    }
+    document.update(overrides)
+    return EngineStatus(**document)
+
+
+class _SafetyEngine:
+    """An engine that answers with one snapshot, or refuses to answer at all."""
+
+    def __init__(self, snapshot: EngineStatus | Exception | None = None) -> None:
+        self.snapshot = snapshot if snapshot is not None else _status()
+        self.asked: list[str] = []
+        self.flattened: list[tuple[str, str]] = []
+        self.flatten_error: Exception | None = None
+
+    async def get_engine_status(self, deployment_instance_id: str) -> EngineStatus:
+        self.asked.append(deployment_instance_id)
+        if isinstance(self.snapshot, Exception):
+            raise self.snapshot
+        return self.snapshot
+
+    async def flatten_positions(self, deployment_instance_id: str, reason: str) -> None:
+        self.flattened.append((deployment_instance_id, reason))
+        if self.flatten_error is not None:
+            raise self.flatten_error
+
+
+def _guard(engine: _SafetyEngine, **overrides: Any) -> OfflineExposureGuard:
+    return OfflineExposureGuard(engine=engine, interval=0.001, **overrides)
+
+
+async def test_nothing_is_evaluated_before_a_deployment_is_watched() -> None:
+    engine = _SafetyEngine()
+
+    assert await _guard(engine).evaluate_once() == []
+    assert engine.asked == []
+
+
+async def test_a_snapshot_within_the_ceiling_leaves_the_position_alone() -> None:
+    engine = _SafetyEngine()
+    guard = _guard(engine)
+    guard.watch(_spec(risk_config={"max_total_notional": "25000"}), INSTANCE)
+
+    await guard.evaluate_once()
+
+    assert engine.asked == [INSTANCE]
+    assert engine.flattened == []
+    assert guard.allows_new_generations()
+
+
+async def test_a_snapshot_beyond_the_ceiling_flattens_and_latches() -> None:
+    engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
+    guard = _guard(engine)
+    guard.watch(_spec(), INSTANCE)
+
+    await guard.evaluate_once()
+
+    assert engine.flattened == [(INSTANCE, "notional_breach")]
+    assert not guard.allows_new_generations()
+
+
+async def test_an_unreadable_snapshot_fails_closed_rather_than_assuming_safety() -> None:
+    engine = _SafetyEngine(RuntimeError("the engine is not answering"))
+    guard = _guard(engine)
+    guard.watch(_spec(), INSTANCE)
+
+    await guard.evaluate_once()
+
+    assert [instance for instance, _ in engine.flattened] == [INSTANCE]
+    assert not guard.allows_new_generations()
+
+
+async def test_an_untrustworthy_snapshot_fails_closed_too() -> None:
+    engine = _SafetyEngine(_status(reliable=False, unreliable_reason="no_mark_for_position"))
+    guard = _guard(engine)
+    guard.watch(_spec(), INSTANCE)
+
+    await guard.evaluate_once()
+
+    assert engine.flattened == [(INSTANCE, "no_mark_for_position")]
+
+
+async def test_a_latched_guard_does_not_flatten_the_same_position_every_tick() -> None:
+    engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
+    guard = _guard(engine)
+    guard.watch(_spec(), INSTANCE)
+
+    await guard.evaluate_once()
+    await guard.evaluate_once()
+
+    assert len(engine.flattened) == 1
+
+
+async def test_the_ceiling_the_spec_named_is_the_one_enforced() -> None:
+    """The same exposure that breaches the default is within a raised ceiling."""
+
+    engine = _SafetyEngine(_status(open_notional=Decimal("9000")))
+    guard = _guard(engine)
+    guard.watch(_spec(risk_config={"max_total_notional": "25000"}), INSTANCE)
+
+    await guard.evaluate_once()
+
+    assert engine.flattened == []
+
+
+async def test_a_stopped_deployment_is_no_longer_evaluated() -> None:
+    """A stopped instance answers nothing, and failing closed on that would be noise."""
+
+    engine = _SafetyEngine()
+    guard = _guard(engine)
+    spec = _spec()
+    guard.watch(spec, INSTANCE)
+
+    guard.release(spec.spec_id)
+    await guard.evaluate_once()
+
+    assert engine.asked == []
+
+
+async def test_the_tick_keeps_evaluating_until_it_is_stopped() -> None:
+    engine = _SafetyEngine()
+    guard = _guard(engine)
+    guard.watch(_spec(risk_config={"max_total_notional": "25000"}), INSTANCE)
+    stop = asyncio.Event()
+
+    async def stop_after_three() -> None:
+        while len(engine.asked) < 3:
+            await asyncio.sleep(0)
+        stop.set()
+
+    await asyncio.wait_for(asyncio.gather(guard.run(stop), stop_after_three()), timeout=2)
+
+    assert len(engine.asked) >= 3
+
+
+async def test_the_tick_ends_once_every_watched_deployment_is_latched() -> None:
+    """Nothing is left to evaluate, so spinning on it would only burn the clock."""
+
+    engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
+    guard = _guard(engine)
+    guard.watch(_spec(), INSTANCE)
+
+    await asyncio.wait_for(guard.run(asyncio.Event()), timeout=2)
+
+    assert len(engine.flattened) == 1
+
+
+async def test_the_tick_does_not_swallow_a_failure_to_flatten() -> None:
+    """If containment itself fails, the lane must hear about it, not tick on."""
+
+    engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
+    engine.flatten_error = RuntimeError("the venue refused the close")
+    guard = _guard(engine)
+    guard.watch(_spec(), INSTANCE)
+
+    with pytest.raises(RuntimeError, match="refused the close"):
+        await asyncio.wait_for(guard.run(asyncio.Event()), timeout=2)

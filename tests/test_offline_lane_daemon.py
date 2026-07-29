@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from custos.contracts import TradingMode
+from custos.core.engine_protocol import EngineStatus
 from custos.offline.daemon import run_offline_lane
 from custos.offline.mode_guard import OfflineModeRefused
 from custos.offline.spec import OfflineDeploymentMessage, OfflineDeploymentSpec
@@ -45,8 +47,12 @@ def _spec(**overrides: Any) -> OfflineDeploymentSpec:
 
 
 class _FakeEngine:
-    def __init__(self) -> None:
+    def __init__(self, open_notional: str = "100") -> None:
         self.deployed: list[dict[str, Any]] = []
+        self.status_calls: list[str] = []
+        self.flattened: list[tuple[str, str]] = []
+        self.flatten_error: Exception | None = None
+        self.open_notional = Decimal(open_notional)
 
     async def deploy(self, spec: dict, credential: dict, artifact: Any) -> str:
         self.deployed.append(spec)
@@ -58,6 +64,23 @@ class _FakeEngine:
 
     def supports_trading_mode(self, mode: str) -> bool:
         return mode in {"sandbox", "testnet"}
+
+    async def get_engine_status(self, deployment_instance_id: str) -> EngineStatus:
+        self.status_calls.append(deployment_instance_id)
+        return EngineStatus(
+            phase="running",
+            position_count=1,
+            order_count=0,
+            open_notional=self.open_notional,
+            peak_equity=Decimal("10000"),
+            current_equity=Decimal("10000"),
+            drawdown_pct=Decimal("0"),
+        )
+
+    async def flatten_positions(self, deployment_instance_id: str, reason: str) -> None:
+        self.flattened.append((deployment_instance_id, reason))
+        if self.flatten_error is not None:
+            raise self.flatten_error
 
 
 class _FakeSubscription:
@@ -209,6 +232,86 @@ async def test_drains_the_connection_it_opened(tmp_path: Path) -> None:
     result = await _run(tmp_path, [])
 
     assert result["connection"].drained
+
+
+class _BrokenTransport(_FakeJetStream):
+    """A JetStream that delivers once and is unreachable from then on."""
+
+    async def subscribe(self, subject: str) -> Any:
+        self.subscribed.append(subject)
+        return _BrokenAfterFirstMessage(self._messages)
+
+    async def publish(self, subject: str, payload: bytes) -> object:
+        raise RuntimeError("the connection to nats is gone")
+
+
+class _BrokenAfterFirstMessage:
+    def __init__(self, messages: list[bytes]) -> None:
+        self._messages = messages
+
+    async def next_msg(self, timeout: float) -> Any:
+        if not self._messages:
+            raise RuntimeError("the connection to nats is gone")
+        return type("_Msg", (), {"data": self._messages.pop(0)})()
+
+
+async def _run_with_broken_transport(
+    tmp_path: Path, engine: _FakeEngine, stop: asyncio.Event
+) -> None:
+    message = OfflineDeploymentMessage.create(
+        tenant_id=TENANT, strategy_id=STRATEGY, spec=_spec()
+    ).to_bytes()
+    connection = _FakeConnection(_BrokenTransport([message], stop))
+
+    async def connect(url: str) -> _FakeConnection:
+        return connection
+
+    await asyncio.wait_for(
+        run_offline_lane(
+            tenant_id=TENANT,
+            runner_id=RUNNER,
+            strategy_id=STRATEGY,
+            nats_url="nats://nats:4222",
+            vault_dir=tmp_path / "vault",
+            engine=engine,
+            ready_file=tmp_path / "ready.json",
+            state_path=tmp_path / "state" / "offline.db",
+            connect_factory=connect,
+            credential_for=lambda spec: {"api_key": "k", "api_secret": "s"},
+            safety_interval=0.001,
+            stop=stop,
+        ),
+        timeout=5,
+    )
+
+
+async def test_the_exposure_tick_outlives_a_transport_that_has_failed(tmp_path: Path) -> None:
+    """Red line 0.3: losing the cloud must not also lose the local guard."""
+
+    stop = asyncio.Event()
+
+    class _StopsAfterThreeTicks(_FakeEngine):
+        async def get_engine_status(self, deployment_instance_id: str) -> EngineStatus:
+            status = await super().get_engine_status(deployment_instance_id)
+            if len(self.status_calls) >= 3:
+                stop.set()
+            return status
+
+    engine = _StopsAfterThreeTicks()
+    await _run_with_broken_transport(tmp_path, engine, stop)
+
+    assert len(engine.status_calls) >= 3, "the guard stopped when the transport did"
+    assert engine.flattened == []
+
+
+async def test_the_lane_ends_rather_than_trading_on_with_a_dead_guard(tmp_path: Path) -> None:
+    """A tick that cannot contain a breach is not a tick that may be ignored."""
+
+    engine = _FakeEngine(open_notional="10000")
+    engine.flatten_error = RuntimeError("the venue refused the close")
+
+    with pytest.raises(RuntimeError, match="refused the close"):
+        await _run_with_broken_transport(tmp_path, engine, asyncio.Event())
 
 
 async def test_forgets_nothing_across_a_restart(tmp_path: Path) -> None:
