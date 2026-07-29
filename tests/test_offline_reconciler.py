@@ -12,6 +12,7 @@ import json
 from typing import Any
 
 import pytest
+from structlog.testing import capture_logs
 
 from custos.contracts import TradingMode
 from custos.offline.mode_guard import OfflineModeRefused
@@ -374,13 +375,17 @@ async def test_a_mode_the_engine_cannot_run_is_terminally_rejected() -> None:
     assert message.acked and not message.naked
 
 
-async def test_a_delivery_that_cannot_be_settled_is_reported_not_ignored() -> None:
+async def test_a_delivery_that_cannot_be_settled_says_so() -> None:
+    """A transport that offers neither ack nor nak leaves the loop unable to settle."""
+
     engine, publisher = _FakeEngine(), _RecordingPublisher()
     bare = type("_Bare", (), {"data": _message(_spec())})()
 
-    await _deliver(_reconciler(engine, publisher), bare)
+    with capture_logs() as events:
+        await _deliver(_reconciler(engine, publisher), bare)
 
     assert len(engine.deployed) == 1
+    assert any(event["event"] == "offline_delivery_not_settled" for event in events), events
 
 
 async def test_the_loop_survives_a_message_it_cannot_read() -> None:

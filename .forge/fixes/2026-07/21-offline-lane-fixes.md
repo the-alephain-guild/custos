@@ -1,6 +1,6 @@
 # 21 — offline-lane-fixes
 
-> **Status**: 🔲 Not started
+> **Status**: ✅ Completed (2026-07-29)
 > **Created**: 2026-07-29
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Plan**: `.forge/plans/2026-07/21-sandbox-offline-deployment-path.md`
@@ -142,20 +142,43 @@ import 时就读掉了 `STRATEGY_INJECT_PATH`。两条静默错误路径：regis
 
 ## 验证清单 (Verification)
 
-- [ ] `make lint` 绿
-- [ ] `make check-authority` 绿
-- [ ] `make test` 无新增失败（既有 3 处 `fmt-check` 红属 lesson C6，不在本轮范围）
-- [ ] 计划文件内 `bootstrap_standalone_nats` 仅存在于偏离条目的历史引用中
-- [ ] close-out 测试计数与实跑一致，并由探针守住
-- [ ] 偏离日志条数 = 8（原 5 + 新 3）
+- [x] `make lint` 绿
+- [x] `make check-authority` 绿
+- [x] `make test` 780 passed / 0 failed（既有 3 处 `fmt-check` 红属 lesson C6，不在本轮范围）
+- [x] 计划文件内 `bootstrap_standalone_nats` 仅剩 `DEV-21-BOOTSTRAP-SYMBOL-NAME` 内一处历史引用
+- [x] close-out 测试计数与实跑一致，并由 `tests/test_plan_closeout_counts.py` 守住
+- [x] 偏离日志条数 = 8（原 5 + 新 3）
 
 ## 进度追踪 (Progress)
 
 | Fix | Priority | Status | Completed | Notes |
 |---|---|---|---|---|
-| Fix 1 | P0 | 🔲 | | C1/C2/C4 |
-| Fix 2 | P0 | 🔲 | | C3 |
-| Fix 3 | P1 | 🔲 | | H1 |
-| Fix 4 | P1 | 🔲 | | H2 |
-| Fix 5 | P2 | 🔲 | | M2 |
-| Fix 6 | P2/P3 | 🔲 | | M1/L1/L2 |
+| Fix 1 | P0 | ✅ | `34a94de` | C1/C2/C4 — 偏离日志 5 → 8 条 |
+| Fix 2 | P0 | ✅ | `e188fd2` `1fab07f` | C3 — 计数改为实跑核对；探针经扰动验证会咬 |
+| Fix 3 | P1 | ✅ | `630e83c` | H1 — 终局拒绝 vs 可重试按 §Safety 划线 |
+| Fix 4 | P1 | ✅ | `32c99d1` | H2 — 显式选目录 + 两处 fail fast + 补 4 测试 |
+| Fix 5 | P2 | ✅ | `88bd6a3` | M2 — 改走公开入口 |
+| Fix 6 | P2/P3 | ✅ | `88bd6a3` | M1/L1/L2 |
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-07-29
+- **实施 commit 范围**: `e849e34`（本计划）→ `34a94de` `e188fd2` `1fab07f` `630e83c`
+  `32c99d1` `88bd6a3` + 自省轮
+- **验证结果**: 全部通过 —— `make lint` 绿、`make check-authority` 绿、
+  `make test` 780 passed / 0 failed
+
+### 修复过程中的两处非预期收获
+
+1. **Fix 3 的分界不是我定的，是规则定的。** 初版把"读不懂的消息"也判为可重试，写完才
+   对照 `mandatory-rules.md` §Safety —— 「Invalid commands are terminally rejected and
+   audited. Transient engine or delivery failures remain retryable.」按该行改为二分后，
+   毒丸循环的风险随之消失。
+2. **Fix 4 的 guard 一上来就在全量测试里报红**，因为别的套件确实先导入了 registry。
+   那不是误报，是它如实指出"本进程内该目录选不了"。修的是测试隔离，不是放松 guard。
+
+### 遗留项
+
+- 原 plan 的两项未跑验证（`make verify-local-v030`、消费者侧端到端）不在本轮范围，仍留在
+  plan 21 的 close-out 遗留项里。
+- 红线 0.3 的 partial（离线通道未组合本地敞口守卫）同样留在原处，需独立 plan。
