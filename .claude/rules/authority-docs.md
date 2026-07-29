@@ -114,4 +114,14 @@ The current contract implementation is
 The canonical V1 receipt binds that path and coordinated V1 bytes. No second
 source, re-export shim or historical runtime authority remains.
 
+Custos owns two delivery lanes, and only one of them is authoritative. The signed
+lane consumes Crucible-verified desired state and owns everything canonical. The
+offline lane under `src/custos/offline/` consumes unsigned desired state on
+operator-owned infrastructure for local strategy-logic verification; it is
+permitted in sandbox and testnet only, is opt-in, is non-promotable, carries its
+own `OfflineDeploymentSpec` rather than canonical V1 bytes, and produces no
+receipts. `authority-manifest.json` `offline_lane` and `verify_offline_lane` in
+`scripts/check-authority-docs.py` hold those bounds; `.claude/rules/mandatory-rules.md`
+§Trust states them.
+
 Run make check-authority after changing ownership or protocols.

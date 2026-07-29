@@ -2214,6 +2214,64 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
             errors.append(f"RunnerFact V1 development-local publication {field} must remain false")
 
 
+def verify_offline_lane(
+    manifest: dict[str, Any],
+    errors: list[str],
+    *,
+    root: Path = ROOT,
+) -> None:
+    """Bound the unsigned offline lane below live and route it through one guard.
+
+    The lane sits outside ``doc_drift.paths`` on purpose — its subjects are exactly
+    what those patterns forbid inside the signed path. This is what bounds it
+    instead, so a module cannot join the lane by merely existing: every file under
+    the lane root is either routed through the guard or declared mode-agnostic.
+    """
+
+    lane = manifest.get("offline_lane")
+    if not isinstance(lane, dict):
+        errors.append("authority manifest declares no offline lane")
+        return
+    if lane.get("excluded_mode") != "live":
+        errors.append("offline lane must exclude live mode")
+    if sorted(lane.get("permitted_modes", [])) != ["sandbox", "testnet"]:
+        errors.append("offline lane permits modes beyond sandbox and testnet")
+    if lane.get("promotable") is not False:
+        errors.append("offline lane must be non-promotable")
+
+    module_root = resolve(str(lane.get("module_root", "")), root=root)
+    if not module_root.is_dir():
+        return
+
+    guard_module = str(lane.get("guard_module", ""))
+    guard_symbol = str(lane.get("guard_symbol", ""))
+    guard = module_root / guard_module
+    if not guard.is_file():
+        errors.append(f"offline lane exists without its mode guard: {guard}")
+        return
+
+    guarded = set(lane.get("guarded_modules", []))
+    mode_agnostic = set(lane.get("mode_agnostic_modules", []))
+    for module in sorted(module_root.glob("*.py")):
+        if module.name in mode_agnostic:
+            continue
+        if module.name not in guarded:
+            errors.append(
+                f"unclassified offline lane module: {module} is neither guarded "
+                "nor declared mode-agnostic"
+            )
+            continue
+        if guard_symbol not in module.read_text(encoding="utf-8"):
+            errors.append(f"offline lane module bypasses the mode guard: {module}")
+
+    for entry_point in lane.get("guarded_entry_points", []):
+        path = resolve(str(entry_point), root=root)
+        if not path.is_file():
+            continue
+        if guard_symbol not in path.read_text(encoding="utf-8"):
+            errors.append(f"offline lane entry point bypasses the mode guard: {path}")
+
+
 def verify_runner_fact_authority(errors: list[str]) -> None:
     ecosystem = load_json(ROOT / "docs/authority/ecosystem-authority.json")
     state = ecosystem.get("runner_fact_contract_v1")
@@ -2334,6 +2392,7 @@ def main() -> int:
     verify_runner_policy_runtime(manifest, errors)
     verify_runner_nats_transport(manifest, errors)
     verify_runner_fact_contract(manifest, errors)
+    verify_offline_lane(manifest, errors)
     verify_runner_fact_authority(errors)
     verify_strategy_contract_canonical_source(errors)
     for entry in manifest.get("external_optional_documents", []):

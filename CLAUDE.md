@@ -33,6 +33,10 @@
   `deployment_instance_id`, spec id/digest, correlation and signature.
 - Gateway contracts are versioned under `docs/gateway-contract/`; accepted mode
   values are only `sandbox`, `testnet`, and `live`.
+- Custos delivers desired state over two lanes. The signed lane is authoritative.
+  The offline lane (`src/custos/offline/`) accepts unsigned desired state for local
+  strategy-logic verification in sandbox and testnet only, is opt-in, and is
+  non-promotable. See `.claude/rules/mandatory-rules.md` §Trust.
 
 详见 [`README.md#production-topology`](README.md#production-topology) 与 [`docs-site/docs/01-introduction/what-is-custos.md`](docs-site/docs/01-introduction/what-is-custos.md).
 
@@ -71,6 +75,9 @@
 2. **G6 host gate 不绕过** — live venue 必须过 `NtTradingNodeHost` G6 gate; `NoopHost` 只允许 sandbox/testnet
 3. **Reconcile 失联 ≠ 停止** — 云端断线时本地 safety breaker + `max_notional_per_runner` cap 继续守护
 4. **Money math 用 `Decimal`, wire 用 `str`** — 禁 `float()` 参与 money 路径
+
+离线通道不放宽以上任何一条. 它止步于 live: `src/custos/offline/mode_guard.py` 在 spec
+携带的 mode 与命令行传入的 mode 上各拒一次, 且发生在解析 / 发布 / 落盘之前.
 
 Signed runtime observability uses `RunnerRuntimeLogFact.v1` inside the existing
 RunnerFact stream. It must use explicit structured events and
