@@ -340,7 +340,7 @@ Filled at close-out, one row per red line, per lesson #40 — `code_coverage` an
 |---|---|---|---|---|
 | 0.1 Key/KEK never leaves the process | `test_no_credential_is_read_for_a_mode_the_lane_refuses` proves the vault is not opened for a refused mode | live: `_credential_reader` is what `run_offline_lane` passes to the reconciler; lane log events carry subject, generation and mode only | none | — |
 | 0.2 G6 host gate not bypassed | `test_an_engine_that_cannot_run_the_mode_is_not_asked_to`; the whole `test_offline_mode_guard.py` suite | live: the lane refuses live outright, so the live venue path is unreachable from it; admission additionally honours `engine.supports_trading_mode` | **partial** — admission here is `supports_trading_mode`, not `check_g6_gate`, which no longer exists (removed in `8c4454f`). Sound while live is refused; it would not be if that ever changed | any future widening past testnet must restore a real gate first |
-| 0.3 Reconcile outage ≠ stop | `test_losing_the_status_channel_does_not_stop_a_running_engine` | live: `_report` logs and returns on publish failure rather than propagating | **partial** — the offline lane composes no `FallbackBreaker`, `RunnerNotionalCap` or `ZombieWatchdog`. Losing the channel does not stop trading, but nothing caps exposure while it is gone | wire the local guards into the offline composition before testnet is used for anything but a short supervised run |
+| 0.3 Reconcile outage ≠ stop | `test_losing_the_status_channel_does_not_stop_a_running_engine` | live: `_report` logs and returns on publish failure rather than propagating | **partial** — the offline lane composes no `FallbackBreaker`, `RunnerNotionalCap` or `ZombieWatchdog`. Losing the channel does not stop trading, but nothing caps exposure while it is gone. **Plan 22 (2026-07-29) wired the periodic exposure tick and the latch; the per-order cap and the watchdog remain unwired in both lanes** | wire the local guards into the offline composition before testnet is used for anything but a short supervised run |
 | 0.4 Decimal money math | not exercised | not exercised | none — the lane carries no money field: it moves specs and lifecycle states, and every price and quantity stays inside the engine | — |
 
 ## Deviations and improvements
@@ -491,6 +491,9 @@ spec，所以用跳过校验的 spec 证明该分支不是死代码）。
 1. **消费者侧端到端未跑** —— 需 Docker。这是唯一能证明五处断裂真的接回去的验证。
 2. **红线 0.3 只兑现一半** —— 离线通道未组合 `FallbackBreaker` / `RunnerNotionalCap` /
    `ZombieWatchdog`。sandbox 无所谓，testnet 长时间无人值守运行前必须补。
+   > **已由 Plan 22 处理（2026-07-29）**：离线通道接了周期敞口 tick + 跳闸锁死。上面这句
+   > 暗示签名通道已组合这三者，实测不成立 —— `EngineSafetySupervisor` 两条通道都未接线，
+   > `RunnerNotionalCap` 与 `ZombieWatchdog` 全仓零接线。剩下的部分见 Plan 22 遗留项 1-3。
 3. **NT artifact 桥仅走 registry 发现** —— `BindMountedStrategy.strategy` 依赖
    `STRATEGY_INJECT_PATH` 这个既有 env seam + toolkit registry，未在本仓做过真实 NT 加载
    （NT 测试在本机 importorskip）。第 1 项跑通才算证实。

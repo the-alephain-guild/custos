@@ -1,7 +1,8 @@
 # 22 — 离线通道的本地敞口守卫
 
-> **Status**: 🔲 Not started
+> **Status**: ✅ Completed
 > **Created**: 2026-07-29
+> **Completed**: 2026-07-29
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: Plan 21 ✅ Completed（离线通道落地）
 > **Blocks**: 离线通道在 testnet 上的长时间无人值守运行
@@ -123,23 +124,23 @@ unhealthy；未跳闸时行为与今天一致；新进程（重启）恢复可�
 
 ## 验证清单 (Verification)
 
-- [ ] `make lint` 绿
-- [ ] `make check-authority` 绿（`safety.py` 已归类，`verify_offline_lane` 通过）
-- [ ] `make test` 无新增失败
-- [ ] 所有引用契约有 `file:line` 证据锚（见上下文表）
-- [ ] tick 在传输故障下仍运行 —— 有测试，非推断
-- [ ] 锁死后引擎零调用 —— 有测试
-- [ ] close-out 计数表经探针核对
-- [ ] 无死代码：`safety.py` 的每个导出都有消费者
+- [x] `make lint` 绿
+- [x] `make check-authority` 绿（`safety.py` 已归类，`verify_offline_lane` 通过）
+- [x] `make test` 无新增失败
+- [x] 所有引用契约有 `file:line` 证据锚（见上下文表）
+- [x] tick 在传输故障下仍运行 —— 有测试，非推断
+- [x] 锁死后引擎零调用 —— 有测试
+- [x] close-out 计数表经探针核对
+- [x] 无死代码：`safety.py` 的每个导出都有消费者
 
 ## 进度追踪 (Progress)
 
 | Task | Status | Completed | Notes |
 |---|---|---|---|
-| Task 1 | 🔲 | | 限额来源 |
-| Task 2 | 🔲 | | tick 解耦 |
-| Task 3 | 🔲 | | 锁死 |
-| Task 4 | 🔲 | | close-out |
+| Task 1 | ✅ | 2026-07-29 | `c1bcba7` — 限额来源；`safety.py` 归入 manifest 前先看着门咬了一次 |
+| Task 2 | ✅ | 2026-07-29 | `653f696` — tick 解耦；`_run_together` 让任一侧的失败终结另一侧 |
+| Task 3 | ✅ | 2026-07-29 | `0653a26` — 锁死；另 `b0ad125` 修计数探针作用域 |
+| Task 4 | ✅ | 2026-07-29 | close-out；自省轮抓出 `b87d763` |
 
 ## 偏离与改进日志 (Deviations & Improvements)
 
@@ -148,9 +149,76 @@ unhealthy；未跳闸时行为与今天一致；新进程（重启）恢复可�
 | 决策 | 全局 | 跳闸后锁死，拒绝后续一切 generation | CEO 2026-07-29 |
 | 决策 | 全局 | 限额默认 strictest，spec `risk_config` 可抬高 | CEO 2026-07-29 |
 | 更正 | 上下文 | Plan 21 close-out 高估了签名通道的守卫覆盖；实测三个守卫在签名通道亦未接线 | 实测（本 plan Foundation Scan） |
+| 偏离 | Task 1 | plan 写"live 抛 `RunnerSafetyPolicyUnavailableError`（经 mode_guard 先拒）"，两者不可兼得：guard 先拒即抛 `OfflineModeRefused`。改为两层各测一次，内层用 relaxed-double 证明它不是被外层遮住的死分支 | 低风险，实施记录 |
+| 偏离 | Task 3 | plan 写"reconciler 接可选 breaker"，实际接的是持有 breaker 的 guard —— 限额来自 spec，而 reconciler 是唯一看得见 spec 的地方 | 低风险，实施记录 |
+| 改进 | Task 1 | `risk_config` 里认不出的键**拒绝**而非忽略。plan 只要求拒绝非法值，但拼错的键在操作者那边读起来和"限额已抬高"一模一样 | 低风险，实施记录 |
+| 改进 | Task 2 | 每个被守护的部署各持一个 breaker，而非共用一个 runner 级 breaker —— 共用会让一个部署的权益高水位混进另一个的回撤 | 低风险，实施记录 |
+| 改进 | 计划外 | Plan 21 的计数探针在本 plan 长出测试时变红。改的是探针作用域：close-out 记录的是一个时刻，只有**最新**认领某文件的 plan 对今天的数字负责 —— 否则要么改写 plan 21 的历史，要么削弱门。见 `b0ad125` | 低风险，实施记录 |
+| 修复 | 自省 Round 1 | `risk_config` 读不出时，原实现先部署再抛错，把引擎留在跑而 lane 已死。改为在任何引擎动作之前读限额，读不出即终局拒绝。见 `b87d763` | 低风险，实施记录 |
 
 ## 已知的下游动作（不在本 plan 范围）
 
 PS 侧若要在离线通道跑实际策略，需自行在 `deploy/custos/conf/<strategy>/spec-override.yaml`
 补 `risk_config`，否则限额停在 strictest（总额 $200），supertrend 一开仓即跳闸。这是对方
 仓库的独立动作，本 plan 不改 PS。
+
+键名是 `max_total_notional` 与 `max_drawdown_pct`，值写十进制字符串或整数（`float` 与
+拼错的键都会被拒，spec 不会被静默降回默认）。
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-07-29
+- **总 Task 数**: 4
+- **偏离数**: 8（2 决策 + 1 更正 + 2 偏离 + 2 改进 + 1 自省修复，详见偏离日志）
+- **验证结果**: 全部通过 —— `make lint` 绿、`make check-authority` 绿、`make test` 全绿
+- **实施 commit 范围**: `3aaa318`（本计划）→ `c1bcba7` `653f696` `b0ad125` `0653a26` `b87d763`
+- **契约影响**: `authority-manifest.json` `offline_lane.guarded_modules` 增 `safety.py`；
+  离线 spec 的 `risk_config` 从自由字典变为有约束的两键契约
+
+### 红线 gate 满足度
+
+| 红线 | code 层覆盖 | runtime 接线 | 兑现范围 |
+|---|---|---|---|
+| 0.1 Key/KEK 不出进程 | 本 plan 未新增任何凭证路径 | 不变 | 不受影响 |
+| 0.2 G6 host gate | 不变 | 不变 | 不受影响 —— 本 plan 不碰执行门 |
+| 0.3 失联 ≠ 停止 | `test_the_exposure_tick_outlives_a_transport_that_has_failed` 断言传输持续抛错期间引擎仍被问了 ≥3 次 | `run_offline_lane` 用 `_run_together` 并行跑订阅与 tick，tick 只调引擎 | **离线通道已兑现**（周期敞口评估 + 越限 flatten + 锁死）。**签名通道仍未接** `EngineSafetySupervisor`，逐单 `RunnerNotionalCap` 与 `ZombieWatchdog` 两条通道皆零接线 |
+| 0.4 Decimal money math | `test_a_float_ceiling_is_refused_because_money_is_not_binary_fractions` + 整数/字符串各一条 | 限额一律 `Decimal(str(...))` 构造 | 已兑现 |
+
+0.3 那格的措辞是刻意分层的：本 plan 兑现的是**离线通道的周期敞口守卫**，不是红线全部。
+签名通道的同名缺口在 Plan 19 范围内，逐单 cap 全生态无 hook（Plan 21 已记为 defer）。
+
+### 失败模式覆盖
+
+下表由 `tests/test_plan_closeout_counts.py` 逐行核对 —— 数字来自 pytest 实际 collect，
+不是手写。
+
+| 测试文件 | 条数 |
+|---|---|
+| `tests/test_offline_lane_safety.py` | 30 |
+| `tests/test_offline_reconciler.py` | 31 |
+| `tests/test_offline_lane_daemon.py` | 16 |
+| `tests/test_plan_closeout_counts.py` | 6 |
+
+上表合计 83 条。第一个文件由本 plan 新建，30 条全部是新的。中间两个在 plan 21 close-out
+时经同一探针核对为 22 与 14，故本 plan 在其中分别加了 9 条与 2 条。末行那个文件的条数会
+随"有计数表的 plan 数"变化 —— 本 plan 写下这张表，它自己就从 4 涨到 6；这两条是参数化实例，
+不是新写的测试函数。
+
+覆盖的失败模式：传输持续抛错、快照读不出（引擎抛异常）、快照不可信（`reliable=False`）、
+flatten 自身失败、`risk_config` 读不出 / 非正 / 是 `float` / 键拼错、跳闸后重投同一
+generation、跳闸后新 generation、重启后未锁死。
+
+含一条 relaxed-double：`test_the_shared_fallback_refuses_live_on_its_own_account` —— 离线
+通道的 guard 永远先拒 live，所以内层 `strictest_local_fallback("live")` 在正常路径上够不到；
+直接调它证明那不是死分支。
+
+### 遗留项
+
+1. **签名通道仍无周期敞口守卫** —— `EngineSafetySupervisor` 在 `_daemon.py` 未接线，
+   `_build_runner_safety_boundary_factory` 硬性要求 `owner_policy`。属 Plan 19 范围。
+2. **逐单 `RunnerNotionalCap` 全生态无 hook** —— 两条通道都没有下单前的拦截点，需要引擎
+   侧先给出这个 seam。
+3. **`ZombieWatchdog` 零接线** —— 同样两条通道皆未接。
+4. **未在真 NT 引擎上跑过 tick** —— `get_engine_status` / `flatten_positions` 两个 host 都
+   实现了（`engines/nautilus/host.py:170,186,690,751`，已 grep 实证），但本 plan 的验证止于
+   fake engine；真跑要 Docker + NATS，与 Plan 21 遗留项 1 同一道门。
