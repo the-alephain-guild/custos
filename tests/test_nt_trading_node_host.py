@@ -453,3 +453,26 @@ async def test_a_node_that_ended_on_its_own_is_no_longer_held(monkeypatch) -> No
     await asyncio.sleep(0.01)
 
     assert host.attached(deployment_instance_id) is False
+
+
+@pytest.mark.asyncio
+async def test_a_finished_node_is_not_held_before_its_callback_runs(monkeypatch) -> None:
+    """A done-callback is scheduled, not immediate — the answer cannot wait for it.
+
+    asyncio runs the callback on a later loop iteration, so between the run task
+    finishing and the registry being cleaned there is a window where the entry is
+    still there. Answering yes in that window tells the reconciler an already
+    applied generation is healthy while its node has just exited.
+    """
+
+    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    host = NtTradingNodeHost()
+    deployment_instance_id = _deployment_instance_id("just-finished")
+    await host.deploy(_spec("just-finished"), _credential(), _Artifact())
+    node = _FakeTradingNode.instances[-1]
+
+    node._stop.set()
+    await asyncio.sleep(0)
+
+    assert deployment_instance_id in host._active_nodes, "the callback has not run yet"
+    assert host.attached(deployment_instance_id) is False

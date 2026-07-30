@@ -551,7 +551,14 @@ class NtTradingNodeHost:
         # by a node loop that ended on its own. Neither survives this process, and
         # neither should — an instance nobody is holding must be deployed, not
         # reconfigured.
-        return deployment_instance_id in self._active_nodes
+        #
+        # The run task is checked too, because the registry is cleaned by a done
+        # callback and a callback is scheduled rather than immediate. Between a
+        # node loop finishing and that cleanup there is an entry with nothing
+        # running behind it, and reporting it as held is the same false success
+        # this query exists to prevent.
+        entry = self._active_nodes.get(deployment_instance_id)
+        return entry is not None and not entry[1].done()
 
     async def wait_ready(
         self,
