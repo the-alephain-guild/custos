@@ -409,3 +409,47 @@ async def test_missing_strategy_activation_identity_builds_no_node(monkeypatch) 
         )
     assert _FakeTradingNode.instances == []
     assert host._active_nodes == {}
+
+
+@pytest.mark.asyncio
+async def test_a_host_that_has_deployed_nothing_holds_nothing() -> None:
+    # No NT needed to answer: this is what the offline reconciler sees on the
+    # first message after a restart, and it is why that message deploys.
+    assert NtTradingNodeHost().attached(_deployment_instance_id("never-deployed")) is False
+
+
+@pytest.mark.asyncio
+async def test_a_deployed_instance_is_held_until_it_is_stopped(monkeypatch) -> None:
+    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    host = NtTradingNodeHost()
+    deployment_instance_id = _deployment_instance_id("held")
+    await host.deploy(_spec("held"), _credential(), _Artifact())
+
+    assert host.attached(deployment_instance_id) is True
+    assert host.attached(_deployment_instance_id("some-other")) is False
+
+    await host.stop(deployment_instance_id)
+
+    assert host.attached(deployment_instance_id) is False
+
+
+@pytest.mark.asyncio
+async def test_a_node_that_ended_on_its_own_is_no_longer_held(monkeypatch) -> None:
+    """The answer tracks the live node, not the authority record beside it.
+
+    A node loop that ends by itself is the case the recorded container id cannot
+    describe: nothing called stop, so a host answering from the lifecycle record
+    would still claim the instance and send the next generation to reconfigure.
+    """
+
+    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    host = NtTradingNodeHost()
+    deployment_instance_id = _deployment_instance_id("self-terminated")
+    await host.deploy(_spec("self-terminated"), _credential(), _Artifact())
+    node, task = host._active_nodes[deployment_instance_id]
+
+    node._stop.set()
+    await task
+    await asyncio.sleep(0.01)
+
+    assert host.attached(deployment_instance_id) is False
