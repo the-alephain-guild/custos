@@ -1,6 +1,6 @@
 # 24 — Take ownership of the toolkit's test suite
 
-> **Status**: 🔲 Not started
+> **Status**: ⏳ In Progress
 > **Created**: 2026-07-30
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Authority**: owner decision 2026-07-30, recorded in PS Plan 60 (§Slice D 结果, option (b))
@@ -96,7 +96,18 @@ the fixtures exist.
 file) and what they may depend on. Establish whether this repository's `conftest.py` needs
 anything PS's provides. Do not port in bulk before one file passes here.
 
-**Commit**: `test(toolkit): adopt the first of the toolkit's own tests`
+**Commit**: `test(toolkit): adopt the first of the toolkit's own tests` — `1221103`
+
+**Landing zone, decided**: `tests/toolkit/`. Engine-backed files take the `test_nautilus_*`
+prefix and a module-level `pytest.importorskip("custos_toolkit_nautilus")`, matching
+`tests/toolkit/test_nautilus_strategy_registry.py`, which is the only convention this
+repository already has for engine-dependent toolkit tests. No `conftest.py` is added,
+because nothing asked for one.
+
+**Evidence the coverage binds to this repository's module**: with the manager's pass/fail
+decision inverted, this repository's prior toolkit coverage stayed green at 2 passed and 4
+of the ported assertions went red. Reverted to the byte (`git diff -- packages/` empty)
+before commit.
 
 ### Task 2: Port the platform-neutral set
 
@@ -134,6 +145,84 @@ evidence; the red is.
       only evidence that the coverage is load-bearing rather than merely present
 - [ ] No ported test loads its subject from a filesystem path
 - [ ] PS notified that Slice E is unblocked
+
+## What the Foundation Scan measured (2026-07-30, this repository)
+
+The scope table above was written from philosophers-stone. Re-measured here by parsing
+every test file's imports rather than by trusting the count:
+
+| category | plan said | measured |
+|---|---|---|
+| toolkit only | 83 | **92** |
+| mixed | 18 | 8 |
+| PS only | 42 | 41 |
+| neither (no toolkit and no PS import) | — | 23 |
+| total | 143 | **164** |
+
+The plan's three numbers do not sum to the number of test files philosophers-stone has,
+which is how the drift showed up. The measured list is the one this plan works from.
+
+### The import scan is not the whole dependency graph — again, and wider
+
+The plan already knew of one file loading its subject by path. Measured, there are more,
+and the worst of them are invisible to an import scan because they import nothing at all:
+
+| file | how it reaches its subject | consequence |
+|---|---|---|
+| `tests/test_core_contract.py:56` | `Path("shared/nautilus/strategy_core.py").read_text()` | tests PS's copy |
+| `tests/test_order_reconciler.py:190,282` | `Path(__file__).parent.parent / "shared" / ...` | tests PS's copy |
+| `tests/test_stale_order_sweep.py:305` | same | tests PS's copy |
+| `tests/test_filter_config_scope.py:23` | `spec_from_file_location(..., "shared/nautilus/config/filters.py")` | classified "neither"; actually a toolkit test |
+| `tests/test_risk_equity_wiring.py:16-24` | reads four `shared/nautilus/...` files | classified "neither"; actually a toolkit test |
+
+These cannot be ported as they stand, and they will break in philosophers-stone the moment
+Slice E deletes `shared/` — so Slice E is blocked on them being rewritten to reach the
+module by import, not merely on this plan finishing.
+
+`tests/test_strategy_entry_points.py` reads `_template/refinement/nautilus/strategy.py`.
+Its subject is a philosophers-stone template, so despite importing the toolkit it belongs
+there. Misclassified by import alone.
+
+### The conftest question, answered
+
+This repository has **no `conftest.py`**, and no ported test needs one: of the 92
+toolkit-only files, **zero** request any fixture philosophers-stone's two conftest files
+define. Its root conftest imports `shared.hummingbot.config`, which is philosophers-stone's
+own code and never was the toolkit's.
+
+### The port is also a translation
+
+30 of the 92 files carry **504 lines containing CJK**. This repository's language rule
+covers test artifacts and `scripts/check-code-english.py` blocks new CJK lines at commit,
+so every one of those lines is rewritten in English on arrival. The plan called this "a
+move plus whatever fixture wiring this repository needs"; the fixture wiring turned out to
+be nothing and the translation turned out to be the real cost.
+
+### Task 4's mutation recipe is sound, for a reason worth writing down
+
+`docs/authority/strategy-toolkit-*.json` record a `target_sha256` for every toolkit source
+file, so mutating one looked likely to fire the authority gate and produce a red that
+proves nothing. It does not: `scripts/check-toolkit-extraction.py:158-161` hashes
+`_git_blob(implementation_commit, ...)` — a **historical commit**, not the working tree.
+Verified by mutating `filter_manager.py` and watching `make check-toolkit-extraction` pass.
+
+So the mutation experiment yields one unambiguous red. The same fact says something less
+comfortable: those hashes attest that the extraction was faithful **when it happened**, and
+nothing in `make verify` notices that a toolkit source has changed since. That is this
+plan's own thesis one layer deeper than it stated it.
+
+### Which gate the ported coverage lands in
+
+`custos-strategy-toolkit` is a base dependency; `custos-strategy-toolkit-nautilus` is only
+in the `nautilus` extra (`pyproject.toml:7,32`, confirmed against `uv export` for both
+profiles). So:
+
+- platform-neutral coverage (Task 2) is load-bearing under `make verify`;
+- engine adapter coverage (Task 3) `importorskip`s out of `make verify` and is load-bearing
+  under `make verify-nt`.
+
+Both run in the release gate (`.github/workflows/release.yml:56,58`). Task 4 must state it
+that way rather than claim "the default verification", which would be true of half of it.
 
 ## Deviations & improvements
 
