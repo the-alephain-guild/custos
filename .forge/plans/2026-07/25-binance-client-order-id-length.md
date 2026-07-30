@@ -1,6 +1,6 @@
 # 25 — Binance 拒收本机生成的 client order id（超长，订单一律发不出）
 
-> **Status**: 🔲 Not started
+> **Status**: ⏳ In Progress —— 代码侧四个 Task 全绿; 计划自定的**唯一完成判据**(真机接单)属 PS 侧, 未取得
 > **Created**: 2026-07-30
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现，不依赖任何未落地的能力
@@ -151,19 +151,145 @@ sandbox 走同一份 strategy config。确认它仍能部署、撮合、上报 �
 
 ## 验证清单 (Verification)
 
-- [ ] `make verify` 全绿
-- [ ] Task 1 的测试在修复前红、修复后绿（两侧输出都记进 close-out）
-- [ ] Task 3 的最坏情况守护绿
-- [ ] sandbox 部署路径仍绿（Task 4）
-- [ ] **真机证据**：PS 侧以 `MODE=testnet` 跑到一笔订单被交易所**接受**，或被拒但原因是市场性的
-      （余额 / 精度 / 最小名义额），不再是 `-4015`。**这是本 plan 唯一的完成判据** ——
-      单测证不了交易所会不会收（本仓 C10：绿的测试套说明不了任何订单被接受过）。
+- [x] 发布门的各组成部分全绿：`pytest tests/` 2181 passed / 25 skipped / 1 xfailed、
+      `make lint`、`make check-authority`。`make fmt-check` 在主干上恒红，与本 plan 无关
+      —— 三个被 receipt 按字节 pin 的文件不是 format-clean，见 `historical-lessons.md` C6。
+- [x] Task 1 的测试修复前红、修复后绿，两侧输出见下方 close-out。
+- [x] Task 3 的最坏情况守护绿，且用的是**实现自己的** counter 上界（`2**31 - 1`，
+      靠把 `set_client_order_id_count` 推到拒绝为止量出来）而不是一个圆整数。
+- [x] sandbox 路径真跑了一次本地撮合（不是推断）：`BacktestEngine` + 同一份 config →
+      下单 → 读回成交，并断言成交单的 id 就是新形态。
+- [ ] **真机证据未取得。** 这是本 plan 自定的唯一完成判据，且它在 PS 侧：需要以
+      `MODE=testnet` 跑到一笔订单被交易所**接受**，或被拒但原因是市场性的（余额 / 精度 /
+      最小名义额），不再是 `-4015`。**代码侧全绿不等于交易所会收** —— 本仓 C10 记的正是
+      这件事，而这个缺口本身就是本 bug 之所以能活到今天的原因。
 
 ## 偏离与改进日志 (Deviations & Improvements)
 
 - 若 Task 1 发现各 venue 上限不同，记在这里并说明是否需要按 venue 分支（本 plan 默认不分支）。
-- 若选 C 而非 B，记下当时接受的 counter 天花板与理由，且 Task 3 的守护必须用那个天花板作断言 ——
-  接受一个上限可以，接受一个**没写下来的**上限不行。
+  —— 未发现：只有 Binance 接线，无第二个 venue 可比。见 close-out 遗留项 3。
+- 若选 C 而非 B，记下当时接受的 counter 天花板与理由 —— 选了 B，无天花板可记。
+
+### DEV-25-LANDING-POINT-IS-THE-BUILDER-NOT-THE-CLASS
+- **等级**: 低
+- **原因**: 先试了在 `NautilusTradingStrategyConfig` 上重声明那两个继承字段的默认值，
+  msgspec 拒绝：`Required field 'trading' cannot follow optional fields`。重声明会把字段
+  挪到基类位置，把必填字段挤到可选字段之后。
+- **决定**: 改落在 `build_nautilus_base_config` 的返回值里，并同步扩
+  `NautilusBaseConfigSections`。这其实**更贴合**计划说的「config 构造处」，而且沿用了该处
+  已有的惯例 —— `oms_type` / `external_order_claims` 本来就是这样传的 NT 层字段。
+- **附带好处**: 它不进 strategy 的 YAML。venue 的约束不该让策略作者知道，更不该让他写错。
+
+### DEV-25-TASK-4-PREMISE-CORRECTED
+- **等级**: 低
+- **原因**: 计划 Task 4 写「sandbox 走同一份 strategy config」。实测 sandbox 有**两条**路径：
+  `--engine sandbox-sim` 的 `SandboxSimulationHost.deploy` 只记 lifecycle、**根本不建 NT
+  节点、不碰 strategy**（`host.py:106-137`）；而 `--engine nautilus`（默认）+
+  `trading_mode: sandbox` 才建真 NT 节点，经 `SandboxLiveExecClientFactory` 本地撮合，那条
+  路径确实共用这份 config。
+- **决定**: Task 4 针对后者写测试，且**真跑撮合**（`BacktestEngine` 下单 → 读回成交），
+  并做了证伪：把 flag 翻回旧形态，该测试变红。前者无需覆盖 —— 它碰不到 id。
+
+### DEV-25-TOOLKIT-SOURCE-EDITED
+- **等级**: 中
+- **原因**: 修法落在 `packages/…/adapter/trading_config.py`，该文件被
+  `docs/authority/strategy-toolkit-*.json` 按 sha256 pin 住（lesson C6 的题目）。
+- **决定**: 编辑并提交。两个 pin 门（`check-toolkit-extraction` /
+  `check-toolkit-typing-closure`）哈希的是历史 git blob，不看工作区，所以不会因此变红 ——
+  这一点在 Plan 24 已实证。但要诚实说清：这意味着 toolkit 从那次「零重写抽取」**开始分叉**，
+  而 receipt 仍指向分叉前。**建议**下一次重签 receipt 时把本次改动纳入。
+- **顺带更正**: 实施中发现 `test_toolkit_release_candidate_build.py` 会拦**未提交**的
+  toolkit 漂移（比对工作区与 HEAD）。这修正了 Plan 24 close-out 里「本仓无任何东西会注意到
+  toolkit 被改」的过头说法，已在该 plan 内留更正段（commit `32f7381`）。
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-07-30（代码侧）
+- **总 Task 数**: 4，全部落地
+- **偏离数**: 3（见偏离日志）
+- **实施 commit**: `3d22b82`
+- **状态**: ⏳ —— 计划自定的唯一完成判据（真机接单）未取得，见验证清单最后一项
+
+### 选型：按推荐走 B，且是实测过的 B
+
+| 形态 | 长度 | 判定 |
+|---|---|---|
+| 默认（tag + counter，带连字符） | 44 | ✗ 观测到的那次拒绝 |
+| 去连字符 | 39 | ✗ |
+| uuid **带**连字符 | **36** | ✗ 上限是「小于 36」，36 本身就被拒 |
+| uuid + 去连字符 | **32** | ✓ 落地这个 |
+
+计划的长度表逐行复核成立，包括「uuid 单独开还不够」这个反直觉点 —— 只开
+`use_uuid_client_order_ids` 得到 36，仍然会被拒。**两个 flag 都要。**
+
+### 红 / 绿两侧（Task 1 要求）
+
+修复前：
+
+```
+E       assert 44 < 36          # 实际生成的 id
+E       assert 63 < 36          # 最坏情况
+E       assert 5 == 1           # 长度随 counter 变化：{44, 45, 46, 49, 54}
+3 failed, 2 passed
+```
+
+修复后 `6 passed`。另外两条修复前就绿、且**应该**一直绿：一条钉住 bug 本身（旧形态确实
+产出 44 且尾部与观测值逐字符吻合），一条钉住「落点只能在 config」。
+
+### 落点：为什么只能在 config
+
+计划说落在 config 构造处而不是「在 host 里硬塞」。实证下来这不是偏好问题，是唯一可能：
+
+- `use_uuid_client_order_ids` / `use_hyphens_in_client_order_ids` 在
+  `trading/strategy.pxd:82,84` 是 `cdef readonly` —— **从 Python 不可赋值**；
+- `OrderFactory` 在 `Strategy.register()`（`strategy.pyx:297-304`）里建，而 `register`
+  由 `host.py:371` 的 `add_strategy` 触发。
+
+所以 host 虽然是 venue 边界的拥有者、约束也来自 venue，却**碰不到**这个开关。这一点本身写成
+了测试（`test_the_shape_is_decided_by_the_config_and_nothing_after_it`）：如果哪天这两个属性
+变成可写，修法就可能挪到比 config 更隐蔽的地方，那条测试会先叫。
+
+### 上限值的来源
+
+`36` 落在 `venue_binance.py` 的 `BINANCE_CLIENT_ORDER_ID_MAX_LEN`，注释写明来源是**交易所
+自己的拒绝报文**（2026-07-30 USDT-M futures testnet）。这不是偷懒：NT 的 Binance 适配器
+grep 无此常量，futures 文档不给该字段长度，本仓此前对 `4015` 与 36 都是零命中。没有更权威的
+来源可引。
+
+### 测试条数（取自 `pytest --collect-only`）
+
+| 测试文件 | 条数 |
+|---|---|
+| `tests/test_client_order_id_length.py` | 5 |
+| `tests/test_client_order_id_sandbox_execution.py` | 1 |
+| `tests/test_plan_closeout_counts.py` | 11 |
+
+上表合计 17 条。
+
+第三行不是本 plan 加的测试，是本 plan **让它变了**：那个探针按「带条数表格的 plan」参数化，
+本 close-out 一加表就多出两个用例（9 → 11）。规则是「动了别人数过的文件就在自己的 close-out
+里重数」，间接变动同样算，所以这里重数而不是回去改 plan 24 的行 —— 那一行记的是它当时交付了
+什么，不该被后来的 plan 改成滚动值。
+
+### 红线 gate 满足度
+
+| 红线 | code 覆盖 | runtime 接线 | 本 plan 影响 |
+|---|---|---|---|
+| 0.1 Key/KEK 不出进程 | 未触碰 | 未触碰 | 无。改的是 id 形态，不经凭证路径 |
+| 0.2 G6 host gate | 未触碰 | 未触碰 | 无。`_build_exec_plan` 的 mode 分支一字未改 |
+| 0.3 失联 ≠ 停止 | 未触碰 | 未触碰 | 无 |
+| 0.4 Decimal money math | 未触碰 | 未触碰 | 无。id 是标识符，不参与金额 |
+
+说明一句它**不**是什么：本 plan 让订单能被交易所收下，这既不放宽也不兑现任何一条红线。
+真正待兑现的是 0.2 之外的另一件事 —— 这条通道从未有一笔订单被真实 venue 接受过。
+
+### 遗留项
+
+1. **真机证据（阻塞完成）。** 需 PS 侧 `MODE=testnet` 复跑。判据：不再出现 `-4015`。
+2. **`portfolio_equity_ambiguous` 让熔断 fail-closed** —— 计划已登记为 follow-up，先给
+   testnet 账户入金再判，未实证故不下断言。
+3. **其他 venue 的上限未实证。** 本 plan 不按 venue 分支（计划默认如此），因为只有 Binance
+   接线。加第二个 venue 时这个常量要么被证明通用，要么变成按 venue 查。
 
 ## Follow-up hooks（不属于本 plan scope，登记以防遗漏）
 
