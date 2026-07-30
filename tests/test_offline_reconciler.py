@@ -26,6 +26,7 @@ from custos.offline.reconciler import (
 )
 from custos.offline.safety import OfflineExposureGuard
 from custos.offline.spec import OfflineDeploymentMessage, OfflineDeploymentSpec
+from custos.offline.state import AppliedRecord
 
 TENANT = "local"
 RUNNER = "ps-supertrend"
@@ -69,6 +70,9 @@ class _FakeEngine:
         self.flattened: list[tuple[str, str]] = []
         self.deploy_error: Exception | None = None
         self.open_notional = Decimal(open_notional)
+        # Attachment is process-scoped in both real hosts, so a freshly built
+        # fake is attached to nothing — exactly what a restart looks like.
+        self._attached: set[str] = set()
 
     async def get_engine_status(self, deployment_instance_id: str) -> EngineStatus:
         return EngineStatus(
@@ -93,6 +97,7 @@ class _FakeEngine:
         if self.deploy_error is not None:
             raise self.deploy_error
         self.deployed.append(spec)
+        self._attached.add(str(spec["deployment_instance_id"]))
         return f"container-{spec['deployment_instance_id']}"
 
     async def reconfigure(self, spec: dict) -> None:
@@ -100,6 +105,10 @@ class _FakeEngine:
 
     async def stop(self, deployment_instance_id: str) -> None:
         self.stopped.append(deployment_instance_id)
+        self._attached.discard(deployment_instance_id)
+
+    def attached(self, deployment_instance_id: str) -> bool:
+        return deployment_instance_id in self._attached
 
     def supports_trading_mode(self, mode: str) -> bool:
         return mode in self.supported
@@ -120,10 +129,24 @@ class _RecordingPublisher:
         return [body["payload"] for _, body in self.published]
 
 
+class _WhatThePreviousProcessWrote:
+    """An applied store already holding a record written before a restart."""
+
+    def __init__(self, spec_id: str, record: AppliedRecord) -> None:
+        self.records = {spec_id: record}
+
+    def load(self) -> dict[str, AppliedRecord]:
+        return dict(self.records)
+
+    def save(self, spec_id: str, record: AppliedRecord) -> None:
+        self.records[spec_id] = record
+
+
 def _reconciler(
     engine: _FakeEngine,
     publisher: _RecordingPublisher,
     guard: OfflineExposureGuard | None = None,
+    applied_store: _WhatThePreviousProcessWrote | None = None,
 ) -> OfflineReconciler:
     return OfflineReconciler(
         tenant_id=TENANT,
@@ -133,7 +156,26 @@ def _reconciler(
         publish=publisher,
         artifact_for=lambda spec: object(),
         credential_for=lambda spec: {"api_key": "k", "api_secret": "s"},
+        applied_store=applied_store,
         guard=guard,
+    )
+
+
+def _after_a_restart(
+    engine: _FakeEngine,
+    publisher: _RecordingPublisher,
+    *,
+    generation: int,
+) -> OfflineReconciler:
+    """A reconciler that loaded a record naming a container this process never built."""
+
+    return _reconciler(
+        engine,
+        publisher,
+        applied_store=_WhatThePreviousProcessWrote(
+            "supertrend-sandbox",
+            AppliedRecord(generation=generation, container_id="container-from-the-last-process"),
+        ),
     )
 
 
@@ -238,6 +280,53 @@ async def test_a_redelivered_generation_reports_again_without_reapplying() -> No
 
     assert len(engine.deployed) == 1
     assert [payload["observed_generation"] for payload in publisher.payloads] == [1, 1]
+
+
+async def test_a_new_generation_after_a_restart_is_deployed_not_reconfigured() -> None:
+    """The record names a container, but this process is attached to nothing.
+
+    Dispatching on the recorded container id sends an unchanged strategy into
+    reconfigure, which the real host refuses as a structural change it cannot
+    hot-swap. Nothing structural changed — only the attachment was lost.
+    """
+
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    reconciler = _after_a_restart(engine, publisher, generation=1)
+
+    await reconciler.handle(_message(_spec(generation=2, leverage=5)))
+
+    assert len(engine.deployed) == 1
+    assert engine.reconfigured == []
+
+
+async def test_the_applied_generation_after_a_restart_is_not_healthy_on_paper() -> None:
+    """Repeating a generation is how the consumer re-asserts desired state.
+
+    Answering healthy without asking the engine anything is worse than failing:
+    the consumer's wait-status passes while no strategy is running.
+    """
+
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    reconciler = _after_a_restart(engine, publisher, generation=1)
+
+    await reconciler.handle(_message(_spec(generation=1)))
+
+    engaged = bool(engine.deployed or engine.reconfigured or engine.stopped)
+    assert engaged or publisher.payloads[-1]["health"] == "unhealthy"
+    assert len(engine.deployed) == 1, "nothing is attached, so this generation is deployed"
+
+
+async def test_an_attached_generation_is_still_reported_healthy_without_redeploying() -> None:
+    """The calibration must not cost the in-process redelivery its cheap answer."""
+
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    reconciler = _after_a_restart(engine, publisher, generation=1)
+    await reconciler.handle(_message(_spec(generation=2)))
+
+    await reconciler.handle(_message(_spec(generation=2)))
+
+    assert len(engine.deployed) == 1
+    assert publisher.payloads[-1]["health"] == "healthy"
 
 
 async def test_a_message_for_another_tenant_is_refused() -> None:
