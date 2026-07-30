@@ -16,7 +16,7 @@ codex 报 0 CRITICAL / 1 HIGH / 3 MEDIUM / 2 LOW。逐条实证后：2 条修，
 - `supports_trading_mode` 确实在 `try` 之外（`src/custos/offline/reconciler.py:261`）
 - `run()` 确实只 guard `next_msg`，不 guard `handle()`（`:167-181`）
 - `ARCHIVED` 确是 `LifecycleState` 的真实变体（`src/custos/contracts/deployment.py:77`）
-- `_on_node_task_done` 确实只 pop registry、不 `dispose()`（`src/custos/engines/nautilus/host.py:816-827`）
+- `_on_node_task_done` 确实只 pop registry、不 `dispose()`（`src/custos/engines/nautilus/host.py:831-839`）
 
 ## 修复任务 (Tasks)
 
@@ -62,7 +62,7 @@ registry（证明窗口真的存在、测试没有被 callback 抢先），再�
 
 ### MEDIUM-1 — 自终止 node 直接 redeploy，但 done callback 不 dispose
 
-**实证成立，但越出本 plan scope。** `_on_node_task_done`（`host.py:816-827`）只摘 registry，
+**实证成立，但越出本 plan scope。** `_on_node_task_done`（`host.py:831-839`）只摘 registry，
 不做 `stop()` 里的 `node.dispose()` 与 task reap。
 
 值得说清它的**方向**：改动前，节点自终止后 `container_id` 仍非空 → 下一个 generation 走

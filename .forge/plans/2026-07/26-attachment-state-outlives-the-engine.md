@@ -349,7 +349,7 @@ fix cycle 是本 plan 自己的交付，plan 也还停在 ⏳，close-out 尚未
    两点：终局 generation 的早返回不会清掉上个进程留下的值；与其删不如先更名为
    `last_deploy_receipt` 之类，让字段名自己说明它是回执而不是当前状态。
 4. **自终止的 NT 节点没有明确的清理路径。**（codex MEDIUM）`_on_node_task_done`
-   （`host.py:816-827`）只摘 registry，不做 `stop()` 里的 `node.dispose()` 与 task reap。
+   （`host.py:831-839`）只摘 registry，不做 `stop()` 里的 `node.dispose()` 与 task reap。
    本 plan 把这条路径从**永久卡死**（旧行为：`container_id` 非空 → reconfigure 被拒 → 不再恢复）
    换成了**可以重新部署**，方向是对的，但重新部署前上一个节点还剩什么没释放，本仓给不出答案 ——
    要判断 NT `run_async()` 自行返回后的语义，需要真机证据。与第 1 项同批处理。

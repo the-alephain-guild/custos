@@ -6,6 +6,55 @@
 
 > **custos 内部 lesson 用 `C1` `C2` … 前缀区分生态数字编号** (见文末"记录新 lesson")。
 
+## C12 清理是被调度的 callback 时, "记录还在"与"东西还在"是两件事 — registry membership 不是 liveness (2026-07)
+
+- **事件**: Plan 26 修的正是「跨一个边界后仍相信旧记录」: `container_id` 描述引擎的附着, 而附着
+  随进程消失, 于是重启后新 generation 被当成结构性重配拒掉、同一 generation 不调引擎就报 healthy。
+  修法是给 `OfflineEngine` 加 `attached()`, 让分派问引擎而不是读记录。计划把语义写得很清楚 ——
+  `_active_nodes` 持的是活的 `(node, task)`, 即「**真的有个节点在跑**」。我照它选对了 dict, 写成
+  `deployment_instance_id in self._active_nodes`。**codex peer review 指出这答不了「在跑」**:
+  registry 由 `add_done_callback` 清理, 而 callback 是**被调度**、不是立即执行。实测确认窗口真实
+  存在 —— 让 run 循环自行结束后只 `await asyncio.sleep(0)`, entry 仍在 registry 里, 而
+  `attached()` 已经答 True。
+- **根因**: 与本 plan 修的是**同一个错误, 只是尺度不同** —— plan 修的是「跨进程边界后仍信旧记录」,
+  这条是「跨一次 loop 调度后仍信旧 registry」。两次都是把**代表过去的东西**当成**现在的答案**。
+  membership 的含义是「曾经注册过、且还没被清理」; liveness 是「现在还在跑」。只有当清理是**同步**
+  发生时两者才相等, 而本仓的清理不是同步的。我把计划那句话读了一半就动手: `entry is not None`
+  表达得了「有记录」, 表达不了「活着」。
+- **教训**: 凡 registry 配**异步清理**(done-callback / weakref / 定时清扫 / 另一个 task 负责摘除),
+  **membership 不是 liveness**。要回答「它还活着吗」, 就去问那个活着的东西本身 —— task 的
+  `done()`、进程的 `poll()`、连接的状态 —— 不要问记录它的那个字典。
+- **预防**:
+  - 写「X 还在吗」这类查询时, 先问一句: **谁负责把 X 从这里摘掉, 什么时候摘?** 答案里出现
+    「callback」「稍后」「另一个 task」, membership 就不够。
+  - 这类窗口**可以被确定性地测出来**, 不必靠时序碰运气: 让被观察对象在**恰好一次**
+    `await asyncio.sleep(0)` 内完成, 此时 callback 尚未运行。测试里**先断言记录还在**(证明窗口真
+    存在、不是 callback 恰好晚跑), 再断言查询答 False —— 否则这条测试可能是绿在别的原因上(C9/#28
+    同型)。
+  - 收紧了这类查询之后, **回头看还有谁在用同一个 dict 做同类判断** —— 本次 `deploy()` 的幂等守卫
+    (`host.py:296`)仍按原始 membership 拒绝, 与收紧后的 `attached()` 口径不一。不一致本身可以是
+    有意的(那处放宽等于允许静默顶掉一个从未 dispose 的节点), 但**必须被写下来**, 否则下一个读者
+    会以为是漏改。
+- **同批的第二条 (计划里"这两个现在等价"是可检验的断言, 不是旁注)**: 同一份 plan 的 Task 2 写着
+  `_active_nodes` 与 `_lifecycle_authorities`「当前同生同死, 所以查错了今天也看不出来」。**实测不
+  成立**: `stop()` 两个都摘, 但 `_on_node_task_done`(`host.py:831-839`)只摘前者 —— 节点自己结束时
+  两者立刻分岔。把实现改指 `_lifecycle_authorities` 会让一条测试变红(已实跑)。**判据**: plan 里
+  凡出现「A 与 B 当前等价 / 选哪个都一样 / 今天看不出差别」, 那是一个**可以扰动验证的断言**, 应当
+  在实施时跑一次, 把结论写成「我扰动过, 会红/不会红」, 而不是留一句凭印象的旁注。写「看不出来」
+  的代价是: 真有差别时, 没有人会去看。
+- **与 C9 的区分**: C9 是「fail-closed 只围着 `except` 写, 挂起不抛异常所以没人设防」; 本条是
+  「查询只看记录, 而记录的清理是异步的」。两者都是**防线守着一个比现实窄的定义**, C9 窄在「坏 =
+  抛异常」, 本条窄在「在 = 有记录」。
+- **Binding**: `NtTradingNodeHost.attached`(`src/custos/engines/nautilus/host.py`)查 entry 且查
+  `not task.done()`; 探针 `test_a_finished_node_is_not_held_before_its_callback_runs`
+  (改回 membership-only 会红, 已证伪)。第二条的证据与登记见
+  `.forge/plans/2026-07/26-attachment-state-outlives-the-engine.md` 偏离日志
+  `DEV-26-TWO-REGISTRIES-DO-NOT-DIE-TOGETHER`, 审查原文与分诊见
+  `.forge/reviews/2026-07/codex/26-attachment-state-outlives-the-engine-peer-review.md` 与
+  `.forge/fixes/2026-07/26-attachment-state-outlives-the-engine-fixes.md`。
+
+---
+
 ## C11 外部系统的约束要在**跟它说话的那道边界**上强制, 不在值被构造的地方 (2026-07)
 
 - **事件**: 离线通道首次真连 Binance testnet, 每一单都被 `-4015` 拒 —— client order id
