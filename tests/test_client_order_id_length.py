@@ -29,7 +29,7 @@ from nautilus_trader.model.identifiers import StrategyId, TraderId  # noqa: E402
 from nautilus_trader.trading.strategy import Strategy  # noqa: E402
 
 from custos.engines.nautilus.venue_binance import (  # noqa: E402
-    BINANCE_CLIENT_ORDER_ID_MAX_LEN,
+    BINANCE_CLIENT_ORDER_ID_LEN_LIMIT,
 )
 
 pytest.importorskip("custos_toolkit_nautilus")
@@ -43,12 +43,18 @@ from custos_toolkit_nautilus.adapter.trading_config import (  # noqa: E402
 # The instance id from the failing run, in the shape a deployment instance really has.
 OBSERVED_INSTANCE_ID = "dcb00e52-0b45-569e-83b0-2f1a4c7d9e11"
 
-# The largest order count the generator can hold, so the widest counter it can ever
-# render: ten digits. Found by pushing `set_client_order_id_count` until it refused —
-# it stores the count in a 32-bit signed int and raises OverflowError above this. Using
-# the implementation's own ceiling rather than a round number means the worst case here
-# is the real worst case.
-MAX_ORDER_COUNT = 2**31 - 1
+# The generator holds the order count in a 32-bit signed int — found by pushing
+# `set_client_order_id_count` until it refused above 2**31 - 1.
+#
+# Two values matter, because generating *increments* before rendering:
+#   - 2**31 - 2 renders the largest positive counter, "2147483647", ten characters.
+#   - 2**31 - 1 increments past the ceiling and wraps to -2147483648, which renders as
+#     eleven characters including the sign. That is the widest the component can ever be,
+#     so it is the real worst case even though it is an overflow rather than a count.
+# Both are exercised. An earlier version used only the first and described it as the
+# widest possible, which was wrong.
+LARGEST_POSITIVE_ORDER_COUNT = 2**31 - 2
+ORDER_COUNT_THAT_WRAPS = 2**31 - 1
 
 
 @pytest.fixture(scope="module")
@@ -101,9 +107,9 @@ def test_a_generated_client_order_id_fits_what_binance_accepts(strategy_config) 
 
     generated = _factory_as_the_engine_builds_it(strategy_config).generate_client_order_id().value
 
-    assert len(generated) < BINANCE_CLIENT_ORDER_ID_MAX_LEN, (
+    assert len(generated) < BINANCE_CLIENT_ORDER_ID_LEN_LIMIT, (
         f"{generated!r} is {len(generated)} characters; Binance refuses anything not "
-        f"shorter than {BINANCE_CLIENT_ORDER_ID_MAX_LEN} with -4015"
+        f"shorter than {BINANCE_CLIENT_ORDER_ID_LEN_LIMIT} with -4015"
     )
 
 
@@ -111,8 +117,8 @@ def test_the_length_holds_at_the_worst_case_this_runner_can_reach(strategy_confi
     """Pins the property, not one measurement: nothing this runner varies changes it.
 
     Three things could push a structured id over the bound, and all three are pushed to
-    their limit at once here — the order counter to the widest the generator can hold,
-    the trader tag to the longest this repository's builder can emit (it truncates to 20
+    their limit at once here — the order counter to both of its widest renderings, the
+    trader tag to the longest this repository's builder can emit (it truncates to 20
     alphanumerics), and the strategy tag well past anything a strategy names itself.
 
     An id shape whose length depends on any of these has a ceiling rather than a fix, and
@@ -124,14 +130,15 @@ def test_the_length_holds_at_the_worst_case_this_runner_can_reach(strategy_confi
         instance_id="f" * 64,
         strategy_id="A" * 40 + "-" + "9" * 12,
     )
-    factory.set_client_order_id_count(MAX_ORDER_COUNT)
+    for count in (LARGEST_POSITIVE_ORDER_COUNT, ORDER_COUNT_THAT_WRAPS):
+        factory.set_client_order_id_count(count)
 
-    generated = factory.generate_client_order_id().value
+        generated = factory.generate_client_order_id().value
 
-    assert len(generated) < BINANCE_CLIENT_ORDER_ID_MAX_LEN, (
-        f"{generated!r} is {len(generated)} characters at the worst case; the id shape "
-        "still depends on the counter or on a tag, so this is a ceiling, not a fix"
-    )
+        assert len(generated) < BINANCE_CLIENT_ORDER_ID_LEN_LIMIT, (
+            f"{generated!r} is {len(generated)} characters at the worst case; the id shape "
+            "still depends on the counter or on a tag, so this is a ceiling, not a fix"
+        )
 
 
 def test_the_length_does_not_move_at_all_as_the_counter_grows(strategy_config) -> None:
@@ -140,7 +147,7 @@ def test_the_length_does_not_move_at_all_as_the_counter_grows(strategy_config) -
     factory = _factory_as_the_engine_builds_it(strategy_config)
 
     lengths = set()
-    for count in (0, 9, 99, 99_999, MAX_ORDER_COUNT):
+    for count in (0, 9, 99, 99_999, LARGEST_POSITIVE_ORDER_COUNT, ORDER_COUNT_THAT_WRAPS):
         factory.set_client_order_id_count(count)
         lengths.add(len(factory.generate_client_order_id().value))
 

@@ -11,8 +11,10 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 from custos.core.order_reservation_boundary import RunnerReservationBoundary
+from custos.engines.nautilus.venue_binance import BINANCE_CLIENT_ORDER_ID_LEN_LIMIT
 
 _POLICY_REJECTION_REASON = "custos_runner_notional_policy_rejected"
+_CLIENT_ORDER_ID_REJECTION_REASON = "custos_runner_client_order_id_too_long_for_venue"
 
 
 def _decimal(value: Any, *, field: str) -> Decimal:
@@ -119,6 +121,9 @@ class RunnerSafetyExecutionDispatch:
         self._timestamp_ns = timestamp_ns
 
     def submit_order(self, command: Any) -> None:
+        if self._client_order_id_too_long(command.order):
+            self._reject_order(command.order, _CLIENT_ORDER_ID_REJECTION_REASON)
+            return
         try:
             reservations = self._boundary.before_submit_order(command)
         except Exception:
@@ -135,6 +140,12 @@ class RunnerSafetyExecutionDispatch:
 
     def submit_order_list(self, command: Any) -> None:
         orders = tuple(command.order_list.orders)
+        if any(self._client_order_id_too_long(order) for order in orders):
+            # One unusable id fails the list: the venue would refuse that leg and leave
+            # the rest as an unintended partial structure.
+            for order in orders:
+                self._reject_order(order, _CLIENT_ORDER_ID_REJECTION_REASON)
+            return
         try:
             reservations = self._boundary.before_submit_order_list(command)
         except Exception:
@@ -181,12 +192,36 @@ class RunnerSafetyExecutionDispatch:
     def batch_cancel_orders(self, command: Any) -> None:
         self._inner.batch_cancel_orders(command)
 
-    def _reject_order(self, order: Any) -> None:
+    @staticmethod
+    def _client_order_id_too_long(order: Any) -> bool:
+        """Refuse an id the venue will refuse, before it costs a round trip.
+
+        The id's shape is chosen where the strategy config is built, and nothing after
+        construction can change it — the flags that decide it are read-only on the
+        strategy. That makes the config the only place it can be got right, and a
+        convention rather than an invariant: a signed artifact whose adapter builds its
+        own config, or a strategy passing an explicit client_order_id, reaches the venue
+        without ever consulting that builder. Both would reproduce the -4015 rejection of
+        every order while every test about the builder stayed green.
+
+        So the length is enforced here as well, at the boundary that owns venue
+        interaction. Enforcing costs nothing when the id is already short, and turns a
+        silent venue-side failure into a local rejection naming its own reason.
+
+        Binance's limit applies to every order because Binance is the only venue this
+        runner assembles an execution config for — `venue_binance._binance_exchange_type`
+        refuses any other connector before an order can exist. Wiring a second venue
+        means giving this a per-venue limit rather than leaving it to guess.
+        """
+
+        return len(str(order.client_order_id)) >= BINANCE_CLIENT_ORDER_ID_LEN_LIMIT
+
+    def _reject_order(self, order: Any, reason: str = _POLICY_REJECTION_REASON) -> None:
         self._inner.generate_order_rejected(
             order.strategy_id,
             order.instrument_id,
             order.client_order_id,
-            _POLICY_REJECTION_REASON,
+            reason,
             self._timestamp_ns(),
         )
 

@@ -464,3 +464,78 @@ def test_guarded_client_is_a_real_live_execution_client() -> None:
         assert guarded.is_connected is inner.is_connected
     finally:
         loop.close()
+
+
+def test_an_id_the_venue_would_refuse_is_rejected_here_instead() -> None:
+    """The venue's id-length limit is enforced at the boundary, not just in the builder.
+
+    The id's shape is decided where the strategy config is built, and that is the only
+    place it can be decided — the flags are read-only on the strategy. Which makes it a
+    convention: a signed artifact whose adapter builds its own config, or a strategy
+    passing an explicit client_order_id, reaches the venue without consulting that
+    builder and reproduces the rejection of every order.
+
+    Enforced here, that becomes an invariant regardless of who built the config, and the
+    failure is local and named rather than a venue answering -4015 to everything.
+    """
+
+    log: list[tuple] = []
+    inner = _InnerClient(log)
+    dispatch = RunnerSafetyExecutionDispatch(
+        inner=inner,
+        boundary=_boundary(_Store(log)),
+        timestamp_ns=lambda: 17,
+    )
+
+    # The exact id the venue refused: 44 characters, the shape before the fix.
+    refused = "O-20260730-044937-dcb00e520b45569e83b0-000-2"
+    dispatch.submit_order(_submit_command(_order(refused)))
+
+    assert log == [], "the order reached the reservation or the venue despite an unusable id"
+    assert [entry[3] for entry in inner.rejections] == [
+        "custos_runner_client_order_id_too_long_for_venue"
+    ], "rejected for the wrong reason, so the cause would not be diagnosable from the event"
+
+
+def test_the_boundary_lets_the_shape_the_builder_produces_through() -> None:
+    """The guard must not reject what the fix produces, or it would block every order."""
+
+    log: list[tuple] = []
+    inner = _InnerClient(log)
+    dispatch = RunnerSafetyExecutionDispatch(
+        inner=inner,
+        boundary=_boundary(_Store(log)),
+        timestamp_ns=lambda: 17,
+    )
+
+    # A hyphen-free UUID, which is what build_nautilus_base_config now asks for.
+    dispatch.submit_order(_submit_command(_order("33e0789d38f9419aa8a0e00e98d07878")))
+
+    assert [entry[0] for entry in log] == ["reserve", "submit"]
+    assert inner.rejections == []
+
+
+def test_one_unusable_id_fails_the_whole_order_list() -> None:
+    """A partly-submitted bracket is worse than none: the venue would refuse that leg."""
+
+    log: list[tuple] = []
+    inner = _InnerClient(log)
+    dispatch = RunnerSafetyExecutionDispatch(
+        inner=inner,
+        boundary=_boundary(_Store(log)),
+        timestamp_ns=lambda: 17,
+    )
+    orders = (
+        _order("33e0789d38f9419aa8a0e00e98d07878"),
+        _order("O-20260730-044937-dcb00e520b45569e83b0-000-2"),
+    )
+
+    dispatch.submit_order_list(
+        SimpleNamespace(order_list=SimpleNamespace(orders=orders), command_id="submit-list-1")
+    )
+
+    assert log == [], "part of the list reached the venue"
+    assert len(inner.rejections) == 2, "both legs must be rejected, not only the unusable one"
+    assert {entry[3] for entry in inner.rejections} == {
+        "custos_runner_client_order_id_too_long_for_venue"
+    }

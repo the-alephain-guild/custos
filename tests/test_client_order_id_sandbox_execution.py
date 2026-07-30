@@ -39,7 +39,7 @@ from nautilus_trader.test_kit.stubs.data import TestDataStubs  # noqa: E402
 from nautilus_trader.trading.strategy import Strategy  # noqa: E402
 
 from custos.engines.nautilus.venue_binance import (  # noqa: E402
-    BINANCE_CLIENT_ORDER_ID_MAX_LEN,
+    BINANCE_CLIENT_ORDER_ID_LEN_LIMIT,
 )
 
 _INSTRUMENT = TestInstrumentProvider.btcusdt_perp_binance()
@@ -108,7 +108,7 @@ def test_an_order_still_fills_locally_and_carries_the_short_id(tmp_path) -> None
     engine.dispose()
 
     assert filled is not None, "the order never filled, so local matching is broken"
-    assert len(filled) < BINANCE_CLIENT_ORDER_ID_MAX_LEN, (
+    assert len(filled) < BINANCE_CLIENT_ORDER_ID_LEN_LIMIT, (
         f"the filled order's id {filled!r} is {len(filled)} characters — local matching "
         "accepted an id a real venue would refuse"
     )
