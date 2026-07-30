@@ -252,9 +252,10 @@ class OfflineReconciler:
             # process that is gone. Reporting healthy here is worse than failing:
             # the consumer's wait-status passes over an engine running nothing.
             _log.info(
-                "offline_applied_generation_reapplied",
+                "offline_applied_generation_not_in_place",
                 spec_id=spec.spec_id,
                 generation=spec.generation,
+                lifecycle_state=spec.lifecycle_state.value,
             )
 
         if not self._engine.supports_trading_mode(spec.trading_mode.value):
