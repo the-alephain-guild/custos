@@ -111,9 +111,10 @@ class SandboxSimulationHost:
     restricts it to signed ``sandbox`` commands and canonical supported connectors.
     Testnet and live always require ``NtTradingNodeHost``.
 
-    The method signatures exactly match ExecutionEngineProtocol so the lifecycle
-    supervisor can use this dependency and admission can immediately reject
-    supports_trading_mode.
+    It satisfies ExecutionEngineProtocol so the lifecycle supervisor can take it
+    as a dependency and admission can reject supports_trading_mode straight away.
+    It answers one method beyond that protocol — the offline lane's attachment
+    query, which is declared on OfflineEngine.
     """
 
     def __init__(self) -> None:

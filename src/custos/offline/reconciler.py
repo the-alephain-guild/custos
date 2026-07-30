@@ -121,6 +121,15 @@ class AppliedStore(Protocol):
 
 @dataclass
 class _Applied:
+    """What is remembered about a spec id, and how far each half of it travels.
+
+    ``generation`` is meant to survive a restart; recording it is the reason the
+    store exists. ``container_id`` is what the engine handed back when it took the
+    deployment, so it describes an attachment — and an attachment does not outlive
+    the process that made it. It is kept as provenance and never decides what to
+    ask the engine to do; that question goes to ``OfflineEngine.attached``.
+    """
+
     generation: int = 0
     container_id: str = ""
 

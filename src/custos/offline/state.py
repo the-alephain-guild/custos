@@ -1,8 +1,9 @@
 """Durable record of what the offline lane has already applied.
 
-Without this the reconciler forgets across a restart and redeploys a generation
-it already ran. It also gives the lane a real local store to report on, so its
-readiness claim is something that was checked rather than something asserted.
+Without this a restarted reconciler starts from generation zero and accepts a
+generation it has already passed — at-least-once delivery replays them. It also
+gives the lane a real local store to report on, so its readiness claim is
+something that was checked rather than something asserted.
 """
 
 from __future__ import annotations
@@ -22,6 +23,13 @@ CREATE TABLE IF NOT EXISTS applied_generation (
 
 @dataclass(frozen=True, slots=True)
 class AppliedRecord:
+    """The generation a spec id reached, and the container the engine named then.
+
+    Only the generation means anything after a restart. The container id records
+    an attachment, which belongs to the process that made it, so a reader must not
+    take it as evidence that anything is still running.
+    """
+
     generation: int
     container_id: str
 
