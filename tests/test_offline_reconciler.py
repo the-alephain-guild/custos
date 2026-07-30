@@ -317,7 +317,7 @@ async def test_the_applied_generation_after_a_restart_is_not_healthy_on_paper() 
 
 
 async def test_an_attached_generation_is_still_reported_healthy_without_redeploying() -> None:
-    """The calibration must not cost the in-process redelivery its cheap answer."""
+    """Asking the engine must not cost an in-process redelivery its cheap answer."""
 
     engine, publisher = _FakeEngine(), _RecordingPublisher()
     reconciler = _after_a_restart(engine, publisher, generation=1)
@@ -326,6 +326,24 @@ async def test_an_attached_generation_is_still_reported_healthy_without_redeploy
     await reconciler.handle(_message(_spec(generation=2)))
 
     assert len(engine.deployed) == 1
+    assert publisher.payloads[-1]["health"] == "healthy"
+
+
+async def test_a_stopped_generation_after_a_restart_is_healthy_without_stopping_again() -> None:
+    """A stopped spec asks for the absence of an engine, and absence is what it has.
+
+    The question the reconciler asks is whether the engine is where the spec wants
+    it, not whether it is running — otherwise a restarted runner would re-stop an
+    instance nobody is holding on every redelivery.
+    """
+
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    reconciler = _after_a_restart(engine, publisher, generation=2)
+
+    await reconciler.handle(_message(_spec(generation=2, lifecycle_state="stopped")))
+
+    assert engine.stopped == []
+    assert engine.deployed == []
     assert publisher.payloads[-1]["health"] == "healthy"
 
 
