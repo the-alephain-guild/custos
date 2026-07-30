@@ -170,14 +170,22 @@ class ExecutionManager:
         instrument_id: InstrumentId,
         signal: Signal,
         size: Decimal,
+        reduce_only: bool = True,
     ) -> Order | None:
         """
-        Create exit order (always market, reduce-only).
+        Create exit order (always market; reduce-only unless the venue refused it).
 
         reduce_only protects the money path: if an exit is re-submitted (e.g. after the
         close gate's in-flight window) while the local cache still lags a fill that
         already closed the position, the venue rejects the duplicate instead of opening
         a reverse position.
+
+        Callers pass ``reduce_only=False`` only after the venue has already refused the
+        reduce-only form for this position on the logic tier. Binance's demo engine does
+        that while the position is genuinely open, and retrying the refused form cannot
+        succeed -- so the plain order is the only way to close. That trade is deliberate:
+        it drops the protection described above, which is why the caller must first
+        establish that the position is still open.
 
         Translates signal direction to order side:
         - EXIT_LONG -> OrderSide.SELL (close long position)
@@ -216,5 +224,5 @@ class ExecutionManager:
             order_side=side,
             quantity=quantity,
             time_in_force=TimeInForce.IOC,
-            reduce_only=True,
+            reduce_only=reduce_only,
         )

@@ -49,7 +49,10 @@ def _make_ctx() -> SimpleNamespace:
         pair="BTC/USDT",
         order_tracker=OrderTracker(),
         execution_manager=SimpleNamespace(
-            create_exit_order=lambda instrument_id, signal, size: order
+            # reduce_only is accepted because the close path now chooses it; these tests
+            # cover the in-flight gate, and the choice itself is covered by
+            # test_close_reduce_only_fallback.py.
+            create_exit_order=lambda instrument_id, signal, size, reduce_only=True: order
         ),
     )
 

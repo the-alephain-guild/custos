@@ -238,11 +238,25 @@ class SignalExecutionCoordinator:
             return
 
         execution_manager = cast(ExecutionManager, ctx.execution_manager)
+        # Reduce-only is the protective default, but a venue that has already refused it
+        # on the logic tier (Binance's demo engine does this with the position genuinely
+        # open) will refuse it again -- retrying the refused form is retrying what cannot
+        # work. From the second attempt on, close with a plain order of the position's
+        # size. The count is raised only by logic-tier rejections and is cleared on a
+        # confirmed close, so a server error or rate limit does not drop the protection.
+        first_attempt = ctx.order_tracker.close_reject_count == 0
         order = execution_manager.create_exit_order(
             instrument_id=ctx.instrument_id,
             signal=signal,
             size=Decimal(str(position.quantity)),
+            reduce_only=first_attempt,
         )
+        if not first_attempt:
+            s.log.warning(
+                f"[{ctx.pair}] Closing without reduce_only after "
+                f"{ctx.order_tracker.close_reject_count} logical refusal(s) of the "
+                f"reduce-only close; size={position.quantity} taken from the open position",
+            )
         if order:
             _sig_id = cast(
                 str | None, signal.metadata.get("_signal_id") if signal.metadata else None
