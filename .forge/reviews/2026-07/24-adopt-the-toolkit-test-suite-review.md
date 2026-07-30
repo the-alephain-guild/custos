@@ -109,7 +109,7 @@ dogfood #2 明说红线表「有表不等于表里的话被验过」——那次
 
 | # | 位置 | 描述 |
 |---|---|---|
-| I1 | close-out | 发现 `docs/authority/strategy-toolkit-*.json` 的 `target_sha256` 哈希的是**历史 git blob**(`check-toolkit-extraction.py:158-161`),不是工作区。实测变异 toolkit 源码后该门仍通过。这比计划的论点深一层:那些哈希证明「抽取当时忠实」,不证明「此后未被改」。 |
+| I1 | close-out | 发现 `docs/authority/strategy-toolkit-*.json` 的 `target_sha256` 哈希的是**历史 git blob**(`check-toolkit-extraction.py:158-161`),不是工作区。实测变异 toolkit 源码后该门仍通过。这比计划的论点深一层:那些哈希证明「抽取当时忠实」,不证明「此后未被改」。**2026-07-30 更正**: 由此推出的「本仓无任何东西会注意到 toolkit 被改」过头了 —— `test_toolkit_release_candidate_build.py` 比对工作区与 HEAD,会拦**未提交**的漂移(守的是可复现构建,不是抽取忠实度);**已提交**的漂移仍然一路全绿,实质结论对后者成立。详见 plan 24 close-out 内的更正段。 |
 | I2 | `tests/toolkit/test_strategy_core.py` | 自省抓出函数级切分留下的孤儿 helper。且它的扫描根已错——文件从 `tests/` 移到 `tests/toolkit/` 后 `parents[1]` 从仓库根变成 `tests/`,调用返回 `[]`。删除后**移植集中已无任何一处依赖自身文件路径**,整类风险关闭,而不只是关掉被点名的五个实例。 |
 | I3 | 8 个文件退回 PS | 它们的哨兵在没有策略的仓库里正确地拒绝通过。其中一条参数化在空 glob 上——在这里它不是失败而是整条消失,那正是它旁边那条哨兵存在的理由。 |
 

@@ -203,6 +203,11 @@
 - **与 C3 区分**: C3 是 "pre-publish shape gate 不等于 artifact identity gate"
   (**发布链**上把顺序当身份), 本条是 "源文件同时是签名资产" (**开发期**把措辞当无风险)。
   两者共同点: artifact identity 由字节定义, 不由意图定义。
+- **dogfood (2026-07-30, Plan 25)**: 本条明写"跑 `make fmt` 会修好 gate 但破坏 pin", 我仍然
+  中了 —— 不是跑了 `make fmt`, 是跑了 `uv run ruff format tests/ src/ packages/` 这种**大范围**
+  的等价物, 一次把三个 known-red 的 pinned 文件"修好"了。**教训收窄为: 格式化的范围只给本次
+  真正改过的文件**, 不给目录。`git status` 立刻看出来并用 `git show HEAD:<path>` 写回, 但如果
+  当时顺手 commit, 破坏的就是证据链而不是格式。
 - **Binding**: `.forge/README.md` §后续 plan 规划 "内部系统名对外收敛 — 两项 deferred"
   记录了受影响文件集与解冻条件; `test_machine_request_consumer_assets_are_exactly_pinned`
   是该约束的自动化探针 (2026-07-28 首次 dogfood 命中)。

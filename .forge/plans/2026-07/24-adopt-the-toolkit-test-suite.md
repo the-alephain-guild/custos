@@ -342,6 +342,22 @@ distribution 只在 `nautilus` extra 里。两道门都在发布 CI 中执行
 `filter_manager.py` 后 `make check-toolkit-extraction` 仍然通过。所以那些哈希证明的是
 「抽取当时是忠实的」，不是「此后没被改过」。这正是本计划的论点，只是深了一层。
 
+> **更正（2026-07-30，Plan 25 实施时发现）。** 上一段说「哈希不保护工作区」是对的，但当时
+> 由此推出的「本仓没有任何东西会注意到 toolkit 源码被改了」**过头了**。
+> `tests/test_toolkit_release_candidate_build.py` 会拦：它经
+> `scripts/toolkit_rc_build.py:98-109` 比对**工作区与 HEAD**（`git diff --quiet <HEAD> --
+> packages/…` 加 untracked 扫描），不一致就报
+> `toolkit package sources must exactly match the clean source commit`。
+>
+> 分寸在这里：它守的是「从干净树构建」这条**可复现性**纪律，不是「toolkit 仍等于那次抽取」。
+> 所以**未提交**的漂移会被它拦下，**已提交**的漂移一路全绿 —— 上面那条实质结论对后者成立，
+> 而后者才是真正会长期存在的情形（Plan 25 提交了一处 toolkit 改动，2181 项全绿）。
+>
+> 这条更正之所以必要，是因为 Plan 24 做变异实验时它其实已经响过：`make test-baseline` 当时
+> 报 `2 failed, 1258 passed, 222 skipped, 1 xfailed, 3 errors`，我记下了「3 errors 是新的」
+> 却把它整体归因为「变异的连带结果」，没有点开看是谁。结论（门会变红）没错，**红在哪里**
+> 认得不全。看到一个没预料到的 error 计数就该点开，而不是归因了就算数。
+
 ### 测试条数（取自 `pytest --collect-only`）
 
 | 测试文件 | 条数 |
