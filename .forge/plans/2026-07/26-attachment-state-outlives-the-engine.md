@@ -1,7 +1,9 @@
 # 26 — 重启后仍相信上个进程的附着状态（一因两症：结构性重配被拒 + false healthy）
 
-> **Status**: ⏳ In Progress —— 代码侧四个 Task 全绿; 计划自定的**症状一唯一证据**(重启后真机
-> 不带 workaround 起得来)属 PS 侧, 未取得
+> **Status**: ⏳ In Progress —— 代码侧四个 Task 全绿; **两症的真机证据已于 2026-07-30 在 PS 侧取得**
+> (见 §验证清单前两项); 仍未完成: 遗留项 3 (`container_id` 已无人读) / 4 (自终止节点的清理路径 +
+> `attached()` 与 `deploy()` 幂等守卫口径不一, **本身需要真机证据且这两轮未覆盖**) / 5 (同步 engine
+> 查询的异常边界, 独立 plan)
 > **Created**: 2026-07-30
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现
@@ -196,12 +198,25 @@ match ExecutionEngineProtocol」（`host.py:114`）在多出一个协议外方�
 - [x] 两个 host 的附着查询各有测试（Task 4），且各自被扰动证伪过
 - [x] `ExecutionEngineProtocol` **未被改动**：`git diff` 对 `src/custos/core/engine_protocol.py`
       与 `tests/core/test_engine_protocol_tier2.py` 均为零改动，两个文件的 isinstance 正反断言全绿
-- [ ] **真机证据**：重启后不带任何 workaround 直接部署 —— 即在 philosophers-stone 侧临时禁用它的
-      `clear-recorded-deployment`，`compose down` 后 `make start` 仍能起来且不出现
-      `structural reconfigure`。**这是本 plan 唯一能证明症状一真被修掉的证据**，单测证不了
-      （它证的是分派选择，不是重启后的真实行为）
-- [ ] 重复 generation 的真机行为：重启后重发同一 generation，**不得**出现「`wait-status` 通过而
-      没有策略在跑」
+- [x] **真机证据（症状一）** —— 2026-07-30 于 PS 侧取得。用 `CLEAR_GENERATION=0` 命中 skip 分支禁掉
+      `clear-recorded-deployment`（不改文件，日志有 `leaves no older generation to retract with;
+      skipping`），`compose down` 后直接 `start-detached`。**跑前**状态库确实留着上个进程的附着
+      （`applied_generation` 表：`supertrend-testnet` → `container_id` = `dcb00e52-0b45-569e-83b0-0e7a1cb27db9`，
+      36 字符），即这次跑**有可能失败**。跑后 runner 容器日志 266 行中 `structural reconfigure`
+      **0 次**、`reconfigure` 任意大小写 **0 次**（根本没被尝试），`nt_deploy_started` 在，`MAKE_EXIT=0`。
+      镜像 revision `3085244`，且**进容器核验过内容**：`attached` 在协议与两个 host 上，NT 那份含
+      `.done()`（即 codex 复审后那版，不是最初查 dict 成员那版）
+- [x] **真机证据（症状二）** —— 同日同一批。`compose down` 后把 generation **钉死**在已 applied 的
+      `1785412898760827000` 重发，runner 日志出现
+      `{"spec_id": "supertrend-testnet", "generation": 1785412898760827000, "lifecycle_state": "running",
+      "event": "offline_applied_generation_not_in_place"}` 并**重新 engage**（`nt_deploy_started` +
+      `TradingNode: RUNNING`），而非空报 healthy。该事件在同批新 generation 那轮 **0 次**，说明它只在
+      本症状的路径上触发、不是恒发
+
+> ⚠️ 上述两轮日志里同时有 `fallback_breaker_fail_closed`（reason=`portfolio_equity_ambiguous`）与
+> `offline_exposure_guard_latched` 两条 error。**与本 plan 无关**：那是 Plan 27 记录的另两个根因
+> （多币种账户 equity 币种未声明 + flatten 在持仓到达前空转），在这两轮里各自第二、第三次复现。
+> 读本 plan 证据时不要把它们当成本修复的失败。
 
 ## 偏离与改进日志 (Deviations & Improvements)
 
@@ -238,9 +253,9 @@ match ExecutionEngineProtocol」（`host.py:114`）在多出一个协议外方�
 - **philosophers-stone 的 workaround 应在本 plan 落地后拆除。** 它在 `start` 里发 `stopped` spec
   清 `container_id` 并等回报（PS Plan 61）。拆除前应确认本 plan 的真机证据已取得，否则会把 PS
   退回到一整天前的状态。
-- **`-4015` 的真机接单判据仍在 PS 侧**（本仓 Plan 25 的唯一未完成项），且还差一个含该修复的
-  runner 镜像 —— PS 实跑取的是镜像里的 toolkit，不是 PS 仓的 wheel。与本 plan 无关，但两者都在
-  等同一个「重建镜像」动作。
+- ~~**`-4015` 的真机接单判据仍在 PS 侧**~~ **已取得，Plan 25 于 2026-07-30 标完成。** 那个共同的
+  「重建镜像」动作已经做了（revision `3085244`，按 custos HEAD），本 plan 与 Plan 25 的真机证据
+  都出自这同一批 testnet 实跑。
 
 ## 完成报告 (Close-out Report)
 
@@ -338,10 +353,13 @@ fix cycle 是本 plan 自己的交付，plan 也还停在 ⏳，close-out 尚未
 
 ### 遗留项
 
-1. **真机证据（阻塞完成）。** 两条，都在 PS 侧：临时禁掉 `clear-recorded-deployment` 后
-   `compose down` → `make start` 不出现 `structural reconfigure`；以及重启后重发同一 generation
-   不出现「`wait-status` 通过而没有策略在跑」。**且需要一个含本修复的 runner 镜像** —— PS 实跑取的是
-   镜像里的代码，与 Plan 25 在等同一个重建动作。
+1. ~~**真机证据（阻塞完成）。**~~ **已取得（2026-07-30，PS 侧）** —— 两条都有，证据见 §验证清单
+   前两项。镜像已按 custos HEAD 重建（revision `3085244`），Plan 25 的 `-4015` 判据在同一次重建后
+   一并取得（0 次 `-4015`、0 次 `OrderRejected`、client order id 32 字符）。
+   **注意这不等于本 plan 可以标完成** —— 遗留项 3 / 4 / 5 仍在，其中第 4 项自己就要求真机证据，
+   而这两轮**没有覆盖它**：两轮里都没有出现「NT 节点自行终止」的情形，所以
+   `run_async()` 自行返回后还剩什么没释放、以及 `attached()` 与 `deploy()` 幂等守卫的口径不一
+   会不会真的踩到，这两轮都答不了。
 2. **PS 的 workaround 待拆**（跨仓，见 §Follow-up）。拆除前必须先拿到第 1 项，否则 PS 会退回到
    2026-07-30 之前的状态。
 3. **`container_id` 现在没有任何读它做决策的地方。** 本 plan 按计划保留它作 provenance（删它要

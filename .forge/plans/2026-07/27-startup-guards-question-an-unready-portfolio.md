@@ -200,10 +200,14 @@ if len(entries) != 1:
 
 ## Follow-up hooks（不属于本 plan scope，登记以防遗漏）
 
-- **testnet 上有一个遗留空仓。** `-0.0070 BTC`（`BTCUSDT-PERP`，均价 `63995.10`），带一张 resting
-  reduce-only `STOP_MARKET BUY 0.0070 @ 65275.10`（`a39769df774a4fa39e8b73ae9d975966`）。runner 已于
-  `11:08` 停止（容器 `exit 137`，SIGKILL —— 走了一段优雅关闭后被 compose 超时杀掉），**关停没有撤这张
-  SL**。持仓仍在、无人管理。要平掉需要有意识地操作，别让它成为下一次启动时又一个"账户既有持仓"。
+- **testnet 上有一个遗留空仓，且交易所侧状态在逐轮累积。** `-0.0070 BTC`（`BTCUSDT-PERP`，均价
+  `63995.10`）。首轮 runner 于 `11:08` 停止（容器 `exit 137`，SIGKILL —— 走了一段优雅关闭后被 compose
+  超时杀掉），**关停没有撤 SL**。此后为取 Plan 25 / 26 的真机判据又跑了两轮，每轮 reconciliation 都把
+  这个空仓重新捡进来、策略再挂一张 reduce-only `STOP_MARKET`，于是累计出三个我方 32 字符 id
+  （`a39769df…` / `4ccc9459…` / `5dbb46ff…`，均 `OrderAccepted`）。**本 plan 的两个发现在这两轮里各自
+  又复现一次**（`instrument_count: 0` 与 `portfolio_equity_ambiguous` 均一字不差），所以它们不是一次性
+  巧合。持仓与这些挂单仍在、无人管理：要平掉需要有意识地操作，否则每次启动都多一层「账户既有持仓」，
+  而**发现 B 恰好让启动期的 flatten 对它无效**。
 - **PS 实跑取的是镜像里的 toolkit，不是仓里的源码。** 当前本地 `custos-runner:v0.3.0` 的
   `image.revision = b55c211`，而 custos HEAD 已到 `3353e74` —— **Plan 26 的修复不在这个镜像里**。
   Plan 26 那条 PS 侧真机判据需要**再重建一次镜像**才能取。

@@ -1,6 +1,8 @@
 # 25 — Binance 拒收本机生成的 client order id（超长，订单一律发不出）
 
-> **Status**: ⏳ In Progress —— 代码侧四个 Task 全绿; 计划自定的**唯一完成判据**(真机接单)属 PS 侧, 未取得
+> **Status**: ✅ Completed (2026-07-30) —— 代码侧四个 Task 全绿; 计划自定的**唯一完成判据**(真机接单)
+> 已在 PS 侧取得: 三轮 testnet 实跑, 我方 32 字符 client order id 三次被 `OrderAccepted`, `-4015` 0 次
+> (证据见 §验证清单末项)
 > **Created**: 2026-07-30
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现，不依赖任何未落地的能力
@@ -159,10 +161,15 @@ sandbox 走同一份 strategy config。确认它仍能部署、撮合、上报 �
       靠把 `set_client_order_id_count` 推到拒绝为止量出来）而不是一个圆整数。
 - [x] sandbox 路径真跑了一次本地撮合（不是推断）：`BacktestEngine` + 同一份 config →
       下单 → 读回成交，并断言成交单的 id 就是新形态。
-- [ ] **真机证据未取得。** 这是本 plan 自定的唯一完成判据，且它在 PS 侧：需要以
-      `MODE=testnet` 跑到一笔订单被交易所**接受**，或被拒但原因是市场性的（余额 / 精度 /
-      最小名义额），不再是 `-4015`。**代码侧全绿不等于交易所会收** —— 本仓 C10 记的正是
-      这件事，而这个缺口本身就是本 bug 之所以能活到今天的原因。
+- [x] **真机证据已取得（2026-07-30，PS 侧）。** `MODE=testnet` 三轮实跑，**我方生成的**订单被交易所
+      `OrderAccepted`，三个不同 client order id 各 32 字符（无连字符）：
+      `a39769df774a4fa39e8b73ae9d975966`、`4ccc9459f0a44cd099c938f28b82351f`、
+      `5dbb46ff35394086b8af160d9d17b419`。三轮合计 `-4015` **0 次**、`OrderRejected` **0 次**。
+      区分方式：同期日志里还有 36 字符带连字符的 id（`11adee49-…` / `041b1a31-…` / `da887090-…`），
+      那些是 venue 侧对账产物、不是本 runner 生成的，**不能拿它们当本判据的证据**。
+      前提条件同时满足：镜像按 custos HEAD 重建（revision `3085244`），且进容器核验过
+      `BINANCE_CLIENT_ORDER_ID_LEN_LIMIT = 36` 与 `_client_order_id_too_long` 确实在镜像里 ——
+      PS 实跑取的是镜像里的代码，不是仓里的 wheel，所以这一步不能靠 label 推。
 
 ## 偏离与改进日志 (Deviations & Improvements)
 
