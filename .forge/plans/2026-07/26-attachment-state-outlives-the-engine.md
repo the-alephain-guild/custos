@@ -1,6 +1,7 @@
 # 26 — 重启后仍相信上个进程的附着状态（一因两症：结构性重配被拒 + false healthy）
 
-> **Status**: 🔲 Not started
+> **Status**: ⏳ In Progress —— 代码侧四个 Task 全绿; 计划自定的**症状一唯一证据**(重启后真机
+> 不带 workaround 起得来)属 PS 侧, 未取得
 > **Created**: 2026-07-30
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现
@@ -187,11 +188,13 @@ match ExecutionEngineProtocol」（`host.py:114`）在多出一个协议外方�
 
 ## 验证清单 (Verification)
 
-- [ ] `make verify` 全绿
-- [ ] Task 1 两条测试修复前红、修复后绿（两侧输出都记进 close-out）
-- [ ] 两个 host 的附着查询各有测试（Task 4）
-- [ ] `ExecutionEngineProtocol` **未被改动**：`tests/core/test_engine_protocol_tier2.py` 的 isinstance
-      正反断言全绿且未被修改。若实施中改了它，说明范围已越出 §决策，须停下来重新判断
+- [x] `make verify` 全绿 —— **除 C6 记录的既有恒红**：`fmt-check` 报 3 个被 `docs/authority/**`
+      按字节 pin 住的文件（`core/runner_fact.py` + 2 个 integration 测试）。实施前实测同样 3 个、
+      同样内容，与本 plan 无关；本 plan 触碰的文件全部 format-clean。`make test-baseline` 全绿
+- [x] Task 1 两条测试修复前红、修复后绿（红侧输出见下方 close-out）
+- [x] 两个 host 的附着查询各有测试（Task 4），且各自被扰动证伪过
+- [x] `ExecutionEngineProtocol` **未被改动**：`git diff` 对 `src/custos/core/engine_protocol.py`
+      与 `tests/core/test_engine_protocol_tier2.py` 均为零改动，两个文件的 isinstance 正反断言全绿
 - [ ] **真机证据**：重启后不带任何 workaround 直接部署 —— 即在 philosophers-stone 侧临时禁用它的
       `clear-recorded-deployment`，`compose down` 后 `make start` 仍能起来且不出现
       `structural reconfigure`。**这是本 plan 唯一能证明症状一真被修掉的证据**，单测证不了
@@ -207,7 +210,27 @@ match ExecutionEngineProtocol」（`host.py:114`）在多出一个协议外方�
   `ExecutionEngineProtocol` —— 后者 `@runtime_checkable` 且有 presence-based isinstance 正/反向断言
   在跑，加方法会静默改变它对所有实现者（含多个 test fake）的含义。
 - 若实施中发现某个 host 的附着状态确实可能长于进程，记在这里 —— 那会推翻本 plan 的前提，也说明
-  `attached()` 不能简单实现为「查内存 dict」。
+  `attached()` 不能简单实现为「查内存 dict」。**未发生**：两个 host 的记账都在内存，本 plan
+  前提成立。
+- **DEV-26-DISPATCH-ON-THE-ENGINE-NOT-THE-RECORD**（低风险，实施中）：Task 2 写的是「首次触碰某
+  spec_id 时用 `attached()` **校准** 载入的 `container_id`，未附着即视为空」，实施改为**分派处直接
+  问引擎**，`container_id` 不再被校准、也不再被任何分派读取。两者对重启场景等价，但校准版有两个
+  问题：(a) 它只修「记录来自上个进程」这一种失真，修不了**同一进程内节点自己死掉**
+  （`_on_node_task_done` 会摘掉活节点，而 `container_id` 仍非空 → 下一个 generation 仍走
+  reconfigure 被拒）；(b) 校准之后 `_engage` 成功必然重写 `container_id`，校准的效果无法被任何
+  断言观察到 —— 那就是本仓 C9/#28 说的死分支。现在 `container_id` 只作 provenance，`_Applied` 与
+  `AppliedRecord` 的 docstring 明说它不参与决策（Task 3）。
+- **DEV-26-RESTART-REDEPLOY-TEST-PREMISE-CORRECTED**（低风险，实施中）：`test_forgets_nothing_across_a_restart`
+  （Plan 22 计入）断言「重启后重发同一 generation **不得** deploy」—— 那正是症状二，它把错误信念
+  写成了契约。按本仓 C8（删面时连测试一起删就没人变红），不删断言，拆成两条：一条守它真正在保护的
+  性质（applied generation 跨重启记得住，因而仍拒更旧的 generation），一条写下更正后的信念（引擎已经
+  没了的那个 generation 会被重新部署）。plan 起草时未预见到这条既有测试需要改写。
+- **DEV-26-TWO-REGISTRIES-DO-NOT-DIE-TOGETHER**（低风险，实测更正 plan 前提）：Task 2 的 ⚠️ 说
+  `NtTradingNodeHost` 的 `_active_nodes` 与 `_lifecycle_authorities`「当前同生同死，所以查错了今天
+  也看不出来」。**实测不成立**：`stop()` 两个都摘，但 `_on_node_task_done`（`host.py:815-818`）
+  只摘 `_active_nodes`。所以节点自己结束时两者分岔，查错了今天就能看出来 ——
+  `test_a_node_that_ended_on_its_own_is_no_longer_held` 在把实现改指 `_lifecycle_authorities` 后
+  确实变红（已实跑）。选 `_active_nodes` 仍然对，但理由是它有观察得到的差别，不是「反正一样」。
 
 ## Follow-up hooks（不属于本 plan scope，登记以防遗漏）
 
@@ -217,3 +240,105 @@ match ExecutionEngineProtocol」（`host.py:114`）在多出一个协议外方�
 - **`-4015` 的真机接单判据仍在 PS 侧**（本仓 Plan 25 的唯一未完成项），且还差一个含该修复的
   runner 镜像 —— PS 实跑取的是镜像里的 toolkit，不是 PS 仓的 wheel。与本 plan 无关，但两者都在
   等同一个「重建镜像」动作。
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-07-30（代码侧；真机判据未取，故 plan 不标 ✅）
+- **总 Task 数**: 4，全部完成
+- **偏离数**: 3（DEV-26-DISPATCH-ON-THE-ENGINE-NOT-THE-RECORD /
+  DEV-26-RESTART-REDEPLOY-TEST-PREMISE-CORRECTED / DEV-26-TWO-REGISTRIES-DO-NOT-DIE-TOGETHER）
+- **验证结果**: 本仓全绿（`make test-baseline`）；`fmt-check` 停在 C6 的既有恒红，与本 plan 无关
+- **实施 commit 范围**: `19b1735`..`0b26b9f`
+- **契约影响**: `OfflineEngine`（离线通道自己的窄切片协议）多一个 `attached()`。
+  `ExecutionEngineProtocol` 零改动 —— 该协议 `@runtime_checkable`，加方法会静默改变 `isinstance`
+  对每个实现者的含义。docs-site 与 `docs/authority/nautilus-host-contract.md` 描述的都是后者，
+  未因此 stale，`make check-authority` 通过
+
+### 修的到底是什么
+
+`container_id` 被当成「引擎还附着着吗」的答案用了。它不是 —— 它是上一次 deploy 的返回值，
+而附着活在引擎的内存里。跨一次进程边界，引擎丢了状态，记录没丢，于是新进程相信自己附着着一个
+它从未创建的东西：新 generation 被当成结构性重配拒掉，同一 generation 不调引擎就报 healthy。
+
+现在分派处直接问引擎。`_engage` 用 `attached()` 决定 deploy 还是 reconfigure；`==` 分支问的是
+「引擎在不在 spec 要它在的地方」—— running 要附着，stopped 要不附着 —— 只有答案相符才报 healthy。
+`container_id` 留作 provenance，两个 dataclass 的 docstring 明说它不参与决策。
+
+### Task 1 的红（修复前）
+
+```
+FAILED test_a_new_generation_after_a_restart_is_deployed_not_reconfigured
+E   assert 0 == 1        # engine.deployed 为空 —— 它走了 reconfigure
+FAILED test_the_applied_generation_after_a_restart_is_not_healthy_on_paper
+E   assert (False or 'healthy' == 'unhealthy')   # 一次引擎调用都没有，却是 healthy
+FAILED test_an_attached_generation_is_still_reported_healthy_without_redeploying
+E   assert 0 == 1
+```
+
+第三条不是症状，是**给修法立的界**：它盯住进程内重投仍走便宜路径，防止「让每次重投都重新部署」
+这种把两症一起盖过去的修法。
+
+### 扰动证伪（每条守卫都真的会咬）
+
+| 把实现改成 | 变红的测试 |
+|---|---|
+| NT host 查 `_lifecycle_authorities` 而非 `_active_nodes` | `test_a_node_that_ended_on_its_own_is_no_longer_held` |
+| sandbox host 答成整机一个开关（`bool(self._lifecycle_authorities)`） | `test_holding_one_instance_is_not_holding_another` |
+| `==` 分支只看附着、不看 spec 要什么（`return bool(attached)`） | `test_a_stopped_generation_after_a_restart_is_healthy_without_stopping_again` |
+
+第一行同时推翻了 plan 的一个前提，见 DEV-26-TWO-REGISTRIES-DO-NOT-DIE-TOGETHER。
+
+### 测试条数（`pytest --collect-only` 实跑）
+
+| 测试文件 | 条数 |
+|---|---|
+| `tests/test_offline_reconciler.py` | 36 |
+| `tests/test_offline_lane_daemon.py` | 17 |
+| `tests/test_nt_trading_node_host.py` | 21 |
+| `tests/engines/nautilus/test_sandbox_host_attachment.py` | 4 |
+| `tests/test_plan_closeout_counts.py` | 13 |
+
+上表合计 91 条。这是这些文件**今天各自的总数**，不是本 plan 的增量 —— 本 plan 在
+`test_offline_reconciler.py` 加了 4 条、`test_nt_trading_node_host.py` 加了 3 条、
+`test_sandbox_host_attachment.py` 是新文件 4 条，并把 `test_offline_lane_daemon.py` 的一条
+拆成两条。
+
+后两行是被本 plan **间接**改变的：`test_plan_closeout_counts.py` 按「带条数表格的 plan」参数化，
+本 close-out 一加表就多出两个用例（11 → 13）。规则是「动了别人数过的文件就在自己的 close-out
+里重数」，间接变动同样算，所以这里重数，而不是回去改 Plan 22 / Plan 25 的行 —— 那些行记的是
+它们当时交付了什么。
+
+### 红线 gate 满足度
+
+| 红线 | code 覆盖 | runtime 接线 | 本 plan 影响 |
+|---|---|---|---|
+| 0.1 Key/KEK 不出进程 | 未触碰 | 未触碰 | 无。`attached()` 只答一个 bool，不经凭证路径 |
+| 0.2 G6 host gate | 未触碰 | 未触碰 | 无。admission 与 `_build_exec_plan` 的 mode 分支一字未改；离线通道本就 live 禁入 |
+| 0.3 失联 ≠ 停止 | 未触碰 | 未触碰 | 无。敞口守卫的 latch 语义未动 —— `watch()` 对已在守的 spec 只重放限额、不解锁；且 `allows_new_generations()` 在跳闸后更早一步就拒了 |
+| 0.4 Decimal money math | 未触碰 | 未触碰 | 无 |
+
+说清它**不**是什么：本 plan 让重启后的部署走得通，这既不放宽也不兑现任何一条红线。
+
+### 失败模式覆盖
+
+| 场景 | 测试 |
+|---|---|
+| 重启后新 generation（记录带上个进程的 container id） | `test_a_new_generation_after_a_restart_is_deployed_not_reconfigured` |
+| 重启后同一 generation（false healthy） | `test_the_applied_generation_after_a_restart_is_not_healthy_on_paper` |
+| 重启后同一 generation 且 spec 已 stopped | `test_a_stopped_generation_after_a_restart_is_healthy_without_stopping_again` |
+| 重启后更旧的 generation 仍被拒 | `test_a_restart_still_refuses_a_generation_it_has_already_passed` |
+| 进程内重投不重新部署 | `test_an_attached_generation_is_still_reported_healthy_without_redeploying` |
+| 节点自己死掉（无人调 stop） | `test_a_node_that_ended_on_its_own_is_no_longer_held` |
+| 附着按实例回答、不是整机开关 | `test_holding_one_instance_is_not_holding_another` |
+
+### 遗留项
+
+1. **真机证据（阻塞完成）。** 两条，都在 PS 侧：临时禁掉 `clear-recorded-deployment` 后
+   `compose down` → `make start` 不出现 `structural reconfigure`；以及重启后重发同一 generation
+   不出现「`wait-status` 通过而没有策略在跑」。**且需要一个含本修复的 runner 镜像** —— PS 实跑取的是
+   镜像里的代码，与 Plan 25 在等同一个重建动作。
+2. **PS 的 workaround 待拆**（跨仓，见 §Follow-up）。拆除前必须先拿到第 1 项，否则 PS 会退回到
+   2026-07-30 之前的状态。
+3. **`container_id` 现在没有任何读它做决策的地方。** 本 plan 按计划保留它作 provenance（删它要
+   动 sqlite 表与 `AppliedRecord`，超出本 plan）。下一个动这块的 plan 应当判断它是否还值得存 ——
+   一个没人读的字段迟早会被下一个读者当成它不是的东西，这正是本 plan 修的那件事。
