@@ -149,7 +149,8 @@ healthy。且「附着状态是进程作用域的」这件事由代码表达，�
    spec，断言要么重新 engage，要么报 unhealthy —— **不允许「没 engage 却 healthy」**。
 
 两条都必须**在修复前是红的**，并把红的输出记进 close-out。用真实的 reconciler 与 fake engine，
-不要在测试里复刻分派逻辑（本仓 C10：手抄等于测自己的假设）。
+不要在测试里复刻分派逻辑 —— 手抄一遍等于测自己的假设（本仓 C4「mock 绕过 public surface 形成双重
+假绿」+ C7「自洽的假绿」；起 plan 时我把这条错标成 C10，C10 实为正则作用域，指针已更正）。
 
 ### Task 2 — 落选定的修法
 
