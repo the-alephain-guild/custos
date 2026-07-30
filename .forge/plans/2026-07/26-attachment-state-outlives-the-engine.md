@@ -292,18 +292,22 @@ E   assert 0 == 1
 
 | 测试文件 | 条数 |
 |---|---|
-| `tests/test_offline_reconciler.py` | 36 |
+| `tests/test_offline_reconciler.py` | 37 |
 | `tests/test_offline_lane_daemon.py` | 17 |
-| `tests/test_nt_trading_node_host.py` | 21 |
+| `tests/test_nt_trading_node_host.py` | 22 |
 | `tests/engines/nautilus/test_sandbox_host_attachment.py` | 4 |
 | `tests/test_plan_closeout_counts.py` | 13 |
 
-上表合计 91 条。这是这些文件**今天各自的总数**，不是本 plan 的增量 —— 本 plan 在
+上表合计 93 条。这是这些文件**今天各自的总数**，不是本 plan 的增量 —— 本 plan 在
 `test_offline_reconciler.py` 加了 4 条、`test_nt_trading_node_host.py` 加了 3 条、
 `test_sandbox_host_attachment.py` 是新文件 4 条，并把 `test_offline_lane_daemon.py` 的一条
 拆成两条。
 
-后两行是被本 plan **间接**改变的：`test_plan_closeout_counts.py` 按「带条数表格的 plan」参数化，
+前两行在 codex 审查之后各多了一条（36 → 37、21 → 22）：`attached()` 不再把已结束的 task
+算作附着（Fix 1），terminal 判据加测 `archived`（Fix 2）。这里重数而不是另起一份记录 ——
+fix cycle 是本 plan 自己的交付，plan 也还停在 ⏳，close-out 尚未定稿。
+
+最后一行是被本 plan **间接**改变的：`test_plan_closeout_counts.py` 按「带条数表格的 plan」参数化，
 本 close-out 一加表就多出两个用例（11 → 13）。规则是「动了别人数过的文件就在自己的 close-out
 里重数」，间接变动同样算，所以这里重数，而不是回去改 Plan 22 / Plan 25 的行 —— 那些行记的是
 它们当时交付了什么。
@@ -341,4 +345,16 @@ E   assert 0 == 1
    2026-07-30 之前的状态。
 3. **`container_id` 现在没有任何读它做决策的地方。** 本 plan 按计划保留它作 provenance（删它要
    动 sqlite 表与 `AppliedRecord`，超出本 plan）。下一个动这块的 plan 应当判断它是否还值得存 ——
-   一个没人读的字段迟早会被下一个读者当成它不是的东西，这正是本 plan 修的那件事。
+   一个没人读的字段迟早会被下一个读者当成它不是的东西，这正是本 plan 修的那件事。codex 补了
+   两点：终局 generation 的早返回不会清掉上个进程留下的值；与其删不如先更名为
+   `last_deploy_receipt` 之类，让字段名自己说明它是回执而不是当前状态。
+4. **自终止的 NT 节点没有明确的清理路径。**（codex MEDIUM）`_on_node_task_done`
+   （`host.py:816-827`）只摘 registry，不做 `stop()` 里的 `node.dispose()` 与 task reap。
+   本 plan 把这条路径从**永久卡死**（旧行为：`container_id` 非空 → reconfigure 被拒 → 不再恢复）
+   换成了**可以重新部署**，方向是对的，但重新部署前上一个节点还剩什么没释放，本仓给不出答案 ——
+   要判断 NT `run_async()` 自行返回后的语义，需要真机证据。与第 1 项同批处理。
+5. **同步 engine 查询没有统一的异常边界。**（codex MEDIUM）`_engine_is_where_the_spec_asks`
+   （`reconciler.py:247`）在 engine-op 的 `try` 之外，抛异常会终结 lane task 而不是走
+   RETRYABLE/NAK。**这是既有形态而非本 plan 引入**：紧挨着的 `supports_trading_mode`（`:261`）
+   暴露完全相同。只包本 plan 新加的那一次调用会让两者处置不一致；正确的修法是一次性给所有同步
+   engine 查询定边界，那是独立的 plan。两个当前 host 都是 dict lookup，抛不出异常。

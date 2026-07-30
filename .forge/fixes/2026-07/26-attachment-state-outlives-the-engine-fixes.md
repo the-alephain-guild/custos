@@ -1,6 +1,6 @@
 # 26 — attachment-state-outlives-the-engine 的修复
 
-> **Status**: 🔲 Not started
+> **Status**: ✅ Completed（2026-07-30；`aade81a`..`8ab85c5`）
 > **Created**: 2026-07-30
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Plan**: `.forge/plans/2026-07/26-attachment-state-outlives-the-engine.md`
@@ -95,15 +95,38 @@ generation 的早返回不会清掉上个进程留下的值；以及与其删不
 
 ## 验证清单 (Verification)
 
-- [ ] Fix 1 的测试修复前红、修复后绿
-- [ ] Fix 2 两个 terminal 变体都绿
-- [ ] `make test-baseline` 全绿
-- [ ] `ExecutionEngineProtocol` 仍零改动
-- [ ] 不修的四条各自写明理由，且引用的代码事实都有 `file:line` 实证
+- [x] Fix 1 的测试修复前红、修复后绿 —— 红侧 `assert True is False`，且**同一测试的第一条断言
+      通过**（entry 仍在 registry），证明红的原因是查询答错而不是 callback 恰好晚跑；改回
+      membership-only 会再次变红（已实跑）
+- [x] Fix 2 两个 terminal 变体都绿（`archived` 本就绿 —— 这条是覆盖不是修复）
+- [x] `make test-baseline` 全绿（2201 passed / 25 skipped / 1 xfailed）
+- [x] `ExecutionEngineProtocol` 仍零改动
+- [x] 不修的四条各自写明理由，且引用的代码事实都有 `file:line` 实证
 
 ## 进度追踪 (Progress)
 
 | Fix | Priority | Status | Completed | Notes |
 |---|---|---|---|---|
-| 1 | P2 | 🔲 | | `attached()` 不把已结束的 task 算作附着 |
-| 2 | P3 | 🔲 | | terminal 判据覆盖 `archived` |
+| 1 | P2 | ✅ | 2026-07-30 | `attached()` 不把已结束的 task 算作附着（`aade81a`） |
+| 2 | P3 | ✅ | 2026-07-30 | terminal 判据覆盖 `archived`（`8ab85c5`） |
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-07-30
+- **修 2 条 / 登记 4 条**，无一条被静默丢弃
+- **实施 commit 范围**: `aade81a`..`8ab85c5`
+- **测试条数变化**: `tests/test_nt_trading_node_host.py` 21 → 22、
+  `tests/test_offline_reconciler.py` 36 → 37。两行都在 plan 26 的 close-out 表里重数过 ——
+  fix cycle 是同一个 plan 的交付，且 plan 仍停在 ⏳，close-out 未定稿
+- **红线影响**: 无。Fix 1 让 `attached()` 答得更严（原本会短暂多答一个 True），方向是收紧不是
+  放宽；Fix 2 纯测试
+
+### 关于 MEDIUM-2 值得记一句
+
+它和本 plan 修的是**同一个错误，只是尺度不同**：plan 修的是「跨进程边界后仍相信旧记录」，
+这条是「跨一次 loop 调度后仍相信旧 registry」。两次都是把一个**代表过去的东西**当成
+**现在的答案**。写 `attached()` 时我按计划的措辞选对了 dict，却没把「持的是活的 `(node, task)`」
+这句话读到底 —— `entry is not None` 表达不了「活」。
+
+外部审查抓到它，而两轮自省没有：自省看的是自己刚写的代码对不对，看不见「我对这句话的理解本身
+就少了一半」。
