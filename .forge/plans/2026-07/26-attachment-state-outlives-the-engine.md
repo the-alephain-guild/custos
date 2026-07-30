@@ -284,7 +284,7 @@ E   assert 0 == 1
 |---|---|
 | NT host 查 `_lifecycle_authorities` 而非 `_active_nodes` | `test_a_node_that_ended_on_its_own_is_no_longer_held` |
 | sandbox host 答成整机一个开关（`bool(self._lifecycle_authorities)`） | `test_holding_one_instance_is_not_holding_another` |
-| `==` 分支只看附着、不看 spec 要什么（`return bool(attached)`） | `test_a_stopped_generation_after_a_restart_is_healthy_without_stopping_again` |
+| `==` 分支只看附着、不看 spec 要什么（`return bool(attached)`） | `test_a_terminal_generation_after_a_restart_is_healthy_without_stopping_again` |
 
 第一行同时推翻了 plan 的一个前提，见 DEV-26-TWO-REGISTRIES-DO-NOT-DIE-TOGETHER。
 
@@ -329,7 +329,7 @@ fix cycle 是本 plan 自己的交付，plan 也还停在 ⏳，close-out 尚未
 |---|---|
 | 重启后新 generation（记录带上个进程的 container id） | `test_a_new_generation_after_a_restart_is_deployed_not_reconfigured` |
 | 重启后同一 generation（false healthy） | `test_the_applied_generation_after_a_restart_is_not_healthy_on_paper` |
-| 重启后同一 generation 且 spec 已 stopped | `test_a_stopped_generation_after_a_restart_is_healthy_without_stopping_again` |
+| 重启后同一 generation 且 spec 已终局（`stopped` / `archived` 各一次） | `test_a_terminal_generation_after_a_restart_is_healthy_without_stopping_again` |
 | 重启后更旧的 generation 仍被拒 | `test_a_restart_still_refuses_a_generation_it_has_already_passed` |
 | 进程内重投不重新部署 | `test_an_attached_generation_is_still_reported_healthy_without_redeploying` |
 | 节点自己死掉（无人调 stop） | `test_a_node_that_ended_on_its_own_is_no_longer_held` |
@@ -353,6 +353,13 @@ fix cycle 是本 plan 自己的交付，plan 也还停在 ⏳，close-out 尚未
    本 plan 把这条路径从**永久卡死**（旧行为：`container_id` 非空 → reconfigure 被拒 → 不再恢复）
    换成了**可以重新部署**，方向是对的，但重新部署前上一个节点还剩什么没释放，本仓给不出答案 ——
    要判断 NT `run_async()` 自行返回后的语义，需要真机证据。与第 1 项同批处理。
+
+   同一处缺口还留下一个**两个调用点口径不一**：Fix 1 之后 `attached()` 认为「entry 在但 task 已
+   结束」= 未附着，而 `deploy()` 的幂等守卫（`host.py:296`）仍按原始 membership 拒绝，所以在那个
+   调度窗口里 reconciler 会去 deploy 而 deploy 会抛「already deployed; call stop first」。后果是
+   一次 unhealthy + RETRYABLE，下一次投递（callback 早已跑完）即自愈，**比修复前的空报 healthy 好**。
+   不把守卫一起放宽是有意的：放宽等于允许静默顶掉一个**从未 dispose 过的**节点，而那正是本项
+   要先弄清的事。两处口径应当在这一项里一并收敛。
 5. **同步 engine 查询没有统一的异常边界。**（codex MEDIUM）`_engine_is_where_the_spec_asks`
    （`reconciler.py:247`）在 engine-op 的 `try` 之外，抛异常会终结 lane task 而不是走
    RETRYABLE/NAK。**这是既有形态而非本 plan 引入**：紧挨着的 `supports_trading_mode`（`:261`）
