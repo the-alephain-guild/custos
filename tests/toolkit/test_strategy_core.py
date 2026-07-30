@@ -15,7 +15,6 @@ Python. So tests touching instance methods bind the unbound method onto a Simple
 
 from __future__ import annotations
 
-import ast
 import inspect
 import types
 
@@ -128,73 +127,6 @@ def test_ready_file_orphan_constant_removed():
     assert not hasattr(ts_module, "STRATEGY_READY_FILE"), (
         "the orphaned constant should be gone from trading_strategy too — see self._ready_file"
     )
-
-
-# The premise that made removal safe, guarded so it cannot quietly stop holding
-_LIFECYCLE_REQUIRED = {"on_start", "on_core_bar", "on_stop"}
-_SCAN_SKIP_PARTS = {
-    ".venv",
-    "__pycache__",
-    "build",
-    ".build",
-    "tests",
-    ".git",
-    ".claude",  # agent worktrees and repository copies under plugins
-    ".worktrees",  # top-level git worktrees: feature-branch copies, not this source
-    "node_modules",
-}
-
-
-def _find_direct_core_subclasses():
-    """Walks the source with the AST and returns (rel_path, classname, defined_methods) for
-    every direct NautilusStrategyCore subclass.
-
-    The AST rather than an import: it avoids loading Cython and heavy dependencies, and an
-    example class inside a docstring stays a string literal instead of reading as a ClassDef.
-    """
-    from pathlib import Path
-
-    repo_root = Path(__file__).resolve().parents[1]
-    found = []
-    for py in repo_root.rglob("*.py"):
-        if _SCAN_SKIP_PARTS & set(py.parts):
-            continue
-        try:
-            tree = ast.parse(py.read_text(encoding="utf-8"))
-        except (SyntaxError, UnicodeDecodeError, OSError):
-            # OSError also covers a broken symlink, a permission problem, or a directory
-            continue
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.ClassDef):
-                continue
-            # Matches the bare `class X(NautilusStrategyCore)` and the attribute form
-            # `class X(strategy_core.NautilusStrategyCore)`, so import style cannot hide one
-            base_ids = {
-                b.id if isinstance(b, ast.Name) else b.attr
-                for b in node.bases
-                if isinstance(b, ast.Name | ast.Attribute)
-            }
-            if "NautilusStrategyCore" not in base_ids:
-                continue
-            defined = {
-                n.name for n in node.body if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef)
-            }
-            found.append((str(py.relative_to(repo_root)), node.name, defined))
-    return found
-
-
-def _calls_super_method(func_node, method_name):
-    """Whether the method's body contains a ``super().<method_name>()`` call."""
-    for n in ast.walk(func_node):
-        if (
-            isinstance(n, ast.Attribute)
-            and n.attr == method_name
-            and isinstance(n.value, ast.Call)
-            and isinstance(n.value.func, ast.Name)
-            and n.value.func.id == "super"
-        ):
-            return True
-    return False
 
 
 # =============================================================================
