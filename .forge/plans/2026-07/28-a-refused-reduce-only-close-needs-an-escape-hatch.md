@@ -43,6 +43,32 @@ reduce-only 市价 BUY 0.007** 一次成交净平。结论是 **Demo 撮合引�
 | 出场单 | `packages/custos-strategy-toolkit-nautilus/…/adapter/execution.py:214-219` | market + `TimeInForce.IOC` + `reduce_only=True` |
 | 紧急全平 | `…/adapter/strategy_core.py:327-368`（`close_position` 在 `:366`） | 逐仓 `cancel_all_orders` → `close_position(reduce_only=True, IOC)` |
 
+### 但实际上是三条，且可达性不同（起 plan 时的 Foundation Scan 发现）
+
+owner 指示把逻辑放 `strategy_core.py`。落点归属没问题，但**只放那里覆盖不到会真正开单的路径**：
+
+| 路径 | 代码 | reduce_only | 离线通道可达？ |
+|---|---|---|---|
+| 常规出场 | toolkit `execution.py:214-219` | 硬编码 `True` | **可达** —— 出场信号（反转 / SL / TP）触发 |
+| `emergency_close` | toolkit `strategy_core.py:327-368` | `True` | **不可达** —— 见下 |
+| 熔断 flatten | **custos** `host.py:728` → NT `close_all_positions` | NT 默认 `True`（镜像内实测签名） | 可达，但**不是 toolkit 代码** |
+
+两条实证：
+
+1. **`emergency_close` 在本通道里没有调用方。** 它被声明为命令（`strategy_core.py:242`
+   `_BASE_COMMANDS`），但 `supported_commands` 全仓**零消费方**，而 `src/custos/offline/daemon.py:203`
+   的 docstring 自己写着「The lane publishes no facts, **holds no commands**, resolves no policies」——
+   离线通道按设计不持有命令。它的 docstring 也自称「Crucible graceful-close layer」，是 sidecar 时代的
+   遗留面。**fallback 只加在这里，在本通道里就是死代码。**
+2. **熔断那条 flatten 不经过 toolkit。** `host.flatten_positions`（`:711-733`）调的是 NT 自带的
+   `strategy.close_all_positions(instrument_id)`（`:728`，唯一调用点），其 `reduce_only` 默认 `True`。
+   所以它**同样吃 -2022**，但改 `strategy_core.py` 碰不到它。
+
+因此 fallback 的判定逻辑应当收敛成**一个共享 helper**（放 `strategy_core.py` 符合 owner 指示），由
+**会真正开单的两条路径**各自调用：常规出场（`execution.py`）与熔断 flatten（需要 host 侧改为走 toolkit
+的平仓路径，或在 host 侧复用同一个 helper）。`emergency_close` 一并接上，但要清楚它在本通道当前不可达 ——
+接它是为了不留下两套语义，不是因为它现在会跑。
+
 **代码已经知道 -2022 的存在。** `emergency_close` 的 docstring 明写先撤挂单是为了「不让 resting
 reduce_only 占容量而引发 -2022 rejection」（`strategy_core.py:330-333`）。也就是说现有实现已经处理了
 **容量型** -2022；本 plan 要处理的是**撤干净之后仍被拒**的那种 —— 引擎自身状态不一致，撤单救不了。
@@ -139,12 +165,19 @@ reduce-only 平仓在撤干净挂单后仍被引擎拒绝时，有一条**受严
 - 一次性 + per-position 冷却，且冷却状态与在途 guard 复用现有 close-guard 机制（lesson #13），不新造；
 - 日志把「为什么允许拆掉 reduce_only」写清楚（哪条门禁过了、依据是什么），事后要能复盘。
 
-### Task 4 — 两条平仓路径都要覆盖
+### Task 4 — 三条平仓路径都要覆盖，其中一条在 toolkit 之外
 
-`create_exit_order`（常规出场）与 `emergency_close`（紧急全平）**都**会遇到这个引擎缺陷。只改一条会留下
-另一条在同一环境下平不掉。`emergency_close` 还有额外约束：它 **never propagates** 且不得延误关停
-（见其 docstring 与 lesson #34），所以 fallback 在那条路上必须同样受总预算约束、不能把 best-effort 层
-变成会挂住的层。
+判定逻辑收敛为 `strategy_core.py` 里的**一个共享 helper**（owner 指定的落点），三处接入：
+
+1. **`create_exit_order`（`execution.py:214-219`）** —— 本通道唯一**当前会真正触发**的平仓路径。
+2. **熔断 flatten（`host.py:728`）** —— 在 custos 侧、调 NT 的 `close_all_positions`。要么改为走 toolkit
+   的平仓路径，要么在 host 侧复用同一 helper。**不接它，则熔断在 demo 损坏态下依旧平不掉** ——
+   而那正是最需要它成功的时刻。
+3. **`emergency_close`（`strategy_core.py:327-368`）** —— 一并接上以免留下两套语义，但 close-out 必须
+   **诚实标注它在本通道当前不可达**（无命令通道，见 §上下文），不得写成"已覆盖三条路径"就完事。
+
+`emergency_close` 还有额外约束：它 **never propagates** 且不得延误关停（见其 docstring 与 lesson #34），
+所以 fallback 在那条路上必须同样受总预算约束、不能把 best-effort 层变成会挂住的层。
 
 ### Task 5 — 两个 host 都要被测到
 
@@ -159,7 +192,9 @@ reduce-only 平仓在撤干净挂单后仍被引擎拒绝时，有一条**受严
 - [ ] Task 1 / Task 2 的四条测试修复前红、修复后绿（两侧输出都记进 close-out）
 - [ ] **`-2019` 保证金不足不触发 fallback** —— 单独列项，因为这条错了就是把拒单变成新仓位
 - [ ] **cache 滞后误报 open 时不下普通单** —— 单独列项，这是选项 A 的已知弱点
-- [ ] 两条平仓路径（`create_exit_order` + `emergency_close`）各有覆盖
+- [ ] 三条平仓路径各有覆盖，且 close-out **分别标注可达性**：`create_exit_order`（当前唯一会真正触发）、
+      熔断 flatten（`host.py:728`，toolkit 之外）、`emergency_close`（本通道**不可达**，接它只为语义统一）。
+      把不可达的那条写成"已验证"就是 C7 的自洽假绿
 - [ ] `emergency_close` 路径上的 fallback 不延误关停（沿用 lesson #34 的 `wait_for(总预算)` + 兜底放
       `finally` 的判据）
 - [ ] **真机证据 —— 不可强求，须诚实标注。** 本 plan 的触发条件依赖 demo 引擎处于**损坏态**，而它是
@@ -181,5 +216,10 @@ reduce-only 平仓在撤干净挂单后仍被引擎拒绝时，有一条**受严
   testnet 流。这个混合配置是有意的还是历史残留，本 plan 没有判断。若改成真 testnet REST，本 plan 的
   触发条件可能永远不会出现 —— 那也是一种解法，但要先确认真 testnet 的 reduce-only 是健康的。
 - **testnet 上仍有一个未平的空仓**（`-0.0070 BTC` + 三张 resting reduce-only stop），见 Plan 27
-  §Follow-up。它当前平不掉的原因**不是**本 plan 这个缺陷，而是 Plan 27 的两个发现让 runner 的
-  flatten 路径失效；且策略层没有 REST，无法照 lesson #14 手工净平。
+  §Follow-up。它当前平不掉的原因**不是**本 plan 这个缺陷：熔断那条 flatten 被 Plan 27 的两个发现废掉，
+  `emergency_close` 在本通道不可达，而策略层没有 REST、无法照 lesson #14 手工净平。**本 plan 落地也不会
+  自动平掉它** —— 本通道唯一会真正触发的是常规出场路径，它要等一个出场信号（趋势反转，或价格触及那张
+  挂在 `65275.10` 的 stop）。若希望"按需平仓"成为一种能力，那需要给本通道一个命令通道，是独立的决策。
+- **`emergency_close` 是一个当前不可达的安全面。** 它被声明为命令却零消费方，而离线通道按设计不持有
+  命令。要么给通道加命令投递，要么明确它只服务签名通道 —— 现状是"看起来有、实际调不到"，比没有更容易
+  误导下一个读者（与 Plan 26 修的那类"把代表过去的东西当现在的答案"同源）。
