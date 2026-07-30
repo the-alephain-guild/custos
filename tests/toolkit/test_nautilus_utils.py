@@ -1,4 +1,4 @@
-"""Tests for shared.nautilus.utils module.
+"""The engine adapter's utils.
 
 These tests cover utility functions for deriving NautilusTrader types from config.
 """

@@ -1,4 +1,4 @@
-"""Tests for shared.nautilus.config module.
+"""The engine adapter's config package.
 
 These tests cover the msgspec.Struct based configuration models for NautilusTrader.
 """

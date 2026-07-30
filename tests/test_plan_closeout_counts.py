@@ -49,11 +49,25 @@ def _plans_with_test_tables() -> list[Path]:
     )
 
 
-def _collected_counts(files: list[str]) -> Counter[str]:
-    """Ask pytest itself how many tests each file has."""
+_SKIPPED_FILE = re.compile(r"^SKIPPED \[\d+\] (tests/[\w/]+\.py):", re.MULTILINE)
+
+
+def _collect(files: list[str]) -> tuple[Counter[str], set[str]]:
+    """Ask pytest how many tests each file has, and which ones it could not collect.
+
+    A file whose module-level ``importorskip`` fires collects nothing, and that is not
+    the same as a wrong count. The toolkit's engine-adapter tests are exactly that: the
+    adapter distribution ships in the ``nautilus`` extra, so under the base profile they
+    skip and count zero, while under ``make verify-nt`` they run. Counting them as zero
+    would make every close-out that records them red in one profile and green in the
+    other, which says nothing about whether the number is right.
+
+    So skipped files are reported separately rather than folded into the counts, and
+    their rows are named out loud instead of quietly excused.
+    """
 
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "--collect-only", "-q", "--no-header", *files],
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", "--no-header", "-rs", *files],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -66,6 +80,11 @@ def _collected_counts(files: list[str]) -> Counter[str]:
         node, separator, _ = line.partition("::")
         if separator and node.endswith(".py"):
             counts[node] += 1
+    return counts, set(_SKIPPED_FILE.findall(result.stdout))
+
+
+def _collected_counts(files: list[str]) -> Counter[str]:
+    counts, _ = _collect(files)
     return counts
 
 
@@ -93,11 +112,11 @@ def test_a_close_out_counts_no_test_file_that_has_since_been_deleted(plan: Path)
 def test_the_newest_count_of_every_test_file_matches_what_pytest_collects() -> None:
     claim = _newest_claim()
 
-    collected = _collected_counts(sorted(claim))
+    collected, skipped = _collect(sorted(claim))
     wrong = {
         path: {"plan": plan, "claimed": count, "collected": collected.get(path, 0)}
         for path, (plan, count) in claim.items()
-        if collected.get(path, 0) != count
+        if path not in skipped and collected.get(path, 0) != count
     }
 
     assert not wrong, (
@@ -105,6 +124,16 @@ def test_the_newest_count_of_every_test_file_matches_what_pytest_collects() -> N
         "A plan that grows a counted file recounts it in its own close-out rather "
         "than editing the older one."
     )
+
+    unverified = sorted(path for path in claim if path in skipped)
+    if unverified:
+        # Named, not silenced: under this profile these counts were not checked at all,
+        # and a reader of a green run should be able to see which ones.
+        print(
+            f"{len(unverified)} counted files did not collect under this profile, so their "
+            f"counts are unchecked here and are covered by the profile that runs them: "
+            f"{unverified}"
+        )
 
 
 @pytest.mark.parametrize("plan", _plans_with_test_tables(), ids=lambda p: p.name)
@@ -120,6 +149,35 @@ def test_a_close_out_states_no_total_its_rows_do_not_support(plan: Path) -> None
             f"{plan.name} claims {total} tests while its rows account for {rows}; "
             "state a total its own table supports, or drop the total"
         )
+
+
+def test_the_probe_tells_a_skipped_file_apart_from_an_uncollectable_one() -> None:
+    """Proves the excusal is earned by a real skip, not handed to any file counting zero.
+
+    Written into ``tests/`` rather than a tmp_path because pytest reports paths relative
+    to the root, and a count is only excused for a path this repository would recognise.
+    """
+
+    marker = ROOT / "tests" / "_probe_skips_at_collection.py"
+    marker.write_text(
+        "import pytest\n\n"
+        'pytest.importorskip("a_module_this_repository_will_never_have")\n\n\n'
+        "def test_never_runs() -> None:\n"
+        "    raise AssertionError\n",
+        encoding="utf-8",
+    )
+    try:
+        counts, skipped = _collect(
+            ["tests/_probe_skips_at_collection.py", "tests/test_plan_closeout_counts.py"]
+        )
+    finally:
+        marker.unlink()
+
+    assert "tests/_probe_skips_at_collection.py" in skipped
+    assert counts["tests/_probe_skips_at_collection.py"] == 0
+    # The file that did collect is not excused, so a wrong count for it still fails.
+    assert "tests/test_plan_closeout_counts.py" not in skipped
+    assert counts["tests/test_plan_closeout_counts.py"] > 0
 
 
 def test_the_probe_notices_a_count_that_drifted(tmp_path: Path) -> None:

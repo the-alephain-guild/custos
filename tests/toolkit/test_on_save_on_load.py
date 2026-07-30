@@ -5,7 +5,7 @@ replace the SnapshotManager state-serialization subsystem. This task adds them
 *alongside* the legacy path and proves the produced snapshot is equivalent
 (behavioural equivalence had to be shown before the old path was deleted).
 
-The serialize/restore core lives in shared.nautilus.state_persistence as pure
+The serialize/restore core lives in the adapter's state_persistence as pure
 functions, so round-trip and equivalence are directly testable without
 instantiating the Cython-backed Strategy.
 """

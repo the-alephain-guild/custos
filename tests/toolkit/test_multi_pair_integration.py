@@ -215,7 +215,7 @@ class TestExportedComponents:
     """Test that all components are properly exported."""
 
     def test_imports_from_nautilus_module(self):
-        """Test all multi-pair components can be imported from shared.nautilus."""
+        """Every multi-pair component is importable from the engine adapter."""
         from custos_toolkit_nautilus.adapter import (
             AllocationConfig,
             CapitalAllocator,

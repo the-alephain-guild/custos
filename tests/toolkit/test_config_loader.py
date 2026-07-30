@@ -1,4 +1,4 @@
-"""Tests for shared.config.loader module."""
+"""The toolkit's config loader."""
 
 import tempfile
 from pathlib import Path

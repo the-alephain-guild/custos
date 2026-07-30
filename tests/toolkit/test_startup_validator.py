@@ -1,4 +1,4 @@
-"""Tests for shared.config.validator — startup validation and provenance logging."""
+"""The toolkit's config validator — startup validation and provenance logging."""
 
 from __future__ import annotations
 

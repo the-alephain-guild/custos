@@ -1,4 +1,4 @@
-"""Tests for shared.nautilus.tick_monitor module."""
+"""The engine adapter's tick monitor."""
 
 import pytest
 

@@ -1,4 +1,4 @@
-"""Tests for shared.risk.manager module."""
+"""The toolkit's risk manager."""
 
 from decimal import Decimal
 

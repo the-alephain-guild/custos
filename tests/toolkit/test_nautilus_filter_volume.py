@@ -101,7 +101,7 @@ class TestNautilusVolumeFilter:
         with pytest.raises(ValueError):
             NautilusVolumeFilter(VolumeFilterConfig(enabled=True, ma_period=5, ma_type="bogus"))
 
-    def test_no_shared_filters_import(self):
+    def test_does_not_import_the_platform_neutral_filters(self):
         import inspect
         import re
 
@@ -109,4 +109,4 @@ class TestNautilusVolumeFilter:
 
         src = inspect.getsource(mod)
         import_lines = [ln for ln in src.splitlines() if re.match(r"\s*(from|import)\s", ln)]
-        assert not any("shared.filters" in ln or "..filters" in ln for ln in import_lines)
+        assert not any("custos_toolkit.filters" in ln or "..filters" in ln for ln in import_lines)

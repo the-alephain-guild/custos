@@ -2,7 +2,8 @@
 """Tests for NautilusAdxFilter (DM + ATR + WilderMA composition).
 
 The ADX formula once had a bug, and this retires it: absolute-value assertions against
-a known data pair from the reference implementation, so the wiring yields standard ADX
+a known data pair from the reference implementation, so the composition yields standard
+ADX rather than the wrong value a hand-rolled Wilder initialisation produced.
 """
 
 from dataclasses import dataclass
@@ -10,8 +11,13 @@ from dataclasses import dataclass
 import pytest
 
 pytest.importorskip("nautilus_trader")
-pandas_ta = pytest.importorskip("pandas_ta")
+
+# The reference implementation below is the vendored pandas_ta, because the adapter
+# imports the vendored copy at runtime and the installed package is absent here by
+# design. Skipping on the installed one left this whole file collecting nothing —
+# coverage present but never run, which is what this port set out to end.
 import pandas as pd  # noqa: E402
+from custos_toolkit_nautilus._vendor import pandas_ta  # noqa: E402
 from custos_toolkit_nautilus.adapter.config.filters import AdxFilterConfig  # noqa: E402
 from custos_toolkit_nautilus.adapter.filters import NautilusAdxFilter  # noqa: E402
 
@@ -105,7 +111,7 @@ class TestNautilusAdxFilter:
         assert f.get_plus_di() is not None and 0.0 <= f.get_plus_di() <= 100.0
         assert f.get_minus_di() is not None and 0.0 <= f.get_minus_di() <= 100.0
 
-    def test_no_shared_filters_import(self):
+    def test_does_not_import_the_platform_neutral_filters(self):
         import inspect
         import re
 
@@ -113,4 +119,4 @@ class TestNautilusAdxFilter:
 
         src = inspect.getsource(mod)
         import_lines = [ln for ln in src.splitlines() if re.match(r"\s*(from|import)\s", ln)]
-        assert not any("shared.filters" in ln or "..filters" in ln for ln in import_lines)
+        assert not any("custos_toolkit.filters" in ln or "..filters" in ln for ln in import_lines)

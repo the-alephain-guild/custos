@@ -17,11 +17,11 @@ pytest.importorskip("nautilus_trader")
 class TestSnapshotModulesDeleted:
     def test_snapshot_module_gone(self):
         with pytest.raises(ModuleNotFoundError):
-            importlib.import_module("shared.nautilus.snapshot")
+            importlib.import_module("custos_toolkit_nautilus.adapter.snapshot")
 
     def test_snapshot_helper_module_gone(self):
         with pytest.raises(ModuleNotFoundError):
-            importlib.import_module("shared.nautilus.snapshot_helper")
+            importlib.import_module("custos_toolkit_nautilus.adapter.snapshot_helper")
 
 
 class TestExportsRemoved:

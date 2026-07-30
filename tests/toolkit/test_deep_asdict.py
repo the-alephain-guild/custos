@@ -1,7 +1,7 @@
 """
 Tests for deep dict conversion of msgspec structs.
 
-Tests the deep_asdict utility function from shared.nautilus.utils.
+Tests the deep_asdict utility in the engine adapter's utils.
 
 Verifies the fix for:
 AttributeError('StopLossConfig' object has no attribute 'get')
@@ -126,7 +126,7 @@ class TradeRiskConfig(msgspec.Struct, frozen=True):
 
 
 class TestDeepAsdictBasic:
-    """Test basic functionality of deep_asdict from shared.nautilus.utils."""
+    """Test basic functionality of deep_asdict."""
 
     def test_converts_simple_struct_to_dict(self):
         """Simple struct should be converted to dict."""

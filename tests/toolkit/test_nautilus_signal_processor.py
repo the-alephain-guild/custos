@@ -1,4 +1,4 @@
-"""Tests for shared.nautilus.signal_processor module.
+"""The engine adapter's signal processor.
 
 Since SignalProcessorStrategy inherits from NautilusTradingStrategy (a Cython-based
 class requiring Nautilus runtime), we use MagicMock(spec=...) to create test instances

@@ -1,4 +1,4 @@
-"""Tests for shared.signals.types module."""
+"""The toolkit's signal types."""
 
 from decimal import Decimal
 

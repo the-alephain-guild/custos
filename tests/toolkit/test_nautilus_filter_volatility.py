@@ -111,7 +111,7 @@ class TestNautilusVolatilityFilter:
         assert f.min_atr_pct == 0.003
         assert f.max_atr_pct == 0.05
 
-    def test_no_shared_filters_import(self):
+    def test_does_not_import_the_platform_neutral_filters(self):
         """The engine-backed filter must not import the platform-neutral one — imports only."""
         import inspect
         import re
@@ -120,4 +120,4 @@ class TestNautilusVolatilityFilter:
 
         src = inspect.getsource(mod)
         import_lines = [ln for ln in src.splitlines() if re.match(r"\s*(from|import)\s", ln)]
-        assert not any("shared.filters" in ln or "..filters" in ln for ln in import_lines)
+        assert not any("custos_toolkit.filters" in ln or "..filters" in ln for ln in import_lines)
