@@ -329,18 +329,22 @@ async def test_an_attached_generation_is_still_reported_healthy_without_redeploy
     assert publisher.payloads[-1]["health"] == "healthy"
 
 
-async def test_a_stopped_generation_after_a_restart_is_healthy_without_stopping_again() -> None:
-    """A stopped spec asks for the absence of an engine, and absence is what it has.
+@pytest.mark.parametrize("lifecycle_state", ["stopped", "archived"])
+async def test_a_terminal_generation_after_a_restart_is_healthy_without_stopping_again(
+    lifecycle_state: str,
+) -> None:
+    """A terminal spec asks for the absence of an engine, and absence is what it has.
 
     The question the reconciler asks is whether the engine is where the spec wants
     it, not whether it is running — otherwise a restarted runner would re-stop an
-    instance nobody is holding on every redelivery.
+    instance nobody is holding on every redelivery. Both terminal states take the
+    same path today; asking each of them is what would notice if they stopped.
     """
 
     engine, publisher = _FakeEngine(), _RecordingPublisher()
     reconciler = _after_a_restart(engine, publisher, generation=2)
 
-    await reconciler.handle(_message(_spec(generation=2, lifecycle_state="stopped")))
+    await reconciler.handle(_message(_spec(generation=2, lifecycle_state=lifecycle_state)))
 
     assert engine.stopped == []
     assert engine.deployed == []
