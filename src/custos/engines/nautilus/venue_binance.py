@@ -66,6 +66,17 @@ _DATA_ENVIRONMENT_BY_MODE: dict[str, BinanceEnvironment] = {
 # spec carries enough before a real live order path is built.
 _LIVE_MIN_APPROVERS = 2
 
+# Binance refuses an order whose client order id is not shorter than this. The
+# number comes from the venue itself, because nothing else states it: the
+# NautilusTrader Binance adapter carries no such constant, and the API docs give
+# no length for the futures field. Measured on 2026-07-30 against the USDT-M
+# futures testnet, which answered a 44-character id with
+#   -4015 "Client order id length should be less than 36 chars"
+# Note the wording: 36 is itself refused, so this is an exclusive bound and the
+# guard below compares with `<`. Treat a change here as a venue-contract change
+# and re-measure rather than adjusting to fit an id.
+BINANCE_CLIENT_ORDER_ID_MAX_LEN = 36
+
 
 def data_environment_for_mode(mode: str) -> BinanceEnvironment:
     """Data-feed environment for a trading_mode (defaults to LIVE prices)."""

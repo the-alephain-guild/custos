@@ -48,6 +48,8 @@ class NautilusBaseConfigSections(TypedDict):
 
     oms_type: str
     external_order_claims: list[InstrumentId]
+    use_uuid_client_order_ids: bool
+    use_hyphens_in_client_order_ids: bool
     trading: TradingConfig
     position: PositionConfig
     risk: RiskConfig
@@ -274,6 +276,26 @@ def build_nautilus_base_config(config_wrapper: ConfigWrapper) -> NautilusBaseCon
     return {
         "oms_type": oms_type,
         "external_order_claims": external_order_claims,
+        # Client order ids are a bare UUID with the hyphens removed: 32 characters, fixed.
+        #
+        # The framework's default builds them from the trader tag, the strategy tag and a
+        # per-strategy order counter. Binance refuses anything not shorter than 36, and a
+        # deployment instance tag alone made that 44 — every order on the venue came back
+        # -4015. Shortening the tag would have held until the counter grew a digit, so the
+        # length is taken off the counter and the tags entirely instead.
+        #
+        # Both flags are needed: a UUID with hyphens is exactly 36, which is still refused.
+        #
+        # Nothing is lost by dropping the tags. Attribution comes from the trader id the
+        # engine prefixes onto every log line and from the deployment instance this runner
+        # records on the order path, not from reading an id on an exchange screen — which
+        # only ever showed a truncated tag anyway.
+        #
+        # This is not read from the strategy's YAML on purpose. The limit belongs to the
+        # venue, not to a strategy, so no strategy author should have to know it or be able
+        # to get it wrong.
+        "use_uuid_client_order_ids": True,
+        "use_hyphens_in_client_order_ids": False,
         "trading": build_trading_config(
             config_wrapper.trading, cast(dict[str, object] | None, raw.get("trading"))
         ),
