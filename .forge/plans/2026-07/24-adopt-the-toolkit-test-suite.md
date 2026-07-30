@@ -476,6 +476,14 @@ plan。本表按规则重数（plan 21/22 的旧行是历史，不改）。
 
 ### 遗留项
 
+0. **Slice E 的新前置条件（2026-07-30，Plan 25 的 codex peer review 发现）。** Speculum 的
+   回测 fill 解析在报告缺时间戳列时，会从 `O-YYYYMMDD-HHMMSS` 形状的 index 反解时间戳
+   （`speculum/backend/app/engine/adapters/nautilus/adapter.py:669-687`）。Plan 25 把 client
+   order id 改成无连字符 UUID 后，那个 fallback 会抛 `ValueError` → **静默跳过该笔成交**
+   （注释自承 "skip the fill"）。今天不触发，因为 Speculum 用的是 PS 的
+   `shared.nautilus.trading_config`（`config_builder.py:271`）而非本仓 toolkit。**但删掉
+   `shared/` 正是逼 Speculum 切过来** —— 所以 Slice E 前必须先修那个 fallback，否则回测权益
+   曲线会静默丢单。
 1. **PS Slice E 尚未完全解锁。** 五个文件仍以硬编码路径读 `shared/`
    （`test_core_contract.py:56`、`test_order_reconciler.py:190,282`、
    `test_stale_order_sweep.py:305`、`test_filter_config_scope.py:23`、

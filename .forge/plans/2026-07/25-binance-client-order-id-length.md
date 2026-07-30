@@ -262,9 +262,16 @@ grep 无此常量，futures 文档不给该字段长度，本仓此前对 `4015`
 |---|---|
 | `tests/test_client_order_id_length.py` | 5 |
 | `tests/test_client_order_id_sandbox_execution.py` | 1 |
+| `tests/engines/nautilus/test_runner_safety_execution_boundary.py` | 12 |
 | `tests/test_plan_closeout_counts.py` | 11 |
 
-上表合计 17 条。
+上表合计 29 条。
+
+第三行是既有文件，本 plan 的 peer-review fix 往里加了 3 条边界强制测试（9 → 12），所以在这里
+数它 —— 此前没有 plan 数过它，但「动了就重数」的纪律与谁先数过无关。第四行不是本 plan 加的
+测试，是本 plan **让它变了**：那个探针按「带条数表格的 plan」参数化，本 close-out 一加表就多出
+两个用例（9 → 11）。间接变动同样算，所以在这里重数而不是回去改 plan 24 的行 —— 那一行记的是
+它当时交付了什么，不该被后来的 plan 改成滚动值。
 
 第三行不是本 plan 加的测试，是本 plan **让它变了**：那个探针按「带条数表格的 plan」参数化，
 本 close-out 一加表就多出两个用例（9 → 11）。规则是「动了别人数过的文件就在自己的 close-out
@@ -283,8 +290,28 @@ grep 无此常量，futures 文档不给该字段长度，本仓此前对 `4015`
 说明一句它**不**是什么：本 plan 让订单能被交易所收下，这既不放宽也不兑现任何一条红线。
 真正待兑现的是 0.2 之外的另一件事 —— 这条通道从未有一笔订单被真实 venue 接受过。
 
+### 外部审查（`--peer=codex`）
+
+codex 报 0 CRITICAL / 1 HIGH / 3 MEDIUM / 4 LOW，逐条实证后 3 条已修、4 条判为不改并写明
+理由、2 条转遗留。原文归档在
+`.forge/reviews/2026-07/codex/25-binance-client-order-id-length-peer-review.md`，分诊在
+`.forge/fixes/2026-07/25-binance-client-order-id-length-fixes.md`。
+
+值得单独说的三件：
+
+1. **它抓到我自己代码里两处事实错误。** 最坏情况的 counter：我写「`2**31-1` 是能渲染的最宽
+   counter，十位」，实测 generate 先自增再渲染，溢出成 `-2147483648` —— 十一字符，比最大正值
+   更宽。现在两个值都测。以及常量名把一个**排他**上界叫成「max」，来源注释还断言「文档不给
+   长度」——那是我没查就写的，已收回到真验过的部分。
+2. **HIGH 成立且已修**：原修法是**约定**不是不变量 —— 只有走 `build_nautilus_base_config`
+   才成立，而 `runtime_loader.py:81-82` 直接采信 artifact adapter 自建的 config。已在
+   `RunnerSafetyExecutionDispatch` 加边界强制（超限本地拒单 + 独立 reason），并证伪过。
+   这一层正是 custos 拥有 venue 交互的地方，所以现在与谁建 config 无关。
+3. **一条真实跨仓隐患**：见遗留项 0 —— 它同时是 Plan 24 Slice E 的新前置条件。
+
 ### 遗留项
 
+0. **Speculum 的 fill fallback（跨仓，Plan 24 Slice E 前置）。** 已回写 Plan 24 遗留项。
 1. **真机证据（阻塞完成）。** 需 PS 侧 `MODE=testnet` 复跑。判据：不再出现 `-4015`。
 2. **`portfolio_equity_ambiguous` 让熔断 fail-closed** —— 计划已登记为 follow-up，先给
    testnet 账户入金再判，未实证故不下断言。
