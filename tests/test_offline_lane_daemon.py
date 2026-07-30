@@ -54,14 +54,21 @@ class _FakeEngine:
         self.flattened: list[tuple[str, str]] = []
         self.flatten_error: Exception | None = None
         self.open_notional = Decimal(open_notional)
+        # In-memory like both real hosts: a fresh engine holds nothing.
+        self._attached: set[str] = set()
 
     async def deploy(self, spec: dict, credential: dict, artifact: Any) -> str:
         self.deployed.append(spec)
+        self._attached.add(str(spec["deployment_instance_id"]))
         return "container-1"
 
     async def reconfigure(self, spec: dict) -> None: ...
 
-    async def stop(self, deployment_instance_id: str) -> None: ...
+    async def stop(self, deployment_instance_id: str) -> None:
+        self._attached.discard(deployment_instance_id)
+
+    def attached(self, deployment_instance_id: str) -> bool:
+        return deployment_instance_id in self._attached
 
     def supports_trading_mode(self, mode: str) -> bool:
         return mode in {"sandbox", "testnet"}
@@ -318,17 +325,38 @@ async def test_the_lane_ends_rather_than_trading_on_with_a_dead_guard(tmp_path: 
         await _run_with_broken_transport(tmp_path, engine, asyncio.Event())
 
 
-async def test_forgets_nothing_across_a_restart(tmp_path: Path) -> None:
-    """A restarted runner must not redeploy a generation it already applied."""
-
-    message = OfflineDeploymentMessage.create(
-        tenant_id=TENANT, strategy_id=STRATEGY, spec=_spec()
+def _desired_state(**overrides: Any) -> bytes:
+    return OfflineDeploymentMessage.create(
+        tenant_id=TENANT, strategy_id=STRATEGY, spec=_spec(**overrides)
     ).to_bytes()
-    await _run(tmp_path, [message])
 
-    second = await _run(tmp_path, [message])
+
+async def test_a_restart_still_refuses_a_generation_it_has_already_passed(
+    tmp_path: Path,
+) -> None:
+    """The applied generation is what survives a restart, and it still decides."""
+
+    await _run(tmp_path, [_desired_state(generation=2)])
+
+    second = await _run(tmp_path, [_desired_state(generation=1)])
 
     assert second["engine"].deployed == []
+
+
+async def test_a_restart_redeploys_the_generation_whose_engine_it_no_longer_has(
+    tmp_path: Path,
+) -> None:
+    """The record survives the restart; the engine it describes does not.
+
+    Reporting this generation applied without deploying anything would hand the
+    consumer a passing wait-status over a runner that is running no strategy.
+    """
+
+    await _run(tmp_path, [_desired_state()])
+
+    second = await _run(tmp_path, [_desired_state()])
+
+    assert len(second["engine"].deployed) == 1
 
 
 def test_the_applied_store_reports_sqlite_own_verdict(tmp_path: Path) -> None:

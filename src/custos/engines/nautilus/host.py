@@ -149,6 +149,11 @@ class SandboxSimulationHost:
             deployment_instance_id=deployment_instance_id,
         )
 
+    def attached(self, deployment_instance_id: str) -> bool:
+        # The simulation lives in this process, so what it is holding is exactly
+        # what this process deployed and has not stopped.
+        return deployment_instance_id in self._lifecycle_authorities
+
     def supports_trading_mode(self, mode: str) -> bool:
         # This host is an explicit local simulation boundary. It may exercise the
         # full lifecycle in sandbox, but must never claim a real-venue mode.
@@ -538,6 +543,14 @@ class NtTradingNodeHost:
             except (asyncio.CancelledError, Exception):  # noqa: BLE001 — reaping the run task
                 pass
         _log.info("nt_stop_completed", deployment_instance_id=deployment_instance_id)
+
+    def attached(self, deployment_instance_id: str) -> bool:
+        # Answered from the live node registry rather than the authority record:
+        # only the former holds a running node, and it is dropped both by stop and
+        # by a node loop that ended on its own. Neither survives this process, and
+        # neither should — an instance nobody is holding must be deployed, not
+        # reconfigured.
+        return deployment_instance_id in self._active_nodes
 
     async def wait_ready(
         self,

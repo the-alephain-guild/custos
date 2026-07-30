@@ -69,6 +69,14 @@ class OfflineEngine(Protocol):
 
     async def stop(self, deployment_instance_id: str) -> None: ...
 
+    def attached(self, deployment_instance_id: str) -> bool:
+        """Whether this engine is holding that instance right now.
+
+        Attachment does not outlive the process that made it, so this is the only
+        thing that can tell a running deployment apart from one a previous process
+        left a record of.
+        """
+
     def supports_trading_mode(self, mode: str) -> bool: ...
 
 
@@ -217,6 +225,7 @@ class OfflineReconciler:
             return Settlement.REJECTED
 
         applied = self._applied.setdefault(spec.spec_id, _Applied())
+        identity = runtime_identity(spec)
 
         if spec.generation < applied.generation:
             _log.warning(
@@ -227,8 +236,17 @@ class OfflineReconciler:
             )
             return Settlement.APPLIED
         if spec.generation == applied.generation:
-            await self._report(spec, healthy=True)
-            return Settlement.APPLIED
+            if self._engine_is_where_the_spec_asks(spec, identity):
+                await self._report(spec, healthy=True)
+                return Settlement.APPLIED
+            # The record says this generation was applied, and it was — by a
+            # process that is gone. Reporting healthy here is worse than failing:
+            # the consumer's wait-status passes over an engine running nothing.
+            _log.info(
+                "offline_applied_generation_reapplied",
+                spec_id=spec.spec_id,
+                generation=spec.generation,
+            )
 
         if not self._engine.supports_trading_mode(spec.trading_mode.value):
             # Terminal: this engine will not grow the capability on redelivery.
@@ -240,7 +258,6 @@ class OfflineReconciler:
             await self._report(spec, healthy=False)
             return Settlement.REJECTED
 
-        identity = runtime_identity(spec)
         try:
             applied.container_id = await self._engage(spec, applied, identity)
         except Exception as exc:  # noqa: BLE001 - a failed apply is reported, then retried
@@ -258,6 +275,22 @@ class OfflineReconciler:
         self._update_guard(spec, identity, limits)
         await self._report(spec, healthy=True)
         return Settlement.APPLIED
+
+    def _engine_is_where_the_spec_asks(
+        self,
+        spec: OfflineDeploymentSpec,
+        identity: OfflineRuntimeIdentity,
+    ) -> bool:
+        """Whether an already-applied generation needs nothing done to it.
+
+        A running spec asks for an attached engine; a stopped one asks for the
+        absence of it. Either way the question goes to the engine, because the
+        applied record survives a restart and the attachment it describes does not.
+        """
+
+        wants_an_engine = spec.lifecycle_state not in _TERMINAL_STATES
+        attached = self._engine.attached(str(identity.deployment_instance_id))
+        return bool(attached) == wants_an_engine
 
     def _update_guard(
         self,
@@ -296,10 +329,15 @@ class OfflineReconciler:
         identity: OfflineRuntimeIdentity,
     ) -> str:
         document = runtime_spec(spec, identity)
+        deployment_instance_id = str(identity.deployment_instance_id)
         if spec.lifecycle_state in _TERMINAL_STATES:
-            await self._engine.stop(str(identity.deployment_instance_id))
+            await self._engine.stop(deployment_instance_id)
             return ""
-        if not applied.container_id:
+        if not self._engine.attached(deployment_instance_id):
+            # Only an engine already holding this instance can be reconfigured.
+            # Asking the engine rather than reading the recorded container id is
+            # what keeps a restart, and a node that died under us, on the deploy
+            # path instead of a structural reconfigure the host would refuse.
             return await self._engine.deploy(
                 document,
                 self._credential_for(spec),
