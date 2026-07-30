@@ -6,6 +6,52 @@
 
 > **custos 内部 lesson 用 `C1` `C2` … 前缀区分生态数字编号** (见文末"记录新 lesson")。
 
+## C10 批量改写源码时, 正则的作用域必须是语法结构而不是行 — 一半损坏能通过语法检查 (2026-07)
+
+- **事件**: Plan 24 把 84 个测试文件从另一个仓库搬进来, 收尾要剥掉 65 处内部追踪号
+  (`plan 36 T8` / `lesson #21` 之类, 本仓读者无从查起)。我对**裸行**跑了一组正则, 其中
+  两条是灾难: `\(\s*\)` 用来清"删引用后空掉的括号", 实际把 `f.is_ready()` 改成了属性
+  访问; `\s+\)` 用来收尾空白, 实际压掉了缩进的收尾括号。9 个文件语法错**能看见**,
+  更多文件是**能解析但语义已变**——而那些正是断言辅助调用, 测试照样"通过"。
+- **第二次尝试也错了**: 我随后改用 tokenize + AST 限定"只碰 COMMENT token 与 docstring
+  所在的行"。**仍然出错**——带行尾注释的**代码行**整行合格, 于是
+  `assert_called_once()  # lesson #15` 又被改坏一次。散文修复同样不可机械化: 机械版
+  留下了 `deleted in .` / `block 2c :` / `(now live via )` 这类断句。
+- **根因**: "行"不是语法单位。一行可以同时是代码和注释, 而清理性的正则(补空括号、
+  收空白)天生不区分它落在哪半。把作用域从"行"收窄到"注释 token 所在的行"只是把
+  错误变罕见, 没有消除它——**唯一正确的作用域是 token 或 AST 节点本身**。
+- **恢复**: 已提交的文件用 `git show HEAD:<path>` 写回(不用 `git checkout --`, 护栏拦
+  得对); 未提交的从源仓重取 + 按序重放, 重放脚本每步**先断言再改**。恢复后测试数与
+  损坏前逐条一致。事后又做了一道独立证据: 剥掉 docstring 与全部字符串常量后比 AST,
+  差异集正好等于声明的改动集(47/60 文件逻辑逐字节等同源仓)——重放若漏了或多了什么,
+  这个等式不会成立。
+- **预防**:
+  - 批量改源码用**逐条手写替换**, 且替换器要求**整行唯一匹配**(匹配数 != 1 就拒绝,
+    不猜) + 写前 `ast.parse`。只用行号做键不够: 过时的行号会静默改错行。
+  - 需要机械化时, 作用域只能是 token / AST 节点, 不能是行; 且**改完必须看 diff**,
+    不能只看 pytest ——静默那半就是靠"测试还是绿的"活下来的。
+  - 与 C7 同族: 绿色由两个同源错误互相印证得出。这次是"被改坏的断言辅助 + 仍然通过的
+    测试", C7 是"陈旧矩阵 + 同龄陈旧镜像"。
+- **同批的第二条 (「全绿」不含「有没有在跑」)**: 收尾时 `pytest` 报 `1308 passed`, 而
+  `pytest --collect-only` 显示两个刚翻译完的文件**一条都不跑**——一个卡在
+  `importorskip("pandas_ta")`(上游包, 本仓正是把它 vendor 进来才不依赖), 一个要
+  `redis` + 活服务(本仓无 redis 依赖, 走 NATS)。46 条断言差一步就永久沉默。**收尾必看
+  collect 计数, 不只看 passed。** 与 C8 同向: 那次是删掉面时连测试一起删所以没人变红,
+  这次是搬进来的测试从未被执行。
+- **同批的第三条 (rename 让断言里的字面量静默失效)**: 七处 layering 守卫查
+  `"shared.filters"` / `"shared.nautilus.snapshot"`——那个包在本仓
+  `find_spec('shared')` 为 `None`, 完全不存在, 守卫因此**永不失败**。上游改了 import,
+  没改断言里的字符串。修法是重指到真包名, 并**注入一条违规导入证明它会咬**。这是
+  lesson #35(boundary constant rename fanout)的一个未列形态: 改名清单要含**断言里的
+  包名字面量**, 它不在 import 语句里, grep import 找不到。
+- **Binding**: 恢复与核实的探针留在 plan 24 的 close-out 与
+  `.forge/reviews/2026-07/24-adopt-the-toolkit-test-suite-review.md`(含结构对比表);
+  计数侧的机械防护是 `tests/test_plan_closeout_counts.py`(本轮扩为 profile-aware,
+  被 collect 期跳过的文件**点名报告为未核验**而非静默豁免, 豁免本身由
+  `test_the_probe_tells_a_skipped_file_apart_from_an_uncollectable_one` 证伪)。
+
+---
+
 ## C9 fail-closed 守的是"错了", 不是"不吭声" — 没有异常可抓的那条路上没人设防 (2026-07)
 
 - **事件**: `EngineSafetySupervisor` 是既有组件、已被审过、对 `get_engine_status` **抛异常**
@@ -389,6 +435,10 @@
   需外加显式 `removeItem(oldKey)`
 - **custos 特化**: Python module 名 `arx_runner` → `custos_runner` (README 已声明 follow-up)
   必须走此协议, 涉及 40+ import site fanout
+- **改名清单必须含断言里的包名字面量** (2026-07 实测复发, 见 C10 同批第三条): 七处
+  layering 守卫查 `"shared.filters"` 字面量, 而那个包改名后在本仓已不存在, 守卫**永不
+  失败**。上游改了 import 语句、没改断言里的字符串, 而 grep import 找不到这类消费者。
+  重指后必须**注入一条违规**证明它会咬, 否则只是把一个空转换成另一个。
 
 ## #40 含 defer 决策的红线 gate close-out 声明必须显式降级 partial scope — code test 覆盖 ≠ runtime wire 兑现
 
