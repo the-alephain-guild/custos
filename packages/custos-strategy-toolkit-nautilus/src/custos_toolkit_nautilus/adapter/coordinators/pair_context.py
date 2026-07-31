@@ -109,6 +109,28 @@ class PairContextCoordinator:
 
             s.log.info(f"Initialized context for {pair}: instrument={ctx.instrument_id}")
 
+    def subscribe_mark_prices(self) -> None:
+        """Subscribe the mark price for every pair, unconditionally.
+
+        The portfolio snapshot prices each open position from the mark price, and the
+        notional cap, the snapshot publisher and the fallback breaker all read that
+        snapshot. Nothing else subscribes it, and its fallback (MID) needs quote ticks
+        that this deployment does not take -- so without this the snapshot is unreliable
+        whenever a position is open, and the breaker can only fail closed.
+
+        Unconditional on purpose: tick subscriptions are gated on the exit mode and the
+        tick-monitoring config, and neither has anything to do with whether the guards
+        need a price. Hanging this off that config is what left the breaker depending on
+        data nobody had asked for.
+
+        Mark price rather than last trade because that is what a perpetual's unrealised
+        PnL and liquidation are marked against.
+        """
+        s = self._strategy
+        for ctx in s._contexts.values():
+            s.subscribe_mark_prices(ctx.instrument_id)
+        s.log.info(f"Mark price subscribed for {len(s._contexts)} pairs (position pricing)")
+
     def subscribe_ticks(self) -> None:
         """Subscribe to tick data for all pairs if enabled."""
         s = self._strategy

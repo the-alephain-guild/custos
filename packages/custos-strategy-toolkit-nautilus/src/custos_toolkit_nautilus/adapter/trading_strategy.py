@@ -499,6 +499,12 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         # 7. Subscribe to tick data (if enabled)
         self._pair_context_coordinator.subscribe_ticks()
 
+        # 7b. Subscribe the mark price the guards price positions from. Not optional and
+        # not tied to the tick config above: the snapshot the notional cap, the snapshot
+        # publisher and the fallback breaker all read is unreliable without it whenever a
+        # position is open.
+        self._pair_context_coordinator.subscribe_mark_prices()
+
         # 8. Recover from existing positions
         self._reconciler.recover_from_existing_positions()
 
