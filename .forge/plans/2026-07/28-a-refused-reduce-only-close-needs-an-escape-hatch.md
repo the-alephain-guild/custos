@@ -1,6 +1,8 @@
 # 28 — reduce-only 平仓被拒时没有出路（demo 撮合引擎的已知缺陷，lesson #14 的手工绕法待固化）
 
-> **Status**: 🔲 Not started
+> **Status**: ⏳ In Progress —— **常规出场路径已落地并有真机证据**（2026-07-31，`9f38691`；见 §完成情况）。
+> 未做: Task 1（分类器把 `-2022` 与 `-2019` 分开，**安全前提**）、Task 4 的另外两条平仓路径
+> （熔断 flatten / `emergency_close`）、Task 5（sandbox host 断言）
 > **Created**: 2026-07-30
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现（需 demo 环境处于 reduce-only 损坏态）
@@ -259,6 +261,54 @@ reduce-only 平仓在撤干净挂单后仍被引擎拒绝时，有一条**受严
       间歇性的、无法按需复现。因此：**不得**因为"跑了一轮没触发"就宣布已验证。可接受的做法是记录
       「fallback 未被触发，因为环境当时正常」，并保留一条人工验证路径（若再次遇到 lesson #14 那种
       平不掉，按本 plan 的日志核对门禁是否如期放行）。**把未触发写成已验证，就是 C7 的自洽假绿。**
+
+## 完成情况 (Partial close-out, 2026-07-31)
+
+### 已落地：常规出场路径的 fallback（commit `9f38691`）
+
+`create_exit_order` 增 `reduce_only: bool = True` 参数；`signal_execution.py` 按
+`ctx.order_tracker.close_reject_count == 0` 决定传什么，并在拆掉保护时打 warning 写明依据与数量来源。
+未新增状态 —— 复用既有的连续逻辑拒单计数（`order_reconciler.py:419` 只在 logic tier 递增，
+`trade_event_handler.py:224` 确认平仓后清零）。
+
+测试 4 条（`tests/toolkit/test_close_reduce_only_fallback.py`），其中 3 条实现前红（`KeyError:
+'reduce_only'`）、实现后绿；第 4 条**实现前即绿**并被有意保留 —— 它断言「fallback 已武装但仓位已平时
+不得下普通单」，而拆掉 `reduce_only` 之后，现有的 `positions_open` 早退是唯一挡住"开出反向仓"的东西，
+必须有测试钉住它。`tests/toolkit` 1319 passed；全仓 2206 passed / 25 skipped / 1 xfailed。
+
+> 全仓首次跑出 3 个 error（`test_toolkit_release_candidate_build.py`），实证为**工作区未提交**所致
+> （"toolkit package sources must exactly match the clean source commit"），提交后自行消失 —— 是可复现
+> 构建守卫在起作用，不是缺陷。
+
+### 真机证据（这条 plan 的验证清单原本写明"不可强求"，但它真的发生了）
+
+镜像 `9f38691`（进容器核验过 `create_exit_order` 带 `reduce_only`、默认 `True`、判断与日志都在）。
+2026-07-31 testnet 实跑，**`-2022` 真实触发**，完整链条：
+
+| 时刻 (UTC) | 事件 |
+|---|---|
+| `08:30:00` | 趋势跳变 `prev_trend=-1 → trend=1` → `Signal: EXIT_SHORT, action=close_on_reversal` |
+| `08:30:01` | `reduce_only=True` 平仓单 `e8c775dd…` 被拒：`{'code': -2022, 'msg': 'ReduceOnly Order is rejected.'}` |
+| `08:30:01` | 处理器撤净该 instrument 挂单（含止损 `c6ba006a…`）+ 2s 退避；拒单计数 → 1 |
+| `08:31:00` | `Closing without reduce_only after 1 logical refusal(s) …; size=0.0070 taken from the open position` |
+| `08:31:07` | `PositionClosed` — `side=FLAT`, `quantity=0.0000`, closing_order_id `e726ccb2…` |
+| `08:32:00` | `Status: trend=BULL | pos=FLAT`，随后按设计开新仓 |
+
+平仓单实测形态：`BUY MARKET 0.0070 IOC **reduce_only=False**` —— 方向相反、数量等于持仓、只发一次。
+
+**一处诚实标注**：第一次被拒后处理器已撤净挂单，容量本应腾出，但按 owner 指定的算法第二次不再试
+reduce-only，**所以本次无法判定"引擎侧真拒"与"容量被占满"哪个是主因**（两者都会表现为 `-2022`）。
+本次证明的是「这条 fallback 走得通、仓位真的平掉」，不是「引擎一定坏了」。§决策 里那个容量假说仍未被
+排除，仍值得按 §Follow-up 处理撤单可靠性。
+
+### 未做（不要按"已完成"读本 plan）
+
+1. **Task 1 —— 分类器仍未把 `-2022` 与 `-2019` 分开。** 现状是 `record_close_reject()` 在整个 logic
+   tier 递增，所以**理论上一次保证金不足的拒单也会武装 fallback**。reduce-only 平仓一般不需要追加保证金
+   （它降低敞口），所以现实风险低，但这正是 Task 1 被定为**安全前提**的原因，跳过它是一处已知缺口。
+2. **Task 4 只覆盖了三条路径中的一条。** 熔断 flatten（`host.py:728` → NT `close_all_positions`）与
+   `emergency_close`（`strategy_core.py:327`）仍硬编码 reduce-only，遇到同样的拒单依旧平不掉。
+3. **Task 5 —— sandbox host 的"不回归"断言未加。**
 
 ## 偏离与改进日志 (Deviations & Improvements)
 
