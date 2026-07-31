@@ -166,6 +166,9 @@ async def test_host_status_breaker_inputs_and_runner_facts_share_one_provider() 
     node = _Node(mark_price=_DecimalValue("100"))
     host._active_nodes["instance"] = (node, None)
     host._runner_fact_contexts["instance"] = (object(), None)
+    # deploy registers this beside the node; the guard paths read it so equity resolves
+    # on an account that holds more than one currency.
+    host._settlement_currencies["instance"] = "USDT"
 
     assert await host.get_open_notional("instance") == Decimal("200")
     assert (await host.get_positions("instance"))[0].unrealized_pnl == Decimal("20")
@@ -183,7 +186,10 @@ async def test_host_status_breaker_inputs_and_runner_facts_share_one_provider() 
             "currency": "USDT",
         }
     ]
-    assert provider.calls == [None, None, None, "USDT"]
+    # All four declare the currency: the three guard paths take it from what deploy
+    # registered, and the RunnerFact path takes it from its caller. None of them may
+    # ask an account holding several currencies for "the" equity.
+    assert provider.calls == ["USDT", "USDT", "USDT", "USDT"]
 
 
 async def test_host_marks_inactive_or_unreliable_status_fail_closed() -> None:
@@ -270,3 +276,105 @@ async def test_safety_tick_fails_closed_on_an_unreliable_status() -> None:
     assert tick.verdict.reason == "portfolio_equity_missing:USDT"
     assert supervisor.breaker.frozen is True
     assert engine.flattened == [("instance-2", "portfolio_equity_missing:USDT")]
+
+
+# ---------------------------------------------------------------------------
+# A funded account holds more than one currency, and equity has to say which one.
+#
+# Real evidence, 2026-07-30: a testnet account holding USDT + USDC + BTC with
+# base_currency=None made every guard that does not declare a currency unreliable,
+# the fallback breaker fail closed at startup, and the exposure guard latch. Funding
+# the account in more currencies makes this worse, not better.
+# ---------------------------------------------------------------------------
+
+
+def _multi_currency_portfolio() -> _Portfolio:
+    """What a funded futures account actually looks like."""
+    return _Portfolio(
+        equities={
+            "USDT": _DecimalValue("4488.58845941"),
+            "USDC": _DecimalValue("5000"),
+            "BTC": _DecimalValue("0.01"),
+        }
+    )
+
+
+def test_equity_is_ambiguous_on_a_multi_currency_account_when_none_is_declared() -> None:
+    """The cause, pinned: with no currency asked for, more than one entry cannot resolve."""
+    node = _Node(mark_price=_DecimalValue("100"), portfolio=_multi_currency_portfolio())
+
+    snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(node)
+
+    assert snapshot.reliable is False
+    assert snapshot.unreliable_reason == "portfolio_equity_ambiguous"
+
+
+def test_declaring_the_currency_resolves_the_same_account() -> None:
+    """Same account, same provider -- naming the currency is the whole difference."""
+    node = _Node(mark_price=_DecimalValue("100"), portfolio=_multi_currency_portfolio())
+
+    snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
+        node, currency="USDT"
+    )
+
+    assert snapshot.reliable is True
+    assert snapshot.equity == Decimal("4488.58845941")
+
+
+async def test_the_guard_paths_stay_reliable_on_a_multi_currency_account() -> None:
+    """get_open_notional / get_positions / get_engine_status must not go unreliable
+    merely because the account is funded in several currencies.
+
+    These three are what the notional cap, the snapshot publisher and the fallback
+    breaker read, so an ambiguous answer here is what tripped the breaker at startup.
+    """
+    node = _Node(mark_price=_DecimalValue("100"), portfolio=_multi_currency_portfolio())
+    host = NtTradingNodeHost(
+        tenant_id="tenant",
+        runner_id="runner",
+        portfolio_snapshot_provider=NautilusPortfolioSnapshotProvider(price_type_mid="MID"),
+    )
+    host._active_nodes["instance"] = (node, None)
+    host._settlement_currencies["instance"] = "USDT"
+
+    assert await host.get_open_notional("instance") == Decimal("200")
+    assert len(await host.get_positions("instance")) == 1
+    status = await host.get_engine_status("instance")
+
+    assert status.reliable is True
+    assert status.current_equity == Decimal("4488.58845941")
+
+
+# ---------------------------------------------------------------------------
+# Where the declared currency comes from: the spec's pairs, which are required and
+# non-empty, so it is derivable even with no open position -- which is exactly the
+# moment the startup guards need it.
+# ---------------------------------------------------------------------------
+
+
+def test_settlement_currency_is_derived_from_the_pairs() -> None:
+    from custos.engines.nautilus.settlement import settlement_currency_for_pairs
+
+    assert settlement_currency_for_pairs(["BTC-USDT"]) == "USDT"
+    assert settlement_currency_for_pairs(["BTC/USDT", "ETH-USDT"]) == "USDT"
+
+
+def test_a_deployment_spanning_settlement_currencies_is_refused_by_name() -> None:
+    """Equity has no single answer here, and the error must say that rather than
+    borrow the word 'ambiguous', which already means something else in this code."""
+    import pytest
+
+    from custos.engines.nautilus.settlement import (
+        SettlementCurrencyError,
+        settlement_currency_for_pairs,
+    )
+
+    with pytest.raises(SettlementCurrencyError) as excinfo:
+        settlement_currency_for_pairs(["BTC-USDT", "ETH-USDC"])
+
+    message = str(excinfo.value)
+    assert "settlement currenc" in message.lower()
+    assert "ambiguous" not in message.lower()
+
+    with pytest.raises(SettlementCurrencyError):
+        settlement_currency_for_pairs([])

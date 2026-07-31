@@ -19,6 +19,10 @@ from custos.core.runner_fact_producer import (
     VenueLedgerEvidence,
 )
 from custos.engines.nautilus.host import SandboxSimulationHost
+from custos.engines.nautilus.settlement import (
+    SettlementCurrencyError,
+    settlement_currency_for_pairs,
+)
 
 
 class SandboxRunnerFactHost(SandboxSimulationHost):
@@ -148,14 +152,14 @@ class SandboxRunnerFactHost(SandboxSimulationHost):
 
 
 def _settlement_currency(spec: Mapping[str, Any]) -> str:
-    currencies = {
-        str(pair).upper().replace("/", "-").split("-")[-1] for pair in spec.get("pairs") or []
-    }
-    if len(currencies) != 1:
+    # One derivation, shared with the guard paths in host.py: two copies of this rule
+    # would be two places for it to drift.
+    try:
+        currency = settlement_currency_for_pairs(spec.get("pairs") or [])
+    except SettlementCurrencyError as exc:
         raise RunnerFactContractError(
             "sandbox RunnerFact v1 requires one settlement currency per deployment"
-        )
-    currency = next(iter(currencies))
+        ) from exc
     if currency not in SUPPORTED_CURRENCIES:
         raise RunnerFactContractError(f"settlement currency {currency!r} is outside RunnerFact v1")
     return currency

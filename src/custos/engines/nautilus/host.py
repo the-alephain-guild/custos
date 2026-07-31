@@ -48,6 +48,7 @@ from custos.core.runner_fact_producer import (
 from custos.engines.nautilus.portfolio_snapshot import (
     NautilusPortfolioSnapshotProvider,
 )
+from custos.engines.nautilus.settlement import settlement_currency_for_pairs
 
 try:
     from nautilus_trader.adapters.binance.factories import (
@@ -259,6 +260,11 @@ class NtTradingNodeHost:
         # Decimal equity high-water mark per instance so get_engine_status can
         # report drawdown percentage over time. Never a float (red line 0.4).
         self._peak_equity: dict[str, Decimal] = {}
+        # deployment_instance_id -> the currency this deployment settles in, derived from
+        # its pairs at deploy. The guards below read equity, and equity only has one
+        # answer once a currency is named: a funded account holds several at once, so
+        # without this they go unreliable on any real account and fail closed.
+        self._settlement_currencies: dict[str, str] = {}
         self._stop_timeout_secs = _STOP_TIMEOUT_SECS
         self._tenant_id = tenant_id
         self._runner_id = runner_id
@@ -384,6 +390,11 @@ class NtTradingNodeHost:
         )
         self._active_nodes[deployment_instance_id] = (node, task)
         self._lifecycle_authorities[deployment_instance_id] = lifecycle_authority
+        # Derived from the pairs rather than the open positions: at this moment there are
+        # no positions, and the startup guards read equity immediately.
+        self._settlement_currencies[deployment_instance_id] = settlement_currency_for_pairs(
+            spec.get("pairs") or []
+        )
 
         _log.info(
             "nt_deploy_started",
@@ -514,8 +525,25 @@ class NtTradingNodeHost:
         )
         return deployment, provider
 
+    def _declared_currency(self, deployment_instance_id: str) -> str | None:
+        """The currency this instance settles in, or None with a record of why not.
+
+        deploy registers it beside the node and stop drops both, so an active instance
+        without one means those two fell out of step. Returning None degrades to the
+        pre-fix behaviour -- equity goes unreliable on any multi-currency account and the
+        guards fail closed -- which is safe but must never happen quietly.
+        """
+        currency = self._settlement_currencies.get(deployment_instance_id)
+        if currency is None:
+            _log.warning(
+                "settlement_currency_unregistered",
+                deployment_instance_id=deployment_instance_id,
+            )
+        return currency
+
     async def stop(self, deployment_instance_id: str) -> None:
         self._peak_equity.pop(deployment_instance_id, None)
+        self._settlement_currencies.pop(deployment_instance_id, None)
         self._runner_fact_contexts.pop(deployment_instance_id, None)
         entry = self._active_nodes.pop(deployment_instance_id, None)
         self._lifecycle_authorities.pop(deployment_instance_id, None)
@@ -687,7 +715,9 @@ class NtTradingNodeHost:
         if entry is None:
             return Decimal("0")
         node, _task = entry
-        snapshot = self._portfolio_snapshot_provider.snapshot(node)
+        snapshot = self._portfolio_snapshot_provider.snapshot(
+            node, currency=self._declared_currency(deployment_instance_id)
+        )
         if not snapshot.reliable:
             raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
         return snapshot.open_notional
@@ -739,7 +769,9 @@ class NtTradingNodeHost:
         if entry is None:
             return []
         node, _task = entry
-        snapshot = self._portfolio_snapshot_provider.snapshot(node)
+        snapshot = self._portfolio_snapshot_provider.snapshot(
+            node, currency=self._declared_currency(deployment_instance_id)
+        )
         if not snapshot.reliable:
             raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
         return snapshot.engine_positions()
@@ -789,7 +821,9 @@ class NtTradingNodeHost:
             orders = list(node.kernel.cache.orders_open())
         except AttributeError:
             orders = []
-        snapshot = self._portfolio_snapshot_provider.snapshot(node)
+        snapshot = self._portfolio_snapshot_provider.snapshot(
+            node, currency=self._declared_currency(deployment_instance_id)
+        )
         if not snapshot.reliable:
             return EngineStatus(
                 phase="degraded",
