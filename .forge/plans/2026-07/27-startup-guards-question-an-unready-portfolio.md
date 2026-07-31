@@ -1,6 +1,8 @@
 # 27 — 启动期的守卫问了一个还没准备好的组合（equity 币种未声明 + flatten 在持仓到达前空转）
 
-> **Status**: 🔲 Not started
+> **Status**: ⏳ In Progress —— 发现 A 已修（`40d94e6`）+ 发现 B 的 B2 已修（`1073d36`）；
+> **B1 查证后不能按原文实现**（离线通道不等就绪 / readiness 里的对账字段是占位符 / 改 latch 被本 plan
+> 非目标排除），可行形态与遗留项见 §完成情况。两处修复**尚未真机复验**（运行中的镜像不含它们）
 > **Created**: 2026-07-30
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现
@@ -191,6 +193,64 @@ if len(entries) != 1:
       解析逻辑，不是真实账户的币种分布
 - [ ] **真机证据（B）**：构造一次启动期 fail-closed（可临时把某个阈值调到必然触发），确认记录不把
       `instrument_count == 0` 写成已兜住
+
+## 完成情况 (Partial close-out, 2026-07-31)
+
+### 发现 A 已修（commit `40d94e6`）
+
+币种在 deploy 时由 pairs 推导并与 node 存在一起（`host.py:267` 字典 / `:528` 访问器），三个守卫路径
+（`:719` / `:785` / 第三处同形）改为声明币种。推导收在新模块
+`src/custos/engines/nautilus/settlement.py`，sandbox 的 RunnerFact host 改为委托它 —— 同一条规则只有
+一份实现（lesson #12）。跨 quote 币种的部署报 `SettlementCurrencyError`，措辞不复用 `ambiguous`。
+未注册币种时退回修复前行为（安全）但打 `settlement_currency_unregistered` 警告，不静默（lesson #15）。
+
+测试 5 条新增，其中 2 条把成因钉住（不声明币种 → `portfolio_equity_ambiguous`；声明了 → 解析出
+`4488.58845941`）。**旧测试 `assert provider.calls == [None, None, None, "USDT"]` 原本把缺陷钉死**
+——它明确断言那三处传 `None`；现已改为四处都声明币种，断言的是生产行为而非退化路径。
+
+### 发现 B 的 B2 已修（commit `1073d36`）
+
+`flatten_positions` 在 `instrument_ids` 为空时改记 `nt_flatten_containment_unconfirmed`（error 级，
+`host.py:763`），不再写 `positions_flattened`；真的平掉东西时保留原事件。**这不是自创写法** —— 本通道的
+超时路径早已如此（`offline/safety.py` 的 `offline_exposure_containment_unconfirmed`，其 docstring 明写
+"nothing was flattened, and the record says so rather than implying containment happened"）。C9 那条在
+超时路径兑现过，只有「够到引擎却发现什么都没有」这条没有，现在补齐。
+
+`make verify` 相关：`tests` 全套 2213 passed / 25 skipped / 1 xfailed，ruff format + check 干净。
+
+### B1 未做，且**不能按原文实现** —— 三条实证
+
+owner 选了 B3（B1 + B2）。B2 已落地；B1 在查证后发现无法照「等对账就绪」实现：
+
+1. **离线通道根本不等引擎就绪。** `wait_ready` 的调用方只有签名通道的
+   `src/custos/core/engine_lifecycle.py`（`:156` / `:292` / `:374`）；离线 reconciler 在 `deploy` 返回后
+   直接报 healthy。这也解释了实跑中观察到的「`wait-status` 绿的时点早于交易所对账完成」。
+2. **那套 readiness 里唯一提到对账的字段是个占位符。** `host.py:616` 写的是
+   `reconciliation_initialized=authority.trading_mode == "sandbox"`，而
+   `EngineReadinessChecks.ready`（`core/engine_protocol.py:226-237`）要求全部字段为真 —— 所以该字段
+   **在 testnet/live 恒为 False**，即便去调 `wait_ready` 也永不就绪。它名叫"对账已初始化"，却既不检查
+   对账、在真实模式下也不可能通过。**这是一个"看起来在检查、其实没检查"的门**，与本 plan 修的
+   「把一个只能回答局部的信号当成回答全部」同源，单列为遗留项 3。
+3. **B1 的另一种实现被本 plan 自己的非目标排除。** 「跳闸后继续评估直到确认」需要改 latch 语义，而
+   latch 即 `breaker.tripped`（`offline/safety.py:92`），而 §非目标 明写「不动 exposure guard 的 latch
+   语义」。
+
+**B1 剩下的可行形态**：给启动期一个**有界宽限窗口** —— 首次评估在窗口内遇到 unreliable 只记录不跳闸，
+窗口过后恢复现行为。这是「等就绪 + 有截止时间」的实质，但它改的是 **fail-closed 的时机**，属安全语义，
+留待 owner 决定是否做、窗口多长。
+
+**紧迫性说明（诚实降级）**：发现 A 修好后，启动期那次 `portfolio_equity_ambiguous` 跳闸**不会再发生**，
+所以 B1 现在防的是"其它原因导致的启动期跳闸 + flatten 空转"，比修 A 之前弱得多。
+
+### 遗留项
+
+1. **B1（有界宽限窗口）** —— 需 owner 定，见上。
+2. **真机复验** —— 本 plan 两处修复尚未在真机跑过：需重建镜像后观察启动期不再出现
+   `portfolio_equity_ambiguous`。当前运行中的 lane 用的是 `9f38691` 镜像，**不含**本 plan 的修复。
+3. **`reconciliation_initialized` 是个不检查对账的占位门。** `host.py:616` 以 `trading_mode ==
+   "sandbox"` 充当该检查，使 `ready` 在 testnet/live 恒假。两种收口都要判断：要么让它真的反映 NT 的
+   启动对账状态，要么把这个字段从 `ready` 的合取里摘掉并改名，别留一个名不副实的门。**当前它没有造成
+   故障，只因为离线通道压根不调 `wait_ready`** —— 签名通道调，所以这条对签名通道可能是真问题。
 
 ## 偏离与改进日志 (Deviations & Improvements)
 
