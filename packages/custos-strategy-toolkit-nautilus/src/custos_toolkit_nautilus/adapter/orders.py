@@ -62,6 +62,11 @@ class OrderTracker:
     # for manual intervention. Not touched by clear()/clear_closing() (those clear order-id
     # tracking after a reject/reversal, not on a real close) so the count survives to accumulate.
     _close_reject_count: int = field(default=0, repr=False)
+    # Set only on positive evidence that the venue refused reduce-only itself, and only
+    # this may drop reduce_only from the next close. Cleared on a confirmed close.
+    _reduce_only_refused: bool = field(default=False, repr=False)
+    # The plain close is one attempt per position, so this records that it was spent.
+    _plain_close_submitted: bool = field(default=False, repr=False)
 
     def set_sl_order(self, order_id: ClientOrderId) -> None:
         """Set the stop loss order ID."""
@@ -131,8 +136,42 @@ class OrderTracker:
         self._close_reject_count += 1
 
     def reset_close_rejects(self) -> None:
-        """Reset the consecutive close-reject count (on confirmed position close)."""
+        """Reset close-rejection state (on confirmed position close).
+
+        This clears the escape hatch too: the position it was opened for is gone, so a
+        later close must start from the protective form again.
+        """
         self._close_reject_count = 0
+        self._reduce_only_refused = False
+        self._plain_close_submitted = False
+
+    # Escape hatch for a venue that refuses reduce-only on a position that is really
+    # there. Kept separate from the reject count above, because that count also rises on
+    # rejections whose reason is unknown, and an unknown reason is not evidence.
+
+    def record_reduce_only_refusal(self) -> None:
+        """Record that the venue specifically refused the reduce-only form."""
+        self._reduce_only_refused = True
+
+    @property
+    def reduce_only_refused(self) -> bool:
+        """Whether reduce-only was refused for the position currently open."""
+        return self._reduce_only_refused
+
+    def mark_plain_close_submitted(self) -> None:
+        """Record that the one permitted plain close order has gone out."""
+        self._plain_close_submitted = True
+
+    @property
+    def plain_close_submitted(self) -> bool:
+        """Whether the single plain close attempt has already been made.
+
+        A plain close can open a reverse position, so it is one attempt per position,
+        not one per bar: every later bar still emits an exit while the position looks
+        open, and repeating an order that no longer has anything to reduce is how a
+        stale view becomes a new position.
+        """
+        return self._plain_close_submitted
 
     @property
     def close_reject_count(self) -> int:

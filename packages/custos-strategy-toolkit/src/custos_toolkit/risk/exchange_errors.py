@@ -52,3 +52,28 @@ def classify_rejection_reason(reason: str | None) -> str:
     if any(marker in lowered for marker in _SERVER_ERROR_MARKERS):
         return "server"
     return "logic"
+
+
+# Positive markers for "the venue refused reduce-only itself". Deliberately narrow:
+# this is the only evidence that may drop reduce_only from a close order, and dropping
+# it makes the order capable of opening a reverse position.
+_REDUCE_ONLY_REFUSAL_MARKERS = ("-2022", "reduceonly", "reduce only", "reduce-only")
+
+
+def is_reduce_only_refusal(reason: str | None) -> bool:
+    """Whether the venue specifically refused the reduce-only form of an order.
+
+    ``classify_rejection_reason`` answers a different question: it buckets a rejection
+    for backoff purposes, and its ``"logic"`` bucket is the documented default for
+    *unrecognised* reasons. That default is safe for deciding how long to wait, and
+    unsafe for deciding to drop reduce_only -- an empty or unknown reason would arm an
+    escape hatch on no evidence at all, which is how an order that may already have
+    filled turns into a new position in the opposite direction.
+
+    So this requires positive evidence, and says False when it does not have it. A
+    margin rejection (-2019) shares the ``"logic"`` bucket and is not one.
+    """
+    if not reason:
+        return False
+    lowered = reason.lower()
+    return any(marker in lowered for marker in _REDUCE_ONLY_REFUSAL_MARKERS)

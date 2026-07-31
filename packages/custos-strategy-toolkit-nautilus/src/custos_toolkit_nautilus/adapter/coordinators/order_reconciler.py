@@ -18,7 +18,10 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from custos_toolkit.risk.exchange_errors import classify_rejection_reason
+from custos_toolkit.risk.exchange_errors import (
+    classify_rejection_reason,
+    is_reduce_only_refusal,
+)
 from custos_toolkit.signals.types import Signal, SignalDirection
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.events import OrderCancelRejected, OrderRejected
@@ -417,6 +420,13 @@ class OrderReconciler:
                 # clear() above and resets only on a confirmed close
                 # (TradeEventHandler.handle_position_closed).
                 ctx.order_tracker.record_close_reject()
+                # Arming the escape hatch needs the venue to have refused reduce-only
+                # itself. The count above also rises on rejections whose reason we could
+                # not read, and this tier is the classifier's default for those -- an
+                # unknown reason is not evidence, and acting on it would drop reduce_only
+                # for an order that may already have filled.
+                if is_reduce_only_refusal(reason):
+                    ctx.order_tracker.record_reduce_only_refusal()
                 if ctx.order_tracker.close_reject_count >= _CLOSE_REJECT_HALT_THRESHOLD:
                     s.pause()
                     s.log.error(

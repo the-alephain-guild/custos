@@ -238,24 +238,37 @@ class SignalExecutionCoordinator:
             return
 
         execution_manager = cast(ExecutionManager, ctx.execution_manager)
-        # Reduce-only is the protective default, but a venue that has already refused it
-        # on the logic tier (Binance's demo engine does this with the position genuinely
-        # open) will refuse it again -- retrying the refused form is retrying what cannot
-        # work. From the second attempt on, close with a plain order of the position's
-        # size. The count is raised only by logic-tier rejections and is cleared on a
-        # confirmed close, so a server error or rate limit does not drop the protection.
-        first_attempt = ctx.order_tracker.close_reject_count == 0
+        # Reduce-only is the protective default. A venue that specifically refused that
+        # form while the position is genuinely open (Binance's demo engine does) will
+        # refuse it again, so the escape hatch is a plain order of the position's size.
+        #
+        # Two limits keep the hatch from becoming the hazard it protects against, because
+        # a plain order can open a reverse position rather than close anything:
+        #   - it needs positive evidence that reduce-only itself was refused, not merely a
+        #     rejection that was not recognised as a server error;
+        #   - it is one attempt per position. Later bars keep emitting an exit while the
+        #     position looks open, and re-sending a plain order on each of them is how a
+        #     stale view turns into a new position.
+        use_reduce_only = not ctx.order_tracker.reduce_only_refused
+        if not use_reduce_only and ctx.order_tracker.plain_close_submitted:
+            s.log.warning(
+                f"[{ctx.pair}] The single plain close for this position has already been "
+                f"submitted; not re-sending. If the position is still open, its state at "
+                f"the venue needs a look rather than another order",
+            )
+            return
         order = execution_manager.create_exit_order(
             instrument_id=ctx.instrument_id,
             signal=signal,
             size=Decimal(str(position.quantity)),
-            reduce_only=first_attempt,
+            reduce_only=use_reduce_only,
         )
-        if not first_attempt:
+        if not use_reduce_only:
+            ctx.order_tracker.mark_plain_close_submitted()
             s.log.warning(
-                f"[{ctx.pair}] Closing without reduce_only after "
-                f"{ctx.order_tracker.close_reject_count} logical refusal(s) of the "
-                f"reduce-only close; size={position.quantity} taken from the open position",
+                f"[{ctx.pair}] Closing without reduce_only: the venue refused the "
+                f"reduce-only form for this position; size={position.quantity} taken from "
+                f"the open position. This is the one plain attempt",
             )
         if order:
             _sig_id = cast(

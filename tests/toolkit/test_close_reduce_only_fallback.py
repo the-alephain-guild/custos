@@ -94,8 +94,8 @@ def test_second_attempt_drops_reduce_only_after_a_logical_refusal():
     coord.execute_exit_for_pair(ctx, _exit_signal(), bar=object())
     assert calls[0]["reduce_only"] is True
 
-    # What handle_order_rejected does on the logic tier (-2022 and friends).
-    ctx.order_tracker.record_close_reject()
+    # What handle_order_rejected does when the venue named reduce-only as the problem.
+    ctx.order_tracker.record_reduce_only_refusal()
 
     strat.now_ns = 1_000 + 6 * _ONE_SEC_NS  # past the in-flight window
     coord.execute_exit_for_pair(ctx, _exit_signal(), bar=object())
@@ -105,20 +105,17 @@ def test_second_attempt_drops_reduce_only_after_a_logical_refusal():
     assert calls[1]["size"] == _POSITION_QTY, "the plain order must match the position size"
 
 
-def test_reduce_only_is_not_retried_after_the_fallback_is_armed():
-    """Once refused, later attempts stay plain -- no going back to the form that failed."""
+def test_the_refused_form_is_never_tried_again():
+    """Once the venue has refused reduce-only for this position, we do not go back to it."""
     strat = _make_strategy(now_ns=1_000)
     calls: list = []
     ctx = _make_ctx(calls)
     coord = SignalExecutionCoordinator(strat)
 
-    ctx.order_tracker.record_close_reject()
+    ctx.order_tracker.record_reduce_only_refusal()
     coord.execute_exit_for_pair(ctx, _exit_signal(), bar=object())
 
-    strat.now_ns = 1_000 + 6 * _ONE_SEC_NS
-    coord.execute_exit_for_pair(ctx, _exit_signal(), bar=object())
-
-    assert [c["reduce_only"] for c in calls] == [False, False]
+    assert [c["reduce_only"] for c in calls] == [False]
 
 
 def test_a_closed_position_never_gets_a_plain_order():
@@ -132,10 +129,85 @@ def test_a_closed_position_never_gets_a_plain_order():
     ctx = _make_ctx(calls)
     coord = SignalExecutionCoordinator(strat)
 
-    ctx.order_tracker.record_close_reject()
+    ctx.order_tracker.record_reduce_only_refusal()
     strat._position.is_closed = True
 
     coord.execute_exit_for_pair(ctx, _exit_signal(), bar=object())
 
     assert calls == [], "no close order may be created when there is no open position"
     assert strat.submitted == []
+
+
+# ---------------------------------------------------------------------------
+# What may arm the escape hatch, and how often it may fire.
+#
+# Real incident, 2026-07-31: while the venue was returning -1007 ("execution status
+# unknown") and HTML error pages, one rejection arrived with no reason at all. The
+# classifier's "logic" tier is documented as the default for unrecognised reasons, and
+# arming keyed off that tier -- so an unknown rejection dropped reduce_only and a plain,
+# reverse-capable order went out, once per bar. Nothing opened a reverse position only
+# because the venue was refusing those orders too.
+#
+# Dropping reduce_only needs positive evidence that reduce-only itself was refused, and
+# it gets one attempt, not one per bar.
+# ---------------------------------------------------------------------------
+
+
+def test_an_unknown_rejection_reason_does_not_arm_the_escape_hatch() -> None:
+    from custos_toolkit.risk.exchange_errors import is_reduce_only_refusal
+
+    assert is_reduce_only_refusal(None) is False
+    assert is_reduce_only_refusal("") is False
+    assert is_reduce_only_refusal("UNKNOWN") is False
+    assert is_reduce_only_refusal("unknown") is False
+
+
+def test_a_reduce_only_refusal_is_recognised_from_the_venue_text() -> None:
+    from custos_toolkit.risk.exchange_errors import is_reduce_only_refusal
+
+    assert is_reduce_only_refusal("{'code': -2022, 'msg': 'ReduceOnly Order is rejected.'}") is True
+    assert is_reduce_only_refusal("ReduceOnly Order is rejected.") is True
+
+
+def test_a_margin_rejection_does_not_arm_the_escape_hatch() -> None:
+    """-2019 is in the same tier as -2022 but must never drop the protection."""
+    from custos_toolkit.risk.exchange_errors import is_reduce_only_refusal
+
+    assert is_reduce_only_refusal("{'code': -2019, 'msg': 'Margin is insufficient.'}") is False
+
+
+def test_the_plain_close_is_attempted_once_not_once_per_bar() -> None:
+    """The escape hatch is a single attempt per position.
+
+    Every later bar still emits an exit while the position looks open, and each plain
+    order is reverse-capable, so repeating it is how a stale cache turns into a new
+    position.
+    """
+    strat = _make_strategy(now_ns=1_000)
+    calls: list = []
+    ctx = _make_ctx(calls)
+    coord = SignalExecutionCoordinator(strat)
+
+    ctx.order_tracker.record_reduce_only_refusal()
+    coord.execute_exit_for_pair(ctx, _exit_signal(), bar=object())
+    assert [c["reduce_only"] for c in calls] == [False]
+
+    strat.now_ns = 1_000 + 6 * _ONE_SEC_NS
+    coord.execute_exit_for_pair(ctx, _exit_signal(), bar=object())
+
+    assert [c["reduce_only"] for c in calls] == [False], (
+        "the plain close must not be re-submitted on the next bar"
+    )
+
+
+def test_a_refusal_without_evidence_keeps_using_reduce_only() -> None:
+    """The counter that only says 'something was refused' must not drop the protection."""
+    strat = _make_strategy(now_ns=1_000)
+    calls: list = []
+    ctx = _make_ctx(calls)
+    coord = SignalExecutionCoordinator(strat)
+
+    ctx.order_tracker.record_close_reject()  # what an UNKNOWN rejection records
+    coord.execute_exit_for_pair(ctx, _exit_signal(), bar=object())
+
+    assert calls[0]["reduce_only"] is True
