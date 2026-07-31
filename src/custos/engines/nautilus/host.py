@@ -753,6 +753,18 @@ class NtTradingNodeHost:
             return
         node, _task = entry
         instrument_ids = {position.instrument_id for position in node.kernel.cache.positions_open()}
+        if not instrument_ids:
+            # Nothing was contained, and at startup that is not the same as nothing being
+            # there: reconciliation may not yet have delivered the account's existing
+            # positions, in which case they arrive seconds later untouched. Recording this
+            # as a flatten would read as containment and stop anyone from asking further,
+            # which is precisely what C9 asks us not to do.
+            _log.error(
+                "nt_flatten_containment_unconfirmed",
+                deployment_instance_id=deployment_instance_id,
+                reason=reason,
+            )
+            return
         for strategy in node.kernel.trader.strategies():
             for instrument_id in instrument_ids:
                 strategy.close_all_positions(instrument_id)
