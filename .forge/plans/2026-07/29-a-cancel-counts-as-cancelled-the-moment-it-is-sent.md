@@ -1,6 +1,8 @@
 # 29 — 撤单发出即当作已撤销：这条通道没有确认回路，孤儿止损单逐轮累积
 
-> **Status**: 🔲 Not started
+> **Status**: ⏳ In Progress —— **Task 1 已落地**（custos `816548b` + PS `b593718`）：撤单请求与它的
+> 结局现在都有可数的记录，容器日志在 `make stop` 时落盘，`make cancel-audit` 直接给出四个数。
+> **Task 2-4 未开**，且**按设计不该现在开** —— 先用它跑一轮真机，拿到证据再选修哪一层
 > **Created**: 2026-08-01
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现
@@ -150,6 +152,66 @@ SIGKILL 从外面切断。
 - [ ] **真机证据**：连续重启 ≥3 轮后，交易所侧 resting reduce-only 挂单数**不随轮数增长**。
       注意这条要在**行情正常**的时段取 —— 行情断掉时 sweep 本来就不该被指望（除非选项 3 已落地，
       那正好是它的判据）。**不得**因为"跑了一轮没看到孤儿"就宣布验证通过
+
+## Task 1 落地（custos `816548b` + PS `b593718`，2026-08-01）
+
+### 记录方式：override 基类的两个 venue 调用，而不是改 12 个调用点
+
+撤单目前从 8 处发出（关停 / 反转 / 孤儿 sweep / 6 处 SL-TP 路径），另有 4 处 bulk。
+**逐处加日志的方案被否掉了** —— 一个需要每个调用点记得去写的记录，就是第 9 处不会有的记录。
+改为在 `NautilusStrategyCore` 上 override `cancel_order` 与 `cancel_all_orders`：无处可绕，
+以后新增的撤单点自动被覆盖。
+
+bulk 那条是重点。`cancel_all_orders` 只点名 instrument 不点名订单，**它自己不产生任何"要撤几张"的
+信息** —— 而那正是这道题的左边。所以先枚举 `cache.orders_open(instrument_id=...)` 逐张记录，再委托。
+带 `order_side` 过滤时只记该侧，否则会把交易所根本没被要求撤的单算进左边，让健康的一轮看起来在丢单。
+
+三个事件名：`cancel_requested` / `cancel_confirmed` / `cancel_refused`，格式是固定前缀 + `key=value`，
+`grep -c` 就能数。**不是 structlog** —— NT 的 logger 收的是一条消息不是 k/v，所以这里是个约定。
+
+确认侧记在 `on_order_canceled` / `on_order_cancel_rejected` 两个壳里，且**放在 try 之前**：body 抛异常
+不该把确认一起带走，而丢失的确认读起来正好像"撤单没生效"。有一条测试用源码顺序钉住这一点。
+`cancel_refused` 尤其要紧 —— 现在的 body 对 SL/TP **什么都不做**，没有这一行，一次被拒的止损撤单
+不留任何痕迹。
+
+**观测不得让撤单付代价**：`cancel_audit` 里所有记录函数吞掉自身异常，bulk 的枚举也包在 try 里 ——
+丢一条记录是坏事，丢一次撤单更坏。两条测试分别钉住"日志炸了照样撤"和"缓存炸了照样撤"。
+
+### 一个我差点漏掉的验证缺口
+
+11 条单测把 `_venue_cancel_*` 这个交接点 stub 掉了（Cython 基类需要活引擎）—— 也就是说**最不能坏的
+那一步，恰好是这些测试替换掉的那一步**。资金路径上这不是可以靠推理的地方：交接坏掉的话，止损单会留在
+交易所，而所有测试全绿、日志还高高兴兴地记着"已请求"。
+
+补 `tests/test_cancel_still_reaches_the_venue.py`：真 `BacktestEngine`、真挂单、撤完从交易所读回
+`OrderStatus.CANCELED`，单张与 bulk 各一条。**并做了证伪** —— 把 `super().cancel_order(...)` 改成
+`pass` 后测试确实转红，证明它不是自洽的空断言。
+
+（这条测试第一版失败过，但不是代码问题：策略没订阅 trade tick，撤单那一拍从未到达。查清楚才改，
+没有把它当成"override 坏了"。）
+
+### PS 侧：证据能留下来，也能直接数
+
+- `make stop` 先跑 `logs-save` 再 `down` —— 一轮的日志是随容器一起死的，而 `down` 就是杀它的那一步，
+  2026-07-30 那四张单查不下去正是因此。落到 `runtime/logs/<UTC 时间戳>.log`（`runtime/` 已在
+  `.gitignore` 里，日志是本地证据不是仓库内容）。保存失败**不阻断** stop。
+- `make cancel-audit` 输出 requested / confirmed / refused / **unaccounted** 四个数，默认取最新一份，
+  可用 `LOG=<path>` 指定。已用构造日志实测：3 请求 / 1 确认 / 1 被拒 → unaccounted 1。
+
+⚠️ **四个数不该被读成"应该配平"**：订单可能在请求与交易所处理之间成交，被拒是第三种结局。要看的是
+**跨轮持续的缺口 + 事后仍挂在交易所的单**，不是单轮的任一次不匹配。这句话同时写在 Makefile 注释、
+模块 docstring 和测试 docstring 里，因为最容易被误用的就是它。
+
+### 验证
+
+新增 13 条测试，全仓 **2249 passed / 25 skipped / 1 xfailed**；ruff 干净（`fmt-check` 仍只命中 C6 那 3 个
+按字节 pin 的既有文件）。PS 侧 `test_deploy_custos_makefile.py` + `test_deploy_custos_status.py` 42 passed。
+`test_toolkit_release_candidate_build.py` 的 3 个 error 又是工作区未提交，commit 后消失，与前两轮同因。
+
+### 下一步不是 Task 2
+
+Task 1 的产出是**让下一轮长跑能回答问题**，不是修好撤单。三个候选原因仍未区分。
+**带着这套记录跑一轮，`make cancel-audit` 看结果，再选修哪一层。**
 
 ## Follow-up hooks（不属于本 plan scope，登记以防遗漏）
 
