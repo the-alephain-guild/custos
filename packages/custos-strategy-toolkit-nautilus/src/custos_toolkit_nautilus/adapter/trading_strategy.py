@@ -52,6 +52,10 @@ from nautilus_trader.model.events import (
 )
 from nautilus_trader.model.identifiers import InstrumentId
 
+from custos_toolkit_nautilus.adapter.cancel_audit import (
+    record_cancel_confirmed,
+    record_cancel_refused,
+)
 from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
 from custos_toolkit_nautilus.adapter.config import TickMonitoringConfig
 from custos_toolkit_nautilus.adapter.coordinators import (
@@ -811,7 +815,17 @@ class NautilusTradingStrategy(NautilusStrategyCore):
             )
 
     def on_order_canceled(self, event: OrderCanceled) -> None:
-        """Handle order canceled with top-level exception protection."""
+        """Handle order canceled with top-level exception protection.
+
+        The record goes first, ahead of the guarded body: a body that throws would
+        otherwise take the confirmation with it, and a confirmation that goes missing
+        reads exactly like a cancel that never landed.
+        """
+        record_cancel_confirmed(
+            self.log,
+            order_id=event.client_order_id,
+            instrument_id=event.instrument_id,
+        )
         try:
             self._trade_event_handler.handle_order_canceled(event)
         except Exception as exc:  # noqa: BLE001 — engine doesn't guard callbacks; log and continue
@@ -838,7 +852,17 @@ class NautilusTradingStrategy(NautilusStrategyCore):
 
         Body delegated to OrderReconciler; the engine dispatches by name, so the thin
         shell stays on the Strategy class.
+
+        The record goes first, for the same reason as ``on_order_canceled`` -- and with
+        more force here, since the body currently does nothing at all for a stop-loss,
+        so without this line a refused stop-loss cancel leaves no trace whatsoever.
         """
+        record_cancel_refused(
+            self.log,
+            order_id=event.client_order_id,
+            instrument_id=event.instrument_id,
+            reason=event.reason,
+        )
         try:
             self._reconciler.handle_order_cancel_rejected(event)
         except Exception as exc:  # noqa: BLE001 — engine doesn't guard callbacks; log and continue

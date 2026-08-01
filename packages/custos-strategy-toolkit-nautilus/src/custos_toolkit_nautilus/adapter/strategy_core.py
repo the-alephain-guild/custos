@@ -33,6 +33,7 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import Bar, QuoteTick, TradeTick
 from nautilus_trader.trading.strategy import Strategy
 
+from custos_toolkit_nautilus.adapter.cancel_audit import record_cancel_requested
 from custos_toolkit_nautilus.adapter.state_persistence import (
     build_snapshot,
     decode_snapshot,
@@ -372,6 +373,71 @@ class NautilusStrategyCore(Strategy, ABC):
                 self.restore_from_snapshot({"state": global_state})
         except Exception as exc:
             self._log_warning(f"on_load failed: {exc}")
+
+    # ---- Cancelling: recorded on the way out, so the outcome can be counted ----
+
+    def cancel_order(self, order: Any, client_id: Any = None, params: Any = None) -> None:
+        """Cancel one order, recording that the venue was asked.
+
+        The override sits on the base class on purpose. Cancels are issued from eight
+        places today -- shutdown, reversal, the orphan sweep, the SL/TP paths -- and a
+        record that each of them has to remember to write is a record that the ninth
+        will not have. Here there is nothing to route around, and a cancel site added
+        later is covered without anyone thinking about it.
+        """
+        record_cancel_requested(
+            self.log,
+            order_id=getattr(order, "client_order_id", None),
+            instrument_id=getattr(order, "instrument_id", None),
+        )
+        self._venue_cancel_order(order, client_id, params)
+
+    def cancel_all_orders(
+        self,
+        instrument_id: Any,
+        order_side: Any = None,
+        client_id: Any = None,
+        params: Any = None,
+    ) -> None:
+        """Cancel this instrument's open orders, recording one line per order.
+
+        The bulk call names an instrument, not orders, so on its own it says nothing
+        about how many cancels were asked for -- and that count is exactly the left-hand
+        side of the question Plan 29 needs answered. So the open orders are enumerated
+        first and each one recorded.
+
+        The enumeration is best-effort: if the cache cannot be read, the cancel still
+        goes out unrecorded. Losing a record is bad; losing a cancel is worse.
+        """
+        from nautilus_trader.model.enums import OrderSide
+
+        if order_side is None:
+            order_side = OrderSide.NO_ORDER_SIDE
+        try:
+            for order in self.cache.orders_open(instrument_id=instrument_id):
+                if order_side != OrderSide.NO_ORDER_SIDE and order.side != order_side:
+                    # Recording orders the venue was never asked about would inflate the
+                    # left-hand side of the count and make a healthy run look lossy.
+                    continue
+                record_cancel_requested(
+                    self.log,
+                    order_id=getattr(order, "client_order_id", None),
+                    instrument_id=instrument_id,
+                )
+        except Exception as exc:  # noqa: BLE001 — see docstring: the cancel outranks the record
+            self._log_warning(f"cancel_all_orders: could not enumerate open orders: {exc}")
+
+        self._venue_cancel_all_orders(instrument_id, order_side, client_id, params)
+
+    # The handoff to the framework's own implementations, named so that the recording
+    # above can be exercised without a running engine -- the Cython base needs one.
+    def _venue_cancel_order(self, order: Any, client_id: Any, params: Any) -> None:
+        super().cancel_order(order, client_id, params)
+
+    def _venue_cancel_all_orders(
+        self, instrument_id: Any, order_side: Any, client_id: Any, params: Any
+    ) -> None:
+        super().cancel_all_orders(instrument_id, order_side, client_id, params)
 
     # ---- Closing a position when the venue refuses the protective form ----
 
