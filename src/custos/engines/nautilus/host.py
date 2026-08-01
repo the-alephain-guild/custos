@@ -608,13 +608,36 @@ class NtTradingNodeHost:
                 raise RuntimeError("engine task exited before readiness")
             node, task = entry
             connectivity = await self.check_engine_connected(instance_id)
+            kernel = node.kernel
+            trader = getattr(kernel, "trader", None)
+            portfolio = getattr(kernel, "portfolio", None)
+            exec_engine = getattr(kernel, "exec_engine", None)
+
+            # A running trader is the closest thing to a reconciliation receipt that
+            # NautilusTrader offers: there is no completion flag to read, but
+            # ``NautilusKernel.start_async`` awaits reconciliation and *returns without
+            # starting the trader* if it fails. So a started trader means the step was
+            # passed -- either reconciled, or legitimately skipped.
+            trader_running = bool(trader is not None and trader.is_running)
+            strategies = tuple(trader.strategies()) if trader is not None else ()
+
+            # Skipping is only legitimate in sandbox, which fills locally against live
+            # prices and has no exchange account to reconcile against (see
+            # ``_build_exec_plan``). On testnet and live it is a misconfiguration, and
+            # the trader starts either way -- so passing it needs its own check.
+            reconciliation_required = authority.trading_mode != "sandbox"
+            reconciliation_enabled = bool(getattr(exec_engine, "reconciliation", False))
+
             checks = EngineReadinessChecks(
                 node_task_alive=not task.done(),
                 data_connectivity_ready=connectivity.data_connected,
                 execution_connectivity_ready=connectivity.exec_connected,
-                portfolio_initialized=getattr(node.kernel, "portfolio", None) is not None,
-                reconciliation_initialized=authority.trading_mode == "sandbox",
-                strategy_accepting_lifecycle=not task.done(),
+                portfolio_initialized=bool(portfolio is not None and portfolio.initialized),
+                reconciliation_initialized=(
+                    trader_running and (reconciliation_enabled or not reconciliation_required)
+                ),
+                strategy_accepting_lifecycle=bool(strategies)
+                and all(strategy.is_running for strategy in strategies),
                 mandatory_capabilities_active=authority.trading_mode in {"sandbox", "testnet"},
             )
             if checks.ready:
