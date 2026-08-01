@@ -303,6 +303,62 @@ positions_flattened            1     （instrument_count: 1，确有持仓）
 是我们的假设自洽，不是与框架一致（C4 / C7 的形状）。新测试**用真的 `MarkPriceUpdate`**，修复前红，
 报的正是"传进去的是 update 不是 price"。**当一个类型本身就是 bug 时，fake 必须是真类型。**
 
+### 第二跑（`69e153e`）：TypeError 消失，B2 的那一支首次真机命中，然后 B1 被实证需要
+
+```
+portfolio_equity_ambiguous          0    ← A 稳定
+mark_price_unavailable              0    ← C 的订阅稳定
+portfolio_snapshot_invalid          0    ← 类型修复生效
+nt_flatten_containment_unconfirmed  1    ← B2 改的那一支，首次真机命中
+positions_flattened                 0
+fallback_breaker_fail_closed        1    ← 第三个原因
+```
+
+**B2 真机确认。** 上一跑把持仓平掉了，这一跑无仓可平，于是 flatten 正确记成
+`nt_flatten_containment_unconfirmed` 而不是 `positions_flattened`。**这正是 B2 改动的那半边**，
+之前一直只验到未改动的那一支，现在两支都验过了。
+
+**新原因 `portfolio_equity_missing:USDT`，时间线精确到毫秒：**
+
+| 时刻 (UTC) | 事件 |
+|---|---|
+| `02:30:03.556` | NT 配置 `reconciliation_startup_delay_secs=**10.0**` |
+| `02:30:03.570` | ExecEngine：**"Awaiting startup reconciliation completion"** |
+| **`02:30:05.846`** | **熔断 fail closed `portfolio_equity_missing:USDT`**（启动后 2.3s）|
+| `02:30:05.847` | guard latched |
+| `02:30:05.962` | Portfolio: **Updated AccountState** —— 余额到达，**晚了 116 毫秒** |
+| `02:30:08.460` | "Execution state reconciled" / "Startup reconciliation completed" |
+
+**差 116 毫秒。** 而且这不是偶然：NT **按设计**要等 —— 它自己声明了 10 秒启动延迟，自己打日志说
+"正在等启动对账完成"，实际 4.9 秒后才报完成。守卫在 2.3 秒去问一个 NT 明说还没准备好的组合。
+
+### 这推翻了我当天早些时候给出的建议
+
+我在 §B1 剩下的可行形态 里写过：「发现 A 与发现 C 修好后…宽限窗口推迟的是**尚未出现过的**某种
+unreliable…建议等真机上再出现一次再决定」。
+
+**真机出现了，就在同一天。** 而且它不是偶发扰动，是**结构性**的：账户余额只能等对账送来，NT 明码
+标价要等 10 秒，任何"把 snapshot 算得更对"的修复都改变不了这件事 —— 数据当时确实不存在。
+
+所以 B1 的必要性**从"已降级"回升为"有实证需求"**。我先前的降级理由（"防的是假想成因"）被这条时间线
+证伪，在此更正。
+
+### 但现在有比宽限窗口更好的选项，而且是今天才有的
+
+宽限窗口要选一个数字，而选数字总是在猜。**遗留项 3 修好之后，真正的信号已经可以问了**：
+`EngineReadinessChecks` 现在读 `trader.is_running`，而按 `NautilusKernel.start_async` 的序列，
+trader 启动 ⟹ 启动对账已完成。也就是说「对账是否完成」不再需要用时间估计，可以直接判定。
+
+于是 B1 有两种形态，需 owner 定：
+
+| | 做法 | 代价 |
+|---|---|---|
+| **B1-a 有界宽限窗口** | 首次评估在窗口内遇到 unreliable 只记录不跳闸 | 要挑一个数字；挑小了没用，挑大了平白推迟 fail-closed |
+| **B1-b 等就绪再开始评估** | 离线通道在启动 breaker 前先等 readiness（现在它压根不调 `wait_ready`，见遗留项 1）| 范围更大，但**判据是真的**，不是估的 |
+
+**推荐 B1-b**，理由是它不引入猜测的数字；B1-a 可作为 B1-b 的兜底上限（就绪迟迟不来也不能无限不设防）。
+两者都改 fail-closed 的时机 = 安全语义，所以留给 owner 拍板，本 plan 不擅自实施。
+
 ### 真机验证到哪一步（2026-07-31，逐条）
 
 | 修复 | 真机状态 | 依据 |
