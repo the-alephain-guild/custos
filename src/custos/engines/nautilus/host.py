@@ -156,6 +156,13 @@ class SandboxSimulationHost:
         # what this process deployed and has not stopped.
         return deployment_instance_id in self._lifecycle_authorities
 
+    async def deployment_ready(self, deployment_instance_id: str) -> bool:
+        # Nothing to wait for: the simulation is in-process and has no venue state to
+        # reconcile, so a deployed instance is a ready one. It answers rather than
+        # leaving the question unanswered, which would have the exposure guard record
+        # the whole sandbox lane as an engine that cannot report readiness.
+        return deployment_instance_id in self._lifecycle_authorities
+
     def supports_trading_mode(self, mode: str) -> bool:
         # This host is an explicit local simulation boundary. It may exercise the
         # full lifecycle in sandbox, but must never claim a real-venue mode.
@@ -607,39 +614,7 @@ class NtTradingNodeHost:
             if entry is None:
                 raise RuntimeError("engine task exited before readiness")
             node, task = entry
-            connectivity = await self.check_engine_connected(instance_id)
-            kernel = node.kernel
-            trader = getattr(kernel, "trader", None)
-            portfolio = getattr(kernel, "portfolio", None)
-            exec_engine = getattr(kernel, "exec_engine", None)
-
-            # A running trader is the closest thing to a reconciliation receipt that
-            # NautilusTrader offers: there is no completion flag to read, but
-            # ``NautilusKernel.start_async`` awaits reconciliation and *returns without
-            # starting the trader* if it fails. So a started trader means the step was
-            # passed -- either reconciled, or legitimately skipped.
-            trader_running = bool(trader is not None and trader.is_running)
-            strategies = tuple(trader.strategies()) if trader is not None else ()
-
-            # Skipping is only legitimate in sandbox, which fills locally against live
-            # prices and has no exchange account to reconcile against (see
-            # ``_build_exec_plan``). On testnet and live it is a misconfiguration, and
-            # the trader starts either way -- so passing it needs its own check.
-            reconciliation_required = authority.trading_mode != "sandbox"
-            reconciliation_enabled = bool(getattr(exec_engine, "reconciliation", False))
-
-            checks = EngineReadinessChecks(
-                node_task_alive=not task.done(),
-                data_connectivity_ready=connectivity.data_connected,
-                execution_connectivity_ready=connectivity.exec_connected,
-                portfolio_initialized=bool(portfolio is not None and portfolio.initialized),
-                reconciliation_initialized=(
-                    trader_running and (reconciliation_enabled or not reconciliation_required)
-                ),
-                strategy_accepting_lifecycle=bool(strategies)
-                and all(strategy.is_running for strategy in strategies),
-                mandatory_capabilities_active=authority.trading_mode in {"sandbox", "testnet"},
-            )
+            checks = await self._readiness_checks(authority, node, task)
             if checks.ready:
                 return EngineReadyReceipt.from_authority(
                     authority,
@@ -648,6 +623,75 @@ class NtTradingNodeHost:
                 )
             await asyncio.sleep(min(0.05, max(0.001, timeout_secs / 10)))
         raise TimeoutError("engine did not satisfy readiness before the deadline")
+
+    async def deployment_ready(self, deployment_instance_id: str) -> bool:
+        """Whether this deployment has crossed every ready boundary, asked without waiting.
+
+        The offline lane's exposure guard runs on its own clock and cannot block on
+        ``wait_ready``, but it must not question a deployment mid-startup: on 2026-08-01
+        it tripped on ``portfolio_equity_missing`` 116ms before the account balance
+        arrived, while NautilusTrader was still inside the startup reconciliation it
+        announces in advance.
+
+        Deliberately the same computation ``wait_ready`` loops on. A guard that decided
+        readiness for itself would be a second opinion about one fact, and the two would
+        drift apart the first time either changed.
+
+        An unknown deployment is not ready -- fail closed on this side too.
+        """
+        authority = self._lifecycle_authorities.get(deployment_instance_id)
+        entry = self._active_nodes.get(deployment_instance_id)
+        if authority is None or entry is None:
+            return False
+        node, task = entry
+        checks = await self._readiness_checks(authority, node, task)
+        return checks.ready
+
+    async def _readiness_checks(
+        self,
+        authority: EngineLifecycleAuthority,
+        node: object,
+        task: object,
+    ) -> EngineReadinessChecks:
+        """Ask the engine what it has actually finished, field by field.
+
+        Every field here used to be derivable from the deployment's trading mode, which
+        is to say from what it was asked to do rather than from what it did. Three of the
+        seven were: see the tests for what each one now proves.
+        """
+        connectivity = await self.check_engine_connected(str(authority.deployment_instance_id))
+        kernel = node.kernel
+        trader = getattr(kernel, "trader", None)
+        portfolio = getattr(kernel, "portfolio", None)
+        exec_engine = getattr(kernel, "exec_engine", None)
+
+        # A running trader is the closest thing to a reconciliation receipt that
+        # NautilusTrader offers: there is no completion flag to read, but
+        # ``NautilusKernel.start_async`` awaits reconciliation and *returns without
+        # starting the trader* if it fails. So a started trader means the step was
+        # passed -- either reconciled, or legitimately skipped.
+        trader_running = bool(trader is not None and trader.is_running)
+        strategies = tuple(trader.strategies()) if trader is not None else ()
+
+        # Skipping is only legitimate in sandbox, which fills locally against live
+        # prices and has no exchange account to reconcile against (see
+        # ``_build_exec_plan``). On testnet and live it is a misconfiguration, and
+        # the trader starts either way -- so passing it needs its own check.
+        reconciliation_required = authority.trading_mode != "sandbox"
+        reconciliation_enabled = bool(getattr(exec_engine, "reconciliation", False))
+
+        return EngineReadinessChecks(
+            node_task_alive=not task.done(),
+            data_connectivity_ready=connectivity.data_connected,
+            execution_connectivity_ready=connectivity.exec_connected,
+            portfolio_initialized=bool(portfolio is not None and portfolio.initialized),
+            reconciliation_initialized=(
+                trader_running and (reconciliation_enabled or not reconciliation_required)
+            ),
+            strategy_accepting_lifecycle=bool(strategies)
+            and all(strategy.is_running for strategy in strategies),
+            mandatory_capabilities_active=authority.trading_mode in {"sandbox", "testnet"},
+        )
 
     async def wait_terminal(
         self,

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 from dataclasses import dataclass, replace
 from decimal import Decimal, InvalidOperation
 from typing import Final
@@ -39,6 +40,17 @@ _DECLARED_KEYS: Final = (_NOTIONAL_KEY, _DRAWDOWN_KEY)
 _SPEC_SOURCE: Final = "offline_spec_risk_config"
 TICK_SECS: Final = 5.0
 EVALUATION_DEADLINE_SECS: Final = 10.0
+# How long to let an engine finish starting before guarding it regardless.
+#
+# NautilusTrader states its own intent up front -- ``reconciliation_startup_delay_secs``
+# defaults to 10 -- and on 2026-07-31 hardware startup reconciliation completed 4.9s in.
+# This is an order of magnitude above that, because the cost of waiting slightly too long
+# is a short unguarded window on a deployment that is not trading yet, while the cost of
+# giving up too early is the fail-closed trip this bound exists to avoid.
+#
+# It is a backstop, not a schedule: an engine that never reports ready must still end up
+# guarded rather than silently exempt.
+READINESS_TIMEOUT_SECS: Final = 120.0
 
 
 def resolve_breaker_config(spec: OfflineDeploymentSpec) -> FallbackBreakerConfig:
@@ -83,10 +95,27 @@ def _positive_decimal(declared: dict[str, object], key: str, fallback: Decimal) 
     return amount
 
 
+@dataclass(slots=True)
+class _Startup:
+    """How far a watched deployment has got towards being worth questioning.
+
+    Separate from ``_Watched`` so that record can stay frozen: which deployment this is
+    and which supervisor holds it are fixed, while progress through startup is not. Kept
+    as a field rather than a parallel dictionary because two collections keyed by spec id
+    are two chances to forget one of them in ``release``.
+    """
+
+    watched_at: float
+    evaluating: bool = False
+    announced_wait: bool = False
+    announced_unknown: bool = False
+
+
 @dataclass(frozen=True, slots=True)
 class _Watched:
     deployment_instance_id: str
     supervisor: EngineSafetySupervisor
+    startup: _Startup
 
     @property
     def latched(self) -> bool:
@@ -107,10 +136,12 @@ class OfflineExposureGuard:
         engine: EngineSafetyPort,
         interval: float = TICK_SECS,
         deadline: float = EVALUATION_DEADLINE_SECS,
+        readiness_timeout: float = READINESS_TIMEOUT_SECS,
     ) -> None:
         self._engine = engine
         self._interval = interval
         self._deadline = deadline
+        self._readiness_timeout = readiness_timeout
         self._watched: dict[str, _Watched] = {}
 
     def allows_new_generations(self) -> bool:
@@ -138,6 +169,7 @@ class OfflineExposureGuard:
                 supervisor=EngineSafetySupervisor(
                     engine=self._engine, breaker=FallbackBreaker(limits)
                 ),
+                startup=_Startup(watched_at=time.monotonic()),
             )
             _log.info(
                 "offline_exposure_guard_watching",
@@ -168,10 +200,74 @@ class OfflineExposureGuard:
         for spec_id, watched in tuple(self._watched.items()):
             if watched.latched:
                 continue
+            if not await self._may_evaluate(spec_id, watched):
+                continue
             tick = await self._evaluate_within_deadline(spec_id, watched)
             if tick is not None:
                 ticks.append(tick)
         return ticks
+
+    async def _may_evaluate(self, spec_id: str, watched: _Watched) -> bool:
+        """Whether the engine has finished starting enough to be asked about exposure.
+
+        Questioning it earlier produces a fail-closed trip on data that has not arrived
+        yet rather than on exposure that exists -- measured on 2026-08-01 as a trip 116ms
+        before the account balance landed, while NautilusTrader was still inside the
+        startup reconciliation it announces in advance.
+
+        Waiting is not tripping: a deployment held here is untouched, and the breaker
+        still allows new generations.
+        """
+
+        if watched.startup.evaluating:
+            return True
+
+        probe = getattr(self._engine, "deployment_ready", None)
+        if not callable(probe):
+            # Older engines are evaluated exactly as before. Said once, because a safety
+            # check that is quietly not running is worse than one that is loudly not.
+            if not watched.startup.announced_unknown:
+                watched.startup.announced_unknown = True
+                _log.warning(
+                    "offline_exposure_readiness_unknown",
+                    spec_id=spec_id,
+                    deployment_instance_id=watched.deployment_instance_id,
+                )
+            watched.startup.evaluating = True
+            return True
+
+        if await probe(watched.deployment_instance_id):
+            watched.startup.evaluating = True
+            _log.info(
+                "offline_exposure_guard_evaluating",
+                spec_id=spec_id,
+                deployment_instance_id=watched.deployment_instance_id,
+                waited_seconds=round(time.monotonic() - watched.startup.watched_at, 3),
+            )
+            return True
+
+        # Never blind: an engine stuck half-started must still end up guarded, so past
+        # the bound this evaluates anyway. That lands on an unreliable snapshot and fails
+        # closed -- the behaviour this whole change delays, which is the right way round.
+        if time.monotonic() - watched.startup.watched_at >= self._readiness_timeout:
+            watched.startup.evaluating = True
+            _log.error(
+                "offline_exposure_readiness_timeout",
+                spec_id=spec_id,
+                deployment_instance_id=watched.deployment_instance_id,
+                timeout_seconds=self._readiness_timeout,
+            )
+            return True
+
+        if not watched.startup.announced_wait:
+            watched.startup.announced_wait = True
+            _log.info(
+                "offline_exposure_awaiting_readiness",
+                spec_id=spec_id,
+                deployment_instance_id=watched.deployment_instance_id,
+                timeout_seconds=self._readiness_timeout,
+            )
+        return False
 
     async def _evaluate_within_deadline(
         self, spec_id: str, watched: _Watched

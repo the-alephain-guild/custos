@@ -188,6 +188,81 @@ async def test_a_node_with_no_strategies_is_not_ready() -> None:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# The same answer, asked without waiting
+#
+# The offline lane's exposure guard runs on its own clock and cannot block on
+# ``wait_ready``; it needs to poll. Both answers come from one computation on purpose --
+# a guard that decided readiness differently from the lifecycle wait would be a second
+# opinion about the same fact, and the two would drift.
+# ---------------------------------------------------------------------------
+
+
+async def test_a_ready_deployment_answers_the_poll() -> None:
+    authority = _authority("testnet")
+    host = _host_with(authority, _node())
+
+    assert await host.deployment_ready(str(authority.deployment_instance_id)) is True
+
+
+async def test_a_deployment_still_starting_answers_no() -> None:
+    authority = _authority("testnet")
+    host = _host_with(authority, _node(trader_running=False))
+
+    assert await host.deployment_ready(str(authority.deployment_instance_id)) is False
+
+
+async def test_an_unknown_deployment_is_not_ready() -> None:
+    """Fail closed on the readiness side too: unknown is not ready."""
+    authority = _authority("testnet")
+    host = _host_with(authority, _node())
+
+    assert await host.deployment_ready("no-such-instance") is False
+
+
+async def test_the_poll_and_the_wait_agree() -> None:
+    """Same node, same verdict -- they must not be two opinions."""
+    authority = _authority("testnet")
+    host = _host_with(authority, _node(portfolio_initialized=False))
+
+    assert await host.deployment_ready(str(authority.deployment_instance_id)) is False
+    try:
+        await host.wait_ready(authority, timeout_secs=0.05)
+    except TimeoutError:
+        return
+    raise AssertionError("wait_ready said ready while the poll said not ready")
+
+
+async def test_the_sandbox_host_is_ready_as_soon_as_it_has_deployed() -> None:
+    """The simulation is in-process: there is no venue state to wait for.
+
+    It still has to answer, or the guard would treat the whole sandbox lane as an engine
+    that cannot report readiness and log that on every deployment.
+    """
+    from uuid import uuid4
+
+    from custos.engines.nautilus.host import SandboxSimulationHost
+
+    host = SandboxSimulationHost()
+    instance = str(uuid4())
+    assert await host.deployment_ready(instance) is False
+
+    await host.deploy(
+        {
+            "deployment_instance_id": instance,
+            "deployment_spec_id": str(uuid4()),
+            "deployment_spec_digest": "d" * 64,
+            "generation": 1,
+            "trading_mode": "sandbox",
+            "pairs": ["BTC-USDT"],
+        },
+        {},
+        SimpleNamespace(activation_id="activation-test", strategy=object()),
+    )
+
+    assert await host.deployment_ready(instance) is True
+
+
 async def test_the_receipt_carries_the_checks_that_passed() -> None:
     authority = _authority("testnet")
     host = _host_with(authority, _node())
