@@ -766,8 +766,18 @@ class NtTradingNodeHost:
             )
             return
         for strategy in node.kernel.trader.strategies():
+            # NT's own close_all_positions is reduce-only, and a venue that refuses that
+            # form refuses it here too -- leaving containment unable to contain at the
+            # one moment it must. Toolkit strategies expose a close that drops
+            # reduce-only on recorded evidence of that refusal; prefer it when present.
+            # Duck-typed, not isinstance: the toolkit is not required of a deployment,
+            # and a strategy without it has to keep behaving exactly as before.
+            close_with_fallback = getattr(strategy, "close_all_positions_with_fallback", None)
             for instrument_id in instrument_ids:
-                strategy.close_all_positions(instrument_id)
+                if callable(close_with_fallback):
+                    close_with_fallback(instrument_id)
+                else:
+                    strategy.close_all_positions(instrument_id)
         _log.warning(
             "positions_flattened",
             deployment_instance_id=deployment_instance_id,

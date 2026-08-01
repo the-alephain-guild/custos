@@ -96,3 +96,48 @@ async def test_a_flatten_that_closed_something_still_says_so() -> None:
 
     flattened = next(e for e in logs if e["event"] == "positions_flattened")
     assert flattened["instrument_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Which close the flatten uses.
+#
+# Containment goes through NT's own ``close_all_positions``, whose ``reduce_only``
+# defaults to True -- so on a venue refusing that form (Binance's demo engine does, see
+# plan 28) the breaker's flatten cannot close anything, at the moment it most needs to.
+# Toolkit strategies carry a close path that drops reduce-only on evidence of exactly
+# that refusal, and the flatten should use it when the strategy has one.
+#
+# The preference is duck-typed rather than an isinstance check: this host runs whatever
+# strategy the deployment names, the toolkit is not a requirement, and a strategy without
+# the method must keep working unchanged.
+# ---------------------------------------------------------------------------
+
+
+class _ToolkitStrategy(_Strategy):
+    def __init__(self) -> None:
+        super().__init__()
+        self.closed_with_fallback: list = []
+
+    def close_all_positions_with_fallback(self, instrument_id) -> None:
+        self.closed_with_fallback.append(instrument_id)
+
+
+async def test_the_flatten_uses_the_toolkit_close_path_when_there_is_one() -> None:
+    strategy = _ToolkitStrategy()
+    host = _host_with(_Node([_Position("BTCUSDT-PERP.BINANCE")], strategy))
+
+    await host.flatten_positions("instance", "max_notional_exceeded")
+
+    assert strategy.closed_with_fallback == ["BTCUSDT-PERP.BINANCE"]
+    assert strategy.closed == [], (
+        "the plain reduce-only-only close must not also run -- two closes is one too many"
+    )
+
+
+async def test_a_strategy_without_the_toolkit_close_path_is_unaffected() -> None:
+    strategy = _Strategy()
+    host = _host_with(_Node([_Position("BTCUSDT-PERP.BINANCE")], strategy))
+
+    await host.flatten_positions("instance", "max_notional_exceeded")
+
+    assert strategy.closed == ["BTCUSDT-PERP.BINANCE"]

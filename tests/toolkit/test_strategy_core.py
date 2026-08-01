@@ -190,7 +190,15 @@ def _make_emergency_stub():
     stub.cache = MagicMock()
     stub.cancel_all_orders = MagicMock()
     stub.close_position = MagicMock()
-    for name in ("emergency_close", "_log_warning"):
+    # emergency_close submits through the shared close path, so the stub has to carry it
+    # and the evidence hook it consults. Binding only emergency_close would let its own
+    # fail-safe swallow the resulting AttributeError and report a green no-op.
+    for name in (
+        "emergency_close",
+        "_close_position_with_fallback",
+        "order_tracker_for",
+        "_log_warning",
+    ):
         method = getattr(NautilusStrategyCore, name)
         setattr(stub, name, types.MethodType(method, stub))
     return stub

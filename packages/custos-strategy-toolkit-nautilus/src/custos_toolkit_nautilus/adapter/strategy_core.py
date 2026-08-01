@@ -25,7 +25,9 @@ directly and implement all trading logic themselves.
 import logging
 import os
 from abc import ABC, abstractmethod
+from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import Bar, QuoteTick, TradeTick
@@ -37,8 +39,57 @@ from custos_toolkit_nautilus.adapter.state_persistence import (
     encode_snapshot,
 )
 
+if TYPE_CHECKING:
+    from custos_toolkit_nautilus.adapter.orders import OrderTracker
+
 # Module-level logger, used as a fallback when self.log is unavailable.
 _logger = logging.getLogger(__name__)
+
+
+class CloseAttempt(Enum):
+    """Which form the next close of a position may take."""
+
+    REDUCE_ONLY = "reduce_only"
+    """The protective default: the venue rejects a duplicate rather than reversing."""
+
+    PLAIN = "plain"
+    """The escape hatch, earned by a refusal of the reduce-only form itself."""
+
+    PLAIN_ALREADY_SPENT = "plain_already_spent"
+    """The hatch was used for this position. What to do now is the caller's decision."""
+
+
+def plan_close_attempt(
+    *,
+    reduce_only_refused: bool,
+    plain_close_submitted: bool,
+) -> CloseAttempt:
+    """Decide which form a close of this position may take.
+
+    ``reduce_only`` is the protective default and it is there for a reason: when a close
+    is re-sent while the local cache still lags a fill that already closed the position,
+    the venue rejects the duplicate instead of opening a reverse position. A plain order
+    in that situation opens the reverse position. So the hatch needs two things.
+
+    *Positive evidence.* ``reduce_only_refused`` means the venue named reduce-only as the
+    problem -- not merely that something was rejected. The incident of 2026-07-31 is why
+    that distinction is spelt out: arming keyed off the rejection classifier's ``logic``
+    tier, which is documented as the bucket for *unrecognised* reasons, so a rejection
+    carrying no reason at all armed the hatch while the venue was answering ``-1007``,
+    execution status unknown -- the one context where a close may already have filled.
+
+    *A single attempt.* The hatch is spent once used. Callers differ in what they do
+    then, and the difference is deliberate: a per-bar path should send nothing, because
+    re-sending on every bar is how a stale view turns into a position; a one-shot
+    containment path should fall back to the reduce-only form, which may well be refused
+    but cannot reverse anything, because attempting beats abstaining when the alternative
+    is leaving exposure uncontained.
+    """
+    if not reduce_only_refused:
+        return CloseAttempt.REDUCE_ONLY
+    if plain_close_submitted:
+        return CloseAttempt.PLAIN_ALREADY_SPENT
+    return CloseAttempt.PLAIN
 
 
 class NautilusStrategyCore(Strategy, ABC):
@@ -322,15 +373,82 @@ class NautilusStrategyCore(Strategy, ABC):
         except Exception as exc:
             self._log_warning(f"on_load failed: {exc}")
 
+    # ---- Closing a position when the venue refuses the protective form ----
+
+    def order_tracker_for(self, instrument_id: Any) -> "OrderTracker | None":
+        """The tracker holding this instrument's venue-refusal evidence, if any.
+
+        Core keeps no per-instrument order state, so it has no evidence and the close
+        paths below take the protective default. Subclasses that do keep it -- such as
+        ``NautilusTradingStrategy``, whose pair contexts each own an ``OrderTracker`` --
+        override this so the close paths can see what the venue has already refused.
+        """
+        return None
+
+    def close_all_positions_with_fallback(self, instrument_id: Any) -> None:
+        """Close this instrument's open positions, dropping reduce-only only on evidence.
+
+        The containment entry point: the runner's breaker calls this when it needs
+        exposure gone. It is the same decision the regular exit path makes, because a
+        venue that refuses the reduce-only form refuses it for every path, and the
+        breaker's flatten is the moment that most needs a close to land.
+
+        One thing it cannot do, said plainly so the record does not read otherwise: a
+        rejection reaches the strategy asynchronously as an event, while this is a single
+        synchronous pass. A refusal that happens *during* this call is not visible to it.
+        This helps when the refusal was already recorded, which is the shape the real
+        incident had.
+        """
+        for position in self.cache.positions_open(instrument_id=instrument_id):
+            self._close_position_with_fallback(position)
+
+    def _close_position_with_fallback(self, position: Any) -> None:
+        """Submit one close, in the strongest form the evidence allows."""
+        from nautilus_trader.model.enums import TimeInForce
+
+        try:
+            tracker = self.order_tracker_for(position.instrument_id)
+        except Exception as exc:
+            # No readable evidence is no evidence, and no evidence means the protective
+            # form. This close runs on shutdown and containment paths that must not raise.
+            self._log_warning(f"close fallback: could not read order state: {exc}")
+            tracker = None
+
+        attempt = plan_close_attempt(
+            reduce_only_refused=bool(tracker is not None and tracker.reduce_only_refused),
+            plain_close_submitted=bool(tracker is not None and tracker.plain_close_submitted),
+        )
+        if attempt is CloseAttempt.PLAIN:
+            self._log_warning(
+                f"Closing {position.instrument_id} without reduce_only: the venue refused "
+                f"the reduce-only form for this position. This is the one plain attempt"
+            )
+        elif attempt is CloseAttempt.PLAIN_ALREADY_SPENT:
+            self._log_warning(
+                f"Closing {position.instrument_id} with reduce_only although the venue "
+                f"refused it: the one plain attempt is spent. This will likely be refused "
+                f"too, but a refused reduce-only order cannot open a reverse position"
+            )
+
+        self.close_position(
+            position,
+            reduce_only=attempt is not CloseAttempt.PLAIN,
+            time_in_force=TimeInForce.IOC,
+        )
+        if attempt is CloseAttempt.PLAIN and tracker is not None:
+            tracker.mark_plain_close_submitted()
+
     # ---- Emergency close (Crucible graceful-close layer) ----
 
     def emergency_close(self) -> None:
         """Best-effort close of all open positions on Crucible emergency.
 
-        reduce_only market IOC. Iterate ``cache.positions_open()``; for each
-        position first ``cancel_all_orders`` (so resting reduce_only orders do
-        not consume capacity and cause -2022 rejection), then
-        ``close_position(reduce_only=True, IOC)``.
+        Market IOC. Iterate ``cache.positions_open()``; for each position first
+        ``cancel_all_orders`` (so resting reduce_only orders do not consume
+        capacity and cause -2022 rejection), then close it through
+        ``_close_position_with_fallback`` -- reduce-only unless the venue has
+        already refused that form for the position, in which case the one plain
+        attempt applies. See ``plan_close_attempt``.
 
         best-effort + fail-safe: one position's failure does not abort the rest,
         and this method **never propagates**. docker stop is the hard fallback
@@ -343,8 +461,6 @@ class NautilusStrategyCore(Strategy, ABC):
         Subclasses such as NautilusTradingStrategy may override for finer-grained
         serialized cancel/replace.
         """
-        from nautilus_trader.model.enums import TimeInForce
-
         try:
             # Materialize inside the try: if positions_open() returns a lazy
             # iterable, an iteration error is also covered by fail-safe and will
@@ -363,7 +479,7 @@ class NautilusStrategyCore(Strategy, ABC):
             except Exception as exc:
                 self._log_warning(f"emergency_close cancel {pos.instrument_id} failed: {exc}")
             try:
-                self.close_position(pos, reduce_only=True, time_in_force=TimeInForce.IOC)
+                self._close_position_with_fallback(pos)
             except Exception as exc:
                 self._log_warning(f"emergency_close {pos.instrument_id} failed: {exc}")
 

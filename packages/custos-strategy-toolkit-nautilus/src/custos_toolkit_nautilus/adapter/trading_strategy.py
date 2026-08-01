@@ -77,6 +77,7 @@ from custos_toolkit_nautilus.adapter.event_publisher import (
     strategy_id_env_missing,
 )
 from custos_toolkit_nautilus.adapter.filter_manager import FilterManager
+from custos_toolkit_nautilus.adapter.orders import OrderTracker
 from custos_toolkit_nautilus.adapter.pair_context import PairContext
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
 from custos_toolkit_nautilus.adapter.strategy_core import NautilusStrategyCore
@@ -935,6 +936,17 @@ class NautilusTradingStrategy(NautilusStrategyCore):
     def _get_context_from_instrument(self, instrument_id: InstrumentId) -> PairContext | None:
         """Get the context for an InstrumentId (O(1) dict.get)."""
         return self._contexts.get(instrument_id)
+
+    def order_tracker_for(self, instrument_id: InstrumentId) -> OrderTracker | None:
+        """Hand the base class's close paths this instrument's venue-refusal evidence.
+
+        The evidence lives in the pair context's tracker, which the base class cannot
+        reach on its own -- so without this override the containment flatten and
+        ``emergency_close`` would keep using the reduce-only form on a venue that has
+        already refused it.
+        """
+        ctx = self._contexts.get(instrument_id)
+        return ctx.order_tracker if ctx is not None else None
 
     def _get_context(self, pair: str) -> PairContext | None:
         """Get the context for a pair string.

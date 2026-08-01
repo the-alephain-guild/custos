@@ -22,6 +22,7 @@ from nautilus_trader.common.enums import LogColor
 from custos_toolkit_nautilus.adapter.event_publisher import make_signal_tag
 from custos_toolkit_nautilus.adapter.execution import ExecutionManager
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
+from custos_toolkit_nautilus.adapter.strategy_core import CloseAttempt, plan_close_attempt
 
 if TYPE_CHECKING:
     from custos_toolkit.signals.types import Signal
@@ -249,14 +250,21 @@ class SignalExecutionCoordinator:
         #   - it is one attempt per position. Later bars keep emitting an exit while the
         #     position looks open, and re-sending a plain order on each of them is how a
         #     stale view turns into a new position.
-        use_reduce_only = not ctx.order_tracker.reduce_only_refused
-        if not use_reduce_only and ctx.order_tracker.plain_close_submitted:
+        attempt = plan_close_attempt(
+            reduce_only_refused=ctx.order_tracker.reduce_only_refused,
+            plain_close_submitted=ctx.order_tracker.plain_close_submitted,
+        )
+        if attempt is CloseAttempt.PLAIN_ALREADY_SPENT:
+            # This path runs once per bar, so unlike the one-shot containment paths it
+            # sends nothing rather than falling back to the refused form -- re-sending on
+            # every bar is the flood shape, and the plain form is not an option twice.
             s.log.warning(
                 f"[{ctx.pair}] The single plain close for this position has already been "
                 f"submitted; not re-sending. If the position is still open, its state at "
                 f"the venue needs a look rather than another order",
             )
             return
+        use_reduce_only = attempt is not CloseAttempt.PLAIN
         order = execution_manager.create_exit_order(
             instrument_id=ctx.instrument_id,
             signal=signal,
