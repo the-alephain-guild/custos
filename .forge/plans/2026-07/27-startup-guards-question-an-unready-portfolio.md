@@ -1,8 +1,10 @@
-# 27 — 启动期的守卫问了一个还没准备好的组合（equity 币种未声明 + flatten 在持仓到达前空转）
+# 27 — 启动期的守卫问了一个还没准备好的组合（equity 币种未声明 + flatten 在持仓到达前空转 + 定价来源从未被订阅）
 
-> **Status**: ⏳ In Progress —— 发现 A 已修（`40d94e6`）+ 发现 B 的 B2 已修（`1073d36`）；
+> **Status**: ⏳ In Progress —— 发现 A 已修并**已真机验证**（`40d94e6`）+ 发现 B 的 B2 已修、**真机只
+> 验到未改动的那一支**（`1073d36`）+ **发现 C 已修、未真机验证**（`675c0fd`，见下）。
 > **B1 查证后不能按原文实现**（离线通道不等就绪 / readiness 里的对账字段是占位符 / 改 latch 被本 plan
-> 非目标排除），可行形态与遗留项见 §完成情况。两处修复**尚未真机复验**（运行中的镜像不含它们）
+> 非目标排除）；且 **B1 的必要性已降级** —— 起初把它标为"必需"依据的是一个后来被实证推翻的结论，
+> 见 §发现 C。可行形态与遗留项见 §完成情况
 > **Created**: 2026-07-30
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现
@@ -87,6 +89,44 @@ if len(entries) != 1:
 
 三次都是同一个形状。组合在 `08:55:49` 说 0，不是因为账户是空的，而是因为**它还没被告知**。
 
+### 发现 C（2026-07-31 追加）：守卫的定价来源全仓没有人订阅
+
+修好发现 A 之后，同一条路上换了一个原因继续 fail closed：`mark_price_unavailable`。我第一反应是"行情
+还没到，等一会就好"，据此还一度把 B1（等就绪）说成必需。**查证后这个说法是错的，两条实证都指向别处。**
+
+`snapshot()` 给每个持仓定价的顺序是（`portfolio_snapshot.py:135-141`）：
+
+```python
+mark = cache.mark_price(instrument_id)                   # 首选
+if mark is None and self._price_type_mid is not None:
+    mark = cache.price(instrument_id, self._price_type_mid)   # 退路：MID
+if mark is None:
+    return ...unreliable(f"mark_price_unavailable:{instrument_id}")
+```
+
+1. **首选那条从来不可能有值。** `git grep subscribe_mark_prices 675c0fd~1` 在 `src/` 与 `packages/`
+   **零命中** —— 全仓没有任何地方订阅过 mark price，所以 `cache.mark_price()` 恒为 `None`。
+2. **退路那条也拿不到。** 在 runner 镜像里实测：cache 里只有 trade tick 时，`LAST` 有值而
+   `MID` / `BID` / `ASK` 全是 `None`；补一条 quote tick 后 `MID` 才有值。本部署订阅的是 bar + trade，
+   **不订阅 quote**。
+
+两条合起来：**只要有持仓，snapshot 就不可能可靠，熔断除了 fail closed 没有别的可能** —— 与等多久无关。
+这也解释了为什么它在此前的所有观察里都藏着：`_resolve_equity` 在 `:124-130` 就先返回了，代码**根本走不到**
+定价这一段。发现 A 一直在给发现 C 打掩护。
+
+**这与发现 B 是不同的病。** B 是"问早了"（等一会就有答案），C 是"问了一个没人回答的问题"（等多久都没有）。
+把 C 误当成 B 的一部分，正是我先前判断 B1 必需的由来。
+
+**修法（`675c0fd`）**：`PairContextCoordinator.subscribe_mark_prices()` 给每个 pair 订阅 mark price，
+在 `on_start` 里无条件调用。三点理由记在方法的 docstring 与
+`tests/toolkit/test_mark_price_subscription.py` 的模块 docstring 里：
+
+- **用 mark price 而不是 last trade**，因为永续合约的未实现盈亏与强平就是按它计价的，不是权宜之计；
+- **无条件订阅**，因为 tick 订阅挂在出场模式与 tick 监控配置下，而"守卫需要一个价格"与这两件事毫无关系。
+  **把它挂在那份配置下，正是熔断依赖了没人订阅的数据这件事的成因** —— 所以这里刻意不加任何条件，并有一条
+  测试钉住"tick 监控关掉时订阅照样发生"；
+- 第三条测试断言 `on_start` 里**确实调用**了它 —— 一个"存在但没接线"的订阅，就是事故当时的状态。
+
 ## 决策 (Decisions)
 
 ### 发现 A 的修法：从 spec 的 pairs 推导，不新增 spec 字段
@@ -130,8 +170,8 @@ if len(entries) != 1:
 
 ## 目标 (Goal)
 
-有资金的多币种 testnet 账户上启动，不因币种未声明而误跳闸；且任何一次 fail-closed 的 flatten，
-要么真的作用在持仓上，要么在记录里说清它没有。
+有资金的多币种 testnet 账户上启动，不因币种未声明而误跳闸；守卫给持仓定价所依赖的数据**有人订阅**；
+且任何一次 fail-closed 的 flatten，要么真的作用在持仓上，要么在记录里说清它没有。
 
 ## 非目标 (Non-goals)
 
@@ -193,6 +233,11 @@ if len(entries) != 1:
       解析逻辑，不是真实账户的币种分布
 - [ ] **真机证据（B）**：构造一次启动期 fail-closed（可临时把某个阈值调到必然触发），确认记录不把
       `instrument_count == 0` 写成已兜住
+- [x] **发现 C 的静态判据**：`git grep subscribe_mark_prices <fix>~1` 在 `src/` + `packages/` 零命中
+      （证明"从未被订阅"而非"订阅了但没到"）；三条测试覆盖逐 pair 订阅 / 与 tick 配置无关 / 已接进
+      `on_start`
+- [ ] **真机证据（C）**：在**行情在流且有持仓**的情况下，`mark_price_unavailable` 0 次。两个条件缺一
+      不可 —— 只有持仓而无行情，或只有行情而无持仓，都碰不到这条路，**不得**据此宣布已验证
 
 ## 完成情况 (Partial close-out, 2026-07-31)
 
@@ -218,9 +263,33 @@ if len(entries) != 1:
 
 `make verify` 相关：`tests` 全套 2213 passed / 25 skipped / 1 xfailed，ruff format + check 干净。
 
-### B1 未做，且**不能按原文实现** —— 三条实证
+### 发现 C 已修（commit `675c0fd`）
 
-owner 选了 B3（B1 + B2）。B2 已落地；B1 在查证后发现无法照「等对账就绪」实现：
+见 §发现 C。新增 3 条测试（`tests/toolkit/test_mark_price_subscription.py`）：逐 pair 订阅、
+tick 监控关掉时照样订阅、`on_start` 确实接线。镜像重建后进容器核验了四项 —— 方法存在、**接进
+`on_start`**、实现里**没有**任何条件分支、NT 侧 `Strategy.subscribe_mark_prices` 可用。第三项是反向查：
+确认新方法**不带**条件，而不只是确认它存在，因为本事故的形状就是"守卫的数据需求被挂在了不相关的可选
+配置下"。
+
+### 真机验证到哪一步（2026-07-31，逐条）
+
+| 修复 | 真机状态 | 依据 |
+|---|---|---|
+| A（equity 币种声明） | ✅ 已验 | 含 `40d94e6` 的镜像上启动，`portfolio_equity_ambiguous` **0 次** |
+| B2（空 flatten 诚实记录） | ⚠️ **只验到未改动的那一支** | 观察到有持仓时仍正确记 `positions_flattened`（证明没改坏正常路径）；**`instrument_count == 0` 那一支没有在真机上出现过**，即本次改动的那半边未被真机触达 |
+| C（mark price 订阅） | ⏳ 未验 | 需要「行情在流 + 有持仓」同时成立，今天从未同时出现（交易所降级期间 11 分钟零 bar）|
+
+B2 这一行是刻意写细的：把"跑过了、没报错"当成"改的那一支验过了"，就是 C7 的自洽假绿。
+
+### B1 未做、**不能按原文实现**，且**必要性已降级**
+
+**先说降级。** 我先前把 B1 标为"必需"，依据是"启动期熔断因为行情还没到而误跳闸，所以必须等就绪"。
+§发现 C 实证推翻了这个依据 —— 那次跳闸不是因为"还没到"，是因为**没有人订阅**，等多久都不会到。
+`675c0fd` 修的是数据来源，不是时机。B1 现在防的是"其它原因导致的启动期跳闸 + flatten 空转"，与
+发现 A 修好后的判断一致：比最初以为的弱得多。
+
+**再说为什么不能按原文实现。** owner 选了 B3（B1 + B2）。B2 已落地；B1 查证后无法照「等对账就绪」
+实现，三条实证：
 
 1. **离线通道根本不等引擎就绪。** `wait_ready` 的调用方只有签名通道的
    `src/custos/core/engine_lifecycle.py`（`:156` / `:292` / `:374`）；离线 reconciler 在 `deploy` 返回后
@@ -239,14 +308,16 @@ owner 选了 B3（B1 + B2）。B2 已落地；B1 在查证后发现无法照「�
 窗口过后恢复现行为。这是「等就绪 + 有截止时间」的实质，但它改的是 **fail-closed 的时机**，属安全语义，
 留待 owner 决定是否做、窗口多长。
 
-**紧迫性说明（诚实降级）**：发现 A 修好后，启动期那次 `portfolio_equity_ambiguous` 跳闸**不会再发生**，
-所以 B1 现在防的是"其它原因导致的启动期跳闸 + flatten 空转"，比修 A 之前弱得多。
+⚠️ **若要做，先确认它防的是什么。** 发现 A 与发现 C 修好后，已知会在启动期让 snapshot 不可靠的两个成因
+都已消除。一个宽限窗口若在此时加进来，它推迟的是**尚未出现过的**某种 unreliable —— 而推迟 fail-closed
+是有代价的。**建议：等真机上再出现一次启动期 unreliable、看清它的 reason 之后再决定**，不要为一个假想的
+成因放宽安全时机。
 
 ### 遗留项
 
-1. **B1（有界宽限窗口）** —— 需 owner 定，见上。
-2. **真机复验** —— 本 plan 两处修复尚未在真机跑过：需重建镜像后观察启动期不再出现
-   `portfolio_equity_ambiguous`。当前运行中的 lane 用的是 `9f38691` 镜像，**不含**本 plan 的修复。
+1. **B1（有界宽限窗口）** —— 需 owner 定，且必要性已降级，见上。
+2. **真机复验** —— 发现 C 的订阅尚未在真机跑过（需「行情在流 + 有持仓」同时成立）；发现 B2 只验到
+   未改动的那一支。逐条状态见上表。
 3. **`reconciliation_initialized` 是个不检查对账的占位门。** `host.py:616` 以 `trading_mode ==
    "sandbox"` 充当该检查，使 `ready` 在 testnet/live 恒假。两种收口都要判断：要么让它真的反映 NT 的
    启动对账状态，要么把这个字段从 `ready` 的合取里摘掉并改名，别留一个名不副实的门。**当前它没有造成
@@ -257,6 +328,16 @@ owner 选了 B3（B1 + B2）。B2 已落地；B1 在查证后发现无法照「�
 - 若实施中发现 `portfolio.equity(venue)` 的条目集其实**不**随账户币种数变化（即我对多条目来源的判断
   有误），记在这里 —— 那会推翻发现 A 的根因，须重新实证再动手。
 - B 的选型（B1/B2/B3）定下来后记在这里，连同对"就绪"如何定义的判断依据。
+- **DEV-27-C-MISDIAGNOSED-AS-TIMING（2026-07-31，我的两次错判，都已撤回）**：修好发现 A 后守卫改报
+  `mark_price_unavailable`，我先说「熔断因为标记价格还没到而误平仓」，又据此说「B1 是必需的」。owner 要求
+  先调查清楚，查证后**两句都被推翻**：那 11 分钟零 bar 到达，且 `mark_price` 与 `MID` 都是结构性拿不到
+  （零订阅 + 不订阅 quote），与"等多久"无关。**成因**：`mark_price_unavailable` 这个 reason 读起来像
+  "暂时没有"，我按字面把它当成时序问题，没有去查"这个数据本来由谁提供"。**教训**：`X_unavailable` 类
+  reason 不区分"还没到"与"没人给"，判断是哪一种必须查供给侧（谁订阅 / 谁写入），不能从措辞推断 ——
+  与 lesson #9/#11「不信推理信实证」同源，这次的具体形态是**把缺失当成延迟**。
+- **发现 C 是被发现 A 挡住的。** `_resolve_equity` 在 `:124-130` 先返回，代码走不到 `:135-141` 的定价段。
+  修一个缺陷让下一个缺陷现形，这不是"越修越糟"，而是同一条路上本来就串着两个 —— 但它意味着
+  **A 的真机验证通过，不能推断这条路已经可用**。
 
 ## Follow-up hooks（不属于本 plan scope，登记以防遗漏）
 
