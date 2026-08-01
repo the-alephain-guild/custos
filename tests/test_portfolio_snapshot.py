@@ -111,6 +111,54 @@ def test_provider_calls_unrealized_pnl_with_trusted_mark_without_conversion_synt
     assert node.kernel.cache.position.mark_arguments == [mark]
 
 
+def test_a_real_mark_price_update_is_unwrapped_before_it_is_priced_with() -> None:
+    """The cache's two price sources return different types, and only one is a price.
+
+    Real testnet evidence, 2026-08-01: with a position open the breaker fail-closed on
+    ``portfolio_snapshot_invalid:TypeError`` while ``mark_price_unavailable`` never
+    appeared -- so a mark price *was* found, and using it is what threw.
+
+    ``Cache.mark_price()`` returns a ``MarkPriceUpdate``; the fallback
+    ``Cache.price(..., MID)`` returns a ``Price``. The snapshot treated both the same and
+    handed the wrapper to ``Position.unrealized_pnl()``, which wants a ``Price``.
+
+    The branch had never run: nothing in the tree subscribed mark prices until the fix
+    for that landed, so the code always fell through to the ``Price`` branch. This test
+    uses the **real** ``MarkPriceUpdate`` deliberately -- the previous fake returned a
+    decimal-like object, which is to say it was shaped like the code's assumption rather
+    than like NautilusTrader, and no amount of it passing could have found this.
+    """
+    import pytest
+
+    pytest.importorskip("nautilus_trader")
+    from nautilus_trader.model.data import MarkPriceUpdate
+    from nautilus_trader.model.identifiers import InstrumentId
+    from nautilus_trader.model.objects import Price
+
+    price = Price.from_str("100.00")
+    update = MarkPriceUpdate(
+        instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+        value=price,
+        ts_event=1,
+        ts_init=1,
+    )
+    node = _Node(mark_price=update)
+
+    snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
+        node,
+        currency="USDT",
+    )
+
+    assert snapshot.reliable is True, (
+        f"snapshot came back unreliable: {snapshot.unreliable_reason} -- the mark price "
+        "was found and then could not be used"
+    )
+    assert snapshot.positions[0].mark_price == Decimal("100.00")
+    assert node.kernel.cache.position.mark_arguments == [price], (
+        "the Price inside the update must be what prices the position, not the update itself"
+    )
+
+
 def test_missing_mark_or_equity_returns_typed_unreliable_snapshot() -> None:
     missing_mark = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
         _Node(mark_price=None),

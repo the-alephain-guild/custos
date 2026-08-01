@@ -133,7 +133,17 @@ class NautilusPortfolioSnapshotProvider:
             converted: list[NautilusPortfolioPosition] = []
             for position in positions:
                 instrument_id = position.instrument_id
+                # The two sources do not return the same thing. ``mark_price`` returns a
+                # ``MarkPriceUpdate`` -- an event carrying the price alongside its
+                # timestamps -- while ``price`` returns the ``Price`` itself. Everything
+                # downstream wants the price, and ``Position.unrealized_pnl`` refuses
+                # anything else.
+                #
+                # This only became reachable when mark prices were first subscribed:
+                # before that the call always returned None and the fallback below,
+                # which does return a ``Price``, was the only branch that ever ran.
                 mark = cache.mark_price(instrument_id)
+                mark = getattr(mark, "value", mark)
                 if mark is None and self._price_type_mid is not None:
                     mark = cache.price(instrument_id, self._price_type_mid)
                 if mark is None:
