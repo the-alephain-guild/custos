@@ -271,13 +271,45 @@ tick 监控关掉时照样订阅、`on_start` 确实接线。镜像重建后进�
 确认新方法**不带**条件，而不只是确认它存在，因为本事故的形状就是"守卫的数据需求被挂在了不相关的可选
 配置下"。
 
+### 发现 C 的真机首跑：订阅生效了，然后暴露出下一个（`69e153e`，2026-08-01）
+
+含 `675c0fd` 的镜像首次在有持仓的 testnet 上跑。结果：
+
+```
+portfolio_equity_ambiguous     0     ← 发现 A 再次确认
+mark_price_unavailable         0     ← 订阅生效了，取到了 mark price
+fallback_breaker_fail_closed   1     ← 但换了个原因跳闸
+positions_flattened            1     （instrument_count: 1，确有持仓）
+```
+
+新原因：**`portfolio_snapshot_invalid:TypeError`**。`mark_price_unavailable` 为 0 说明价格**取到了** ——
+炸在拿到之后用它的时候。
+
+**根因：cache 的两个价格来源返回的不是同一种东西。**
+
+| 调用 | 返回 |
+|---|---|
+| `cache.mark_price(id)` | **`MarkPriceUpdate`** —— 一个带时间戳的事件，价格在它的 `.value` 里 |
+| `cache.price(id, MID)` | **`Price`** —— 价格本身 |
+
+`portfolio_snapshot.py` 把两者当同一种东西，于是把 wrapper 交给了 `Position.unrealized_pnl()`，
+而它只收 `Price`。修法是 `mark = getattr(mark, "value", mark)`。
+
+**这条分支在今天之前从未跑过。** 没人订阅 mark price → 第一支永远 `None` → 永远走返回 `Price` 的退路。
+`675c0fd` 让它第一次活过来，类型不匹配随即现形。**这是本 plan 内第三次同一形状**：A 挡住 C，C 挡住这个。
+
+**为什么单测抓不到，且不是"测试写少了"。** 旧 fake 的 `mark_price()` 返回 `_DecimalValue("100")` ——
+一个**长得像代码的假设、而不像 NautilusTrader** 的对象。它通过多少次都不可能发现这件事，因为它验证的
+是我们的假设自洽，不是与框架一致（C4 / C7 的形状）。新测试**用真的 `MarkPriceUpdate`**，修复前红，
+报的正是"传进去的是 update 不是 price"。**当一个类型本身就是 bug 时，fake 必须是真类型。**
+
 ### 真机验证到哪一步（2026-07-31，逐条）
 
 | 修复 | 真机状态 | 依据 |
 |---|---|---|
 | A（equity 币种声明） | ✅ 已验 | 含 `40d94e6` 的镜像上启动，`portfolio_equity_ambiguous` **0 次** |
 | B2（空 flatten 诚实记录） | ⚠️ **只验到未改动的那一支** | 观察到有持仓时仍正确记 `positions_flattened`（证明没改坏正常路径）；**`instrument_count == 0` 那一支没有在真机上出现过**，即本次改动的那半边未被真机触达 |
-| C（mark price 订阅） | ⏳ 未验 | 需要「行情在流 + 有持仓」同时成立，今天从未同时出现（交易所降级期间 11 分钟零 bar）|
+| C（mark price 订阅） | ⚠️ **订阅已验，整条路未通** | 2026-08-01 首次在「行情在流 + 有持仓」下跑到：`mark_price_unavailable` **0 次**，证明订阅生效、价格确实取到；但紧接着 `portfolio_snapshot_invalid:TypeError`，见上节。`69e153e` 修好类型后**尚未复跑** |
 
 B2 这一行是刻意写细的：把"跑过了、没报错"当成"改的那一支验过了"，就是 C7 的自洽假绿。
 
