@@ -1,9 +1,10 @@
 # 28 — reduce-only 平仓被拒时没有出路（demo 撮合引擎的已知缺陷，lesson #14 的手工绕法待固化）
 
-> **Status**: ⏳ In Progress —— 常规出场路径已落地并有真机证据（`9f38691`）；**Task 1 已补**
-> （`6f0c0e1`，起因是跳过它当天就在生产里出事，见 §2026-07-31 事故）。
-> 未做: Task 4 的另外两条平仓路径（熔断 flatten / `emergency_close`）、Task 5（sandbox host 断言）。
-> `6f0c0e1` 的两处修复**尚未真机复验**
+> **Status**: ⏳ In Progress —— **五个 Task 的代码都已落地**；常规出场路径有真机证据（`9f38691`）；
+> **Task 1 已补**（`6f0c0e1`，起因是跳过它当天就在生产里出事，见 §2026-07-31 事故）；
+> **Task 4 + Task 5 已补**（`cbbff0a`，判定收敛为一个纯函数 + 三条路径接入 + sandbox 不回归）。
+> 未 close 的原因只有一个：`6f0c0e1` 与 `cbbff0a` **都尚未真机复验**，而触发条件依赖 demo 引擎处于
+> 间歇性损坏态，不可按需复现。另：`emergency_close` 在本通道**仍不可达**，接上它 ≠ 验证了它
 > **Created**: 2026-07-30
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现（需 demo 环境处于 reduce-only 损坏态）
@@ -374,14 +375,75 @@ runner 自己开的多仓。这与 owner 报告的「交易所网页端也平不
 `-2022` → 逻辑层 → 武装 + 普通单平掉；`-1007` → 服务器层 → 60s 退避、保护不动；HTML 错误页 → 同上。
 **这组对照证明分级不是纸面洁癖**：若按遗留项原样把桶合在一起，后两次都会错误地下普通反向单。
 
+## Task 4 + Task 5 落地（commit `cbbff0a`，2026-08-01）
+
+### 判定逻辑收敛成一个纯函数，三条路径共用
+
+`strategy_core.py`（owner 指定的落点）新增 `plan_close_attempt(*, reduce_only_refused,
+plain_close_submitted) -> CloseAttempt`，三态：`REDUCE_ONLY` / `PLAIN` / `PLAIN_ALREADY_SPENT`。
+
+**三态而非布尔，是因为第三态下各调用点的正确动作真的不同**，这个差别不是实现细节：
+
+| 路径 | 一次性名额用完后 | 为什么 |
+|---|---|---|
+| 常规出场（每 bar 跑一次）| **什么都不发** | 每根 bar 重发被拒的 reduce-only 单就是 lesson #13 那次刷单的形状 |
+| 熔断 flatten / `emergency_close`（一次性）| **回退到 reduce-only 形式** | 大概率还是被拒，但被拒的 reduce-only 单**不可能开出反向仓**；在这两个时刻，尝试胜过不尝试 |
+
+第四个组合（`reduce_only_refused=False` 但 `plain_close_submitted=True`）显式返回 `REDUCE_ONLY` 并有
+测试钉住 —— 两个标志互相矛盾时不得读成"可以下普通单"。
+
+### 三处接入
+
+| 路径 | 改法 | 可达性（诚实标注）|
+|---|---|---|
+| 常规出场 `execution.py` / `signal_execution.py` | 改为调用共享判定，行为不变（原有 8 条测试全绿）| **本通道唯一当前会真正触发的**，且已有真机证据 |
+| 熔断 flatten `host.py` | 优先调策略侧 `close_all_positions_with_fallback`，**鸭子类型**，没有该方法的策略走原 `close_all_positions` 一字不变 | 可达，但见下"它拿不到什么" |
+| `emergency_close` `strategy_core.py` | 改走共享的 `_close_position_with_fallback` | **本通道不可达** —— 无命令通道（`offline/daemon.py:203` 自述 "holds no commands"）。接它只为不留两套语义，**不是**因为它现在会跑 |
+
+证据来源用一个可覆写的钩子 `order_tracker_for(instrument_id)`：Core 默认返回 `None`（没有证据 → 用保护
+形式），`NautilusTradingStrategy` 覆写为查 `_contexts` 里的 tracker。基类够不到 pair context，没有这个
+钩子那两条路就会在一个已经拒绝过 reduce-only 的交易所上继续用 reduce-only。
+
+### 熔断 flatten 从这个改动里**拿不到**什么（写清楚，否则容易读反）
+
+**交易所的拒单是异步事件，而 flatten 是一次同步遍历。** 所以「在 flatten 执行过程中发生的拒绝」它看不到，
+也就无法在同一次调用里改用普通单。它受益的场景是**拒绝已经被记录在先** —— 而这正是真机那次的形状：策略
+在 `08:30` 被拒，此后任何要平掉这个仓的动作都已经知道。
+
+若熔断的 flatten 恰好是第一次尝试，它只有一发 reduce-only，被拒就结束了。**这不是本次改动的疏漏，是
+"一次性 flatten + 异步拒单"的结构性上限**，要突破需要给 containment 一个确认回路 —— 与孤儿撤单同一个
+形状，登记进 Plan 29。
+
+### Task 5 —— sandbox 不回归
+
+`tests/engines/nautilus/test_sandbox_close_path_unchanged.py` 三条：flatten 仍是「只记一条日志、不做别的」；
+它确实无仓可平（positions / orders / notional 全空）；以及**反向断言** `SandboxSimulationHost` 上
+**没有** `close_all_positions_with_fallback`。第三条是这组的重点 —— 它防的是未来有人"顺手统一两个 host"，
+让模拟边界去平一个它并不持有的真实仓位，而所有 sandbox 测试照样全绿（Plan 26 / 27 Task 5 同一诉求）。
+
+### 验证
+
+新增 15 条测试（12 toolkit + 3 sandbox），全仓 **2236 passed / 25 skipped / 1 xfailed**。
+`ruff check` 干净；`ruff format --check` 命中且仅命中 C6 记录的那 3 个被 `docs/authority/**` 按字节 pin
+住的既有文件（`src/custos/core/runner_fact.py` + 2 个 integration test），本次新增/改动文件全部 format-clean。
+
+`test_toolkit_release_candidate_build.py` 的 3 个 error 又出现了一次，仍是**工作区未提交**所致
+（`toolkit package sources must exactly match the clean source commit`），commit 后重跑 4 passed。
+与上一轮同因，不是缺陷。
+
+**三条既有白盒测试被迁移而非改判**：`_make_emergency_stub` 原本只 bind `emergency_close` +
+`_log_warning`，新的共享方法不在 stub 上 → `emergency_close` 自己的 fail-safe 把 `AttributeError` 吞掉，
+测试变成"绿色的空操作"。这正是 lesson #39 说的白盒测试耦合实现住址；修法是把新方法一并 bind，**断言强度
+不变**（仍断言 `close_position(reduce_only=True, IOC)` 被调用）。
+
 ## 未做（不要按"已完成"读本 plan）
 
-1. **Task 4 只覆盖了三条路径中的一条。** 熔断 flatten（`host.py:728` → NT `close_all_positions`）与
-   `emergency_close`（`strategy_core.py:327`）仍硬编码 reduce-only，遇到同样的拒单依旧平不掉。
-2. **Task 5 —— sandbox host 的"不回归"断言未加。**
-3. **`6f0c0e1` 的两处修复尚未真机复验。** 需要在含它的镜像上再遇到一次真实的 `-2022` 才能确认武装依据与
-   一次性都按预期工作 —— 而 demo 引擎的损坏是间歇的，**不得因为"跑了一轮没触发"就宣布验证通过**
-   （与 §验证清单 末项同一条纪律）。
+1. **`6f0c0e1` 与 `cbbff0a` 都尚未真机复验。** 需要在含它们的镜像上再遇到一次真实的 `-2022` 才能确认
+   武装依据、一次性、以及新接入的两条路径按预期工作 —— 而 demo 引擎的损坏是间歇的，**不得因为
+   "跑了一轮没触发"就宣布验证通过**（与 §验证清单 末项同一条纪律）。
+2. **`emergency_close` 这条路仍然不可达**，接上它不等于验证了它。要让它可达需要给离线通道一个命令通道，
+   是独立决策（见 §Follow-up）。
+3. **containment 没有确认回路** —— 见上"拿不到什么"，已登记进 Plan 29。
 
 ## 偏离与改进日志 (Deviations & Improvements)
 
@@ -405,8 +467,14 @@ runner 自己开的多仓。这与 owner 报告的「交易所网页端也平不
   时交易所侧同时挂着 4 张来自前四轮的 reduce-only 止损单。前几轮日志里都有对应的 `OrderCanceled`，但它们
   显然没在交易所侧生效 —— `runtime/` 下只有遥测 WAL 与 generation 记录两个库、**没有 NT 缓存库**，所以
   NT 每轮空缓存起步，那 4 张是交易所报回来的，即确实还挂着。这与 PS lesson #17（批量撤单
-  fire-and-forget 无对账 → 孤儿 SL）同形。**这条值得独立起 plan**：它既是资金路径问题（占满 reduce-only
-  额度导致平不掉），也让现有代码里"先撤单再平仓"这个 -2022 缓解措施实际失效。
+  fire-and-forget 无对账 → 孤儿 SL）同形。**已起 [Plan 29](29-a-cancel-counts-as-cancelled-the-moment-it-is-sent.md)**
+  （2026-08-01）：它既是资金路径问题（占满 reduce-only 额度导致平不掉），也让现有代码里"先撤单再平仓"
+  这个 -2022 缓解措施实际失效。Plan 29 的 Foundation Scan 还发现：兜底 sweep 的**判定规则是对的**
+  （那 3 张未认领的单精确命中 `is_stale_order` 的重复分支），失效的是"它有没有跑"或"它的撤单有没有生效"，
+  而这三个候选原因**从现存证据里区分不了** —— 所以 Plan 29 的第一个 Task 是让证据可得，不是挑一个动手。
+- **本 plan 的熔断 flatten 也需要 Plan 29 那个确认回路。** 见 §Task 4 「拿不到什么」：拒单是异步事件、
+  flatten 是一次同步遍历，"发出去了"被当成"生效了" —— 与撤单同一个形状。Plan 29 做确认层时应让
+  containment 复用同一层，而不是各写一套。
 - **`emergency_close` 是一个当前不可达的安全面。** 它被声明为命令却零消费方，而离线通道按设计不持有
   命令。要么给通道加命令投递，要么明确它只服务签名通道 —— 现状是"看起来有、实际调不到"，比没有更容易
   误导下一个读者（与 Plan 26 修的那类"把代表过去的东西当现在的答案"同源）。
