@@ -318,10 +318,70 @@ B2 这一行是刻意写细的：把"跑过了、没报错"当成"改的那一�
 1. **B1（有界宽限窗口）** —— 需 owner 定，且必要性已降级，见上。
 2. **真机复验** —— 发现 C 的订阅尚未在真机跑过（需「行情在流 + 有持仓」同时成立）；发现 B2 只验到
    未改动的那一支。逐条状态见上表。
-3. **`reconciliation_initialized` 是个不检查对账的占位门。** `host.py:616` 以 `trading_mode ==
-   "sandbox"` 充当该检查，使 `ready` 在 testnet/live 恒假。两种收口都要判断：要么让它真的反映 NT 的
-   启动对账状态，要么把这个字段从 `ready` 的合取里摘掉并改名，别留一个名不副实的门。**当前它没有造成
-   故障，只因为离线通道压根不调 `wait_ready`** —— 签名通道调，所以这条对签名通道可能是真问题。
+3. ~~**`reconciliation_initialized` 是个不检查对账的占位门。**~~ **已修（`cf70afb`，2026-08-01）**，
+   收口过程见下节 —— 查证后发现它不止"没检查"，而是**反的**；且同一个结构里另有两个字段同病。
+
+## 遗留项 3 收口：readiness 问的是引擎，不再是它被要求跑的模式（`cf70afb`，2026-08-01）
+
+### 查证推翻了原来的描述：它不是"没检查"，是**反的**
+
+原式 `reconciliation_initialized = (trading_mode == "sandbox")`。实证 `_build_exec_plan`
+（`host.py:411-438`）：**sandbox 是唯一关掉对账的模式**（本地撮合、没有交易所账户可对，返回 `False`），
+testnet / live 才真的跑对账（返回 `True`）。所以这个字段**恰好在什么都没对账时为真，在真的对账了时为假**
+—— 它让 `ready` 在唯一会碰到交易所的两个模式上永不可达。
+
+### 同一个结构里另外两个字段也不是证据
+
+`EngineReadinessChecks` 自称 "Evidence that a created task has crossed every mandatory ready
+boundary"。七个字段里三个不是证据：
+
+| 字段 | 原实现 | 实际检查了什么 |
+|---|---|---|
+| `reconciliation_initialized` | `trading_mode == "sandbox"` | 反的，见上 |
+| `portfolio_initialized` | `getattr(kernel, "portfolio", None) is not None` | 常量 —— kernel 总有 portfolio |
+| `strategy_accepting_lifecycle` | `not task.done()` | 与上面两行的 `node_task_alive` **逐字符相同** |
+
+### 为什么三个一起修，而不是只修被点名的那个
+
+**只修第一个会比三个都不修更糟。** `ready` 会从"永不为真"变成"靠两个常量和一个重复项为真" ——
+永不通过的门至少是吵的，永远通过的门是静的。所以这次把三个一起换成引擎真能被问到的东西，
+并在此显式声明**我扩大了范围**，理由如上。
+
+### 让对账可判定的依据（NT 没有"对账完成"标志，这点先查清了）
+
+`LiveExecutionEngine` 上没有任何 `reconciliation_complete` 之类的属性，只有
+`reconciliation`（**是否会跑**，不是是否跑完）。可用的判据来自 kernel 自己的启动序列
+（`NautilusKernel.start_async` 源码实证）：
+
+```
+_start_engines() → _connect_clients() → _await_engines_connected()
+  → if exec_engine.reconciliation: _await_execution_reconciliation()   ← 失败即 return
+  → _initialize_portfolio() → _await_portfolio_initialization()        ← 失败即 return
+  → _trader.start()
+```
+
+对账失败时 `start_async` **直接返回，trader 永不启动**。所以 **trader 在跑 = 对账那一步已经过了**，
+这是 NT 能提供的最接近完成信号的东西。
+
+新实现：`trader_running and (reconciliation_enabled or trading_mode == "sandbox")`。
+第二项不是多余的 —— trader 无论对账跑没跑都会启动，所以「在 testnet 上把对账关掉」这种配置错误
+需要它自己那一条才拦得住。
+
+### 验证
+
+新增 9 条测试（`tests/engines/nautilus/test_readiness_checks_what_it_claims.py`）。
+**注意其中 8 条在修复前就是绿的** —— 因为修复前 testnet 上一切都不 ready，它们全是空洞通过。
+使它们变得有意义的是基线那条（`test_a_testnet_node_can_become_ready_at_all`，修复前红）：
+基线证明完整节点确实 ready，其余每条只改一个字段并断言不 ready，于是逐条隔离成立。
+**这组测试是自证的，但只在基线通过之后** —— 这一点值得记下来，因为"修复前就绿"很容易被读成"没用"。
+
+全仓 2261 passed / 25 skipped / 1 xfailed；`ruff check` 干净；`scripts/check-authority-docs.py`
+通过（它 pin 的是七个字段**名**，本次一个都没改名，只改了它们的含义 —— 所以证据链不动）。
+
+### 仍未做
+
+**真机未验。** 离线通道压根不调 `wait_ready`，所以这条路在本通道上跑不到；**签名通道调**，
+真机验证要在签名通道上取。这条修的是签名通道的真问题，不是离线通道的。
 
 ## 偏离与改进日志 (Deviations & Improvements)
 
