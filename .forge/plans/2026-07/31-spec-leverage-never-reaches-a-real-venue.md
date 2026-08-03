@@ -1,7 +1,8 @@
 # 31 — spec 里的 leverage 到不了真实交易所，只到 sandbox
 
-> **Status**: ⏳ In Progress —— 接线已落地（custos `9b3af5f`，含证伪过的类型断言）；
-> **尚未真机验证下发是否生效**，判据见 §怎么算验过。`futures_margin_types` 有意不设，理由见 §进度 2
+> **Status**: ⏳ In Progress —— 接线已落地（custos `9b3af5f`，含证伪过的类型断言）；真机确认
+> **调用已达交易所**（`Set default leverage BTCUSDT 3X`，改动前 46 小时日志里 0 次）；**保证金效果待
+> 下一笔新开仓验证** —— 现有仓位开在改动之前，不追溯。`futures_margin_types` 有意不设，见 §进度 2
 > **Created**: 2026-08-01
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现，且已在真机观察到
@@ -92,3 +93,26 @@ futures_margin_types: dict[BinanceSymbol, BinanceFuturesMarginType] | None
 「配置传了」不等于「交易所改了」。判据是**读回**：重启后从运行时确认 BTCUSDT 的杠杆是 3 而不是账户
 默认，或等价地看保证金比 —— 名义 447 的仓位，3x 下初始保证金应在 149 附近而不是 447。后者不需要额外
 凭据，账户状态日志里就有，是本 plan 当初据以发现问题的同一个量。
+
+## 真机读回（2026-08-03，镜像 `9b3af5f`）
+
+重建镜像重启后，Binance exec client 的日志里出现了这一行：
+
+```
+04:20:00  ExecClient-BINANCE: Set default leverage BTCUSDT 3X
+```
+
+**它是新的**，不是一直都在：改动前 46 小时的日志 0 次、停机测试那份 0 次、现在 1 次。也就是说
+`POST /fapi/v1/leverage` 这个调用**以前从来没发生过**，现在发生了 —— spec 的声明第一次真的到达
+交易所。
+
+### 还差一步：保证金要等一笔新仓才能看
+
+同时刻账户报的仍是 `MarginBalance(initial=446.58 USDT)`，约等于全额名义 —— 因为这个 -0.0071 仓位是
+**改动之前开的**，Binance 的杠杆作用于新开仓，不追溯既有持仓。所以这个数**既不能证实也不能证伪**
+下发效果，只能说明它没有回头去改旧仓。
+
+判据不变（§怎么算验过）：**下一笔新开仓**的初始保证金应落在名义的三分之一附近（名义 ~449 → ~150），
+而不是 ~449。已挂后台观察，等下一次趋势翻转。
+
+**在那之前，第 3 项算"调用已达交易所"，不算"杠杆已生效"** —— 两者差一笔新仓的距离，别把前者读成后者。
