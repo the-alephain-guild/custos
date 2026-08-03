@@ -240,5 +240,113 @@ Plan 28 / 29 / 30 改同一条平仓路径，当初记的是「先定顺序再�
 `safety.py` / `engine_safety.py` **不在**它们俩改的那条策略侧平仓路径上。原先「会互相覆盖」的顾虑
 在 29 撤回 Task 2-4 之后基本消失。
 
-**仍未定的是 §决策 里的 A / B / C。** 顺序定了不等于选型定了 —— B（闩住后继续评估、超限再平）
-需要节流，而节流所依赖的"平仓确认"正是 29 选项 2 撤回的那部分，选 B 时要一并想清楚它靠什么收敛。
+~~**仍未定的是 §决策 里的 A / B / C。**~~ **已定：A + C**（owner，2026-08-03，见 §决策已定）。
+原文那句「B 需要节流，而节流所依赖的『平仓确认』正是 29 选项 2 撤回的那部分」仍然成立——它正是
+不选 B 的理由之一：B 没有收敛点，而它唯一可能的收敛机制在 29 已经撤回。
+
+## 完成情况（2026-08-03）
+
+- **完成日期**: 代码侧 2026-08-03；**真机未验**
+- **总 Task 数**: 6（全部落地）
+- **实施 commit**: `c2413cd`（决策 + 任务）· `b291124`（实现 + 测试）
+- **验证结果**: `uv run pytest tests/` = **2297 passed / 25 skipped / 1 xfailed / 1 failed**；
+  `ruff check src/ tests/ scripts/ packages/` 全绿
+
+**那 1 条 failed 与本次改动无关，已实证**：
+`test_runner_deployment_command_golden.py::test_golden_hash_matches_snapshot_sidecar_and_optional_sibling`
+比对的 `SIBLING` 指向**另一个仓库**（`../crucible-rust/docs/authority/runner-deployment-command-golden-v1.json`），
+两边字节在 index 3332 处差一个换行。把本次改的三个文件 `git stash` 回 HEAD 后重跑，该条**照样红**
+——所以是 workspace 内的跨仓 golden 漂移，不是本次引入。它在独立 clone 下不触发
+（`if SIBLING.is_file()`）。修它要跨仓协同，不属本 plan 范围，见 §遗留项 4。
+
+**`make check` 在主干上本来就是红的**，与本次无关：`ruff format --check` 报
+`src/custos/core/runner_fact.py` 与 2 个 pinned integration test 需要重排——这三个文件被
+`docs/authority/**` 的资产索引按字节 pin 住，跑 `make fmt` 会修好 gate 但毁掉证据链
+（`.forge/README.md` §Deferred 1 副作用 + `historical-lessons.md` C6）。本次只对**自己改过的
+三个文件**跑了 `ruff format --check`，全部已格式化。
+
+### 改了什么
+
+| 位置 | 改动 |
+|---|---|
+| `offline/safety.py` | 新增 `OfflineSafetyEngine` Protocol（`EngineSafetyPort` + `stop` + `attached`） |
+| `offline/safety.py` | `evaluate_once` 对已闩住的条目走 `_end_deployment`，不再 `continue` |
+| `offline/safety.py` | `_end_deployment`：`attached()` 为真则告警 + 停机（有界）；超时记 unconfirmed；异常传播 |
+| `offline/safety.py` | `run()` 删除「全闩住即 return」，连同 `offline_exposure_guard_latched` 日志 |
+| `offline/safety.py` | 类 docstring 改写——原文那句 *because* 是本 plan 判定为错的那句 |
+
+`core/engine_safety.py` 与 `core/fallback_breaker.py` **未改**，签名通道语义不变。
+
+### 测试条数（取自 `pytest --collect-only`，非手写）
+
+| 测试文件 | 条数 |
+|---|---|
+| `tests/test_offline_lane_safety.py` | 46 |
+| `tests/engines/nautilus/test_nautilus_host_implements_engine_protocol.py` | 4 |
+| `tests/test_plan_closeout_counts.py` | 15 |
+
+上表合计 65 条。这是三个文件的**全量**条数，不是本 plan 的增量：本 plan 新写 12 条、
+改写 2 条（那 2 条见下）。
+
+`tests/test_offline_lane_safety.py` 上一次被 plan 22 数为 38，本次重数为 46 ——
+按 `progress-management.md` §"数字类声明必须来自实跑"，重数写在这里，**不去改 plan 22 那一行**。
+`tests/test_plan_closeout_counts.py` 正是靠这条规矩红的，红得对。
+
+第三行需要解释，否则下一个读者会以为是凑数：**本 plan 并没有往那个探针文件里写测试**，
+但它有两个 `parametrize` 跑在「带计数表的 plan」这份清单上，而本 plan 恰好新增了一张计数表
+——于是每个参数化各多一个参数，13 变 15。它被 plan 26 数过，现在由本 plan 重数。
+再加行不会继续涨：清单看的是"这份 plan 有没有表"，不是"表里有几行"。
+
+### 两条被改写的既有测试
+
+`tests/test_offline_lane_safety.py` 里的
+`test_the_tick_ends_once_every_watched_deployment_is_latched` 与
+`test_the_tick_ends_against_an_engine_that_never_answers` 断言的是「全闩住 → `run()` 返回」
+——也就是本 plan 要修的行为本身。改写为断言相反的事，并在 docstring 里写明它们原本断言的是什么。
+同型前例是 Plan 26（一条既有测试把症状写成了契约）。
+
+### 失败模式覆盖
+
+| # | 场景 | 测试 |
+|---|---|---|
+| FM1 | `stop()` 超时不返回 | `test_a_stop_that_never_returns_is_recorded_rather_than_assumed` |
+| FM2 | `stop()` 抛异常 | `test_the_tick_does_not_swallow_a_failure_to_stop` |
+| FM3 | 停机后引擎仍 `attached` | `test_a_deployment_that_will_not_stop_is_reported_on_every_tick` |
+| FM4 | 闩住的部署从未 attach | `test_a_latched_deployment_the_engine_never_held_is_left_alone` |
+| FM5 | 停机不得解闩 | `test_stopping_the_deployment_does_not_unlatch_the_generation_gate` |
+| FM6 | wedged engine 走 fail_closed | `test_an_engine_that_never_answers_is_stopped_too` |
+
+**FM3 配了证伪搭档** `test_a_deployment_that_did_stop_is_not_stopped_again`：不配的话，
+FM3 的「每 tick 都喊」可能绿在「守卫无条件重复」上，而不是绿在「引擎确实还握着它」上。
+
+**两处探针都实跑证伪过**：把 `_end_deployment` 里的 `attached()` 早返回删掉，FM4 与它的证伪
+搭档双双转红；`isinstance` 那两条对只有旧两个方法的引擎判 False（实跑三个类分别为
+False / False / True）。
+
+### 红线 gate 满足度
+
+按 lesson #40：红线名是设计意图，兑现声明是能力实现，两者不混。
+
+| 红线 | code test 覆盖 | runtime wire | 真机 | defer |
+|---|---|---|---|---|
+| 0.3 失联≠停止 | ✅ 12 条新测试覆盖停机/告警/不解闩/超时/异常五条路径 | ✅ 守卫由 `daemon.py:124` 组合，engine 与 reconciler 同一对象，无需新接线 | ❌ **未验** | 无 |
+| 0.1 Key/KEK 不出进程 | 不适用 | 未触碰 | — | — |
+| 0.2 G6 host gate | 不适用 | 未触碰 | — | — |
+| 0.4 Decimal money | 不适用 | 未触碰（未新增任何 money 运算） | — | — |
+
+**0.3 这一行只兑现到「闩住之后守卫不再停摆」**。它不声称敞口从此不会超限——策略在跳闸到停机
+之间开的仓仍然会发生，本 plan 收窄的是「此后无人看管」那一段。
+
+### 遗留项
+
+1. **真机未验**。判据写在 §复现：跳闸后应紧跟
+   `offline_exposure_latched_deployment_stopping`，此后策略不再开仓。按 Plan 25 的先例，
+   真机证据到手前本 plan 不标 ✅。
+2. **停机之后交易所可能留 resting 单**。Plan 29 的 46 小时连跑给的是「正常关停」路径的证据
+   （19/19 撤单确认），**不是**「守卫强制停机」路径的。这条要在真机复验时一并看。
+3. **告警不节流**。`attached()` 一直为真时每个 tick（5s）一条 ERROR。这是有意的——「喊一次
+   然后沉默」正是本 plan 要消除的形状——但真机上若确实出现停不掉的引擎，日志量要复看一次。
+4. **跨仓 golden 漂移**（本 plan 顺手撞见，不属本 plan 范围）：custos 与 crucible-rust 两侧的
+   `runner-deployment-command-golden-v1.json` 字节不一致。它只在 workspace checkout 下红，
+   独立 clone 不触发，所以 CI 大概率一直是绿的——与 C7「陈旧产物互相印证出的假绿」同族，值得
+   单独起一条。
