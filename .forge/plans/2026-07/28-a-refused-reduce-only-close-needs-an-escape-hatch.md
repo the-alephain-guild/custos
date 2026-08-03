@@ -491,7 +491,12 @@ plain_close_submitted) -> CloseAttempt`，三态：`REDUCE_ONLY` / `PLAIN` / `PL
   Speculum 回测或稳定环境，**不依赖 demo-fapi**」，而当前 `MODE=testnet` 的 REST 正指向它，行情却来自
   testnet 流。这个混合配置是有意的还是历史残留，本 plan 没有判断。若改成真 testnet REST，本 plan 的
   触发条件可能永远不会出现 —— 那也是一种解法，但要先确认真 testnet 的 reduce-only 是健康的。
-- **testnet 上仍有一个未平的空仓**（`-0.0070 BTC` + 三张 resting reduce-only stop），见 Plan 27
+- ~~**testnet 上仍有一个未平的空仓**~~ **已平，且是这条 follow-up 自己预言的那条路平的（2026-08-03）。**
+  原文说「本 plan 落地也不会自动平掉它 —— 本通道唯一会真正触发的是常规出场路径，它要等一个出场信号」。
+  确实如此：46 小时里常规出场路径走了 19 次，其中 10 次靠逃生口转普通单成交。现在重启对账报
+  `Initialized 0 open orders`，当前 `-0.0071` 是 `05:19` 新开的仓。**具体哪一次平掉了它无法回溯确认**
+  （更早日志已不存在）。「按需平仓」仍然不是一种能力，那部分仍需命令通道，见下条。原文：
+- **（历史）testnet 上仍有一个未平的空仓**（`-0.0070 BTC` + 三张 resting reduce-only stop），见 Plan 27
   §Follow-up。它当前平不掉的原因**不是**本 plan 这个缺陷：熔断那条 flatten 被 Plan 27 的两个发现废掉，
   `emergency_close` 在本通道不可达，而策略层没有 REST、无法照 lesson #14 手工净平。**本 plan 落地也不会
   自动平掉它** —— 本通道唯一会真正触发的是常规出场路径，它要等一个出场信号（趋势反转，或价格触及那张
