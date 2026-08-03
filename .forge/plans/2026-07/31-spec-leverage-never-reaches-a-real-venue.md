@@ -1,6 +1,7 @@
 # 31 — spec 里的 leverage 到不了真实交易所，只到 sandbox
 
-> **Status**: 🔲 Not started —— 只记录，不实施
+> **Status**: ⏳ In Progress —— 接线已落地（custos `9b3af5f`，含证伪过的类型断言）；
+> **尚未真机验证下发是否生效**，判据见 §怎么算验过。`futures_margin_types` 有意不设，理由见 §进度 2
 > **Created**: 2026-08-01
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现，且已在真机观察到
@@ -72,9 +73,22 @@ futures_margin_types: dict[BinanceSymbol, BinanceFuturesMarginType] | None
 5% 的止损，而真实强平距离只有 5% —— 止损可能永远来不及触发。**spec 的 leverage 是一个校验所
 信任、却没有任何东西去兑现的假设**，这跟 PS lesson #21（比例字段无单一真理源）是同一类问题。
 
-## 该做什么
+## 进度
 
-1. 给 testnet/live 的 exec config 接上 `futures_leverages`（含类型转换）
-2. 同时考虑 `futures_margin_types`（isolated vs cross 同样影响强平距离，spec 目前完全没有表达）
-3. 验证下发是否真的生效 —— 读回交易所侧的杠杆，而不是只看配置传了
-4. 顺手核实 sandbox 那条路径的类型不匹配有没有让它静默失效
+1. **已做** —— `build_binance_futures_leverages` 新增，testnet/live 的 exec config 接上
+   `futures_leverages`（custos `9b3af5f`）。转换是必需的而不是顺手：sandbox 那份键 `InstrumentId`
+   值 `Decimal`，Binance 这份键 `BinanceSymbol` 值 `int`，且 `BinanceSymbol` 会把 `-PERP` 去掉。
+   测试断言的是**键与值的类型**而不只是相等 —— 因为 msgspec 直接构造不校验，把 sandbox 那份塞进来
+   会被照单全收然后什么也不做。用「故意塞 sandbox 那份」证伪过，三条测试全红。
+2. **不做，且写明理由** —— `futures_margin_types` 保持不设。isolated 与 cross 的强平距离不同，
+   而 spec 无从表达选哪个；在这里挑一个等于**在实现层发明策略**，而不是搬运声明。要做得先给 spec
+   加字段，那是契约变更。
+3. **待验** —— 见下。
+4. **待验** —— sandbox 那条路径的类型不匹配（声明 `dict[str, float]`、实际收 `dict[InstrumentId,
+   Decimal]`）有没有让它静默失效。本次没查 `SimulatedExchange` 拿这些键做什么，**不要当作已确认可用**。
+
+## 怎么算验过（第 3 项）
+
+「配置传了」不等于「交易所改了」。判据是**读回**：重启后从运行时确认 BTCUSDT 的杠杆是 3 而不是账户
+默认，或等价地看保证金比 —— 名义 447 的仓位，3x 下初始保证金应在 149 附近而不是 447。后者不需要额外
+凭据，账户状态日志里就有，是本 plan 当初据以发现问题的同一个量。
