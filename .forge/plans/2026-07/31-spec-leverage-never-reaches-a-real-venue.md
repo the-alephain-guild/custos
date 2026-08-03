@@ -1,8 +1,9 @@
 # 31 — spec 里的 leverage 到不了真实交易所，只到 sandbox
 
-> **Status**: ⏳ In Progress —— 接线已落地（custos `9b3af5f`，含证伪过的类型断言）；真机确认
-> **调用已达交易所**（`Set default leverage BTCUSDT 3X`，改动前 46 小时日志里 0 次）；**保证金效果待
-> 下一笔新开仓验证** —— 现有仓位开在改动之前，不追溯。`futures_margin_types` 有意不设，见 §进度 2
+> **Status**: ⏳ In Progress —— 接线已落地并**真机验完**（custos `9b3af5f`）：调用到达交易所
+> （`Set default leverage BTCUSDT 3X`，改动前 46 小时日志 0 次），保证金比由 1.0 变为 **3.00**。
+> 余下只有第 4 项：sandbox 那条路径的类型不匹配是否让它静默失效，**未查**。
+> `futures_margin_types` 有意不设，见 §进度 2
 > **Created**: 2026-08-01
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现，且已在真机观察到
@@ -84,7 +85,7 @@ futures_margin_types: dict[BinanceSymbol, BinanceFuturesMarginType] | None
 2. **不做，且写明理由** —— `futures_margin_types` 保持不设。isolated 与 cross 的强平距离不同，
    而 spec 无从表达选哪个；在这里挑一个等于**在实现层发明策略**，而不是搬运声明。要做得先给 spec
    加字段，那是契约变更。
-3. **待验** —— 见下。
+3. **已验** —— 调用到达 + 保证金比 3.00，见 §真机读回。
 4. **待验** —— sandbox 那条路径的类型不匹配（声明 `dict[str, float]`、实际收 `dict[InstrumentId,
    Decimal]`）有没有让它静默失效。本次没查 `SimulatedExchange` 拿这些键做什么，**不要当作已确认可用**。
 
@@ -106,13 +107,22 @@ futures_margin_types: dict[BinanceSymbol, BinanceFuturesMarginType] | None
 `POST /fapi/v1/leverage` 这个调用**以前从来没发生过**，现在发生了 —— spec 的声明第一次真的到达
 交易所。
 
-### 还差一步：保证金要等一笔新仓才能看
+### 保证金也验了：3.00
 
-同时刻账户报的仍是 `MarginBalance(initial=446.58 USDT)`，约等于全额名义 —— 因为这个 -0.0071 仓位是
-**改动之前开的**，Binance 的杠杆作用于新开仓，不追溯既有持仓。所以这个数**既不能证实也不能证伪**
-下发效果，只能说明它没有回头去改旧仓。
+先踩了一个坑值得记下来。改动后那条 `locked=447.04 / initial=446.58` 看着像"没生效"，其实它的时间戳是
+`04:20:00.825`，**比杠杆调用（`04:20:00.993`）早 168 毫秒** —— 是改动前的快照。而它之后的每一条
+AccountState 都是 `margins=[]`、`locked=0`：那些是 WS 增量更新，只带 USDT 钱包余额，**根本不携带
+保证金**。也就是说改动后的日志里既没有"生效"的证据，也没有"没生效"的证据 —— 差点把"读不到"当成
+"是零"。
 
-判据不变（§怎么算验过）：**下一笔新开仓**的初始保证金应落在名义的三分之一附近（名义 ~449 → ~150），
-而不是 ~449。已挂后台观察，等下一次趋势翻转。
+完整快照只在启动对账时来一次。所以趁着 `05:19` 开的那笔仓还在，重启读它：
 
-**在那之前，第 3 项算"调用已达交易所"，不算"杠杆已生效"** —— 两者差一笔新仓的距离，别把前者读成后者。
+```
+net_position = -0.0071                 名义 ≈ 445.8
+locked       = 148.58947299 USDT
+initial      = 148.59164298 USDT       445.8 / 148.59 = 3.00
+```
+
+**对照改动前**：同样一笔 ~447 名义的仓位，initial margin 是 447.77 —— 比值 1.0。现在是 3.00。
+
+第 3 项验完：**调用到达交易所，且杠杆确实生效**。
