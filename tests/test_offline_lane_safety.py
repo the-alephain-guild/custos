@@ -28,6 +28,7 @@ from custos.offline.spec import OfflineDeploymentSpec
 STRICTEST_NOTIONAL = Decimal("200")
 STRICTEST_DRAWDOWN_PCT = Decimal("10")
 INSTANCE = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+_STILL_HELD = "offline_exposure_latched_deployment_stopping"
 
 
 def _spec(**overrides: Any) -> OfflineDeploymentSpec:
@@ -160,13 +161,20 @@ def _status(**overrides: Any) -> EngineStatus:
 
 
 class _SafetyEngine:
-    """An engine that answers with one snapshot, or refuses to answer at all."""
+    """An engine that answers with one snapshot, or refuses to answer at all.
+
+    It holds a deployment from the moment it is watched until a stop succeeds, so
+    ``attached`` answers about the engine rather than about a record of it.
+    """
 
     def __init__(self, snapshot: EngineStatus | Exception | None = None) -> None:
         self.snapshot = snapshot if snapshot is not None else _status()
         self.asked: list[str] = []
         self.flattened: list[tuple[str, str]] = []
         self.flatten_error: Exception | None = None
+        self.stopped: list[str] = []
+        self.stop_error: Exception | None = None
+        self._released: set[str] = set()
 
     async def get_engine_status(self, deployment_instance_id: str) -> EngineStatus:
         self.asked.append(deployment_instance_id)
@@ -178,6 +186,15 @@ class _SafetyEngine:
         self.flattened.append((deployment_instance_id, reason))
         if self.flatten_error is not None:
             raise self.flatten_error
+
+    async def stop(self, deployment_instance_id: str) -> None:
+        self.stopped.append(deployment_instance_id)
+        if self.stop_error is not None:
+            raise self.stop_error
+        self._released.add(deployment_instance_id)
+
+    def attached(self, deployment_instance_id: str) -> bool:
+        return deployment_instance_id not in self._released
 
 
 def _guard(engine: _SafetyEngine, **overrides: Any) -> OfflineExposureGuard:
@@ -292,16 +309,24 @@ async def test_the_tick_keeps_evaluating_until_it_is_stopped() -> None:
     assert len(engine.asked) >= 3
 
 
-async def test_the_tick_ends_once_every_watched_deployment_is_latched() -> None:
-    """Nothing is left to evaluate, so spinning on it would only burn the clock."""
+async def test_the_tick_does_not_end_once_every_watched_deployment_is_latched() -> None:
+    """This used to assert the opposite -- that the loop returned here.
+
+    "Nothing is left to evaluate" was true only of the exposure number. The
+    deployment was still running, and on real hardware it opened four more
+    positions, each over twice the ceiling that had latched, with nothing
+    watching. Standing down is the defect; the loop now runs until it is stopped.
+    """
 
     engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
     guard = _guard(engine)
     _watch(guard, _spec())
 
-    await asyncio.wait_for(guard.run(asyncio.Event()), timeout=2)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(guard.run(asyncio.Event()), timeout=0.05)
 
     assert len(engine.flattened) == 1
+    assert engine.stopped == [INSTANCE]
 
 
 class _WedgedEngine(_SafetyEngine):
@@ -349,14 +374,22 @@ async def test_a_wedged_engine_is_recorded_as_containment_not_confirmed() -> Non
     assert engine.flattened == []
 
 
-async def test_the_tick_ends_against_an_engine_that_never_answers() -> None:
+async def test_the_tick_does_not_end_against_an_engine_that_never_answers() -> None:
+    """Also a superseded contract: the loop used to return once this latched.
+
+    An engine too wedged to answer is not an engine that has stopped trading, so
+    the deployment still has to be ended.
+    """
+
     engine = _WedgedEngine()
     guard = _guard(engine, deadline=0.02)
     _watch(guard, _spec())
 
-    await asyncio.wait_for(guard.run(asyncio.Event()), timeout=2)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(guard.run(asyncio.Event()), timeout=0.2)
 
     assert not guard.allows_new_generations()
+    assert engine.stopped == [INSTANCE]
 
 
 async def test_the_tick_does_not_swallow_a_failure_to_flatten() -> None:
@@ -369,3 +402,147 @@ async def test_the_tick_does_not_swallow_a_failure_to_flatten() -> None:
 
     with pytest.raises(RuntimeError, match="refused the close"):
         await asyncio.wait_for(guard.run(asyncio.Event()), timeout=2)
+
+
+class _UnstoppableEngine(_SafetyEngine):
+    """It accepts the stop and goes on holding the deployment anyway."""
+
+    async def stop(self, deployment_instance_id: str) -> None:
+        self.stopped.append(deployment_instance_id)
+
+
+class _StopWedgedEngine(_SafetyEngine):
+    """It accepts the stop and never returns from it."""
+
+    async def stop(self, deployment_instance_id: str) -> None:
+        self.stopped.append(deployment_instance_id)
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+class _UnheldEngine(_SafetyEngine):
+    """It holds nothing -- a deployment that latched before it ever ran."""
+
+    def attached(self, deployment_instance_id: str) -> bool:
+        return False
+
+
+async def test_a_latched_deployment_is_stopped_rather_than_left_trading() -> None:
+    """Flattening removes the exposure that tripped it; the strategy opens the next.
+
+    Measured on real hardware: four entries over the following 2h40m, each more
+    than twice the ceiling that had latched, because nothing ever touched the
+    strategy.
+    """
+
+    engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
+    guard = _guard(engine)
+    _watch(guard, _spec())
+
+    await guard.evaluate_once()
+
+    assert engine.flattened == [(INSTANCE, "notional_breach")]
+    assert engine.stopped == [INSTANCE]
+
+
+async def test_stopping_the_deployment_does_not_unlatch_the_generation_gate() -> None:
+    """The gate reads the watched entries, so dropping one would re-open it.
+
+    Ending the deployment and refusing the next generation are two separate
+    promises, and stopping must not quietly retract the second.
+    """
+
+    engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
+    guard = _guard(engine)
+    _watch(guard, _spec())
+
+    await guard.evaluate_once()
+    await guard.evaluate_once()
+
+    assert engine.stopped == [INSTANCE]
+    assert not guard.allows_new_generations()
+
+
+async def test_a_deployment_that_will_not_stop_is_reported_on_every_tick() -> None:
+    """One shout and then silence would recreate the blind spot being removed."""
+
+    engine = _UnstoppableEngine(_status(open_notional=Decimal("10000")))
+    guard = _guard(engine)
+    _watch(guard, _spec())
+
+    with capture_logs() as logs:
+        for _ in range(3):
+            await guard.evaluate_once()
+
+    alarms = [entry for entry in logs if entry["event"] == _STILL_HELD]
+    assert len(alarms) == 3
+    assert engine.stopped == [INSTANCE, INSTANCE, INSTANCE]
+
+
+async def test_a_deployment_that_did_stop_is_not_stopped_again() -> None:
+    """Falsifies the test above: the repetition must come from the engine still
+    holding it, not from the guard repeating itself regardless."""
+
+    engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
+    guard = _guard(engine)
+    _watch(guard, _spec())
+
+    with capture_logs() as logs:
+        for _ in range(3):
+            await guard.evaluate_once()
+
+    assert engine.stopped == [INSTANCE]
+    assert len([entry for entry in logs if entry["event"] == _STILL_HELD]) == 1
+
+
+async def test_a_stop_that_never_returns_is_recorded_rather_than_assumed() -> None:
+    """Same shape as the wedged status query: no exception to catch, so bound it."""
+
+    engine = _StopWedgedEngine(_status(open_notional=Decimal("10000")))
+    guard = _guard(engine, deadline=0.02)
+    _watch(guard, _spec())
+
+    with capture_logs() as logs:
+        await asyncio.wait_for(guard.evaluate_once(), timeout=2)
+
+    assert any(entry["event"] == "offline_exposure_stop_unconfirmed" for entry in logs)
+
+
+async def test_the_tick_does_not_swallow_a_failure_to_stop() -> None:
+    """Same contract as a failure to flatten: containment failing is not a detail."""
+
+    engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
+    engine.stop_error = RuntimeError("the engine refused to stop")
+    guard = _guard(engine)
+    _watch(guard, _spec())
+
+    with pytest.raises(RuntimeError, match="refused to stop"):
+        await asyncio.wait_for(guard.run(asyncio.Event()), timeout=2)
+
+
+async def test_a_latched_deployment_the_engine_never_held_is_left_alone() -> None:
+    """Nothing to end, so stopping and shouting would both be noise."""
+
+    engine = _UnheldEngine(_status(open_notional=Decimal("10000")))
+    guard = _guard(engine)
+    _watch(guard, _spec())
+
+    with capture_logs() as logs:
+        await guard.evaluate_once()
+
+    assert engine.stopped == []
+    assert not any(entry["event"] == _STILL_HELD for entry in logs)
+    assert not guard.allows_new_generations()
+
+
+async def test_an_engine_that_never_answers_is_stopped_too() -> None:
+    """It latched by failing closed rather than by breaching, and that is still a
+    deployment nobody is watching."""
+
+    engine = _WedgedEngine()
+    guard = _guard(engine, deadline=0.02)
+    _watch(guard, _spec())
+
+    await guard.evaluate_once()
+
+    assert engine.stopped == [INSTANCE]
