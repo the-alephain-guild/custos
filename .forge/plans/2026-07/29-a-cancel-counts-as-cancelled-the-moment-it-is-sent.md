@@ -1,10 +1,11 @@
 # 29 — 撤单发出即当作已撤销：这条通道没有确认回路，孤儿止损单逐轮累积
 
-> **Status**: ⏳ In Progress —— **Task 1 已落地**（custos `816548b` + PS `b593718`）：撤单请求与它的
-> 结局现在都有可数的记录，容器日志在 `make stop` 时落盘，`make cancel-audit` 直接给出四个数。
+> **Status**: ✅ Completed（2026-08-03）—— **Task 1 已落地**（custos `816548b` + PS `b593718`）：撤单
+> 请求与它的结局现在都有可数的记录，容器日志在 `make stop` 时落盘，`make cancel-audit` 直接给出四个数。
 > **Task 2-4 不开** —— 真机证据已拿到（§真机证据，46 小时连跑 + 一次完整停/起）：三个候选原因一个都没
 > 复现，19/19 撤单确认、重启后交易所零 resting 单。原推荐「2+3」据此**撤回**。真正查出来的缺陷是关停时
-> 同一张单被请求撤销两次，已在 PS `709f091` 修掉。待做的只剩 `stop_grace_period` 一行配置
+> 同一张单被请求撤销两次，已在 PS `709f091` 修掉。最后那一行 `stop_grace_period` 配置已由
+> PS `a5ddc40` 落地，见 §收口。**Task 2-4 的重开判据保持有效**，写在 §下一步：不做 Task 2-4
 > **Created**: 2026-08-01
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现
@@ -290,3 +291,27 @@ Task 1 的产出是**让下一轮长跑能回答问题**，不是修好撤单。
 - **`handle_order_cancel_rejected` 的语义需要一次单独判断。** 把"撤单被拒"读成"订单已不存在"在
   entry order 上大概率成立，在 SL / TP 上没有依据。改它会动到 tracker 的清理时机，范围比本 plan 大。
 - **testnet 上现存的孤儿单与空仓** —— Plan 27 §Follow-up。本 plan 不清理它们。
+
+## 收口（2026-08-03）
+
+### 那一行配置已落地：PS `a5ddc40`
+
+`deploy/custos/docker-compose.yaml` 的 `custos-runner` 现在带
+`stop_grace_period: 30s`，并在原处写清了为什么是这个数：NT 给自己的
+`Awaiting post stop (10.0s timeout)` 与 docker 默认的 10 秒宽限期**完全等长**，所以一次用满预算的
+有序关停会在它刚好做完的那一刻被 SIGKILL。2026-08-03 实测那次撤单 800ms 就确认了，
+而 `docker compose stop` 仍然走满 10.245 秒 —— 余量是真的，但是白捡的。
+
+**诚实标注：30 秒这个窗口本身没有被真机跑过。** 促成它的那次测量是在旧的 10 秒默认值下取的；
+这次改的是把外层窗口放宽，不是改行为，所以它不像代码路径那样需要一次证明才算数——但也不能写成
+「已验证」。下一轮长跑关停时顺带看一眼 `docker compose stop` 的耗时即可。
+
+### 为什么这份 plan 可以收，尽管 Task 2-4 没做
+
+Task 1 的产出是**让下一轮长跑能回答问题**，而那一轮已经跑完了：46 小时连跑 + 一次完整停/起，
+三个候选原因一个都没复现。这不是"没查"，是"查了，发现不需要修"——这正是 Task 1 存在的理由。
+Task 2-4 的登记与**重开判据**（`unaccounted` 排除重复撤单后再次非零，或重启时 reconciliation
+报出非零 resting 单）原样保留，两个数现在都能直接读到。
+
+顺带的旁证：2026-08-03 退掉了 Plan 27 与 Plan 28 里那两条关于"testnet 遗留空仓与孤儿止损单"的
+follow-up（commit `c2023eb`），因为交易所侧现在是干净的——与本 plan 的实测结论一致。
