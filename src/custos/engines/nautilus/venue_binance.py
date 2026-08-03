@@ -28,6 +28,7 @@ from nautilus_trader.adapters.binance.common.enums import (
     BinanceAccountType,
     BinanceEnvironment,
 )
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.adapters.binance.config import (
     BinanceDataClientConfig,
     BinanceExecClientConfig,
@@ -136,16 +137,40 @@ def build_instrument_ids(spec: dict) -> frozenset[InstrumentId]:
 
 
 def build_futures_leverages(spec: dict) -> dict[InstrumentId, Decimal]:
-    """Per-instrument leverage map for the configured pairs.
+    """Per-instrument leverage map for the configured pairs, in the sandbox's shape.
 
-    Keyed by InstrumentId with Decimal values so it drops straight into the
-    sandbox exec config's ``leverages`` field (and any future Binance live
-    exec config). Without pinning, the account default (e.g. 20x) would apply.
+    Keyed by InstrumentId with Decimal values, which is what the sandbox exec config's
+    ``leverages`` field takes. Binance wants a different shape entirely -- see
+    ``build_binance_futures_leverages``. Without pinning, the account default (e.g. 20x)
+    would apply.
     """
     connector = spec["connector"]
     leverage = Decimal(str(spec.get("leverage", 1)))
     return {
         InstrumentId.from_str(_format_instrument_id(pair, connector)): leverage
+        for pair in _trading_pairs(spec)
+    }
+
+
+def build_binance_futures_leverages(spec: dict) -> dict[BinanceSymbol, int]:
+    """The same declaration in the shape ``BinanceExecClientConfig`` reads.
+
+    Not a reshaping of the sandbox map for the sake of it: that one is keyed by
+    ``InstrumentId`` with ``Decimal`` values, this field is keyed by ``BinanceSymbol``
+    with ``int``, and ``BinanceSymbol`` drops the ``-PERP`` suffix, so the venue is keyed
+    by ``BTCUSDT``. msgspec does not type-check on direct construction, so passing the
+    sandbox map here would be accepted and then mean nothing.
+
+    ``leverage`` is a positive integer in the spec contract, so it converts exactly; a
+    float would have to round, and silently rounding a risk parameter is not a thing to
+    do quietly.
+    """
+    connector = spec["connector"]
+    leverage = int(spec.get("leverage", 1))
+    return {
+        BinanceSymbol(InstrumentId.from_str(_format_instrument_id(pair, connector)).symbol.value): (
+            leverage
+        )
         for pair in _trading_pairs(spec)
     }
 
@@ -237,12 +262,19 @@ def _build_binance_exec_config(
     account_type = (
         BinanceAccountType.USDT_FUTURES if exchange_type == "futures" else BinanceAccountType.SPOT
     )
+    # Spot has no futures leverage to set. Margin type is left to the account: isolated
+    # and cross imply different liquidation distances and the spec cannot say which, so
+    # choosing one here would be inventing the policy rather than carrying it.
+    futures_leverages = (
+        build_binance_futures_leverages(spec) if exchange_type == "futures" else None
+    )
     return BinanceExecClientConfig(
         api_key=api_key,
         api_secret=api_secret,
         key_type=key_type,
         account_type=account_type,
         environment=environment,
+        futures_leverages=futures_leverages,
         instrument_provider=InstrumentProviderConfig(
             load_all=False,
             load_ids=build_instrument_ids(spec),

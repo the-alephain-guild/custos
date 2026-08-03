@@ -21,6 +21,7 @@ from nautilus_trader.adapters.binance.common.enums import (  # noqa: E402
     BinanceAccountType,
     BinanceEnvironment,
 )
+from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.model.identifiers import InstrumentId  # noqa: E402
 
 from custos.engines.nautilus.venue_binance import (  # noqa: E402
@@ -226,3 +227,68 @@ def test_build_data_client_config_testnet_env() -> None:
     spec["trading_mode"] = "testnet"
     cfg = build_data_client_config(spec, _credential(), BinanceEnvironment.TESTNET)
     assert cfg.environment == BinanceEnvironment.TESTNET
+
+
+# ---------------------------------------------------------------------------
+# Leverage on a real venue
+#
+# Measured on testnet 2026-08-01: the spec said `leverage: 3` and the exchange
+# reported initial margin 447.77 against a notional of 447.77 at mark -- a margin
+# ratio of 1.0, so 1x. The map was being built and then only handed to the sandbox,
+# leaving the account default in force everywhere it mattered.
+#
+# It matters beyond position size: the strategy's startup check estimates liquidation
+# distance as 1/leverage to decide whether a fixed stop can trigger in time. That check
+# reads the spec. Nothing was making the venue agree with it.
+# ---------------------------------------------------------------------------
+
+
+def test_testnet_pins_the_declared_leverage() -> None:
+    cfg = build_exec_client_config_testnet(_spec("binance_perpetual"), _credential())
+
+    assert cfg.futures_leverages == {
+        BinanceSymbol("BTCUSDT-PERP"): 3,
+        BinanceSymbol("ETHUSDT-PERP"): 3,
+    }
+
+
+def test_live_pins_the_declared_leverage() -> None:
+    cfg = build_exec_client_config_live(_approved_spec("binance_perpetual"), _credential())
+
+    assert cfg.futures_leverages == {
+        BinanceSymbol("BTCUSDT-PERP"): 3,
+        BinanceSymbol("ETHUSDT-PERP"): 3,
+    }
+
+
+def test_the_pinned_leverage_is_keyed_the_way_binance_reads_it() -> None:
+    """Not a drop-in from the sandbox map, which is why this was easy to leave unwired.
+
+    ``build_futures_leverages`` is keyed by ``InstrumentId`` with ``Decimal`` values;
+    this field wants ``BinanceSymbol`` keys and plain ``int``. BinanceSymbol also drops
+    the ``-PERP`` suffix, so the key the venue sees is ``BTCUSDT``. msgspec does not
+    validate on direct construction, so handing it the wrong shape would pass here and
+    fail somewhere further away.
+    """
+    cfg = build_exec_client_config_testnet(_spec("binance_perpetual"), _credential())
+
+    for symbol, value in cfg.futures_leverages.items():
+        assert isinstance(symbol, BinanceSymbol), f"{symbol!r} is not a BinanceSymbol"
+        assert type(value) is int, f"{value!r} is {type(value).__name__}, not int"
+    assert set(cfg.futures_leverages) == {"BTCUSDT", "ETHUSDT"}
+
+
+def test_spot_declares_no_leverage() -> None:
+    """There is no futures leverage to set on a spot account."""
+    cfg = build_exec_client_config_testnet(_spec("binance"), _credential())
+
+    assert cfg.futures_leverages is None
+
+
+def test_margin_type_is_left_alone_until_the_spec_can_say() -> None:
+    """Isolated and cross give different liquidation distances, and the spec cannot
+    express which. Sending one anyway would be inventing the policy here rather than
+    reading it, so the account setting stands and the gap stays visible."""
+    cfg = build_exec_client_config_testnet(_spec("binance_perpetual"), _credential())
+
+    assert cfg.futures_margin_types is None
