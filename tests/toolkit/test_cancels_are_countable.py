@@ -206,17 +206,54 @@ def test_a_refused_cancel_is_recorded_with_its_reason() -> None:
 
 
 def test_the_strategy_records_both_outcomes_before_handling_them() -> None:
-    """Recording sits ahead of the handler bodies, so a throwing body cannot hide it."""
+    """Recording runs ahead of the handler body, and both sit inside the guard.
+
+    Two properties, and they pull in different directions if you state either as
+    text. Ordering first: a body that throws must not take the record with it.
+    Containment second: Nautilus re-raises whatever a callback lets escape, so a
+    statement outside the try is one the strategy process can die on -- on the
+    cancel path, where that means a stop-loss nobody is watching any more.
+
+    Asserted over the syntax tree rather than over string offsets, because the
+    record moving inside the guard satisfies both and would fail a check that
+    only knew where ``try:`` appears in the text.
+    """
+    import ast
     import inspect
+    import textwrap
 
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
 
-    for handler, expected in (
-        (NautilusTradingStrategy.on_order_canceled, "record_cancel_confirmed"),
-        (NautilusTradingStrategy.on_order_cancel_rejected, "record_cancel_refused"),
+    for handler, record, body in (
+        (
+            NautilusTradingStrategy.on_order_canceled,
+            "record_cancel_confirmed",
+            "handle_order_canceled",
+        ),
+        (
+            NautilusTradingStrategy.on_order_cancel_rejected,
+            "record_cancel_refused",
+            "handle_order_cancel_rejected",
+        ),
     ):
-        source = inspect.getsource(handler)
-        assert expected in source
-        assert source.index(expected) < source.index("try:"), (
-            f"{expected} must run before the guarded body, or a raising body loses the record"
+        function = ast.parse(textwrap.dedent(inspect.getsource(handler))).body[0]
+        assert isinstance(function, ast.FunctionDef)
+
+        statements = function.body
+        if isinstance(statements[0], ast.Expr) and isinstance(statements[0].value, ast.Constant):
+            statements = statements[1:]
+
+        guard = statements[0]
+        assert isinstance(guard, ast.Try), (
+            f"{handler.__name__} must open with the guard: anything before it can kill the process"
+        )
+
+        calls = [
+            node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id
+            for node in ast.walk(ast.Module(body=guard.body, type_ignores=[]))
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute | ast.Name)
+        ]
+        assert record in calls and body in calls, f"{handler.__name__} lost one of the two calls"
+        assert calls.index(record) < calls.index(body), (
+            f"{record} must run before the body, or a raising body loses the record"
         )
