@@ -1,7 +1,8 @@
 # 30 — 熔断闩住后守卫就不看了，可策略还在交易
 
-> **Status**: 🔲 Not started —— **三者中排第一**（2026-08-03 定，见 §三者顺序）：28 主体已验、29 的候选
-> 原因未复现，只有本 plan 的缺陷仍完整存在且可按需复现。**修哪一层（A/B/C）仍未定**，见 §决策
+> **Status**: ⏳ In Progress —— **三者中排第一**（2026-08-03 定，见 §三者顺序）：28 主体已验、29 的候选
+> 原因未复现，只有本 plan 的缺陷仍完整存在且可按需复现。**层级已定：A + C**（owner 2026-08-03，
+> 见 §决策已定）；Foundation Scan 改了原代价表的两格，见 §Foundation Scan
 > **Created**: 2026-08-01
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现，且已在真机复现
@@ -85,6 +86,123 @@ if verdict.tripped:
 A 看起来最彻底，但它把「停策略」这件事引进安全面，而这条通道现在连撤单确认都还没有
 （Plan 29），停下来留一地挂单未必比 B 安全。
 
+## Foundation Scan（2026-08-03 实测）—— 改了上面代价表的两格
+
+起草时的代价表有两处是推的，不是量的。实测结果如下，**上面那张表按本节读**。
+
+### 缺陷仍在，但行号已挪
+
+| 计划原文 | 实测位置 | 内容 |
+|---|---|---|
+| `safety.py:299` return | `safety.py:304-309` | `if self._watched and all(latched): _log.error(...); return` |
+| `evaluate_once` 跳过 | `safety.py:201-202` | `if watched.latched: continue` |
+| `engine_safety.py:57` | `engine_safety.py:57-58` | `if verdict.tripped: await flatten` —— 未变 |
+
+### 更正 1：A 的代价被高估了
+
+原文写「『停策略』这个动作目前不在 `EngineSafetyPort` 上」——这半句对，
+`engine_safety.py:12-15` 确实只声明 `get_engine_status` 与 `flatten_positions`。但它推出的
+结论（A 需要引入新原语）不成立：
+
+- `daemon.py:124` 与 `:151` 把**同一个 engine 对象**分别交给守卫和 reconciler；
+- 该对象满足 `OfflineEngine`（`reconciler.py:63-80`），其中已有
+  `async def stop(deployment_instance_id)` 与 `def attached(deployment_instance_id)`；
+- 两个 host 都实现了这两个方法（`engines/nautilus/host.py:147`/`:154` 与 `:551`/`:583`）。
+
+所以 A 要的是**加宽守卫自己的 Protocol**，不是新原语、不是改对象图。
+
+### 更正 2：B 无需改 breaker，但也没有收敛点
+
+`FallbackBreaker.evaluate()` 算 `tripped` 时不看 `_frozen`——`fallback_breaker.py:142` 的
+`not self._frozen` 只挡了那条日志，verdict 照常返回 `tripped=True`。于是只要
+`evaluate_once` 不再跳过已闩住的条目，`EngineSafetySupervisor` 每个 tick 都会再平一次，
+而全仓没有任何节流（`TICK_SECS = 5.0`）。B 能把「敞口超限的持续时间」压到一个 tick，
+压不住敞口本身——策略会照自己的信号再开回来。
+
+### 爆炸半径为零
+
+`EngineSafetySupervisor` 全仓只有一个消费者，就是这个离线守卫（grep 实证：
+`src/` 内除自身定义外仅 `offline/safety.py` 引用）。签名通道现在不用它。
+
+### 一条降级了的顾虑
+
+原文担心「停下来留一地挂单未必比 B 安全」，依据是 Plan 29 的孤儿单。Plan 29 那 46 小时
+连跑的结论是 19/19 撤单确认、重启后交易所零 resting 单——这个顾虑比起草时弱。
+
+## 决策已定（owner，2026-08-03）：A + C
+
+**跳闸时先平一次（保持现状），随即停掉该部署；守卫循环不退出，继续确认这一停有没有真的
+生效。** 选它的理由是三条里只有它收敛：策略停了就不会再开仓，而 B 是一场守卫与策略在同一
+进程里没有终点的拉锯。
+
+C 在 A 之下的含义随之收窄，也更准：闩住之后要继续看的不再是敞口数字，而是**这一停有没有
+落地**。停完再去问引擎的组合，只会因为实例已经不在而 fail closed，每个 tick 重新平一次
+空气——那正是 B 的病。所以「继续看」问的是 `attached()`，即 C12 那句话：**要回答「它还
+活着吗」，就去问那个活着的东西本身，不要问记录它的那个字典。**
+
+不做的事，写清楚以免下一个读者以为是漏了：
+
+- **不 `release()` 已闩住的条目。** `allows_new_generations()` 靠 `_watched` 里还有闩住的
+  条目才返回 False（`safety.py:147-150`）；一旦 release，`_watched` 空了，代次闸门会**反向
+  解闩**。停掉部署与继续拒绝新代次是两件事，都要成立。
+- **不改 `core/engine_safety.py` 的语义。** 它叫「评估一份快照并就地遏制一次跳闸」，A 的
+  「跳闸即结束这个部署」是离线通道自己的判断，落在离线通道自己的 wrapper 里。
+- **不改本通道的退出语义。** 守卫停完所有部署后照常 tick，lane 不因此退出。
+
+## Tasks
+
+### Task 1 — 先写会红的测试（A 与 C 各一条）
+
+1. 闩住之后 `run()` 不退出，且守卫会去 `stop()` 那个部署；
+2. 停不掉（引擎仍 `attached`）时**每个 tick** 都要喊，不是喊一次。
+
+两条都必须在实现前跑红。
+
+### Task 2 — 改写两条把缺陷当契约的既有测试
+
+`tests/test_offline_lane_safety.py:295` 的
+`test_the_tick_ends_once_every_watched_deployment_is_latched` 与 `:352` 的
+`test_the_tick_ends_against_an_engine_that_never_answers`，断言的正是
+「全闩住 → `run()` 返回」——即本 plan 要修的行为。它们不是碍事的测试，是**上一版设计的
+留痕**，所以改写而不是删除，并在改写处写明它们原本断言的是什么。
+
+同型前例：Plan 26 也撞见过一条把症状写成契约的既有测试。
+
+### Task 3 — 落 A：闩住即停掉部署
+
+- `offline/safety.py` 新增 `OfflineSafetyEngine` Protocol = `EngineSafetyPort` + `stop` +
+  `attached`，`OfflineExposureGuard` 收它；
+- `evaluate_once` 对已闩住的条目走遏制分支，不再 `continue`；
+- `run()` 删掉「全闩住即 return」那一段，连同 `offline_exposure_guard_latched` 那条日志
+  ——它的字面意思是「守卫就此停手」，改完之后这句话不再为真，留着就是假话。
+
+### Task 4 — 落 C：停机没确认就一直喊
+
+- `attached()` 仍为真 → 每 tick 记 ERROR 并**重试** stop（不是喊一次就算）；
+- stop 超时 → 记 `..._unconfirmed`，不假装已停，也不停下 tick；
+- stop 抛异常 → **传播**，与既有「平仓失败不吞」同一契约
+  （`tests/test_offline_lane_safety.py:362`）。
+
+### Task 5 — 两个 host 都要被测到
+
+沿用 Plan 26/27/28 的惯例：断言 `NtTradingNodeHost` 与 `SandboxSimulationHost` 都满足加宽
+后的 Protocol，避免只有 NT 那条路被覆盖。
+
+### Task 6 — 不变量：停了也不许解闩
+
+守卫停掉部署之后，`allows_new_generations()` 必须仍为 False。
+
+## 失败模式覆盖契约
+
+| # | 场景 | 期望 |
+|---|---|---|
+| FM1 | `stop()` 超时不返回 | 记 unconfirmed，tick 继续，不假装已停 |
+| FM2 | `stop()` 抛异常 | 传播，不吞（同 flatten 既有契约） |
+| FM3 | 停机后引擎仍 `attached` | 每 tick 告警 + 重试 stop |
+| FM4 | 闩住的部署从未 attach 过 | 不停、不喊（不制造噪声） |
+| FM5 | 守卫停掉部署之后 | `allows_new_generations()` 仍为 False |
+| FM6 | wedged engine 走 fail_closed 闩住 | 同样触发停机路径 |
+
 ## 复现 (Reproduce)
 
 不需要特殊构造，把上限设到当前仓位之下即可：
@@ -95,8 +213,13 @@ risk_config:
   max_total_notional: 100        # 低于 10% 仓位
 ```
 
-`make -C deploy/custos start-detached MODE=testnet`，等 `offline_exposure_guard_latched`，然后放着。
-下一次趋势翻转时策略会照常开仓，日志里不会再有任何守卫的声音。
+`make -C deploy/custos start-detached MODE=testnet`，等 `fallback_breaker_tripped`（跳闸那一刻），
+然后放着。下一次趋势翻转时策略会照常开仓，日志里不会再有任何守卫的声音。
+
+> **改完之后这条 repro 的判据变了**：跳闸后应当紧跟一条
+> `offline_exposure_latched_deployment_stopping`，此后策略不再开仓。原来这里写的是等
+> `offline_exposure_guard_latched`——那条日志随 Task 3 一并删除，因为它的字面意思
+> （守卫就此停手）在修完之后不再为真。
 
 ## 三者顺序已定（2026-08-03）：本 plan 排第一
 
