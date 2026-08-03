@@ -1,8 +1,8 @@
 # 31 — spec 里的 leverage 到不了真实交易所，只到 sandbox
 
-> **Status**: ⏳ In Progress —— 接线已落地并**真机验完**（custos `9b3af5f`）：调用到达交易所
+> **Status**: ✅ Completed —— 接线已落地并**真机验完**（custos `9b3af5f`）：调用到达交易所
 > （`Set default leverage BTCUSDT 3X`，改动前 46 小时日志 0 次），保证金比由 1.0 变为 **3.00**。
-> 余下只有第 4 项：sandbox 那条路径的类型不匹配是否让它静默失效，**未查**。
+> 第 4 项也查了：sandbox 那条路径**没有**静默失效 —— 不准的是上游注解，不是传过去的值。
 > `futures_margin_types` 有意不设，见 §进度 2
 > **Created**: 2026-08-01
 > **Project**: custos (`tesseract-trading/custos/`)
@@ -86,8 +86,7 @@ futures_margin_types: dict[BinanceSymbol, BinanceFuturesMarginType] | None
    而 spec 无从表达选哪个；在这里挑一个等于**在实现层发明策略**，而不是搬运声明。要做得先给 spec
    加字段，那是契约变更。
 3. **已验** —— 调用到达 + 保证金比 3.00，见 §真机读回。
-4. **待验** —— sandbox 那条路径的类型不匹配（声明 `dict[str, float]`、实际收 `dict[InstrumentId,
-   Decimal]`）有没有让它静默失效。本次没查 `SimulatedExchange` 拿这些键做什么，**不要当作已确认可用**。
+4. **已查，结论与预期相反** —— sandbox 那条路径**没有**静默失效，见 §sandbox 的类型不匹配。
 
 ## 怎么算验过（第 3 项）
 
@@ -126,3 +125,28 @@ initial      = 148.59164298 USDT       445.8 / 148.59 = 3.00
 **对照改动前**：同样一笔 ~447 名义的仓位，initial margin 是 447.77 —— 比值 1.0。现在是 3.00。
 
 第 3 项验完：**调用到达交易所，且杠杆确实生效**。
+
+## sandbox 的类型不匹配：错的是注解，不是值
+
+原以为这里可能藏着第二个静默失效。查下来是反的。
+
+实测 msgspec 直接构造确实不校验也不转换 —— 传 `{InstrumentId: Decimal}` 进声明为
+`dict[str, float]` 的字段，原样存下：
+
+```
+stored keys  : [('InstrumentId', 'BTCUSDT-PERP.BINANCE')]
+stored values: [('Decimal', '3')]
+```
+
+但**下游要的正是这个形状**。`SandboxExecutionClient` 把 `config.leverages or {}` 原样递给
+`SimulatedExchange`，而 `BacktestEngine.add_venue` 的签名写得很清楚：
+
+```
+leverages: dict[InstrumentId, Decimal] | None = None
+    The instrument specific leverage configuration (for margin accounts).
+```
+
+所以 custos 传的是对的，`SandboxExecutionClientConfig.leverages: dict[str, float]` 这个**注解本身
+不准**（相对它自己转发的对象而言）。因为 msgspec 不校验，这个不准的注解也就不产生后果。
+
+**不要因此改 custos 那一侧去迎合注解** —— 迎合注解会真的把 sandbox 杠杆改坏。
