@@ -817,16 +817,18 @@ class NautilusTradingStrategy(NautilusStrategyCore):
     def on_order_canceled(self, event: OrderCanceled) -> None:
         """Handle order canceled with top-level exception protection.
 
-        The record goes first, ahead of the guarded body: a body that throws would
-        otherwise take the confirmation with it, and a confirmation that goes missing
-        reads exactly like a cancel that never landed.
+        The record still runs before the body -- a confirmation that goes missing
+        reads exactly like a cancel that never landed, and a body that throws must
+        not take it along. Inside the guard rather than ahead of it, though: the
+        engine re-raises anything a callback lets escape, so a statement outside
+        the try is one the strategy process can die on.
         """
-        record_cancel_confirmed(
-            self.log,
-            order_id=event.client_order_id,
-            instrument_id=event.instrument_id,
-        )
         try:
+            record_cancel_confirmed(
+                self.log,
+                order_id=event.client_order_id,
+                instrument_id=event.instrument_id,
+            )
             self._trade_event_handler.handle_order_canceled(event)
         except Exception as exc:  # noqa: BLE001 — engine doesn't guard callbacks; log and continue
             self.log.error(
@@ -853,17 +855,18 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         Body delegated to OrderReconciler; the engine dispatches by name, so the thin
         shell stays on the Strategy class.
 
-        The record goes first, for the same reason as ``on_order_canceled`` -- and with
-        more force here, since the body currently does nothing at all for a stop-loss,
-        so without this line a refused stop-loss cancel leaves no trace whatsoever.
+        The record runs before the body, for the same reason as ``on_order_canceled``
+        -- and with more force here, since the body currently does nothing at all for a
+        stop-loss, so without this line a refused stop-loss cancel leaves no trace
+        whatsoever. It sits inside the guard for the same reason too.
         """
-        record_cancel_refused(
-            self.log,
-            order_id=event.client_order_id,
-            instrument_id=event.instrument_id,
-            reason=event.reason,
-        )
         try:
+            record_cancel_refused(
+                self.log,
+                order_id=event.client_order_id,
+                instrument_id=event.instrument_id,
+                reason=event.reason,
+            )
             self._reconciler.handle_order_cancel_rejected(event)
         except Exception as exc:  # noqa: BLE001 — engine doesn't guard callbacks; log and continue
             self.log.error(
