@@ -346,7 +346,8 @@ False / False / True）。
    （19/19 撤单确认），**不是**「守卫强制停机」路径的。这条要在真机复验时一并看。
 3. **告警不节流**。`attached()` 一直为真时每个 tick（5s）一条 ERROR。这是有意的——「喊一次
    然后沉默」正是本 plan 要消除的形状——但真机上若确实出现停不掉的引擎，日志量要复看一次。
-4. **跨仓 golden 漂移**（本 plan 顺手撞见，不属本 plan 范围）：custos 与 crucible-rust 两侧的
-   `runner-deployment-command-golden-v1.json` 字节不一致。它只在 workspace checkout 下红，
-   独立 clone 不触发，所以 CI 大概率一直是绿的——与 C7「陈旧产物互相印证出的假绿」同族，值得
-   单独起一条。
+4. ~~**跨仓 golden 漂移**（本 plan 顺手撞见，不属本 plan 范围）~~ **已起
+   [Plan 32](../2026-08/32-the-producer-moved-and-only-the-consumer-has-a-gate.md)**（2026-08-04）。
+   查下去比这里写的更具体：差的不是空白而是一个字段（producer `2a9e1b9` 加了
+   `cooldown_seconds`），运行时不会被拒（custos 把 `risk_policy` 当不透明字节），
+   真正的问题是「能改的一方没有门，有门的一方 CI 看不见」。
