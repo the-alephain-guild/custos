@@ -21,6 +21,7 @@ COPY dist/*.whl /tmp/wheels/
 RUN set -eux; \
     pip install \
       --root-user-action=ignore \
+      --timeout 300 \
       --require-hashes \
       --no-deps \
       --requirement /tmp/runtime-requirements.lock; \
