@@ -1473,3 +1473,10 @@ proves the durable pending queue is empty. The accepted receipt reports
 `LOCAL_DOCKER_NETWORK_RUNNER_FACT_PUBLICATION_VERIFIED` and
 `host_tcp_exposed=false`; it is local evidence only and does not satisfy the
 Plan 90 Phase-B or production readiness gates.
+
+The current `custos-runner:test` image was rebuilt from the committed lock and
+all three local wheels after the host-neutral gate landed. The Docker build now
+allows a 300-second read timeout for the 168 MB hash-pinned Nautilus wheel; it
+does not loosen `--require-hashes`, dependency versions, the Python/engine ABI
+or image provenance rules. The rebuilt image passes the Docker-network
+RunnerFact acceptance without relying on the older local image.
