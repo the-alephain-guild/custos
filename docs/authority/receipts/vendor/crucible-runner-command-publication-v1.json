@@ -1,0 +1,236 @@
+{
+  "schema_version": 1,
+  "receipt_id": "CRUCIBLE-RUNNER-COMMAND-PUBLICATION-V1",
+  "owner": "crucible-rust",
+  "status": "LOCAL_AUTHENTICATED_PG_JETSTREAM_PUBACK_RECOVERY_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN",
+  "acceptance_commit": "a5d48eff364c8ff234bd136d694edd721b976c93",
+  "command_contract": {
+    "event_types": [
+      "DeploymentSpecReadyForRunner.<runner_id>.<deployment_instance_id>",
+      "DeploymentInstanceDesiredStateChanged.<runner_id>.<deployment_instance_id>"
+    ],
+    "event_plane": "mode",
+    "trading_mode": "sandbox",
+    "runner_subject": "crucible.runner.command.v1.<tenant_id>.<runner_id>.sandbox",
+    "message_id": "mode_domain_outbox.event_id",
+    "signature_profile": "crucible-domain-event-v1-exact-bytes",
+    "generic_audit_subject_is_runner_delivery": false,
+    "arx_business_fact_relay_present": false
+  },
+  "completion_contract": {
+    "audit_puback_alone_completes_runner_command": false,
+    "runner_control_puback_required": true,
+    "published_at_set_only_after_all_required_pubacks": true,
+    "failed_publish_releases_claim": true,
+    "failed_publish_records_bounded_error": true,
+    "restart_reuses_same_event_id": true,
+    "jetstream_duplicate_suppression_verified": true,
+    "database_completion_is_idempotent": true
+  },
+  "acceptance": {
+    "verified_at": "2026-08-01",
+    "command": "make verify-runner-command-publication",
+    "result": "1 passed",
+    "worker_regression_command": "cargo test -p server-http --lib domain_outbox_worker",
+    "worker_regression_result": "2 passed",
+    "publisher_regression_command": "cargo test -p server-http --lib domain_event_publisher",
+    "publisher_regression_result": "2 passed",
+    "format_command": "cargo fmt --all -- --check",
+    "format_result": "passed",
+    "real_postgresql": true,
+    "physical_sim_database": true,
+    "receipt_gated_0113_to_0116_operator_chain_exercised": true,
+    "real_nats_jetstream": true,
+    "real_mode_outbox_writer_exercised": true,
+    "real_mode_outbox_worker_exercised": true,
+    "real_signed_publisher_exercised": true,
+    "missing_runner_stream_prevents_completion": true,
+    "audit_event_completes_independently": true,
+    "retry_attempt_persisted": true,
+    "fresh_worker_restart_count": 2,
+    "runner_puback_before_outbox_completion": true,
+    "exact_subject_bound_signature_verified": true,
+    "initial_audit_stream_message_count_after_retry": 3,
+    "initial_runner_stream_message_count_after_retry": 1,
+    "final_audit_stream_message_count": 5,
+    "strategy_product_genesis_audit_event_count": 1,
+    "desired_state_runner_stream_message_count_after_retry": 1,
+    "idle_worker_cycle_claimed": 0,
+    "authenticated_runner_control_in_same_gate": true,
+    "distinct_audit_sim_live_accounts_in_same_gate": true,
+    "sim_publisher_mode_scope": [
+      "sandbox",
+      "testnet"
+    ],
+    "live_publisher_mode_scope": [
+      "live"
+    ],
+    "ordinary_publisher_topology_mutation_rejected": true,
+    "full_resolver_tls_in_same_gate": false,
+    "desired_state_transition_in_same_gate": true,
+    "desired_state_generation": 2,
+    "desired_state_lifecycle_state": "paused",
+    "custos_daemon_in_same_gate": false,
+    "deployed_service_exercised": false
+  },
+  "source_pin_refresh": {
+    "verified_at": "2026-07-30",
+    "source_commits": {
+      "command_outbox_writer": "3f318e15c998fa846561ee4e828c37286a0d42f1",
+      "joint_full_daemon_acceptance": "e470119110c4a61ba30918207ba6f80c94cd7612"
+    },
+    "command": "make verify-runner-transport-service-process",
+    "result": "1 passed",
+    "production_server_process_exercised": true,
+    "isolated_signer_process_exercised": true,
+    "isolated_provisioner_process_exercised": true,
+    "real_postgresql": true,
+    "real_nats_jetstream": true,
+    "joint_custos_daemon_exercised": false,
+    "joint_full_daemon_source_pin_refreshed": false
+  },
+  "exact_product_binding_refresh": {
+    "verified_at": "2026-08-01",
+    "deployment_binding_commit": "703a69d229a742bcb558ee0babb851e26d429836",
+    "acceptance_commit": "a5d48eff364c8ff234bd136d694edd721b976c93",
+    "command": "make verify-runner-command-publication",
+    "result": "1 passed; 0 failed",
+    "complete_strategy_product_fixture": true,
+    "capital_unit_ledger_genesis_published_to_audit": true,
+    "missing_runner_stream_still_blocks_command_completion": true,
+    "restart_puback_recovery_still_verified": true
+  },
+  "predecessor_runtime_evidence": {
+    "path": "docs/authority/receipts/crucible-runner-nats-transport-runtime-v1.json",
+    "sha256": "8221a8918b4460d41c6812f2fd775dbd1f791dbe375f985551189efdc2ed271a",
+    "size_bytes": 9306,
+    "authenticated_runner_transport_verified": true,
+    "custos_daemon_restart_verified": true,
+    "command_ack_after_lifecycle_commit_verified": true,
+    "runner_fact_puback_verified": true,
+    "same_outbox_event_as_this_gate": false
+  },
+  "sources": [
+    {
+      "role": "focused_gate",
+      "path": "Makefile",
+      "sha256": "6e8aaa7a39fd6ea0d71abab2a1eb0d79adf607069b00fa4eaa02688b1fc84132",
+      "size_bytes": 10124
+    },
+    {
+      "role": "postgresql_jetstream_acceptance",
+      "path": "crates/server-http/tests/runner_command_outbox_transport_pg.rs",
+      "sha256": "980e1d3b8d457f4af066374e376a01ebe97c1109006254df61ee945584ddbef2",
+      "size_bytes": 22280
+    },
+    {
+      "role": "signed_publisher",
+      "path": "crates/server-http/src/domain_event_publisher.rs",
+      "sha256": "23f6bd065cb172af55e2b2663f7fb378f477602bd606e958fa84a6cdc6bc9cd3",
+      "size_bytes": 41787
+    },
+    {
+      "role": "outbox_worker",
+      "path": "crates/server-http/src/domain_outbox_worker.rs",
+      "sha256": "120c4d685ec8be1fe8a0900e7d086b6f89b8f3b42107543f6da1a6e35d47211d",
+      "size_bytes": 18938
+    },
+    {
+      "role": "mode_outbox_adapter",
+      "path": "crates/server-http/src/domain_outbox_sources.rs",
+      "sha256": "082d8136ff7160b14c09b541289f76576ce77761b3535c23d123b33b8badd129",
+      "size_bytes": 7324
+    },
+    {
+      "role": "mode_outbox_repository",
+      "path": "crates/store/src/domain_outbox_repo.rs",
+      "sha256": "6185dc65e0bfb95646a77b877e834858a0ab4c81248dd9edd1c19c6bbd78e50d",
+      "size_bytes": 12394
+    },
+    {
+      "role": "command_outbox_writer",
+      "path": "crates/store/src/deployment_instance_projection.rs",
+      "sha256": "812b0bcf8f50e7f1b05bf85c0b983267c226646436245fa769416fe96b383a7f",
+      "size_bytes": 80576
+    },
+    {
+      "role": "joint_full_daemon_acceptance",
+      "path": "crates/server-http/tests/runner_nats_transport_service_process.rs",
+      "sha256": "b569a51c8b20ce80c68c6377e9f754cfdca0af29fe32c3dd867fbe738c52a298",
+      "size_bytes": 109884
+    }
+  ],
+  "local_puback_recovery_ready": true,
+  "runtime_ready": false,
+  "live_ready": false,
+  "production_ready": false,
+  "open_blockers": [
+    "real Philosophers-Stone exact-candidate OCI publication, Sigstore evidence and exact-byte pins",
+    "locked runtime candidate plus deployed control migration heads 0029 and 0117",
+    "deployed testnet and live acceptance"
+  ],
+  "joint_full_daemon_acceptance": {
+    "verified_at": "2026-07-26",
+    "command": "make verify-runner-full-daemon-local",
+    "result": "1 passed",
+    "duration_seconds": 89.97,
+    "crucible_code_commit": "b696b8a2c31324a9acf34852bc85364cabe002ec",
+    "custos_code_commit": "d6ba1bf40818906f81f85e59ef819af25fdfb207",
+    "real_postgresql": true,
+    "real_tls_full_resolver_jetstream": true,
+    "production_signer_provisioner_server_processes": true,
+    "encrypted_machine_and_transport_vault_restart": true,
+    "strategy_release_from_postgresql": true,
+    "immutable_artifact_materialized": true,
+    "exact_artifact_ref_bom_statement_evidence_snapshot_verified": true,
+    "authenticated_runner_policy_consumed": true,
+    "command_ack_after_lifecycle_commit": true,
+    "crash_after_local_commit_before_broker_ack_recovered": true,
+    "runner_fact_puback": true,
+    "crucible_postgresql_projection": true,
+    "deployed_service_exercised": false,
+    "runtime_candidate_locked": false
+  },
+  "current_source_refresh": {
+    "verified_at": "2026-08-01",
+    "source_commit": "bd1ba3a4b2b20529195272b6cb050fe3f7d05ee9",
+    "command": "cargo test -p server-http --lib domain_event_publisher -- --nocapture",
+    "result": "3 passed; 0 failed",
+    "runner_command_wire_changed": false,
+    "source_changes": [
+      "Testcontainers NATS connection uses the runtime-reported host instead of a loopback literal",
+      "the signed publisher exposes existing stream constants and adds exact-byte domain-event verification"
+    ],
+    "full_postgresql_jetstream_gate_attempted": true,
+    "full_postgresql_jetstream_gate_result": "environment blocked before business assertions: sandbox denied the mapped PostgreSQL host connection",
+    "prior_postgresql_jetstream_acceptance_preserved": true
+  },
+  "contract_assets": [
+    {
+      "role": "runner_command_golden",
+      "path": "docs/authority/runner-deployment-command-golden-v1.json",
+      "sha256": "126ee972334509ff59272b0145b1c237a582e522cf4ba9318bf1c28beaef83f7",
+      "size_bytes": 18598
+    },
+    {
+      "role": "runner_command_golden_sha256",
+      "path": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
+      "sha256": "d1cd8c60c725d41307453c91f5f01505dc71a82ddced42e3fa0f3e3ce6d94443",
+      "size_bytes": 107
+    }
+  ],
+  "contract_evolution": {
+    "current_production_version": 1,
+    "feature_changes": "IN_PLACE_V1",
+    "runtime_compatibility_layers_allowed": false,
+    "v2_requires_external_production_consumer": true,
+    "v2_requires_explicit_migration_window": true
+  },
+  "contract_asset_authority": {
+    "contract_commit": "8c2c4eff20ae1ba38bbab54cdf7844ef25e1187d",
+    "risk_policy_source_commit": "582b7e761c82a2dee3cf7466bbafdaa60e5ec57a",
+    "risk_policy_owner": "crucible-rust",
+    "consumer_interpretation_allowed": false,
+    "receipt_self_pins_publication_commit": false
+  }
+}

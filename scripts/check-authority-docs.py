@@ -64,7 +64,26 @@ RUNNER_FACT_CONTRACT_RECEIPT_PATH = (
 )
 RUNNER_COMMAND_CONSUMER_SOURCE = "src/custos/contracts/crucible_runner_command.py"
 RUNNER_COMMAND_GOLDEN_PATH = "docs/authority/runner-deployment-command-golden-v1.json"
-RUNNER_COMMAND_PRODUCER_COMMIT = "57783973375055cd8af7cc4e681314a0b633f6fa"
+RUNNER_COMMAND_PRODUCER_COMMIT = "8c2c4eff20ae1ba38bbab54cdf7844ef25e1187d"
+RUNNER_COMMAND_PRODUCER_RECEIPT_COMMIT = "e7a2bb97b17a887b081f60b1a9ae3620d3a592d0"
+RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH = (
+    "docs/authority/receipts/vendor/crucible-runner-command-publication-v1.json"
+)
+RUNNER_COMMAND_PRODUCER_RECEIPT_STATUS = (
+    "LOCAL_AUTHENTICATED_PG_JETSTREAM_PUBACK_RECOVERY_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
+)
+RUNNER_COMMAND_CONTRACT_ASSETS = (
+    (
+        "runner_command_golden",
+        RUNNER_COMMAND_GOLDEN_PATH,
+        RUNNER_COMMAND_GOLDEN_PATH,
+    ),
+    (
+        "runner_command_golden_sha256",
+        f"{RUNNER_COMMAND_GOLDEN_PATH}.sha256",
+        f"{RUNNER_COMMAND_GOLDEN_PATH}.sha256",
+    ),
+)
 RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
     "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json"
 )
@@ -525,7 +544,17 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
     receipt_path = resolve(RUNNER_COMMAND_CONSUMER_RECEIPT_PATH)
     source_path = resolve(RUNNER_COMMAND_CONSUMER_SOURCE)
     fixture_path = resolve(RUNNER_COMMAND_GOLDEN_PATH)
-    if not all(path.is_file() for path in (index_path, receipt_path, source_path, fixture_path)):
+    command_receipt_path = resolve(RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH)
+    if not all(
+        path.is_file()
+        for path in (
+            index_path,
+            receipt_path,
+            source_path,
+            fixture_path,
+            command_receipt_path,
+        )
+    ):
         errors.append("runner command consumer V1 command consumer inventory is incomplete")
         return
 
@@ -582,10 +611,69 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         producer.get("contract") != "CrucibleRunnerDeploymentCommandV1"
         or producer.get("status") != "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED"
         or producer.get("producer_commit") != RUNNER_COMMAND_PRODUCER_COMMIT
+        or producer.get("producer_receipt_commit") != RUNNER_COMMAND_PRODUCER_RECEIPT_COMMIT
         or producer.get("subject_template") != "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
     ):
         errors.append("runner command consumer V1 producer contract differs")
     else:
+        command_receipt_bytes = command_receipt_path.read_bytes()
+        command_receipt = load_json(command_receipt_path)
+        command_contract_assets = []
+        producer_command_contract_assets = []
+        for role, producer_path, consumer_path in RUNNER_COMMAND_CONTRACT_ASSETS:
+            contract_path = resolve(consumer_path)
+            if not contract_path.is_file():
+                errors.append(f"runner command contract asset is missing: {contract_path}")
+                continue
+            contract_bytes = contract_path.read_bytes()
+            pin = {
+                "sha256": hashlib.sha256(contract_bytes).hexdigest(),
+                "size_bytes": len(contract_bytes),
+            }
+            command_contract_assets.append(
+                {
+                    "role": role,
+                    "producer_path": producer_path,
+                    "path": consumer_path,
+                    **pin,
+                }
+            )
+            producer_command_contract_assets.append({"role": role, "path": producer_path, **pin})
+        expected_command_receipt_pin = {
+            "path": RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH,
+            "sha256": hashlib.sha256(command_receipt_bytes).hexdigest(),
+            "size_bytes": len(command_receipt_bytes),
+            "status": command_receipt.get("status"),
+            "contract_assets": command_contract_assets,
+        }
+        if producer.get("producer_receipt") != expected_command_receipt_pin:
+            errors.append("runner command producer receipt pin differs")
+        if (
+            command_receipt.get("receipt_id") != "CRUCIBLE-RUNNER-COMMAND-PUBLICATION-V1"
+            or command_receipt.get("owner") != "crucible-rust"
+            or command_receipt.get("status") != RUNNER_COMMAND_PRODUCER_RECEIPT_STATUS
+            or command_receipt.get("contract_assets") != producer_command_contract_assets
+            or command_receipt.get("contract_asset_authority", {}).get("contract_commit")
+            != RUNNER_COMMAND_PRODUCER_COMMIT
+            or command_receipt.get("contract_asset_authority", {}).get("risk_policy_owner")
+            != "crucible-rust"
+            or command_receipt.get("contract_asset_authority", {}).get(
+                "consumer_interpretation_allowed"
+            )
+            is not False
+            or command_receipt.get("contract_evolution")
+            != {
+                "current_production_version": 1,
+                "feature_changes": "IN_PLACE_V1",
+                "runtime_compatibility_layers_allowed": False,
+                "v2_requires_external_production_consumer": True,
+                "v2_requires_explicit_migration_window": True,
+            }
+            or command_receipt.get("runtime_ready") is not False
+            or command_receipt.get("production_ready") is not False
+        ):
+            errors.append("runner command producer receipt semantics differ")
+
         resolution_pin = producer.get("strategy_resolution_receipt")
         resolution_path = resolve(RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH)
         if not resolution_path.is_file():
@@ -650,6 +738,8 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         errors.append("runner command consumer command must contain DeploymentSpec only")
     if index.get("command_contract_consumer_ready") is not True:
         errors.append("runner command consumer exact command contract must be ready")
+    if index.get("runner_command_producer_receipt_consumed") is not True:
+        errors.append("runner command producer receipt must be consumed")
     if index.get("development_material_resolution_ready") is not True:
         errors.append("runner command consumer development material resolution must be ready")
     if index.get("strategy_release_resolution_contract_ready") is not True:
@@ -673,6 +763,10 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         errors.append("runner command consumer receipt does not bind the current index")
     if receipt.get("runtime_ready") is not False or receipt.get("production_ready") is not False:
         errors.append("runner command consumer cannot claim runtime or production readiness")
+    if receipt.get("crucible_producer") != producer:
+        errors.append("runner command consumer receipt producer pin differs")
+    if receipt.get("runner_command_producer_receipt_consumed") is not True:
+        errors.append("runner command consumer receipt lacks the producer receipt pin")
     if receipt.get("development_material_resolution_ready") is not True:
         errors.append("runner command receipt development material resolution differs")
     if receipt.get("strategy_release_resolution_contract_ready") is not True:

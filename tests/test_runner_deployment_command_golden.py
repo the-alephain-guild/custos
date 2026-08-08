@@ -18,7 +18,9 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = ROOT / "docs/authority/runner-deployment-command-golden-v1.json"
 SIDECAR = FIXTURE.with_suffix(FIXTURE.suffix + ".sha256")
 SNAPSHOT = ROOT / "docs/authority/ecosystem-authority.json"
-SIBLING = ROOT.parent / "crucible-rust/docs/authority/runner-deployment-command-golden-v1.json"
+PRODUCER_RECEIPT = (
+    ROOT / "docs/authority/receipts/vendor/crucible-runner-command-publication-v1.json"
+)
 KEY_ID = "fixture-domain-key-v1"
 PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(1, 33)))
 
@@ -162,13 +164,41 @@ def test_risk_policy_snapshot_digest_is_verified_without_business_interpretation
         )
 
 
-def test_golden_hash_matches_snapshot_sidecar_and_optional_sibling() -> None:
+def test_current_policy_owned_cooldown_is_accepted_without_business_interpretation() -> None:
+    case = deepcopy(_fixture()["cases"][0])
+    policy = case["event_document"]["payload"]["deployment_spec"]["risk_policy"]
+    assert policy["cooldown_seconds"] == 300
+
+    data, verifier = _signed(case)
+    verifier.verify(subject=case["subject"], data=data)
+    command = CrucibleRunnerDeploymentCommandV1.from_verified_signed_envelope(
+        signed_envelope_bytes=data,
+        subject=case["subject"],
+    )
+    assert command.deployment_spec["risk_policy"] == policy
+
+
+def test_golden_hash_matches_snapshot_sidecar_and_producer_receipt() -> None:
     raw = FIXTURE.read_bytes()
     digest = hashlib.sha256(raw).hexdigest()
     snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     authority = snapshot["runner_command_golden_fixture"]
+    receipt = json.loads(PRODUCER_RECEIPT.read_text(encoding="utf-8"))
+    producer_assets = {asset["path"]: asset for asset in receipt["contract_assets"]}
 
     assert authority["sha256"] == digest
     assert SIDECAR.read_text(encoding="ascii") == f"{digest}  {FIXTURE.name}\n"
-    if SIBLING.is_file():
-        assert SIBLING.read_bytes() == raw
+    assert producer_assets[authority["path"]]["sha256"] == digest
+    assert producer_assets[authority["path"]]["size_bytes"] == len(raw)
+
+    sidecar_raw = SIDECAR.read_bytes()
+    sidecar_asset = producer_assets[authority["sha256_sidecar"]]
+    assert sidecar_asset["sha256"] == hashlib.sha256(sidecar_raw).hexdigest()
+    assert sidecar_asset["size_bytes"] == len(sidecar_raw)
+    assert receipt["contract_evolution"] == {
+        "current_production_version": 1,
+        "feature_changes": "IN_PLACE_V1",
+        "runtime_compatibility_layers_allowed": False,
+        "v2_requires_external_production_consumer": True,
+        "v2_requires_explicit_migration_window": True,
+    }

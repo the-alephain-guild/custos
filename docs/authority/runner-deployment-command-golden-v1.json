@@ -6,7 +6,7 @@
     {
       "name": "deployment_spec_ready_for_runner",
       "subject": "crucible.runner.command.v1.acme.10000000-0000-4000-8000-000000000001.sandbox",
-      "command_fingerprint": "30427469ef57d8f2cbb33c8b87c738d4a23d53f979cc236b957960081d3e824c",
+      "command_fingerprint": "7a0e185ecafd681f3474f8643f1a203d0f5ae82b6917b78e0e0c38eda38c1600",
       "event_document": {
         "schema_version": 1,
         "event_id": "90000000-0000-4000-8000-000000000009",
@@ -78,9 +78,10 @@
                 "base": "start_of_day_cash_flow_adjusted_nav"
               },
               "max_notional_leverage": "1",
-              "max_single_strategy_allocation_ratio": "1.0"
+              "max_single_strategy_allocation_ratio": "1.0",
+              "cooldown_seconds": 300
             },
-            "risk_policy_digest": "96d56dada66c975be1f64660afb1ea3f210dd6d304491ea12f39fbec17c8b368",
+            "risk_policy_digest": "b8f169902ee8416655244528b31aa585ea6d43cb5db85f1e0f33842ce0d63832",
             "target_runner_id": "10000000-0000-4000-8000-000000000001",
             "engine_binding_id": "80000000-0000-4000-8000-000000000008",
             "execution_channel": {
@@ -138,7 +139,7 @@
             "promotion_id": null,
             "promotion_evidence_digest": null
           },
-          "deployment_spec_digest": "c07620dbba681c16ddd4271bb8607a8ee50f1ce9923fe6587a0f67a2df063235",
+          "deployment_spec_digest": "6445ceae9fa2cab7a1e43ac35dbbdab532a9b10d45536e4a5b6f4c2188b5b83a",
           "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
           "generation": 1,
           "issued_at": "2026-07-14T00:00:00Z",
@@ -156,7 +157,7 @@
     {
       "name": "deployment_instance_desired_state_changed",
       "subject": "crucible.runner.command.v1.acme.10000000-0000-4000-8000-000000000001.sandbox",
-      "command_fingerprint": "c59b1ae2fded6ebc42ca4f53c68b1b17348db6c84d4b117a716941bf80bb6844",
+      "command_fingerprint": "9c8fc60d6266102289657f11b54bcbd48e8d9388af764c32ae4601108bb2a5e6",
       "event_document": {
         "schema_version": 1,
         "event_id": "90000000-0000-4000-8000-000000000010",
@@ -228,9 +229,10 @@
                 "base": "start_of_day_cash_flow_adjusted_nav"
               },
               "max_notional_leverage": "1",
-              "max_single_strategy_allocation_ratio": "1.0"
+              "max_single_strategy_allocation_ratio": "1.0",
+              "cooldown_seconds": 300
             },
-            "risk_policy_digest": "96d56dada66c975be1f64660afb1ea3f210dd6d304491ea12f39fbec17c8b368",
+            "risk_policy_digest": "b8f169902ee8416655244528b31aa585ea6d43cb5db85f1e0f33842ce0d63832",
             "target_runner_id": "10000000-0000-4000-8000-000000000001",
             "engine_binding_id": "80000000-0000-4000-8000-000000000008",
             "execution_channel": {
@@ -288,7 +290,7 @@
             "promotion_id": null,
             "promotion_evidence_digest": null
           },
-          "deployment_spec_digest": "c07620dbba681c16ddd4271bb8607a8ee50f1ce9923fe6587a0f67a2df063235",
+          "deployment_spec_digest": "6445ceae9fa2cab7a1e43ac35dbbdab532a9b10d45536e4a5b6f4c2188b5b83a",
           "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
           "generation": 2,
           "issued_at": "2026-07-14T00:01:00Z",
@@ -306,7 +308,7 @@
     {
       "name": "deployment_spec_ready_for_runner_development_source",
       "subject": "crucible.runner.command.v1.acme.10000000-0000-4000-8000-000000000001.sandbox",
-      "command_fingerprint": "1d43c856f87de376d8383b88b1c0021bbf7957439f15adfe3adf55770f3f0c89",
+      "command_fingerprint": "1c346b383c2e44b70b95fa5dd584e2a9f5fdc1bd4751b534999e638031fccda9",
       "event_document": {
         "schema_version": 1,
         "event_id": "90000000-0000-4000-8000-000000000011",
@@ -377,9 +379,10 @@
                 "base": "start_of_day_cash_flow_adjusted_nav"
               },
               "max_notional_leverage": "1",
-              "max_single_strategy_allocation_ratio": "1.0"
+              "max_single_strategy_allocation_ratio": "1.0",
+              "cooldown_seconds": 300
             },
-            "risk_policy_digest": "96d56dada66c975be1f64660afb1ea3f210dd6d304491ea12f39fbec17c8b368",
+            "risk_policy_digest": "b8f169902ee8416655244528b31aa585ea6d43cb5db85f1e0f33842ce0d63832",
             "target_runner_id": "10000000-0000-4000-8000-000000000001",
             "engine_binding_id": "80000000-0000-4000-8000-000000000008",
             "execution_channel": {
@@ -437,7 +440,7 @@
             "promotion_id": null,
             "promotion_evidence_digest": null
           },
-          "deployment_spec_digest": "74f2605e79445cb75c07c7f527e13f3d427915627f31488b31f2036eecc4af87",
+          "deployment_spec_digest": "bb9fbca4b6cd8b73d3975a90e5386b31be61f8f6d3bb2bddcbb8f7e2566043db",
           "deployment_spec_id": "33000000-0000-4000-8000-000000000033",
           "generation": 1,
           "issued_at": "2026-07-14T00:02:00Z",

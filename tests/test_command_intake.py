@@ -52,6 +52,14 @@ def _compact(value: object) -> bytes:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
 
 
+def _recursively_sorted(value: object) -> object:
+    if isinstance(value, dict):
+        return {key: _recursively_sorted(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [_recursively_sorted(item) for item in value]
+    return value
+
+
 def _signed_fixture(
     *,
     private_key: Ed25519PrivateKey = KEY_A,
@@ -69,6 +77,7 @@ def _signed_fixture(
         event["payload"]["generation"] = generation
     if mutate_event is not None:
         mutate_event(event)
+    event["payload"] = _recursively_sorted(event["payload"])
     event_bytes = _compact(event)
     subject_bytes = subject.encode()
     framed = b"".join(
@@ -266,6 +275,8 @@ def test_cross_language_fingerprint_vector_uses_exact_signed_event_bytes() -> No
         )
         == vector["command_fingerprint"]
     )
+    fixture = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
+    assert vector["command_fingerprint"] == fixture["cases"][0]["command_fingerprint"]
 
 
 def test_signature_rotation_does_not_change_command_fingerprint() -> None:

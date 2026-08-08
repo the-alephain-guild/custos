@@ -10,8 +10,8 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
-    "sha256": "877a1d93a0811af29d0e0af44aa3ccbdb80e316046e75497de39c037c1a43d24",
-    "size_bytes": 5950
+    "sha256": "be4a69e7a0e309dfc6ceb51bde2e67c27218534e1752a2e40262c7bd3228bb72",
+    "size_bytes": 7574
   },
   "contract_guards": {
     "command_selected_root_policy_issuer_workflow": false,
@@ -26,7 +26,30 @@
   },
   "crucible_producer": {
     "contract": "CrucibleRunnerDeploymentCommandV1",
-    "producer_commit": "57783973375055cd8af7cc4e681314a0b633f6fa",
+    "producer_commit": "8c2c4eff20ae1ba38bbab54cdf7844ef25e1187d",
+    "producer_receipt": {
+      "contract_assets": [
+        {
+          "path": "docs/authority/runner-deployment-command-golden-v1.json",
+          "producer_path": "docs/authority/runner-deployment-command-golden-v1.json",
+          "role": "runner_command_golden",
+          "sha256": "126ee972334509ff59272b0145b1c237a582e522cf4ba9318bf1c28beaef83f7",
+          "size_bytes": 18598
+        },
+        {
+          "path": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
+          "producer_path": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
+          "role": "runner_command_golden_sha256",
+          "sha256": "d1cd8c60c725d41307453c91f5f01505dc71a82ddced42e3fa0f3e3ce6d94443",
+          "size_bytes": 107
+        }
+      ],
+      "path": "docs/authority/receipts/vendor/crucible-runner-command-publication-v1.json",
+      "sha256": "93d96dd4b6e78820c48245af4d2cd0bd067eb127add30024e6040e19613d8282",
+      "size_bytes": 9973,
+      "status": "LOCAL_AUTHENTICATED_PG_JETSTREAM_PUBACK_RECOVERY_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
+    },
+    "producer_receipt_commit": "e7a2bb97b17a887b081f60b1a9ae3620d3a592d0",
     "repository": "tesseract-trading/crucible-rust",
     "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED",
     "strategy_resolution_receipt": {
@@ -75,6 +98,7 @@
   "production_ready": false,
   "receipt_schema_version": 1,
   "receipt_status": "LOCAL_STRATEGY_RESOLUTION_CONTRACT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN",
+  "runner_command_producer_receipt_consumed": true,
   "runtime_ready": false,
   "strategy_release_resolution_contract_ready": true
 }

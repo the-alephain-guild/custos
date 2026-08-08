@@ -32,7 +32,28 @@ created. The current technically correct shape remains the sole first-production
 V1. Completion of this Plan proves contract consumption only; runtime and
 production readiness remain governed by their existing receipts.
 
-> **Status**: ⏳ In progress — approved one-way producer receipt handoff; implementation and gates pending
+## Completion checkpoint (2026-08-08)
+
+- Crucible corrected the complete DeploymentSpec digest and exact-event command
+  fingerprint chain at contract commit
+  `8c2c4eff20ae1ba38bbab54cdf7844ef25e1187d`, then published the existing
+  V1 receipt at `e7a2bb97b17a887b081f60b1a9ae3620d3a592d0`.
+- Custos vendors that receipt and its exact golden/sidecar, records the two
+  commits separately, and includes the producer receipt plus the cross-language
+  fingerprint vector in its generated consumer asset index.
+- The five command-consumer targets passed 52 tests with the opt-in real-NATS
+  case skipped. Standalone `make check-authority`, targeted Ruff format/lint
+  and the independent receipt-mutation gate passed.
+- The repository-wide `make verify` reaches the global format gate and then
+  stops on three pre-existing, untouched files:
+  `src/custos/core/runner_fact.py`,
+  `tests/integration/runner_fact_publication_process.py` and
+  `tests/integration/runner_nats_transport_service_consumer.py`. This Plan
+  neither changes nor claims those unrelated bytes.
+- Runtime and production readiness remain false as before. This checkpoint
+  closes the exact producer-to-consumer command contract only.
+
+> **Status**: ✅ Completed — one-way producer receipt handoff and independent-clone gate verified
 > **Created**: 2026-08-04
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现
