@@ -2,7 +2,7 @@
 
 > **Status**: ⏳ In progress — T2-T8a and the same-event local production-service immutable StrategyRelease-to-engine-to-RunnerFact-PostgreSQL flow pass; exact PS candidate, deployed physical-mode receipts, runtime RC and T9-T10 remain open
 > **Created**: 2026-07-14
-> **Revised**: 2026-07-26 through same-event encrypted-vault rotation and Crucible projection
+> **Revised**: 2026-08-08 through isolated Docker-network RunnerFact PubAck acceptance
 > **Project**: Custos
 > **Source**: Audit of pre-plan migration `324da6e`, PS Plan 53, and v1.team review
 > **For Claude**: Use `/forge:execute` to implement this plan.
@@ -1459,3 +1459,17 @@ execution was then denied by the host usage limit. Therefore this checkpoint
 does not claim a built image digest, runtime RC, GHCR publication or promotion.
 Those release receipts, the exact PS production candidate and deployed
 `0029`/`0117` mode receipts remain T9-T10 blockers.
+
+## 2026-08-08 host-neutral Docker-network acceptance
+
+The existing host-port RunnerFact gate remains available for normal developer
+machines. A second acceptance target,
+`make verify-runner-fact-publication-network`, now runs the current Custos source
+and NATS inside one isolated Docker network namespace without publishing a host
+TCP port. It preserves the development-only loopback transport restriction,
+exercises the production `RunnerFactOutbox` and JetStream publisher, verifies
+the exact instance/generation/message-id payload, persists PubAck evidence and
+proves the durable pending queue is empty. The accepted receipt reports
+`LOCAL_DOCKER_NETWORK_RUNNER_FACT_PUBLICATION_VERIFIED` and
+`host_tcp_exposed=false`; it is local evidence only and does not satisfy the
+Plan 90 Phase-B or production readiness gates.

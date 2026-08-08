@@ -3,7 +3,7 @@
 # Standalone open-source repository entrypoint. Standardized validation targets
 # keep shell execution deterministic and avoid permission drift from ad-hoc commands.
 
-.PHONY: help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication clean toolkit-sync-check strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
+.PHONY: help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication verify-runner-fact-publication-network clean toolkit-sync-check strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
 
 # Default target: help
 .DEFAULT_GOAL := help
@@ -55,6 +55,9 @@ verify-authenticated-runtime-projection:  ## Run signed command through Custos a
 
 verify-runner-fact-publication:  ## Run opt-in real JetStream RunnerFact outbox/PubAck gate
 	CUSTOS_RUN_REAL_RUNNER_FACT_PUBLICATION=1 uv run pytest tests/integration/test_runner_fact_publication.py -v
+
+verify-runner-fact-publication-network:  ## Run RunnerFact PubAck gate inside an isolated Docker network
+	uv run --no-sync python scripts/verify_runner_fact_publication_docker_network.py
 
 test-baseline:  ## Run the standalone green baseline
 	# Base gate does not hard-require NT: if nautilus is missing, NT host tests are skipped by pytest.importorskip.
