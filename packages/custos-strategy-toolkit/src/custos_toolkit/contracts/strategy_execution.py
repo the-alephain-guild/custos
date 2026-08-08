@@ -288,12 +288,53 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
                 "detached_attestation_ref_digest differs from the detached producer reference"
             )
 
+        bom_fields = {
+            "build_lock_sha256",
+            "canonicalization",
+            "contract_asset_index_coordinate",
+            "contract_asset_index_sha256",
+            "engine",
+            "engine_version",
+            "entry_point_group",
+            "entry_point_name",
+            "execution_abi_golden_coordinate",
+            "execution_abi_golden_sha256",
+            "execution_abi_schema_coordinate",
+            "execution_abi_schema_sha256",
+            "members",
+            "producer_commit",
+            "producer_repository",
+            "python_requires",
+            "schema_version",
+            "strategy_artifact_coordinate",
+            "strategy_artifact_sha256",
+            "strategy_coordinate",
+            "strategy_manifest_sha256",
+            "strategy_sbom_sha256",
+            "strategy_source_commit",
+            "strategy_source_tree_sha256",
+            "toolkit_coordinate",
+            "toolkit_sbom_sha256",
+            "toolkit_wheel_sha256",
+            "zero_rewrite_characterization_sha256",
+            "zero_rewrite_semantic_diff_sha256",
+        }
+        if set(self.release_bom) != bom_fields:
+            raise ValueError("producer BOM shape is not exact V1")
+        if self.release_bom.get("schema_version") != "alephain.strategy-release-bom.v1":
+            raise ValueError("producer BOM schema_version is not exact V1")
+        if self.release_bom.get("canonicalization") != "sha256-canonical-json-v1":
+            raise ValueError("producer BOM canonicalization differs")
+
         bom_bindings = {
+            "strategy_artifact_coordinate": self.artifact_ref.artifact_coordinate,
             "strategy_artifact_sha256": self.artifact_ref.artifact_sha256,
             "strategy_manifest_sha256": self.artifact_ref.manifest_sha256,
+            "strategy_sbom_sha256": self.artifact_ref.sbom_sha256,
             "strategy_source_tree_sha256": self.artifact_ref.normalized_source_tree_sha256,
             "producer_repository": self.artifact_ref.source_repository,
             "strategy_source_commit": self.artifact_ref.source_commit,
+            "execution_abi_schema_sha256": self.artifact_ref.contract_schema_sha256,
             "engine": self.artifact_ref.engine,
             "engine_version": self.artifact_ref.engine_version,
         }
@@ -301,23 +342,157 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
             if self.release_bom.get(name) != expected:
                 raise ValueError(f"producer BOM {name} differs from ArtifactRefV1")
 
-        statement_subjects = self.release_statement.get("subject")
-        if not isinstance(statement_subjects, (list, tuple)):
-            raise ValueError("producer statement subject must be an array")
-        subject_digests: dict[str, object] = {}
-        for subject in statement_subjects:
-            if not isinstance(subject, Mapping):
-                raise ValueError("producer statement subject must be an object")
-            digest = subject.get("digest")
-            if isinstance(digest, Mapping):
-                subject_digests[str(subject.get("name"))] = digest.get("sha256")
-        expected_subjects = {
-            "strategy-release-bom-v1": self.release_bom_digest,
-            "strategy-artifact": self.artifact_ref.artifact_sha256,
-            "strategy-manifest-v1": self.artifact_ref.manifest_sha256,
+        build_inputs = {
+            item.name: item.sha256 for item in self.artifact_ref.build_inputs
         }
-        if subject_digests != expected_subjects:
+        if build_inputs.get("uv.lock") != self.release_bom.get("build_lock_sha256"):
+            raise ValueError("producer BOM build_lock_sha256 differs from ArtifactRefV1")
+
+        members = self.release_bom.get("members")
+        if not isinstance(members, list) or not members:
+            raise ValueError("producer BOM members must be a non-empty array")
+        member_fields = {"coordinate", "media_type", "name", "role", "sha256", "size_bytes"}
+        members_by_role: dict[str, list[Mapping[str, object]]] = {}
+        member_names: set[str] = set()
+        for member in members:
+            if not isinstance(member, Mapping) or set(member) != member_fields:
+                raise ValueError("producer BOM member shape is not exact V1")
+            role = member.get("role")
+            name = member.get("name")
+            if not isinstance(role, str) or not isinstance(name, str) or name in member_names:
+                raise ValueError("producer BOM member identity is invalid or duplicated")
+            member_names.add(name)
+            members_by_role.setdefault(role, []).append(member)
+        singleton_roles = {
+            "base_contracts_wheel",
+            "contract_schema",
+            "nautilus_wheel",
+            "source_tree",
+            "strategy_manifest",
+            "strategy_sbom",
+            "strategy_wheel",
+            "toolkit_sbom",
+        }
+        expected_member_roles = set(singleton_roles)
+        if self.artifact_ref.required_runtime_artifacts:
+            expected_member_roles.add("runtime_artifact")
+        if set(members_by_role) != expected_member_roles:
+            raise ValueError("producer BOM member roles are not exact V1")
+        if any(len(members_by_role[role]) != 1 for role in singleton_roles):
+            raise ValueError("producer BOM singleton member role is duplicated")
+
+        def member(role: str) -> Mapping[str, object]:
+            return members_by_role[role][0]
+
+        member_bindings = {
+            "strategy_wheel": (
+                self.artifact_ref.artifact_sha256,
+                self.artifact_ref.artifact_size_bytes,
+            ),
+            "strategy_manifest": (
+                self.artifact_ref.manifest_sha256,
+                self.artifact_ref.manifest_size_bytes,
+            ),
+            "strategy_sbom": (self.artifact_ref.sbom_sha256, None),
+            "source_tree": (self.artifact_ref.normalized_source_tree_sha256, None),
+            "contract_schema": (
+                self.release_bom.get("contract_asset_index_sha256"),
+                None,
+            ),
+            "nautilus_wheel": (self.release_bom.get("toolkit_wheel_sha256"), None),
+            "toolkit_sbom": (self.release_bom.get("toolkit_sbom_sha256"), None),
+        }
+        for role, (digest, size) in member_bindings.items():
+            bom_member = member(role)
+            if bom_member.get("sha256") != digest:
+                raise ValueError(f"producer BOM {role} digest differs")
+            if size is not None and bom_member.get("size_bytes") != size:
+                raise ValueError(f"producer BOM {role} size differs")
+        runtime_members = {
+            (
+                item.get("name"),
+                item.get("media_type"),
+                item.get("sha256"),
+                item.get("size_bytes"),
+            )
+            for item in members_by_role.get("runtime_artifact", [])
+        }
+        runtime_refs = {
+            (item.name, item.media_type, item.sha256, item.size_bytes)
+            for item in self.artifact_ref.required_runtime_artifacts
+        }
+        if runtime_members != runtime_refs:
+            raise ValueError("producer BOM runtime artifacts differ from ArtifactRefV1")
+
+        statement_fields = {"_type", "subject", "predicateType", "predicate"}
+        if set(self.release_statement) != statement_fields:
+            raise ValueError("producer statement shape is not exact V1")
+        if self.release_statement.get("_type") != "https://in-toto.io/Statement/v1":
+            raise ValueError("producer statement type is not in-toto V1")
+        if (
+            self.release_statement.get("predicateType")
+            != "https://the-alephain-guild.dev/attestation/strategy-release/v1"
+        ):
+            raise ValueError("producer statement predicate type differs")
+        statement_subjects = self.release_statement.get("subject")
+        if not isinstance(statement_subjects, list):
+            raise ValueError("producer statement subject must be an array")
+        expected_subjects = [
+            {"name": "strategy-release-bom-v1", "digest": {"sha256": self.release_bom_digest}},
+            {"name": "strategy-artifact", "digest": {"sha256": self.artifact_ref.artifact_sha256}},
+            {"name": "strategy-manifest-v1", "digest": {"sha256": self.artifact_ref.manifest_sha256}},
+            {"name": "strategy-artifact-ref-v1", "digest": {"sha256": self.artifact_ref_digest}},
+        ]
+        if statement_subjects != expected_subjects:
             raise ValueError("producer statement subjects differ from BOM and ArtifactRefV1")
+
+        predicate = self.release_statement.get("predicate")
+        if not isinstance(predicate, Mapping):
+            raise ValueError("producer statement predicate must be an object")
+        predicate_fields = {
+            "build_lock_sha256",
+            "contract_asset_index_sha256",
+            "engine",
+            "engine_version",
+            "entry_point_group",
+            "entry_point_name",
+            "execution_abi_schema_sha256",
+            "producer_commit",
+            "producer_repository",
+            "python_requires",
+            "schema_version",
+            "source_date_epoch",
+            "strategy_sbom_sha256",
+            "strategy_source_tree_sha256",
+            "toolkit_sbom_sha256",
+            "toolkit_wheel_sha256",
+            "workflow_identity",
+            "zero_rewrite_characterization_sha256",
+            "zero_rewrite_semantic_diff_sha256",
+        }
+        if set(predicate) != predicate_fields:
+            raise ValueError("producer statement predicate shape is not exact V1")
+        bom_predicate_bindings = {
+            "build_lock_sha256",
+            "contract_asset_index_sha256",
+            "engine",
+            "engine_version",
+            "entry_point_group",
+            "entry_point_name",
+            "execution_abi_schema_sha256",
+            "producer_commit",
+            "producer_repository",
+            "python_requires",
+            "strategy_sbom_sha256",
+            "strategy_source_tree_sha256",
+            "toolkit_sbom_sha256",
+            "toolkit_wheel_sha256",
+            "zero_rewrite_characterization_sha256",
+            "zero_rewrite_semantic_diff_sha256",
+        }
+        for name in bom_predicate_bindings:
+            if predicate.get(name) != self.release_bom.get(name):
+                raise ValueError(f"producer statement predicate {name} differs from BOM")
 
         if self.detached_attestation_ref.get("statement_sha256") != self.release_statement_digest:
             raise ValueError("detached attestation reference differs from producer statement")
@@ -346,6 +521,117 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
         for name, expected_evidence in evidence_bindings.items():
             if self.crucible_artifact_evidence.get(name) != expected_evidence:
                 raise ValueError(f"Crucible artifact evidence {name} differs")
+        signed_claims = self.crucible_artifact_evidence.get("signed_producer_claims")
+        if not isinstance(signed_claims, Mapping):
+            raise ValueError("Crucible signed producer claims must be an object")
+        expected_claims = {
+            "schema_version": predicate.get("schema_version"),
+            "producer_repository": predicate.get("producer_repository"),
+            "producer_commit": predicate.get("producer_commit"),
+            "workflow_identity": predicate.get("workflow_identity"),
+            "source_date_epoch": predicate.get("source_date_epoch"),
+            "strategy_source_tree_sha256": predicate.get("strategy_source_tree_sha256"),
+            "artifact_sha256": self.artifact_ref.artifact_sha256,
+            "manifest_sha256": self.artifact_ref.manifest_sha256,
+            "artifact_ref_digest": self.artifact_ref_digest,
+            "release_bom_digest": self.release_bom_digest,
+            "execution_abi_schema_sha256": predicate.get("execution_abi_schema_sha256"),
+            "contract_asset_index_sha256": predicate.get("contract_asset_index_sha256"),
+            "toolkit_wheel_sha256": predicate.get("toolkit_wheel_sha256"),
+            "toolkit_sbom_sha256": predicate.get("toolkit_sbom_sha256"),
+            "build_lock_sha256": predicate.get("build_lock_sha256"),
+            "zero_rewrite_semantic_diff_sha256": predicate.get(
+                "zero_rewrite_semantic_diff_sha256"
+            ),
+            "zero_rewrite_characterization_sha256": predicate.get(
+                "zero_rewrite_characterization_sha256"
+            ),
+            "engine": predicate.get("engine"),
+            "engine_version": predicate.get("engine_version"),
+            "python_requires": predicate.get("python_requires"),
+            "entry_point_group": predicate.get("entry_point_group"),
+            "entry_point_name": predicate.get("entry_point_name"),
+        }
+        if dict(signed_claims) != expected_claims:
+            raise ValueError("Crucible signed producer claims differ from exact statement bindings")
+
+        proof = self.crucible_artifact_evidence.get("sigstore_proof")
+        proof_fields = (
+            "bundle_sha256",
+            "statement_sha256",
+            "dsse_payload_sha256",
+            "dsse_signature_sha256",
+            "signing_certificate_sha256",
+            "trusted_root_sha256",
+            "certificate_issuer",
+            "certificate_subject",
+            "certificate_not_before",
+            "certificate_not_after",
+            "sct_log_id",
+            "sct_sha256",
+            "rekor_log_id",
+            "rekor_log_index",
+            "rekor_integrated_time",
+            "rekor_entry_body_sha256",
+            "rekor_signed_entry_timestamp_sha256",
+            "rekor_inclusion_proof_sha256",
+            "rekor_checkpoint_sha256",
+            "rekor_tree_size",
+            "rekor_root_hash",
+        )
+        if not isinstance(proof, Mapping) or set(proof) != set(proof_fields):
+            raise ValueError("Crucible Sigstore proof shape is not exact V1")
+        if (
+            proof.get("bundle_sha256") != self.detached_attestation_ref.get("bundle_sha256")
+            or proof.get("statement_sha256") != self.release_statement_digest
+            or proof.get("dsse_payload_sha256") != self.release_statement_digest
+            or proof.get("certificate_subject") != predicate.get("workflow_identity")
+        ):
+            raise ValueError("Crucible Sigstore proof differs from producer evidence")
+
+        crucible_policy = self.crucible_artifact_evidence.get("local_policy_evaluation")
+        policy_fields = (
+            "policy_id",
+            "policy_version",
+            "policy_digest",
+            "evaluated_at",
+            "decision",
+        )
+        if not isinstance(crucible_policy, Mapping) or set(crucible_policy) != set(
+            policy_fields
+        ):
+            raise ValueError("Crucible local policy evaluation shape is not exact V1")
+        if crucible_policy.get("decision") != "accepted":
+            raise ValueError("Crucible local policy did not accept the artifact")
+
+        evidence_preimage = {
+            "schema_version": self.crucible_artifact_evidence["schema_version"],
+            "strategy_release_id": self.crucible_artifact_evidence["strategy_release_id"],
+            "artifact_ref_digest": self.crucible_artifact_evidence["artifact_ref_digest"],
+            "release_bom_digest": self.crucible_artifact_evidence["release_bom_digest"],
+            "release_statement_digest": self.crucible_artifact_evidence[
+                "release_statement_digest"
+            ],
+            "detached_attestation_ref_digest": self.crucible_artifact_evidence[
+                "detached_attestation_ref_digest"
+            ],
+            "bundle_sha256": self.crucible_artifact_evidence["bundle_sha256"],
+            "signed_producer_claims": expected_claims,
+            "sigstore_proof": {name: proof[name] for name in proof_fields},
+            "local_policy_evaluation": {
+                name: crucible_policy[name] for name in policy_fields
+            },
+            "composite_evidence_digest": "",
+        }
+        computed_evidence_digest = hashlib.sha256(
+            json.dumps(
+                evidence_preimage,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        if computed_evidence_digest != self.crucible_artifact_evidence_digest:
+            raise ValueError("Crucible artifact evidence composite digest differs")
         if (
             self.crucible_artifact_evidence.get("composite_evidence_digest")
             != self.crucible_artifact_evidence_digest
@@ -393,10 +679,7 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
         for name, expected in policy_bindings.items():
             if getattr(policy, name) != expected:
                 raise ValueError(f"runner-local policy {name} differs")
-        crucible_policy = self.crucible_artifact_evidence.get("local_policy_evaluation")
-        if isinstance(crucible_policy, Mapping) and (
-            crucible_policy.get("policy_digest") == policy.policy_digest
-        ):
+        if crucible_policy.get("policy_digest") == policy.policy_digest:
             raise ValueError("runner-local policy must not reuse the Crucible policy digest")
         return self
 

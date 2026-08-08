@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 from pathlib import Path
 
@@ -20,12 +19,6 @@ GOLDEN = ROOT / "docs/authority/strategy-artifact-pre-import-verification-v1.gol
 NEGATIVE = ROOT / "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json"
 INDEX = ROOT / "docs/authority/strategy-contract-assets-v1.json"
 RECEIPT = ROOT / "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json"
-CRUCIBLE_RECEIPT = (
-    ROOT / "docs/authority/receipts/vendor/"
-    "crucible-custos-strategy-contract-v1-consumer-receipt.json"
-)
-
-
 def _validate(document: dict[str, object]) -> None:
     StrategyArtifactPreImportVerificationReceiptV1.model_validate(document)
 
@@ -62,11 +55,19 @@ def test_schema_golden_and_index_are_the_same_v1_contract() -> None:
     assert index["status"] == "CANONICAL_V1_CONTRACT_ASSETS_PUBLISHED"
     assert "consumer_receipts" not in index
     assert "runtime_ready" not in index
-    crucible_receipt = json.loads(CRUCIBLE_RECEIPT.read_text(encoding="utf-8"))
-    assert crucible_receipt["producer"]["commit"] == ("39493964e165afbd688beac7205ed4d6943c2c49")
-    assert crucible_receipt["consumer"] == "crucible-rust"
-    assert crucible_receipt["runtime_ready"] is False
-    assert crucible_receipt["production_ready"] is False
+    receipt = golden["receipt"]
+    assert receipt["artifact_ref"]["contract_schema_sha256"] == (
+        receipt["release_bom"]["execution_abi_schema_sha256"]
+    )
+    assert [subject["name"] for subject in receipt["release_statement"]["subject"]] == [
+        "strategy-release-bom-v1",
+        "strategy-artifact",
+        "strategy-manifest-v1",
+        "strategy-artifact-ref-v1",
+    ]
+    claims = receipt["crucible_artifact_evidence"]["signed_producer_claims"]
+    assert claims["artifact_ref_digest"] == receipt["artifact_ref_digest"]
+    assert claims["release_bom_digest"] == receipt["release_bom_digest"]
 
 
 def test_all_published_negative_cases_fail_closed() -> None:
@@ -90,6 +91,4 @@ def test_contract_receipt_stays_pending_until_both_consumers_pin_v1() -> None:
     assert receipt["runtime_ready"] is False
     assert receipt["production_ready"] is False
     assert receipt["consumers"]["philosophers_stone"]["receipt"] is None
-    crucible_pin = receipt["consumers"]["crucible_rust"]["receipt"]
-    assert crucible_pin["commit"] == ("a30a62bb2e4115adaad9c036386ebb2b731e0526")
-    assert crucible_pin["sha256"] == hashlib.sha256(CRUCIBLE_RECEIPT.read_bytes()).hexdigest()
+    assert receipt["consumers"]["crucible_rust"]["receipt"] is None

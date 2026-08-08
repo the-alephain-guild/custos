@@ -82,8 +82,8 @@ RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
     "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json"
 )
 RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df"
-RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT = "e36c6cd11008542c63fb21f8837afcb02d31ac70"
-RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "84cfca9a80000d86f780fdcfe66e9aee617858c0"
+RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT = "a4972de"
+RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "5a531c2bbc8c9ec08a631d51ebedae5650fc05a0"
 RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS = (
     (
         "docs/authority/runner-strategy-release-resolution-v1.schema.json",
@@ -333,6 +333,71 @@ def build_v1_contract_assets() -> dict[str, bytes]:
                     "name": "verified_members_alias_forbidden",
                     "mutation": {"operation": "add", "path": ["verified_members"], "value": []},
                 },
+                {
+                    "name": "release_statement_fourth_subject_required",
+                    "mutation": {
+                        "operation": "replace",
+                        "path": ["release_statement", "subject"],
+                        "value": release_statement["subject"][:3],
+                    },
+                },
+                {
+                    "name": "release_statement_subject_order_is_exact",
+                    "mutation": {
+                        "operation": "replace",
+                        "path": ["release_statement", "subject"],
+                        "value": [
+                            release_statement["subject"][1],
+                            release_statement["subject"][0],
+                            *release_statement["subject"][2:],
+                        ],
+                    },
+                },
+                {
+                    "name": "release_statement_duplicate_subject_forbidden",
+                    "mutation": {
+                        "operation": "replace",
+                        "path": ["release_statement", "subject"],
+                        "value": [
+                            *release_statement["subject"][:3],
+                            release_statement["subject"][2],
+                        ],
+                    },
+                },
+                {
+                    "name": "release_statement_artifact_ref_digest_is_exact",
+                    "mutation": {
+                        "operation": "replace",
+                        "path": ["release_statement", "subject"],
+                        "value": [
+                            *release_statement["subject"][:3],
+                            {
+                                "name": "strategy-artifact-ref-v1",
+                                "digest": {"sha256": "f" * 64},
+                            },
+                        ],
+                    },
+                },
+                {
+                    "name": "artifact_ref_execution_abi_binding_is_exact",
+                    "mutation": {
+                        "operation": "replace",
+                        "path": ["artifact_ref", "contract_schema_sha256"],
+                        "value": "f" * 64,
+                    },
+                },
+                {
+                    "name": "signed_claim_artifact_ref_binding_is_exact",
+                    "mutation": {
+                        "operation": "replace",
+                        "path": [
+                            "crucible_artifact_evidence",
+                            "signed_producer_claims",
+                            "artifact_ref_digest",
+                        ],
+                        "value": "f" * 64,
+                    },
+                },
             ],
         }
     )
@@ -343,30 +408,6 @@ def build_v1_contract_assets() -> dict[str, bytes]:
         f"{PRE_IMPORT_GOLDEN_PATH}.sha256": _sidecar(PRE_IMPORT_GOLDEN_PATH, golden),
         PRE_IMPORT_NEGATIVE_PATH: negative,
         f"{PRE_IMPORT_NEGATIVE_PATH}.sha256": _sidecar(PRE_IMPORT_NEGATIVE_PATH, negative),
-    }
-    crucible_receipt_vendor_path = (
-        "docs/authority/receipts/vendor/crucible-custos-strategy-contract-v1-consumer-receipt.json"
-    )
-    crucible_receipt_bytes = (ROOT / crucible_receipt_vendor_path).read_bytes()
-    crucible_receipt_document = json.loads(crucible_receipt_bytes)
-    if (
-        crucible_receipt_document.get("status")
-        != "EXACT_CUSTOS_V1_CONTRACT_PINNED_PENDING_PRODUCER_HANDOFF"
-        or crucible_receipt_document.get("runtime_ready") is not False
-        or crucible_receipt_document.get("production_ready") is not False
-        or crucible_receipt_document.get("producer", {}).get("commit")
-        != "39493964e165afbd688beac7205ed4d6943c2c49"
-        or crucible_receipt_document.get("consumer") != "crucible-rust"
-    ):
-        raise ValueError("Crucible consumer receipt does not pin canonical Custos V1")
-    crucible_receipt_pin = {
-        "repository": "tesseract-trading/crucible-rust",
-        "commit": "a30a62bb2e4115adaad9c036386ebb2b731e0526",
-        "path": (
-            "docs/authority/receipts/crucible-custos-strategy-contract-v1-consumer-receipt.json"
-        ),
-        "vendored_path": crucible_receipt_vendor_path,
-        "sha256": sha256(crucible_receipt_bytes),
     }
     index_entries = [
         {"path": path, "sha256": sha256(data), "size_bytes": len(data)}
@@ -421,7 +462,7 @@ def build_v1_contract_assets() -> dict[str, bytes]:
                 },
                 "crucible_rust": {
                     "repository": "tesseract-trading/crucible-rust",
-                    "receipt": crucible_receipt_pin,
+                    "receipt": None,
                 },
             },
             "policy_boundary": {
@@ -435,7 +476,8 @@ def build_v1_contract_assets() -> dict[str, bytes]:
             "production_ready": False,
             "open_blockers": [
                 "Philosophers Stone canonical V1 consumer receipt",
-                "final exact-byte relock after the remaining producer consumer receipt",
+                "Crucible Rust canonical V1 consumer receipt over this corrected asset index",
+                "final exact-byte relock after both consumer receipts",
             ],
         }
     )

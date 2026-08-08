@@ -10,8 +10,8 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
-    "sha256": "5e0085aebede4edfd73af3aa3a09691bed2314ecfea27ba7e8fe8f4766f5ecc4",
-    "size_bytes": 7574
+    "sha256": "f1551adc3a9fdd582632f52608b9471244babf8b11477bb47bdac26617c61b38",
+    "size_bytes": 7541
   },
   "contract_guards": {
     "command_selected_root_policy_issuer_workflow": false,
@@ -69,22 +69,22 @@
         {
           "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",
           "producer_path": "docs/authority/runner-strategy-release-resolution-v1.golden.json",
-          "sha256": "1f00e2d37b96f9f3729bebf875d3d6f852a9eafa90be3c46fde06e7dc6959f1a",
-          "size_bytes": 23505
+          "sha256": "9c9eccb96b5625b02829f775088d16136fab0e35f8179bcd85b03b73dee3ea75",
+          "size_bytes": 31004
         },
         {
           "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json.sha256",
           "producer_path": "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
-          "sha256": "ad557d478849f4909489915587289422eb592c6351fa8a9f974441ee89fdfcea",
+          "sha256": "2ce44b99e5b118ea476f6a634ab790584fa599a1d4040c1b7a74045b5bfeed97",
           "size_bytes": 116
         }
       ],
-      "contract_commit": "e36c6cd11008542c63fb21f8837afcb02d31ac70",
+      "contract_commit": "a4972de",
       "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json",
       "producer_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
-      "receipt_commit": "84cfca9a80000d86f780fdcfe66e9aee617858c0",
-      "sha256": "44a88bf82f5befe3e9b96365e16e9afb382521402e6d84dc5f9df90aad2d37f4",
-      "size_bytes": 4109,
+      "receipt_commit": "5a531c2bbc8c9ec08a631d51ebedae5650fc05a0",
+      "sha256": "7ea49d826118873cabb1c7020c5b84155bf9e395531896c8dd9426a2436e0f95",
+      "size_bytes": 4076,
       "status": "LOCAL_SANDBOX_HTTP_PG_CONTRACT_READY"
     },
     "subject_template": "crucible.runner.command.v1.<tenant>.<runner>.<mode>"

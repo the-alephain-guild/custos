@@ -1,6 +1,6 @@
 {
   "base_golden": "docs/authority/strategy-artifact-pre-import-verification-v1.golden.json",
-  "base_golden_sha256": "05c6eed77f910607566742b52f679a03ffcee3d3bb20a66c087ce01f373a0b3b",
+  "base_golden_sha256": "5ae4cad9da45fee5052332349f60aaf2b5df6e443ba54002748978a2e16866df",
   "canonical_name": "Custos canonical V1 pre-import receipt negative mutations",
   "cases": [
     {
@@ -42,7 +42,7 @@
           "detached_attestation_ref",
           "bundle_sha256"
         ],
-        "value": "16f4486dfbd49df9a1a96a03338cc888e4567cd48695c63e6e79e7940f6be8ff"
+        "value": "7c2eea35ae11476aa31805616f4c6f59b1ffb3e8882fbf879e6d84782dad5360"
       },
       "name": "bundle_self_reference_forbidden"
     },
@@ -64,7 +64,7 @@
           "crucible_artifact_acceptance",
           "receipt_digest"
         ],
-        "value": "76925a21ebf75e5f74748766746ed1e4aca568ad6141bcb5cb7bb539f429f1b9"
+        "value": "d1723a16f4ddb0c60bfd5e7e58293175ec077c19eaefcd320c4a7bf4961c631f"
       },
       "name": "legacy_crucible_receipt_alias_forbidden"
     },
@@ -98,6 +98,167 @@
         "value": []
       },
       "name": "verified_members_alias_forbidden"
+    },
+    {
+      "mutation": {
+        "operation": "replace",
+        "path": [
+          "release_statement",
+          "subject"
+        ],
+        "value": [
+          {
+            "digest": {
+              "sha256": "b91bd49081d234eca0d88958e460b92e2d92775160e272102ccc0514e44147a8"
+            },
+            "name": "strategy-release-bom-v1"
+          },
+          {
+            "digest": {
+              "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+            },
+            "name": "strategy-artifact"
+          },
+          {
+            "digest": {
+              "sha256": "d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f"
+            },
+            "name": "strategy-manifest-v1"
+          }
+        ]
+      },
+      "name": "release_statement_fourth_subject_required"
+    },
+    {
+      "mutation": {
+        "operation": "replace",
+        "path": [
+          "release_statement",
+          "subject"
+        ],
+        "value": [
+          {
+            "digest": {
+              "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+            },
+            "name": "strategy-artifact"
+          },
+          {
+            "digest": {
+              "sha256": "b91bd49081d234eca0d88958e460b92e2d92775160e272102ccc0514e44147a8"
+            },
+            "name": "strategy-release-bom-v1"
+          },
+          {
+            "digest": {
+              "sha256": "d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f"
+            },
+            "name": "strategy-manifest-v1"
+          },
+          {
+            "digest": {
+              "sha256": "e263309b2937d2c1fec4bcfd389cfa264e22d15e55f07471327bcbf40461650a"
+            },
+            "name": "strategy-artifact-ref-v1"
+          }
+        ]
+      },
+      "name": "release_statement_subject_order_is_exact"
+    },
+    {
+      "mutation": {
+        "operation": "replace",
+        "path": [
+          "release_statement",
+          "subject"
+        ],
+        "value": [
+          {
+            "digest": {
+              "sha256": "b91bd49081d234eca0d88958e460b92e2d92775160e272102ccc0514e44147a8"
+            },
+            "name": "strategy-release-bom-v1"
+          },
+          {
+            "digest": {
+              "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+            },
+            "name": "strategy-artifact"
+          },
+          {
+            "digest": {
+              "sha256": "d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f"
+            },
+            "name": "strategy-manifest-v1"
+          },
+          {
+            "digest": {
+              "sha256": "d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f"
+            },
+            "name": "strategy-manifest-v1"
+          }
+        ]
+      },
+      "name": "release_statement_duplicate_subject_forbidden"
+    },
+    {
+      "mutation": {
+        "operation": "replace",
+        "path": [
+          "release_statement",
+          "subject"
+        ],
+        "value": [
+          {
+            "digest": {
+              "sha256": "b91bd49081d234eca0d88958e460b92e2d92775160e272102ccc0514e44147a8"
+            },
+            "name": "strategy-release-bom-v1"
+          },
+          {
+            "digest": {
+              "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+            },
+            "name": "strategy-artifact"
+          },
+          {
+            "digest": {
+              "sha256": "d26bc418ba98e9805928b4cc1f71d685a984052cb5be68bda2790378a10f495f"
+            },
+            "name": "strategy-manifest-v1"
+          },
+          {
+            "digest": {
+              "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            },
+            "name": "strategy-artifact-ref-v1"
+          }
+        ]
+      },
+      "name": "release_statement_artifact_ref_digest_is_exact"
+    },
+    {
+      "mutation": {
+        "operation": "replace",
+        "path": [
+          "artifact_ref",
+          "contract_schema_sha256"
+        ],
+        "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "name": "artifact_ref_execution_abi_binding_is_exact"
+    },
+    {
+      "mutation": {
+        "operation": "replace",
+        "path": [
+          "crucible_artifact_evidence",
+          "signed_producer_claims",
+          "artifact_ref_digest"
+        ],
+        "value": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "name": "signed_claim_artifact_ref_binding_is_exact"
     }
   ],
   "fixture_schema_version": 1

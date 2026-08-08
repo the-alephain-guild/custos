@@ -7,7 +7,7 @@
   "authority_coordinate": "crucible.runner-strategy-resolution.v1",
   "producer_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
   "runtime_code_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
-  "contract_commit": "e36c6cd11008542c63fb21f8837afcb02d31ac70",
+  "contract_commit": "a4972de",
   "route": {
     "method": "POST",
     "path": "/api/v1/runner-material/resolve",
@@ -47,12 +47,12 @@
     },
     {
       "path": "docs/authority/runner-strategy-release-resolution-v1.golden.json",
-      "sha256": "1f00e2d37b96f9f3729bebf875d3d6f852a9eafa90be3c46fde06e7dc6959f1a",
-      "size_bytes": 23505
+      "sha256": "9c9eccb96b5625b02829f775088d16136fab0e35f8179bcd85b03b73dee3ea75",
+      "size_bytes": 31004
     },
     {
       "path": "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
-      "sha256": "ad557d478849f4909489915587289422eb592c6351fa8a9f974441ee89fdfcea",
+      "sha256": "2ce44b99e5b118ea476f6a634ab790584fa599a1d4040c1b7a74045b5bfeed97",
       "size_bytes": 116
     }
   ],

@@ -3,22 +3,22 @@
   "assets": [
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.golden.json",
-      "sha256": "05c6eed77f910607566742b52f679a03ffcee3d3bb20a66c087ce01f373a0b3b",
-      "size_bytes": 14276
+      "sha256": "5ae4cad9da45fee5052332349f60aaf2b5df6e443ba54002748978a2e16866df",
+      "size_bytes": 18136
     },
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.golden.json.sha256",
-      "sha256": "8cd9c13eb9c29c8ef65d66a427fc084e3a0dafbaec410cf28fdf6ba5ae1772fb",
+      "sha256": "3da38936d16e857e1747847d6b1a86faad9a708a04f9f7110009979b39c5b7c2",
       "size_bytes": 123
     },
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json",
-      "sha256": "2373d4e37293ae64333f271682a25ec2a0f6345e84ab77a8b1c20f1e9966d66b",
-      "size_bytes": 2634
+      "sha256": "3b02341e074a5e55ec2c1c6bb7ef4cdae59602d08cccc5b3e1becaa6b0c46b81",
+      "size_bytes": 7242
     },
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json.sha256",
-      "sha256": "2557209ce3ce1350229bc0aa72c08d4f0a13d0b226cae45c7f2a6eb272220a5e",
+      "sha256": "51a80ffdd10b1e065aac0bd27e95f53f7fc06ee49cf9b0bb339de5cc00300389",
       "size_bytes": 125
     },
     {
@@ -59,7 +59,7 @@
   "producer": {
     "repository": "tesseract-trading/custos",
     "source_path": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
-    "source_sha256": "d768ce08cfdc279a6f4c3e8bedeb3628e32b2d0e5d08b712e9702e3d01e40cf4"
+    "source_sha256": "39d48ca66637ea2d803ba9c9bc4e1f921ec2309aa130d21263452b62c987eb06"
   },
   "status": "CANONICAL_V1_CONTRACT_ASSETS_PUBLISHED"
 }
