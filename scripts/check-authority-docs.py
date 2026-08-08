@@ -65,7 +65,7 @@ RUNNER_FACT_CONTRACT_RECEIPT_PATH = (
 RUNNER_COMMAND_CONSUMER_SOURCE = "src/custos/contracts/crucible_runner_command.py"
 RUNNER_COMMAND_GOLDEN_PATH = "docs/authority/runner-deployment-command-golden-v1.json"
 RUNNER_COMMAND_PRODUCER_COMMIT = "8c2c4eff20ae1ba38bbab54cdf7844ef25e1187d"
-RUNNER_COMMAND_PRODUCER_RECEIPT_COMMIT = "bc4e37ab6cb4959b41370d0a3e16c85389f791d2"
+RUNNER_COMMAND_PRODUCER_RECEIPT_COMMIT = "72c0ba90623e61641e14a3ede8168f3e379e6f4c"
 RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH = (
     "docs/authority/receipts/vendor/crucible-runner-command-publication-v1.json"
 )

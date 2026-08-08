@@ -10,7 +10,7 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
-    "sha256": "cd06ccbc3af0b9165bce028244822f12d95912b0fce2fb273692f75d24e1767a",
+    "sha256": "5e0085aebede4edfd73af3aa3a09691bed2314ecfea27ba7e8fe8f4766f5ecc4",
     "size_bytes": 7574
   },
   "contract_guards": {
@@ -45,11 +45,11 @@
         }
       ],
       "path": "docs/authority/receipts/vendor/crucible-runner-command-publication-v1.json",
-      "sha256": "35d15d26c5bfcda455a20cb2e372ff3b7b3ac3c51c38db485fe71ea9c16d25e5",
+      "sha256": "9a2eb21b090a32354980aff260278accc60c93267007fd2678f443edc581ee2e",
       "size_bytes": 9973,
       "status": "LOCAL_AUTHENTICATED_PG_JETSTREAM_PUBACK_RECOVERY_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
     },
-    "producer_receipt_commit": "bc4e37ab6cb4959b41370d0a3e16c85389f791d2",
+    "producer_receipt_commit": "72c0ba90623e61641e14a3ede8168f3e379e6f4c",
     "repository": "tesseract-trading/crucible-rust",
     "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED",
     "strategy_resolution_receipt": {

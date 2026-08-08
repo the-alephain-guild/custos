@@ -102,7 +102,7 @@
   },
   "predecessor_runtime_evidence": {
     "path": "docs/authority/receipts/crucible-runner-nats-transport-runtime-v1.json",
-    "sha256": "8221a8918b4460d41c6812f2fd775dbd1f791dbe375f985551189efdc2ed271a",
+    "sha256": "8b956f448d6c3fbb85fde711af237ff0566e3035730f8357d2b44bf31aadd550",
     "size_bytes": 9306,
     "authenticated_runner_transport_verified": true,
     "custos_daemon_restart_verified": true,
