@@ -1,6 +1,38 @@
 # 32 — producer 改了 golden，而只有 consumer 那侧有门，且那道门 CI 看不见
 
-> **Status**: 🔲 Not started —— **修哪一层（A/B/C）未定**，见 §决策；证据已齐（§Foundation Scan）
+## Approved single-direction producer receipt correction (2026-08-08)
+
+This section is normative over the open A/B/C choice and task wording below.
+The approved solution is A+C, implemented through the producer receipt that
+already exists. The symmetric producer-side sibling proposal in B is rejected:
+Crucible must not depend on, inspect or pin Custos.
+
+1. Crucible extends the existing
+   `CRUCIBLE-RUNNER-COMMAND-PUBLICATION-V1` receipt in place so it binds the
+   canonical command golden and sidecar by exact path, digest and byte length.
+2. Crucible's local authority gate proves the receipt matches its own producer
+   assets. It remains independently verifiable and has no consumer checkout
+   dependency.
+3. Custos vendors that exact producer receipt plus the current golden and
+   sidecar, and records the producer receipt publication commit separately to
+   avoid a circular self-pin in the producer receipt.
+4. Custos's generated asset index and consumer receipt bind the vendored
+   producer receipt and every producer asset. Independent-clone CI therefore
+   verifies immutable producer evidence instead of silently skipping a missing
+   sibling repository.
+5. An optional workspace comparison may diagnose that a newer producer receipt
+   is available, but it is supplemental freshness evidence, not the consumer's
+   authority root and not a producer gate.
+6. The current `cooldown_seconds` bytes must parse through the real signature
+   verifier and risk-policy digest validation. Mutation tests must prove that a
+   stale receipt, changed golden or incorrect digest makes the gate fail.
+
+No new command version, parser, dataclass, schema, golden or authority entry is
+created. The current technically correct shape remains the sole first-production
+V1. Completion of this Plan proves contract consumption only; runtime and
+production readiness remain governed by their existing receipts.
+
+> **Status**: ⏳ In progress — approved one-way producer receipt handoff; implementation and gates pending
 > **Created**: 2026-08-04
 > **Project**: custos (`tesseract-trading/custos/`)
 > **Depends on**: 无 —— 现有代码即可复现
