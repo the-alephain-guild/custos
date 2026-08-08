@@ -156,8 +156,8 @@
     {
       "role": "joint_full_daemon_acceptance",
       "path": "crates/server-http/tests/runner_nats_transport_service_process.rs",
-      "sha256": "b569a51c8b20ce80c68c6377e9f754cfdca0af29fe32c3dd867fbe738c52a298",
-      "size_bytes": 109884
+      "sha256": "cd7373f24e7b83502425644234bcec950a542bf998c3fc0e9978c99284212480",
+      "size_bytes": 109928
     }
   ],
   "local_puback_recovery_ready": true,

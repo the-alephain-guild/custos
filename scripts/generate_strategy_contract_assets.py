@@ -58,7 +58,7 @@ RUNNER_COMMAND_FINGERPRINT_VECTOR_PATH = (
     "tests/fixtures/runner_command/runner_command_fingerprint_v1.json"
 )
 RUNNER_COMMAND_PRODUCER_COMMIT = "8c2c4eff20ae1ba38bbab54cdf7844ef25e1187d"
-RUNNER_COMMAND_PRODUCER_RECEIPT_COMMIT = "e7a2bb97b17a887b081f60b1a9ae3620d3a592d0"
+RUNNER_COMMAND_PRODUCER_RECEIPT_COMMIT = "bc4e37ab6cb4959b41370d0a3e16c85389f791d2"
 RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH = (
     "docs/authority/receipts/vendor/crucible-runner-command-publication-v1.json"
 )
