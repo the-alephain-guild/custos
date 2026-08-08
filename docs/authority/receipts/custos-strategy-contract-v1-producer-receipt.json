@@ -3,7 +3,13 @@
   "command_consumer_ready": false,
   "consumers": {
     "crucible_rust": {
-      "receipt": null,
+      "receipt": {
+        "commit": "80383870b9f2f6be1edd0e4867ad8dd36605d2d6",
+        "path": "docs/authority/receipts/crucible-custos-strategy-contract-v1-consumer-receipt.json",
+        "repository": "tesseract-trading/crucible-rust",
+        "sha256": "4047d74724ace7cff1e8da242e1492f75293f8403131cd5201a734f31d520812",
+        "vendored_path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-v1-consumer-receipt.json"
+      },
       "repository": "tesseract-trading/crucible-rust"
     },
     "philosophers_stone": {
@@ -19,8 +25,7 @@
   "contract_consumer_ready": false,
   "open_blockers": [
     "Philosophers Stone canonical V1 consumer receipt",
-    "Crucible Rust canonical V1 consumer receipt over this corrected asset index",
-    "final exact-byte relock after both consumer receipts"
+    "final exact-byte relock after the remaining PS consumer receipt"
   ],
   "policy_boundary": {
     "crucible_local_policy_decision_reused": false,

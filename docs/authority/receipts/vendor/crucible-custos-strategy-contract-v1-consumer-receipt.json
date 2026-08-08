@@ -1,0 +1,34 @@
+{
+  "canonical_name": "Crucible canonical Custos V1 strategy contract consumer receipt",
+  "consumer": "crucible-rust",
+  "producer": {
+    "assets": {
+      "artifact_ref_golden": {
+        "local_path": "docs/authority/custos-strategy-artifact-ref-v1.golden.json",
+        "producer_path": "docs/authority/strategy-artifact-ref-v1.golden.json",
+        "sha256": "6486cec742a7921a3c5d9d1e799ce2faa067754af9028d2759709252f1d6a5c0"
+      },
+      "artifact_ref_schema": {
+        "local_path": "docs/authority/custos-strategy-artifact-ref-v1.schema.json",
+        "producer_path": "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json",
+        "sha256": "0f82d8cd9ce1fe7fb4cf6c70a98bbd6683bb517c7eb968c54a9cfa89567bbff5"
+      },
+      "contract_asset_index": {
+        "local_path": "docs/authority/custos-strategy-contract-assets-v1.json",
+        "producer_path": "docs/authority/strategy-contract-assets-v1.json",
+        "sha256": "50678d8a07aac075e609ca3f39e4e9e5ac12f02f5bcc5f67b132e61348294c24"
+      },
+      "pre_import_receipt_schema": {
+        "local_path": "docs/authority/custos-strategy-artifact-pre-import-verification-receipt-v1.schema.json",
+        "producer_path": "docs/gateway-contract/v1/strategy_artifact_pre_import_verification_receipt_v1.schema.json",
+        "sha256": "a59b24671851a35fd973b76685ac17bbbcb2c0c685b824f4c8287fff72beaa9e"
+      }
+    },
+    "commit": "d1847cd39802951fcafcdeec0061854655feee8b",
+    "repository": "tesseract-trading/custos"
+  },
+  "production_ready": false,
+  "receipt_schema_version": 1,
+  "runtime_ready": false,
+  "status": "EXACT_CUSTOS_V1_CONTRACT_PINNED_PENDING_PRODUCER_HANDOFF"
+}

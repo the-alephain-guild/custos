@@ -39,6 +39,12 @@ PRE_IMPORT_NEGATIVE_PATH = (
     "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json"
 )
 CONTRACT_RECEIPT_PATH = "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json"
+CRUCIBLE_CONSUMER_RECEIPT_VENDOR_PATH = (
+    "docs/authority/receipts/vendor/"
+    "crucible-custos-strategy-contract-v1-consumer-receipt.json"
+)
+CUSTOS_STRATEGY_CONTRACT_COMMIT = "d1847cd39802951fcafcdeec0061854655feee8b"
+CRUCIBLE_CONSUMER_RECEIPT_COMMIT = "80383870b9f2f6be1edd0e4867ad8dd36605d2d6"
 RUNNER_COMMAND_CONSUMER_INDEX_PATH = (
     "docs/authority/crucible-runner-command-consumer-assets-v1.json"
 )
@@ -440,6 +446,67 @@ def build_v1_contract_assets() -> dict[str, bytes]:
         }
     )
     generated[INDEX_PATH] = index
+    crucible_receipt_bytes = (ROOT / CRUCIBLE_CONSUMER_RECEIPT_VENDOR_PATH).read_bytes()
+    crucible_receipt_document = json.loads(crucible_receipt_bytes)
+    expected_consumer_assets = {
+        "artifact_ref_golden": {
+            "local_path": "docs/authority/custos-strategy-artifact-ref-v1.golden.json",
+            "producer_path": ARTIFACT_REF_GOLDEN_PATH,
+            "sha256": sha256(generated[ARTIFACT_REF_GOLDEN_PATH]),
+        },
+        "artifact_ref_schema": {
+            "local_path": "docs/authority/custos-strategy-artifact-ref-v1.schema.json",
+            "producer_path": ARTIFACT_REF_SCHEMA_PATH,
+            "sha256": sha256(generated[ARTIFACT_REF_SCHEMA_PATH]),
+        },
+        "contract_asset_index": {
+            "local_path": "docs/authority/custos-strategy-contract-assets-v1.json",
+            "producer_path": INDEX_PATH,
+            "sha256": sha256(index),
+        },
+        "pre_import_receipt_schema": {
+            "local_path": (
+                "docs/authority/"
+                "custos-strategy-artifact-pre-import-verification-receipt-v1.schema.json"
+            ),
+            "producer_path": PRE_IMPORT_SCHEMA_PATH,
+            "sha256": sha256(generated[PRE_IMPORT_SCHEMA_PATH]),
+        },
+    }
+    if (
+        set(crucible_receipt_document)
+        != {
+            "canonical_name",
+            "consumer",
+            "producer",
+            "production_ready",
+            "receipt_schema_version",
+            "runtime_ready",
+            "status",
+        }
+        or crucible_receipt_document.get("consumer") != "crucible-rust"
+        or crucible_receipt_document.get("producer")
+        != {
+            "assets": expected_consumer_assets,
+            "commit": CUSTOS_STRATEGY_CONTRACT_COMMIT,
+            "repository": "tesseract-trading/custos",
+        }
+        or crucible_receipt_document.get("status")
+        != "EXACT_CUSTOS_V1_CONTRACT_PINNED_PENDING_PRODUCER_HANDOFF"
+        or crucible_receipt_document.get("runtime_ready") is not False
+        or crucible_receipt_document.get("production_ready") is not False
+    ):
+        raise ValueError("Crucible consumer receipt does not pin the corrected Custos V1")
+    crucible_receipt_pin = {
+        "repository": "tesseract-trading/crucible-rust",
+        "commit": CRUCIBLE_CONSUMER_RECEIPT_COMMIT,
+        "path": (
+            "docs/authority/receipts/"
+            "crucible-custos-strategy-contract-v1-consumer-receipt.json"
+        ),
+        "vendored_path": CRUCIBLE_CONSUMER_RECEIPT_VENDOR_PATH,
+        "sha256": sha256(crucible_receipt_bytes),
+    }
     generated[CONTRACT_RECEIPT_PATH] = json_bytes(
         {
             "receipt_schema_version": 1,
@@ -462,7 +529,7 @@ def build_v1_contract_assets() -> dict[str, bytes]:
                 },
                 "crucible_rust": {
                     "repository": "tesseract-trading/crucible-rust",
-                    "receipt": None,
+                    "receipt": crucible_receipt_pin,
                 },
             },
             "policy_boundary": {
@@ -476,8 +543,7 @@ def build_v1_contract_assets() -> dict[str, bytes]:
             "production_ready": False,
             "open_blockers": [
                 "Philosophers Stone canonical V1 consumer receipt",
-                "Crucible Rust canonical V1 consumer receipt over this corrected asset index",
-                "final exact-byte relock after both consumer receipts",
+                "final exact-byte relock after the remaining PS consumer receipt",
             ],
         }
     )

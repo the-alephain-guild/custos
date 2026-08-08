@@ -346,6 +346,10 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
         "pre_import_golden": resolve(CANONICAL_PRE_IMPORT_GOLDEN_PATH),
         "pre_import_negative": resolve(CANONICAL_PRE_IMPORT_NEGATIVE_PATH),
         "receipt": resolve(STRATEGY_CONTRACT_RECEIPT_PATH),
+        "crucible_consumer_receipt": resolve(
+            "docs/authority/receipts/vendor/"
+            "crucible-custos-strategy-contract-v1-consumer-receipt.json"
+        ),
     }
     missing = [str(path) for path in required_paths.values() if not path.is_file()]
     if missing:
@@ -359,6 +363,9 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
             required_paths["pre_import_schema"].read_text(encoding="utf-8")
         )
         receipt = json.loads(required_paths["receipt"].read_text(encoding="utf-8"))
+        crucible_consumer_receipt = json.loads(
+            required_paths["crucible_consumer_receipt"].read_text(encoding="utf-8")
+        )
     except (OSError, json.JSONDecodeError) as exc:
         errors.append(f"canonical V1 strategy contract assets are unreadable: {exc}")
         return
@@ -486,8 +493,43 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
     receipt_consumers = receipt.get("consumers", {})
     if receipt_consumers.get("philosophers_stone", {}).get("receipt") is not None:
         errors.append("Custos receipt must not fabricate the pending PS consumer receipt")
-    if receipt_consumers.get("crucible_rust", {}).get("receipt") is not None:
-        errors.append("Custos receipt must not retain a stale Crucible consumer receipt")
+    crucible_receipt_pin = {
+        "repository": "tesseract-trading/crucible-rust",
+        "commit": "80383870b9f2f6be1edd0e4867ad8dd36605d2d6",
+        "path": (
+            "docs/authority/receipts/"
+            "crucible-custos-strategy-contract-v1-consumer-receipt.json"
+        ),
+        "vendored_path": (
+            "docs/authority/receipts/vendor/"
+            "crucible-custos-strategy-contract-v1-consumer-receipt.json"
+        ),
+        "sha256": hashlib.sha256(
+            required_paths["crucible_consumer_receipt"].read_bytes()
+        ).hexdigest(),
+    }
+    if receipt_consumers.get("crucible_rust", {}).get("receipt") != crucible_receipt_pin:
+        errors.append("Custos producer receipt does not pin the exact Crucible consumer receipt")
+    if (
+        set(crucible_consumer_receipt)
+        != {
+            "canonical_name",
+            "consumer",
+            "producer",
+            "production_ready",
+            "receipt_schema_version",
+            "runtime_ready",
+            "status",
+        }
+        or crucible_consumer_receipt.get("consumer") != "crucible-rust"
+        or crucible_consumer_receipt.get("producer", {}).get("commit")
+        != "d1847cd39802951fcafcdeec0061854655feee8b"
+        or crucible_consumer_receipt.get("status")
+        != "EXACT_CUSTOS_V1_CONTRACT_PINNED_PENDING_PRODUCER_HANDOFF"
+        or crucible_consumer_receipt.get("runtime_ready") is not False
+        or crucible_consumer_receipt.get("production_ready") is not False
+    ):
+        errors.append("vendored Crucible consumer receipt semantics differ")
 
 
 def verify_runner_command_consumer(errors: list[str]) -> None:

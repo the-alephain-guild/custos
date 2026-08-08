@@ -179,6 +179,10 @@
       "role": "strategy_contract_receipt_v1"
     },
     {
+      "path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-v1-consumer-receipt.json",
+      "role": "crucible_strategy_contract_consumer_receipt_v1"
+    },
+    {
       "role": "runner_policy_consumer_asset_index_v1",
       "path": "docs/authority/crucible-runner-safety-policy-consumer-assets-v1.json"
     },
@@ -390,6 +394,7 @@
       "Makefile",
       "docs/authority/crucible-runner-command-consumer-assets-v1.json",
       "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
+      "docs/authority/receipts/vendor/crucible-custos-strategy-contract-v1-consumer-receipt.json",
       "docs/authority/receipts/custos-toolkit-rc-authority-v1.json",
       "docs/authority/receipts/custos-toolkit-rc-authority-v1.json.sha256",
       "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",

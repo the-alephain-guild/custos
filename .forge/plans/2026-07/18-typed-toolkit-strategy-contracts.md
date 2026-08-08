@@ -655,9 +655,10 @@ Execution checkpoint (2026-07-21):
   Custos asset index and has been removed from the current authority tree.
   Crucible owner commits `a4972de`, `58145be`, `7942afc` and `5a531c2` publish
   the strict four-subject material, bind `uv.lock` to the BOM and refresh the
-  exact owner receipt. A new Crucible consumer receipt must now pin the
-  corrected Custos asset index; readiness remains false until that real
-  readback exists.
+  exact owner receipt. Crucible consumer commit `8038387` now pins Custos
+  contract commit `d1847cd` and its corrected asset index; the Custos producer
+  handoff binds that receipt while readiness remains false pending final
+  Crucible readback and PS acceptance.
 - Engine/runtime/production readiness remains false until the PS artifact and
   Crucible StrategyRelease receipts complete Tasks 7-9. Historical tags and
   receipts must not be overwritten or repointed.
@@ -742,7 +743,7 @@ git commit -m "docs(custos): mark plan 18 as completed"
 | Immutable toolkit RC | READY | RC5 protected publication and independent digest readback succeeded; no historical consumer receipt is accepted for the corrected V1 index |
 | Old contract/runtime generations | removed | old runtime module and command-owned evidence path are absent |
 | PS V1 handoff | pending final pins | PS source uses the sole V1 OCI topology |
-| Crucible V1 handoff | corrected Custos contract published; consumer receipt open | stale readback was removed; a new Crucible receipt must pin the corrected Custos index, while real PS publication and Plan 88 C6 native acceptance remain open |
+| Crucible V1 handoff | corrected consumer receipt pinned; final readback open | Crucible `8038387` consumes Custos `d1847cd`; the producer handoff now pins that receipt, while final Crucible readback, real PS publication and Plan 88 C6 native acceptance remain open |
 | Crucible Plan 89 runner resolution | local exact-byte gate pass | Runtime `34e0f13`, contract `a4972de` and owner receipt `5a531c2` bind one persisted DeploymentSpec-derived release with four ordered subjects and an exact BOM/ArtifactRef build-lock binding; immutable daemon materialization and deployed acceptance remain open |
 | Runtime activation | sandbox ready; production clone-local path ready | development-source runtime passes; Crucible `10b85e4` exposes complete production authority; Custos `4ad12b2` validates it and `d926ab0` composes immutable OCI acquisition, cache, trust policy and activation; real publication and launched receipts remain open |
 | Production/live | STOP | requires final exact-byte receipts and real runtime evidence |
@@ -858,7 +859,8 @@ and ArtifactRef subjects; complete producer claims, Sigstore proof and Crucible
 policy; exact BOM/member/ArtifactRef bindings; and a recomputed Crucible
 composite evidence digest. The obsolete Crucible receipt over the prior Custos
 asset index was deleted rather than retained as a runtime compatibility path.
-Both PS and Crucible consumer receipt pins remain `null` and fail closed until
-they independently consume this generated asset index. Sandbox-only
+The Crucible consumer receipt now pins this generated index; the PS receipt
+remains `null`, and the entire path stays fail closed until PS acceptance and
+the final Crucible readback exist. Sandbox-only
 `DevelopmentSourceRefV1` and local image publication remain supported and are
 not promotable production evidence.
