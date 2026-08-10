@@ -52,8 +52,8 @@ def test_stable_tag_and_manual_production_sources_are_explicit() -> None:
     text = _read()
     assert "v[0-9]+.[0-9]+.[0-9]+" in text
     assert "release_id:" in text
-    assert 'required: true' in text
-    assert 'manual production publication must use main' in text
+    assert "required: true" in text
+    assert "manual production publication must use main" in text
     assert "- 'v*'" not in text and '- "v*"' not in text
 
 
@@ -63,14 +63,16 @@ def test_every_action_is_commit_pinned() -> None:
     assert all(re.search(r"@[0-9a-f]{40}$", value) for value in uses)
 
 
-def test_wheels_are_verified_signed_and_built_before_image_publication() -> None:
+def test_runtime_is_fully_tested_before_wheels_and_image_publication() -> None:
     text = _read()
-    base = text.index("make verify-base-clean")
-    nautilus = text.index("make verify-nt")
+    install = text.index("--package custos-runner --extra dev --extra nautilus")
+    runtime_lock = text.index("make check-runtime-lock", install)
+    all_tests = text.index("uv run --extra nautilus pytest tests/", runtime_lock)
+    authority = text.index("scripts/check-authority-docs.py", all_tests)
     wheel = text.index("make dist")
     wheel_signature = text.index(".github/workflows/scripts/sign-wheel.sh")
     image = text.index("docker/build-push-action@")
-    assert base < nautilus < wheel < wheel_signature < image
+    assert install < runtime_lock < all_tests < authority < wheel < wheel_signature < image
 
 
 def test_source_date_epoch_is_integer_git_seconds() -> None:

@@ -69,11 +69,36 @@ jobs:
           test -n "$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Verify clean base then Nautilus runtime contracts
+      - name: Verify the complete production runtime contract
         run: |
-          make verify-base-clean
-          make install-nt
-          make verify-nt
+          uv sync --python "${PYTHON_VERSION}" \
+            --package custos-runner --extra dev --extra nautilus
+          make check-runtime-lock
+          uv run --package custos-runner ruff format --check \
+            src/custos/cli/subcommands/enroll.py \
+            src/custos/cli/subcommands/start.py \
+            tests/test_cli_enroll.py \
+            tests/test_cli_start.py \
+            tests/test_release_workflow_shape.py
+          uv run --package custos-runner ruff check src/ tests/ scripts/ packages/
+          uv run --extra nautilus python -c \
+            "import nautilus_trader; assert nautilus_trader.__version__"
+          uv run --extra nautilus pytest tests/
+          uv run python scripts/generate_strategy_contract_assets.py --check
+          uv run python scripts/check-toolkit-extraction.py
+          uv run --package custos-runner --extra dev --extra nautilus \
+            python scripts/check-toolkit-typing-closure.py
+          uv run python scripts/generate_runner_machine_request_consumer_assets.py --check
+          /usr/bin/python3 scripts/check-authority-docs.py
+          uv run --package custos-runner --extra dev mypy \
+            --config-file packages/custos-strategy-toolkit/pyproject.toml \
+            packages/custos-strategy-toolkit/src/custos_toolkit
+          uv run --package custos-runner --extra dev --extra nautilus mypy \
+            --config-file packages/custos-strategy-toolkit-nautilus/pyproject.toml \
+            packages/custos-strategy-toolkit-nautilus/src/custos_toolkit_nautilus
+          uv run mypy \
+            src/custos/cli/subcommands/enroll.py \
+            src/custos/cli/subcommands/start.py
 
       - name: Build reproducible wheel inputs
         shell: bash
@@ -87,7 +112,7 @@ jobs:
 
       - name: Sign every wheel with Sigstore keyless
         run: |
-          uv sync --extra dev --extra lts
+          uv sync --extra dev --extra lts --extra nautilus
           uv run bash .github/workflows/scripts/sign-wheel.sh
           uv run pytest tests/test_wheel_signature.py -v -m ci_only
 
