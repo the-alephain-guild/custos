@@ -14,7 +14,7 @@ from custos.core.local_cap import (
     LocalCapConfig,
     RunnerSafetyPolicyUnavailableError,
 )
-from custos.core.runner_fact import RunnerStateStore
+from custos.core.runner_fact import RunnerStateAuthorityError, RunnerStateStore
 
 
 def _utc_now_datetime() -> datetime:
@@ -67,10 +67,15 @@ class DurableRunnerSafetyPolicyResolver:
     now: Callable[[], datetime] = _utc_now_datetime
 
     async def resolve(self, trading_mode: str) -> RunnerSafetyLimits:
-        durable = await self.store.load_effective_runner_safety_policy(
-            trading_mode,
-            now=self.now(),
-        )
+        try:
+            durable = await self.store.load_effective_runner_safety_policy(
+                trading_mode,
+                now=self.now(),
+            )
+        except RunnerStateAuthorityError as exc:
+            raise RunnerSafetyPolicyUnavailableError(
+                "verified runner safety policy is unavailable"
+            ) from exc
         return RunnerSafetyLimits.from_verified_policy(durable.policy)
 
 

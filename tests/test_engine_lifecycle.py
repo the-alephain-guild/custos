@@ -15,6 +15,7 @@ from custos.core.engine_lifecycle import (
     EngineLifecycleSupervisor,
 )
 from custos.core.engine_protocol import (
+    EngineDependencyUnavailable,
     EngineLifecycleAuthority,
     EngineReadinessChecks,
     EngineReadyReceipt,
@@ -231,6 +232,10 @@ def _supervisor(
     )
 
 
+def test_default_readiness_budget_outlives_the_engine_connection_deadline() -> None:
+    assert EngineLifecycleConfig().readiness_timeout_secs > 60.0
+
+
 @pytest.mark.asyncio
 async def test_ready_is_typed_and_committed_after_engine_readiness() -> None:
     verified = _verified()
@@ -332,6 +337,34 @@ async def test_readiness_timeout_exhausts_durable_budget_and_quarantines() -> No
     assert engine.stop_calls == 3
     assert store.state.restart_count == 2
     assert store.terminal == [("retry_exhausted", "engine_ready_timeout")]
+
+
+@pytest.mark.asyncio
+async def test_missing_runtime_authority_does_not_consume_engine_restart_budget() -> None:
+    verified = _verified()
+    store = _Store()
+    engine = _Engine([_ready(verified)])
+
+    async def dependency_blocked(spec: dict, credential: dict, artifact: object) -> str:
+        engine.deploy_calls += 1
+        engine.events.append("deploy")
+        raise EngineDependencyUnavailable("runner safety policy is not available yet")
+
+    engine.deploy = dependency_blocked  # type: ignore[method-assign]
+
+    with pytest.raises(EngineLifecycleBlocked, match="runner safety policy"):
+        await _supervisor(store, engine).apply(
+            delivery_id="delivery-policy-pending",
+            verified=verified,
+            runtime_spec={"trading_mode": "sandbox", "connector": "binance"},
+            credential={},
+            artifact=_Artifact(),
+        )
+
+    assert engine.deploy_calls == 1
+    assert engine.events == ["deploy"]
+    assert store.state.restart_count == 0
+    assert store.terminal == []
 
 
 @pytest.mark.asyncio

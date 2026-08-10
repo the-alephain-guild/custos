@@ -35,6 +35,10 @@ from custos.core.runner_safety_policy import (
     DurableRunnerSafetyPolicyResolver,
     RunnerSafetyPolicyUnavailableError,
 )
+from custos.core.runner_safety_policy_authority import (
+    RunnerSafetyPolicyAuthorityRejectedError,
+    parse_runner_safety_policy_resolution,
+)
 
 RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
 TENANT_ID = "acme"
@@ -212,6 +216,58 @@ def _prior(verified: VerifiedRunnerSafetyPolicy) -> RunnerAggregateCapPolicyRefV
         revision=policy.revision,
         policy_digest=policy.policy_digest,
     )
+
+
+def _policy_resolution(verified: VerifiedRunnerSafetyPolicy) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "tenant_id": TENANT_ID,
+        "runner_id": str(RUNNER_ID),
+        "trading_mode": verified.policy.trading_mode,
+        "exact_subject": verified.exact_subject,
+        "signed_envelope_base64url": _b64url(verified.exact_signed_envelope_bytes),
+    }
+
+
+def test_machine_policy_snapshot_preserves_exact_signed_nats_event() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    expected = _verified_policy(private_key)
+    actual = parse_runner_safety_policy_resolution(
+        _policy_resolution(expected),
+        authenticator=_policy_authenticator(private_key),
+        expected_tenant_id=TENANT_ID,
+        expected_runner_id=RUNNER_ID,
+        expected_trading_mode="sandbox",
+    )
+    assert actual.exact_subject == expected.exact_subject
+    assert actual.exact_event_bytes == expected.exact_event_bytes
+    assert actual.exact_signed_envelope_bytes == expected.exact_signed_envelope_bytes
+
+
+def test_machine_policy_snapshot_rejects_scope_or_envelope_drift() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    expected = _verified_policy(private_key)
+    wrong_scope = _policy_resolution(expected)
+    wrong_scope["runner_id"] = str(UUID("10000000-0000-4000-8000-000000000099"))
+    with pytest.raises(RunnerSafetyPolicyAuthorityRejectedError, match="scope"):
+        parse_runner_safety_policy_resolution(
+            wrong_scope,
+            authenticator=_policy_authenticator(private_key),
+            expected_tenant_id=TENANT_ID,
+            expected_runner_id=RUNNER_ID,
+            expected_trading_mode="sandbox",
+        )
+
+    invalid_envelope = _policy_resolution(expected)
+    invalid_envelope["signed_envelope_base64url"] = "not+base64url"
+    with pytest.raises(RunnerSafetyPolicyAuthorityRejectedError, match="base64url"):
+        parse_runner_safety_policy_resolution(
+            invalid_envelope,
+            authenticator=_policy_authenticator(private_key),
+            expected_tenant_id=TENANT_ID,
+            expected_runner_id=RUNNER_ID,
+            expected_trading_mode="sandbox",
+        )
 
 
 @pytest.mark.asyncio
@@ -472,5 +528,5 @@ async def test_durable_resolver_uses_valid_owner_policy_for_live_and_fails_close
 
     assert limits.policy_id == verified.policy.policy_id
     assert limits.owner_policy is True
-    with pytest.raises(RunnerStateAuthorityError, match="missing"):
+    with pytest.raises(RunnerSafetyPolicyUnavailableError, match="unavailable"):
         await resolver.resolve("testnet")

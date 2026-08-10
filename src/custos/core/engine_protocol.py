@@ -22,6 +22,15 @@ from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
+
+class EngineDependencyUnavailable(RuntimeError):
+    """A required runtime authority is not available yet.
+
+    The command remains valid and must be retried after the dependency arrives;
+    this is not an engine crash and must not consume the restart budget.
+    """
+
+
 # Runtime invariant: every Decimal-declared money field on the snapshot
 # dataclasses must be a real ``Decimal`` — a float slipping through breaks
 # money math (red line 0.4). Non-money fields (identifier strings, phase

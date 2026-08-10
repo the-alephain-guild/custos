@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -263,19 +264,22 @@ class GuardedLiveExecutionClient(LiveExecutionClient):
             timestamp_ns=clock.timestamp_ns,
         )
 
-    @property
-    def account_id(self):
-        return self._inner.account_id
-
-    @property
-    def is_connected(self) -> bool:
-        return bool(self._inner.is_connected)
-
-    def connect(self) -> None:
+    async def _connect(self) -> None:
+        # LiveExecutionClient.is_connected/account_id are Cython data
+        # descriptors.  A Python property with the same name cannot proxy them;
+        # the execution engine would therefore observe this facade as
+        # disconnected even after the inner client connected.  Let the base
+        # connect() lifecycle set this facade's own descriptor after this hook
+        # has observed the authoritative inner state.
         self._inner.connect()
+        while not self._inner.is_connected or self._inner.account_id is None:
+            await asyncio.sleep(0.01)
+        self._set_account_id(self._inner.account_id)
 
-    def disconnect(self) -> None:
+    async def _disconnect(self) -> None:
         self._inner.disconnect()
+        while self._inner.is_connected:
+            await asyncio.sleep(0.01)
 
     def submit_order(self, command: Any) -> None:
         self._dispatch.submit_order(command)

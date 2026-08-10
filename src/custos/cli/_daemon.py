@@ -54,7 +54,7 @@ from custos.contracts.crucible_runner_safety_policy import (
 )
 from custos.core.credential_resolver import VaultRunnerCredentialResolverV1
 from custos.core.engine_lifecycle import EngineLifecycleConfig, EngineLifecycleSupervisor
-from custos.core.engine_protocol import ExecutionEngineProtocol
+from custos.core.engine_protocol import EngineDependencyUnavailable, ExecutionEngineProtocol
 from custos.core.fallback_breaker import FallbackBreaker
 from custos.core.machine_credential_vault import (
     MachineCredentialError,
@@ -98,7 +98,9 @@ from custos.core.runner_material_authority import RunnerMaterialAuthorityClient
 from custos.core.runner_safety_policy import (
     DurableRunnerSafetyPolicyResolver,
     RunnerSafetyPolicyResolver,
+    RunnerSafetyPolicyUnavailableError,
 )
+from custos.core.runner_safety_policy_authority import RunnerSafetyPolicyAuthorityClient
 from custos.core.runner_toml import RunnerToml
 from custos.engines.nautilus.runtime_loader import NautilusRuntimeEntryPointLoaderV1
 
@@ -398,9 +400,16 @@ def _build_runner_safety_boundary_factory(
     safety_policy_resolver: RunnerSafetyPolicyResolver,
 ):
     async def build(spec: dict):
-        limits = await safety_policy_resolver.resolve(str(spec["trading_mode"]))
+        try:
+            limits = await safety_policy_resolver.resolve(str(spec["trading_mode"]))
+        except RunnerSafetyPolicyUnavailableError as exc:
+            raise EngineDependencyUnavailable(
+                "verified runner safety policy is not available yet"
+            ) from exc
         if not limits.owner_policy or limits.policy_id is None:
-            raise RuntimeError("runner safety execution requires a durable verified owner policy")
+            raise EngineDependencyUnavailable(
+                "runner safety execution requires a durable verified owner policy"
+            )
 
         return RunnerReservationBoundary(
             store=state_store,
@@ -410,6 +419,26 @@ def _build_runner_safety_boundary_factory(
         )
 
     return build
+
+
+async def _synchronize_runner_safety_policies(
+    *,
+    authority: RunnerSafetyPolicyAuthorityClient,
+    state_store: RunnerStateStore,
+    trading_modes: list[str],
+) -> None:
+    for trading_mode in trading_modes:
+        verified = await authority.resolve_current(trading_mode)
+        decision = await state_store.record_verified_runner_safety_policy(verified)
+        log.info(
+            "runner_safety_policy_bootstrapped",
+            extra={
+                "trading_mode": trading_mode,
+                "policy_id": str(verified.policy.policy_id),
+                "revision": verified.policy.revision,
+                "identity_decision": decision.decision.value,
+            },
+        )
 
 
 async def _supervise_long_running_tasks(tasks: list[asyncio.Task], stop: asyncio.Event) -> None:
@@ -808,6 +837,21 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 runner_id=runner_id,
                 authority_resolver=lambda verified: _runner_fact_authority(capability, verified),
             )
+            policy_authenticator = CrucibleRunnerSafetyPolicyAuthenticator(
+                expected_tenant_id=args.tenant_id,
+                expected_runner_id=runner_id,
+                allowed_trading_modes=frozenset(args.enabled_modes),
+                signature_keys=signature_keys,
+            )
+            await _synchronize_runner_safety_policies(
+                authority=RunnerSafetyPolicyAuthorityClient(
+                    metadata.backend_url,
+                    machine_credential,
+                    policy_authenticator,
+                ),
+                state_store=state_store,
+                trading_modes=list(args.enabled_modes),
+            )
             intake = CommandIntakeCoordinator(
                 authenticator=command_authenticator,
                 durability=state_store,
@@ -891,12 +935,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
             )
             control_consumer = RunnerControlConsumerV1(
                 command_runtime=command_runtime,
-                policy_authenticator=CrucibleRunnerSafetyPolicyAuthenticator(
-                    expected_tenant_id=args.tenant_id,
-                    expected_runner_id=runner_id,
-                    allowed_trading_modes=frozenset(args.enabled_modes),
-                    signature_keys=signature_keys,
-                ),
+                policy_authenticator=policy_authenticator,
                 state_store=state_store,
             )
             subscriptions = {

@@ -11,13 +11,19 @@ from typing import Any, Literal, Protocol
 from custos.artifacts.runtime import ArtifactRuntimeCapabilityV1
 from custos.core.engine_protocol import (
     ActivatedEngineArtifactV1,
+    EngineDependencyUnavailable,
     EngineLifecycleAuthority,
     EngineReadyReceipt,
     EngineTerminalEvent,
     ExecutionEngineProtocol,
 )
+from custos.core.log import get_logger
 from custos.core.runner_command_intake import VerifiedRunnerCommand
 from custos.core.runner_fact import CommandOutcomeCommitResult, EngineLifecycleDurableState
+from custos.core.runtime_log_fact import RuntimeLogFactError, RuntimeLogRedactor
+
+
+log = get_logger("custos.engine-lifecycle")
 
 
 class EngineLifecycleError(RuntimeError):
@@ -34,7 +40,10 @@ class EngineLifecycleQuarantined(EngineLifecycleError):
 
 @dataclass(frozen=True, slots=True)
 class EngineLifecycleConfig:
-    readiness_timeout_secs: float = 30.0
+    # Nautilus owns a 60 second connection deadline by default.  Custos must
+    # observe the engine's typed ready/failed result rather than cancel its
+    # startup first and misclassify an in-progress connection as a restart.
+    readiness_timeout_secs: float = 90.0
     restart_budget: int = 3
     restart_backoff_initial_secs: float = 1.0
     restart_backoff_max_secs: float = 30.0
@@ -291,7 +300,25 @@ class EngineLifecycleSupervisor:
                 handle = await self._engine.deploy(runtime_spec, credential, artifact)
                 receipt = await self._await_ready(authority)
                 self._require_ready_identity(receipt, authority)
+            except EngineDependencyUnavailable as exc:
+                raise EngineLifecycleBlocked(str(exc)) from exc
             except Exception as exc:  # noqa: BLE001 - typed terminal mapping below
+                try:
+                    error = RuntimeLogRedactor(
+                        (
+                            credential.get("api_key", ""),
+                            credential.get("api_secret", ""),
+                        )
+                    ).message(str(exc) or type(exc).__name__)
+                except RuntimeLogFactError:
+                    error = "<redacted: invalid runtime error message>"
+                log.warning(
+                    "engine_start_attempt_failed",
+                    deployment_instance_id=str(authority.deployment_instance_id),
+                    error_type=type(exc).__name__,
+                    error=error,
+                    restart_count=restart_count,
+                )
                 if handle is not None:
                     await self._engine.stop(str(authority.deployment_instance_id))
                 reason_code = (

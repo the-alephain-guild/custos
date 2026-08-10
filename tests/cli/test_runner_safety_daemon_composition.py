@@ -16,8 +16,11 @@ from custos.artifacts.release_resolver import (
 from custos.cli._daemon import (
     _build_runner_safety_boundary_factory,
     _build_strategy_release_runtime,
+    _synchronize_runner_safety_policies,
 )
 from custos.core.fallback_breaker import FallbackBreakerConfig
+from custos.core.engine_protocol import EngineDependencyUnavailable
+from custos.core.runner_fact import RunnerPolicyCommitResult, RunnerPolicyIdentityDecision
 
 POLICY_ID = UUID("22222222-2222-4222-8222-222222222222")
 DEPLOYMENT_INSTANCE_ID = UUID("11111111-1111-4111-8111-111111111111")
@@ -39,6 +42,39 @@ class _Resolver:
                 max_drawdown_pct=Decimal("10"),
             ),
         )
+
+
+@pytest.mark.asyncio
+async def test_policy_bootstrap_records_each_mode_and_uses_commit_decision() -> None:
+    verified = SimpleNamespace(
+        policy=SimpleNamespace(policy_id=POLICY_ID, revision=1),
+    )
+
+    class Authority:
+        async def resolve_current(self, trading_mode: str):
+            assert trading_mode == "sandbox"
+            return verified
+
+    class Store:
+        def __init__(self) -> None:
+            self.recorded: list[object] = []
+
+        async def record_verified_runner_safety_policy(self, value: object):
+            self.recorded.append(value)
+            return RunnerPolicyCommitResult(
+                decision=RunnerPolicyIdentityDecision.NEWER,
+                committed=True,
+                policy_id=POLICY_ID,
+                policy_digest="a" * 64,
+            )
+
+    store = Store()
+    await _synchronize_runner_safety_policies(
+        authority=Authority(),
+        state_store=store,
+        trading_modes=["sandbox"],
+    )
+    assert store.recorded == [verified]
 
 
 @pytest.mark.asyncio
@@ -71,7 +107,7 @@ async def test_boundary_factory_fails_closed_without_owner_policy() -> None:
         safety_policy_resolver=_Resolver(policy_id=None, owner_policy=False),
     )
 
-    with pytest.raises(RuntimeError, match="verified owner policy"):
+    with pytest.raises(EngineDependencyUnavailable, match="verified owner policy"):
         await factory(
             {
                 "deployment_instance_id": str(DEPLOYMENT_INSTANCE_ID),

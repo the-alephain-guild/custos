@@ -1,8 +1,8 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T9 local evidence, Crucible acceptance of the published PS candidate, the signed multi-platform Custos candidate and native current-head full loop pass; downstream owner receipts, unchanged promotion, deployed acceptance and T10 remain open
+> **Status**: ⏳ In progress — T2-T9 local evidence, the exact PS development artifact through real Nautilus/Custos/Crucible/ARX browser acceptance, Crucible acceptance of the published PS candidate, and the signed multi-platform Custos candidate pass; downstream owner receipts, unchanged promotion, deployed acceptance and T10 remain open
 > **Created**: 2026-07-14
-> **Revised**: 2026-08-10 through native StrategyRelease acceptance and clean-head local v1.team acceptance
+> **Revised**: 2026-08-10 through exact development-artifact engine execution and zero-mock local browser acceptance
 > **Project**: Custos
 > **Source**: Audit of pre-plan migration `324da6e`, PS Plan 53, and v1.team review
 > **For Claude**: Use `/forge:execute` to implement this plan.
@@ -11,6 +11,26 @@
 > **Runtime RC gates**: Crucible Plan 89 migration 0116 signed command producer and `CR89-0116-GENERATION-STORAGE`; Crucible Plan 90 Phase-A schema/golden compatibility receipt; Crucible Plan 99 runner-safety-policy-authority; Crucible Plan 100 runner NATS transport authority and revocation receipts; Custos Plan 18 staged candidate and exact final required by the selected RC/final-candidate BOM
 > **Close-out gates**: Crucible Plan 90 Phase-B real runtime round-trip receipt; PS Plan 56 exact final-candidate acceptance
 > **Original plan-first**: `3ce4048`; this live-plan revision supersedes its erroneous decisions
+
+## 2026-08-10 exact local strategy runtime receipt
+
+The public ARX command `make v1-team-strategy-sandbox-accept` passed with a real
+Custos daemon and the PS SuperTrend development artifact. Custos resolved the
+current signed runner policy from Crucible with its machine credential before
+binding the command durable, loaded `BTCUSDT-PERP.BINANCE`, started two sandbox
+Nautilus instances with local simulated execution, committed lifecycle state
+before command ACK and published distinct signed heartbeat facts before
+PubAck. Crucible projected both exact instance streams to healthy/online state,
+and the ARX Chromium journey passed without mocks.
+
+The acceptance exposed and fixed two runtime defects in the sole V1 rather
+than adding a compatibility lane: the outer readiness budget now outlives
+Nautilus's default connection deadline, and the safety facade implements
+Nautilus's native `_connect/_disconnect` hooks instead of attempting to shadow
+Cython connection descriptors. Focused lifecycle, policy, daemon and adapter
+tests pass `28/28`. The accepted development source and browser receipt are
+non-promotable; crash recovery, immutable final image/artifact relock and
+deployed testnet/live remain release gates.
 
 ## 上下文 (Context)
 
@@ -1127,11 +1147,11 @@ git commit -m "docs(custos): mark plan 19 as completed"
 |---|---|---|
 | Signed command V1 consumer | development runtime focused verified | consumes real DeploymentSpec domain events; exact-event fingerprint, direct Crucible material resolution, contract assets and authority gate pass |
 | RunnerFact SQLite V1 deep module | focused verified | one store, one outbox, one instance-continuous sequence and an atomic durable PubAck publication receipt; Custos `ad7728e` plus real JetStream gate `aeca1fe` pass |
-| Engine lifecycle | local immutable activation and attested runtime image verified; deployed candidate blocked | The production daemon consumes a real PG-backed StrategyRelease, verifies exact artifact ref/BOM/statement/evidence/snapshot bytes, materializes immutable bytes and applies two sandbox instances. PS published the exact unique-V1 RC2; Crucible acceptance and deployed promotion remain open. |
-| Runner policy V1 | same-event local production issuance and daemon consumption verified; deployed issuance blocked | Crucible `1c7adea` runs the real owner HTTP, sandbox PG repository/outbox/worker and narrow SIM publisher while Custos `c4a9f2d` production daemon consumes the same signed policy before command ACK and RunnerFact PubAck. Deployed testnet/live `0117`, invalid/expired deployed-policy evidence and runtime readiness remain pending. |
+| Engine lifecycle | exact local development execution plus immutable activation and attested runtime image verified; deployed candidate blocked | The real daemon now starts two PS SuperTrend sandbox Nautilus instances against Binance perpetual data and local simulated execution, commits both lifecycle outcomes and exposes healthy projections. Immutable StrategyRelease candidate acceptance and deployed promotion remain separate gates. |
+| Runner policy V1 | exact machine-bootstrap plus same-event NATS consumption verified; deployed issuance blocked | Custos resolves Crucible's original signed outbox envelope through machine authentication before command recovery, then accepts the same revision idempotently from the shared control durable. Policy precedes command ACK and RunnerFact PubAck; deployed testnet/live, expiry/revocation and restart evidence remain pending. |
 | Machine credential and NATS vault V1 | service-issued credential reaches the full daemon and survives encrypted-vault restart plus generation rotation | Crucible `3e5f695` launches production signer/provisioner/server and Custos `a449b22` production daemon in one pinned-CA TLS full-resolver event. Custos atomically persists 0600 sops+age machine and sandbox transport vaults, deletes the plaintext bootstrap, restarts from exact bytes, then uses the production rotation path to persist pending generation 2 before network, require Crucible's revocation receipt, deny generation 1 reconnect, atomically promote the new authority and start a third daemon from it. Deployed control `0029` and testnet/live receipts remain pending. |
 | RunnerFact V1 | Phase A plus local full-daemon and full-stack acceptance complete; deployed close-out open | Custos `56cd64a`, Crucible `dda4e77` and ARX `09342f4` prove direct signed command consumption, commit-before-ACK, durable PubAck, 14 signed facts and exact PostgreSQL projections across the complete local harness. Coordinated deployed receipts remain required. |
-| Local sandbox runtime | full real-service acceptance passed | Fresh CONTROL/LIVE/SIM PostgreSQL, JetStream, two instances, direct Custos execution, tenant isolation, economic, observability, operations, audit, settlement and Chromium acceptance pass under immutable close-out receipt `ecbc393dada1721e490586fd959650a9a08759de9a09c11a485f18d3a53f45b0`. |
+| Local sandbox runtime | full real-service and exact PS strategy browser acceptance passed | Fresh CONTROL/LIVE/SIM PostgreSQL, JetStream, exact PS development bytes, two real Nautilus instances, direct signed command/fact paths and Chromium ARX views pass. The earlier broad close-out remains `ecbc393dada1721e490586fd959650a9a08759de9a09c11a485f18d3a53f45b0`; exact strategy run `72f18ee7-e98a-4a95-b88c-2349ab91d070` is non-promotable. |
 | Production/live | STOP | The Custos image and PS artifact are externally published, while Crucible PS-artifact acceptance, the coordinated eight-image lock, deployed database/transport receipts, PS56 acceptance and two-person production approval remain open |
 
 The machine-readable boundary is pinned by
