@@ -1,6 +1,6 @@
 # 18 - Publish typed toolkit and strategy execution contracts
 
-> **Status**: ⏳ In progress — sole V1 contract, RC5 toolkit, PS unique-V1 OCI publication, Crucible StrategyRelease acceptance, clean-head local production-daemon full loop and the attested Custos runtime candidate are verified; coordinated unchanged promotion and deployed testnet/live acceptance remain open
+> **Status**: ⏳ In progress — sole V1 contract, RC5 toolkit, PS unique-V1 OCI publication, Crucible StrategyRelease acceptance, the signed multi-platform Custos candidate and native current-head local full loop are verified; downstream owner receipts, unchanged promotion and deployed testnet/live acceptance remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-08-10 for Crucible artifact acceptance and clean-head local v1.team acceptance evidence
 > **Project**: Custos
@@ -915,16 +915,28 @@ status `LOCAL_DEMO_ACCEPTED_PRODUCTION_GATES_OPEN`. It is strong local execution
 evidence, not a substitute for Crucible's PS-artifact acceptance, unchanged
 promotion or deployed production receipts; Tasks 7-9 therefore remain open.
 
-## 2026-08-10 current Custos runtime candidate publication
+## 2026-08-10 current multi-platform Custos runtime candidate
 
-Custos main-branch Release run `31361924833` published source
-`b25a5f53e676677b234e98a72ccb36d43d83d0d5` as
-`ghcr.io/the-alephain-guild/custos@sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690`.
-The workflow passed the complete production contract, signed all three wheels,
-gated the exact `linux/amd64` image digest, signed it keylessly, then completed
-an independent registry/signature/runtime readback. Owner receipt SHA-256 is
-`aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead`.
+Custos main-branch Release run `31369543826` published source
+`4afffb96b1a768fb34f66692d4bb7f96652aeccf` as the signed multi-platform index
+`ghcr.io/the-alephain-guild/custos@sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753`.
+The index contains exactly `linux/amd64` and `linux/arm64`. The workflow passed
+the complete production contract, signed all three wheels, gated both platform
+surfaces, signed the index keylessly, then completed an independent
+registry/signature/runtime readback. Owner receipt SHA-256 is
+`b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194`.
 
-This closes current Custos candidate publication only. Runtime, live and
-production readiness remain false until the coordinated owner digest lock,
-unchanged promotion, deployed receipts and PS Plan 56 acceptance complete.
+ARX `734f35c5223b79c10a8cb099fcd1b689a15f9ae7`, Crucible
+`49c25e9a42e888820f651c5c91490ab89f425d8c` and Custos authority
+`4d35fd99bbf5d8977a625a3abeadbdb600e0c604` then ran the native `linux/arm64`
+manifest through real Docker PostgreSQL, ARX HTTP, the full Custos command/fact
+path and zero-mock Chromium. Close-out SHA-256
+`bc0d503020b000203f468c780323dbd872f027a932c65cd78019a99ed372154f`
+reports `LOCAL_DEMO_ACCEPTED_PRODUCTION_GATES_OPEN` and remains
+`promotable=false`.
+
+Promotion commit `f25c1e9` locks the read-only promotion workflow to this exact
+digest and receipt and rejects the retired single-platform pin. Runtime, live
+and production readiness remain false until Crucible deployed Phase-B and PS
+Plan 56 owner receipts, unchanged-digest promotion and deployed acceptance
+complete.

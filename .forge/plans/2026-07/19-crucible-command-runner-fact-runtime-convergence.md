@@ -1,6 +1,6 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T9 local evidence, Crucible acceptance of the published PS candidate, the clean-head full loop and the attested Custos runtime candidate pass; coordinated digest lock, deployed acceptance and T10 remain open
+> **Status**: ⏳ In progress — T2-T9 local evidence, Crucible acceptance of the published PS candidate, the signed multi-platform Custos candidate and native current-head full loop pass; downstream owner receipts, unchanged promotion, deployed acceptance and T10 remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-08-10 through native StrategyRelease acceptance and clean-head local v1.team acceptance
 > **Project**: Custos
@@ -1579,3 +1579,24 @@ Phase-B and PS Plan 56 publish their real owner receipts at the authority paths
 recorded in `docs/authority/ecosystem-authority.json`; its eventual receipt
 marks only the artifact runtime ready and does not self-claim whole-system
 production readiness.
+
+## 2026-08-10 native multi-platform candidate checkpoint
+
+Release run `31369543826` and owner receipt SHA-256
+`b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194`
+bind the exact `linux/amd64` plus `linux/arm64` index
+`sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753`.
+The independent release job pulled and reverified both platform surfaces.
+
+The coordinated local command `make v1-team-full-candidate-accept` then selected
+the native `linux/arm64` manifest and passed vault encryption/decryption, two
+deployment instances, tenant isolation, fourteen signed facts, economics,
+risk, reconciliation, operations, audit, settlement and real Chromium. Its
+immutable close-out is
+`bc0d503020b000203f468c780323dbd872f027a932c65cd78019a99ed372154f`.
+This proves local candidate execution only and is explicitly non-promotable.
+
+Promotion workflow commit `f25c1e9` now rejects the retired single-platform
+digest and receipt pin. T10 remains fail-closed on the real Crucible deployed
+Phase-B and PS Plan 56 owner receipts, the unchanged-digest promotion receipt
+and deployed testnet/live evidence.
