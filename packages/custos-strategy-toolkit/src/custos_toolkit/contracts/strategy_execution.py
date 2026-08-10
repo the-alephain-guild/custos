@@ -342,9 +342,7 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
             if self.release_bom.get(name) != expected:
                 raise ValueError(f"producer BOM {name} differs from ArtifactRefV1")
 
-        build_inputs = {
-            item.name: item.sha256 for item in self.artifact_ref.build_inputs
-        }
+        build_inputs = {item.name: item.sha256 for item in self.artifact_ref.build_inputs}
         if build_inputs.get("uv.lock") != self.release_bom.get("build_lock_sha256"):
             raise ValueError("producer BOM build_lock_sha256 differs from ArtifactRefV1")
 
@@ -354,15 +352,19 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
         member_fields = {"coordinate", "media_type", "name", "role", "sha256", "size_bytes"}
         members_by_role: dict[str, list[Mapping[str, object]]] = {}
         member_names: set[str] = set()
-        for member in members:
-            if not isinstance(member, Mapping) or set(member) != member_fields:
+        for bom_member in members:
+            if not isinstance(bom_member, Mapping) or set(bom_member) != member_fields:
                 raise ValueError("producer BOM member shape is not exact V1")
-            role = member.get("role")
-            name = member.get("name")
-            if not isinstance(role, str) or not isinstance(name, str) or name in member_names:
+            role = bom_member.get("role")
+            member_name = bom_member.get("name")
+            if (
+                not isinstance(role, str)
+                or not isinstance(member_name, str)
+                or member_name in member_names
+            ):
                 raise ValueError("producer BOM member identity is invalid or duplicated")
-            member_names.add(name)
-            members_by_role.setdefault(role, []).append(member)
+            member_names.add(member_name)
+            members_by_role.setdefault(role, []).append(bom_member)
         singleton_roles = {
             "base_contracts_wheel",
             "contract_schema",
@@ -381,7 +383,7 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
         if any(len(members_by_role[role]) != 1 for role in singleton_roles):
             raise ValueError("producer BOM singleton member role is duplicated")
 
-        def member(role: str) -> Mapping[str, object]:
+        def member_for_role(role: str) -> Mapping[str, object]:
             return members_by_role[role][0]
 
         member_bindings = {
@@ -403,7 +405,7 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
             "toolkit_sbom": (self.release_bom.get("toolkit_sbom_sha256"), None),
         }
         for role, (digest, size) in member_bindings.items():
-            bom_member = member(role)
+            bom_member = member_for_role(role)
             if bom_member.get("sha256") != digest:
                 raise ValueError(f"producer BOM {role} digest differs")
             if size is not None and bom_member.get("size_bytes") != size:
@@ -440,7 +442,10 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
         expected_subjects = [
             {"name": "strategy-release-bom-v1", "digest": {"sha256": self.release_bom_digest}},
             {"name": "strategy-artifact", "digest": {"sha256": self.artifact_ref.artifact_sha256}},
-            {"name": "strategy-manifest-v1", "digest": {"sha256": self.artifact_ref.manifest_sha256}},
+            {
+                "name": "strategy-manifest-v1",
+                "digest": {"sha256": self.artifact_ref.manifest_sha256},
+            },
             {"name": "strategy-artifact-ref-v1", "digest": {"sha256": self.artifact_ref_digest}},
         ]
         if statement_subjects != expected_subjects:
@@ -540,9 +545,7 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
             "toolkit_wheel_sha256": predicate.get("toolkit_wheel_sha256"),
             "toolkit_sbom_sha256": predicate.get("toolkit_sbom_sha256"),
             "build_lock_sha256": predicate.get("build_lock_sha256"),
-            "zero_rewrite_semantic_diff_sha256": predicate.get(
-                "zero_rewrite_semantic_diff_sha256"
-            ),
+            "zero_rewrite_semantic_diff_sha256": predicate.get("zero_rewrite_semantic_diff_sha256"),
             "zero_rewrite_characterization_sha256": predicate.get(
                 "zero_rewrite_characterization_sha256"
             ),
@@ -597,9 +600,7 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
             "evaluated_at",
             "decision",
         )
-        if not isinstance(crucible_policy, Mapping) or set(crucible_policy) != set(
-            policy_fields
-        ):
+        if not isinstance(crucible_policy, Mapping) or set(crucible_policy) != set(policy_fields):
             raise ValueError("Crucible local policy evaluation shape is not exact V1")
         if crucible_policy.get("decision") != "accepted":
             raise ValueError("Crucible local policy did not accept the artifact")
@@ -609,18 +610,14 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
             "strategy_release_id": self.crucible_artifact_evidence["strategy_release_id"],
             "artifact_ref_digest": self.crucible_artifact_evidence["artifact_ref_digest"],
             "release_bom_digest": self.crucible_artifact_evidence["release_bom_digest"],
-            "release_statement_digest": self.crucible_artifact_evidence[
-                "release_statement_digest"
-            ],
+            "release_statement_digest": self.crucible_artifact_evidence["release_statement_digest"],
             "detached_attestation_ref_digest": self.crucible_artifact_evidence[
                 "detached_attestation_ref_digest"
             ],
             "bundle_sha256": self.crucible_artifact_evidence["bundle_sha256"],
             "signed_producer_claims": expected_claims,
             "sigstore_proof": {name: proof[name] for name in proof_fields},
-            "local_policy_evaluation": {
-                name: crucible_policy[name] for name in policy_fields
-            },
+            "local_policy_evaluation": {name: crucible_policy[name] for name in policy_fields},
             "composite_evidence_digest": "",
         }
         computed_evidence_digest = hashlib.sha256(
