@@ -63,6 +63,14 @@ def test_every_action_is_commit_pinned() -> None:
     assert all(re.search(r"@[0-9a-f]{40}$", value) for value in uses)
 
 
+def test_production_gate_checks_out_history_for_extraction_baseline() -> None:
+    text = _read()
+    checkout = text.index("Check out exact source")
+    history = text.index("fetch-depth: 0", checkout)
+    extraction = text.index("scripts/check-toolkit-extraction.py", history)
+    assert checkout < history < extraction
+
+
 def test_runtime_is_fully_tested_before_wheels_and_image_publication() -> None:
     text = _read()
     install = text.index("--package custos-runner --extra dev --extra nautilus")
