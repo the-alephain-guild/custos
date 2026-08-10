@@ -51,3 +51,17 @@ def test_candidate_is_reverified_and_promotion_receipt_is_signed() -> None:
     assert '--observed-manifest-digest-before "$CANDIDATE_DIGEST"' in source
     assert '--observed-manifest-digest-after "$CANDIDATE_DIGEST"' in source
     assert "if-no-files-found: error" in source
+
+
+def test_workflow_is_locked_to_the_current_multi_platform_candidate() -> None:
+    source = WORKFLOW.read_text(encoding="utf-8")
+
+    digest = "2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753"
+    receipt_sha256 = (
+        "b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194"
+    )
+    assert f"group: runtime-candidate-promotion-sha256-{digest}" in source
+    assert f"CANDIDATE_DIGEST: sha256:{digest}" in source
+    assert f"PUBLICATION_RECEIPT_SHA256: {receipt_sha256}" in source
+    assert "d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690" not in source
+    assert "aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead" not in source

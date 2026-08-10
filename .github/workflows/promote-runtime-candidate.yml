@@ -9,7 +9,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: runtime-candidate-promotion-sha256-d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690
+  group: runtime-candidate-promotion-sha256-2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753
   cancel-in-progress: false
 
 jobs:
@@ -19,9 +19,9 @@ jobs:
     environment: v1-team-runtime-promotion
     env:
       CANDIDATE_REPOSITORY: ghcr.io/the-alephain-guild/custos
-      CANDIDATE_DIGEST: sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690
+      CANDIDATE_DIGEST: sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753
       PUBLICATION_RECEIPT: docs/authority/external/custos/runtime-image-publication-receipt-v1.json
-      PUBLICATION_RECEIPT_SHA256: aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead
+      PUBLICATION_RECEIPT_SHA256: b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194
       CRUCIBLE_ACCEPTANCE: docs/authority/external/crucible-rust/runtime-candidate-phase-b-acceptance-v1.json
       STRATEGY_OWNER_ACCEPTANCE: docs/authority/external/philosophers-stone/runtime-candidate-acceptance-v1.json
     steps:

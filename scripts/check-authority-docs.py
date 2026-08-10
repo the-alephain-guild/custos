@@ -1185,6 +1185,9 @@ def verify_runtime_candidate_promotion(manifest: dict[str, Any], errors: list[st
         "cosign verify-blob",
         "runtime-candidate-phase-b-acceptance-v1.json",
         "runtime-candidate-acceptance-v1.json",
+        "runtime-candidate-promotion-sha256-2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753",
+        "CANDIDATE_DIGEST: sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753",
+        "PUBLICATION_RECEIPT_SHA256: b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194",
     ):
         if marker not in workflow:
             errors.append(f"runtime candidate promotion workflow lacks {marker!r}")
@@ -1196,6 +1199,8 @@ def verify_runtime_candidate_promotion(manifest: dict[str, Any], errors: list[st
         "docker tag ",
         "imagetools create",
         "crane tag ",
+        "d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690",
+        "aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead",
     ):
         if forbidden in workflow:
             errors.append(
