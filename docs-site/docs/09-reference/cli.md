@@ -25,16 +25,19 @@ made.
 Obtain a machine identity the runner can prove.
 
 ```bash
+install -m 600 /dev/null "$HOME/.arx/enrollment-token"
+printf '%s' '<one-time-token>' > "$HOME/.arx/enrollment-token"
 arx-runner enroll \
-  --token '<one-time-token>' \
+  --token-file "$HOME/.arx/enrollment-token" \
   --backend https://arx.example.com \
   --tenant-id acme \
   --runner-id 018f8b5f-6f7d-7e23-8c31-bd34ab9d0d41
+rm -f "$HOME/.arx/enrollment-token"
 ```
 
 | Flag | Required | Meaning |
 |---|---|---|
-| `--token` | ✅ | One-time enrollment token issued by ARX |
+| `--token-file` | ✅ | Mode-`0600` regular file containing the one-time token issued by ARX |
 | `--backend` | ✅ | Endpoint to enroll against |
 | `--tenant-id` | ✅ | Owning tenant |
 | `--runner-id` | ✅ | This runner's UUID |

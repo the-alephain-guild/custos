@@ -67,12 +67,22 @@ def test_runtime_is_fully_tested_before_wheels_and_image_publication() -> None:
     text = _read()
     install = text.index("--package custos-runner --extra dev --extra nautilus")
     runtime_lock = text.index("make check-runtime-lock", install)
-    all_tests = text.index("uv run --extra nautilus pytest tests/", runtime_lock)
+    all_tests = text.index('uv run --extra nautilus pytest tests/ -m "not ci_only"', runtime_lock)
     authority = text.index("scripts/check-authority-docs.py", all_tests)
     wheel = text.index("make dist")
     wheel_signature = text.index(".github/workflows/scripts/sign-wheel.sh")
+    signature_tests = text.index("pytest tests/test_wheel_signature.py", wheel_signature)
     image = text.index("docker/build-push-action@")
-    assert install < runtime_lock < all_tests < authority < wheel < wheel_signature < image
+    assert (
+        install
+        < runtime_lock
+        < all_tests
+        < authority
+        < wheel
+        < wheel_signature
+        < signature_tests
+        < image
+    )
 
 
 def test_source_date_epoch_is_integer_git_seconds() -> None:

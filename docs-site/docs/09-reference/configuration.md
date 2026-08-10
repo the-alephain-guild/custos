@@ -105,7 +105,7 @@ Enrollment and vault management are separate subcommands:
 
 ```bash
 arx-runner enroll \
-  --token <enrollment-token> \
+  --token-file <mode-0600-enrollment-token-file> \
   --backend https://arx.example.com \
   --tenant-id <tenant> \
   --runner-id <uuid>

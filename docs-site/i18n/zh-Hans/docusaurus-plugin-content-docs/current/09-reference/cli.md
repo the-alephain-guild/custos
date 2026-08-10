@@ -21,16 +21,19 @@ parser 生成。
 取得一个 runner 能够证明的机器身份。
 
 ```bash
+install -m 600 /dev/null "$HOME/.arx/enrollment-token"
+printf '%s' '<一次性 token>' > "$HOME/.arx/enrollment-token"
 arx-runner enroll \
-  --token '<one-time-token>' \
+  --token-file "$HOME/.arx/enrollment-token" \
   --backend https://arx.example.com \
   --tenant-id acme \
   --runner-id 018f8b5f-6f7d-7e23-8c31-bd34ab9d0d41
+rm -f "$HOME/.arx/enrollment-token"
 ```
 
 | Flag | 必填 | 含义 |
 |---|---|---|
-| `--token` | ✅ | ARX 签发的一次性注册令牌 |
+| `--token-file` | ✅ | 包含 ARX 一次性注册令牌的 `0600` 普通文件 |
 | `--backend` | ✅ | 注册目标端点 |
 | `--tenant-id` | ✅ | 所属租户 |
 | `--runner-id` | ✅ | 本 runner 的 UUID |

@@ -31,15 +31,18 @@ chmod 700 runtime/.arx runtime/.arx/vault runtime/.arx/state
 age-keygen -o runtime/.arx/age.key
 chmod 600 runtime/.arx/age.key
 export SOPS_AGE_RECIPIENT="$(age-keygen -y runtime/.arx/age.key)"
+install -m 600 /dev/null runtime/.arx/enrollment-token
+printf '%s' '<one-time-token>' > runtime/.arx/enrollment-token
 
 docker run --rm \
   -v "$PWD/runtime/.arx:/home/custos/.arx" \
   -e SOPS_AGE_RECIPIENT \
   custos-runner:v0.3.0 enroll \
-  --token '<one-time-token>' \
+  --token-file /home/custos/.arx/enrollment-token \
   --backend "$CRUCIBLE_HTTP_URL" \
   --tenant-id "$CUSTOS_TENANT_ID" \
   --runner-id "$CUSTOS_RUNNER_ID"
+rm -f runtime/.arx/enrollment-token
 ```
 
 The `arx-runner enroll` flow creates `runner.toml` public metadata and an

@@ -38,12 +38,15 @@ age-keygen -o "$HOME/.arx/age.key"
 chmod 600 "$HOME/.arx/age.key"
 export SOPS_AGE_KEY_FILE="$HOME/.arx/age.key"
 export SOPS_AGE_RECIPIENT="$(age-keygen -y "$SOPS_AGE_KEY_FILE")"
+install -m 600 /dev/null "$HOME/.arx/enrollment-token"
+printf '%s' '<一次性 enrollment token>' > "$HOME/.arx/enrollment-token"
 
 arx-runner enroll \
-  --token '<一次性 enrollment token>' \
+  --token-file "$HOME/.arx/enrollment-token" \
   --backend https://arx.internal \
   --tenant-id acme \
   --runner-id 22222222-2222-4222-8222-222222222222
+rm -f "$HOME/.arx/enrollment-token"
 
 printf '%s\n' '<交易所 api secret>' | arx-runner vault put \
   --key-id binance-testnet \

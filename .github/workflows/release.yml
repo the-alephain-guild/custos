@@ -54,7 +54,7 @@ jobs:
         uses: astral-sh/setup-uv@8d55fbecc275b1c35dbe060458839f8d30439ccf # v3
 
       - name: Set up Python
-        run: uv python install "${PYTHON_VERSION}"
+        run: uv python install "${PYTHON_VERSION}" 3.11
 
       - name: Resolve package version
         id: version
@@ -83,7 +83,7 @@ jobs:
           uv run --package custos-runner ruff check src/ tests/ scripts/ packages/
           uv run --extra nautilus python -c \
             "import nautilus_trader; assert nautilus_trader.__version__"
-          uv run --extra nautilus pytest tests/
+          uv run --extra nautilus pytest tests/ -m "not ci_only"
           uv run python scripts/generate_strategy_contract_assets.py --check
           uv run python scripts/check-toolkit-extraction.py
           uv run --package custos-runner --extra dev --extra nautilus \

@@ -92,7 +92,7 @@ runner 已经承诺要投递的事实。
 
 ```bash
 arx-runner enroll \
-  --token <enrollment-token> \
+  --token-file <权限为-0600-的-enrollment-token-文件> \
   --backend https://arx.example.com \
   --tenant-id <tenant> \
   --runner-id <uuid>

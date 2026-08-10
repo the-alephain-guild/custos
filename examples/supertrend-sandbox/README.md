@@ -23,12 +23,15 @@ age-keygen -o ~/.arx/age.key
 chmod 600 ~/.arx/age.key
 export SOPS_AGE_KEY_FILE="$HOME/.arx/age.key"
 export SOPS_AGE_RECIPIENT="$(age-keygen -y "$SOPS_AGE_KEY_FILE")"
+install -m 600 /dev/null "$HOME/.arx/enrollment-token"
+printf '%s' '<one-time-token>' > "$HOME/.arx/enrollment-token"
 
 uv run arx-runner enroll \
-  --token '<one-time-token>' \
+  --token-file "$HOME/.arx/enrollment-token" \
   --backend https://crucible.example \
   --tenant-id acme \
   --runner-id 22222222-2222-4222-8222-222222222222
+rm -f "$HOME/.arx/enrollment-token"
 ```
 
 Enrollment writes public binding metadata to `~/.arx/runner.toml` and keeps
