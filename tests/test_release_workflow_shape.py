@@ -112,8 +112,10 @@ def test_exact_digest_runtime_gate_precedes_signature() -> None:
     build = text.index("Build and push exact multi-platform image")
     digest = text.index("CUSTOS_TEST_IMAGE:", build)
     runtime = text.index("make verify-runtime-existing", digest)
+    local_cleanup = text.index('docker image rm "${CUSTOS_TEST_IMAGE}"', runtime)
+    arm64_pull = text.index("docker pull --platform linux/arm64", local_cleanup)
     sign = text.index("cosign sign --yes", runtime)
-    assert build < digest < runtime < sign
+    assert build < digest < runtime < local_cleanup < arm64_pull < sign
 
 
 def test_discovery_tags_are_immutable_but_never_runtime_authority() -> None:

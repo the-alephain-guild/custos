@@ -173,6 +173,7 @@ jobs:
           docker pull --platform linux/amd64 "${CUSTOS_TEST_IMAGE}"
           make install
           make verify-runtime-existing
+          docker image rm "${CUSTOS_TEST_IMAGE}"
           docker pull --platform linux/arm64 "${CUSTOS_TEST_IMAGE}"
           test "$(docker run --rm --platform linux/arm64 --entrypoint /usr/bin/id "${CUSTOS_TEST_IMAGE}" -u)" = 1000
           docker run --rm --platform linux/arm64 "${CUSTOS_TEST_IMAGE}" --help
@@ -350,6 +351,7 @@ jobs:
             for command in credential deployment enroll health identity nats nats-transport publish-capability release-policy start vault; do
               docker run --rm --platform "$platform" "$IMAGE_REF" "$command" --help
             done
+            docker image rm "$IMAGE_REF"
           done
 
   publish-pypi:
