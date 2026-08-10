@@ -8,7 +8,10 @@ from datetime import datetime
 from typing import Annotated, Literal, Self
 
 from cryptography.exceptions import InvalidSignature
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
 from custos_toolkit.contracts.strategy_execution import canonical_json_bytes
 from pydantic import (
     AwareDatetime,
@@ -99,6 +102,27 @@ def canonical_policy_bytes(policy: ReleaseTrustPolicyV1) -> bytes:
 
 def release_policy_signature_message(policy_bytes: bytes) -> bytes:
     return RELEASE_POLICY_SIGNATURE_CONTEXT + len(policy_bytes).to_bytes(8, "big") + policy_bytes
+
+
+def sign_release_policy(
+    policy: ReleaseTrustPolicyV1,
+    *,
+    authority_key_id: str,
+    authority_private_key: Ed25519PrivateKey,
+) -> bytes:
+    """Issue the sole V1 envelope over exact canonical policy bytes."""
+
+    policy_bytes = canonical_policy_bytes(policy)
+    envelope = SignedReleaseTrustPolicyEnvelopeV1(
+        policy_bytes=base64.urlsafe_b64encode(policy_bytes).rstrip(b"=").decode("ascii"),
+        signature_key_id=authority_key_id,
+        signature=base64.urlsafe_b64encode(
+            authority_private_key.sign(release_policy_signature_message(policy_bytes))
+        )
+        .rstrip(b"=")
+        .decode("ascii"),
+    )
+    return canonical_json_bytes(envelope.model_dump(mode="json"))
 
 
 def _decode_base64url(value: str, label: str) -> bytes:
