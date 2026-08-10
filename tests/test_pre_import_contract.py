@@ -6,7 +6,9 @@ import json
 from pathlib import Path
 
 import pytest
+from custos_toolkit.contracts import strategy_execution
 from custos_toolkit.contracts.strategy_execution import (
+    StrategyArtifactRefV1,
     StrategyArtifactPreImportVerificationReceiptV1,
 )
 from pydantic import ValidationError as PydanticValidationError
@@ -92,6 +94,25 @@ def test_all_published_negative_cases_fail_closed() -> None:
         _apply_mutation(invalid, case["mutation"])
         with pytest.raises((PydanticValidationError, TypeError, ValueError)):
             _validate(invalid)
+
+
+def test_build_lock_binding_uses_the_signed_digest_not_a_producer_local_path() -> None:
+    golden = json.loads(GOLDEN.read_text(encoding="utf-8"))["receipt"]
+    artifact_ref = copy.deepcopy(golden["artifact_ref"])
+    build_lock_digest = golden["release_bom"]["build_lock_sha256"]
+    artifact_ref["build_inputs"][0]["name"] = "resources/build-lock-v1.json"
+    parsed = StrategyArtifactRefV1.model_validate(artifact_ref)
+
+    strategy_execution._require_single_build_lock_binding(parsed, build_lock_digest)
+    with pytest.raises(ValueError, match="build_lock_sha256 differs"):
+        strategy_execution._require_single_build_lock_binding(parsed, "f" * 64)
+
+    artifact_ref["build_inputs"].append(
+        {"name": "resources/build-lock-copy-v1.json", "sha256": build_lock_digest}
+    )
+    duplicated = StrategyArtifactRefV1.model_validate(artifact_ref)
+    with pytest.raises(ValueError, match="build_lock_sha256 differs"):
+        strategy_execution._require_single_build_lock_binding(duplicated, build_lock_digest)
 
 
 def test_contract_receipt_stays_pending_until_both_consumers_pin_v1() -> None:

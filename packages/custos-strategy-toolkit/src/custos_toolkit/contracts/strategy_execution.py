@@ -241,6 +241,17 @@ class RunnerLocalArtifactPolicyDecisionV1(_StrictFrozenModel):
     artifact_acceptance_receipt_digest: Sha256Hex
 
 
+def _require_single_build_lock_binding(
+    artifact_ref: StrategyArtifactRefV1,
+    build_lock_digest: object,
+) -> None:
+    matching_build_inputs = tuple(
+        item for item in artifact_ref.build_inputs if item.sha256 == build_lock_digest
+    )
+    if len(matching_build_inputs) != 1:
+        raise ValueError("producer BOM build_lock_sha256 differs from ArtifactRefV1")
+
+
 class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
     """Contract-consumer proof over producer-owned evidence objects."""
 
@@ -342,9 +353,10 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
             if self.release_bom.get(name) != expected:
                 raise ValueError(f"producer BOM {name} differs from ArtifactRefV1")
 
-        build_inputs = {item.name: item.sha256 for item in self.artifact_ref.build_inputs}
-        if build_inputs.get("uv.lock") != self.release_bom.get("build_lock_sha256"):
-            raise ValueError("producer BOM build_lock_sha256 differs from ArtifactRefV1")
+        _require_single_build_lock_binding(
+            self.artifact_ref,
+            self.release_bom.get("build_lock_sha256"),
+        )
 
         members = self.release_bom.get("members")
         if not isinstance(members, list) or not members:

@@ -8,6 +8,7 @@ dependencies = [
     "custos-strategy-toolkit==0.1.0",
     "nats-py[nkeys]>=2.9",
     "pydantic>=2.5",
+    "sigstore>=3.0,<4.0",
     "structlog>=24",
     "uuid6>=2024.1.12",
 ]
@@ -44,13 +45,10 @@ nt-rust = []
 all-engines = [
     "custos-runner[nautilus]",
 ]
-# Long-Term-Support / release-engineering toolchain (Plan 12): sigstore keyless
-# wheel signing (T3) + pytest-docker helpers for the Docker-image test gates
-# (T2). Explicit sigstore major pin (>=3.0,<4.0, Plan 12 H6): sigstore 3.x is
-# the current stable line; a future 4.x is a breaking API bump and must land
-# through a coordinated CI-workflow refresh, not a silent transitive upgrade.
+# Long-Term-Support / release-engineering test tooling. Sigstore is a base
+# dependency because production StrategyRelease admission fails closed without
+# its native verifier; this extra keeps only Docker test infrastructure.
 lts = [
-    "sigstore>=3.0,<4.0",
     "pytest-docker>=3",
 ]
 

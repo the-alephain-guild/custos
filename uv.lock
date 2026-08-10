@@ -196,6 +196,7 @@ dependencies = [
     { name = "custos-strategy-toolkit" },
     { name = "nats-py", extra = ["nkeys"] },
     { name = "pydantic" },
+    { name = "sigstore" },
     { name = "structlog" },
     { name = "uuid6" },
 ]
@@ -215,7 +216,6 @@ dev = [
 ]
 lts = [
     { name = "pytest-docker" },
-    { name = "sigstore" },
 ]
 nautilus = [
     { name = "custos-strategy-toolkit-nautilus" },
@@ -236,7 +236,7 @@ requires-dist = [
     { name = "pytest-docker", marker = "extra == 'lts'", specifier = ">=3" },
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
-    { name = "sigstore", marker = "extra == 'lts'", specifier = ">=3.0,<4.0" },
+    { name = "sigstore", specifier = ">=3.0,<4.0" },
     { name = "structlog", specifier = ">=24" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "uuid6", specifier = ">=2024.1.12" },

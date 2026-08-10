@@ -1,11 +1,11 @@
-"""Plan 12 T1 contract: pyproject.toml SEMVER + [project.scripts] + LTS extras.
+"""Packaging contract: SEMVER, one CLI, production Sigstore, and LTS tools.
 
 Plan 11 T8 landed the clean-break single console-script entry
 (``arx-runner = custos.cli.subcommands:main``) and bumped the version to
 0.2.0. Plan 12 T1 layers on top:
 
-- ``[project.optional-dependencies].lts`` extras (sigstore / pytest-docker) for
-  the signed-release / Docker toolchains introduced by Plan 12 T3-T4.
+- base dependencies include Sigstore because production artifact admission uses it;
+- ``[project.optional-dependencies].lts`` retains pytest-docker release tooling.
 - ``[tool.hatch.build.hooks.custom]`` to give Plan 12 T8 a hook point for the
   ``SOURCE_DATE_EPOCH`` reproducible-build knob.
 
@@ -39,13 +39,14 @@ def test_project_version_is_0_3_0():
     assert data["project"]["version"] == "0.3.0"
 
 
-def test_project_lts_extra_declares_sigstore_and_pytest_docker():
+def test_project_runtime_declares_sigstore_and_lts_declares_pytest_docker():
     data = _load()
     extras = data["project"]["optional-dependencies"]
     assert "lts" in extras, f"missing `lts` extra; got extras={list(extras)}"
     joined = " ".join(extras["lts"])
-    # Sigstore major pin (Plan 12 H6): allow 3.x, reject 4.x major bump.
-    assert "sigstore>=3.0,<4.0" in joined, extras["lts"]
+    dependencies = " ".join(data["project"]["dependencies"])
+    assert "sigstore>=3.0,<4.0" in dependencies, data["project"]["dependencies"]
+    assert "sigstore" not in joined, extras["lts"]
     # pytest-docker for docker-marker test infra (Plan 12 T2).
     assert "pytest-docker" in joined, extras["lts"]
 

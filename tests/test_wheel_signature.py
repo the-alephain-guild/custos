@@ -94,7 +94,7 @@ def test_sigstore_verify_passes_for_every_wheel():
     if not _is_ci_with_oidc():
         pytest.skip("sigstore keyless requires GitHub Actions OIDC")
     if shutil.which("sigstore") is None:
-        pytest.skip("sigstore CLI not on PATH (install with `uv sync --extra lts`)")
+        pytest.skip("sigstore CLI not on PATH (install with `uv sync`)")
     wheels = sorted(DIST.glob("*.whl"))
     assert wheels, f"no wheels under {DIST}"
     # sigstore-python 3.x default: bundle written as `<artifact>.sigstore`; the
