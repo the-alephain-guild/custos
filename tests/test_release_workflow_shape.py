@@ -99,16 +99,17 @@ def test_source_date_epoch_is_integer_git_seconds() -> None:
     assert not re.search(r"SOURCE_DATE_EPOCH:\\s*\\$\\{\\{", text)
 
 
-def test_image_is_single_platform_with_sbom_and_provenance() -> None:
+def test_image_is_multi_platform_with_sbom_and_provenance() -> None:
     text = _read()
-    assert "platforms: linux/amd64" in text
+    assert "docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130" in text
+    assert "platforms: linux/amd64,linux/arm64" in text
     assert "provenance: mode=max" in text
     assert "sbom: true" in text
 
 
 def test_exact_digest_runtime_gate_precedes_signature() -> None:
     text = _read()
-    build = text.index("Build and push exact linux amd64 image")
+    build = text.index("Build and push exact multi-platform image")
     digest = text.index("CUSTOS_TEST_IMAGE:", build)
     runtime = text.index("make verify-runtime-existing", digest)
     sign = text.index("cosign sign --yes", runtime)
@@ -129,7 +130,7 @@ def test_owner_receipt_is_exact_and_machine_parseable() -> None:
         '"receipt_id": "CUSTOS-V1-TEAM-IMAGE-PUBLICATION-V1"',
         '"status": "IMAGE_PUBLISHED_ATTESTED"',
         '"image_key": "custos"',
-        '"platform": "linux/amd64"',
+        '"platforms": ["linux/amd64", "linux/arm64"]',
         '"workflow_file": os.environ["WORKFLOW_FILE"]',
         '"cosign_version": os.environ["COSIGN_VERSION"]',
         '"production_ready": False',
