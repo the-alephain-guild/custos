@@ -1,6 +1,6 @@
 # 18 - Publish typed toolkit and strategy execution contracts
 
-> **Status**: ⏳ In progress — sole V1 contract, RC5 toolkit, PS unique-V1 OCI publication, Crucible StrategyRelease acceptance and the clean-head local production-daemon full loop are verified; current Custos image publication, unchanged final promotion and deployed testnet/live acceptance remain open
+> **Status**: ⏳ In progress — sole V1 contract, RC5 toolkit, PS unique-V1 OCI publication, Crucible StrategyRelease acceptance, clean-head local production-daemon full loop and the attested Custos runtime candidate are verified; coordinated unchanged promotion and deployed testnet/live acceptance remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-08-10 for Crucible artifact acceptance and clean-head local v1.team acceptance evidence
 > **Project**: Custos
@@ -747,8 +747,8 @@ git commit -m "docs(custos): mark plan 18 as completed"
 | PS V1 handoff | unique V1 RC2 published and accepted | PS `63cc7c1` run `31291672169` published `ghcr.io/alchymia-labs/v1-team-strategy-artifacts@sha256:f2181ef975b14cccfacc6f880ebfb97684b2a15d3026474dde62dafd449996ec`; Crucible `aae3a12` records the native exact-byte acceptance |
 | Crucible V1 handoff | StrategyRelease acceptance complete | Crucible `aae3a12` owns the accepted PS artifact evidence and `f18d290` proves the distinct DeploymentSpec and StrategyProduct snapshots converge by immutable release identity through settlement |
 | Crucible Plan 89 runner resolution | local exact-byte gate pass | Runtime `34e0f13`, contract `a4972de` and owner receipt `5a531c2` bind one persisted DeploymentSpec-derived release with four ordered subjects and an exact BOM/ArtifactRef build-lock binding; immutable daemon materialization and deployed acceptance remain open |
-| Runtime activation | clean-head local full loop accepted; current image publication open | ARX `0d8c92b`, Crucible `f18d290` and Custos `a83e6f6` validate the real StrategyRelease, execute two sandbox instances, project signed RunnerFacts, settle two statements and pass Chromium; closeout SHA-256 is `2f60d4c3e4bd9efa5312bfa64cdbbe2dee7d78b4b9e2c407e3711f43d04a0420` |
-| Production/live | STOP | requires an attested image rebuilt from current Custos `a83e6f6`, unchanged final promotion, coordinated image lock, deployed migration/transport receipts and production approval |
+| Runtime activation | clean-head local full loop and attested runtime candidate accepted | ARX `0d8c92b`, Crucible `f18d290` and Custos `a83e6f6` validate the real StrategyRelease through Chromium; Custos run `31361924833` publishes source `b25a5f5` as exact digest `sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690` |
+| Production/live | STOP | requires coordinated final-owner digest lock, unchanged promotion, deployed migration/policy/transport receipts, PS Plan 56 acceptance and production approval |
 
 ## 2026-08-10 clean-head StrategyRelease full-loop checkpoint
 
@@ -914,3 +914,17 @@ Its immutable close-out receipt is
 status `LOCAL_DEMO_ACCEPTED_PRODUCTION_GATES_OPEN`. It is strong local execution
 evidence, not a substitute for Crucible's PS-artifact acceptance, unchanged
 promotion or deployed production receipts; Tasks 7-9 therefore remain open.
+
+## 2026-08-10 current Custos runtime candidate publication
+
+Custos main-branch Release run `31361924833` published source
+`b25a5f53e676677b234e98a72ccb36d43d83d0d5` as
+`ghcr.io/the-alephain-guild/custos@sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690`.
+The workflow passed the complete production contract, signed all three wheels,
+gated the exact `linux/amd64` image digest, signed it keylessly, then completed
+an independent registry/signature/runtime readback. Owner receipt SHA-256 is
+`aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead`.
+
+This closes current Custos candidate publication only. Runtime, live and
+production readiness remain false until the coordinated owner digest lock,
+unchanged promotion, deployed receipts and PS Plan 56 acceptance complete.

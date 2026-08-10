@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
   "receipt_id": "CUSTOS-STRATEGY-ARTIFACT-RUNTIME-V1",
-  "receipt_status": "LOCAL_STRATEGY_RELEASE_RUNTIME_ACCEPTED_PRODUCTION_GATES_OPEN",
+  "receipt_status": "RUNTIME_CANDIDATE_IMAGE_PUBLISHED_ATTESTED_DEPLOYED_ACCEPTANCE_OPEN",
   "repository": "tesseract-trading/custos",
   "runtime_implementation_complete": true,
   "clone_local_production_composition_verified": true,
-  "runtime_candidate_prepared": false,
+  "runtime_candidate_prepared": true,
   "engine_abi_requires_activated_artifact": true,
   "runner_command_runtime_coordinator_present": true,
   "durable_idempotent_activation_replay": true,
@@ -44,10 +44,27 @@
     "crucible_strategy_release_acceptance_present": true,
     "deployed_crucible_strategy_release_acceptance_present": false
   },
+  "runtime_image_publication": {
+    "receipt_status": "IMAGE_PUBLISHED_ATTESTED",
+    "image": "ghcr.io/the-alephain-guild/custos@sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690",
+    "platform": "linux/amd64",
+    "source_commit": "b25a5f53e676677b234e98a72ccb36d43d83d0d5",
+    "workflow_run_id": 31361924833,
+    "workflow_identity": "https://github.com/the-alephain-guild/custos/.github/workflows/release.yml@refs/heads/main",
+    "release_id": "v1-team-runtime-20260810-b25a5f5",
+    "owner_receipt_sha256": "aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead",
+    "provenance_sha256": "1d8bd87415c3e57a0c8545a86fa0c4dbef662b46310e53d8fc10308763aab4aa",
+    "sbom_sha256": "97a5253294a467e7712ba70587d9a69d28c63c1fca723e5b123cb8919f430fd4",
+    "sigstore_bundle_sha256": "8bea5a683a2f7e6dd1669bcc6de829f0bdb9f2d723df06bdca6425204b2b167e",
+    "signature_verification_sha256": "41e6e2f6de44927287692aa69b1f487c15f76c7b2e8569541a33cbffd6aafcc1",
+    "exact_digest_runtime_gate_passed": true,
+    "independent_registry_signature_runtime_readback_passed": true,
+    "production_ready": false
+  },
   "local_composition_capability_ready": true,
   "immutable_strategy_release_activated_by_production_daemon": true,
   "local_immutable_engine_execution_verified": true,
-  "runtime_candidate_ready": false,
+  "runtime_candidate_ready": true,
   "engine_code_ready": true,
   "protected_execution_ready": false,
   "engine_ready": false,
@@ -111,7 +128,6 @@
     "promotable": false
   },
   "open_blockers": [
-    "publish and attest a replacement runtime image from current Custos source",
     "lock and promote the coordinated final owner images unchanged",
     "deployed current control and mode migration-head receipts",
     "deployed signed runner safety policy, authenticated transport, testnet and live receipts"

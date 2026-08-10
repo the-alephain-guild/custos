@@ -225,7 +225,7 @@
   },
   "strategy_artifact_runtime": {
     "owner": "custos",
-    "status": "LOCAL_STRATEGY_RELEASE_RUNTIME_ACCEPTED_PRODUCTION_GATES_OPEN",
+    "status": "RUNTIME_CANDIDATE_IMAGE_PUBLISHED_ATTESTED_DEPLOYED_ACCEPTANCE_OPEN",
     "receipt": "docs/authority/receipts/custos-strategy-artifact-runtime-v1-receipt.json",
     "command_source": "durable CrucibleRunnerDeploymentCommandV1 after signature verification and intake",
     "runner_local_policy_independent": true,
@@ -244,7 +244,18 @@
     "local_composition_capability_ready": true,
     "immutable_strategy_release_activated_by_production_daemon": true,
     "local_immutable_engine_execution_verified": true,
-    "runtime_candidate_ready": false,
+    "runtime_image_publication": {
+      "receipt_status": "IMAGE_PUBLISHED_ATTESTED",
+      "image": "ghcr.io/the-alephain-guild/custos@sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690",
+      "platform": "linux/amd64",
+      "source_commit": "b25a5f53e676677b234e98a72ccb36d43d83d0d5",
+      "workflow_run_id": 31361924833,
+      "owner_receipt_sha256": "aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead",
+      "exact_digest_runtime_gate_passed": true,
+      "independent_registry_signature_runtime_readback_passed": true,
+      "production_ready": false
+    },
+    "runtime_candidate_ready": true,
     "engine_ready": false,
     "daemon_composition_ready": true,
     "daemon_process_activation_verified": true,

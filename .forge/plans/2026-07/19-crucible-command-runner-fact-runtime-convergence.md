@@ -1,12 +1,12 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T9 local evidence, Crucible acceptance of the published PS candidate and the clean-head PostgreSQL/NATS/command/engine/RunnerFact/settlement/browser flow pass; current image publication, coordinated deployment and T10 remain open
+> **Status**: ⏳ In progress — T2-T9 local evidence, Crucible acceptance of the published PS candidate, the clean-head full loop and the attested Custos runtime candidate pass; coordinated digest lock, deployed acceptance and T10 remain open
 > **Created**: 2026-07-14
 > **Revised**: 2026-08-10 through native StrategyRelease acceptance and clean-head local v1.team acceptance
 > **Project**: Custos
 > **Source**: Audit of pre-plan migration `324da6e`, PS Plan 53, and v1.team review
 > **For Claude**: Use `/forge:execute` to implement this plan.
-> **Immediately executable**: T7 contract handoff, native PS artifact acceptance and the local service-issued policy/transport daemon flow through encrypted V1 vault restart, rotation, immutable StrategyRelease activation, PubAck, same-batch Crucible projection and settlement are complete; current-image publication and deployed migration/transport receipts remain gated
+> **Immediately executable**: T7 contract handoff, native PS artifact acceptance, the local service-issued policy/transport daemon flow and current Custos runtime candidate publication are complete; coordinated digest lock and deployed migration/transport receipts remain gated
 > **19d-T8a gate**: 19c STOP only; it produces the immutable RunnerFact candidate before Crucible Plan 90 Phase A
 > **Runtime RC gates**: Crucible Plan 89 migration 0116 signed command producer and `CR89-0116-GENERATION-STORAGE`; Crucible Plan 90 Phase-A schema/golden compatibility receipt; Crucible Plan 99 runner-safety-policy-authority; Crucible Plan 100 runner NATS transport authority and revocation receipts; Custos Plan 18 staged candidate and exact final required by the selected RC/final-candidate BOM
 > **Close-out gates**: Crucible Plan 90 Phase-B real runtime round-trip receipt; PS Plan 56 exact final-candidate acceptance
@@ -1540,7 +1540,20 @@ operations/audit, two settlement statements and the Chromium real-service
 scenario. The immutable local closeout digest is
 `2f60d4c3e4bd9efa5312bfa64cdbbe2dee7d78b4b9e2c407e3711f43d04a0420`.
 
-Task 9 local evidence is closed. Task 10 remains open because the current Custos
-head is newer than published image `sha256:6bf1f55164b96b9356ebdfda1e9a69c4ec4b34b18737e3602c88ee45f2852d72`;
-the replacement image must be published, attested, locked unchanged with the
-other owner images and consumed by deployed testnet/live plus PS Plan 56.
+Task 9 local evidence is closed. The replacement image publication described
+below supplies the current attested candidate; coordinated cross-repo locking,
+unchanged promotion, deployed testnet/live and PS Plan 56 remain Task 10 gates.
+
+## 2026-08-10 current runtime candidate publication
+
+Custos Release run `31361924833` passed the complete production contract and
+published source `b25a5f53e676677b234e98a72ccb36d43d83d0d5` as
+`ghcr.io/the-alephain-guild/custos@sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690`.
+The exact digest passed the container runtime gate, keyless Cosign signing and
+an independent registry/signature/runtime readback. Publication owner receipt
+SHA-256 is
+`aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead`.
+
+This closes Custos image publication but not the coordinated v1.team bundle.
+`runtime_candidate_ready=true` now means a candidate exists and is attested; it
+does not mean `runtime_ready`, `live_ready` or `production_ready`.

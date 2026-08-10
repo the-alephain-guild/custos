@@ -1109,17 +1109,19 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         errors.append("missing artifact runtime V1 artifact runtime authority assets")
         return
     receipt = load_json(receipt_path)
-    expected_status = "LOCAL_STRATEGY_RELEASE_RUNTIME_ACCEPTED_PRODUCTION_GATES_OPEN"
+    expected_status = (
+        "RUNTIME_CANDIDATE_IMAGE_PUBLISHED_ATTESTED_DEPLOYED_ACCEPTANCE_OPEN"
+    )
     if receipt.get("receipt_status") != expected_status:
         errors.append("artifact runtime receipt status differs")
     expected_receipt = {
         "runtime_implementation_complete": True,
         "clone_local_production_composition_verified": True,
-        "runtime_candidate_prepared": False,
+        "runtime_candidate_prepared": True,
         "local_composition_capability_ready": True,
         "immutable_strategy_release_activated_by_production_daemon": True,
         "local_immutable_engine_execution_verified": True,
-        "runtime_candidate_ready": False,
+        "runtime_candidate_ready": True,
         "daemon_composition_ready": True,
         "daemon_process_activation_verified": True,
         "runtime_ready": False,
@@ -1140,6 +1142,25 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
     }
     if dependencies != expected_dependencies:
         errors.append("artifact runtime dependency boundary differs")
+    expected_publication = {
+        "receipt_status": "IMAGE_PUBLISHED_ATTESTED",
+        "image": "ghcr.io/the-alephain-guild/custos@sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690",
+        "platform": "linux/amd64",
+        "source_commit": "b25a5f53e676677b234e98a72ccb36d43d83d0d5",
+        "workflow_run_id": 31361924833,
+        "workflow_identity": "https://github.com/the-alephain-guild/custos/.github/workflows/release.yml@refs/heads/main",
+        "release_id": "v1-team-runtime-20260810-b25a5f5",
+        "owner_receipt_sha256": "aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead",
+        "provenance_sha256": "1d8bd87415c3e57a0c8545a86fa0c4dbef662b46310e53d8fc10308763aab4aa",
+        "sbom_sha256": "97a5253294a467e7712ba70587d9a69d28c63c1fca723e5b123cb8919f430fd4",
+        "sigstore_bundle_sha256": "8bea5a683a2f7e6dd1669bcc6de829f0bdb9f2d723df06bdca6425204b2b167e",
+        "signature_verification_sha256": "41e6e2f6de44927287692aa69b1f487c15f76c7b2e8569541a33cbffd6aafcc1",
+        "exact_digest_runtime_gate_passed": True,
+        "independent_registry_signature_runtime_readback_passed": True,
+        "production_ready": False,
+    }
+    if receipt.get("runtime_image_publication") != expected_publication:
+        errors.append("artifact runtime image publication evidence differs")
     source = source_path.read_text(encoding="utf-8")
     required = (
         "class StrategyArtifactRuntimeV1",
@@ -1214,7 +1235,18 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         "local_composition_capability_ready": True,
         "immutable_strategy_release_activated_by_production_daemon": True,
         "local_immutable_engine_execution_verified": True,
-        "runtime_candidate_ready": False,
+        "runtime_image_publication": {
+            "receipt_status": "IMAGE_PUBLISHED_ATTESTED",
+            "image": "ghcr.io/the-alephain-guild/custos@sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690",
+            "platform": "linux/amd64",
+            "source_commit": "b25a5f53e676677b234e98a72ccb36d43d83d0d5",
+            "workflow_run_id": 31361924833,
+            "owner_receipt_sha256": "aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead",
+            "exact_digest_runtime_gate_passed": True,
+            "independent_registry_signature_runtime_readback_passed": True,
+            "production_ready": False,
+        },
+        "runtime_candidate_ready": True,
         "daemon_composition_ready": True,
         "daemon_process_activation_verified": True,
         "runtime_ready": False,
@@ -1327,7 +1359,7 @@ def verify_engine_lifecycle(manifest: dict[str, Any], errors: list[str]) -> None
     expected_artifact_runtime = {
         "immutable_strategy_release_activated_by_production_daemon": True,
         "local_immutable_engine_execution_verified": True,
-        "runtime_candidate_ready": False,
+        "runtime_candidate_ready": True,
         "daemon_process_activation_verified": True,
         "live_ready": False,
         "runtime_ready": False,
