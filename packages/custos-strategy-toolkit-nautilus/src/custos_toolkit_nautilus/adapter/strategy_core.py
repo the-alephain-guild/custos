@@ -27,10 +27,11 @@ import os
 from abc import ABC, abstractmethod
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.model.data import Bar, QuoteTick, TradeTick
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.trading.strategy import Strategy
 
 from custos_toolkit_nautilus.adapter.cancel_audit import record_cancel_requested
@@ -45,6 +46,32 @@ if TYPE_CHECKING:
 
 # Module-level logger, used as a fallback when self.log is unavailable.
 _logger = logging.getLogger(__name__)
+
+
+class _NautilusRuntimeSurface(Protocol):
+    """Runtime methods omitted or narrowed by Nautilus Cython type metadata."""
+
+    def subscribe_mark_prices(
+        self,
+        instrument_id: InstrumentId,
+        client_id: object | None = None,
+        params: dict[str, object] | None = None,
+    ) -> None: ...
+
+    def cancel_order(
+        self,
+        order: object,
+        client_id: object | None = None,
+        params: dict[str, object] | None = None,
+    ) -> None: ...
+
+    def cancel_all_orders(
+        self,
+        instrument_id: object,
+        order_side: object,
+        client_id: object | None = None,
+        params: dict[str, object] | None = None,
+    ) -> None: ...
 
 
 class CloseAttempt(Enum):
@@ -376,6 +403,19 @@ class NautilusStrategyCore(Strategy, ABC):
 
     # ---- Cancelling: recorded on the way out, so the outcome can be counted ----
 
+    def subscribe_mark_prices(
+        self,
+        instrument_id: InstrumentId,
+        client_id: object | None = None,
+        params: dict[str, object] | None = None,
+    ) -> None:
+        """Expose the inherited Actor subscription through the typed strategy surface."""
+        cast(_NautilusRuntimeSurface, super()).subscribe_mark_prices(
+            instrument_id,
+            client_id=client_id,
+            params=params,
+        )
+
     def cancel_order(self, order: Any, client_id: Any = None, params: Any = None) -> None:
         """Cancel one order, recording that the venue was asked.
 
@@ -432,12 +472,21 @@ class NautilusStrategyCore(Strategy, ABC):
     # The handoff to the framework's own implementations, named so that the recording
     # above can be exercised without a running engine -- the Cython base needs one.
     def _venue_cancel_order(self, order: Any, client_id: Any, params: Any) -> None:
-        super().cancel_order(order, client_id, params)
+        cast(_NautilusRuntimeSurface, super()).cancel_order(
+            order,
+            client_id=client_id,
+            params=params,
+        )
 
     def _venue_cancel_all_orders(
         self, instrument_id: Any, order_side: Any, client_id: Any, params: Any
     ) -> None:
-        super().cancel_all_orders(instrument_id, order_side, client_id, params)
+        cast(_NautilusRuntimeSurface, super()).cancel_all_orders(
+            instrument_id,
+            order_side=order_side,
+            client_id=client_id,
+            params=params,
+        )
 
     # ---- Closing a position when the venue refuses the protective form ----
 
