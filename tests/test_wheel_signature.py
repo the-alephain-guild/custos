@@ -24,6 +24,7 @@ from pathlib import Path
 import pytest
 
 DIST = Path(__file__).resolve().parent.parent / "dist"
+SIGN_SCRIPT = Path(__file__).resolve().parent.parent / ".github/workflows/scripts/sign-wheel.sh"
 
 
 def _is_ci_with_oidc() -> bool:
@@ -35,6 +36,12 @@ def _is_ci_with_oidc() -> bool:
     the release workflow.
     """
     return bool(os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL"))
+
+
+def test_signing_script_emits_bundle_evidence_not_a_detached_signature() -> None:
+    source = SIGN_SCRIPT.read_text(encoding="utf-8")
+    assert 'sigstore sign --bundle "${bundle}" "${whl}"' in source
+    assert "--output-signature" not in source
 
 
 @pytest.mark.ci_only
@@ -72,11 +79,14 @@ def test_sigstore_verify_passes_for_every_wheel():
     repo = os.environ.get("GITHUB_REPOSITORY", "the-alephain-guild/custos")
     cert_identity = f"https://github.com/{repo}/.github/workflows/release.yml@{ref}"
     for whl in wheels:
+        bundle = whl.with_suffix(whl.suffix + ".sigstore")
         proc = subprocess.run(
             [
                 "sigstore",
                 "verify",
                 "identity",
+                "--bundle",
+                str(bundle),
                 "--cert-identity",
                 cert_identity,
                 "--cert-oidc-issuer",

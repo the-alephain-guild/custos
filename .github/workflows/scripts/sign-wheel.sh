@@ -8,9 +8,10 @@
 #
 # Usage: bash .github/workflows/scripts/sign-wheel.sh
 #
-# The sigstore-python 3.x CLI writes the bundle at `<artifact>.sigstore` by
-# default. We pin `--output-signature` to make the location explicit and
-# survivable across CLI defaults changes.
+# The sigstore-python 3.x CLI writes a bundle at `<artifact>.sigstore.json` by
+# default. We pin `--bundle` so the release contract keeps its established
+# `<artifact>.sigstore` asset name without confusing a bundle with a detached
+# signature and certificate pair.
 
 set -euo pipefail
 
@@ -33,12 +34,11 @@ if (( ${#wheels[@]} == 0 )); then
 fi
 
 # Plan 12 H6 verification note: this loop assumes the sigstore-python 3.x
-# `sign` command still accepts `--output-signature <path> <artifact>`. If a
-# future major bump renames the flag (`--bundle` was the 3.0 alias for a
-# short window), fail loudly rather than silently produce unsigned wheels.
+# `sign` command still accepts `--bundle <path> <artifact>`. Fail loudly
+# rather than silently produce detached or unsigned wheel evidence.
 sigstore sign --help >/tmp/sigstore-help.$$ 2>&1 || true
-if ! grep -q -- "--output-signature" /tmp/sigstore-help.$$; then
-    echo "sigstore sign no longer supports --output-signature flag" >&2
+if ! grep -q -- "--bundle" /tmp/sigstore-help.$$; then
+    echo "sigstore sign no longer supports --bundle flag" >&2
     echo "-- captured 'sigstore sign --help' output --" >&2
     cat /tmp/sigstore-help.$$ >&2
     rm -f /tmp/sigstore-help.$$
@@ -49,7 +49,7 @@ rm -f /tmp/sigstore-help.$$
 for whl in "${wheels[@]}"; do
     bundle="${whl}.sigstore"
     echo "signing ${whl} -> ${bundle}"
-    sigstore sign --output-signature "${bundle}" "${whl}"
+    sigstore sign --bundle "${bundle}" "${whl}"
 done
 
 echo "signed ${#wheels[@]} wheel(s); bundles alongside each .whl"
