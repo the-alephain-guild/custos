@@ -43,8 +43,8 @@ CRUCIBLE_CONSUMER_RECEIPT_VENDOR_PATH = (
     "docs/authority/receipts/vendor/"
     "crucible-custos-strategy-contract-v1-consumer-receipt.json"
 )
-CUSTOS_STRATEGY_CONTRACT_COMMIT = "91c5a648c4db4e16f8dde11f48c8e60b30e0a813"
-CRUCIBLE_CONSUMER_RECEIPT_COMMIT = "0a9aa68c78f717f19fdcc9eada9f942980fcf422"
+CUSTOS_STRATEGY_CONTRACT_COMMIT = "a83e6f6969709316b8f11bcc0618b2f7b32fc19f"
+CRUCIBLE_CONSUMER_RECEIPT_COMMIT = "4abd73eb320ac99bf16e443c5e572e5d1047391d"
 RUNNER_COMMAND_CONSUMER_INDEX_PATH = (
     "docs/authority/crucible-runner-command-consumer-assets-v1.json"
 )

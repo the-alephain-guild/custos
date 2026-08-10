@@ -495,7 +495,7 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
         errors.append("Custos receipt must not fabricate the pending PS consumer receipt")
     crucible_receipt_pin = {
         "repository": "tesseract-trading/crucible-rust",
-        "commit": "0a9aa68c78f717f19fdcc9eada9f942980fcf422",
+        "commit": "4abd73eb320ac99bf16e443c5e572e5d1047391d",
         "path": (
             "docs/authority/receipts/"
             "crucible-custos-strategy-contract-v1-consumer-receipt.json"
@@ -523,7 +523,7 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
         }
         or crucible_consumer_receipt.get("consumer") != "crucible-rust"
         or crucible_consumer_receipt.get("producer", {}).get("commit")
-        != "91c5a648c4db4e16f8dde11f48c8e60b30e0a813"
+        != "a83e6f6969709316b8f11bcc0618b2f7b32fc19f"
         or crucible_consumer_receipt.get("status")
         != "EXACT_CUSTOS_V1_CONTRACT_PINNED_PENDING_PRODUCER_HANDOFF"
         or crucible_consumer_receipt.get("runtime_ready") is not False
@@ -1109,7 +1109,7 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         errors.append("missing artifact runtime V1 artifact runtime authority assets")
         return
     receipt = load_json(receipt_path)
-    expected_status = "LOCAL_IMMUTABLE_DAEMON_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN"
+    expected_status = "LOCAL_STRATEGY_RELEASE_RUNTIME_ACCEPTED_PRODUCTION_GATES_OPEN"
     if receipt.get("receipt_status") != expected_status:
         errors.append("artifact runtime receipt status differs")
     expected_receipt = {
@@ -1134,7 +1134,8 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         "immutable_oci_materializer_composed": True,
         "daemon_command_coordinator_composed": True,
         "clone_local_crucible_strategy_release_authority_verified": True,
-        "real_ps_oci_publication_present": False,
+        "real_ps_oci_publication_present": True,
+        "crucible_strategy_release_acceptance_present": True,
         "deployed_crucible_strategy_release_acceptance_present": False,
     }
     if dependencies != expected_dependencies:
@@ -1207,7 +1208,8 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         "immutable_oci_materializer_composed": True,
         "daemon_command_coordinator_composed": True,
         "clone_local_crucible_strategy_release_authority_verified": True,
-        "real_ps_oci_publication_present": False,
+        "real_ps_oci_publication_present": True,
+        "crucible_strategy_release_acceptance_present": True,
         "deployed_crucible_strategy_release_acceptance_present": False,
         "local_composition_capability_ready": True,
         "immutable_strategy_release_activated_by_production_daemon": True,

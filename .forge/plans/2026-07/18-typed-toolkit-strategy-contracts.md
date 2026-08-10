@@ -1,8 +1,8 @@
 # 18 - Publish typed toolkit and strategy execution contracts
 
-> **Status**: ⏳ In progress — sole V1 contract, RC5 toolkit, PS unique-V1 OCI publication and local sandbox/production-daemon activation are verified; Crucible StrategyRelease acceptance, unchanged final promotion and deployed cross-repo acceptance remain open
+> **Status**: ⏳ In progress — sole V1 contract, RC5 toolkit, PS unique-V1 OCI publication, Crucible StrategyRelease acceptance and the clean-head local production-daemon full loop are verified; current Custos image publication, unchanged final promotion and deployed testnet/live acceptance remain open
 > **Created**: 2026-07-14
-> **Revised**: 2026-08-10 for external PS/Custos publication and full local v1.team acceptance evidence
+> **Revised**: 2026-08-10 for Crucible artifact acceptance and clean-head local v1.team acceptance evidence
 > **Project**: Custos
 > **Source**: PS Plan 53 strategy/toolkit convergence roadmap and v1.team review
 > **For Claude**: Use `/forge:execute` for exactly one canonical slice per session.
@@ -658,7 +658,9 @@ Execution checkpoint (2026-07-21):
   exact owner receipt. Crucible consumer commit `8038387` now pins Custos
   contract commit `d1847cd` and its corrected asset index; the Custos producer
   handoff binds that receipt, and Crucible final readback `477215d` pins the
-  handoff. Readiness remains false pending PS acceptance.
+  handoff. Crucible acceptance `aae3a12` now closes the published PS RC2
+  candidate boundary; final-image publication and deployed acceptance remain
+  open.
 - Engine/runtime/production readiness remains false until the PS artifact and
   Crucible StrategyRelease receipts complete Tasks 7-9. Historical tags and
   receipts must not be overwritten or repointed.
@@ -725,7 +727,7 @@ git commit -m "docs(custos): mark plan 18 as completed"
 - [x] wheel 不提供顶层 `shared` 或 `pandas_ta`
 - [x] lightweight contracts import 不修改 `sys.path`
 - [x] existing NT strategy business source zero-rewrite
-- [ ] PS Plan 54、Crucible Plan 88 和 Custos verifier/runtime receipts 指向 exact BOM/member digests
+- [x] PS Plan 54、Crucible Plan 88 和 Custos verifier/runtime candidate receipts 指向 exact BOM/member digests
 - [x] Speculum 不属于 START/STOP、candidate/final acceptance 或 close-out gate
 - [x] PS legacy `build-image.sh` -> Crucible Python image 链保留为独立 compatibility lane，且不作为 team fallback 或验收证据
 - [x] toolkit advisory risk 不冒充 Custos/Crucible authority
@@ -742,11 +744,28 @@ git commit -m "docs(custos): mark plan 18 as completed"
 | Canonical V1 models and source | local gates pass | sole V1 source, generated assets and focused verification are current |
 | Immutable toolkit RC | READY | RC5 protected publication and independent digest readback succeeded; no historical consumer receipt is accepted for the corrected V1 index |
 | Old contract/runtime generations | removed | old runtime module and command-owned evidence path are absent |
-| PS V1 handoff | unique V1 RC2 published; consumer acceptance pending | PS `63cc7c1` run `31291672169` published `ghcr.io/alchymia-labs/v1-team-strategy-artifacts@sha256:f2181ef975b14cccfacc6f880ebfb97684b2a15d3026474dde62dafd449996ec` with exact BOM, execution-ref, statement, SBOM and Sigstore descriptor matrices |
-| Crucible V1 handoff | Custos contract readback complete; PS artifact acceptance pending | Crucible `8038387` consumes Custos `d1847cd`; Custos `b14fc19` pins that receipt and Crucible `477215d` reads back the handoff without a hash cycle. Crucible has not yet issued the acceptance receipt for the published PS RC2 |
+| PS V1 handoff | unique V1 RC2 published and accepted | PS `63cc7c1` run `31291672169` published `ghcr.io/alchymia-labs/v1-team-strategy-artifacts@sha256:f2181ef975b14cccfacc6f880ebfb97684b2a15d3026474dde62dafd449996ec`; Crucible `aae3a12` records the native exact-byte acceptance |
+| Crucible V1 handoff | StrategyRelease acceptance complete | Crucible `aae3a12` owns the accepted PS artifact evidence and `f18d290` proves the distinct DeploymentSpec and StrategyProduct snapshots converge by immutable release identity through settlement |
 | Crucible Plan 89 runner resolution | local exact-byte gate pass | Runtime `34e0f13`, contract `a4972de` and owner receipt `5a531c2` bind one persisted DeploymentSpec-derived release with four ordered subjects and an exact BOM/ArtifactRef build-lock binding; immutable daemon materialization and deployed acceptance remain open |
-| Runtime activation | full local v1.team acceptance passes; production deployment open | development-source runtime passes; the production path validates immutable release material, executes two sandbox instances and projects signed RunnerFacts through real PostgreSQL/NATS. Custos image run `31352721692` is attested at `sha256:6bf1f55164b96b9356ebdfda1e9a69c4ec4b34b18737e3602c88ee45f2852d72` |
-| Production/live | STOP | requires Crucible acceptance of the published PS RC2, unchanged final promotion, coordinated image lock, deployed receipts and production approval |
+| Runtime activation | clean-head local full loop accepted; current image publication open | ARX `0d8c92b`, Crucible `f18d290` and Custos `a83e6f6` validate the real StrategyRelease, execute two sandbox instances, project signed RunnerFacts, settle two statements and pass Chromium; closeout SHA-256 is `2f60d4c3e4bd9efa5312bfa64cdbbe2dee7d78b4b9e2c407e3711f43d04a0420` |
+| Production/live | STOP | requires an attested image rebuilt from current Custos `a83e6f6`, unchanged final promotion, coordinated image lock, deployed migration/transport receipts and production approval |
+
+## 2026-08-10 clean-head StrategyRelease full-loop checkpoint
+
+The local full-stack command completed from ARX
+`0d8c92b8445e6cbe29ed15a32f98fd016dd47e4e`, Crucible
+`f18d29035b26bb78b14bc4bac05109772bd35957` and Custos
+`a83e6f6969709316b8f11bcc0618b2f7b32fc19f`. It consumed the published PS
+artifact through Crucible's native StrategyRelease acceptance, activated it in
+the Custos production daemon, completed two command/fact instance streams,
+published 14 signed RunnerFact batches, generated two settlement statements and
+passed the real-service Chromium scenario. The immutable local closeout digest is
+`2f60d4c3e4bd9efa5312bfa64cdbbe2dee7d78b4b9e2c407e3711f43d04a0420`.
+
+This closes the candidate artifact-chain and local runtime evidence portions of
+Tasks 7 and 9. It does not complete Tasks 8-9: the current Custos source is newer
+than the published runtime image, final bytes are not locked or promoted, and no
+deployed testnet/live receipt or production approval exists.
 
 ## Deviations and Improvements
 

@@ -1,12 +1,12 @@
 # 19 - Converge Crucible command, RunnerFact, and local execution runtime
 
-> **Status**: ⏳ In progress — T2-T8a, the attested Custos V1 runtime image and full local PostgreSQL/NATS/command/engine/RunnerFact/browser flow pass; Crucible acceptance of the published PS candidate, coordinated deployment and T10 remain open
+> **Status**: ⏳ In progress — T2-T9 local evidence, Crucible acceptance of the published PS candidate and the clean-head PostgreSQL/NATS/command/engine/RunnerFact/settlement/browser flow pass; current image publication, coordinated deployment and T10 remain open
 > **Created**: 2026-07-14
-> **Revised**: 2026-08-10 through attested runtime-image publication and full local v1.team acceptance
+> **Revised**: 2026-08-10 through native StrategyRelease acceptance and clean-head local v1.team acceptance
 > **Project**: Custos
 > **Source**: Audit of pre-plan migration `324da6e`, PS Plan 53, and v1.team review
 > **For Claude**: Use `/forge:execute` to implement this plan.
-> **Immediately executable**: T7 contract handoff and the local service-issued policy/transport daemon flow through encrypted V1 vault restart, rotation, immutable StrategyRelease activation, PubAck and same-batch Crucible projection are complete; exact PS candidate and deployed `0117`/`0029` receipts remain gated
+> **Immediately executable**: T7 contract handoff, native PS artifact acceptance and the local service-issued policy/transport daemon flow through encrypted V1 vault restart, rotation, immutable StrategyRelease activation, PubAck, same-batch Crucible projection and settlement are complete; current-image publication and deployed migration/transport receipts remain gated
 > **19d-T8a gate**: 19c STOP only; it produces the immutable RunnerFact candidate before Crucible Plan 90 Phase A
 > **Runtime RC gates**: Crucible Plan 89 migration 0116 signed command producer and `CR89-0116-GENERATION-STORAGE`; Crucible Plan 90 Phase-A schema/golden compatibility receipt; Crucible Plan 99 runner-safety-policy-authority; Crucible Plan 100 runner NATS transport authority and revocation receipts; Custos Plan 18 staged candidate and exact final required by the selected RC/final-candidate BOM
 > **Close-out gates**: Crucible Plan 90 Phase-B real runtime round-trip receipt; PS Plan 56 exact final-candidate acceptance
@@ -1522,9 +1522,25 @@ close-out receipt
 `ecbc393dada1721e490586fd959650a9a08759de9a09c11a485f18d3a53f45b0`
 has status `LOCAL_DEMO_ACCEPTED_PRODUCTION_GATES_OPEN`.
 
-This closes the local runtime/image evidence portion of Task 9. It does not
-close Task 10: Crucible must still accept the published PS unique-V1 artifact,
-the final coordinated image lock must bind all owner receipts, physical
-production migrations require independent human approvals, and the deployed
-testnet/live round trip plus PS Plan 56 acceptance must consume unchanged
-bytes.
+This closes the original local runtime/image evidence portion of Task 9. It did
+not close Task 10 at that checkpoint: native PS artifact acceptance, a final
+coordinated image lock, independently approved physical production migrations,
+and the deployed testnet/live plus PS Plan 56 acceptance were still required.
+
+## 2026-08-10 clean-head native StrategyRelease acceptance
+
+Crucible `aae3a12` now owns native acceptance of the published PS unique-V1
+artifact. The coordinated local rerun from ARX
+`0d8c92b8445e6cbe29ed15a32f98fd016dd47e4e`, Crucible
+`f18d29035b26bb78b14bc4bac05109772bd35957` and Custos
+`a83e6f6969709316b8f11bcc0618b2f7b32fc19f` completed the production-daemon
+artifact verification and activation, two instance-continuous command/fact
+streams, 14 RunnerFact batches, exact Crucible projections, tenant isolation,
+operations/audit, two settlement statements and the Chromium real-service
+scenario. The immutable local closeout digest is
+`2f60d4c3e4bd9efa5312bfa64cdbbe2dee7d78b4b9e2c407e3711f43d04a0420`.
+
+Task 9 local evidence is closed. Task 10 remains open because the current Custos
+head is newer than published image `sha256:6bf1f55164b96b9356ebdfda1e9a69c4ec4b34b18737e3602c88ee45f2852d72`;
+the replacement image must be published, attested, locked unchanged with the
+other owner images and consumed by deployed testnet/live plus PS Plan 56.

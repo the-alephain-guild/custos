@@ -225,7 +225,7 @@
   },
   "strategy_artifact_runtime": {
     "owner": "custos",
-    "status": "LOCAL_IMMUTABLE_DAEMON_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN",
+    "status": "LOCAL_STRATEGY_RELEASE_RUNTIME_ACCEPTED_PRODUCTION_GATES_OPEN",
     "receipt": "docs/authority/receipts/custos-strategy-artifact-runtime-v1-receipt.json",
     "command_source": "durable CrucibleRunnerDeploymentCommandV1 after signature verification and intake",
     "runner_local_policy_independent": true,
@@ -238,7 +238,8 @@
     "immutable_oci_materializer_composed": true,
     "daemon_command_coordinator_composed": true,
     "clone_local_crucible_strategy_release_authority_verified": true,
-    "real_ps_oci_publication_present": false,
+    "real_ps_oci_publication_present": true,
+    "crucible_strategy_release_acceptance_present": true,
     "deployed_crucible_strategy_release_acceptance_present": false,
     "local_composition_capability_ready": true,
     "immutable_strategy_release_activated_by_production_daemon": true,

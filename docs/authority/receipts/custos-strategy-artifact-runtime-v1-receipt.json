@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "receipt_id": "CUSTOS-STRATEGY-ARTIFACT-RUNTIME-V1",
-  "receipt_status": "LOCAL_IMMUTABLE_DAEMON_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN",
+  "receipt_status": "LOCAL_STRATEGY_RELEASE_RUNTIME_ACCEPTED_PRODUCTION_GATES_OPEN",
   "repository": "tesseract-trading/custos",
   "runtime_implementation_complete": true,
   "clone_local_production_composition_verified": true,
@@ -40,7 +40,8 @@
     "immutable_oci_materializer_composed": true,
     "daemon_command_coordinator_composed": true,
     "clone_local_crucible_strategy_release_authority_verified": true,
-    "real_ps_oci_publication_present": false,
+    "real_ps_oci_publication_present": true,
+    "crucible_strategy_release_acceptance_present": true,
     "deployed_crucible_strategy_release_acceptance_present": false
   },
   "local_composition_capability_ready": true,
@@ -93,10 +94,26 @@
     "crash_before_broker_ack_recovered": true,
     "runner_fact_puback": true
   },
+  "local_full_stack_acceptance": {
+    "result": "passed",
+    "scope": "local_real_service_non_production",
+    "arx_commit": "0d8c92b8445e6cbe29ed15a32f98fd016dd47e4e",
+    "crucible_commit": "f18d29035b26bb78b14bc4bac05109772bd35957",
+    "custos_commit": "a83e6f6969709316b8f11bcc0618b2f7b32fc19f",
+    "ps_artifact_published": true,
+    "crucible_strategy_release_accepted": true,
+    "production_daemon_artifact_activation": true,
+    "deployment_instance_count": 2,
+    "runner_fact_batch_count": 14,
+    "settlement_statement_count": 2,
+    "real_service_browser_passed": true,
+    "closeout_receipt_sha256": "2f60d4c3e4bd9efa5312bfa64cdbbe2dee7d78b4b9e2c407e3711f43d04a0420",
+    "promotable": false
+  },
   "open_blockers": [
-    "real Philosophers-Stone exact-candidate OCI publication, Sigstore evidence and exact-byte pins",
-    "locked runtime candidate plus Crucible Phase B and PS exact-candidate acceptance",
-    "deployed control migration heads 0029 and 0117",
+    "publish and attest a replacement runtime image from current Custos source",
+    "lock and promote the coordinated final owner images unchanged",
+    "deployed current control and mode migration-head receipts",
     "deployed signed runner safety policy, authenticated transport, testnet and live receipts"
   ]
 }

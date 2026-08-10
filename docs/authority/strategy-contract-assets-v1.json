@@ -59,7 +59,7 @@
   "producer": {
     "repository": "tesseract-trading/custos",
     "source_path": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
-    "source_sha256": "eb83d41cd8c4bb6e8c751ef19bbbe5de28c18ca69703905fd5eb76b9bab9f3f3"
+    "source_sha256": "62b51a5362bfbd8b797e9584bbea9716df642e5388aab4e169025b0cb56130b0"
   },
   "status": "CANONICAL_V1_CONTRACT_ASSETS_PUBLISHED"
 }
