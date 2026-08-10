@@ -330,7 +330,7 @@ jobs:
           test "$(docker image inspect "$IMAGE_REF" --format '{{json .Config.Cmd}}')" = \
             '["start","--production-state-root","/home/custos/.arx"]'
           docker run --rm "$IMAGE_REF" --help
-          for command in credential deployment enroll health identity nats nats-transport publish-capability start vault; do
+          for command in credential deployment enroll health identity nats nats-transport publish-capability release-policy start vault; do
             docker run --rm "$IMAGE_REF" "$command" --help
           done
 
