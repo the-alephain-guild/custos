@@ -14,6 +14,7 @@ from typing import Any
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from custos_toolkit.contracts.strategy_execution import canonical_json_bytes
 from pydantic import ValidationError
 
 from custos.artifacts.policy import (
@@ -23,7 +24,6 @@ from custos.artifacts.policy import (
     canonical_policy_bytes,
     sign_release_policy,
 )
-from custos_toolkit.contracts.strategy_execution import canonical_json_bytes
 
 _PRIVATE_MODE = 0o600
 _PUBLIC_MODE = 0o644

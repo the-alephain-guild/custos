@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 from custos_toolkit.contracts import strategy_execution
 from custos_toolkit.contracts.strategy_execution import (
-    StrategyArtifactRefV1,
     StrategyArtifactPreImportVerificationReceiptV1,
+    StrategyArtifactRefV1,
 )
 from pydantic import ValidationError as PydanticValidationError
 
