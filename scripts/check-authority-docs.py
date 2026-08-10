@@ -40,6 +40,17 @@ ARTIFACT_RUNTIME_RECEIPT_PATH = (
     "docs/authority/receipts/custos-strategy-artifact-runtime-v1-receipt.json"
 )
 ARTIFACT_RUNTIME_SOURCE = "src/custos/artifacts/runtime.py"
+RUNTIME_CANDIDATE_PUBLICATION_RECEIPT_PATH = (
+    "docs/authority/external/custos/runtime-image-publication-receipt-v1.json"
+)
+RUNTIME_CANDIDATE_ACCEPTANCE_SCHEMA_PATH = (
+    "docs/gateway-contract/v1/runtime_candidate_acceptance_v1.schema.json"
+)
+RUNTIME_CANDIDATE_PROMOTION_SCHEMA_PATH = (
+    "docs/gateway-contract/v1/runtime_candidate_promotion_receipt_v1.schema.json"
+)
+RUNTIME_CANDIDATE_PROMOTION_SOURCE = "scripts/runtime_candidate_promote.py"
+RUNTIME_CANDIDATE_PROMOTION_WORKFLOW = ".github/workflows/promote-runtime-candidate.yml"
 ENGINE_LIFECYCLE_RECEIPT_PATH = "docs/authority/receipts/custos-engine-lifecycle-v1-receipt.json"
 ENGINE_LIFECYCLE_SOURCE = "src/custos/core/engine_lifecycle.py"
 PORTFOLIO_SEMANTICS_RECEIPT_PATH = (
@@ -1098,6 +1109,158 @@ def verify_runner_fact_durable_state(manifest: dict[str, Any], errors: list[str]
             )
     if source.count("CREATE TABLE IF NOT EXISTS runner_fact_outbox") != 1:
         errors.append("RunnerFact durable state must retain exactly one RunnerFact outbox table")
+
+
+def verify_runtime_candidate_promotion(manifest: dict[str, Any], errors: list[str]) -> None:
+    """Keep unchanged-digest promotion fail closed until both owner receipts exist."""
+
+    paths = {
+        "candidate publication receipt": RUNTIME_CANDIDATE_PUBLICATION_RECEIPT_PATH,
+        "acceptance schema": RUNTIME_CANDIDATE_ACCEPTANCE_SCHEMA_PATH,
+        "promotion receipt schema": RUNTIME_CANDIDATE_PROMOTION_SCHEMA_PATH,
+        "promotion runner": RUNTIME_CANDIDATE_PROMOTION_SOURCE,
+        "promotion workflow": RUNTIME_CANDIDATE_PROMOTION_WORKFLOW,
+    }
+    resolved = {name: resolve(path) for name, path in paths.items()}
+    missing = [name for name, path in resolved.items() if not path.is_file()]
+    if missing:
+        errors.append(f"missing runtime candidate promotion assets: {', '.join(missing)}")
+        return
+
+    publication_path = resolved["candidate publication receipt"]
+    expected_receipt_sha256 = (
+        "aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead"
+    )
+    if hashlib.sha256(publication_path.read_bytes()).hexdigest() != expected_receipt_sha256:
+        errors.append("runtime candidate publication receipt exact bytes differ")
+    publication = load_json(publication_path)
+    expected_publication = {
+        "schema_version": 1,
+        "receipt_id": "CUSTOS-V1-TEAM-IMAGE-PUBLICATION-V1",
+        "status": "IMAGE_PUBLISHED_ATTESTED",
+        "image_key": "custos",
+        "production_ready": False,
+    }
+    if any(publication.get(key) != value for key, value in expected_publication.items()):
+        errors.append("runtime candidate publication receipt identity differs")
+    if publication.get("image") != {
+        "repository": "ghcr.io/the-alephain-guild/custos",
+        "digest": "sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690",
+        "platform": "linux/amd64",
+    }:
+        errors.append("runtime candidate publication image differs")
+    if publication.get("source") != {
+        "repository": "the-alephain-guild/custos",
+        "revision": "b25a5f53e676677b234e98a72ccb36d43d83d0d5",
+    }:
+        errors.append("runtime candidate publication source differs")
+
+    acceptance_schema = load_json(resolved["acceptance schema"])
+    promotion_schema = load_json(resolved["promotion receipt schema"])
+    if acceptance_schema.get("title") != "RuntimeCandidateAcceptanceV1":
+        errors.append("runtime candidate acceptance schema identity differs")
+    if promotion_schema.get("title") != "RuntimeCandidatePromotionReceiptV1":
+        errors.append("runtime candidate promotion receipt schema identity differs")
+
+    runner_source = resolved["promotion runner"].read_text(encoding="utf-8")
+    for marker in (
+        "class RuntimeCandidatePromotionError",
+        "def promote_runtime_candidate(",
+        '"PROMOTED_UNCHANGED"',
+        '"system_production_ready": False',
+    ):
+        if marker not in runner_source:
+            errors.append(f"runtime candidate promotion runner lacks {marker!r}")
+
+    workflow = resolved["promotion workflow"].read_text(encoding="utf-8")
+    for marker in (
+        "environment: v1-team-runtime-promotion",
+        "id-token: write",
+        "python3 scripts/runtime_candidate_promote.py",
+        "cosign verify ",
+        "cosign sign-blob",
+        "cosign verify-blob",
+        "runtime-candidate-phase-b-acceptance-v1.json",
+        "runtime-candidate-acceptance-v1.json",
+    ):
+        if marker not in workflow:
+            errors.append(f"runtime candidate promotion workflow lacks {marker!r}")
+    for forbidden in (
+        "packages: write",
+        "contents: write",
+        "docker build ",
+        "docker push ",
+        "docker tag ",
+        "imagetools create",
+        "crane tag ",
+    ):
+        if forbidden in workflow:
+            errors.append(
+                f"runtime candidate promotion workflow permits mutation via {forbidden!r}"
+            )
+
+    expected_entries = (
+        {
+            "role": "runtime_candidate_acceptance_schema_v1",
+            "path": RUNTIME_CANDIDATE_ACCEPTANCE_SCHEMA_PATH,
+            "contract_only": True,
+        },
+        {
+            "role": "runtime_candidate_promotion_receipt_schema_v1",
+            "path": RUNTIME_CANDIDATE_PROMOTION_SCHEMA_PATH,
+            "contract_only": True,
+        },
+        {
+            "role": "runtime_candidate_promotion_runner",
+            "path": RUNTIME_CANDIDATE_PROMOTION_SOURCE,
+            "contract_only": False,
+            "capability_ready": True,
+            "promotion_receipt_published": False,
+        },
+        {
+            "role": "runtime_candidate_promotion_workflow",
+            "path": RUNTIME_CANDIDATE_PROMOTION_WORKFLOW,
+            "contract_only": False,
+            "capability_ready": True,
+            "promotion_receipt_published": False,
+        },
+        {
+            "role": "runtime_candidate_publication_receipt_v1",
+            "path": RUNTIME_CANDIDATE_PUBLICATION_RECEIPT_PATH,
+            "receipt_status": "IMAGE_PUBLISHED_ATTESTED",
+            "production_ready": False,
+        },
+    )
+    entries = manifest.get("authority_documents", [])
+    for entry in expected_entries:
+        if entry not in entries:
+            errors.append(f"authority manifest lacks runtime promotion entry {entry['role']}")
+
+    promotion = load_json(ROOT / "docs/authority/ecosystem-authority.json").get(
+        "runtime_candidate_promotion"
+    )
+    expected_promotion = {
+        "status": "PROMOTION_CAPABILITY_READY_DOWNSTREAM_ACCEPTANCE_OPEN",
+        "candidate_publication_receipt_present": True,
+        "crucible_acceptance_present": False,
+        "strategy_owner_acceptance_present": False,
+        "promotion_capability_ready": True,
+        "unchanged_digest_promotion_completed": False,
+        "artifact_runtime_ready": False,
+        "production_ready": False,
+    }
+    if not isinstance(promotion, dict) or any(
+        promotion.get(key) != value for key, value in expected_promotion.items()
+    ):
+        errors.append("runtime candidate promotion authority boundary differs")
+    elif promotion.get("invariants") != {
+        "owner_receipts_required": True,
+        "exact_digest_reverification_required": True,
+        "rebuild_permitted": False,
+        "retag_substitute_permitted": False,
+        "registry_mutation_permitted": False,
+    }:
+        errors.append("runtime candidate promotion invariants differ")
 
 
 def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None:
@@ -2506,6 +2669,7 @@ def main() -> int:
     verify_strategy_contract_authority(errors)
     verify_runner_command_consumer(errors)
     verify_artifact_runtime(manifest, errors)
+    verify_runtime_candidate_promotion(manifest, errors)
     verify_runner_fact_durable_state(manifest, errors)
     verify_engine_lifecycle(manifest, errors)
     verify_portfolio_semantics(manifest, errors)

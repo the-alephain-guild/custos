@@ -265,6 +265,36 @@
     "canonical_v1_only": true,
     "compatibility_fallback_allowed": false
   },
+  "runtime_candidate_promotion": {
+    "owner": "custos",
+    "status": "PROMOTION_CAPABILITY_READY_DOWNSTREAM_ACCEPTANCE_OPEN",
+    "candidate_publication_receipt": "docs/authority/external/custos/runtime-image-publication-receipt-v1.json",
+    "acceptance_contract": "docs/gateway-contract/v1/runtime_candidate_acceptance_v1.schema.json",
+    "promotion_receipt_contract": "docs/gateway-contract/v1/runtime_candidate_promotion_receipt_v1.schema.json",
+    "promotion_workflow": ".github/workflows/promote-runtime-candidate.yml",
+    "candidate": {
+      "repository": "ghcr.io/the-alephain-guild/custos",
+      "digest": "sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690",
+      "source_commit": "b25a5f53e676677b234e98a72ccb36d43d83d0d5",
+      "publication_receipt_sha256": "aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead"
+    },
+    "crucible_acceptance_path": "docs/authority/external/crucible-rust/runtime-candidate-phase-b-acceptance-v1.json",
+    "strategy_owner_acceptance_path": "docs/authority/external/philosophers-stone/runtime-candidate-acceptance-v1.json",
+    "candidate_publication_receipt_present": true,
+    "crucible_acceptance_present": false,
+    "strategy_owner_acceptance_present": false,
+    "promotion_capability_ready": true,
+    "unchanged_digest_promotion_completed": false,
+    "artifact_runtime_ready": false,
+    "production_ready": false,
+    "invariants": {
+      "owner_receipts_required": true,
+      "exact_digest_reverification_required": true,
+      "rebuild_permitted": false,
+      "retag_substitute_permitted": false,
+      "registry_mutation_permitted": false
+    }
+  },
   "engine_lifecycle": {
     "owner": "custos",
     "status": "LOCAL_IMMUTABLE_ACTIVATION_VERIFIED_RUNTIME_CANDIDATE_OPEN",

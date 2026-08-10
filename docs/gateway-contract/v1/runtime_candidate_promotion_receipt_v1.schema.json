@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://custos.alchymia.dev/contracts/v1/runtime_candidate_promotion_receipt_v1.schema.json",
+  "title": "RuntimeCandidatePromotionReceiptV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "status",
+    "candidate",
+    "inputs",
+    "workflow",
+    "invariants",
+    "promoted_at",
+    "artifact_runtime_ready",
+    "system_production_ready"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "receipt_id": {"const": "CUSTOS-RUNTIME-CANDIDATE-PROMOTION-V1"},
+    "status": {"const": "PROMOTED_UNCHANGED"},
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "digest", "source_revision", "platform"],
+      "properties": {
+        "repository": {"const": "ghcr.io/the-alephain-guild/custos"},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "platform": {"const": "linux/amd64"}
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["publication", "crucible_acceptance", "strategy_owner_acceptance"],
+      "properties": {
+        "publication": {"$ref": "#/$defs/inputReceipt"},
+        "crucible_acceptance": {"$ref": "#/$defs/inputReceipt"},
+        "strategy_owner_acceptance": {"$ref": "#/$defs/inputReceipt"}
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "revision",
+        "run_id",
+        "run_attempt",
+        "workflow_file",
+        "workflow_identity",
+        "environment",
+        "oidc_issuer"
+      ],
+      "properties": {
+        "repository": {"const": "the-alephain-guild/custos"},
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "run_id": {"type": "integer", "minimum": 1},
+        "run_attempt": {"type": "integer", "minimum": 1},
+        "workflow_file": {"const": ".github/workflows/promote-runtime-candidate.yml"},
+        "workflow_identity": {
+          "const": "https://github.com/the-alephain-guild/custos/.github/workflows/promote-runtime-candidate.yml@refs/heads/main"
+        },
+        "environment": {"const": "v1-team-runtime-promotion"},
+        "oidc_issuer": {"const": "https://token.actions.githubusercontent.com"}
+      }
+    },
+    "invariants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "manifest_digest_before",
+        "manifest_digest_after",
+        "exact_digest_unchanged",
+        "image_rebuilt",
+        "tag_repointed",
+        "registry_mutated"
+      ],
+      "properties": {
+        "manifest_digest_before": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "manifest_digest_after": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "exact_digest_unchanged": {"const": true},
+        "image_rebuilt": {"const": false},
+        "tag_repointed": {"const": false},
+        "registry_mutated": {"const": false}
+      }
+    },
+    "promoted_at": {"type": "string", "format": "date-time"},
+    "artifact_runtime_ready": {"const": true},
+    "system_production_ready": {"const": false}
+  },
+  "$defs": {
+    "inputReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["receipt_id", "owner", "sha256", "size_bytes"],
+      "properties": {
+        "receipt_id": {"type": "string", "minLength": 1},
+        "owner": {"enum": ["custos", "crucible-rust", "philosophers-stone"]},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "size_bytes": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

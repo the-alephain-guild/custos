@@ -1,0 +1,111 @@
+name: Promote attested runtime candidate without changing OCI bytes
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+  id-token: write
+
+concurrency:
+  group: runtime-candidate-promotion-sha256-d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690
+  cancel-in-progress: false
+
+jobs:
+  promote-unchanged-candidate:
+    if: github.repository == 'the-alephain-guild/custos' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: v1-team-runtime-promotion
+    env:
+      CANDIDATE_REPOSITORY: ghcr.io/the-alephain-guild/custos
+      CANDIDATE_DIGEST: sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690
+      PUBLICATION_RECEIPT: docs/authority/external/custos/runtime-image-publication-receipt-v1.json
+      PUBLICATION_RECEIPT_SHA256: aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead
+      CRUCIBLE_ACCEPTANCE: docs/authority/external/crucible-rust/runtime-candidate-phase-b-acceptance-v1.json
+      STRATEGY_OWNER_ACCEPTANCE: docs/authority/external/philosophers-stone/runtime-candidate-acceptance-v1.json
+    steps:
+      - name: Check out the authority commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install pinned Cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: v3.1.3
+
+      - name: Require exact committed owner receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse --abbrev-ref HEAD)" = "main"
+          test "$(sha256sum "$PUBLICATION_RECEIPT" | awk '{print $1}')" = "$PUBLICATION_RECEIPT_SHA256"
+          test -s "$CRUCIBLE_ACCEPTANCE"
+          test -s "$STRATEGY_OWNER_ACCEPTANCE"
+
+      - name: Reverify the exact candidate before promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign verify \
+            --certificate-identity "https://github.com/the-alephain-guild/custos/.github/workflows/release.yml@refs/heads/main" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$CANDIDATE_REPOSITORY@$CANDIDATE_DIGEST" \
+            > "$RUNNER_TEMP/candidate-verification-before.json"
+
+      - name: Reverify the exact candidate after the read-only gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign verify \
+            --certificate-identity "https://github.com/the-alephain-guild/custos/.github/workflows/release.yml@refs/heads/main" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$CANDIDATE_REPOSITORY@$CANDIDATE_DIGEST" \
+            > "$RUNNER_TEMP/candidate-verification-after.json"
+
+      - name: Emit the digest-bound promotion receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/custos-runtime-candidate-promotion-v1.json"
+          python3 scripts/runtime_candidate_promote.py \
+            --candidate-receipt "$PUBLICATION_RECEIPT" \
+            --crucible-acceptance "$CRUCIBLE_ACCEPTANCE" \
+            --strategy-owner-acceptance "$STRATEGY_OWNER_ACCEPTANCE" \
+            --expected-publication-receipt-sha256 "$PUBLICATION_RECEIPT_SHA256" \
+            --observed-manifest-digest-before "$CANDIDATE_DIGEST" \
+            --observed-manifest-digest-after "$CANDIDATE_DIGEST" \
+            --workflow-revision "${{ github.sha }}" \
+            --workflow-run-id "${{ github.run_id }}" \
+            --workflow-run-attempt "${{ github.run_attempt }}" \
+            --promoted-at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --output "$output"
+          sha256sum "$output" > "$output.sha256"
+
+      - name: Sign and independently verify the promotion receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          receipt="$RUNNER_TEMP/custos-runtime-candidate-promotion-v1.json"
+          bundle="$RUNNER_TEMP/custos-runtime-candidate-promotion-v1.sigstore.json"
+          cosign sign-blob --yes --bundle "$bundle" "$receipt"
+          cosign verify-blob \
+            --bundle "$bundle" \
+            --certificate-identity "https://github.com/the-alephain-guild/custos/.github/workflows/promote-runtime-candidate.yml@refs/heads/main" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$receipt"
+
+      - name: Upload immutable promotion evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: runtime-candidate-promotion-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/custos-runtime-candidate-promotion-v1.json
+            ${{ runner.temp }}/custos-runtime-candidate-promotion-v1.json.sha256
+            ${{ runner.temp }}/custos-runtime-candidate-promotion-v1.sigstore.json
+            ${{ runner.temp }}/candidate-verification-before.json
+            ${{ runner.temp }}/candidate-verification-after.json
+          if-no-files-found: error
+          retention-days: 90
+          overwrite: false

@@ -95,6 +95,36 @@
       "ready_receipt_published": true
     },
     {
+      "role": "runtime_candidate_acceptance_schema_v1",
+      "path": "docs/gateway-contract/v1/runtime_candidate_acceptance_v1.schema.json",
+      "contract_only": true
+    },
+    {
+      "role": "runtime_candidate_promotion_receipt_schema_v1",
+      "path": "docs/gateway-contract/v1/runtime_candidate_promotion_receipt_v1.schema.json",
+      "contract_only": true
+    },
+    {
+      "role": "runtime_candidate_promotion_runner",
+      "path": "scripts/runtime_candidate_promote.py",
+      "contract_only": false,
+      "capability_ready": true,
+      "promotion_receipt_published": false
+    },
+    {
+      "role": "runtime_candidate_promotion_workflow",
+      "path": ".github/workflows/promote-runtime-candidate.yml",
+      "contract_only": false,
+      "capability_ready": true,
+      "promotion_receipt_published": false
+    },
+    {
+      "role": "runtime_candidate_publication_receipt_v1",
+      "path": "docs/authority/external/custos/runtime-image-publication-receipt-v1.json",
+      "receipt_status": "IMAGE_PUBLISHED_ATTESTED",
+      "production_ready": false
+    },
+    {
       "role": "local_runner_fact",
       "path": "docs-site/docs/03-concepts/runner-fact.md"
     },

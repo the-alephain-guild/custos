@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "receipt_id": "CUSTOS-V1-TEAM-IMAGE-PUBLICATION-V1",
+  "status": "IMAGE_PUBLISHED_ATTESTED",
+  "image_key": "custos",
+  "image": {
+    "repository": "ghcr.io/the-alephain-guild/custos",
+    "digest": "sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690",
+    "platform": "linux/amd64"
+  },
+  "source": {
+    "repository": "the-alephain-guild/custos",
+    "revision": "b25a5f53e676677b234e98a72ccb36d43d83d0d5"
+  },
+  "workflow": {
+    "repository": "the-alephain-guild/custos",
+    "run_id": 31361924833,
+    "run_attempt": 1,
+    "release_id": "v1-team-runtime-20260810-b25a5f5",
+    "source_ref": "refs/heads/main",
+    "workflow_file": ".github/workflows/release.yml",
+    "workflow_identity": "https://github.com/the-alephain-guild/custos/.github/workflows/release.yml@refs/heads/main",
+    "workflow_name": "Release",
+    "trigger": "workflow_dispatch",
+    "oidc_issuer": "https://token.actions.githubusercontent.com",
+    "cosign_version": "v3.1.3"
+  },
+  "evidence": {
+    "provenance": {
+      "path": "provenance.json",
+      "sha256": "1d8bd87415c3e57a0c8545a86fa0c4dbef662b46310e53d8fc10308763aab4aa",
+      "size_bytes": 39062
+    },
+    "sbom": {
+      "path": "sbom.json",
+      "sha256": "97a5253294a467e7712ba70587d9a69d28c63c1fca723e5b123cb8919f430fd4",
+      "size_bytes": 2756672
+    },
+    "sigstore_bundle": {
+      "path": "sigstore-bundle.json",
+      "sha256": "8bea5a683a2f7e6dd1669bcc6de829f0bdb9f2d723df06bdca6425204b2b167e",
+      "size_bytes": 10917
+    },
+    "sigstore_signature_verification": {
+      "path": "sigstore-signature-verification.json",
+      "sha256": "41e6e2f6de44927287692aa69b1f487c15f76c7b2e8569541a33cbffd6aafcc1",
+      "size_bytes": 325
+    }
+  },
+  "production_ready": false,
+  "remaining_gate": "complete v1.team production bundle and deployed acceptance"
+}

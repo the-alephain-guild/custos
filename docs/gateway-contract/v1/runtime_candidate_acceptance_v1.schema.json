@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://custos.alchymia.dev/contracts/v1/runtime_candidate_acceptance_v1.schema.json",
+  "title": "RuntimeCandidateAcceptanceV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "owner",
+    "acceptance_scope",
+    "status",
+    "candidate",
+    "issuer",
+    "evidence",
+    "accepted_at",
+    "invariants"
+  ],
+  "properties": {
+    "schema_version": {"const": 1},
+    "receipt_id": {"type": "string", "pattern": "^[A-Z0-9][A-Z0-9_-]+-V1$"},
+    "owner": {"enum": ["crucible-rust", "philosophers-stone"]},
+    "acceptance_scope": {
+      "enum": ["deployed-runtime-round-trip", "strategy-artifact-runtime-acceptance"]
+    },
+    "status": {"const": "ACCEPTED"},
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "digest",
+        "source_revision",
+        "publication_receipt_sha256"
+      ],
+      "properties": {
+        "repository": {"const": "ghcr.io/the-alephain-guild/custos"},
+        "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "publication_receipt_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "issuer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "revision", "workflow_file", "workflow_run_id"],
+      "properties": {
+        "repository": {
+          "enum": [
+            "tesseract-trading-ltd/crucible-rust",
+            "alchymia-labs/philosophers-stone"
+          ]
+        },
+        "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "workflow_file": {"type": "string", "minLength": 1},
+        "workflow_run_id": {"type": "integer", "minimum": 1}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commands", "receipts"],
+      "properties": {
+        "commands": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["command", "result"],
+            "properties": {
+              "command": {"type": "string", "minLength": 1},
+              "result": {"const": "passed"}
+            }
+          }
+        },
+        "receipts": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "size_bytes"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+              "size_bytes": {"type": "integer", "minimum": 1}
+            }
+          }
+        }
+      }
+    },
+    "accepted_at": {"type": "string", "format": "date-time"},
+    "invariants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exact_digest_reverified",
+        "rebuild_permitted",
+        "retag_substitute_permitted"
+      ],
+      "properties": {
+        "exact_digest_reverified": {"const": true},
+        "rebuild_permitted": {"const": false},
+        "retag_substitute_permitted": {"const": false}
+      }
+    }
+  }
+}

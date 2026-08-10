@@ -1557,3 +1557,24 @@ SHA-256 is
 This closes Custos image publication but not the coordinated v1.team bundle.
 `runtime_candidate_ready=true` now means a candidate exists and is attested; it
 does not mean `runtime_ready`, `live_ready` or `production_ready`.
+
+## 2026-08-10 fail-closed unchanged-digest promotion capability
+
+Custos now owns a read-only promotion workflow for the published candidate.
+The workflow is pinned to the exact publication receipt and digest, requires a
+Crucible deployed Phase-B acceptance plus a philosophers-stone exact runtime
+acceptance, reverifies the signed digest before and after the gate, and emits a
+keyless-signed promotion receipt. It has no package-write or content-write
+permission and contains no build, push, tag or manifest-create operation.
+
+The shared `RuntimeCandidateAcceptanceV1` shape is only a transport receipt:
+each downstream owner retains its own business evidence and must bind that
+evidence, source revision and workflow run to the current Custos publication
+receipt bytes. Missing, rejected, differently bound or malformed owner evidence
+fails closed. No placeholder acceptance or promotion receipt is committed.
+
+Task 10 remains open. The workflow becomes runnable only after Crucible Plan 90
+Phase-B and PS Plan 56 publish their real owner receipts at the authority paths
+recorded in `docs/authority/ecosystem-authority.json`; its eventual receipt
+marks only the artifact runtime ready and does not self-claim whole-system
+production readiness.
