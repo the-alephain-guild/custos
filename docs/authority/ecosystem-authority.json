@@ -281,8 +281,10 @@
       "source_commit": "4afffb96b1a768fb34f66692d4bb7f96652aeccf",
       "publication_receipt_sha256": "b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194"
     },
-    "crucible_acceptance_path": "docs/authority/external/crucible-rust/runtime-candidate-phase-b-acceptance-v1.json",
+    "crucible_acceptance_path": "docs/authority/external/crucible-rust/runtime-candidate-deployed-round-trip-acceptance-v1.json",
+    "crucible_acceptance_sigstore_bundle_path": "docs/authority/external/crucible-rust/runtime-candidate-deployed-round-trip-acceptance-v1.sigstore.json",
     "strategy_owner_acceptance_path": "docs/authority/external/philosophers-stone/runtime-candidate-acceptance-v1.json",
+    "strategy_owner_acceptance_sigstore_bundle_path": "docs/authority/external/philosophers-stone/runtime-candidate-acceptance-v1.sigstore.json",
     "candidate_publication_receipt_present": true,
     "crucible_acceptance_present": false,
     "strategy_owner_acceptance_present": false,
@@ -292,6 +294,7 @@
     "production_ready": false,
     "invariants": {
       "owner_receipts_required": true,
+      "owner_receipt_oidc_signatures_required": true,
       "exact_digest_reverification_required": true,
       "rebuild_permitted": false,
       "retag_substitute_permitted": false,

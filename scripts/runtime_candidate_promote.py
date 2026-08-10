@@ -22,6 +22,8 @@ PROMOTION_IDENTITY = (
 )
 PROMOTION_ENVIRONMENT = "v1-team-runtime-promotion"
 OIDC_ISSUER = "https://token.actions.githubusercontent.com"
+CRUCIBLE_ACCEPTANCE_WORKFLOW = ".github/workflows/accept-custos-runtime-candidate.yml"
+STRATEGY_OWNER_ACCEPTANCE_WORKFLOW = ".github/workflows/custos-runtime-acceptance.yml"
 HEX_40 = re.compile(r"^[0-9a-f]{40}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 OCI_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -206,6 +208,7 @@ def _validate_acceptance(
     expected_owner: str,
     expected_scope: str,
     expected_repository: str,
+    expected_workflow: str,
     candidate: dict[str, str],
 ) -> dict[str, Any]:
     expected_keys = {
@@ -262,7 +265,7 @@ def _validate_acceptance(
         f"{expected_owner} issuer revision differs",
     )
     _require(
-        isinstance(issuer["workflow_file"], str) and bool(issuer["workflow_file"]),
+        issuer["workflow_file"] == expected_workflow,
         f"{expected_owner} workflow file differs",
     )
     _require(
@@ -342,6 +345,7 @@ def promote_runtime_candidate(
         expected_owner="crucible-rust",
         expected_scope="deployed-runtime-round-trip",
         expected_repository="tesseract-trading-ltd/crucible-rust",
+        expected_workflow=CRUCIBLE_ACCEPTANCE_WORKFLOW,
         candidate=candidate,
     )
     strategy_owner, strategy_owner_bytes = _load_json(
@@ -354,6 +358,7 @@ def promote_runtime_candidate(
         expected_owner="philosophers-stone",
         expected_scope="strategy-artifact-runtime-acceptance",
         expected_repository="alchymia-labs/philosophers-stone",
+        expected_workflow=STRATEGY_OWNER_ACCEPTANCE_WORKFLOW,
         candidate=candidate,
     )
 

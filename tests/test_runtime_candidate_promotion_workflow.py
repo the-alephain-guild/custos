@@ -26,19 +26,29 @@ def test_runtime_candidate_promotion_is_environment_gated_and_read_only() -> Non
         assert mutation not in source
 
 
-def test_runtime_candidate_promotion_requires_both_fixed_owner_receipts() -> None:
+def test_runtime_candidate_promotion_requires_both_signed_owner_receipts() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
 
     assert (
         "docs/authority/external/crucible-rust/"
-        "runtime-candidate-phase-b-acceptance-v1.json"
+        "runtime-candidate-deployed-round-trip-acceptance-v1.json"
     ) in source
     assert (
         "docs/authority/external/philosophers-stone/"
         "runtime-candidate-acceptance-v1.json"
     ) in source
     assert 'test -s "$CRUCIBLE_ACCEPTANCE"' in source
+    assert 'test -s "$CRUCIBLE_ACCEPTANCE_BUNDLE"' in source
     assert 'test -s "$STRATEGY_OWNER_ACCEPTANCE"' in source
+    assert 'test -s "$STRATEGY_OWNER_ACCEPTANCE_BUNDLE"' in source
+    assert (
+        "https://github.com/tesseract-trading-ltd/crucible-rust/"
+        ".github/workflows/accept-custos-runtime-candidate.yml@refs/heads/main"
+    ) in source
+    assert (
+        "https://github.com/alchymia-labs/philosophers-stone/"
+        ".github/workflows/custos-runtime-acceptance.yml@refs/heads/main"
+    ) in source
     assert "python3 scripts/runtime_candidate_promote.py" in source
 
 
@@ -47,7 +57,7 @@ def test_candidate_is_reverified_and_promotion_receipt_is_signed() -> None:
 
     assert source.count("cosign verify ") == 2
     assert "cosign sign-blob --yes --bundle" in source
-    assert "cosign verify-blob" in source
+    assert source.count("cosign verify-blob") == 3
     assert '--observed-manifest-digest-before "$CANDIDATE_DIGEST"' in source
     assert '--observed-manifest-digest-after "$CANDIDATE_DIGEST"' in source
     assert "if-no-files-found: error" in source

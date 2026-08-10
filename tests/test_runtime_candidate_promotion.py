@@ -25,9 +25,11 @@ def _acceptance(owner: str) -> dict[str, Any]:
     if owner == "crucible-rust":
         scope = "deployed-runtime-round-trip"
         repository = "tesseract-trading-ltd/crucible-rust"
+        workflow = ".github/workflows/accept-custos-runtime-candidate.yml"
     else:
         scope = "strategy-artifact-runtime-acceptance"
         repository = "alchymia-labs/philosophers-stone"
+        workflow = ".github/workflows/custos-runtime-acceptance.yml"
     return {
         "schema_version": 1,
         "receipt_id": f"{owner.upper()}-RUNTIME-CANDIDATE-ACCEPTANCE-V1",
@@ -43,7 +45,7 @@ def _acceptance(owner: str) -> dict[str, Any]:
         "issuer": {
             "repository": repository,
             "revision": "1" * 40,
-            "workflow_file": ".github/workflows/runtime-candidate-acceptance.yml",
+            "workflow_file": workflow,
             "workflow_run_id": 1234,
         },
         "evidence": {
@@ -78,6 +80,7 @@ def _promote(
     tmp_path: Path,
     *,
     mutate_strategy_owner: bool = False,
+    mutate_crucible_workflow: bool = False,
 ) -> tuple[dict[str, Any], Path, Path]:
     crucible_path = tmp_path / "crucible.json"
     strategy_path = tmp_path / "strategy-owner.json"
@@ -85,6 +88,8 @@ def _promote(
     strategy = _acceptance("philosophers-stone")
     if mutate_strategy_owner:
         strategy["candidate"]["digest"] = "sha256:" + "f" * 64
+    if mutate_crucible_workflow:
+        crucible["issuer"]["workflow_file"] = ".github/workflows/release.yml"
     _write(crucible_path, crucible)
     _write(strategy_path, strategy)
     receipt = promote_runtime_candidate(
@@ -132,6 +137,11 @@ def test_both_exact_owner_acceptances_emit_unchanged_digest_receipt(
 def test_mismatched_strategy_owner_digest_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(RuntimeCandidatePromotionError, match="candidate binding differs"):
         _promote(tmp_path, mutate_strategy_owner=True)
+
+
+def test_mismatched_owner_workflow_is_rejected(tmp_path: Path) -> None:
+    with pytest.raises(RuntimeCandidatePromotionError, match="workflow file differs"):
+        _promote(tmp_path, mutate_crucible_workflow=True)
 
 
 def test_missing_crucible_receipt_is_rejected_before_output(tmp_path: Path) -> None:

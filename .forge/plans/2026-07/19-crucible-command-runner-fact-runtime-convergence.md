@@ -1563,10 +1563,12 @@ does not mean `runtime_ready`, `live_ready` or `production_ready`.
 
 Custos now owns a read-only promotion workflow for the published candidate.
 The workflow is pinned to the exact publication receipt and digest, requires a
-Crucible deployed Phase-B acceptance plus a philosophers-stone exact runtime
-acceptance, reverifies the signed digest before and after the gate, and emits a
-keyless-signed promotion receipt. It has no package-write or content-write
-permission and contains no build, push, tag or manifest-create operation.
+Crucible deployed command/fact round-trip acceptance plus a philosophers-stone
+exact runtime acceptance, verifies both receipt blobs against their owner GitHub
+OIDC workflow identities, reverifies the signed digest before and after the gate,
+and emits a keyless-signed promotion receipt. It has no package-write or
+content-write permission and contains no build, push, tag or manifest-create
+operation.
 
 The shared `RuntimeCandidateAcceptanceV1` shape is only a transport receipt:
 each downstream owner retains its own business evidence and must bind that

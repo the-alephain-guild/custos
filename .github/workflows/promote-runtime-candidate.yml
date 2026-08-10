@@ -22,8 +22,10 @@ jobs:
       CANDIDATE_DIGEST: sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753
       PUBLICATION_RECEIPT: docs/authority/external/custos/runtime-image-publication-receipt-v1.json
       PUBLICATION_RECEIPT_SHA256: b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194
-      CRUCIBLE_ACCEPTANCE: docs/authority/external/crucible-rust/runtime-candidate-phase-b-acceptance-v1.json
+      CRUCIBLE_ACCEPTANCE: docs/authority/external/crucible-rust/runtime-candidate-deployed-round-trip-acceptance-v1.json
+      CRUCIBLE_ACCEPTANCE_BUNDLE: docs/authority/external/crucible-rust/runtime-candidate-deployed-round-trip-acceptance-v1.sigstore.json
       STRATEGY_OWNER_ACCEPTANCE: docs/authority/external/philosophers-stone/runtime-candidate-acceptance-v1.json
+      STRATEGY_OWNER_ACCEPTANCE_BUNDLE: docs/authority/external/philosophers-stone/runtime-candidate-acceptance-v1.sigstore.json
     steps:
       - name: Check out the authority commit
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -42,7 +44,26 @@ jobs:
           test "$(git rev-parse --abbrev-ref HEAD)" = "main"
           test "$(sha256sum "$PUBLICATION_RECEIPT" | awk '{print $1}')" = "$PUBLICATION_RECEIPT_SHA256"
           test -s "$CRUCIBLE_ACCEPTANCE"
+          test -s "$CRUCIBLE_ACCEPTANCE_BUNDLE"
           test -s "$STRATEGY_OWNER_ACCEPTANCE"
+          test -s "$STRATEGY_OWNER_ACCEPTANCE_BUNDLE"
+
+      - name: Verify owner receipt GitHub OIDC identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign verify-blob \
+            --bundle "$CRUCIBLE_ACCEPTANCE_BUNDLE" \
+            --certificate-identity "https://github.com/tesseract-trading-ltd/crucible-rust/.github/workflows/accept-custos-runtime-candidate.yml@refs/heads/main" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$CRUCIBLE_ACCEPTANCE" \
+            > "$RUNNER_TEMP/crucible-acceptance-verification.txt"
+          cosign verify-blob \
+            --bundle "$STRATEGY_OWNER_ACCEPTANCE_BUNDLE" \
+            --certificate-identity "https://github.com/alchymia-labs/philosophers-stone/.github/workflows/custos-runtime-acceptance.yml@refs/heads/main" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "$STRATEGY_OWNER_ACCEPTANCE" \
+            > "$RUNNER_TEMP/strategy-owner-acceptance-verification.txt"
 
       - name: Reverify the exact candidate before promotion
         shell: bash
@@ -106,6 +127,8 @@ jobs:
             ${{ runner.temp }}/custos-runtime-candidate-promotion-v1.sigstore.json
             ${{ runner.temp }}/candidate-verification-before.json
             ${{ runner.temp }}/candidate-verification-after.json
+            ${{ runner.temp }}/crucible-acceptance-verification.txt
+            ${{ runner.temp }}/strategy-owner-acceptance-verification.txt
           if-no-files-found: error
           retention-days: 90
           overwrite: false

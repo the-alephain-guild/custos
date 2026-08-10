@@ -1183,14 +1183,20 @@ def verify_runtime_candidate_promotion(manifest: dict[str, Any], errors: list[st
         "cosign verify ",
         "cosign sign-blob",
         "cosign verify-blob",
-        "runtime-candidate-phase-b-acceptance-v1.json",
+        "runtime-candidate-deployed-round-trip-acceptance-v1.json",
+        "runtime-candidate-deployed-round-trip-acceptance-v1.sigstore.json",
         "runtime-candidate-acceptance-v1.json",
+        "runtime-candidate-acceptance-v1.sigstore.json",
+        "https://github.com/tesseract-trading-ltd/crucible-rust/.github/workflows/accept-custos-runtime-candidate.yml@refs/heads/main",
+        "https://github.com/alchymia-labs/philosophers-stone/.github/workflows/custos-runtime-acceptance.yml@refs/heads/main",
         "runtime-candidate-promotion-sha256-2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753",
         "CANDIDATE_DIGEST: sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753",
         "PUBLICATION_RECEIPT_SHA256: b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194",
     ):
         if marker not in workflow:
             errors.append(f"runtime candidate promotion workflow lacks {marker!r}")
+    if workflow.count("cosign verify-blob") != 3:
+        errors.append("runtime candidate promotion must verify two owner receipts and its output")
     for forbidden in (
         "packages: write",
         "contents: write",
@@ -1249,6 +1255,22 @@ def verify_runtime_candidate_promotion(manifest: dict[str, Any], errors: list[st
     )
     expected_promotion = {
         "status": "PROMOTION_CAPABILITY_READY_DOWNSTREAM_ACCEPTANCE_OPEN",
+        "crucible_acceptance_path": (
+            "docs/authority/external/crucible-rust/"
+            "runtime-candidate-deployed-round-trip-acceptance-v1.json"
+        ),
+        "crucible_acceptance_sigstore_bundle_path": (
+            "docs/authority/external/crucible-rust/"
+            "runtime-candidate-deployed-round-trip-acceptance-v1.sigstore.json"
+        ),
+        "strategy_owner_acceptance_path": (
+            "docs/authority/external/philosophers-stone/"
+            "runtime-candidate-acceptance-v1.json"
+        ),
+        "strategy_owner_acceptance_sigstore_bundle_path": (
+            "docs/authority/external/philosophers-stone/"
+            "runtime-candidate-acceptance-v1.sigstore.json"
+        ),
         "candidate_publication_receipt_present": True,
         "crucible_acceptance_present": False,
         "strategy_owner_acceptance_present": False,
@@ -1263,6 +1285,7 @@ def verify_runtime_candidate_promotion(manifest: dict[str, Any], errors: list[st
         errors.append("runtime candidate promotion authority boundary differs")
     elif promotion.get("invariants") != {
         "owner_receipts_required": True,
+        "owner_receipt_oidc_signatures_required": True,
         "exact_digest_reverification_required": True,
         "rebuild_permitted": False,
         "retag_substitute_permitted": False,
