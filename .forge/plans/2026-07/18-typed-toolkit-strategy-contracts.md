@@ -1,8 +1,8 @@
 # 18 - Publish typed toolkit and strategy execution contracts
 
-> **Status**: ⏳ In progress — sole V1 contract, sandbox runtime, authenticated StrategyRelease consumption and same-event immutable production-daemon activation are verified; real PS publication, locked runtime candidate and final cross-repo acceptance remain open
+> **Status**: ⏳ In progress — sole V1 contract, RC5 toolkit, PS unique-V1 OCI publication and local sandbox/production-daemon activation are verified; Crucible StrategyRelease acceptance, unchanged final promotion and deployed cross-repo acceptance remain open
 > **Created**: 2026-07-14
-> **Revised**: 2026-07-22 for the business-named first-production V1 release relock
+> **Revised**: 2026-08-10 for external PS/Custos publication and full local v1.team acceptance evidence
 > **Project**: Custos
 > **Source**: PS Plan 53 strategy/toolkit convergence roadmap and v1.team review
 > **For Claude**: Use `/forge:execute` for exactly one canonical slice per session.
@@ -742,11 +742,11 @@ git commit -m "docs(custos): mark plan 18 as completed"
 | Canonical V1 models and source | local gates pass | sole V1 source, generated assets and focused verification are current |
 | Immutable toolkit RC | READY | RC5 protected publication and independent digest readback succeeded; no historical consumer receipt is accepted for the corrected V1 index |
 | Old contract/runtime generations | removed | old runtime module and command-owned evidence path are absent |
-| PS V1 handoff | pending final pins | PS source uses the sole V1 OCI topology |
-| Crucible V1 handoff | exact consumer and final readback complete | Crucible `8038387` consumes Custos `d1847cd`; Custos `b14fc19` pins that receipt and Crucible `477215d` reads back the handoff without a hash cycle |
+| PS V1 handoff | unique V1 RC2 published; consumer acceptance pending | PS `63cc7c1` run `31291672169` published `ghcr.io/alchymia-labs/v1-team-strategy-artifacts@sha256:f2181ef975b14cccfacc6f880ebfb97684b2a15d3026474dde62dafd449996ec` with exact BOM, execution-ref, statement, SBOM and Sigstore descriptor matrices |
+| Crucible V1 handoff | Custos contract readback complete; PS artifact acceptance pending | Crucible `8038387` consumes Custos `d1847cd`; Custos `b14fc19` pins that receipt and Crucible `477215d` reads back the handoff without a hash cycle. Crucible has not yet issued the acceptance receipt for the published PS RC2 |
 | Crucible Plan 89 runner resolution | local exact-byte gate pass | Runtime `34e0f13`, contract `a4972de` and owner receipt `5a531c2` bind one persisted DeploymentSpec-derived release with four ordered subjects and an exact BOM/ArtifactRef build-lock binding; immutable daemon materialization and deployed acceptance remain open |
-| Runtime activation | sandbox ready; production clone-local path ready | development-source runtime passes; Crucible `10b85e4` exposes complete production authority; Custos `4ad12b2` validates it and `d926ab0` composes immutable OCI acquisition, cache, trust policy and activation; real publication and launched receipts remain open |
-| Production/live | STOP | requires final exact-byte receipts and real runtime evidence |
+| Runtime activation | full local v1.team acceptance passes; production deployment open | development-source runtime passes; the production path validates immutable release material, executes two sandbox instances and projects signed RunnerFacts through real PostgreSQL/NATS. Custos image run `31352721692` is attested at `sha256:6bf1f55164b96b9356ebdfda1e9a69c4ec4b34b18737e3602c88ee45f2852d72` |
+| Production/live | STOP | requires Crucible acceptance of the published PS RC2, unchanged final promotion, coordinated image lock, deployed receipts and production approval |
 
 ## Deviations and Improvements
 
@@ -864,3 +864,34 @@ The Crucible consumer receipt now pins this generated index and final readback
 entire path stays fail closed until PS acceptance exists. Sandbox-only
 `DevelopmentSourceRefV1` and local image publication remain supported and are
 not promotable production evidence.
+
+## 2026-08-10 external publication and full local acceptance checkpoint
+
+PS run `31291672169` published the unique first-production V1 strategy artifact
+from `63cc7c1503f7c17c591ab6cccc3a274f62f5ac3d`. Independent registry readback
+pins release manifest
+`sha256:f2181ef975b14cccfacc6f880ebfb97684b2a15d3026474dde62dafd449996ec`,
+execution-ref layer
+`sha256:52e78b0c7ab455f3cf32a013e28344d32d470eee66b771f582d7149e13e2c9c8`
+and canonical BOM layer
+`sha256:ac8279a8cd7c633d236bc83e59b08469c93f3286188dfb93525693be05e8c738`.
+The producer receipt reports exact manifest/blob readback and immutable
+attestation descriptor matrices. This closes the obsolete "real PS publication
+open" statement, but not Crucible's artifact acceptance or final promotion.
+
+Custos run `31352721692` independently published and signed the sole V1 runtime
+image from `56cd64a26ddd1ad22479bda6f9a14c3530fb2cd4` at
+`ghcr.io/the-alephain-guild/custos@sha256:6bf1f55164b96b9356ebdfda1e9a69c4ec4b34b18737e3602c88ee45f2852d72`.
+The owner receipt deliberately keeps `production_ready=false` until the
+coordinated image bundle and deployed acceptance complete.
+
+The real local v1.team harness at ARX `09342f4`, Crucible `dda4e77` and Custos
+`56cd64a` then passed fresh physical CONTROL/LIVE/SIM PostgreSQL migrations,
+JetStream, two deployment instances, direct Custos command handling, immutable
+runtime material, 14 signed RunnerFacts, tenant isolation, economic,
+observability, operations, audit, settlement and Chromium service acceptance.
+Its immutable close-out receipt is
+`ecbc393dada1721e490586fd959650a9a08759de9a09c11a485f18d3a53f45b0` with
+status `LOCAL_DEMO_ACCEPTED_PRODUCTION_GATES_OPEN`. It is strong local execution
+evidence, not a substitute for Crucible's PS-artifact acceptance, unchanged
+promotion or deployed production receipts; Tasks 7-9 therefore remain open.
