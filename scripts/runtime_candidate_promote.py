@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 CANDIDATE_REPOSITORY = "ghcr.io/the-alephain-guild/custos"
-CANDIDATE_PLATFORM = "linux/amd64"
+CANDIDATE_PLATFORMS = ("linux/amd64", "linux/arm64")
 CANDIDATE_SOURCE_REPOSITORY = "the-alephain-guild/custos"
 PROMOTION_REPOSITORY = "the-alephain-guild/custos"
 PROMOTION_WORKFLOW = ".github/workflows/promote-runtime-candidate.yml"
@@ -69,7 +69,7 @@ def _validate_publication(
     document: dict[str, Any],
     payload: bytes,
     expected_receipt_sha256: str,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     expected_keys = {
         "schema_version",
         "receipt_id",
@@ -105,7 +105,7 @@ def _validate_publication(
     image = document["image"]
     _require(isinstance(image, dict), "publication image must be an object")
     _require(
-        set(image) == {"repository", "digest", "platform"},
+        set(image) == {"repository", "digest", "platforms"},
         "publication image shape differs",
     )
     _require(
@@ -116,7 +116,10 @@ def _validate_publication(
         isinstance(image["digest"], str) and OCI_DIGEST.fullmatch(image["digest"]),
         "candidate digest differs",
     )
-    _require(image["platform"] == CANDIDATE_PLATFORM, "candidate platform differs")
+    _require(
+        image["platforms"] == list(CANDIDATE_PLATFORMS),
+        "candidate platforms differ",
+    )
 
     source = document["source"]
     _require(isinstance(source, dict), "publication source must be an object")
@@ -154,7 +157,7 @@ def _validate_publication(
     return {
         "repository": image["repository"],
         "digest": image["digest"],
-        "platform": image["platform"],
+        "platforms": image["platforms"],
         "source_revision": source["revision"],
         "receipt_id": document["receipt_id"],
         "receipt_sha256": expected_receipt_sha256,
@@ -362,7 +365,7 @@ def promote_runtime_candidate(
             "repository": candidate["repository"],
             "digest": candidate["digest"],
             "source_revision": candidate["source_revision"],
-            "platform": candidate["platform"],
+            "platforms": candidate["platforms"],
         },
         "inputs": {
             "publication": {

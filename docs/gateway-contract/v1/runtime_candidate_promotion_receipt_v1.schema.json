@@ -23,12 +23,12 @@
     "candidate": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["repository", "digest", "source_revision", "platform"],
+      "required": ["repository", "digest", "source_revision", "platforms"],
       "properties": {
         "repository": {"const": "ghcr.io/the-alephain-guild/custos"},
         "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "source_revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
-        "platform": {"const": "linux/amd64"}
+        "platforms": {"const": ["linux/amd64", "linux/arm64"]}
       }
     },
     "inputs": {

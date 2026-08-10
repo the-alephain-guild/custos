@@ -5,18 +5,21 @@
   "image_key": "custos",
   "image": {
     "repository": "ghcr.io/the-alephain-guild/custos",
-    "digest": "sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690",
-    "platform": "linux/amd64"
+    "digest": "sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753",
+    "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ]
   },
   "source": {
     "repository": "the-alephain-guild/custos",
-    "revision": "b25a5f53e676677b234e98a72ccb36d43d83d0d5"
+    "revision": "4afffb96b1a768fb34f66692d4bb7f96652aeccf"
   },
   "workflow": {
     "repository": "the-alephain-guild/custos",
-    "run_id": 31361924833,
+    "run_id": 31369543826,
     "run_attempt": 1,
-    "release_id": "v1-team-runtime-20260810-b25a5f5",
+    "release_id": "v1-team-runtime-multiarch-20260810-4afffb96b1a7",
     "source_ref": "refs/heads/main",
     "workflow_file": ".github/workflows/release.yml",
     "workflow_identity": "https://github.com/the-alephain-guild/custos/.github/workflows/release.yml@refs/heads/main",
@@ -28,22 +31,22 @@
   "evidence": {
     "provenance": {
       "path": "provenance.json",
-      "sha256": "1d8bd87415c3e57a0c8545a86fa0c4dbef662b46310e53d8fc10308763aab4aa",
-      "size_bytes": 39062
+      "sha256": "9c9d14ad8cbda098e06f80e49816181f0a8ea8ad58f6e0ad7cc3bfde92c93c2b",
+      "size_bytes": 78244
     },
     "sbom": {
       "path": "sbom.json",
-      "sha256": "97a5253294a467e7712ba70587d9a69d28c63c1fca723e5b123cb8919f430fd4",
-      "size_bytes": 2756672
+      "sha256": "7885a81589326e5c8ddabffe9479c385f956d3faaf2e71d535f82d4753dceecd",
+      "size_bytes": 5513306
     },
     "sigstore_bundle": {
       "path": "sigstore-bundle.json",
-      "sha256": "8bea5a683a2f7e6dd1669bcc6de829f0bdb9f2d723df06bdca6425204b2b167e",
-      "size_bytes": 10917
+      "sha256": "ae5c3c5b8d30c99a218e2ea115f8a5e176d14ac462b9ebd858828b65a6b7811f",
+      "size_bytes": 10737
     },
     "sigstore_signature_verification": {
       "path": "sigstore-signature-verification.json",
-      "sha256": "41e6e2f6de44927287692aa69b1f487c15f76c7b2e8569541a33cbffd6aafcc1",
+      "sha256": "add665df37d3f168f1516aae1a491272f637df577e15b34d04094171b405814c",
       "size_bytes": 325
     }
   },

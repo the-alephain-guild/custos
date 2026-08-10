@@ -1493,8 +1493,9 @@ all remain below that one persistent root. The offline lane remains a separate
 development composition and cannot use the production-state assertion.
 
 The existing release workflow is also the sole Custos image authority. It now
-builds one `linux/amd64` candidate from hash-locked inputs, runs the exact digest
-runtime gate before signing, emits provenance/SBOM/Sigstore evidence and writes
+builds one multi-platform V1 index for `linux/amd64` and `linux/arm64` from
+hash-locked inputs, runs the exact digest runtime gate before signing, emits
+provenance/SBOM/Sigstore evidence and writes
 `CUSTOS-V1-TEAM-IMAGE-PUBLICATION-V1`. A discovery tag is immutable but never
 authoritative, and no `latest` alias is published. T9 remains in progress until
 the main-branch workflow receipt is consumed by the coordinated v1.team bundle;
@@ -1546,13 +1547,13 @@ unchanged promotion, deployed testnet/live and PS Plan 56 remain Task 10 gates.
 
 ## 2026-08-10 current runtime candidate publication
 
-Custos Release run `31361924833` passed the complete production contract and
-published source `b25a5f53e676677b234e98a72ccb36d43d83d0d5` as
-`ghcr.io/the-alephain-guild/custos@sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690`.
+Custos Release run `31369543826` passed the complete production contract and
+published source `4afffb96b1a768fb34f66692d4bb7f96652aeccf` as
+`ghcr.io/the-alephain-guild/custos@sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753`.
 The exact digest passed the container runtime gate, keyless Cosign signing and
 an independent registry/signature/runtime readback. Publication owner receipt
 SHA-256 is
-`aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead`.
+`b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194`.
 
 This closes Custos image publication but not the coordinated v1.team bundle.
 `runtime_candidate_ready=true` now means a candidate exists and is attested; it

@@ -246,11 +246,14 @@
     "local_immutable_engine_execution_verified": true,
     "runtime_image_publication": {
       "receipt_status": "IMAGE_PUBLISHED_ATTESTED",
-      "image": "ghcr.io/the-alephain-guild/custos@sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690",
-      "platform": "linux/amd64",
-      "source_commit": "b25a5f53e676677b234e98a72ccb36d43d83d0d5",
-      "workflow_run_id": 31361924833,
-      "owner_receipt_sha256": "aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead",
+      "image": "ghcr.io/the-alephain-guild/custos@sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753",
+      "platforms": [
+        "linux/amd64",
+        "linux/arm64"
+      ],
+      "source_commit": "4afffb96b1a768fb34f66692d4bb7f96652aeccf",
+      "workflow_run_id": 31369543826,
+      "owner_receipt_sha256": "b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194",
       "exact_digest_runtime_gate_passed": true,
       "independent_registry_signature_runtime_readback_passed": true,
       "production_ready": false
@@ -274,9 +277,9 @@
     "promotion_workflow": ".github/workflows/promote-runtime-candidate.yml",
     "candidate": {
       "repository": "ghcr.io/the-alephain-guild/custos",
-      "digest": "sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690",
-      "source_commit": "b25a5f53e676677b234e98a72ccb36d43d83d0d5",
-      "publication_receipt_sha256": "aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead"
+      "digest": "sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753",
+      "source_commit": "4afffb96b1a768fb34f66692d4bb7f96652aeccf",
+      "publication_receipt_sha256": "b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194"
     },
     "crucible_acceptance_path": "docs/authority/external/crucible-rust/runtime-candidate-phase-b-acceptance-v1.json",
     "strategy_owner_acceptance_path": "docs/authority/external/philosophers-stone/runtime-candidate-acceptance-v1.json",

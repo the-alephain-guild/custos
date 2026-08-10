@@ -16,9 +16,9 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLICATION = (
     ROOT / "docs/authority/external/custos/runtime-image-publication-receipt-v1.json"
 )
-PUBLICATION_SHA256 = "aa0cd73656128059a53f2aa5db21ac2fbd4fa012c31b30c6d07830c1909d7ead"
-DIGEST = "sha256:d66c25345c869ed25d93791bcb98357c7d33c44a3330cee2312dfe377c762690"
-SOURCE_REVISION = "b25a5f53e676677b234e98a72ccb36d43d83d0d5"
+PUBLICATION_SHA256 = "b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194"
+DIGEST = "sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753"
+SOURCE_REVISION = "4afffb96b1a768fb34f66692d4bb7f96652aeccf"
 
 
 def _acceptance(owner: str) -> dict[str, Any]:
@@ -110,6 +110,7 @@ def test_both_exact_owner_acceptances_emit_unchanged_digest_receipt(
 
     assert receipt["status"] == "PROMOTED_UNCHANGED"
     assert receipt["candidate"]["digest"] == DIGEST
+    assert receipt["candidate"]["platforms"] == ["linux/amd64", "linux/arm64"]
     assert receipt["invariants"] == {
         "manifest_digest_before": DIGEST,
         "manifest_digest_after": DIGEST,
@@ -177,6 +178,38 @@ def test_candidate_publication_exact_bytes_are_pinned(tmp_path: Path) -> None:
             crucible_acceptance_path=crucible_path,
             strategy_owner_acceptance_path=strategy_path,
             expected_publication_receipt_sha256=PUBLICATION_SHA256,
+            observed_manifest_digest_before=DIGEST,
+            observed_manifest_digest_after=DIGEST,
+            workflow_revision="2" * 40,
+            workflow_run_id=5678,
+            workflow_run_attempt=1,
+            promoted_at="2026-08-10T12:30:00Z",
+            output_path=tmp_path / "promotion.json",
+        )
+
+
+def test_legacy_single_platform_publication_is_rejected(tmp_path: Path) -> None:
+    legacy = tmp_path / "legacy-publication.json"
+    document = json.loads(PUBLICATION.read_text(encoding="utf-8"))
+    document["image"].pop("platforms")
+    document["image"]["platform"] = "linux/amd64"
+    _write(legacy, document)
+    crucible_path = tmp_path / "crucible.json"
+    strategy_path = tmp_path / "strategy-owner.json"
+    _write(crucible_path, _acceptance("crucible-rust"))
+    _write(strategy_path, _acceptance("philosophers-stone"))
+
+    with pytest.raises(
+        RuntimeCandidatePromotionError,
+        match="publication image shape differs",
+    ):
+        promote_runtime_candidate(
+            candidate_receipt_path=legacy,
+            crucible_acceptance_path=crucible_path,
+            strategy_owner_acceptance_path=strategy_path,
+            expected_publication_receipt_sha256=hashlib.sha256(
+                legacy.read_bytes()
+            ).hexdigest(),
             observed_manifest_digest_before=DIGEST,
             observed_manifest_digest_after=DIGEST,
             workflow_revision="2" * 40,
