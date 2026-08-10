@@ -38,6 +38,35 @@ def _is_ci_with_oidc() -> bool:
     return bool(os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL"))
 
 
+def _release_certificate_ref(event_name: str, ref: str) -> str:
+    if event_name == "workflow_dispatch":
+        assert ref == "refs/heads/main", f"manual production ref is not main: {ref!r}"
+    elif event_name == "push":
+        assert ref.startswith("refs/tags/v"), f"stable release ref is not a v tag: {ref!r}"
+    else:
+        raise AssertionError(f"unsupported release trigger: {event_name!r}")
+    return ref
+
+
+@pytest.mark.parametrize(
+    ("event_name", "ref"),
+    (("workflow_dispatch", "refs/heads/main"), ("push", "refs/tags/v0.3.0")),
+)
+def test_release_certificate_ref_is_exact_for_each_supported_trigger(
+    event_name: str, ref: str
+) -> None:
+    assert _release_certificate_ref(event_name, ref) == ref
+
+
+@pytest.mark.parametrize(
+    ("event_name", "ref"),
+    (("workflow_dispatch", "refs/heads/feature"), ("push", "refs/heads/main")),
+)
+def test_release_certificate_ref_rejects_non_release_refs(event_name: str, ref: str) -> None:
+    with pytest.raises(AssertionError):
+        _release_certificate_ref(event_name, ref)
+
+
 def test_signing_script_emits_bundle_evidence_not_a_detached_signature() -> None:
     source = SIGN_SCRIPT.read_text(encoding="utf-8")
     assert 'sigstore sign --bundle "${bundle}" "${whl}"' in source
@@ -72,9 +101,9 @@ def test_sigstore_verify_passes_for_every_wheel():
     # ``verify identity`` subcommand walks the sibling bundle by convention.
     # `cert-identity` and `cert-oidc-issuer` must be pinned so the verify
     # cannot pass on a mis-issued cert (Plan 12 FM8 key-rotation drift).
-    ref = os.environ.get("GITHUB_REF", "")
-    assert ref.startswith("refs/tags/v"), (
-        f"expected release-workflow ref refs/tags/vX.Y.Z; got {ref!r}"
+    ref = _release_certificate_ref(
+        os.environ.get("GITHUB_EVENT_NAME", ""),
+        os.environ.get("GITHUB_REF", ""),
     )
     repo = os.environ.get("GITHUB_REPOSITORY", "the-alephain-guild/custos")
     cert_identity = f"https://github.com/{repo}/.github/workflows/release.yml@{ref}"
