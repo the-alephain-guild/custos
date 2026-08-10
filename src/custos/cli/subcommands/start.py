@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import os
+import stat
 import sys
 from pathlib import Path
 from typing import Any
@@ -187,6 +188,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--runner-fact-snapshot-interval-secs", type=float, default=10.0)
     parser.add_argument("--runner-fact-period-secs", type=int, default=86_400)
     parser.add_argument("--runner-fact-period-retry-secs", type=float, default=30.0)
+    parser.add_argument(
+        "--production-state-root",
+        type=Path,
+        default=None,
+        help=(
+            "Bind every mutable signed-lane authority and runtime state path below "
+            "one persistent root. Offline development uses its separate composition."
+        ),
+    )
     parser.set_defaults(
         artifact_registry_token=os.environ.get("CUSTOS_ARTIFACT_REGISTRY_TOKEN", ""),
         handler=run,
@@ -243,11 +253,67 @@ def _run_offline_lane(args: argparse.Namespace, metadata: Any, credential: Any) 
         return 1
 
 
-def run(args: argparse.Namespace) -> int:
-    args.ready_file.expanduser().resolve().unlink(missing_ok=True)
+def _require_production_state_root(args: argparse.Namespace) -> Path | None:
+    configured = args.production_state_root
+    if configured is None:
+        return None
+    if args.reconcile_strategy_id:
+        raise ValueError("--production-state-root cannot select the offline lane")
+    source = configured.expanduser()
     try:
+        source_metadata = source.lstat()
+    except OSError as exc:
+        raise ValueError("production state root is not accessible") from exc
+    if stat.S_ISLNK(source_metadata.st_mode) or not stat.S_ISDIR(source_metadata.st_mode):
+        raise ValueError("production state root must be a real directory")
+    if stat.S_IMODE(source_metadata.st_mode) & 0o022:
+        raise ValueError("production state root must not be group- or world-writable")
+    root = source.resolve(strict=True)
+    bindings = (
+        ("runner_toml_path", DEFAULT_RUNNER_TOML, "runner.toml"),
+        ("vault_dir", DEFAULT_VAULT_DIR, "vault"),
+        (
+            "nats_transport_vault_dir",
+            DEFAULT_NATS_TRANSPORT_VAULT_DIR,
+            "vault/runner-nats-transport",
+        ),
+        ("ready_file", DEFAULT_READY_FILE, "state/runner-ready.json"),
+        ("runner_capability", DEFAULT_RUNNER_CAPABILITY, "runner-capability.json"),
+        ("runner_fact_outbox", DEFAULT_RUNNER_FACT_OUTBOX, "state/runner-fact-outbox.db"),
+        (
+            "development_artifact_root",
+            DEFAULT_DEVELOPMENT_ARTIFACT_ROOT,
+            "artifacts/development",
+        ),
+        ("artifact_quarantine_dir", DEFAULT_ARTIFACT_QUARANTINE_DIR, "artifacts/quarantine"),
+        ("artifact_activation_dir", DEFAULT_ARTIFACT_ACTIVATION_DIR, "artifacts/activation"),
+        ("artifact_cache_dir", DEFAULT_ARTIFACT_CACHE_DIR, "artifacts/cache"),
+    )
+    for attribute, default, relative in bindings:
+        current = Path(getattr(args, attribute)).expanduser().resolve()
+        expected = (root / relative).resolve()
+        if current != default.expanduser().resolve() and current != expected:
+            label = attribute.replace("_", " ")
+            raise ValueError(f"{label} must use its canonical --production-state-root path")
+        setattr(args, attribute, expected)
+    args.production_state_root = root
+    return root
+
+
+def run(args: argparse.Namespace) -> int:
+    try:
+        production_state_root = _require_production_state_root(args)
+        args.ready_file.expanduser().resolve().unlink(missing_ok=True)
         metadata = RunnerToml.read(args.runner_toml_path)
         bound_vault_path = Path(metadata.machine_vault_path).expanduser().resolve()
+        if (
+            production_state_root is not None
+            and bound_vault_path != production_state_root
+            and production_state_root not in bound_vault_path.parents
+        ):
+            raise MachineCredentialError(
+                "runner.toml machine vault must be contained by --production-state-root"
+            )
         if (
             args.machine_vault is not None
             and args.machine_vault.expanduser().resolve() != bound_vault_path
@@ -316,6 +382,7 @@ def run(args: argparse.Namespace) -> int:
         runner_fact_snapshot_interval_secs=args.runner_fact_snapshot_interval_secs,
         runner_fact_period_secs=args.runner_fact_period_secs,
         runner_fact_period_retry_secs=args.runner_fact_period_retry_secs,
+        production_state_root=production_state_root,
     )
     from custos.cli._daemon import run_daemon
 

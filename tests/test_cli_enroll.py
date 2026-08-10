@@ -35,10 +35,13 @@ def _authority_response(body: dict[str, object]) -> dict[str, object]:
 
 
 def _base_argv(tmp_path: Path, *, token: str = "one-shot-token") -> list[str]:
+    token_file = tmp_path / "enrollment-token"
+    token_file.write_text(token + "\n", encoding="utf-8")
+    os.chmod(token_file, 0o600)
     return [
         "enroll",
-        "--token",
-        token,
+        "--token-file",
+        str(token_file),
         "--backend",
         _BACKEND,
         "--tenant-id",
@@ -177,7 +180,6 @@ def test_enroll_rejects_insecure_non_loopback_http(
 @pytest.mark.parametrize(
     ("flag", "value"),
     [
-        ("--token", "abc\x00def"),
         ("--tenant-id", "../evil"),
         ("--runner-id", "runner-7"),
     ],
@@ -210,3 +212,50 @@ def test_enroll_never_prints_raw_token(
     captured = capsys.readouterr()
     assert token not in captured.out
     assert token not in captured.err
+
+
+def test_enroll_rejects_token_argv() -> None:
+    with pytest.raises(SystemExit):
+        main(["enroll", "--token", "secret"])
+
+
+def test_enroll_rejects_overexposed_token_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    post, _persisted = _wire_enrollment(monkeypatch)
+    argv = _base_argv(tmp_path)
+    token_file = Path(argv[argv.index("--token-file") + 1])
+    os.chmod(token_file, 0o644)
+
+    assert main(argv) == 1
+    post.assert_not_called()
+
+
+def test_enroll_rejects_symlink_token_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    post, _persisted = _wire_enrollment(monkeypatch)
+    argv = _base_argv(tmp_path)
+    token_file = Path(argv[argv.index("--token-file") + 1])
+    target = tmp_path / "real-token"
+    token_file.replace(target)
+    token_file.symlink_to(target)
+
+    assert main(argv) == 1
+    post.assert_not_called()
+
+
+def test_enroll_rejects_multiline_token_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    post, _persisted = _wire_enrollment(monkeypatch)
+    argv = _base_argv(tmp_path)
+    token_file = Path(argv[argv.index("--token-file") + 1])
+    token_file.write_text("first\nsecond\n", encoding="utf-8")
+    os.chmod(token_file, 0o600)
+
+    assert main(argv) == 1
+    post.assert_not_called()

@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import os
+import stat
 import sys
 import urllib.parse
 import urllib.request
@@ -42,7 +44,15 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         "enroll",
         help="Enroll a runner with nonce-bound Ed25519 proof of possession.",
     )
-    parser.add_argument("--token", required=True, type=_non_empty_secret)
+    parser.add_argument(
+        "--token-file",
+        required=True,
+        type=Path,
+        help=(
+            "Path to the one-shot enrollment token. The file must be regular, "
+            "must not be a symlink, and must not grant group or other permissions."
+        ),
+    )
     parser.add_argument("--backend", required=True, type=validate_backend_url)
     parser.add_argument(
         "--tenant-id", required=True, type=lambda value: validate_id("tenant_id", value)
@@ -76,6 +86,7 @@ def run(args: argparse.Namespace) -> int:
         )
         return 1
     try:
+        enrollment_token = _read_enrollment_token(args.token_file)
         age_recipient = resolve_age_recipient(args.age_recipient)
         _require_secure_backend(args.backend)
         private_key, machine_key_id = generate_machine_identity()
@@ -85,7 +96,7 @@ def run(args: argparse.Namespace) -> int:
         )
         challenge_nonce = uuid4()
         proof = canonical_enrollment_proof(
-            enrollment_token=args.token,
+            enrollment_token=enrollment_token,
             tenant_id=args.tenant_id,
             runner_id=args.runner_id,
             challenge_nonce=challenge_nonce,
@@ -93,7 +104,7 @@ def run(args: argparse.Namespace) -> int:
             public_key=public_key,
         )
         body = {
-            "enrollment_token": args.token,
+            "enrollment_token": enrollment_token,
             "tenant_id": args.tenant_id,
             "runner_id": str(args.runner_id),
             "agent_version": args.agent_version,
@@ -136,6 +147,38 @@ def run(args: argparse.Namespace) -> int:
         f"machine_key_id={credential.machine_key_id}"
     )
     return 0
+
+
+def _read_enrollment_token(path: Path) -> str:
+    source = path.expanduser()
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(source, flags)
+    except OSError as exc:
+        raise MachineCredentialError("enrollment token file is not securely readable") from exc
+    with os.fdopen(descriptor, "rb") as handle:
+        metadata = os.fstat(handle.fileno())
+        if not stat.S_ISREG(metadata.st_mode):
+            raise MachineCredentialError("enrollment token file must be a regular file")
+        if stat.S_IMODE(metadata.st_mode) & 0o077:
+            raise MachineCredentialError(
+                "enrollment token file must not grant group or other permissions"
+            )
+        payload = handle.read(4098)
+    if len(payload) > 4097:
+        raise MachineCredentialError("enrollment token file is too large")
+    if payload.endswith(b"\n"):
+        payload = payload[:-1]
+    if b"\n" in payload or b"\r" in payload:
+        raise MachineCredentialError("enrollment token file must contain exactly one token")
+    try:
+        token = payload.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise MachineCredentialError("enrollment token file must be UTF-8") from exc
+    try:
+        return _non_empty_secret(token)
+    except argparse.ArgumentTypeError as exc:
+        raise MachineCredentialError("enrollment token file contains an invalid token") from exc
 
 
 def _post_enrollment(backend: str, body: dict[str, object]) -> dict[str, object]:
@@ -248,5 +291,5 @@ def _non_nil_uuid(value: str) -> UUID:
 
 def _non_empty_secret(value: str) -> str:
     if not value or any(ord(character) < 32 for character in value):
-        raise argparse.ArgumentTypeError("--token must be non-empty and contain no controls")
+        raise argparse.ArgumentTypeError("token must be non-empty and contain no controls")
     return value

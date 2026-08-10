@@ -53,6 +53,33 @@ def _run_start(
     return main(["start", "--enabled-mode", "sandbox", *argv]), run_daemon, credential
 
 
+def _production_state_arguments(root: Path) -> list[str]:
+    return [
+        "--production-state-root",
+        str(root),
+        "--runner-toml",
+        str(root / "runner.toml"),
+        "--vault-dir",
+        str(root / "vault"),
+        "--nats-transport-vault-dir",
+        str(root / "vault" / "runner-nats-transport"),
+        "--ready-file",
+        str(root / "state" / "runner-ready.json"),
+        "--runner-capability",
+        str(root / "runner-capability.json"),
+        "--runner-fact-outbox",
+        str(root / "state" / "runner-fact-outbox.db"),
+        "--development-artifact-root",
+        str(root / "artifacts" / "development"),
+        "--artifact-quarantine-dir",
+        str(root / "artifacts" / "quarantine"),
+        "--artifact-activation-dir",
+        str(root / "artifacts" / "activation"),
+        "--artifact-cache-dir",
+        str(root / "artifacts" / "cache"),
+    ]
+
+
 def test_start_loads_bound_machine_authority(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -256,3 +283,47 @@ def test_start_default_paths_target_arx_namespace(
     ):
         assert ".custos" not in str(path)
         assert ".arx" in str(path)
+
+
+def test_start_binds_every_mutable_production_path_to_one_state_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "arx"
+    _seed_runner_toml(root / "runner.toml")
+
+    exit_code, run_daemon, _credential = _run_start(
+        _production_state_arguments(root), monkeypatch=monkeypatch
+    )
+
+    assert exit_code == 0
+    namespace = run_daemon.call_args.args[0]
+    assert namespace.production_state_root == root.resolve()
+    for path in (
+        namespace.machine_vault,
+        namespace.vault_dir,
+        namespace.nats_transport_vault_dir,
+        namespace.ready_file,
+        namespace.runner_capability,
+        namespace.runner_fact_outbox,
+        namespace.development_artifact_root,
+        namespace.artifact_quarantine_dir,
+        namespace.artifact_activation_dir,
+        namespace.artifact_cache_dir,
+    ):
+        assert root.resolve() in Path(path).resolve().parents
+
+
+def test_start_rejects_split_production_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "arx"
+    _seed_runner_toml(root / "runner.toml")
+    argv = _production_state_arguments(root)
+    argv[argv.index("--runner-fact-outbox") + 1] = str(tmp_path / "split.db")
+
+    exit_code, run_daemon, _credential = _run_start(argv, monkeypatch=monkeypatch)
+
+    assert exit_code == 1
+    run_daemon.assert_not_called()

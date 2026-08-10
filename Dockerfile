@@ -86,9 +86,9 @@ COPY --from=builder /usr/local/lib/python3.12/site-packages \
                     /usr/local/lib/python3.12/site-packages
 COPY --from=builder /usr/local/bin/arx-runner /usr/local/bin/arx-runner
 
-# Persist runtime state on the host. `docs/ops/05-deployment.md` §Docker
-# Runtime Volume Mount documents the `-v ~/.arx:/home/custos/.arx` pattern
-# so operator-provisioned KEK vaults survive container restarts.
+# Persist the sole production state root on the host so machine identity,
+# capability, transport authority, RunnerFact SQLite and artifact state survive
+# replacement and restart as one inseparable authority set.
 VOLUME ["/home/custos/.arx"]
 
 # Pre-create the mount point owned by `custos`: without this an anonymous
@@ -105,7 +105,7 @@ WORKDIR /opt/custos
 # without overriding the entrypoint while the no-argument path remains the
 # reconcile daemon.
 ENTRYPOINT ["arx-runner"]
-CMD ["start"]
+CMD ["start", "--production-state-root", "/home/custos/.arx"]
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
     CMD ["arx-runner", "health"]
 

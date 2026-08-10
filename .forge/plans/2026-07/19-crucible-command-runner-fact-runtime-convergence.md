@@ -1480,3 +1480,22 @@ allows a 300-second read timeout for the 168 MB hash-pinned Nautilus wheel; it
 does not loosen `--require-hashes`, dependency versions, the Python/engine ABI
 or image provenance rules. The rebuilt image passes the Docker-network
 RunnerFact acceptance without relying on the older local image.
+
+## 2026-08-10 sole production V1 image and cold-start contract
+
+The remaining T9 production boundary is implemented in-place rather than by a
+second runtime plan. `arx-runner enroll` accepts the one-shot authorization only
+from a non-symlink regular `--token-file` that grants no group or other access;
+the secret is no longer accepted in process argv. The signed lane can declare
+`--production-state-root`, in which case machine identity, Runner capability,
+per-mode NATS authority, RunnerFact SQLite, readiness and artifact state must
+all remain below that one persistent root. The offline lane remains a separate
+development composition and cannot use the production-state assertion.
+
+The existing release workflow is also the sole Custos image authority. It now
+builds one `linux/amd64` candidate from hash-locked inputs, runs the exact digest
+runtime gate before signing, emits provenance/SBOM/Sigstore evidence and writes
+`CUSTOS-V1-TEAM-IMAGE-PUBLICATION-V1`. A discovery tag is immutable but never
+authoritative, and no `latest` alias is published. T9 remains in progress until
+the main-branch workflow receipt is consumed by the coordinated v1.team bundle;
+T10 remains the deployed testnet/live promotion and close-out gate.
