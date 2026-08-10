@@ -495,7 +495,7 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
         errors.append("Custos receipt must not fabricate the pending PS consumer receipt")
     crucible_receipt_pin = {
         "repository": "tesseract-trading/crucible-rust",
-        "commit": "80383870b9f2f6be1edd0e4867ad8dd36605d2d6",
+        "commit": "0a9aa68c78f717f19fdcc9eada9f942980fcf422",
         "path": (
             "docs/authority/receipts/"
             "crucible-custos-strategy-contract-v1-consumer-receipt.json"
@@ -523,7 +523,7 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
         }
         or crucible_consumer_receipt.get("consumer") != "crucible-rust"
         or crucible_consumer_receipt.get("producer", {}).get("commit")
-        != "d1847cd39802951fcafcdeec0061854655feee8b"
+        != "91c5a648c4db4e16f8dde11f48c8e60b30e0a813"
         or crucible_consumer_receipt.get("status")
         != "EXACT_CUSTOS_V1_CONTRACT_PINNED_PENDING_PRODUCER_HANDOFF"
         or crucible_consumer_receipt.get("runtime_ready") is not False

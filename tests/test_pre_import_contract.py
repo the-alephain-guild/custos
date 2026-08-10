@@ -75,7 +75,7 @@ def test_schema_golden_and_index_are_the_same_v1_contract() -> None:
     assert claims["release_bom_digest"] == receipt["release_bom_digest"]
     crucible_receipt = json.loads(CRUCIBLE_RECEIPT.read_text(encoding="utf-8"))
     assert crucible_receipt["producer"]["commit"] == (
-        "d1847cd39802951fcafcdeec0061854655feee8b"
+        "91c5a648c4db4e16f8dde11f48c8e60b30e0a813"
     )
     assert crucible_receipt["consumer"] == "crucible-rust"
     assert crucible_receipt["runtime_ready"] is False
@@ -104,5 +104,5 @@ def test_contract_receipt_stays_pending_until_both_consumers_pin_v1() -> None:
     assert receipt["production_ready"] is False
     assert receipt["consumers"]["philosophers_stone"]["receipt"] is None
     crucible_pin = receipt["consumers"]["crucible_rust"]["receipt"]
-    assert crucible_pin["commit"] == "80383870b9f2f6be1edd0e4867ad8dd36605d2d6"
+    assert crucible_pin["commit"] == "0a9aa68c78f717f19fdcc9eada9f942980fcf422"
     assert crucible_pin["sha256"] == hashlib.sha256(CRUCIBLE_RECEIPT.read_bytes()).hexdigest()

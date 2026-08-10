@@ -4,10 +4,10 @@
   "consumers": {
     "crucible_rust": {
       "receipt": {
-        "commit": "80383870b9f2f6be1edd0e4867ad8dd36605d2d6",
+        "commit": "0a9aa68c78f717f19fdcc9eada9f942980fcf422",
         "path": "docs/authority/receipts/crucible-custos-strategy-contract-v1-consumer-receipt.json",
         "repository": "tesseract-trading/crucible-rust",
-        "sha256": "4047d74724ace7cff1e8da242e1492f75293f8403131cd5201a734f31d520812",
+        "sha256": "c34bf2f5e280beef28b4e12c4833d9b9c1022df36de8572f943b2aaefab6e23d",
         "vendored_path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-v1-consumer-receipt.json"
       },
       "repository": "tesseract-trading/crucible-rust"
@@ -19,7 +19,7 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/strategy-contract-assets-v1.json",
-    "sha256": "50678d8a07aac075e609ca3f39e4e9e5ac12f02f5bcc5f67b132e61348294c24",
+    "sha256": "92a348671cd7de27c076ba6964dc8b83b4143a586a71b44081a058fe1249aee0",
     "size_bytes": 2828
   },
   "contract_consumer_ready": false,
@@ -34,7 +34,7 @@
   "producer": {
     "repository": "tesseract-trading/custos",
     "source_path": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
-    "source_sha256": "39d48ca66637ea2d803ba9c9bc4e1f921ec2309aa130d21263452b62c987eb06"
+    "source_sha256": "eb83d41cd8c4bb6e8c751ef19bbbe5de28c18ca69703905fd5eb76b9bab9f3f3"
   },
   "production_ready": false,
   "receipt_schema_version": 1,
