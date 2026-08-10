@@ -116,7 +116,11 @@ def test_official_image_has_clean_entrypoint_cmd_and_healthcheck() -> None:
     entrypoint, command, healthcheck = inspect.stdout.strip().split("|")
 
     assert json.loads(entrypoint) == ["arx-runner"]
-    assert json.loads(command) == ["start"]
+    assert json.loads(command) == [
+        "start",
+        "--production-state-root",
+        "/home/custos/.arx",
+    ]
     assert json.loads(healthcheck) == ["CMD", "arx-runner", "health"]
 
 
