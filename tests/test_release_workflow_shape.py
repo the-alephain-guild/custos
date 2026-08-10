@@ -105,6 +105,7 @@ def test_image_is_multi_platform_with_sbom_and_provenance() -> None:
     assert "platforms: linux/amd64,linux/arm64" in text
     assert "provenance: mode=max" in text
     assert "sbom: true" in text
+    assert "docker image inspect --platform" not in text
 
 
 def test_exact_digest_runtime_gate_precedes_signature() -> None:

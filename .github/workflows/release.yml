@@ -345,7 +345,7 @@ jobs:
           for platform in linux/amd64 linux/arm64; do
             docker pull --platform "$platform" "$IMAGE_REF"
             test "$(docker run --rm --platform "$platform" --entrypoint /usr/bin/id "$IMAGE_REF" -u)" = 1000
-            test "$(docker image inspect --platform "$platform" "$IMAGE_REF" --format '{{json .Config.Cmd}}')" = \
+            test "$(docker image inspect "$IMAGE_REF" --format '{{json .Config.Cmd}}')" = \
               '["start","--production-state-root","/home/custos/.arx"]'
             docker run --rm --platform "$platform" "$IMAGE_REF" --help
             for command in credential deployment enroll health identity nats nats-transport publish-capability release-policy start vault; do
