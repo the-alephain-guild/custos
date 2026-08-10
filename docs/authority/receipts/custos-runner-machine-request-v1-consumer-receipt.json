@@ -8,12 +8,12 @@
   },
   "consumer": {
     "repository": "tesseract-trading/custos",
-    "commit": "de194eb623f06725dfdd417d71f364098692d76f"
+    "commit": "71f3f8d5493e22d5ba8c4c0ff3d7c1c83106e592"
   },
   "asset_index": {
     "path": "docs/authority/crucible-runner-machine-request-consumer-assets-v1.json",
-    "sha256": "167a5fff2957a07bfaad42ba12d76cc9006cb9846f0ed5e02485ae056c73cdb9",
-    "size_bytes": 2503
+    "sha256": "2859d56e2858dde912ffd509d259a32a1524ee3c86b3c7269e7e9c397ccf651f",
+    "size_bytes": 2504
   },
   "contract": {
     "request_domain": "crucible.runner.machine.request.v1",

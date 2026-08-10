@@ -29,7 +29,7 @@ def test_machine_request_consumer_assets_are_exactly_pinned() -> None:
     assert index["consumer"] == {
         "repository": "tesseract-trading/custos",
         "plan": 19,
-        "commit": "de194eb623f06725dfdd417d71f364098692d76f",
+        "commit": "71f3f8d5493e22d5ba8c4c0ff3d7c1c83106e592",
         "status": "DIRECT_CREDENTIAL_CLIENT_READY_NATS_TRANSPORT_PENDING",
     }
 

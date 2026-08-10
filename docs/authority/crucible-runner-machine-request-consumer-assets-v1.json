@@ -11,7 +11,7 @@
   "consumer": {
     "repository": "tesseract-trading/custos",
     "plan": 19,
-    "commit": "de194eb623f06725dfdd417d71f364098692d76f",
+    "commit": "71f3f8d5493e22d5ba8c4c0ff3d7c1c83106e592",
     "status": "DIRECT_CREDENTIAL_CLIENT_READY_NATS_TRANSPORT_PENDING"
   },
   "contract": {
@@ -46,8 +46,8 @@
     },
     {
       "path": "src/custos/cli/subcommands/enroll.py",
-      "sha256": "9751ebd14bd3c2c490eff32097be91eec4d15069b777a563886d8422e1b5ff1b",
-      "size_bytes": 9707
+      "sha256": "5d064d694730a8ff70823232e7c356dd36232e415875ca1c1bfb3e1999c98fb5",
+      "size_bytes": 11482
     },
     {
       "path": "tests/test_runner_machine_request_contract.py",
