@@ -115,6 +115,121 @@ def test_build_lock_binding_uses_the_signed_digest_not_a_producer_local_path() -
         strategy_execution._require_single_build_lock_binding(duplicated, build_lock_digest)
 
 
+def test_pre_import_receipt_rejects_non_sigstore_publisher_profile() -> None:
+    golden = json.loads(GOLDEN.read_text(encoding="utf-8"))["receipt"]
+    invalid = copy.deepcopy(golden)
+    proof = invalid["crucible_artifact_evidence"]["sigstore_proof"]
+    invalid["crucible_artifact_evidence"]["sigstore_proof"] = {
+        "publisher_profile": "team_kms",
+        "proof": proof,
+    }
+
+    with pytest.raises(
+        PydanticValidationError,
+        match="not exact GitHub OIDC Sigstore evidence",
+    ):
+        _validate(invalid)
+
+
+def test_pre_import_receipt_accepts_digest_bound_github_oidc_proof_wrapper() -> None:
+    receipt = copy.deepcopy(
+        json.loads(GOLDEN.read_text(encoding="utf-8"))["receipt"]
+    )
+    evidence = receipt["crucible_artifact_evidence"]
+    evidence["sigstore_proof"] = {
+        "publisher_profile": "github_oidc",
+        "proof": evidence["sigstore_proof"],
+    }
+    claim_fields = (
+        "schema_version",
+        "producer_repository",
+        "producer_commit",
+        "workflow_identity",
+        "source_date_epoch",
+        "strategy_source_tree_sha256",
+        "artifact_sha256",
+        "manifest_sha256",
+        "artifact_ref_digest",
+        "release_bom_digest",
+        "execution_abi_schema_sha256",
+        "contract_asset_index_sha256",
+        "toolkit_wheel_sha256",
+        "toolkit_sbom_sha256",
+        "build_lock_sha256",
+        "zero_rewrite_semantic_diff_sha256",
+        "zero_rewrite_characterization_sha256",
+        "engine",
+        "engine_version",
+        "python_requires",
+        "entry_point_group",
+        "entry_point_name",
+    )
+    proof_fields = (
+        "bundle_sha256",
+        "statement_sha256",
+        "dsse_payload_sha256",
+        "dsse_signature_sha256",
+        "signing_certificate_sha256",
+        "trusted_root_sha256",
+        "certificate_issuer",
+        "certificate_subject",
+        "certificate_not_before",
+        "certificate_not_after",
+        "sct_log_id",
+        "sct_sha256",
+        "rekor_log_id",
+        "rekor_log_index",
+        "rekor_integrated_time",
+        "rekor_entry_body_sha256",
+        "rekor_signed_entry_timestamp_sha256",
+        "rekor_inclusion_proof_sha256",
+        "rekor_checkpoint_sha256",
+        "rekor_tree_size",
+        "rekor_root_hash",
+    )
+    policy_fields = (
+        "policy_id",
+        "policy_version",
+        "policy_digest",
+        "evaluated_at",
+        "decision",
+    )
+    wrapped = evidence["sigstore_proof"]
+    evidence_preimage = {
+        "schema_version": evidence["schema_version"],
+        "strategy_release_id": evidence["strategy_release_id"],
+        "artifact_ref_digest": evidence["artifact_ref_digest"],
+        "release_bom_digest": evidence["release_bom_digest"],
+        "release_statement_digest": evidence["release_statement_digest"],
+        "detached_attestation_ref_digest": evidence["detached_attestation_ref_digest"],
+        "bundle_sha256": evidence["bundle_sha256"],
+        "signed_producer_claims": {
+            name: evidence["signed_producer_claims"][name] for name in claim_fields
+        },
+        "sigstore_proof": {
+            "publisher_profile": "github_oidc",
+            "proof": {name: wrapped["proof"][name] for name in proof_fields},
+        },
+        "local_policy_evaluation": {
+            name: evidence["local_policy_evaluation"][name] for name in policy_fields
+        },
+        "composite_evidence_digest": "",
+    }
+    digest = hashlib.sha256(
+        json.dumps(
+            evidence_preimage,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    evidence["composite_evidence_digest"] = digest
+    receipt["crucible_artifact_evidence_digest"] = digest
+    receipt["crucible_artifact_acceptance"]["artifact_evidence_digest"] = digest
+    receipt["runner_local_policy_decision"]["artifact_evidence_digest"] = digest
+
+    _validate(receipt)
+
+
 def test_contract_receipt_stays_pending_until_both_consumers_pin_v1() -> None:
     receipt = json.loads(RECEIPT.read_text(encoding="utf-8"))
 

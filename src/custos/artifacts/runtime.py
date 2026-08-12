@@ -556,6 +556,21 @@ def _validate_sigstore_against_crucible(
             ArtifactVerificationCode.SIGSTORE_EVIDENCE_MISMATCH,
             "Crucible evidence lacks signed producer claims or Sigstore proof",
         )
+    # Crucible's current publisher-aware contract wraps GitHub OIDC proof so it
+    # can coexist with the distinct team-KMS profile. Retain the original V1
+    # direct proof for already-issued releases, but never reinterpret a KMS
+    # proof as Sigstore evidence.
+    if "publisher_profile" in proof or "proof" in proof:
+        if (
+            set(proof) != {"publisher_profile", "proof"}
+            or proof.get("publisher_profile") != "github_oidc"
+            or not isinstance(proof.get("proof"), Mapping)
+        ):
+            raise ArtifactVerificationError(
+                ArtifactVerificationCode.SIGSTORE_EVIDENCE_MISMATCH,
+                "Crucible publisher proof is not exact GitHub OIDC Sigstore evidence",
+            )
+        proof = proof["proof"]
     expected_identity = (
         proof.get("certificate_issuer"),
         proof.get("certificate_subject"),

@@ -14,6 +14,7 @@ from custos.artifacts.policy import SigstoreIdentityV1
 from custos.artifacts.sigstore_verifier import (
     ProductionSigstoreVerifier,
     _parse_in_toto_subjects,
+    _trusted_root_from_bytes,
 )
 from custos.artifacts.verification_types import DigestSubject, SigstoreVerificationRequest
 
@@ -80,6 +81,66 @@ def test_real_trusted_root_and_invalid_bundle_reject_offline_without_network(
     monkeypatch.setattr(socket.socket, "connect", forbid_network)
     with pytest.raises(ArtifactVerificationError) as error:
         ProductionSigstoreVerifier().verify(_request(tmp_path))
+
+    assert error.value.code is ArtifactVerificationCode.SIGSTORE_VERIFICATION_FAILED
+
+
+def test_sigstore_v3_parser_gets_compatible_view_of_newer_ed25519_tlog() -> None:
+    supported = {
+        "logId": {"keyId": "supported"},
+        "publicKey": {"keyDetails": "PKIX_ECDSA_P256_SHA_256"},
+    }
+    unsupported = {
+        "logId": {"keyId": "newer"},
+        "publicKey": {"keyDetails": "PKIX_ED25519"},
+    }
+
+    class FakeTrustedRoot:
+        @staticmethod
+        def from_file(path: str) -> dict:
+            return json.loads(Path(path).read_text(encoding="utf-8"))
+
+    class FakeBindings:
+        TrustedRoot = FakeTrustedRoot
+
+    original = json.dumps(
+        {
+            "mediaType": "application/vnd.dev.sigstore.trustedroot+json;version=0.1",
+            "tlogs": [supported, unsupported],
+            "certificateAuthorities": [],
+            "ctlogs": [],
+        },
+        separators=(",", ":"),
+    ).encode()
+
+    parsed = _trusted_root_from_bytes(FakeBindings(), original)
+
+    assert parsed["tlogs"] == [supported]
+    assert b"PKIX_ED25519" in original
+
+
+def test_sigstore_v3_compatibility_fails_closed_without_supported_tlog() -> None:
+    class FakeTrustedRoot:
+        @staticmethod
+        def from_file(path: str) -> dict:
+            return json.loads(Path(path).read_text(encoding="utf-8"))
+
+    class FakeBindings:
+        TrustedRoot = FakeTrustedRoot
+
+    root = json.dumps(
+        {
+            "tlogs": [
+                {
+                    "logId": {"keyId": "newer"},
+                    "publicKey": {"keyDetails": "PKIX_ED25519"},
+                }
+            ]
+        }
+    ).encode()
+
+    with pytest.raises(ArtifactVerificationError) as error:
+        _trusted_root_from_bytes(FakeBindings(), root)
 
     assert error.value.code is ArtifactVerificationCode.SIGSTORE_VERIFICATION_FAILED
 

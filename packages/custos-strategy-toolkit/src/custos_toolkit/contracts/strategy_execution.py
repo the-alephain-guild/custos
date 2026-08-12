@@ -570,7 +570,22 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
         if dict(signed_claims) != expected_claims:
             raise ValueError("Crucible signed producer claims differ from exact statement bindings")
 
-        proof = self.crucible_artifact_evidence.get("sigstore_proof")
+        proof_evidence = self.crucible_artifact_evidence.get("sigstore_proof")
+        proof = proof_evidence
+        wrapped_github_oidc_proof = False
+        if isinstance(proof_evidence, Mapping) and (
+            "publisher_profile" in proof_evidence or "proof" in proof_evidence
+        ):
+            if (
+                set(proof_evidence) != {"publisher_profile", "proof"}
+                or proof_evidence.get("publisher_profile") != "github_oidc"
+                or not isinstance(proof_evidence.get("proof"), Mapping)
+            ):
+                raise ValueError(
+                    "Crucible publisher proof is not exact GitHub OIDC Sigstore evidence"
+                )
+            proof = proof_evidence["proof"]
+            wrapped_github_oidc_proof = True
         proof_fields = (
             "bundle_sha256",
             "statement_sha256",
@@ -617,6 +632,12 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
         if crucible_policy.get("decision") != "accepted":
             raise ValueError("Crucible local policy did not accept the artifact")
 
+        canonical_proof = {name: proof[name] for name in proof_fields}
+        if wrapped_github_oidc_proof:
+            canonical_proof = {
+                "publisher_profile": "github_oidc",
+                "proof": canonical_proof,
+            }
         evidence_preimage = {
             "schema_version": self.crucible_artifact_evidence["schema_version"],
             "strategy_release_id": self.crucible_artifact_evidence["strategy_release_id"],
@@ -628,7 +649,7 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
             ],
             "bundle_sha256": self.crucible_artifact_evidence["bundle_sha256"],
             "signed_producer_claims": expected_claims,
-            "sigstore_proof": {name: proof[name] for name in proof_fields},
+            "sigstore_proof": canonical_proof,
             "local_policy_evaluation": {name: crucible_policy[name] for name in policy_fields},
             "composite_evidence_digest": "",
         }

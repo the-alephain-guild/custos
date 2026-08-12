@@ -197,9 +197,42 @@ def _github_repository_coordinate(source_repository: str) -> str:
 
 def _trusted_root_from_bytes(bindings: _SigstoreBindings, trusted_root_bytes: bytes) -> Any:
     try:
+        # sigstore-python 3.x cannot deserialize the PKIX_ED25519 enum used by
+        # newer Rekor v2 entries in the public-good trusted-root snapshot. Keep
+        # the caller-provided bytes as the policy/evidence authority, but give
+        # the v3 parser a compatibility view that omits only those unsupported
+        # log keys. A bundle signed by an omitted log still fails closed because
+        # the verifier cannot find its log ID in this view.
+        trusted_root = json.loads(
+            trusted_root_bytes.decode("utf-8"),
+            object_pairs_hook=_reject_duplicate_pairs,
+            parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)),
+        )
+        if not isinstance(trusted_root, dict):
+            raise ValueError("trusted root must be a JSON object")
+        tlogs = trusted_root.get("tlogs")
+        if isinstance(tlogs, list):
+            compatible_tlogs = [
+                entry
+                for entry in tlogs
+                if not (
+                    isinstance(entry, dict)
+                    and isinstance(entry.get("publicKey"), dict)
+                    and entry["publicKey"].get("keyDetails") == "PKIX_ED25519"
+                )
+            ]
+            if tlogs and not compatible_tlogs:
+                raise ValueError("trusted root has no Sigstore v3-compatible tlog")
+            trusted_root["tlogs"] = compatible_tlogs
+        compatible_bytes = json.dumps(
+            trusted_root,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
         with tempfile.TemporaryDirectory(prefix="custos-sigstore-root-") as directory:
             path = Path(directory) / "trusted-root.json"
-            path.write_bytes(trusted_root_bytes)
+            path.write_bytes(compatible_bytes)
             os.chmod(path, 0o600)
             return bindings.TrustedRoot.from_file(str(path))
     except ArtifactVerificationError:

@@ -21,8 +21,14 @@ from custos.artifacts.verification_types import (
 )
 
 
+@pytest.mark.parametrize(
+    ("proof_shape", "accepted"),
+    [("legacy", True), ("github_oidc", True), ("team_kms", False)],
+)
 def test_crucible_sigstore_evidence_uses_exact_certificate_identity(
     tmp_path: Path,
+    proof_shape: str,
+    accepted: bool,
 ) -> None:
     issuer = "https://token.actions.githubusercontent.com"
     workflow_identity = (
@@ -57,6 +63,16 @@ def test_crucible_sigstore_evidence_uses_exact_certificate_identity(
         verified_subjects=subjects,
         transparency_log_verified=True,
     )
+    sigstore_proof = {
+        "bundle_sha256": bundle_digest,
+        "certificate_issuer": issuer,
+        "certificate_subject": workflow_identity,
+    }
+    if proof_shape != "legacy":
+        sigstore_proof = {
+            "publisher_profile": proof_shape,
+            "proof": sigstore_proof,
+        }
     authority = SimpleNamespace(
         detached_attestation_ref={"bundle_sha256": bundle_digest},
         crucible_artifact_evidence={
@@ -64,15 +80,16 @@ def test_crucible_sigstore_evidence_uses_exact_certificate_identity(
                 "workflow_identity": workflow_identity,
                 "producer_repository": source_repository,
             },
-            "sigstore_proof": {
-                "bundle_sha256": bundle_digest,
-                "certificate_issuer": issuer,
-                "certificate_subject": workflow_identity,
-            },
+            "sigstore_proof": sigstore_proof,
         },
     )
 
-    _validate_sigstore_against_crucible(evidence, request, authority)
+    if accepted:
+        _validate_sigstore_against_crucible(evidence, request, authority)
+    else:
+        with pytest.raises(ArtifactVerificationError) as error:
+            _validate_sigstore_against_crucible(evidence, request, authority)
+        assert error.value.code is ArtifactVerificationCode.SIGSTORE_EVIDENCE_MISMATCH
 
 
 def test_artifact_runtime_capability_has_one_v1_shape() -> None:
