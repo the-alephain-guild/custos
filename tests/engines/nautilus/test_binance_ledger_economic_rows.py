@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from custos.engines.nautilus.binance_ledger import BinanceVenueLedgerSource
 
 
@@ -134,13 +136,40 @@ def test_perpetual_account_balances_only_include_settlement_currencies() -> None
     assert positions == [
         {
             "venue_position_id": "BTCUSDT:BOTH",
-            "instrument": "BTCUSDT",
+            "instrument": "BTCUSDT-PERP.BINANCE",
             "side": "buy",
             "quantity": "0.007",
             "avg_entry_price": "63567",
             "currency": "USDT",
         }
     ]
+
+
+def test_perpetual_trade_rows_use_the_canonical_instrument_identity() -> None:
+    fills, fees = _source()._trade_rows(
+        [
+            {
+                "symbol": "BTCUSDT",
+                "id": 527_313_311,
+                "orderId": 28_540_317_470,
+                "side": "BUY",
+                "qty": "0.0070",
+                "price": "63504.90",
+                "commission": "0.17781372",
+                "commissionAsset": "USDT",
+                "time": 1_786_662_060_971,
+            }
+        ]
+    )
+
+    assert fills[0]["instrument"] == "BTCUSDT-PERP.BINANCE"
+    assert fees[0]["amount"] == "0.17781372"
+
+
+def test_venue_event_queries_use_a_half_open_reconciliation_period() -> None:
+    closed_at = datetime(2026, 8, 13, 23, 2, tzinfo=UTC)
+
+    assert _source()._closed_interval_end_ms(closed_at) == 1_786_662_119_999
 
 
 def test_perpetual_position_risk_must_match_account_quantity() -> None:

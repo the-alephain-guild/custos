@@ -147,7 +147,7 @@ class BinanceVenueLedgerSource:
     ) -> list[dict[str, Any]]:
         path = "/fapi/v1/userTrades" if self._futures else "/api/v3/myTrades"
         start_ms = int(coverage_from.timestamp() * 1000)
-        end_ms = int(closed_at.timestamp() * 1000)
+        end_ms = self._closed_interval_end_ms(closed_at)
         result: list[dict[str, Any]] = []
         cursor = start_ms
         while cursor <= end_ms:
@@ -187,7 +187,7 @@ class BinanceVenueLedgerSource:
 
     def _income_history(self, coverage_from: datetime, closed_at: datetime) -> list[dict[str, Any]]:
         start_ms = int(coverage_from.timestamp() * 1000)
-        end_ms = int(closed_at.timestamp() * 1000)
+        end_ms = self._closed_interval_end_ms(closed_at)
         result: list[dict[str, Any]] = []
         page_number = 1
         while True:
@@ -257,7 +257,7 @@ class BinanceVenueLedgerSource:
                 positions.append(
                     {
                         "venue_position_id": f"{symbol}:{row.get('positionSide') or 'BOTH'}",
-                        "instrument": symbol,
+                        "instrument": self._canonical_instrument(symbol),
                         "side": side,
                         "quantity": self._render(abs(quantity)),
                         "avg_entry_price": self._decimal(row.get("entryPrice"), "entryPrice"),
@@ -326,7 +326,7 @@ class BinanceVenueLedgerSource:
                 {
                     "venue_trade_id": trade_id,
                     "venue_order_id": order_id,
-                    "instrument": symbol,
+                    "instrument": self._canonical_instrument(symbol),
                     "side": side_value,
                     "quantity": self._decimal(row.get("qty"), "qty"),
                     "price": self._decimal(row.get("price"), "price"),
@@ -436,6 +436,21 @@ class BinanceVenueLedgerSource:
             if configured == symbol:
                 return quote
         raise BinanceVenueLedgerError(f"unexpected Binance symbol {symbol!r}")
+
+    def _canonical_instrument(self, symbol: str) -> str:
+        # Reconciliation compares independently sourced venue rows with the
+        # canonical Nautilus instrument identity emitted by the engine. Raw
+        # Binance symbols are venue locators, not cross-source identities.
+        self._quote_currency(symbol)
+        suffix = "-PERP.BINANCE" if self._futures else ".BINANCE"
+        return f"{symbol}{suffix}"
+
+    @staticmethod
+    def _closed_interval_end_ms(closed_at: datetime) -> int:
+        # Binance startTime/endTime are inclusive. Reconciliation periods are
+        # half-open [started_at, closed_at), so subtract one millisecond to
+        # prevent a boundary fill or income row from appearing in two periods.
+        return int(closed_at.timestamp() * 1000) - 1
 
     @staticmethod
     def _parse_pair(value: str) -> tuple[str, str]:
