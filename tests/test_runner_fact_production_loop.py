@@ -8,6 +8,7 @@ from uuid import uuid4
 from custos.core.runner_fact_producer import (
     RunnerCapitalBasisSnapshot,
     RunnerFactProductionLoop,
+    VenueLedgerEvidence,
 )
 
 
@@ -49,6 +50,76 @@ class _CapturingEmitter:
     async def emit(self, authority, facts):
         json.dumps(facts, allow_nan=False, separators=(",", ":"), sort_keys=True)
         self.emissions.append((authority, tuple(facts)))
+
+
+class _CoverageHost:
+    def __init__(self) -> None:
+        self.requests = []
+
+    async def runner_fact_venue_ledger(self, deployment_instance_id, coverage_from, closed_at):
+        self.requests.append((deployment_instance_id, coverage_from, closed_at))
+        return VenueLedgerEvidence(
+            venue="BINANCE",
+            source="venue_api",
+            watermark="watermark-1",
+            coverage_from=coverage_from,
+            observed_through=closed_at,
+            completeness={
+                "balances_complete": True,
+                "positions_complete": True,
+                "fills_complete": True,
+                "fees_complete": True,
+            },
+            balances=(
+                {
+                    "asset": "USDT",
+                    "currency": "USDT",
+                    "total": "100",
+                    "available": "100",
+                },
+            ),
+            positions=(),
+            fills=(),
+            fees=(),
+        )
+
+
+async def test_first_reconciliation_period_can_cover_from_signed_command_time() -> None:
+    host = _CoverageHost()
+    emitter = _CapturingEmitter()
+    loop = RunnerFactProductionLoop(
+        host=host,
+        emitter=emitter,
+        snapshot_interval_secs=1,
+        period_secs=60,
+        period_retry_secs=1,
+    )
+    started_at = datetime(2026, 8, 13, 22, 26, tzinfo=UTC)
+    coverage_from = datetime(2026, 8, 13, 22, 25, 21, tzinfo=UTC)
+    closed_at = started_at + timedelta(seconds=60)
+    authority = SimpleNamespace(
+        stream_key="default:testnet:runner:instance",
+        deployment_spec_id=uuid4(),
+        trading_mode="testnet",
+    )
+    deployment = SimpleNamespace(
+        authority=authority,
+        deployment_instance_id=str(uuid4()),
+        reconciliation_available=True,
+    )
+
+    assert await loop._close_reconciliation_period(
+        deployment,
+        started_at,
+        closed_at,
+        coverage_from=coverage_from,
+    )
+
+    assert host.requests == [(deployment.deployment_instance_id, coverage_from, closed_at)]
+    close = emitter.emissions[-1][1][0]
+    assert close["period_started_at"] == "2026-08-13T22:26:00Z"
+    manifest = emitter.emissions[0][1][0]
+    assert manifest["coverage_from"] == "2026-08-13T22:25:21Z"
 
 
 class _CapitalBasisHost:

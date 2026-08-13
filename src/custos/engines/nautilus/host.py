@@ -20,6 +20,7 @@ import signal
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from decimal import Decimal
 from inspect import isawaitable
 from uuid import UUID
@@ -663,6 +664,22 @@ class NtTradingNodeHost:
             spec,
             runtime_strategy=runtime_strategy,
         )
+        coverage_started_at = None
+        if spec.get("reconciliation_coverage_started_at") is not None:
+            try:
+                parsed_coverage_start = datetime.fromisoformat(
+                    str(spec["reconciliation_coverage_started_at"]).replace("Z", "+00:00")
+                )
+                if (
+                    parsed_coverage_start.tzinfo is None
+                    or parsed_coverage_start.utcoffset() is None
+                ):
+                    raise ValueError("timestamp has no UTC offset")
+                coverage_started_at = parsed_coverage_start.astimezone(UTC)
+            except ValueError as exc:
+                raise RuntimeError(
+                    "reconciliation coverage start is not an ISO-8601 timestamp"
+                ) from exc
         deployment = RunnerFactDeployment(
             authority=authority,
             deployment_instance_id=deployment_instance_id,
@@ -673,6 +690,7 @@ class NtTradingNodeHost:
             reconciliation_available=provider is not None,
             strategy_version=strategy_version,
             timeframe=timeframe,
+            reconciliation_coverage_started_at=coverage_started_at,
         )
         return deployment, provider
 

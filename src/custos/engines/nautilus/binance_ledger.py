@@ -46,6 +46,7 @@ class BinanceVenueLedgerSource:
         "_pairs",
         "_symbols",
         "_currencies",
+        "_settlement_currencies",
     )
 
     def __init__(self, *, spec: Mapping[str, Any], credential: Mapping[str, Any]) -> None:
@@ -74,6 +75,7 @@ class BinanceVenueLedgerSource:
         self._pairs = tuple(self._parse_pair(str(pair)) for pair in pairs)
         self._symbols = tuple(base + quote for base, quote in self._pairs)
         self._currencies = frozenset(currency for pair in self._pairs for currency in pair)
+        self._settlement_currencies = frozenset(quote for _base, quote in self._pairs)
         unsupported = self._currencies - SUPPORTED_CURRENCIES
         if unsupported:
             raise BinanceVenueLedgerError(
@@ -205,7 +207,11 @@ class BinanceVenueLedgerSource:
         if self._futures:
             for row in self._expect_list(account.get("assets")):
                 asset = str(row.get("asset") or "").upper()
-                if asset not in self._currencies:
+                # USD-M perpetual account assets are collateral balances, not
+                # spot inventory. Reconcile only the deployment's settlement
+                # currencies; treating the pair's base asset as cash creates a
+                # false balance discrepancy against the settlement ledger.
+                if asset not in self._settlement_currencies:
                     continue
                 balances.append(
                     {

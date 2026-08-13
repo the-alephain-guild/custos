@@ -210,6 +210,7 @@ class RunnerCommandRuntimeCoordinator:
                 f"{verified.command.generation}"
             ),
             verified,
+            initial_reconciliation_backfill=False,
         )
         return ready
 
@@ -217,6 +218,8 @@ class RunnerCommandRuntimeCoordinator:
         self,
         delivery_id: str,
         verified: VerifiedRunnerCommand,
+        *,
+        initial_reconciliation_backfill: bool = True,
     ) -> tuple[
         PreparedStrategyArtifact | PreparedDevelopmentStrategyArtifact,
         ActivatedStrategyArtifact | ActivatedDevelopmentStrategyArtifact,
@@ -262,6 +265,13 @@ class RunnerCommandRuntimeCoordinator:
             runtime_spec_model.credential_scope,
         )
         runtime_spec = runtime_spec_model.model_dump(mode="python")
+        # The signed command timestamp is the earliest authoritative boundary
+        # for a fresh runtime's first independent venue-ledger snapshot. A
+        # startup recovery must not replay the full deployment history into a
+        # later reconciliation period; an absent boundary stays fail-closed.
+        runtime_spec["reconciliation_coverage_started_at"] = (
+            verified.command.issued_at if initial_reconciliation_backfill else None
+        )
         ready = await self._engine_lifecycle.apply(
             delivery_id=delivery_id,
             verified=verified,

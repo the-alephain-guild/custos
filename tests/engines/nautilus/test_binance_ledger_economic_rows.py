@@ -88,3 +88,33 @@ def test_income_rows_ignore_unrelated_account_income_and_other_symbols() -> None
     )
 
     assert rows == []
+
+
+def test_perpetual_account_balances_only_include_settlement_currencies() -> None:
+    balances, positions = _source()._account_rows(
+        {
+            "assets": [
+                {
+                    "asset": "BTC",
+                    "marginBalance": "0.01",
+                    "availableBalance": "0.01",
+                },
+                {
+                    "asset": "USDT",
+                    "marginBalance": "4462.00816174",
+                    "availableBalance": "4462.00816174",
+                },
+            ],
+            "positions": [],
+        }
+    )
+
+    assert balances == [
+        {
+            "asset": "USDT",
+            "currency": "USDT",
+            "total": "4462.00816174",
+            "available": "4462.00816174",
+        }
+    ]
+    assert positions == []

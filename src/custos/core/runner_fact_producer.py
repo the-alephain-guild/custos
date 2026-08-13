@@ -42,6 +42,7 @@ class RunnerFactDeployment:
     reconciliation_available: bool
     strategy_version: str
     timeframe: str
+    reconciliation_coverage_started_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -55,6 +56,13 @@ class RunnerFactDeployment:
         if not self.strategy_version.strip() or not self.timeframe.strip():
             raise RunnerFactContractError(
                 "RunnerFactDeployment requires strategy version and timeframe metadata"
+            )
+        if self.reconciliation_coverage_started_at is not None and (
+            self.reconciliation_coverage_started_at.tzinfo is None
+            or self.reconciliation_coverage_started_at.utcoffset() is None
+        ):
+            raise RunnerFactContractError(
+                "RunnerFactDeployment reconciliation coverage start must be timezone-aware"
             )
 
 
@@ -175,9 +183,7 @@ def _capital_basis_fact(
     )
     return {
         "kind": "RunnerRuntimeLogFact.v1",
-        "event_id": str(
-            _scoped_event_id(authority, "capital_basis", observed_at.isoformat())
-        ),
+        "event_id": str(_scoped_event_id(authority, "capital_basis", observed_at.isoformat())),
         "occurred_at": observed_at.isoformat().replace("+00:00", "Z"),
         "level": "INFO",
         "component": "custos.capital_basis",
@@ -586,6 +592,7 @@ class RunnerFactProductionLoop:
         self._period_secs = period_secs
         self._period_retry_secs = period_retry_secs
         self._period_starts: dict[str, datetime] = {}
+        self._period_coverage_starts: dict[str, datetime] = {}
 
     async def run_observability(self, stop: asyncio.Event) -> None:
         while not stop.is_set():
@@ -664,9 +671,18 @@ class RunnerFactProductionLoop:
             self._period_starts = {
                 key: value for key, value in self._period_starts.items() if key in active_keys
             }
+            self._period_coverage_starts = {
+                key: value
+                for key, value in self._period_coverage_starts.items()
+                if key in active_keys
+            }
             for deployment in active:
                 key = deployment.authority.stream_key
                 start = self._period_starts.setdefault(key, self._floor_period(now))
+                coverage_from = self._period_coverage_starts.setdefault(
+                    key,
+                    min(deployment.reconciliation_coverage_started_at or start, start),
+                )
                 closed_at = start + timedelta(seconds=self._period_secs)
                 if now < closed_at:
                     continue
@@ -677,10 +693,18 @@ class RunnerFactProductionLoop:
                         deployment_spec_id=str(deployment.authority.deployment_spec_id),
                         missed_period_started_at=start.isoformat(),
                     )
-                    self._period_starts[key] = self._floor_period(now)
+                    resumed_at = self._floor_period(now)
+                    self._period_starts[key] = resumed_at
+                    self._period_coverage_starts[key] = resumed_at
                     continue
-                if await self._close_reconciliation_period(deployment, start, closed_at):
+                if await self._close_reconciliation_period(
+                    deployment,
+                    start,
+                    closed_at,
+                    coverage_from=coverage_from,
+                ):
                     self._period_starts[key] = closed_at
+                    self._period_coverage_starts[key] = closed_at
             await self._wait(stop, self._period_retry_secs)
 
     async def _close_reconciliation_period(
@@ -688,6 +712,8 @@ class RunnerFactProductionLoop:
         deployment: RunnerFactDeployment,
         started_at: datetime,
         closed_at: datetime,
+        *,
+        coverage_from: datetime | None = None,
     ) -> bool:
         authority = deployment.authority
         period = f"{started_at:%Y%m%dT%H%M%SZ}_{closed_at:%Y%m%dT%H%M%SZ}"
@@ -701,7 +727,9 @@ class RunnerFactProductionLoop:
                 )
                 return True
             evidence = await self._host.runner_fact_venue_ledger(
-                deployment.deployment_instance_id, started_at, closed_at
+                deployment.deployment_instance_id,
+                coverage_from or started_at,
+                closed_at,
             )
             snapshot_id = _scoped_event_id(
                 authority, "venue_ledger_snapshot", evidence.venue, period

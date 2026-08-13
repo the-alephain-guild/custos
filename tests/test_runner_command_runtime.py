@@ -43,6 +43,7 @@ class _Command:
     trading_mode = "sandbox"
     lifecycle_state = "running"
     is_development_source = False
+    issued_at = "2026-08-13T22:25:21.954939Z"
 
     def to_runtime_spec(self) -> _RuntimeSpec:
         return _RuntimeSpec()
@@ -158,9 +159,11 @@ class _CredentialResolver:
 class _Lifecycle:
     def __init__(self, events: list[str]) -> None:
         self.events = events
+        self.runtime_specs: list[dict] = []
 
     async def apply(self, **kwargs):
         self.events.append("apply")
+        self.runtime_specs.append(kwargs["runtime_spec"])
         return SimpleNamespace(deployment_instance_id=UUID(int=2))
 
     async def apply_non_running(self, **kwargs):
@@ -173,6 +176,7 @@ def _coordinator(
     *,
     intake=None,
     development_artifact_runtime=None,
+    lifecycle=None,
 ):
     policy = CommandDeliveryPolicy(in_progress_interval_seconds=0.01)
     return RunnerCommandRuntimeCoordinator(
@@ -183,7 +187,7 @@ def _coordinator(
         development_artifact_runtime=development_artifact_runtime,
         entry_point_loader=object(),
         credential_resolver=_CredentialResolver(),
-        engine_lifecycle=_Lifecycle(events),
+        engine_lifecycle=lifecycle or _Lifecycle(events),
         delivery_policy=policy,
     )
 
@@ -199,6 +203,18 @@ async def test_applied_command_is_acked_only_after_lifecycle_commit() -> None:
     assert events == ["apply"]
     assert delivery.events == ["ack"]
     assert result.activation_id == "activation-1"
+
+
+@pytest.mark.asyncio
+async def test_fresh_command_passes_signed_time_as_initial_reconciliation_coverage() -> None:
+    events: list[str] = []
+    lifecycle = _Lifecycle(events)
+
+    await _coordinator(events, _Resolver(), lifecycle=lifecycle).process(_Delivery())
+
+    assert lifecycle.runtime_specs[0]["reconciliation_coverage_started_at"] == (
+        "2026-08-13T22:25:21.954939Z"
+    )
 
 
 @pytest.mark.asyncio
@@ -265,11 +281,13 @@ async def test_development_source_uses_local_runtime_and_shared_apply_path() -> 
 async def test_durable_development_command_recovers_without_inbound_ack() -> None:
     events: list[str] = []
     development_runtime = _DevelopmentArtifactRuntime()
+    lifecycle = _Lifecycle(events)
     subject = _coordinator(
         events,
         _Resolver(AssertionError("production resolver must not be called")),
         intake=_Intake(verified=VERIFIED_DEVELOPMENT),
         development_artifact_runtime=development_runtime,
+        lifecycle=lifecycle,
     )
 
     ready = await subject.recover(VERIFIED_DEVELOPMENT)
@@ -277,6 +295,7 @@ async def test_durable_development_command_recovers_without_inbound_ack() -> Non
     assert ready.deployment_instance_id == UUID(int=2)
     assert development_runtime.prepared_for == UUID(int=2)
     assert events == ["apply"]
+    assert lifecycle.runtime_specs[0]["reconciliation_coverage_started_at"] is None
 
 
 @pytest.mark.asyncio
