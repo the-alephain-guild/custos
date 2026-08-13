@@ -48,6 +48,30 @@ from custos.core.runner_command_intake import (
 
 RUNNER_FACT_SCHEMA_VERSION: Final = 1
 RUNNER_FACT_SIGNING_DOMAIN: Final = b"CRUCIBLE-RUNNER-FACT-BATCH-V1\0"
+RUNNER_STRATEGY_SIGNAL_SCHEMA_VERSION: Final = 1
+RUNNER_STRATEGY_SIGNAL_SIGNING_DOMAIN: Final = b"CRUCIBLE-RUNNER-STRATEGY-SIGNAL-V1\0"
+RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS: Final[tuple[str, ...]] = (
+    "schema_version",
+    "fact_id",
+    "subject",
+    "tenant_id",
+    "trading_mode",
+    "runner_id",
+    "deployment_instance_id",
+    "deployment_spec_id",
+    "deployment_spec_digest",
+    "generation",
+    "strategy_id",
+    "strategy_version",
+    "instrument",
+    "timeframe",
+    "direction",
+    "occurred_at",
+    "source_sequence",
+    "input_digest",
+    "trace_id",
+    "key_id",
+)
 RUNNER_FACT_SIGNING_HEADER_FIELDS: Final[tuple[str, ...]] = (
     "schema_version",
     "batch_id",
@@ -251,6 +275,18 @@ def runner_fact_signing_preimage(value: Mapping[str, Any]) -> bytes:
     """Build DOMAIN plus canonical JSON header bytes for RunnerFact v1."""
 
     return RUNNER_FACT_SIGNING_DOMAIN + _canonical_json_bytes(runner_fact_signing_header(value))
+
+
+def strategy_signal_signing_payload(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the exact closed payload signed by StrategySignalFact.v1."""
+
+    if not isinstance(value, Mapping):
+        raise RunnerFactContractError("strategy signal signing input must be an object")
+    signing_keys = frozenset(RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS)
+    input_keys = frozenset(value)
+    if input_keys not in {signing_keys, signing_keys | {"signature"}}:
+        raise RunnerFactContractError("strategy signal signing fields differ from v1 contract")
+    return {field: value[field] for field in RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS}
 
 
 def _utc_now() -> str:
@@ -465,6 +501,12 @@ class RunnerFactIdentity:
         signature = self._private_key.sign(RUNNER_FACT_SIGNING_DOMAIN + canonical_payload)
         return base64.urlsafe_b64encode(signature).rstrip(b"=").decode("ascii")
 
+    def sign_strategy_signal_payload(self, canonical_payload: bytes) -> str:
+        signature = self._private_key.sign(
+            RUNNER_STRATEGY_SIGNAL_SIGNING_DOMAIN + canonical_payload
+        )
+        return base64.urlsafe_b64encode(signature).rstrip(b"=").decode("ascii")
+
     def registration_request(
         self,
         *,
@@ -608,6 +650,67 @@ def runner_fact_event_id(*parts: object) -> UUID:
     if not rendered or any(not part for part in rendered):
         raise RunnerFactContractError("deterministic event identity parts must be non-empty")
     return uuid5(RUNNER_FACT_EVENT_NAMESPACE, "\0".join(rendered))
+
+
+def signed_strategy_signal_fact(
+    authority: RunnerFactAuthority,
+    identity: RunnerFactIdentity,
+    *,
+    fact_id: UUID | str,
+    instrument: str,
+    timeframe: str,
+    direction: Literal["long", "short", "flat"],
+    occurred_at: datetime | str,
+    source_sequence: int,
+    input_digest: str,
+    strategy_version: str,
+    trace_id: UUID | str,
+) -> dict[str, Any]:
+    """Build one independently signed, scope-complete strategy signal fact.
+
+    The dedicated subject preserves RunnerFact V1 compatibility: consumers that
+    only understand the canonical batch contract never receive this envelope.
+    """
+
+    if direction not in {"long", "short", "flat"}:
+        raise RunnerFactContractError("direction must be long, short, or flat")
+    if type(source_sequence) is not int or source_sequence < 1:
+        raise RunnerFactContractError("source_sequence must be a positive integer")
+    if not _LOWER_HEX_64.fullmatch(input_digest):
+        raise RunnerFactContractError("input_digest must be lowercase SHA-256")
+    runner_id = str(authority.runner_id)
+    subject = (
+        "crucible.runner.strategy-signal.v1."
+        f"{authority.tenant_id}.{runner_id}.{authority.trading_mode}"
+    )
+    payload = strategy_signal_signing_payload(
+        {
+            "schema_version": RUNNER_STRATEGY_SIGNAL_SCHEMA_VERSION,
+            "fact_id": _uuid(fact_id, "fact_id"),
+            "subject": subject,
+            "tenant_id": authority.tenant_id,
+            "trading_mode": authority.trading_mode,
+            "runner_id": runner_id,
+            "deployment_instance_id": str(authority.deployment_instance_id),
+            "deployment_spec_id": str(authority.deployment_spec_id),
+            "deployment_spec_digest": authority.deployment_spec_digest,
+            "generation": authority.generation,
+            "strategy_id": str(authority.strategy_id),
+            "strategy_version": _non_empty(strategy_version, "strategy_version"),
+            "instrument": _non_empty(instrument, "instrument"),
+            "timeframe": _non_empty(timeframe, "timeframe"),
+            "direction": direction,
+            "occurred_at": _timestamp(occurred_at, "occurred_at"),
+            "source_sequence": source_sequence,
+            "input_digest": input_digest,
+            "trace_id": _uuid(trace_id, "trace_id"),
+            "key_id": identity.key_id,
+        }
+    )
+    return {
+        **payload,
+        "signature": identity.sign_strategy_signal_payload(_canonical_json_bytes(payload)),
+    }
 
 
 def settlement_fill(
