@@ -46,6 +46,7 @@ from custos.core.runner_fact_producer import (
     VenueLedgerEvidence,
     strategy_signal_metadata,
 )
+from custos.core.runtime_log_fact import RunnerRuntimeLogEmitter, RuntimeLogRedactor
 from custos.engines.nautilus.portfolio_snapshot import (
     NautilusPortfolioSnapshotProvider,
 )
@@ -265,6 +266,11 @@ class NtTradingNodeHost:
         self._lifecycle_authorities: dict[str, EngineLifecycleAuthority] = {}
         # deployment_instance_id -> signed fact scope plus independent venue ledger adapter.
         self._runner_fact_contexts: dict[str, tuple[RunnerFactDeployment, object | None]] = {}
+        # A real venue credential scope represents one account-level order/position
+        # stream. Two active deployment nodes on the same scope would both observe and
+        # mutate the same net position while claiming instance-scoped facts. Sandbox
+        # nodes have independent simulated accounts and intentionally do not participate.
+        self._execution_account_partitions: dict[str, tuple[str, str]] = {}
         # Decimal equity high-water mark per instance so get_engine_status can
         # report drawdown percentage over time. Never a float (red line 0.4).
         self._peak_equity: dict[str, Decimal] = {}
@@ -296,6 +302,40 @@ class NtTradingNodeHost:
 
     def supports_venue(self, venue: str) -> bool:
         return venue.lower() in _SUPPORTED_VENUES
+
+    def _claim_execution_account_partition(self, spec: dict) -> None:
+        mode = str(spec.get("trading_mode") or "sandbox").lower()
+        if mode == "sandbox":
+            return
+        if mode not in {"testnet", "live"}:
+            raise RuntimeError("execution account partition has an invalid trading mode")
+        instance_id = str(spec.get("deployment_instance_id") or "").strip()
+        scope = spec.get("credential_scope")
+        if isinstance(scope, dict):
+            scope_id = str(scope.get("scope_id") or "").strip()
+        else:
+            scope_id = str(getattr(scope, "scope_id", "") or "").strip()
+        if not instance_id or not scope_id:
+            raise RuntimeError(
+                "real-venue deployment requires instance and credential-scope identity"
+            )
+        partition = (mode, scope_id)
+        conflicting_instance = next(
+            (
+                owner
+                for owner, owned_partition in self._execution_account_partitions.items()
+                if owner != instance_id and owned_partition == partition
+            ),
+            None,
+        )
+        if conflicting_instance is not None:
+            raise RuntimeError(
+                "credential scope already has an active testnet/live deployment instance"
+            )
+        self._execution_account_partitions[instance_id] = partition
+
+    def _release_execution_account_partition(self, deployment_instance_id: str) -> None:
+        self._execution_account_partitions.pop(deployment_instance_id, None)
 
     async def deploy(
         self,
@@ -361,6 +401,12 @@ class NtTradingNodeHost:
 
         node_config = TradingNodeConfig(**node_kwargs)
 
+        # Claim before constructing a TradingNode.  A conflicting real-venue
+        # deployment must fail without creating and then disposing a node,
+        # because Nautilus disposal can also stop the process-shared asyncio
+        # loop used by the already-active deployment.
+        self._claim_execution_account_partition(spec)
+
         try:
             node = TradingNode(config=node_config)
             node.add_data_client_factory(venue.BINANCE_VENUE, BinanceLiveDataClientFactory)
@@ -373,6 +419,7 @@ class NtTradingNodeHost:
                 spec_id=spec_id,
                 **_sanitize_exception(exc),
             )
+            self._release_execution_account_partition(deployment_instance_id)
             raise
 
         fact_context = self._build_runner_fact_context(spec, credential)
@@ -383,14 +430,20 @@ class NtTradingNodeHost:
                 runner_safety_boundary,
             )
         except Exception:
+            self._release_execution_account_partition(deployment_instance_id)
             node.dispose()
             raise
-        if fact_context is not None:
-            self._runner_fact_contexts[fact_context[0].deployment_instance_id] = fact_context
-
-        node.trader.add_strategy(strategy)
-
-        task = asyncio.create_task(node.run_async())
+        try:
+            if fact_context is not None:
+                self._runner_fact_contexts[fact_context[0].deployment_instance_id] = fact_context
+            node.trader.add_strategy(strategy)
+            settlement_currency = settlement_currency_for_pairs(spec.get("pairs") or [])
+            task = asyncio.create_task(node.run_async())
+        except Exception:
+            self._runner_fact_contexts.pop(deployment_instance_id, None)
+            self._release_execution_account_partition(deployment_instance_id)
+            node.dispose()
+            raise
         task.add_done_callback(
             lambda task, instance_id=deployment_instance_id: self._on_node_task_done(
                 instance_id, task
@@ -400,9 +453,7 @@ class NtTradingNodeHost:
         self._lifecycle_authorities[deployment_instance_id] = lifecycle_authority
         # Derived from the pairs rather than the open positions: at this moment there are
         # no positions, and the startup guards read equity immediately.
-        self._settlement_currencies[deployment_instance_id] = settlement_currency_for_pairs(
-            spec.get("pairs") or []
-        )
+        self._settlement_currencies[deployment_instance_id] = settlement_currency
 
         _log.info(
             "nt_deploy_started",
@@ -468,9 +519,16 @@ class NtTradingNodeHost:
         if runner_safety_boundary is not None:
             runner_safety_boundary.bootstrap(msgbus)
         if fact_context is not None and self._runner_fact_emitter is not None:
+            if self._capability_receipt is None:
+                raise RuntimeError("RunnerFact bridge lacks its capability receipt")
             RunnerFactMessageBusBridge(
                 emitter=self._runner_fact_emitter,
                 deployment=fact_context[0],
+                runtime_log_emitter=RunnerRuntimeLogEmitter(
+                    emitter=self._runner_fact_emitter,
+                    capability=self._capability_receipt,
+                    redactor=RuntimeLogRedactor(),
+                ),
             ).bootstrap(msgbus)
 
     def _build_runner_fact_context(self, spec: dict, credential: dict):
@@ -556,6 +614,7 @@ class NtTradingNodeHost:
         self._peak_equity.pop(deployment_instance_id, None)
         self._settlement_currencies.pop(deployment_instance_id, None)
         self._runner_fact_contexts.pop(deployment_instance_id, None)
+        self._release_execution_account_partition(deployment_instance_id)
         entry = self._active_nodes.pop(deployment_instance_id, None)
         self._lifecycle_authorities.pop(deployment_instance_id, None)
         if entry is None:
@@ -964,6 +1023,7 @@ class NtTradingNodeHost:
         if entry is not None and entry[1] is task:
             self._active_nodes.pop(deployment_instance_id, None)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
+            self._release_execution_account_partition(deployment_instance_id)
         if task.cancelled():
             return
         exc = task.exception()

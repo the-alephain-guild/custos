@@ -51,6 +51,10 @@ def _spec(label: str = "cfg-1", **overrides: Any) -> dict:
         "pairs": ["BTC-USDT"],
         "leverage": 3,
         "sandbox": {"starting_balances": ["10_000 USDT"]},
+        "credential_scope": {
+            "scope_id": "c0000000-0000-4000-8000-00000000000c",
+            "scope_digest": "c" * 64,
+        },
     }
     spec.update(overrides)
     return spec
@@ -182,3 +186,23 @@ async def test_nautilus_config_partial_dict_uses_defaults_for_missing_keys(
         assert cfg.exec_engine.reconciliation_lookback_mins is None  # NT default
     finally:
         await _teardown(host, spec["deployment_instance_id"])
+
+
+def test_real_venue_rejects_a_second_active_instance_on_the_same_credential_scope() -> None:
+    host = NtTradingNodeHost()
+    first = _spec("partition-a", trading_mode="testnet", sandbox=None)
+    second = _spec("partition-b", trading_mode="testnet", sandbox=None)
+
+    host._claim_execution_account_partition(first)  # noqa: SLF001
+
+    with pytest.raises(RuntimeError, match="credential scope already has an active"):
+        host._claim_execution_account_partition(second)  # noqa: SLF001
+
+
+def test_sandbox_instances_do_not_claim_a_real_venue_account_partition() -> None:
+    host = NtTradingNodeHost()
+
+    host._claim_execution_account_partition(_spec("sandbox-a"))  # noqa: SLF001
+    host._claim_execution_account_partition(_spec("sandbox-b"))  # noqa: SLF001
+
+    assert host._execution_account_partitions == {}  # noqa: SLF001

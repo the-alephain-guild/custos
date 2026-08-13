@@ -26,21 +26,42 @@ def _authority() -> RunnerFactAuthority:
 class _Emitter:
     def __init__(self) -> None:
         self.signals: list[dict[str, object]] = []
+        self.fact_batches: list[tuple[object, ...]] = []
 
     def emit_strategy_signal_sync(self, authority, **signal):
         assert authority == _authority()
         self.signals.append(signal)
         return signal["fact_id"]
 
+    def emit_sync(self, authority, facts):
+        assert authority == _authority()
+        self.fact_batches.append(tuple(facts))
+        return tuple(facts)
 
-class OrderSubmitted:
+
+class _RuntimeLogEmitter:
+    def __init__(self) -> None:
+        self.events: list[dict[str, object]] = []
+
+    def emit_sync(self, authority, **event):
+        assert authority == _authority()
+        self.events.append(event)
+        return event["correlation_id"]
+
+
+class _OrderEvent:
     @staticmethod
     def to_dict(event) -> dict[str, object]:
         return dict(event.values)
 
-    def __init__(self, *, reduce_only: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        event_id: str = "60000000-0000-4000-8000-000000000001",
+        reduce_only: bool = False,
+    ) -> None:
         self.values = {
-            "event_id": "60000000-0000-4000-8000-000000000001",
+            "event_id": event_id,
             "client_order_id": "supertrend-entry-1",
             "instrument_id": "BTCUSDT-PERP.BINANCE",
             "order_side": "BUY",
@@ -49,9 +70,46 @@ class OrderSubmitted:
         }
 
 
-def test_order_submission_emits_one_deterministic_strategy_signal() -> None:
-    emitter = _Emitter()
-    deployment = RunnerFactDeployment(
+class OrderInitialized(_OrderEvent):
+    pass
+
+
+class OrderSubmitted(_OrderEvent):
+    pass
+
+
+class OrderRejected(_OrderEvent):
+    def __init__(self) -> None:
+        super().__init__(event_id="70000000-0000-4000-8000-000000000001")
+        self.values["reason"] = "custos_runner_notional_policy_rejected"
+
+
+class OrderFilled(_OrderEvent):
+    def __init__(
+        self,
+        client_order_id: str,
+        *,
+        event_id: str = "80000000-0000-4000-8000-000000000001",
+        trade_id: str = "trade-1",
+        last_qty: str = "0.007",
+    ) -> None:
+        super().__init__(event_id=event_id)
+        self.values.update(
+            {
+                "client_order_id": client_order_id,
+                "trade_id": trade_id,
+                "venue_order_id": "venue-1",
+                "commission": "0.01 USDT",
+                "last_qty": last_qty,
+                "last_px": "63833.60",
+                "order_type": "MARKET",
+                "liquidity_side": "TAKER",
+            }
+        )
+
+
+def _deployment() -> RunnerFactDeployment:
+    return RunnerFactDeployment(
         authority=_authority(),
         deployment_instance_id="20000000-0000-4000-8000-000000000001",
         deployment_spec_id="30000000-0000-4000-8000-000000000001",
@@ -62,15 +120,22 @@ def test_order_submission_emits_one_deterministic_strategy_signal() -> None:
         strategy_version="v2",
         timeframe="1-MINUTE",
     )
-    bridge = RunnerFactMessageBusBridge(emitter=emitter, deployment=deployment)
 
-    bridge._on_order_event(OrderSubmitted())  # noqa: SLF001
+
+def test_order_initialization_emits_one_signal_before_submission_outcome() -> None:
+    emitter = _Emitter()
+    runtime_logs = _RuntimeLogEmitter()
+    bridge = RunnerFactMessageBusBridge(
+        emitter=emitter,
+        deployment=_deployment(),
+        runtime_log_emitter=runtime_logs,
+    )
+
+    bridge._on_order_event(OrderInitialized())  # noqa: SLF001
     bridge._on_order_event(OrderSubmitted())  # noqa: SLF001
 
-    assert len(emitter.signals) == 2
-    first, replay = emitter.signals
-    assert first["fact_id"] == replay["fact_id"]
-    assert first["trace_id"] == replay["trace_id"]
+    assert len(emitter.signals) == 1
+    first = emitter.signals[0]
     assert first["instrument"] == "BTCUSDT-PERP.BINANCE"
     assert first["client_order_id"] == "supertrend-entry-1"
     assert first["direction"] == "long"
@@ -78,24 +143,93 @@ def test_order_submission_emits_one_deterministic_strategy_signal() -> None:
     assert first["timeframe"] == "1-MINUTE"
     assert len(str(first["input_digest"])) == 64
     json.dumps(first, default=str)
+    assert runtime_logs.events[0]["message"] == "order_submitted"
+    assert runtime_logs.events[0]["structured_fields"] == {
+        "client_order_id": "supertrend-entry-1",
+        "instrument": "BTCUSDT-PERP.BINANCE",
+        "side": "long",
+        "lifecycle": "submitted",
+    }
 
 
-def test_reduce_only_submission_is_a_flat_signal() -> None:
+def test_reduce_only_initialization_is_a_flat_signal() -> None:
     emitter = _Emitter()
-    deployment = RunnerFactDeployment(
-        authority=_authority(),
-        deployment_instance_id="20000000-0000-4000-8000-000000000001",
-        deployment_spec_id="30000000-0000-4000-8000-000000000001",
-        deployment_spec_digest="a" * 64,
-        venue="BINANCE",
-        currency="USDT",
-        reconciliation_available=True,
-        strategy_version="v2",
-        timeframe="1-MINUTE",
-    )
 
-    RunnerFactMessageBusBridge(emitter=emitter, deployment=deployment)._on_order_event(
-        OrderSubmitted(reduce_only=True)
+    RunnerFactMessageBusBridge(emitter=emitter, deployment=_deployment())._on_order_event(
+        OrderInitialized(reduce_only=True)
     )
 
     assert emitter.signals[0]["direction"] == "flat"
+
+
+def test_local_order_rejection_emits_structured_signed_lifecycle_fact() -> None:
+    emitter = _Emitter()
+    runtime_logs = _RuntimeLogEmitter()
+    bridge = RunnerFactMessageBusBridge(
+        emitter=emitter,
+        deployment=_deployment(),
+        runtime_log_emitter=runtime_logs,
+    )
+
+    bridge._on_order_event(OrderInitialized())  # noqa: SLF001
+    bridge._on_order_event(OrderRejected())  # noqa: SLF001
+
+    rejection = runtime_logs.events[0]
+    assert rejection["level"] == "WARN"
+    assert rejection["component"] == "custos.execution.order"
+    assert rejection["message"] == "order_rejected"
+    assert rejection["structured_fields"] == {
+        "client_order_id": "supertrend-entry-1",
+        "instrument": "BTCUSDT-PERP.BINANCE",
+        "side": "long",
+        "lifecycle": "rejected",
+        "reason_code": "custos_runner_notional_policy_rejected",
+    }
+
+
+def test_foreign_order_events_do_not_enter_this_instance_fact_stream() -> None:
+    emitter = _Emitter()
+    runtime_logs = _RuntimeLogEmitter()
+    bridge = RunnerFactMessageBusBridge(
+        emitter=emitter,
+        deployment=_deployment(),
+        runtime_log_emitter=runtime_logs,
+    )
+
+    bridge._on_order_event(OrderSubmitted())  # noqa: SLF001
+    bridge._on_order_event(OrderFilled("foreign-order"))  # noqa: SLF001
+
+    assert emitter.signals == []
+    assert emitter.fact_batches == []
+    assert runtime_logs.events == []
+
+
+def test_owned_partial_fills_remain_separate_execution_and_settlement_facts() -> None:
+    emitter = _Emitter()
+    bridge = RunnerFactMessageBusBridge(emitter=emitter, deployment=_deployment())
+    bridge._on_order_event(OrderInitialized())  # noqa: SLF001
+
+    bridge._on_order_event(  # noqa: SLF001
+        OrderFilled(
+            "supertrend-entry-1",
+            trade_id="trade-part-1",
+            last_qty="0.0031",
+        )
+    )
+    bridge._on_order_event(  # noqa: SLF001
+        OrderFilled(
+            "supertrend-entry-1",
+            event_id="80000000-0000-4000-8000-000000000002",
+            trade_id="trade-part-2",
+            last_qty="0.0039",
+        )
+    )
+
+    assert len(emitter.fact_batches) == 2
+    first_execution, first_settlement, _first_fee = emitter.fact_batches[0]
+    second_execution, second_settlement, _second_fee = emitter.fact_batches[1]
+    assert first_execution["venue_trade_id"] == "trade-part-1"
+    assert first_execution["quantity"] == "0.0031"
+    assert second_execution["venue_trade_id"] == "trade-part-2"
+    assert second_execution["quantity"] == "0.0039"
+    assert first_settlement["fill_id"] != second_settlement["fill_id"]

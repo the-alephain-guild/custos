@@ -31,6 +31,7 @@ from custos_toolkit.signals.types import Signal
 from custos_toolkit_nautilus.adapter.config.risk import StopLossTrailingConfig, build_risk_config
 from custos_toolkit_nautilus.adapter.coordinators import (
     ExecutionCoordinator,
+    OrderReconciler,
     PairContextCoordinator,
     SignalExecutionCoordinator,
     SLTPCoordinator,
@@ -39,6 +40,7 @@ from custos_toolkit_nautilus.adapter.coordinators import (
 from custos_toolkit_nautilus.adapter.pair_context import PairContext
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.enums import OrderSide, OrderType
 from nautilus_trader.model.identifiers import InstrumentId
 
 INSTRUMENT = "BTCUSDT-PERP.BINANCE"
@@ -241,12 +243,193 @@ def test_handle_order_filled_dispatches_native_trailing():
     event = MagicMock()
     event.instrument_id = ctx.instrument_id
     event.last_px = 100.0
+    event.last_qty = Decimal("1")
+    event.client_order_id = "owned-entry"
+    ctx.order_tracker.set_entry_order(event.client_order_id, side=1)
 
     TradeEventHandler.handle_order_filled(SimpleNamespace(_strategy=stub), event)
 
     stub._sltp_coordinator.submit_native_trailing.assert_called_once()
     stub._sltp_coordinator.submit_stop_loss.assert_not_called()
     stub._sltp_coordinator.submit_take_profit.assert_not_called()
+
+
+def test_foreign_fill_does_not_consume_pending_entry_or_submit_protection():
+    ctx = _make_ctx()
+    pending = Signal.enter_long(price=100.0)
+    ctx.position_tracker.set_pending_signal(pending, None)
+    ctx.order_tracker.set_entry_order("owned-entry", side=1)
+
+    cache = MagicMock()
+    cache.positions_open.return_value = [MagicMock(is_long=True)]
+    stub = SimpleNamespace(
+        _get_context_from_instrument=lambda _iid: ctx,
+        log=MagicMock(),
+        _event_publisher=MagicMock(enabled=False),
+        cache=cache,
+        config=MagicMock(position=MagicMock(capital_mode="compound")),
+        _get_risk_equity=lambda: Decimal("1000"),
+        _risk_controller=MagicMock(),
+        _mode=SLTPMode.NATIVE_TRAILING,
+        _sltp_coordinator=SimpleNamespace(
+            submit_native_trailing=MagicMock(),
+            submit_stop_loss=MagicMock(),
+            submit_take_profit=MagicMock(),
+        ),
+    )
+    event = MagicMock()
+    event.instrument_id = ctx.instrument_id
+    event.client_order_id = "foreign-entry"
+    event.last_px = 100.0
+
+    TradeEventHandler.handle_order_filled(SimpleNamespace(_strategy=stub), event)
+
+    assert ctx.position_tracker.pending_signal is pending
+    assert ctx.order_tracker.entry_order_id == "owned-entry"
+    stub._sltp_coordinator.submit_native_trailing.assert_not_called()
+    stub._sltp_coordinator.submit_stop_loss.assert_not_called()
+    stub._sltp_coordinator.submit_take_profit.assert_not_called()
+
+
+def test_partial_entry_fills_keep_correlation_and_protect_each_exposure_lot():
+    ctx = _make_ctx()
+    pending = Signal.enter_long(price=100.0)
+    ctx.position_tracker.set_pending_signal(pending, None)
+    ctx.order_tracker.set_entry_order("owned-entry", side=1)
+
+    partial_order = SimpleNamespace(is_closed=False, tags=[])
+    filled_order = SimpleNamespace(is_closed=True, tags=[])
+    cache = MagicMock()
+    cache.order.side_effect = [partial_order, filled_order]
+    cache.positions_open.return_value = [MagicMock(is_long=True)]
+    mode = SimpleNamespace(on_entry_filled=MagicMock())
+    stub = SimpleNamespace(
+        _get_context_from_instrument=lambda _iid: ctx,
+        log=MagicMock(),
+        _event_publisher=MagicMock(enabled=False),
+        cache=cache,
+        config=MagicMock(position=MagicMock(capital_mode="fixed")),
+        _risk_controller=MagicMock(),
+        _mode=mode,
+    )
+    first = SimpleNamespace(
+        instrument_id=ctx.instrument_id,
+        client_order_id="owned-entry",
+        order_side="BUY",
+        last_qty=Decimal("0.0031"),
+        last_px=Decimal("100.0"),
+    )
+    second = SimpleNamespace(
+        instrument_id=ctx.instrument_id,
+        client_order_id="owned-entry",
+        order_side="BUY",
+        last_qty=Decimal("0.0039"),
+        last_px=Decimal("100.1"),
+    )
+    handler = TradeEventHandler(stub)
+
+    handler.handle_order_filled(first)
+
+    assert ctx.position_tracker.pending_signal is pending
+    assert ctx.order_tracker.entry_order_id == "owned-entry"
+    mode.on_entry_filled.assert_called_once_with(
+        stub,
+        ctx,
+        pending,
+        cache.positions_open.return_value[0],
+        first.last_px,
+        None,
+        protection_quantity=Decimal("0.0031"),
+        initialize_position=True,
+    )
+
+    handler.handle_order_filled(second)
+
+    assert mode.on_entry_filled.call_count == 2
+    assert mode.on_entry_filled.call_args_list[1].kwargs == {
+        "protection_quantity": Decimal("0.0039"),
+        "initialize_position": False,
+    }
+    assert ctx.position_tracker.pending_signal is None
+    assert ctx.order_tracker.entry_order_id is None
+
+
+def test_native_protection_keeps_every_partial_fill_order_and_quantity():
+    ctx = _make_ctx()
+    submitter = MagicMock()
+    first_order = MagicMock(client_order_id="stop-lot-1")
+    second_order = MagicMock(client_order_id="stop-lot-2")
+    submitter.create_order.side_effect = [first_order, second_order]
+    ctx.native_trailing_submitter = submitter
+
+    position = MagicMock(avg_px_open=100.0, is_long=True, quantity=Decimal("0.0070"))
+    cache = MagicMock()
+    cache.positions_open.return_value = [position]
+    stub = _native_submit_stub(cache)
+    coordinator = SLTPCoordinator(stub)
+    signal = Signal.enter_long(price=100.0)
+
+    coordinator.submit_native_trailing(ctx, signal, quantity=Decimal("0.0031"))
+    coordinator.submit_native_trailing(ctx, signal, quantity=Decimal("0.0039"))
+
+    assert [call.kwargs["quantity"] for call in submitter.create_order.call_args_list] == [
+        Decimal("0.0031"),
+        Decimal("0.0039"),
+    ]
+    assert ctx.order_tracker.exchange_sl_order_ids == ["stop-lot-1", "stop-lot-2"]
+    assert stub.submit_order.call_count == 2
+
+
+@pytest.mark.parametrize(
+    ("mode", "order_type", "tracker_property"),
+    [
+        (SLTPMode.HYBRID, OrderType.STOP_MARKET, "exchange_sl_order_ids"),
+        (SLTPMode.EXCHANGE, OrderType.STOP_MARKET, "sl_order_ids"),
+        (SLTPMode.NATIVE_TRAILING, OrderType.TRAILING_STOP_MARKET, "exchange_sl_order_ids"),
+    ],
+)
+def test_restart_reclaims_every_partial_fill_protection_lot(mode, order_type, tracker_property):
+    ctx = _make_ctx()
+    orders = [
+        MagicMock(
+            client_order_id="stop-lot-1",
+            order_type=order_type,
+            is_reduce_only=True,
+            side=OrderSide.SELL,
+            quantity=Decimal("0.0031"),
+        ),
+        MagicMock(
+            client_order_id="stop-lot-2",
+            order_type=order_type,
+            is_reduce_only=True,
+            side=OrderSide.SELL,
+            quantity=Decimal("0.0039"),
+        ),
+    ]
+    cache = MagicMock()
+    cache.orders_open.return_value = orders
+    strategy = SimpleNamespace(
+        _mode=mode,
+        cache=cache,
+        log=MagicMock(),
+        _sltp_coordinator=SimpleNamespace(
+            submit_stop_loss=MagicMock(),
+            submit_safety_stop_loss=MagicMock(),
+            submit_native_trailing=MagicMock(),
+        ),
+    )
+    reconciler = OrderReconciler(strategy)
+    position = MagicMock(is_long=True, avg_px_open=100.0, quantity=Decimal("0.0070"))
+
+    if mode is SLTPMode.NATIVE_TRAILING:
+        reconciler.ensure_native_trailing_exists(ctx, position)
+    else:
+        reconciler.ensure_exchange_sl_exists(ctx, position)
+
+    assert getattr(ctx.order_tracker, tracker_property) == ["stop-lot-1", "stop-lot-2"]
+    strategy._sltp_coordinator.submit_stop_loss.assert_not_called()
+    strategy._sltp_coordinator.submit_safety_stop_loss.assert_not_called()
+    strategy._sltp_coordinator.submit_native_trailing.assert_not_called()
 
 
 # =============================================================================
@@ -331,7 +514,9 @@ def test_protection_rebuilds_when_missing():
     """Open position + no tracked trailing order -> rebuild + loud error + arm rate guard."""
     ctx = _make_ctx()  # exchange_sl_order_id is None (reject cleared the tracker)
     cache = MagicMock()
-    cache.positions_open.return_value = [MagicMock(is_long=True, avg_px_open=100.0)]
+    cache.positions_open.return_value = [
+        MagicMock(is_long=True, avg_px_open=100.0, quantity=Decimal("1"))
+    ]
     stub = _protection_stub("native_trailing", cache)
 
     stub.ensure_native_trailing_protection(ctx)
@@ -344,9 +529,9 @@ def test_protection_rebuilds_when_missing():
 def test_protection_noop_when_open_trailing_exists():
     """A live tracked trailing order means the position is protected -> no rebuild."""
     ctx = _make_ctx()
-    ctx.order_tracker.set_exchange_sl_order("O-TR-1")
+    ctx.order_tracker.set_exchange_sl_order("O-TR-1", Decimal("1"))
     cache = MagicMock()
-    cache.positions_open.return_value = [MagicMock(is_long=True)]
+    cache.positions_open.return_value = [MagicMock(is_long=True, quantity=Decimal("1"))]
     cache.order.return_value = MagicMock(is_closed=False)
     stub = _protection_stub("native_trailing", cache)
 
@@ -359,9 +544,9 @@ def test_protection_noop_when_trailing_inflight():
     """A just-submitted (SUBMITTED, is_open=False) trailing is still in-flight, not
     closed -> must NOT be mistaken for unprotected and rebuilt (race fix)."""
     ctx = _make_ctx()
-    ctx.order_tracker.set_exchange_sl_order("O-TR-1")
+    ctx.order_tracker.set_exchange_sl_order("O-TR-1", Decimal("1"))
     cache = MagicMock()
-    cache.positions_open.return_value = [MagicMock(is_long=True)]
+    cache.positions_open.return_value = [MagicMock(is_long=True, quantity=Decimal("1"))]
     cache.order.return_value = MagicMock(is_open=False, is_closed=False)
     stub = _protection_stub("native_trailing", cache)
 
@@ -373,9 +558,11 @@ def test_protection_noop_when_trailing_inflight():
 def test_protection_rebuilds_when_tracked_order_closed():
     """Tracked trailing order is terminal (REJECTED/CANCELED/EXPIRED) -> rebuild."""
     ctx = _make_ctx()
-    ctx.order_tracker.set_exchange_sl_order("O-TR-1")
+    ctx.order_tracker.set_exchange_sl_order("O-TR-1", Decimal("1"))
     cache = MagicMock()
-    cache.positions_open.return_value = [MagicMock(is_long=True, avg_px_open=100.0)]
+    cache.positions_open.return_value = [
+        MagicMock(is_long=True, avg_px_open=100.0, quantity=Decimal("1"))
+    ]
     cache.order.return_value = MagicMock(is_closed=True)
     stub = _protection_stub("native_trailing", cache)
 
@@ -384,12 +571,100 @@ def test_protection_rebuilds_when_tracked_order_closed():
     stub.ensure_native_trailing_exists.assert_called_once()
 
 
+def test_protection_rebuilds_only_the_missing_partial_fill_delta():
+    ctx = _make_ctx()
+    ctx.order_tracker.add_exchange_sl_order("stop-lot-1", Decimal("0.0031"))
+    position = MagicMock(is_long=True, avg_px_open=100.0, quantity=Decimal("0.0070"))
+    cache = MagicMock()
+    cache.positions_open.return_value = [position]
+    cache.order.return_value = MagicMock(is_closed=False)
+    strategy = SimpleNamespace(
+        _mode=SLTPMode.NATIVE_TRAILING,
+        cache=cache,
+        clock=MagicMock(timestamp_ns=MagicMock(return_value=1_000_000_000_000)),
+        log=MagicMock(),
+        _sltp_coordinator=SimpleNamespace(submit_native_trailing=MagicMock()),
+    )
+    reconciler = OrderReconciler(strategy)
+    reconciler.find_existing_trailing_orders = MagicMock(return_value=[])
+
+    reconciler.ensure_native_trailing_protection(ctx)
+
+    strategy._sltp_coordinator.submit_native_trailing.assert_called_once()
+    assert strategy._sltp_coordinator.submit_native_trailing.call_args.kwargs == {
+        "quantity": Decimal("0.0039")
+    }
+
+
+def test_hybrid_protection_rebuilds_only_the_missing_partial_fill_delta():
+    ctx = _make_ctx()
+    ctx.order_tracker.add_exchange_sl_order("stop-lot-1", Decimal("0.0031"))
+    position = MagicMock(is_long=True, avg_px_open=100.0, quantity=Decimal("0.0070"))
+    cache = MagicMock()
+    cache.positions_open.return_value = [position]
+    cache.order.return_value = MagicMock(is_closed=False)
+    strategy = SimpleNamespace(
+        _mode=SLTPMode.HYBRID,
+        cache=cache,
+        clock=MagicMock(timestamp_ns=MagicMock(return_value=1_000_000_000_000)),
+        log=MagicMock(),
+        _sltp_coordinator=SimpleNamespace(submit_safety_stop_loss=MagicMock()),
+    )
+    reconciler = OrderReconciler(strategy)
+    reconciler.find_existing_sl_orders = MagicMock(return_value=[])
+
+    reconciler.ensure_exchange_sl_protection(ctx)
+
+    strategy._sltp_coordinator.submit_safety_stop_loss.assert_called_once()
+    assert strategy._sltp_coordinator.submit_safety_stop_loss.call_args.kwargs == {
+        "quantity": Decimal("0.0039")
+    }
+
+
+def test_rejected_partial_fill_stop_preserves_entry_and_other_protection():
+    ctx = _make_ctx()
+    pending = Signal.enter_long(price=100.0)
+    ctx.position_tracker.set_pending_signal(pending, None)
+    ctx.order_tracker.set_entry_order("entry-1", side=1)
+    ctx.order_tracker.record_entry_fill(Decimal("0.0031"))
+    ctx.order_tracker.add_exchange_sl_order("stop-lot-1", Decimal("0.0015"))
+    ctx.order_tracker.add_exchange_sl_order("stop-lot-2", Decimal("0.0016"))
+    rejected_order = MagicMock(is_reduce_only=True, tags=[])
+    cache = MagicMock()
+    cache.order.return_value = rejected_order
+    strategy = SimpleNamespace(
+        _get_context_from_instrument=lambda _iid: ctx,
+        cache=cache,
+        clock=MagicMock(timestamp_ns=MagicMock(return_value=1_000_000_000_000)),
+        log=MagicMock(),
+        _event_publisher=MagicMock(enabled=False),
+        _order_signal_map={},
+        cancel_all_orders=MagicMock(),
+        pause=MagicMock(),
+    )
+    event = SimpleNamespace(
+        instrument_id=ctx.instrument_id,
+        client_order_id="stop-lot-2",
+        reason="venue rejected protective stop",
+    )
+
+    OrderReconciler(strategy).handle_order_rejected(event)
+
+    assert ctx.order_tracker.entry_order_id == "entry-1"
+    assert ctx.position_tracker.pending_signal is pending
+    assert ctx.order_tracker.exchange_sl_order_ids == ["stop-lot-1"]
+    assert ctx.order_tracker.protected_quantity(exchange_managed=True) == Decimal("0.0015")
+    strategy.cancel_all_orders.assert_not_called()
+    strategy.pause.assert_called_once()
+    assert ctx.order_tracker.close_reject_count == 0
+
+
 def test_protection_respects_rate_guard():
     """Within the rebuild cooldown, do not rebuild again (avoid reject->rebuild flood)."""
     ctx = _make_ctx()
     ctx.native_trailing_rebuild_deadline_ns = 2_000_000_000_000  # future
     cache = MagicMock()
-    cache.positions_open.return_value = [MagicMock(is_long=True)]
+    cache.positions_open.return_value = [MagicMock(is_long=True, quantity=Decimal("1"))]
     stub = _protection_stub("native_trailing", cache, now_ns=1_000_000_000_000)
 
     stub.ensure_native_trailing_protection(ctx)

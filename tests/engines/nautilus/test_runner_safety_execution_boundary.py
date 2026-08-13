@@ -14,13 +14,19 @@ from nautilus_trader.core.rust.model import AccountType, OmsType  # noqa: E402
 from nautilus_trader.live.execution_client import LiveExecutionClient  # noqa: E402
 from nautilus_trader.live.factories import LiveExecClientFactory  # noqa: E402
 from nautilus_trader.model.identifiers import ClientId, Venue  # noqa: E402
-from nautilus_trader.model.objects import Currency  # noqa: E402
+from nautilus_trader.model.objects import Currency, Price  # noqa: E402
+from nautilus_trader.test_kit.providers import TestInstrumentProvider  # noqa: E402
+from nautilus_trader.test_kit.stubs.commands import TestCommandStubs  # noqa: E402
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs  # noqa: E402
+from nautilus_trader.test_kit.stubs.data import TestDataStubs  # noqa: E402
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs  # noqa: E402
 
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig  # noqa: E402
 from custos.core.order_reservation_boundary import RunnerReservationBoundary  # noqa: E402
+from custos.core.runner_fact import RunnerStateAuthorityError  # noqa: E402
 from custos.engines.nautilus.runner_safety import (  # noqa: E402
     GuardedLiveExecutionClient,
+    NautilusCachedOrderSemantics,
     RunnerSafetyExecutionDispatch,
     guarded_exec_client_factory,
 )
@@ -38,7 +44,7 @@ class _Store:
     def reserve_order_notional(self, **kwargs):
         self.log.append(("reserve", kwargs))
         if self.reject_reservation:
-            raise RuntimeError("runner cap exceeded")
+            raise RunnerStateAuthorityError("runner cap exceeded")
         snapshot = SimpleNamespace(
             client_order_id=kwargs["client_order_id"],
             reserved_notional=kwargs["requested_notional"],
@@ -49,6 +55,10 @@ class _Store:
     def load_order_reservation(self, deployment_instance_id, client_order_id):
         del deployment_instance_id
         return self.reservations[client_order_id]
+
+    def has_order_reservation(self, deployment_instance_id, client_order_id):
+        del deployment_instance_id
+        return client_order_id in self.reservations
 
     def replace_order_reservation(self, **kwargs):
         self.log.append(("replace", kwargs))
@@ -71,6 +81,14 @@ class _Store:
         self.log.append(("reduce", kwargs))
         return self.reservations.get(kwargs["client_order_id"])
 
+    reserve_order_notional_sync = reserve_order_notional
+    load_order_reservation_sync = load_order_reservation
+    has_order_reservation_sync = has_order_reservation
+    replace_order_reservation_sync = replace_order_reservation
+    release_order_reservation_sync = release_order_reservation
+    record_order_fill_sync = record_order_fill
+    record_position_reduction_sync = record_position_reduction
+
 
 class _Semantics:
     def order_notional(self, order) -> Decimal:
@@ -87,6 +105,9 @@ class _Semantics:
 
     def event_is_risk_reducing(self, event) -> bool:
         return bool(event.reduce_only)
+
+    def event_exposure_source_order_id(self, event) -> str | None:
+        return getattr(event, "exposure_source_order_id", None)
 
 
 class _InnerClient:
@@ -173,6 +194,67 @@ def _breaker() -> FallbackBreaker:
     )
 
 
+def test_market_order_uses_the_subscribed_mark_when_mid_price_is_unavailable() -> None:
+    class Instrument:
+        @staticmethod
+        def notional_value(quantity, price):
+            return Decimal(str(quantity)) * Decimal(str(price))
+
+    class Cache:
+        @staticmethod
+        def instrument(_instrument_id):
+            return Instrument()
+
+        @staticmethod
+        def mark_price(_instrument_id):
+            return SimpleNamespace(value=Decimal("63706.50"))
+
+        @staticmethod
+        def price(_instrument_id, _price_type):
+            return None
+
+    semantics = NautilusCachedOrderSemantics(Cache())
+    order = SimpleNamespace(
+        instrument_id="BTCUSDT-PERP.BINANCE",
+        quantity="0.0070",
+        price=None,
+        trigger_price=None,
+        is_quote_quantity=False,
+    )
+
+    assert semantics.order_notional(order) == Decimal("445.945500")
+
+
+def test_real_nautilus_submit_uses_the_public_command_id_abi() -> None:
+    log: list[tuple] = []
+    cache = TestComponentStubs.cache()
+    instrument = TestInstrumentProvider.btcusdt_perp_binance()
+    cache.add_instrument(instrument)
+    cache.add_mark_price(TestDataStubs.mark_price(instrument.id, Price.from_str("63809.1")))
+    order = TestExecStubs.market_order(
+        instrument=instrument,
+        quantity=instrument.make_qty(0.007),
+    )
+    command = TestCommandStubs.submit_order_command(order)
+    boundary = RunnerReservationBoundary(
+        store=_Store(log),
+        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        policy_id=POLICY_ID,
+        fallback_breaker=_breaker(),
+        semantics=NautilusCachedOrderSemantics(cache),
+    )
+    dispatch = RunnerSafetyExecutionDispatch(
+        inner=_InnerClient(log),
+        boundary=boundary,
+        timestamp_ns=lambda: 19,
+    )
+
+    dispatch.submit_order(command)
+
+    assert [entry[0] for entry in log] == ["reserve", "submit"]
+    assert str(command.id) in log[0][1]["event_id"]
+
+
 def _boundary(
     store: _Store,
     *,
@@ -228,6 +310,24 @@ def test_cap_rejection_emits_standard_order_rejected_without_submit() -> None:
     ]
 
 
+def test_unexpected_safety_failure_is_not_mislabeled_as_a_notional_rejection() -> None:
+    class BrokenBoundary:
+        @staticmethod
+        def before_submit_order(_command):
+            raise AttributeError("simulated boundary ABI failure")
+
+    inner = _InnerClient([])
+    dispatch = RunnerSafetyExecutionDispatch(
+        inner=inner,
+        boundary=BrokenBoundary(),
+        timestamp_ns=lambda: 27,
+    )
+
+    dispatch.submit_order(_submit_command(_order("safety-unavailable")))
+
+    assert inner.rejections[0][3] == "custos_runner_safety_boundary_unavailable"
+
+
 def test_risk_reducing_and_cancel_commands_are_never_blocked() -> None:
     log: list[tuple] = []
     store = _Store(log)
@@ -263,6 +363,7 @@ def test_frozen_breaker_rejects_risk_increasing_but_not_reduce_only_or_cancel() 
 
     assert [entry[0] for entry in log] == ["submit", "cancel_upstream"]
     assert inner.rejections[0][2] == "risk-increasing"
+    assert inner.rejections[0][3] == "custos_runner_fallback_breaker_frozen"
 
 
 def test_modify_reserves_new_notional_before_upstream() -> None:
@@ -297,11 +398,17 @@ def test_modify_reserves_new_notional_before_upstream() -> None:
 
 
 class OrderFilled:
-    def __init__(self, *, reduce_only: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        reduce_only: bool = False,
+        exposure_source_order_id: str | None = None,
+    ) -> None:
         self.event_id = "fill-event-1"
         self.client_order_id = "order-3"
         self.notional = "7"
         self.reduce_only = reduce_only
+        self.exposure_source_order_id = exposure_source_order_id
 
     @classmethod
     def to_dict(cls, event):
@@ -355,6 +462,15 @@ def test_order_events_advance_fill_and_cancel_reservations() -> None:
     assert log[1][1]["reason"] == "canceled"
 
 
+def test_terminal_event_without_a_reservation_is_a_safe_noop() -> None:
+    log: list[tuple] = []
+    boundary = _boundary(_Store(log))
+
+    boundary.on_order_event(OrderCanceled())
+
+    assert log == []
+
+
 def test_reduce_only_fill_releases_open_exposure_when_reservation_exists() -> None:
     log: list[tuple] = []
     store = _Store(log)
@@ -368,10 +484,68 @@ def test_reduce_only_fill_releases_open_exposure_when_reservation_exists() -> No
     log.clear()
     boundary = _boundary(store)
 
-    boundary.on_order_event(OrderFilled(reduce_only=True))
+    boundary.on_order_event(OrderFilled(reduce_only=True, exposure_source_order_id="order-3"))
 
     assert [entry[0] for entry in log] == ["reduce"]
     assert log[0][1]["reduction_notional"] == Decimal("7")
+
+
+def test_unattributed_reduce_only_fill_freezes_new_risk_without_raising() -> None:
+    log: list[tuple] = []
+    breaker = _breaker()
+    boundary = _boundary(_Store(log), fallback_breaker=breaker)
+    boundary.before_submit_order(
+        _submit_command(_order("order-3", reduce_only=True), command_id="reduce-submit")
+    )
+
+    boundary.on_order_event(OrderFilled(reduce_only=True))
+
+    assert breaker.frozen is True
+    assert log == []
+
+
+def test_fill_accounting_failure_freezes_new_risk_without_killing_event_loop() -> None:
+    class BrokenFillStore(_Store):
+        def record_order_fill_sync(self, **kwargs):
+            raise RunnerStateAuthorityError("simulated post-trade accounting mismatch")
+
+    log: list[tuple] = []
+    store = BrokenFillStore(log)
+    store.reserve_order_notional(
+        event_id="seed",
+        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        client_order_id="order-3",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("25"),
+    )
+    breaker = _breaker()
+    boundary = _boundary(store, fallback_breaker=breaker)
+
+    boundary.on_order_event(OrderFilled())
+
+    assert breaker.frozen is True
+
+
+def test_foreign_risk_increasing_fill_is_ignored_without_freezing_this_instance() -> None:
+    log: list[tuple] = []
+    breaker = _breaker()
+    boundary = _boundary(_Store(log), fallback_breaker=breaker)
+
+    boundary.on_order_event(OrderFilled())
+
+    assert breaker.frozen is False
+    assert log == []
+
+
+def test_foreign_reduce_only_fill_is_ignored_without_freezing_this_instance() -> None:
+    log: list[tuple] = []
+    breaker = _breaker()
+    boundary = _boundary(_Store(log), fallback_breaker=breaker)
+
+    boundary.on_order_event(OrderFilled(reduce_only=True, exposure_source_order_id="foreign-entry"))
+
+    assert breaker.frozen is False
+    assert log == []
 
 
 class _UpstreamFactory(LiveExecClientFactory):

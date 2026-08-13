@@ -35,6 +35,15 @@ class CapturingEmitter:
         self.facts.extend(dict(fact) for fact in facts)
         return None
 
+    def emit_sync(
+        self,
+        authority: RunnerFactAuthority,
+        facts: Sequence[Mapping[str, Any]],
+    ) -> None:
+        del authority
+        self.facts.extend(dict(fact) for fact in facts)
+        return None
+
 
 def _authority() -> RunnerFactAuthority:
     return RunnerFactAuthority(
@@ -112,3 +121,29 @@ async def test_same_runtime_log_content_cannot_collide_across_authority_streams(
         )
 
     assert len({fact["event_id"] for fact in capture.facts}) == len(authorities)
+
+
+def test_runtime_log_can_be_committed_from_a_synchronous_engine_callback() -> None:
+    capture = CapturingEmitter()
+    capability = RunnerCapabilityReceipt.load(
+        ROOT / "docs/authority/runner-fact-capability-receipt-golden-v1.json"
+    )
+    emitter = RunnerRuntimeLogEmitter(
+        emitter=cast(RunnerFactEmitter, capture),
+        capability=capability,
+        redactor=RuntimeLogRedactor(),
+    )
+
+    emitter.emit_sync(
+        _authority(),
+        level="WARN",
+        component="custos.execution.order",
+        message="order_rejected",
+        structured_fields={
+            "client_order_id": "supertrend-entry-1",
+            "reason_code": "custos_runner_notional_policy_rejected",
+        },
+        correlation_id=CORRELATION_ID,
+    )
+
+    assert capture.facts[0]["message"] == "order_rejected"

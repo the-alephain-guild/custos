@@ -589,6 +589,7 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         if ctx is None:
             return
         self._reconciler.sweep_stale_orders_for_pair(ctx)
+        self._reconciler.ensure_exchange_sl_protection(ctx)
         self._reconciler.ensure_native_trailing_protection(ctx)
 
     def on_core_bar(self, bar: Bar) -> None:

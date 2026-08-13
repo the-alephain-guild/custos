@@ -137,3 +137,121 @@ def test_handle_position_closed_resets_close_reject_count():
     TradeEventHandler(strategy).handle_position_closed(event)
 
     assert tracker.close_reject_count == 0
+
+
+@requires_nautilus
+def test_position_close_preserves_partial_reversal_entry_before_new_exposure():
+    from decimal import Decimal
+
+    from custos_toolkit.position.tracker import PositionTracker
+    from custos_toolkit.signals.types import Signal
+    from custos_toolkit_nautilus.adapter.coordinators import TradeEventHandler
+    from custos_toolkit_nautilus.adapter.orders import OrderTracker
+
+    pending = Signal.enter_short(price=100.0)
+    position_tracker = PositionTracker()
+    position_tracker.set_pending_signal(pending, Decimal("2"))
+    tracker = OrderTracker()
+    tracker.set_entry_order(
+        "reverse-entry",
+        side=-1,
+        exposure_offset_quantity=Decimal("0.007"),
+    )
+    tracker.record_entry_fill(Decimal("0.007"))
+    tracker.add_exchange_sl_order("old-long-stop")
+    ctx = SimpleNamespace(
+        pair="BTC-USDT",
+        order_tracker=tracker,
+        sl_tp_submitted_for_reversal=False,
+        pending_entry_is_reversal=True,
+        allocated_capital=Decimal("0"),
+        position_tracker=position_tracker,
+        break_even_applied=False,
+        tick_monitor=None,
+    )
+    calls = []
+
+    def cancel_sl_tp_orders(_ctx, *, preserve_entry=False):
+        calls.append(preserve_entry)
+        _ctx.order_tracker.clear_protection_orders()
+        return 1
+
+    strategy = SimpleNamespace(
+        _get_context_from_instrument=lambda _iid: ctx,
+        log=MagicMock(),
+        cache=MagicMock(),
+        _event_publisher=SimpleNamespace(enabled=False),
+        _risk_controller=MagicMock(),
+        _capital_allocator=None,
+        _sltp_coordinator=SimpleNamespace(cancel_sl_tp_orders=cancel_sl_tp_orders),
+        on_trade_closed=MagicMock(),
+    )
+    event = SimpleNamespace(
+        instrument_id="BTCUSDT.BINANCE",
+        realized_pnl=SimpleNamespace(as_decimal=lambda: Decimal("0")),
+    )
+
+    TradeEventHandler(strategy).handle_position_closed(event)
+
+    assert calls == [True]
+    assert tracker.entry_order_id == "reverse-entry"
+    assert tracker.entry_filled_quantity == Decimal("0.007")
+    assert tracker.exchange_sl_order_ids == []
+    assert position_tracker.pending_signal is pending
+    assert position_tracker.pending_entry_atr == Decimal("2")
+    assert ctx.pending_entry_is_reversal is False
+
+
+@requires_nautilus
+def test_position_close_keeps_new_protection_during_nonterminal_reversal_fill():
+    from decimal import Decimal
+
+    from custos_toolkit.position.tracker import PositionTracker
+    from custos_toolkit.signals.types import Signal
+    from custos_toolkit_nautilus.adapter.coordinators import TradeEventHandler
+    from custos_toolkit_nautilus.adapter.orders import OrderTracker
+
+    pending = Signal.enter_short(price=100.0)
+    position_tracker = PositionTracker()
+    position_tracker.set_pending_signal(pending, None)
+    tracker = OrderTracker()
+    tracker.set_entry_order(
+        "reverse-entry",
+        side=-1,
+        exposure_offset_quantity=Decimal("0.007"),
+    )
+    tracker.record_entry_fill(Decimal("0.008"))
+    tracker.add_exchange_sl_order("new-short-stop")
+    ctx = SimpleNamespace(
+        pair="BTC-USDT",
+        order_tracker=tracker,
+        sl_tp_submitted_for_reversal=True,
+        pending_entry_is_reversal=False,
+        allocated_capital=Decimal("0"),
+        position_tracker=position_tracker,
+        break_even_applied=False,
+        tick_monitor=None,
+    )
+    cancel = MagicMock(return_value=0)
+    strategy = SimpleNamespace(
+        _get_context_from_instrument=lambda _iid: ctx,
+        log=MagicMock(),
+        cache=MagicMock(),
+        _event_publisher=SimpleNamespace(enabled=False),
+        _risk_controller=MagicMock(),
+        _capital_allocator=None,
+        _sltp_coordinator=SimpleNamespace(cancel_sl_tp_orders=cancel),
+        on_trade_closed=MagicMock(),
+    )
+    event = SimpleNamespace(
+        instrument_id="BTCUSDT.BINANCE",
+        realized_pnl=SimpleNamespace(as_decimal=lambda: Decimal("0")),
+    )
+
+    TradeEventHandler(strategy).handle_position_closed(event)
+
+    cancel.assert_not_called()
+    assert tracker.entry_order_id == "reverse-entry"
+    assert tracker.exchange_sl_order_ids == ["new-short-stop"]
+    assert position_tracker.pending_signal is pending
+    assert ctx.sl_tp_submitted_for_reversal is False

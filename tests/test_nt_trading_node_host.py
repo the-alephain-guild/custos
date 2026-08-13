@@ -49,6 +49,10 @@ def _spec(label: str = "spec-1", **overrides) -> dict:
         "connector": "binance_perpetual",
         "pairs": ["BTC-USDT"],
         "leverage": 3,
+        "credential_scope": {
+            "scope_id": str(uuid5(NAMESPACE_URL, f"custos-test-scope:{label}")),
+            "scope_digest": "c" * 64,
+        },
         "sandbox": {"starting_balances": ["10_000 USDT"]},
     }
     spec.update(overrides)

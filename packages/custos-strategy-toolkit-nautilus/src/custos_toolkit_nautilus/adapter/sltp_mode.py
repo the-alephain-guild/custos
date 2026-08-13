@@ -20,6 +20,7 @@ from custos_toolkit.signals.types import SignalDirection
 
 if TYPE_CHECKING:
     from custos_toolkit.signals.types import Signal
+    from nautilus_trader.model.objects import Quantity
 
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
@@ -83,6 +84,9 @@ class SLTPMode(str, Enum):  # noqa: UP042 - preserve pre-T4b str(Enum) runtime s
         position: Position | None,
         entry_px: Decimal | float,
         entry_atr: Decimal | float | None,
+        *,
+        protection_quantity: Quantity | Decimal | None = None,
+        initialize_position: bool = True,
     ) -> None:
         """Submit post-fill protection for an entry, per this mode.
 
@@ -90,16 +94,18 @@ class SLTPMode(str, Enum):  # noqa: UP042 - preserve pre-T4b str(Enum) runtime s
         the tick/hybrid path that seeds the tick monitor, matching the original
         lazy-conversion behavior (exchange/native_trailing never touch it).
         """
+        quantity_kwargs = {} if protection_quantity is None else {"quantity": protection_quantity}
         if self is SLTPMode.EXCHANGE:
-            strategy._sltp_coordinator.submit_stop_loss(ctx, signal)
-            strategy._sltp_coordinator.submit_take_profit(ctx, signal)
-        elif self is SLTPMode.TICK:
+            strategy._sltp_coordinator.submit_stop_loss(ctx, signal, **quantity_kwargs)
+            strategy._sltp_coordinator.submit_take_profit(ctx, signal, **quantity_kwargs)
+        elif self is SLTPMode.TICK and initialize_position:
             _init_tick_position(ctx, signal, position, entry_px, entry_atr)
         elif self is SLTPMode.HYBRID:
-            strategy._sltp_coordinator.submit_safety_stop_loss(ctx, signal)
-            _init_tick_position(ctx, signal, position, entry_px, entry_atr)
+            strategy._sltp_coordinator.submit_safety_stop_loss(ctx, signal, **quantity_kwargs)
+            if initialize_position:
+                _init_tick_position(ctx, signal, position, entry_px, entry_atr)
         elif self is SLTPMode.NATIVE_TRAILING:
-            strategy._sltp_coordinator.submit_native_trailing(ctx, signal)
+            strategy._sltp_coordinator.submit_native_trailing(ctx, signal, **quantity_kwargs)
 
 
 def _init_tick_position(

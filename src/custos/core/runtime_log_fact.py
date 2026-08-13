@@ -290,6 +290,30 @@ class RunnerRuntimeLogEmitter:
         )
         return await self._emitter.emit(authority, (fact,))
 
+    def emit_sync(
+        self,
+        authority: RunnerFactAuthority,
+        *,
+        level: str,
+        component: str,
+        message: str,
+        structured_fields: Mapping[str, Any],
+        correlation_id: UUID | str,
+        causation_id: UUID | str | None = None,
+    ) -> UUID | None:
+        """Commit a structured log from a synchronous engine MessageBus callback."""
+
+        fact = self._fact(
+            authority,
+            level=level,
+            component=component,
+            message=message,
+            structured_fields=structured_fields,
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+        )
+        return self._emitter.emit_sync(authority, (fact,))
+
     def _fact(
         self,
         authority: RunnerFactAuthority,

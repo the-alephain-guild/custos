@@ -84,6 +84,10 @@ class RunnerFactHost(Protocol):
     ) -> VenueLedgerEvidence: ...
 
 
+class RunnerRuntimeLogPort(Protocol):
+    def emit_sync(self, authority: RunnerFactAuthority, **event: Any) -> object: ...
+
+
 def _scoped_event_id(authority: RunnerFactAuthority, kind: str, *identity: object):
     return runner_fact_event_id(authority.stream_key, kind, *identity)
 
@@ -149,9 +153,13 @@ class RunnerFactMessageBusBridge:
         *,
         emitter: RunnerFactEmitter,
         deployment: RunnerFactDeployment,
+        runtime_log_emitter: RunnerRuntimeLogPort | None = None,
     ) -> None:
         self._emitter = emitter
         self._deployment = deployment
+        self._runtime_log_emitter = runtime_log_emitter
+        self._order_directions: dict[str, str] = {}
+        self._owned_order_ids: set[str] = set()
 
     def bootstrap(self, message_bus: Any) -> None:
         if message_bus is None:
@@ -166,8 +174,31 @@ class RunnerFactMessageBusBridge:
 
     def _on_order_event(self, event: Any) -> None:
         event_name = type(event).__name__
+        if event_name == "OrderInitialized":
+            self._on_order_initialized(event)
+            return
+        client_order_id = self._event_client_order_id(event)
+        if client_order_id and client_order_id not in self._owned_order_ids:
+            # A live venue stream is account-wide. Separate deployment nodes can see
+            # sibling/manual orders on the same account; only a locally initialized
+            # order may enter this instance-scoped signed fact stream.
+            return
         if event_name == "OrderSubmitted":
-            self._on_order_submitted(event)
+            self._on_order_lifecycle(event, lifecycle="submitted", level="INFO")
+            return
+        if event_name in {"OrderRejected", "OrderDenied"}:
+            self._on_order_lifecycle(
+                event,
+                lifecycle="rejected",
+                level="WARN",
+                include_reason=True,
+            )
+            return
+        if event_name == "OrderCanceled":
+            self._on_order_lifecycle(event, lifecycle="canceled", level="INFO")
+            return
+        if event_name == "OrderExpired":
+            self._on_order_lifecycle(event, lifecycle="expired", level="WARN")
             return
         if event_name != "OrderFilled":
             return
@@ -238,7 +269,7 @@ class RunnerFactMessageBusBridge:
         except Exception as exc:  # audit loss is loud but never kills the engine thread
             _log.error("runner_fact_execution_event_failed", error=str(exc))
 
-    def _on_order_submitted(self, event: Any) -> None:
+    def _on_order_initialized(self, event: Any) -> None:
         try:
             data = type(event).to_dict(event)
             authority = self._deployment.authority
@@ -246,10 +277,10 @@ class RunnerFactMessageBusBridge:
             client_order_id = str(data.get("client_order_id") or "").strip()
             stable_identity = event_id or client_order_id
             if not stable_identity:
-                raise RunnerFactContractError("OrderSubmitted has no stable event/order identity")
+                raise RunnerFactContractError("OrderInitialized has no stable event/order identity")
             instrument = str(data.get("instrument_id") or "").strip()
             if not instrument:
-                raise RunnerFactContractError("OrderSubmitted has no instrument identity")
+                raise RunnerFactContractError("OrderInitialized has no instrument identity")
             side = str(data.get("order_side") or "").strip().lower().split(".")[-1]
             if bool(data.get("reduce_only")):
                 direction = "flat"
@@ -258,8 +289,11 @@ class RunnerFactMessageBusBridge:
             elif side == "sell":
                 direction = "short"
             else:
-                raise RunnerFactContractError("OrderSubmitted has an unsupported order side")
-            occurred_at = _nt_timestamp(data.get("ts_event"))
+                raise RunnerFactContractError("OrderInitialized has an unsupported order side")
+            if client_order_id:
+                self._owned_order_ids.add(client_order_id)
+                self._order_directions[client_order_id] = direction
+            occurred_at = _nt_timestamp(data.get("ts_event") or data.get("ts_init"))
             input_document = {
                 "client_order_id": client_order_id or None,
                 "direction": direction,
@@ -291,6 +325,62 @@ class RunnerFactMessageBusBridge:
             )
         except Exception as exc:  # audit loss is loud but never kills the engine thread
             _log.error("runner_strategy_signal_event_failed", error=str(exc))
+
+    def _on_order_lifecycle(
+        self,
+        event: Any,
+        *,
+        lifecycle: str,
+        level: str,
+        include_reason: bool = False,
+    ) -> None:
+        if self._runtime_log_emitter is None:
+            return
+        try:
+            data = type(event).to_dict(event)
+            client_order_id = str(data.get("client_order_id") or "").strip()
+            if not client_order_id:
+                raise RunnerFactContractError("order lifecycle event has no client order id")
+            instrument = str(data.get("instrument_id") or "").strip()
+            if not instrument:
+                raise RunnerFactContractError("order lifecycle event has no instrument identity")
+            side = self._order_directions.get(client_order_id)
+            if side is None:
+                raw_side = str(data.get("order_side") or "").strip().lower().split(".")[-1]
+                side = {"buy": "long", "sell": "short"}.get(raw_side)
+            if side is None:
+                raise RunnerFactContractError("order lifecycle event has no known side")
+            fields: dict[str, Any] = {
+                "client_order_id": client_order_id,
+                "instrument": instrument,
+                "side": side,
+                "lifecycle": lifecycle,
+            }
+            if include_reason:
+                reason = str(data.get("reason") or "unknown_rejection").strip()
+                fields["reason_code"] = reason or "unknown_rejection"
+            authority = self._deployment.authority
+            self._runtime_log_emitter.emit_sync(
+                authority,
+                level=level,
+                component="custos.execution.order",
+                message=f"order_{lifecycle}",
+                structured_fields=fields,
+                correlation_id=_scoped_event_id(authority, "order_trace", client_order_id),
+            )
+            if lifecycle in {"rejected", "canceled", "expired"}:
+                self._order_directions.pop(client_order_id, None)
+                self._owned_order_ids.discard(client_order_id)
+        except Exception as exc:  # signed lifecycle loss is visible but never kills execution
+            _log.error("runner_order_lifecycle_event_failed", error=str(exc))
+
+    @staticmethod
+    def _event_client_order_id(event: Any) -> str:
+        try:
+            data = type(event).to_dict(event)
+        except Exception:
+            data = {}
+        return str(data.get("client_order_id") or getattr(event, "client_order_id", "")).strip()
 
     def _on_position_event(self, event: Any) -> None:
         if type(event).__name__ != "PositionClosed":

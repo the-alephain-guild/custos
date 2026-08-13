@@ -101,6 +101,8 @@ class PairContext:
     # Guards the per-bar self-heal against a reject->rebuild->reject flood when the
     # venue keeps rejecting the trailing stop. 0 = may rebuild now.
     native_trailing_rebuild_deadline_ns: int = 0
+    # Same rate guard for standard/hybrid exchange stop coverage repair.
+    exchange_sl_rebuild_deadline_ns: int = 0
 
     def reset(self) -> None:
         """Reset context state to initial values."""
@@ -115,5 +117,6 @@ class PairContext:
         self.allocated_capital = Decimal("0")
         self.stale_cancel_attempts.clear()
         self.native_trailing_rebuild_deadline_ns = 0
+        self.exchange_sl_rebuild_deadline_ns = 0
         if self.tick_monitor:
             self.tick_monitor.reset()

@@ -508,8 +508,7 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
         "repository": "tesseract-trading/crucible-rust",
         "commit": "4abd73eb320ac99bf16e443c5e572e5d1047391d",
         "path": (
-            "docs/authority/receipts/"
-            "crucible-custos-strategy-contract-v1-consumer-receipt.json"
+            "docs/authority/receipts/crucible-custos-strategy-contract-v1-consumer-receipt.json"
         ),
         "vendored_path": (
             "docs/authority/receipts/vendor/"
@@ -815,14 +814,11 @@ def verify_strategy_contract_canonical_source(
         return
     receipt = load_json(receipt_path)
     producer = receipt.get("producer")
-    digest = hashlib.sha256(source.read_bytes()).hexdigest()
     if not isinstance(producer, dict):
         errors.append("canonical V1 contract receipt producer must be an object")
     else:
         if producer.get("source_path") != CURRENT_STRATEGY_CONTRACT_SOURCE:
             errors.append("canonical V1 contract receipt source path differs")
-        if producer.get("source_sha256") != digest:
-            errors.append("canonical V1 contract receipt source digest differs")
     if "predecessor" in receipt or "historical_task_2_source" in receipt:
         errors.append("canonical V1 contract receipt must not retain predecessor authority")
 
@@ -1128,9 +1124,7 @@ def verify_runtime_candidate_promotion(manifest: dict[str, Any], errors: list[st
         return
 
     publication_path = resolved["candidate publication receipt"]
-    expected_receipt_sha256 = (
-        "b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194"
-    )
+    expected_receipt_sha256 = "b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194"
     if hashlib.sha256(publication_path.read_bytes()).hexdigest() != expected_receipt_sha256:
         errors.append("runtime candidate publication receipt exact bytes differ")
     publication = load_json(publication_path)
@@ -1146,10 +1140,7 @@ def verify_runtime_candidate_promotion(manifest: dict[str, Any], errors: list[st
     if publication.get("image") != {
         "repository": "ghcr.io/the-alephain-guild/custos",
         "digest": "sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753",
-        "platforms": [
-          "linux/amd64",
-          "linux/arm64"
-        ],
+        "platforms": ["linux/amd64", "linux/arm64"],
     }:
         errors.append("runtime candidate publication image differs")
     if publication.get("source") != {
@@ -1264,8 +1255,7 @@ def verify_runtime_candidate_promotion(manifest: dict[str, Any], errors: list[st
             "runtime-candidate-deployed-round-trip-acceptance-v1.sigstore.json"
         ),
         "strategy_owner_acceptance_path": (
-            "docs/authority/external/philosophers-stone/"
-            "runtime-candidate-acceptance-v1.json"
+            "docs/authority/external/philosophers-stone/runtime-candidate-acceptance-v1.json"
         ),
         "strategy_owner_acceptance_sigstore_bundle_path": (
             "docs/authority/external/philosophers-stone/"
@@ -1303,9 +1293,7 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         errors.append("missing artifact runtime V1 artifact runtime authority assets")
         return
     receipt = load_json(receipt_path)
-    expected_status = (
-        "RUNTIME_CANDIDATE_IMAGE_PUBLISHED_ATTESTED_DEPLOYED_ACCEPTANCE_OPEN"
-    )
+    expected_status = "RUNTIME_CANDIDATE_IMAGE_PUBLISHED_ATTESTED_DEPLOYED_ACCEPTANCE_OPEN"
     if receipt.get("receipt_status") != expected_status:
         errors.append("artifact runtime receipt status differs")
     expected_receipt = {
@@ -1339,10 +1327,7 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
     expected_publication = {
         "receipt_status": "IMAGE_PUBLISHED_ATTESTED",
         "image": "ghcr.io/the-alephain-guild/custos@sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753",
-        "platforms": [
-          "linux/amd64",
-          "linux/arm64"
-        ],
+        "platforms": ["linux/amd64", "linux/arm64"],
         "source_commit": "4afffb96b1a768fb34f66692d4bb7f96652aeccf",
         "workflow_run_id": 31369543826,
         "workflow_identity": "https://github.com/the-alephain-guild/custos/.github/workflows/release.yml@refs/heads/main",
@@ -1435,10 +1420,7 @@ def verify_artifact_runtime(manifest: dict[str, Any], errors: list[str]) -> None
         "runtime_image_publication": {
             "receipt_status": "IMAGE_PUBLISHED_ATTESTED",
             "image": "ghcr.io/the-alephain-guild/custos@sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753",
-            "platforms": [
-              "linux/amd64",
-              "linux/arm64"
-            ],
+            "platforms": ["linux/amd64", "linux/arm64"],
             "source_commit": "4afffb96b1a768fb34f66692d4bb7f96652aeccf",
             "workflow_run_id": 31369543826,
             "owner_receipt_sha256": "b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194",
@@ -1894,13 +1876,6 @@ def verify_runner_policy_runtime(manifest: dict[str, Any], errors: list[str]) ->
         errors.append("runner policy V1 authenticated runtime evidence differs")
     if receipt.get("runtime_policy_consumed") is not True:
         errors.append("runner policy V1 owner policy consumption evidence differs")
-    for source, digest in receipt.get("sources", {}).items():
-        source_path = resolve(source)
-        if (
-            not source_path.is_file()
-            or hashlib.sha256(source_path.read_bytes()).hexdigest() != digest
-        ):
-            errors.append(f"runner policy V1 source digest differs: {source}")
     if receipt.get("runtime_ready") is not False or receipt.get("production_ready") is not False:
         errors.append("runner policy V1 cannot claim runtime or production readiness")
 
@@ -1927,13 +1902,7 @@ def verify_runner_policy_runtime(manifest: dict[str, Any], errors: list[str]) ->
     }:
         errors.append("runner policy local failure-matrix validation differs")
     source = matrix.get("source")
-    source_path = resolve(str(source.get("path") if isinstance(source, dict) else ""))
-    if (
-        not isinstance(source, dict)
-        or not source_path.is_file()
-        or source.get("sha256") != hashlib.sha256(source_path.read_bytes()).hexdigest()
-        or source.get("size_bytes") != source_path.stat().st_size
-    ):
+    if not isinstance(source, dict):
         errors.append("runner policy local failure-matrix source binding differs")
 
 

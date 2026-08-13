@@ -80,6 +80,22 @@ class TradeEventHandler:
         if ctx is None:
             return
 
+        # Binance's user stream is account-wide. When two nodes share an account,
+        # a sibling order fill can arrive while this strategy still has its own entry
+        # signal pending. Only the exact tracked entry may consume that signal and arm
+        # its protection; otherwise the sibling fill steals the pending signal and this
+        # instance later ignores its own fill.
+        tracked_entry_id = ctx.order_tracker.entry_order_id
+        pending_signal = ctx.position_tracker.pending_signal
+        is_tracked_entry_fill = (
+            tracked_entry_id is not None and tracked_entry_id == event.client_order_id
+        )
+        if pending_signal is not None and not is_tracked_entry_fill:
+            return
+
+        order = s.cache.order(event.client_order_id)
+        order_is_terminal = bool(order is not None and order.is_closed)
+
         s.log.info(
             f"[{ctx.pair}] Order FILLED: {event.order_side} {event.last_qty} @ {event.last_px}",
             color=LogColor.CYAN,
@@ -91,17 +107,18 @@ class TradeEventHandler:
         # left unprotected). Telemetry failure only logs; it never blocks what follows.
         if s._event_publisher.enabled:
             try:
-                _order = s.cache.order(event.client_order_id)
                 _oid = str(event.client_order_id)
-                _sig_id = s._order_signal_map.pop(_oid, None) or extract_signal_id_from_tags(
-                    _order.tags if _order else None
-                )
+                _sig_id = (
+                    s._order_signal_map.pop(_oid, None)
+                    if order_is_terminal
+                    else s._order_signal_map.get(_oid)
+                ) or extract_signal_id_from_tags(order.tags if order else None)
                 s._event_publisher.publish_order_event(
                     event=event,
-                    order=_order,
+                    order=order,
                     signal_id=_sig_id,
                     side=event.order_side.name,
-                    order_type=_order.order_type.name if _order else "UNKNOWN",
+                    order_type=order.order_type.name if order else "UNKNOWN",
                     quantity=str(event.last_qty),
                     fill_price=str(event.last_px),
                     status="filled",
@@ -112,23 +129,21 @@ class TradeEventHandler:
                     f"[{ctx.pair}] Order-fill telemetry failed (money path continues): {exc}"
                 )
 
-        # Clear entry order tracking if this was the entry order
-        if (
-            ctx.order_tracker.entry_order_id is not None
-            and ctx.order_tracker.entry_order_id == event.client_order_id
-        ):
-            ctx.order_tracker.clear_entry_order()
+        protection_quantity = Decimal("0")
+        initialize_position = False
+        if is_tracked_entry_fill:
+            protection_quantity, initialize_position = ctx.order_tracker.record_entry_fill(
+                Decimal(str(event.last_qty))
+            )
 
         pos_config = s.config.position
         if pos_config.capital_mode == "compound":
             equity = s._get_risk_equity()
             cast(RiskController, s._risk_controller).update_peak_equity(equity)
 
-        pending_signal = ctx.position_tracker.pending_signal
-        if pending_signal is not None:
+        if pending_signal is not None and protection_quantity > 0:
             signal = pending_signal
             entry_atr = ctx.position_tracker.pending_entry_atr
-            ctx.position_tracker.clear_pending_signal()
 
             positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
             position = positions[0] if positions else None
@@ -137,9 +152,28 @@ class TradeEventHandler:
             # belong to the current position and must be cancelled on close by
             # on_position_closed. Per-mode post-fill protection is dispatched by
             # SLTPMode.on_entry_filled.
-            ctx.sl_tp_submitted_for_reversal = ctx.pending_entry_is_reversal
+            if initialize_position:
+                ctx.sl_tp_submitted_for_reversal = ctx.pending_entry_is_reversal
+                ctx.pending_entry_is_reversal = False
+            s._mode.on_entry_filled(
+                s,
+                ctx,
+                signal,
+                position,
+                event.last_px,
+                entry_atr,
+                protection_quantity=protection_quantity,
+                initialize_position=initialize_position,
+            )
+
+        # An OrderFilled event is one trade lot. Keep the entry and pending signal
+        # correlated across partial fills; release them only when the cached source
+        # order confirms a terminal state. A later OrderCanceled event owns the
+        # partial-fill-then-cancel terminal path.
+        if is_tracked_entry_fill and order_is_terminal:
+            ctx.order_tracker.clear_entry_order()
+            ctx.position_tracker.clear_pending_signal()
             ctx.pending_entry_is_reversal = False
-            s._mode.on_entry_filled(s, ctx, signal, position, event.last_px, entry_atr)
 
     def handle_position_opened(self, event: PositionOpened) -> None:
         """Handle position opened event -- publish position event."""
@@ -199,6 +233,16 @@ class TradeEventHandler:
 
         # Cancel all SL/TP orders on position close to prevent orphaned orders.
         # Skip cancellation if SL/TP were just submitted for an incoming reversal position.
+        pending_entry_signal = ctx.position_tracker.pending_signal
+        pending_entry_atr = ctx.position_tracker.pending_entry_atr
+        reversal_entry_continues = bool(
+            ctx.order_tracker.entry_order_id is not None
+            and pending_entry_signal is not None
+            and (
+                ctx.sl_tp_submitted_for_reversal or getattr(ctx, "pending_entry_is_reversal", False)
+            )
+        )
+
         if ctx.sl_tp_submitted_for_reversal:
             s.log.info(
                 f"[{ctx.pair}] Skipping SL/TP cancellation — reversal SL/TP already submitted",
@@ -209,7 +253,20 @@ class TradeEventHandler:
             # so clear just the close gate here -- a stale in-flight deadline must not
             # block the new reversed position from closing. The reversal SL/TP stay intact.
             ctx.order_tracker.clear_closing()
+        elif reversal_entry_continues:
+            # A partial fill can close the old side exactly before later lots open
+            # target-direction exposure. Cancel the old position's protection, but
+            # preserve the source entry correlation and pending signal for those lots.
+            cancelled = s._sltp_coordinator.cancel_sl_tp_orders(ctx, preserve_entry=True)
+            ctx.pending_entry_is_reversal = False
+            if cancelled > 0:
+                s.log.info(
+                    f"[{ctx.pair}] Cancelled {cancelled} old-position SL/TP orders "
+                    "while reversal entry remains in flight",
+                    color=LogColor.YELLOW,
+                )
         else:
+            ctx.pending_entry_is_reversal = False
             cancelled = s._sltp_coordinator.cancel_sl_tp_orders(ctx)
             if cancelled > 0:
                 s.log.info(
@@ -218,6 +275,8 @@ class TradeEventHandler:
                 )
 
         ctx.position_tracker.reset()
+        if reversal_entry_continues:
+            ctx.position_tracker.set_pending_signal(pending_entry_signal, pending_entry_atr)
         # Position confirmed flat -> reset the consecutive close-reject halt count. Both the
         # normal and reversal close paths converge here, so this is the single point that
         # owns the reset (clear()/clear_closing() must not, they also run on the reject path).

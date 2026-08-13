@@ -115,6 +115,7 @@ class SignalExecutionCoordinator:
         # Reversal sizing: add current position size for close+open in netting accounts
         # Default False; only the reversal branch below sets it True.
         ctx.pending_entry_is_reversal = False
+        reversal_close_quantity = Decimal("0")
         positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
         if positions:
             position = positions[0]
@@ -129,6 +130,7 @@ class SignalExecutionCoordinator:
                 # Convert current position quantity (base currency, e.g., BTC) to notional value
                 # (quote currency, e.g., USDT) to ensure we're adding USDT + USDT, not USDT + BTC
                 current_qty = Decimal(str(position.quantity))
+                reversal_close_quantity = current_qty
                 current_price = Decimal(str(bar.close))
                 current_value_usdt = current_qty * current_price
                 final_size = final_size + current_value_usdt
@@ -213,7 +215,11 @@ class SignalExecutionCoordinator:
         # Track the entry order ID + direction for potential cancellation if the signal
         # changes (direction lets a trend gate tell this entry from a stale opposite one).
         entry_side = 1 if signal.direction == SignalDirection.ENTER_LONG else -1
-        ctx.order_tracker.set_entry_order(order.client_order_id, entry_side)
+        ctx.order_tracker.set_entry_order(
+            order.client_order_id,
+            entry_side,
+            exposure_offset_quantity=reversal_close_quantity,
+        )
 
         s.log.info(
             f"[{ctx.pair}] ENTRY: {signal.direction.name} | "

@@ -6,11 +6,15 @@ orders.py imports the engine at module level, so the module skips when it is abs
 
 from __future__ import annotations
 
+from decimal import Decimal
+from types import SimpleNamespace
+
 import pytest
 
 pytest.importorskip("nautilus_trader")
 
-from custos_toolkit_nautilus.adapter.orders import OrderTracker  # noqa: E402
+from custos_toolkit_nautilus.adapter.orders import OrderTracker, is_stale_order  # noqa: E402
+from nautilus_trader.model.enums import OrderSide, OrderType  # noqa: E402
 
 S = 1_000_000_000  # one second in nanoseconds
 
@@ -106,3 +110,92 @@ class TestCloseRejectCount:
         t.record_close_reject()
         t.clear_closing()
         assert t.close_reject_count == 1
+
+
+class TestPartialFillProtectionAccounting:
+    def test_each_normal_entry_fill_becomes_a_new_protection_lot(self):
+        tracker = OrderTracker()
+        tracker.set_entry_order("entry-1", side=1)
+
+        first_delta, first_exposure = tracker.record_entry_fill(Decimal("0.0031"))
+        second_delta, second_exposure = tracker.record_entry_fill(Decimal("0.0039"))
+
+        assert (first_delta, first_exposure) == (Decimal("0.0031"), True)
+        assert (second_delta, second_exposure) == (Decimal("0.0039"), False)
+        assert tracker.entry_filled_quantity == Decimal("0.0070")
+        assert tracker.entry_protected_quantity == Decimal("0.0070")
+
+    def test_reversal_close_quantity_is_not_mislabeled_as_new_exposure(self):
+        tracker = OrderTracker()
+        tracker.set_entry_order(
+            "reverse-entry",
+            side=-1,
+            exposure_offset_quantity=Decimal("0.0070"),
+        )
+
+        closing_delta, closing_first = tracker.record_entry_fill(Decimal("0.0030"))
+        crossing_delta, crossing_first = tracker.record_entry_fill(Decimal("0.0050"))
+        open_delta, open_first = tracker.record_entry_fill(Decimal("0.0060"))
+
+        assert (closing_delta, closing_first) == (Decimal("0"), False)
+        assert (crossing_delta, crossing_first) == (Decimal("0.0010"), True)
+        assert (open_delta, open_first) == (Decimal("0.0060"), False)
+        assert tracker.entry_filled_quantity == Decimal("0.0140")
+        assert tracker.entry_protected_quantity == Decimal("0.0070")
+
+    def test_all_partial_fill_protection_orders_remain_owned_until_removed(self):
+        tracker = OrderTracker()
+        tracker.add_exchange_sl_order("stop-lot-1", Decimal("0.0031"))
+        tracker.add_exchange_sl_order("stop-lot-2", Decimal("0.0039"))
+
+        assert tracker.exchange_sl_order_ids == ["stop-lot-1", "stop-lot-2"]
+        assert tracker.exchange_sl_order_id == "stop-lot-2"
+        assert tracker.protected_quantity(exchange_managed=True) == Decimal("0.0070")
+        assert tracker.has_pending_orders is True
+
+        tracker.remove_order("stop-lot-1")
+
+        assert tracker.exchange_sl_order_ids == ["stop-lot-2"]
+        assert tracker.protected_quantity(exchange_managed=True) == Decimal("0.0039")
+
+
+class TestStaleProtectiveOrderOwnership:
+    def test_untracked_protective_stop_is_preserved_without_owner_evidence(self):
+        order = SimpleNamespace(
+            client_order_id="other-instance-stop",
+            side=OrderSide.SELL,
+            order_type=OrderType.STOP_MARKET,
+            is_reduce_only=True,
+            ts_init=0,
+        )
+
+        assert (
+            is_stale_order(
+                order,
+                position_is_long=True,
+                tracked_ids={"owned-stop"},
+                sl_is_tracked=True,
+                now_ns=60 * S,
+            )
+            is False
+        )
+
+    def test_untracked_wrong_side_stop_is_still_removed(self):
+        order = SimpleNamespace(
+            client_order_id="old-long-stop",
+            side=OrderSide.SELL,
+            order_type=OrderType.STOP_MARKET,
+            is_reduce_only=True,
+            ts_init=0,
+        )
+
+        assert (
+            is_stale_order(
+                order,
+                position_is_long=False,
+                tracked_ids=set(),
+                sl_is_tracked=False,
+                now_ns=60 * S,
+            )
+            is True
+        )

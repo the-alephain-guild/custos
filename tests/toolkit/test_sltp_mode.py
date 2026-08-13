@@ -132,6 +132,30 @@ def test_on_entry_filled_exchange_submits_sl_and_tp():
     ctx.tick_monitor.init_position.assert_not_called()
 
 
+def test_on_entry_filled_forwards_only_the_new_partial_fill_quantity():
+    s, ctx = _stub_strategy(), _stub_ctx()
+    signal = _long_signal()
+
+    SLTPMode.EXCHANGE.on_entry_filled(
+        s,
+        ctx,
+        signal,
+        object(),
+        Decimal("100"),
+        None,
+        protection_quantity=Decimal("0.0039"),
+        initialize_position=False,
+    )
+
+    s._sltp_coordinator.submit_stop_loss.assert_called_once_with(
+        ctx, signal, quantity=Decimal("0.0039")
+    )
+    s._sltp_coordinator.submit_take_profit.assert_called_once_with(
+        ctx, signal, quantity=Decimal("0.0039")
+    )
+    ctx.tick_monitor.init_position.assert_not_called()
+
+
 def test_on_entry_filled_tick_inits_tick_monitor_only():
     s, ctx = _stub_strategy(), _stub_ctx()
     SLTPMode.TICK.on_entry_filled(s, ctx, _long_signal(), object(), Decimal("100"), Decimal("2"))
@@ -154,6 +178,27 @@ def test_on_entry_filled_hybrid_safety_sl_plus_tick():
     ctx.tick_monitor.init_position.assert_called_once_with(
         entry_price=Decimal("100"), is_long=True, entry_atr=Decimal("2")
     )
+
+
+def test_hybrid_later_partial_fill_adds_safety_lot_without_resetting_tick_state():
+    s, ctx = _stub_strategy(), _stub_ctx()
+    signal = _long_signal()
+
+    SLTPMode.HYBRID.on_entry_filled(
+        s,
+        ctx,
+        signal,
+        object(),
+        Decimal("100"),
+        Decimal("2"),
+        protection_quantity=Decimal("0.0039"),
+        initialize_position=False,
+    )
+
+    s._sltp_coordinator.submit_safety_stop_loss.assert_called_once_with(
+        ctx, signal, quantity=Decimal("0.0039")
+    )
+    ctx.tick_monitor.init_position.assert_not_called()
 
 
 def test_on_entry_filled_native_trailing_submits_trailing_only():

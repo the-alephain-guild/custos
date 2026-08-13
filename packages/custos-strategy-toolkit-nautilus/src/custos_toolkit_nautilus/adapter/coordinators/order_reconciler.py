@@ -125,23 +125,45 @@ class OrderReconciler:
         """
         s = self._strategy
         # Check for existing SL orders on the exchange
-        existing_sl = self.find_existing_sl_order(ctx, position)
+        existing_sls = self.find_existing_sl_orders(ctx, position)
 
-        if existing_sl:
-            # Found existing SL order - track it
-            if s._mode is SLTPMode.HYBRID:
-                ctx.order_tracker.set_exchange_sl_order(existing_sl.client_order_id)
-            else:
-                ctx.order_tracker.set_sl_order(existing_sl.client_order_id)
-            s.log.info(
-                f"[{ctx.pair}] Found existing SL order: {existing_sl.client_order_id}",
-                color=LogColor.GREEN,
-            )
+        newly_reclaimed = 0
+        if existing_sls:
+            # A partially filled entry owns one protective lot per fill. Reclaim
+            # every matching order after restart, not only the first one, otherwise
+            # close cleanup would orphan the remaining lots.
+            for existing_sl in existing_sls:
+                if s._mode is SLTPMode.HYBRID:
+                    if existing_sl.client_order_id not in ctx.order_tracker.exchange_sl_order_ids:
+                        newly_reclaimed += 1
+                    ctx.order_tracker.add_exchange_sl_order(
+                        existing_sl.client_order_id, existing_sl.quantity
+                    )
+                else:
+                    if existing_sl.client_order_id not in ctx.order_tracker.sl_order_ids:
+                        newly_reclaimed += 1
+                    ctx.order_tracker.add_sl_order(
+                        existing_sl.client_order_id, existing_sl.quantity
+                    )
+            if newly_reclaimed:
+                s.log.info(
+                    f"[{ctx.pair}] Reclaimed {newly_reclaimed} existing SL order lot(s)",
+                    color=LogColor.GREEN,
+                )
+
+        exchange_managed = s._mode is SLTPMode.HYBRID
+        protected_quantity = ctx.order_tracker.protected_quantity(exchange_managed=exchange_managed)
+        missing_quantity = max(
+            Decimal(str(position.quantity)) - protected_quantity,
+            Decimal("0"),
+        )
+        if missing_quantity <= 0:
             return
 
-        # No SL order found - create one
+        # No SL order, or partial-fill coverage is short: create only the missing
+        # quantity. Never cancel/replace an accepted lot and introduce a protection gap.
         s.log.warning(
-            f"[{ctx.pair}] No SL order found for existing position - creating new one",
+            f"[{ctx.pair}] SL protection short by {missing_quantity} - creating delta lot",
         )
 
         # Create a synthetic signal based on position direction
@@ -149,15 +171,45 @@ class OrderReconciler:
         signal = Signal(direction=direction, price=Decimal(str(position.avg_px_open)))
 
         if s._mode is SLTPMode.HYBRID:
-            s._sltp_coordinator.submit_safety_stop_loss(ctx, signal)
+            s._sltp_coordinator.submit_safety_stop_loss(ctx, signal, quantity=missing_quantity)
         else:  # exchange mode
             # Set entry price and ATR for SL calculation
             ctx.position_tracker.set_pending_signal(signal, entry_atr=None)
-            s._sltp_coordinator.submit_stop_loss(ctx, signal)
+            s._sltp_coordinator.submit_stop_loss(ctx, signal, quantity=missing_quantity)
+
+    def ensure_exchange_sl_protection(self, ctx: PairContext) -> None:
+        """Per-bar repair of missing standard/hybrid stop coverage."""
+        s = self._strategy
+        if not s._mode.uses_exchange_sl:
+            return
+        positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
+        if not positions:
+            return
+        self._prune_closed_protection(ctx, exchange_managed=s._mode is SLTPMode.HYBRID)
+        position = positions[0]
+        expected = Decimal(str(position.quantity))
+        covered = ctx.order_tracker.protected_quantity(exchange_managed=s._mode is SLTPMode.HYBRID)
+        if covered >= expected:
+            return
+        now_ns = s.clock.timestamp_ns()
+        if now_ns < ctx.exchange_sl_rebuild_deadline_ns:
+            return
+        ctx.exchange_sl_rebuild_deadline_ns = now_ns + _NATIVE_TRAILING_REBUILD_COOLDOWN_NS
+        s.log.error(
+            f"[{ctx.pair}] Exchange SL coverage {covered} is below position {expected} — "
+            "rebuilding missing delta",
+            color=LogColor.RED,
+        )
+        self.ensure_exchange_sl_exists(ctx, position)
 
     def find_existing_sl_order(self, ctx: PairContext, position: Position) -> Order | None:
+        """Return the first matching stop for legacy single-order callers."""
+        orders = self.find_existing_sl_orders(ctx, position)
+        return orders[0] if orders else None
+
+    def find_existing_sl_orders(self, ctx: PairContext, position: Position) -> list[Order]:
         """
-        Find existing stop loss order for the position on the exchange.
+        Find all existing stop-loss lots for the position on the exchange.
 
         Looks for:
         - Stop market orders (reduce_only=True)
@@ -178,6 +230,7 @@ class OrderReconciler:
 
         expected_side = OrderSide.SELL if position.is_long else OrderSide.BUY
 
+        matches = []
         for order in open_orders:
             # Check if this looks like a SL order:
             # 1. Stop market order
@@ -188,9 +241,9 @@ class OrderReconciler:
                 and order.is_reduce_only
                 and order.side == expected_side
             ):
-                return order
+                matches.append(order)
 
-        return None
+        return matches
 
     def ensure_native_trailing_exists(self, ctx: PairContext, position: Position) -> None:
         """Ensure an exchange-managed trailing stop exists for the position.
@@ -200,21 +253,34 @@ class OrderReconciler:
         re-claim it; otherwise submit a fresh one (native_trailing recovery).
         """
         s = self._strategy
-        existing = self.find_existing_trailing_order(ctx, position)
-        if existing:
-            ctx.order_tracker.set_exchange_sl_order(existing.client_order_id)
-            s.log.info(
-                f"[{ctx.pair}] Found existing trailing stop: {existing.client_order_id}",
-                color=LogColor.GREEN,
-            )
+        existing_orders = self.find_existing_trailing_orders(ctx, position)
+        newly_reclaimed = 0
+        if existing_orders:
+            for existing in existing_orders:
+                if existing.client_order_id not in ctx.order_tracker.exchange_sl_order_ids:
+                    newly_reclaimed += 1
+                ctx.order_tracker.add_exchange_sl_order(existing.client_order_id, existing.quantity)
+            if newly_reclaimed:
+                s.log.info(
+                    f"[{ctx.pair}] Reclaimed {newly_reclaimed} existing trailing stop lot(s)",
+                    color=LogColor.GREEN,
+                )
+
+        protected_quantity = ctx.order_tracker.protected_quantity(exchange_managed=True)
+        missing_quantity = max(
+            Decimal(str(position.quantity)) - protected_quantity,
+            Decimal("0"),
+        )
+        if missing_quantity <= 0:
             return
 
         s.log.warning(
-            f"[{ctx.pair}] No trailing stop found for existing position - creating new one",
+            f"[{ctx.pair}] Trailing-stop protection short by {missing_quantity} - "
+            "creating delta lot",
         )
         direction = SignalDirection.ENTER_LONG if position.is_long else SignalDirection.ENTER_SHORT
         signal = Signal(direction=direction, price=Decimal(str(position.avg_px_open)))
-        s._sltp_coordinator.submit_native_trailing(ctx, signal)
+        s._sltp_coordinator.submit_native_trailing(ctx, signal, quantity=missing_quantity)
 
     def ensure_native_trailing_protection(self, ctx: PairContext) -> None:
         """Per-bar self-heal: rebuild the trailing stop if an open position lost it.
@@ -234,15 +300,12 @@ class OrderReconciler:
         if not positions:
             return
 
-        # Already protected by a live tracked trailing order? Use `not is_closed`
-        # (covers open AND in-flight SUBMITTED/PENDING) so a just-submitted trailing
-        # still being accepted by the venue is not mistaken for "unprotected" and
-        # rebuilt into a duplicate (avoids racing a just-submitted trailing order).
-        sl_id = ctx.order_tracker.exchange_sl_order_id
-        if sl_id is not None:
-            order = s.cache.order(sl_id)
-            if order is not None and not order.is_closed:
-                return
+        self._prune_closed_protection(ctx, exchange_managed=True)
+        position = positions[0]
+        expected = Decimal(str(position.quantity))
+        covered = ctx.order_tracker.protected_quantity(exchange_managed=True)
+        if covered >= expected:
+            return
 
         now_ns = s.clock.timestamp_ns()
         if now_ns < ctx.native_trailing_rebuild_deadline_ns:
@@ -250,13 +313,36 @@ class OrderReconciler:
 
         ctx.native_trailing_rebuild_deadline_ns = now_ns + _NATIVE_TRAILING_REBUILD_COOLDOWN_NS
         s.log.error(
-            f"[{ctx.pair}] NATIVE_TRAILING: open position has no protective trailing stop "
-            f"(reject/loss) — rebuilding",
+            f"[{ctx.pair}] NATIVE_TRAILING coverage {covered} is below position {expected} "
+            "(reject/loss) — rebuilding missing delta",
             color=LogColor.RED,
         )
-        self.ensure_native_trailing_exists(ctx, positions[0])
+        self.ensure_native_trailing_exists(ctx, position)
+
+    def _prune_closed_protection(
+        self,
+        ctx: PairContext,
+        *,
+        exchange_managed: bool,
+    ) -> None:
+        """Drop only terminal cached stops; unknown orders remain in-flight coverage."""
+        s = self._strategy
+        order_ids = (
+            ctx.order_tracker.exchange_sl_order_ids
+            if exchange_managed
+            else ctx.order_tracker.sl_order_ids
+        )
+        for order_id in order_ids:
+            order = s.cache.order(order_id)
+            if order is not None and order.is_closed:
+                ctx.order_tracker.remove_order(order_id)
 
     def find_existing_trailing_order(self, ctx: PairContext, position: Position) -> Order | None:
+        """Return the first matching trailing stop for legacy single-order callers."""
+        orders = self.find_existing_trailing_orders(ctx, position)
+        return orders[0] if orders else None
+
+    def find_existing_trailing_orders(self, ctx: PairContext, position: Position) -> list[Order]:
         """Find an open exchange-managed trailing stop for the position.
 
         Looks for a reduce-only TRAILING_STOP_MARKET on the protective side
@@ -267,15 +353,16 @@ class OrderReconciler:
         open_orders = self._strategy.cache.orders_open(instrument_id=ctx.instrument_id)
         expected_side = OrderSide.SELL if position.is_long else OrderSide.BUY
 
+        matches = []
         for order in open_orders:
             if (
                 order.order_type == OrderType.TRAILING_STOP_MARKET
                 and order.is_reduce_only
                 and order.side == expected_side
             ):
-                return order
+                matches.append(order)
 
-        return None
+        return matches
 
     def sweep_stale_orders_for_pair(self, ctx: PairContext) -> int:
         """Cancel stale (orphaned) reduce-only orders for this pair.
@@ -301,8 +388,8 @@ class OrderReconciler:
         tracked_ids = {
             oid
             for oid in (
-                tracker.sl_order_id,
-                tracker.exchange_sl_order_id,
+                *tracker.sl_order_ids,
+                *tracker.exchange_sl_order_ids,
                 tracker.entry_order_id,
                 *tracker.tp_order_ids,
             )
@@ -310,7 +397,7 @@ class OrderReconciler:
         }
         positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
         position_is_long = positions[0].is_long if positions else None
-        sl_is_tracked = tracker.sl_order_id is not None or tracker.exchange_sl_order_id is not None
+        sl_is_tracked = bool(tracker.sl_order_ids or tracker.exchange_sl_order_ids)
         now_ns = s.clock.timestamp_ns()
 
         # Prune rate-guard entries for orders no longer open
@@ -364,6 +451,11 @@ class OrderReconciler:
         order = s.cache.order(event.client_order_id)
         reason = str(getattr(event, "reason", "")) or "unknown"
         is_reduce_only = bool(getattr(order, "is_reduce_only", False)) if order else False
+        is_tracked_stop = event.client_order_id in {
+            *ctx.order_tracker.sl_order_ids,
+            *ctx.order_tracker.exchange_sl_order_ids,
+        }
+        is_tracked_take_profit = event.client_order_id in set(ctx.order_tracker.tp_order_ids)
 
         # Event emission: order rejected (same shape as cancel_rejected).
         if s._event_publisher.enabled:
@@ -383,7 +475,33 @@ class OrderReconciler:
                 venue_from_event=False,
             )
 
-        # Rejected close order -> severity-tiered breaker: break the tight loop without
+        if is_tracked_stop:
+            # A protective lot is not an active close attempt. Cancel-all/clear here
+            # would erase other accepted lots and a still-partially-filling entry.
+            # Remove only the rejected lot, pause new risk, and let the per-bar
+            # quantity reconciler rebuild the exact missing delta under cooldown.
+            ctx.order_tracker.remove_order(event.client_order_id)
+            ctx.native_trailing_rebuild_deadline_ns = 0
+            ctx.exchange_sl_rebuild_deadline_ns = 0
+            s.pause()
+            s.log.error(
+                f"[{ctx.pair}] Protective stop rejected ({reason}); preserving other "
+                "protection and pending entry, pausing new risk until coverage is repaired",
+                color=LogColor.RED,
+            )
+            return
+
+        if is_tracked_take_profit:
+            # A rejected profit-taking lot does not consume stop coverage and must not
+            # enter the full-close -2022 escape path.
+            ctx.order_tracker.remove_order(event.client_order_id)
+            s.log.warning(
+                f"[{ctx.pair}] Take-profit lot rejected ({reason}); stop coverage retained",
+                color=LogColor.YELLOW,
+            )
+            return
+
+        # Rejected active close order -> severity-tiered breaker: break the tight loop without
         # hammering a throttled endpoint.
         if is_reduce_only:
             now_ns = s.clock.timestamp_ns()
@@ -443,6 +561,8 @@ class OrderReconciler:
             and ctx.order_tracker.entry_order_id == event.client_order_id
         ):
             ctx.order_tracker.clear_entry_order()
+            ctx.position_tracker.clear_pending_signal()
+            ctx.pending_entry_is_reversal = False
             s.log.warning(
                 f"[{ctx.pair}] Entry order rejected: {event.client_order_id} ({reason})",
                 color=LogColor.RED,

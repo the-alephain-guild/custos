@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, cast
 from custos_toolkit.signals.types import Signal
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.objects import Quantity
 
 from custos_toolkit_nautilus.adapter.event_publisher import make_signal_tag
 from custos_toolkit_nautilus.adapter.orders import StopLossSubmitter, TakeProfitSubmitter
@@ -75,15 +76,13 @@ class SLTPCoordinator:
 
         # Cancel existing SL order(s) depending on mode
         if s._mode is SLTPMode.EXCHANGE:
-            sl_order_id = ctx.order_tracker.sl_order_id
-            if sl_order_id:
+            for sl_order_id in ctx.order_tracker.sl_order_ids:
                 order = s.cache.order(sl_order_id)
                 if order and order.is_open:
                     s.cancel_order(order)
                 ctx.order_tracker.remove_order(sl_order_id)
         elif s._mode is SLTPMode.HYBRID:
-            exchange_sl_id = ctx.order_tracker.exchange_sl_order_id
-            if exchange_sl_id:
+            for exchange_sl_id in ctx.order_tracker.exchange_sl_order_ids:
                 order = s.cache.order(exchange_sl_id)
                 if order and order.is_open:
                     s.cancel_order(order)
@@ -106,9 +105,9 @@ class SLTPCoordinator:
             return
 
         if s._mode is SLTPMode.EXCHANGE:
-            ctx.order_tracker.set_sl_order(new_sl.client_order_id)
+            ctx.order_tracker.set_sl_order(new_sl.client_order_id, position.quantity)
         elif s._mode is SLTPMode.HYBRID:
-            ctx.order_tracker.set_exchange_sl_order(new_sl.client_order_id)
+            ctx.order_tracker.set_exchange_sl_order(new_sl.client_order_id, position.quantity)
 
         s.submit_order(new_sl)
         self._link_order_to_signal(new_sl, ctx)
@@ -118,14 +117,17 @@ class SLTPCoordinator:
             color=LogColor.GREEN,
         )
 
-    def cancel_sl_tp_orders(self, ctx: PairContext) -> int:
-        """Cancel all tracked SL/TP orders for a specific pair."""
+    def cancel_sl_tp_orders(self, ctx: PairContext, *, preserve_entry: bool = False) -> int:
+        """Cancel all tracked SL/TP orders for a specific pair.
+
+        ``preserve_entry`` is used only when a partially filled reversal has closed
+        the old position but its source entry order can still open the new side.
+        """
         s = self._strategy
         cancelled = 0
 
         # Cancel tick-based SL order
-        sl_order_id = ctx.order_tracker.sl_order_id
-        if sl_order_id is not None:
+        for sl_order_id in ctx.order_tracker.sl_order_ids:
             order = s.cache.order(sl_order_id)
             if order and order.is_open:
                 s.cancel_order(order)
@@ -133,8 +135,7 @@ class SLTPCoordinator:
                 cancelled += 1
 
         # Cancel exchange safety SL order (hybrid mode)
-        exchange_sl_id = ctx.order_tracker.exchange_sl_order_id
-        if exchange_sl_id is not None:
+        for exchange_sl_id in ctx.order_tracker.exchange_sl_order_ids:
             order = s.cache.order(exchange_sl_id)
             if order and order.is_open:
                 s.cancel_order(order)
@@ -149,7 +150,10 @@ class SLTPCoordinator:
                 s.log.info(f"[{ctx.pair}] Cancelled TP order: {tp_id}")
                 cancelled += 1
 
-        ctx.order_tracker.clear()
+        if preserve_entry:
+            ctx.order_tracker.clear_protection_orders()
+        else:
+            ctx.order_tracker.clear()
         return cancelled
 
     def cancel_exchange_safety_sl(self, ctx: PairContext) -> bool:
@@ -159,21 +163,27 @@ class SLTPCoordinator:
         -- a candidate for a separate dead-code review; preserved as-is here.
         """
         s = self._strategy
-        exchange_sl_order_id = ctx.order_tracker.exchange_sl_order_id
-        if exchange_sl_order_id is None:
+        exchange_sl_order_ids = ctx.order_tracker.exchange_sl_order_ids
+        if not exchange_sl_order_ids:
             return False
 
-        order = s.cache.order(exchange_sl_order_id)
-        if order and order.is_open:
-            s.cancel_order(order)
-            s.log.info(f"[{ctx.pair}] Cancelled safety SL: {exchange_sl_order_id}")
+        cancelled = False
+        for exchange_sl_order_id in exchange_sl_order_ids:
+            order = s.cache.order(exchange_sl_order_id)
+            if order and order.is_open:
+                s.cancel_order(order)
+                s.log.info(f"[{ctx.pair}] Cancelled safety SL: {exchange_sl_order_id}")
+                cancelled = True
             ctx.order_tracker.remove_order(exchange_sl_order_id)
-            return True
+        return cancelled
 
-        ctx.order_tracker.remove_order(exchange_sl_order_id)
-        return False
-
-    def submit_stop_loss(self, ctx: PairContext, signal: Signal) -> None:
+    def submit_stop_loss(
+        self,
+        ctx: PairContext,
+        signal: Signal,
+        *,
+        quantity: Quantity | Decimal | None = None,
+    ) -> None:
         """Submit stop loss order for a specific pair."""
         s = self._strategy
         entry_price = ctx.position_tracker.first_entry_price
@@ -192,9 +202,11 @@ class SLTPCoordinator:
             atr=ctx.position_tracker.pending_entry_atr,
             position=position,
             tags=self._signal_tags(ctx),  # SL order carries signal_id tag
+            quantity=quantity,
         )
         if order:
-            ctx.order_tracker.set_sl_order(order.client_order_id)
+            protected_quantity = position.quantity if quantity is None else quantity
+            ctx.order_tracker.add_sl_order(order.client_order_id, protected_quantity)
             s.submit_order(order)
             self._link_order_to_signal(order, ctx)
             s.log.info(
@@ -202,7 +214,13 @@ class SLTPCoordinator:
                 color=LogColor.RED,
             )
 
-    def submit_take_profit(self, ctx: PairContext, signal: Signal) -> None:
+    def submit_take_profit(
+        self,
+        ctx: PairContext,
+        signal: Signal,
+        *,
+        quantity: Quantity | Decimal | None = None,
+    ) -> None:
         """Submit take profit order(s) for a specific pair."""
         s = self._strategy
         entry_price = ctx.position_tracker.first_entry_price
@@ -225,6 +243,7 @@ class SLTPCoordinator:
                 position=position,
                 scaled_config=tp_config.scaled,
                 tags=self._signal_tags(ctx),  # TP order carries signal_id tag
+                quantity=quantity,
             )
             for order in orders:
                 ctx.order_tracker.add_tp_order(order.client_order_id)
@@ -247,6 +266,7 @@ class SLTPCoordinator:
                 stop_loss=sl_price,
                 position=position,
                 tags=self._signal_tags(ctx),  # TP order carries signal_id tag
+                quantity=quantity,
             )
             if single_order:
                 ctx.order_tracker.add_tp_order(single_order.client_order_id)
@@ -257,7 +277,13 @@ class SLTPCoordinator:
                     color=LogColor.GREEN,
                 )
 
-    def submit_safety_stop_loss(self, ctx: PairContext, signal: Signal) -> None:
+    def submit_safety_stop_loss(
+        self,
+        ctx: PairContext,
+        signal: Signal,
+        *,
+        quantity: Quantity | Decimal | None = None,
+    ) -> None:
         """Submit exchange safety net stop loss for a specific pair (hybrid mode only)."""
         s = self._strategy
         positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
@@ -282,14 +308,15 @@ class SLTPCoordinator:
         order = cast(StopLossSubmitter, ctx.sl_submitter).create_order_from_price(
             instrument_id=ctx.instrument_id,
             side=OrderSide.SELL if position.is_long else OrderSide.BUY,
-            quantity=position.quantity,
+            quantity=position.quantity if quantity is None else quantity,
             stop_price=sl_price,
             tags=self._signal_tags(ctx),  # safety SL order carries signal_id tag
         )
         if order is None:
             return
 
-        ctx.order_tracker.set_exchange_sl_order(order.client_order_id)
+        protected_quantity = position.quantity if quantity is None else quantity
+        ctx.order_tracker.add_exchange_sl_order(order.client_order_id, protected_quantity)
         s.submit_order(order)
         self._link_order_to_signal(order, ctx)
         s.log.info(
@@ -298,7 +325,13 @@ class SLTPCoordinator:
             color=LogColor.RED,
         )
 
-    def submit_native_trailing(self, ctx: PairContext, signal: Signal) -> Order | None:
+    def submit_native_trailing(
+        self,
+        ctx: PairContext,
+        signal: Signal,
+        *,
+        quantity: Quantity | Decimal | None = None,
+    ) -> Order | None:
         """Submit an exchange-managed trailing stop for native_trailing mode.
 
         The TrailingStopMarketOrder is itself the venue-managed protective stop:
@@ -343,10 +376,12 @@ class SLTPCoordinator:
             position=position,
             trailing_cfg=trailing_cfg,
             tags=self._signal_tags(ctx),  # signal_id tag
+            quantity=quantity,
         )
         if order:
             # Track as the exchange-managed protective stop (sweep/recovery aware)
-            ctx.order_tracker.set_exchange_sl_order(order.client_order_id)
+            protected_quantity = position.quantity if quantity is None else quantity
+            ctx.order_tracker.add_exchange_sl_order(order.client_order_id, protected_quantity)
             s.submit_order(order)
             self._link_order_to_signal(order, ctx)
             s.log.info(

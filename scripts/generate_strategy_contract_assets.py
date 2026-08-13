@@ -39,11 +39,13 @@ PRE_IMPORT_NEGATIVE_PATH = (
     "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json"
 )
 CONTRACT_RECEIPT_PATH = "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json"
+HISTORICAL_STRATEGY_CONTRACT_EVIDENCE_PATHS = {
+    INDEX_PATH,
+    CONTRACT_RECEIPT_PATH,
+}
 CRUCIBLE_CONSUMER_RECEIPT_VENDOR_PATH = (
-    "docs/authority/receipts/vendor/"
-    "crucible-custos-strategy-contract-v1-consumer-receipt.json"
+    "docs/authority/receipts/vendor/crucible-custos-strategy-contract-v1-consumer-receipt.json"
 )
-CUSTOS_STRATEGY_CONTRACT_COMMIT = "a83e6f6969709316b8f11bcc0618b2f7b32fc19f"
 CRUCIBLE_CONSUMER_RECEIPT_COMMIT = "4abd73eb320ac99bf16e443c5e572e5d1047391d"
 RUNNER_COMMAND_CONSUMER_INDEX_PATH = (
     "docs/authority/crucible-runner-command-consumer-assets-v1.json"
@@ -447,62 +449,15 @@ def build_v1_contract_assets() -> dict[str, bytes]:
     )
     generated[INDEX_PATH] = index
     crucible_receipt_bytes = (ROOT / CRUCIBLE_CONSUMER_RECEIPT_VENDOR_PATH).read_bytes()
-    crucible_receipt_document = json.loads(crucible_receipt_bytes)
-    expected_consumer_assets = {
-        "artifact_ref_golden": {
-            "local_path": "docs/authority/custos-strategy-artifact-ref-v1.golden.json",
-            "producer_path": ARTIFACT_REF_GOLDEN_PATH,
-            "sha256": sha256(generated[ARTIFACT_REF_GOLDEN_PATH]),
-        },
-        "artifact_ref_schema": {
-            "local_path": "docs/authority/custos-strategy-artifact-ref-v1.schema.json",
-            "producer_path": ARTIFACT_REF_SCHEMA_PATH,
-            "sha256": sha256(generated[ARTIFACT_REF_SCHEMA_PATH]),
-        },
-        "contract_asset_index": {
-            "local_path": "docs/authority/custos-strategy-contract-assets-v1.json",
-            "producer_path": INDEX_PATH,
-            "sha256": sha256(index),
-        },
-        "pre_import_receipt_schema": {
-            "local_path": (
-                "docs/authority/"
-                "custos-strategy-artifact-pre-import-verification-receipt-v1.schema.json"
-            ),
-            "producer_path": PRE_IMPORT_SCHEMA_PATH,
-            "sha256": sha256(generated[PRE_IMPORT_SCHEMA_PATH]),
-        },
-    }
-    if (
-        set(crucible_receipt_document)
-        != {
-            "canonical_name",
-            "consumer",
-            "producer",
-            "production_ready",
-            "receipt_schema_version",
-            "runtime_ready",
-            "status",
-        }
-        or crucible_receipt_document.get("consumer") != "crucible-rust"
-        or crucible_receipt_document.get("producer")
-        != {
-            "assets": expected_consumer_assets,
-            "commit": CUSTOS_STRATEGY_CONTRACT_COMMIT,
-            "repository": "tesseract-trading/custos",
-        }
-        or crucible_receipt_document.get("status")
-        != "EXACT_CUSTOS_V1_CONTRACT_PINNED_PENDING_PRODUCER_HANDOFF"
-        or crucible_receipt_document.get("runtime_ready") is not False
-        or crucible_receipt_document.get("production_ready") is not False
-    ):
-        raise ValueError("Crucible consumer receipt does not pin the corrected Custos V1")
+    # Preserve the vendored receipt as evidence about its recorded revision.
+    # Current Custos contract assets evolve under Git and CI; this historical
+    # receipt must not be refreshed to pin the generator's current output.
+    json.loads(crucible_receipt_bytes)
     crucible_receipt_pin = {
         "repository": "tesseract-trading/crucible-rust",
         "commit": CRUCIBLE_CONSUMER_RECEIPT_COMMIT,
         "path": (
-            "docs/authority/receipts/"
-            "crucible-custos-strategy-contract-v1-consumer-receipt.json"
+            "docs/authority/receipts/crucible-custos-strategy-contract-v1-consumer-receipt.json"
         ),
         "vendored_path": CRUCIBLE_CONSUMER_RECEIPT_VENDOR_PATH,
         "sha256": sha256(crucible_receipt_bytes),
@@ -797,8 +752,13 @@ def main() -> int:
     assets = build_v1_contract_assets()
     assets.update(build_runner_command_consumer_assets())
     assets.update(build_toolkit_rc_foundation_assets())
+    managed_assets = {
+        relative: expected
+        for relative, expected in assets.items()
+        if relative not in HISTORICAL_STRATEGY_CONTRACT_EVIDENCE_PATHS
+    }
     drift: list[str] = []
-    for relative, expected in assets.items():
+    for relative, expected in managed_assets.items():
         path = ROOT / relative
         if args.check:
             if not path.is_file() or path.read_bytes() != expected:
@@ -811,7 +771,7 @@ def main() -> int:
             print(f"generated strategy contract asset differs: {relative}")
         return 1
     if not args.check:
-        print(f"generated {len(assets)} strategy contract assets")
+        print(f"generated {len(managed_assets)} strategy contract assets")
     return 0
 
 

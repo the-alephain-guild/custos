@@ -104,6 +104,102 @@ def _store(path: Path) -> RunnerStateStore:
     return store
 
 
+def test_synchronous_engine_callback_api_commits_the_reservation_lifecycle(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path / "runner-sync-state.sqlite3")
+
+    assert not store.has_order_reservation_sync(INSTANCE_A, "order-sync")
+    reserved = store.reserve_order_notional_sync(
+        event_id="reserve-sync",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-sync",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("25"),
+    )
+    filled = store.record_order_fill_sync(
+        event_id="fill-sync",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-sync",
+        fill_notional=Decimal("10"),
+    )
+    released = store.release_order_reservation_sync(
+        event_id="reject-sync",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-sync",
+        reason="rejected",
+    )
+
+    assert reserved.state == "reserved"
+    assert store.has_order_reservation_sync(INSTANCE_A, "order-sync")
+    assert filled.filled_exposure == Decimal("10")
+    assert released.state == "filled"
+    assert released.reserved_notional == Decimal("0")
+
+
+def test_market_fill_can_settle_above_quote_reservation_within_signed_caps(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path / "runner-market-fill-state.sqlite3")
+    store.reserve_order_notional_sync(
+        event_id="reserve-market",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-market",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("90"),
+    )
+
+    filled = store.record_order_fill_sync(
+        event_id="fill-market",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-market",
+        fill_notional=Decimal("95"),
+    )
+
+    assert (filled.reserved_notional, filled.filled_exposure, filled.state) == (
+        Decimal("0"),
+        Decimal("95"),
+        "filled",
+    )
+
+
+def test_multiple_partial_fills_accumulate_without_dropping_the_source_reservation(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path / "runner-partial-fill-state.sqlite3")
+    store.reserve_order_notional_sync(
+        event_id="reserve-partial",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-partial",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("70"),
+    )
+
+    first = store.record_order_fill_sync(
+        event_id="fill-partial-1",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-partial",
+        fill_notional=Decimal("31"),
+    )
+    second = store.record_order_fill_sync(
+        event_id="fill-partial-2",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-partial",
+        fill_notional=Decimal("39"),
+    )
+
+    assert (first.reserved_notional, first.filled_exposure, first.state) == (
+        Decimal("39"),
+        Decimal("31"),
+        "partially_filled",
+    )
+    assert (second.reserved_notional, second.filled_exposure, second.state) == (
+        Decimal("0"),
+        Decimal("70"),
+        "filled",
+    )
+
+
 @pytest.mark.asyncio
 async def test_reserve_is_atomic_runner_wide_idempotent_and_fail_closed(
     tmp_path: Path,

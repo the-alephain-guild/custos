@@ -11,10 +11,19 @@ from nautilus_trader.core.rust.model import PriceType
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.factories import LiveExecClientFactory
 
-from custos.core.order_reservation_boundary import RunnerReservationBoundary
+from custos.core.log import get_logger
+from custos.core.order_reservation_boundary import (
+    RunnerReservationBoundary,
+    RunnerRiskIncreaseFrozenError,
+    runner_command_id,
+)
+from custos.core.runner_fact import RunnerStateAuthorityError
 from custos.engines.nautilus.venue_binance import BINANCE_CLIENT_ORDER_ID_LEN_LIMIT
 
+_log = get_logger("custos.runner_safety")
 _POLICY_REJECTION_REASON = "custos_runner_notional_policy_rejected"
+_FALLBACK_BREAKER_REJECTION_REASON = "custos_runner_fallback_breaker_frozen"
+_SAFETY_BOUNDARY_REJECTION_REASON = "custos_runner_safety_boundary_unavailable"
 _CLIENT_ORDER_ID_REJECTION_REASON = "custos_runner_client_order_id_too_long_for_venue"
 
 
@@ -82,12 +91,25 @@ class NautilusCachedOrderSemantics:
         order = self._cache.order(event.client_order_id)
         return order is not None and self.order_is_risk_reducing(order)
 
-    def _order_price(self, order: Any) -> Any:
-        price = (
-            getattr(order, "price", None)
-            or getattr(order, "trigger_price", None)
-            or self._cache.price(order.instrument_id, PriceType.MID)
+    def event_exposure_source_order_id(self, event: Any) -> str | None:
+        position_id = getattr(event, "position_id", None)
+        position_reader = getattr(self._cache, "position", None)
+        position = (
+            position_reader(position_id)
+            if position_id is not None and callable(position_reader)
+            else None
         )
+        opening_order_id = getattr(position, "opening_order_id", None)
+        return str(opening_order_id) if opening_order_id is not None else None
+
+    def _order_price(self, order: Any) -> Any:
+        price = getattr(order, "price", None) or getattr(order, "trigger_price", None)
+        if price is None:
+            mark_reader = getattr(self._cache, "mark_price", None)
+            mark = mark_reader(order.instrument_id) if callable(mark_reader) else None
+            price = getattr(mark, "value", mark)
+        if price is None:
+            price = self._cache.price(order.instrument_id, PriceType.MID)
         if price is None:
             raise RuntimeError("order has no reliable price")
         return price
@@ -127,15 +149,21 @@ class RunnerSafetyExecutionDispatch:
             return
         try:
             reservations = self._boundary.before_submit_order(command)
-        except Exception:
-            self._reject_order(command.order)
+        except Exception as exc:
+            reason = self._reservation_rejection_reason(exc)
+            _log.warning(
+                "runner_order_reservation_rejected",
+                reason_code=reason,
+                error_type=type(exc).__name__,
+            )
+            self._reject_order(command.order, reason)
             return
         try:
             self._inner.submit_order(command)
         except Exception:
             self._boundary.rollback_submit(
                 reservations,
-                command_id=command.command_id,
+                command_id=runner_command_id(command),
             )
             raise
 
@@ -149,16 +177,23 @@ class RunnerSafetyExecutionDispatch:
             return
         try:
             reservations = self._boundary.before_submit_order_list(command)
-        except Exception:
+        except Exception as exc:
+            reason = self._reservation_rejection_reason(exc)
+            _log.warning(
+                "runner_order_list_reservation_rejected",
+                reason_code=reason,
+                error_type=type(exc).__name__,
+                order_count=len(orders),
+            )
             for order in orders:
-                self._reject_order(order)
+                self._reject_order(order, reason)
             return
         try:
             self._inner.submit_order_list(command)
         except Exception:
             self._boundary.rollback_submit(
                 reservations,
-                command_id=command.command_id,
+                command_id=runner_command_id(command),
             )
             raise
 
@@ -180,7 +215,7 @@ class RunnerSafetyExecutionDispatch:
         except Exception:
             self._boundary.rollback_modify(
                 modification,
-                event_id=command.command_id,
+                event_id=runner_command_id(command),
             )
             raise
 
@@ -225,6 +260,14 @@ class RunnerSafetyExecutionDispatch:
             reason,
             self._timestamp_ns(),
         )
+
+    @staticmethod
+    def _reservation_rejection_reason(exc: Exception) -> str:
+        if isinstance(exc, RunnerStateAuthorityError):
+            return _POLICY_REJECTION_REASON
+        if isinstance(exc, RunnerRiskIncreaseFrozenError):
+            return _FALLBACK_BREAKER_REJECTION_REASON
+        return _SAFETY_BOUNDARY_REJECTION_REASON
 
 
 class GuardedLiveExecutionClient(LiveExecutionClient):

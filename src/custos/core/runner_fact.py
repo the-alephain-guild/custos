@@ -1788,10 +1788,13 @@ class RunnerFactOutbox:
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
-            if connection.execute(
-                "SELECT 1 FROM strategy_signal_seen WHERE fact_id = ?",
-                (str(canonical_fact_id),),
-            ).fetchone() is not None:
+            if (
+                connection.execute(
+                    "SELECT 1 FROM strategy_signal_seen WHERE fact_id = ?",
+                    (str(canonical_fact_id),),
+                ).fetchone()
+                is not None
+            ):
                 connection.commit()
                 return None
             row = connection.execute(
@@ -2026,9 +2029,9 @@ class RunnerFactOutbox:
                 0.0,
                 (
                     observed_at
-                    - datetime.fromisoformat(str(latest_published).replace("Z", "+00:00")).astimezone(
-                        UTC
-                    )
+                    - datetime.fromisoformat(
+                        str(latest_published).replace("Z", "+00:00")
+                    ).astimezone(UTC)
                 ).total_seconds(),
             )
             if latest_published is not None
@@ -2214,9 +2217,7 @@ class RunnerFactOutbox:
             batch_payload_sha256=str(row["batch_payload_sha256"]),
             broker_stream=str(row["broker_stream"]),
             broker_sequence=int(row["broker_sequence"]),
-            broker_domain=(
-                str(row["broker_domain"]) if row["broker_domain"] is not None else None
-            ),
+            broker_domain=(str(row["broker_domain"]) if row["broker_domain"] is not None else None),
             duplicate=bool(row["duplicate"]),
             publish_attempts=int(row["publish_attempts"]),
             published_at=str(row["published_at"]),
@@ -3612,6 +3613,25 @@ class RunnerStateStore:
             requested_notional,
         )
 
+    def reserve_order_notional_sync(
+        self,
+        *,
+        event_id: str,
+        deployment_instance_id: UUID,
+        client_order_id: str,
+        policy_id: UUID,
+        requested_notional: Decimal,
+    ) -> OrderReservationSnapshot:
+        """Commit from Nautilus' synchronous execution callback before dispatch."""
+
+        return self._reserve_order_notional(
+            event_id,
+            deployment_instance_id,
+            client_order_id,
+            policy_id,
+            requested_notional,
+        )
+
     def _reserve_order_notional(
         self,
         event_id: str,
@@ -3700,6 +3720,21 @@ class RunnerStateStore:
             new_reserved_notional,
         )
 
+    def replace_order_reservation_sync(
+        self,
+        *,
+        event_id: str,
+        deployment_instance_id: UUID,
+        client_order_id: str,
+        new_reserved_notional: Decimal,
+    ) -> OrderReservationSnapshot:
+        return self._replace_order_reservation(
+            event_id,
+            deployment_instance_id,
+            client_order_id,
+            new_reserved_notional,
+        )
+
     def _replace_order_reservation(
         self,
         event_id: str,
@@ -3782,6 +3817,21 @@ class RunnerStateStore:
             reason,
         )
 
+    def release_order_reservation_sync(
+        self,
+        *,
+        event_id: str,
+        deployment_instance_id: UUID,
+        client_order_id: str,
+        reason: Literal["rejected", "canceled"],
+    ) -> OrderReservationSnapshot:
+        return self._release_order_reservation(
+            event_id,
+            deployment_instance_id,
+            client_order_id,
+            reason,
+        )
+
     def _release_order_reservation(
         self,
         event_id: str,
@@ -3850,6 +3900,21 @@ class RunnerStateStore:
             fill_notional,
         )
 
+    def record_order_fill_sync(
+        self,
+        *,
+        event_id: str,
+        deployment_instance_id: UUID,
+        client_order_id: str,
+        fill_notional: Decimal,
+    ) -> OrderReservationSnapshot:
+        return self._record_order_fill(
+            event_id,
+            deployment_instance_id,
+            client_order_id,
+            fill_notional,
+        )
+
     def _record_order_fill(
         self,
         event_id: str,
@@ -3878,10 +3943,14 @@ class RunnerStateStore:
                 deployment_instance_id=instance,
             )
             reserved = Decimal(str(row["reserved_notional"]))
-            if fill > reserved:
-                raise RunnerStateAuthorityError("fill exceeds the durable order reservation")
             filled = Decimal(str(row["filled_exposure"])) + fill
-            remaining = reserved - fill
+            if filled > Decimal(str(policy_row["max_order_notional"])):
+                raise RunnerStateAuthorityError("fill exceeds the runner policy per-order cap")
+            exposure = self._runner_exposure(connection, policy_row)
+            remaining = max(reserved - fill, Decimal("0"))
+            settled_total = exposure.total_exposure + fill - (reserved - remaining)
+            if settled_total > exposure.max_total_notional:
+                raise RunnerStateAuthorityError("fill exceeds the runner aggregate cap")
             state = "partially_filled" if remaining > 0 else "filled"
             recorded_at_ns = time.time_ns()
             connection.execute(
@@ -3929,6 +3998,21 @@ class RunnerStateStore:
     ) -> OrderReservationSnapshot:
         return await asyncio.to_thread(
             self._record_position_reduction,
+            event_id,
+            deployment_instance_id,
+            client_order_id,
+            reduction_notional,
+        )
+
+    def record_position_reduction_sync(
+        self,
+        *,
+        event_id: str,
+        deployment_instance_id: UUID,
+        client_order_id: str,
+        reduction_notional: Decimal,
+    ) -> OrderReservationSnapshot:
+        return self._record_position_reduction(
             event_id,
             deployment_instance_id,
             client_order_id,
@@ -4159,6 +4243,34 @@ class RunnerStateStore:
             deployment_instance_id,
             client_order_id,
         )
+
+    def load_order_reservation_sync(
+        self,
+        deployment_instance_id: UUID,
+        client_order_id: str,
+    ) -> OrderReservationSnapshot:
+        return self._load_order_reservation(deployment_instance_id, client_order_id)
+
+    def has_order_reservation_sync(
+        self,
+        deployment_instance_id: UUID,
+        client_order_id: str,
+    ) -> bool:
+        """Return whether a terminal engine event has durable exposure to release."""
+
+        instance = _uuid(deployment_instance_id, "deployment_instance_id")
+        order = _non_empty(client_order_id, "client_order_id")
+        with self._outbox._connect() as connection:
+            return (
+                connection.execute(
+                    """
+                    SELECT 1 FROM order_reservation
+                    WHERE deployment_instance_id = ? AND client_order_id = ?
+                    """,
+                    (instance, order),
+                ).fetchone()
+                is not None
+            )
 
     def _load_order_reservation(
         self,

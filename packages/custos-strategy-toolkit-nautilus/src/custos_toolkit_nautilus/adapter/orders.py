@@ -16,7 +16,6 @@ from custos_toolkit.risk.orders import OrderPriceCalculator
 from custos_toolkit.signals.types import Signal, SignalDirection
 from nautilus_trader.model.enums import (
     OrderSide,
-    OrderType,
     TimeInForce,
     TrailingOffsetType,
     TriggerType,
@@ -44,13 +43,23 @@ class OrderTracker:
     base_strategy.py state variables.
     """
 
-    _sl_order_id: ClientOrderId | None = field(default=None, repr=False)
+    _sl_order_ids: list[ClientOrderId] = field(default_factory=list, repr=False)
     _tp_order_ids: list[ClientOrderId] = field(default_factory=list, repr=False)
-    _exchange_sl_order_id: ClientOrderId | None = field(default=None, repr=False)
+    _exchange_sl_order_ids: list[ClientOrderId] = field(default_factory=list, repr=False)
+    _protection_quantities: dict[ClientOrderId, Decimal] = field(default_factory=dict, repr=False)
     _entry_order_id: ClientOrderId | None = field(default=None, repr=False)
     # Direction of the pending entry order: 1 = long, -1 = short, 0 = none. Lets callers
     # tell a trend-aligned pending entry from a stale opposite one.
     _entry_side: int = field(default=0, repr=False)
+    # One OrderFilled event represents one trade lot, not necessarily the terminal
+    # fill of the source order. Keep cumulative fill/protection quantities until the
+    # entry order reaches a terminal state. For reversals, the initial quantity only
+    # closes the prior position and must not be mislabeled as new exposure.
+    _entry_filled_quantity: Decimal = field(default_factory=lambda: Decimal("0"), repr=False)
+    _entry_exposure_offset_quantity: Decimal = field(
+        default_factory=lambda: Decimal("0"), repr=False
+    )
+    _entry_protected_quantity: Decimal = field(default_factory=lambda: Decimal("0"), repr=False)
     # Full-close in-flight / cooldown gate. 0 = a close may be submitted; > 0 = blocked
     # until this timestamp (ns). Set to now+timeout after submitting a close (in-flight
     # protection) and to now+cooldown after a close is rejected (backoff retry). Prevents
@@ -68,9 +77,31 @@ class OrderTracker:
     # The plain close is one attempt per position, so this records that it was spent.
     _plain_close_submitted: bool = field(default=False, repr=False)
 
-    def set_sl_order(self, order_id: ClientOrderId) -> None:
-        """Set the stop loss order ID."""
-        self._sl_order_id = order_id
+    @staticmethod
+    def _protection_quantity(quantity: Quantity | Decimal | None) -> Decimal:
+        return Decimal("0") if quantity is None else Decimal(str(quantity))
+
+    def set_sl_order(
+        self,
+        order_id: ClientOrderId,
+        quantity: Quantity | Decimal | None = None,
+    ) -> None:
+        """Replace tracked stop-loss lots with one canonical order."""
+        for prior in self._sl_order_ids:
+            self._protection_quantities.pop(prior, None)
+        self._sl_order_ids = [order_id]
+        self._protection_quantities[order_id] = self._protection_quantity(quantity)
+
+    def add_sl_order(
+        self,
+        order_id: ClientOrderId,
+        quantity: Quantity | Decimal | None = None,
+    ) -> None:
+        """Track an additional stop-loss lot created by a partial fill."""
+        if order_id not in self._sl_order_ids:
+            self._sl_order_ids.append(order_id)
+        if quantity is not None:
+            self._protection_quantities[order_id] = self._protection_quantity(quantity)
 
     def add_tp_order(self, order_id: ClientOrderId) -> None:
         """Add a take profit order ID."""
@@ -80,27 +111,89 @@ class OrderTracker:
         """Set all take profit order IDs at once."""
         self._tp_order_ids = list(order_ids)
 
-    def set_exchange_sl_order(self, order_id: ClientOrderId) -> None:
-        """Set the exchange-managed stop loss order ID."""
-        self._exchange_sl_order_id = order_id
+    def set_exchange_sl_order(
+        self,
+        order_id: ClientOrderId,
+        quantity: Quantity | Decimal | None = None,
+    ) -> None:
+        """Replace exchange-managed stop lots with one canonical order."""
+        for prior in self._exchange_sl_order_ids:
+            self._protection_quantities.pop(prior, None)
+        self._exchange_sl_order_ids = [order_id]
+        self._protection_quantities[order_id] = self._protection_quantity(quantity)
 
-    def set_entry_order(self, order_id: ClientOrderId, side: int = 0) -> None:
+    def add_exchange_sl_order(
+        self,
+        order_id: ClientOrderId,
+        quantity: Quantity | Decimal | None = None,
+    ) -> None:
+        """Track an additional exchange-managed stop lot from a partial fill."""
+        if order_id not in self._exchange_sl_order_ids:
+            self._exchange_sl_order_ids.append(order_id)
+        if quantity is not None:
+            self._protection_quantities[order_id] = self._protection_quantity(quantity)
+
+    def set_entry_order(
+        self,
+        order_id: ClientOrderId,
+        side: int = 0,
+        *,
+        exposure_offset_quantity: Decimal | None = None,
+    ) -> None:
         """Set the pending entry order ID and its direction (1=long, -1=short)."""
+        offset = (
+            Decimal("0")
+            if exposure_offset_quantity is None
+            else Decimal(str(exposure_offset_quantity))
+        )
+        if offset < 0:
+            raise ValueError("entry exposure offset quantity must be non-negative")
         self._entry_order_id = order_id
         self._entry_side = side
+        self._entry_filled_quantity = Decimal("0")
+        self._entry_exposure_offset_quantity = offset
+        self._entry_protected_quantity = Decimal("0")
+
+    def record_entry_fill(self, fill_quantity: Decimal) -> tuple[Decimal, bool]:
+        """Return the newly opened exposure requiring its own protective lot.
+
+        The first part of a reversal order closes the old position. Only cumulative
+        fill beyond that offset opens exposure in the target direction. The boolean
+        identifies the first positive exposure lot so tick-based protection is
+        initialized once without being reset on every partial fill.
+        """
+        quantity = Decimal(str(fill_quantity))
+        if quantity <= 0:
+            raise ValueError("entry fill quantity must be positive")
+        previous_protected = self._entry_protected_quantity
+        self._entry_filled_quantity += quantity
+        target_exposure = max(
+            self._entry_filled_quantity - self._entry_exposure_offset_quantity,
+            Decimal("0"),
+        )
+        protection_delta = max(target_exposure - previous_protected, Decimal("0"))
+        self._entry_protected_quantity = target_exposure
+        return protection_delta, previous_protected == 0 and protection_delta > 0
 
     def clear_entry_order(self) -> None:
         """Clear only the entry order ID (e.g., after fill or cancel)."""
         self._entry_order_id = None
         self._entry_side = 0
+        self._entry_filled_quantity = Decimal("0")
+        self._entry_exposure_offset_quantity = Decimal("0")
+        self._entry_protected_quantity = Decimal("0")
 
     def clear(self) -> None:
         """Clear all tracked order IDs."""
-        self._sl_order_id = None
+        self.clear_protection_orders()
+        self.clear_entry_order()
+
+    def clear_protection_orders(self) -> None:
+        """Clear protective orders while retaining an in-flight reversal entry."""
+        self._sl_order_ids = []
         self._tp_order_ids = []
-        self._exchange_sl_order_id = None
-        self._entry_order_id = None
-        self._entry_side = 0
+        self._exchange_sl_order_ids = []
+        self._protection_quantities = {}
         self._closing_deadline_ns = 0
 
     # Full-close in-flight / cooldown gate.
@@ -180,20 +273,25 @@ class OrderTracker:
 
     def remove_order(self, order_id: ClientOrderId) -> None:
         """Remove an order ID from tracking."""
-        if self._sl_order_id is not None and self._sl_order_id == order_id:
-            self._sl_order_id = None
+        if order_id in self._sl_order_ids:
+            self._sl_order_ids.remove(order_id)
         if order_id in self._tp_order_ids:
             self._tp_order_ids.remove(order_id)
-        if self._exchange_sl_order_id is not None and self._exchange_sl_order_id == order_id:
-            self._exchange_sl_order_id = None
+        if order_id in self._exchange_sl_order_ids:
+            self._exchange_sl_order_ids.remove(order_id)
+        self._protection_quantities.pop(order_id, None)
         if self._entry_order_id is not None and self._entry_order_id == order_id:
-            self._entry_order_id = None
-            self._entry_side = 0
+            self.clear_entry_order()
 
     @property
     def sl_order_id(self) -> ClientOrderId | None:
-        """Get the stop loss order ID."""
-        return self._sl_order_id
+        """Get the newest stop-loss lot for legacy single-order callers."""
+        return self._sl_order_ids[-1] if self._sl_order_ids else None
+
+    @property
+    def sl_order_ids(self) -> list[ClientOrderId]:
+        """Get all owned stop-loss lots."""
+        return self._sl_order_ids.copy()
 
     @property
     def tp_order_ids(self) -> list[ClientOrderId]:
@@ -202,8 +300,25 @@ class OrderTracker:
 
     @property
     def exchange_sl_order_id(self) -> ClientOrderId | None:
-        """Get the exchange-managed stop loss order ID."""
-        return self._exchange_sl_order_id
+        """Get the newest exchange-managed stop lot for legacy callers."""
+        return self._exchange_sl_order_ids[-1] if self._exchange_sl_order_ids else None
+
+    @property
+    def exchange_sl_order_ids(self) -> list[ClientOrderId]:
+        """Get all owned exchange-managed stop lots."""
+        return self._exchange_sl_order_ids.copy()
+
+    def protection_quantity_for(self, order_id: ClientOrderId) -> Decimal:
+        """Return the quantity assigned to an owned protective order."""
+        return self._protection_quantities.get(order_id, Decimal("0"))
+
+    def protected_quantity(self, *, exchange_managed: bool) -> Decimal:
+        """Return total tracked stop quantity for the selected protection family."""
+        order_ids = self._exchange_sl_order_ids if exchange_managed else self._sl_order_ids
+        return sum(
+            (self.protection_quantity_for(order_id) for order_id in order_ids),
+            start=Decimal("0"),
+        )
 
     @property
     def entry_order_id(self) -> ClientOrderId | None:
@@ -216,12 +331,22 @@ class OrderTracker:
         return self._entry_side
 
     @property
+    def entry_filled_quantity(self) -> Decimal:
+        """Cumulative source-order fill quantity observed so far."""
+        return self._entry_filled_quantity
+
+    @property
+    def entry_protected_quantity(self) -> Decimal:
+        """Cumulative target-direction exposure assigned protective lots."""
+        return self._entry_protected_quantity
+
+    @property
     def has_pending_orders(self) -> bool:
         """Check if any orders are being tracked."""
         return (
-            self._sl_order_id is not None
+            len(self._sl_order_ids) > 0
             or len(self._tp_order_ids) > 0
-            or self._exchange_sl_order_id is not None
+            or len(self._exchange_sl_order_ids) > 0
             or self._entry_order_id is not None
         )
 
@@ -230,7 +355,8 @@ class OrderTracker:
 # cancel_all_orders() during reversal is fire-and-forget — a venue failure
 # (e.g. demo-fapi transport error) leaves the old SL resting with no retry,
 # while the tracker has already been cleared. The per-bar sweep reconciles
-# cache state and cancels orphaned reduce-only orders.
+# cache state and cancels orphaned reduce-only orders only when their stale state
+# is provable without assuming that every account order belongs to this strategy.
 STALE_ORDER_MIN_AGE_NS: int = 30_000_000_000  # 30s — don't race in-flight orders
 STALE_SWEEP_RETRY_COOLDOWN_NS: int = 120_000_000_000  # 120s — per-order cancel rate guard
 
@@ -254,12 +380,10 @@ def is_stale_order(
     - no open position -> any untracked reduce-only order is an orphan -> cancel
     - wrong side (cannot reduce the current position) -> cancel
       (the reversal-orphan case: position flipped, old SL side is now invalid)
-    - protective-side STOP_MARKET or TRAILING_STOP_MARKET while an SL is already
-      tracked -> duplicate -> cancel (failed/duplicate trailing-SL replacement;
-      reduce-only capacity hazard)
-    - protective-side stop with no tracked SL -> keep (restart recovery:
-      OrderReconciler.ensure_exchange_sl_exists() re-tracks it); protective-side
-      LIMIT (TP) -> keep (restart TPs are intentionally preserved)
+    - protective-side reduce-only orders are kept even when untracked. Venue streams
+      are account-wide and another deployment may own them; without an explicit owner
+      token, treating a second protective stop as a duplicate can cancel a sibling
+      instance's only protection. Once flat or reversed, the rules above prove it stale.
 
     Args:
         order: Open order (duck-typed: client_order_id, side, order_type,
@@ -283,11 +407,6 @@ def is_stale_order(
         return True
     protective_side = OrderSide.SELL if position_is_long else OrderSide.BUY
     if order.side != protective_side:
-        return True
-    if (
-        order.order_type in (OrderType.STOP_MARKET, OrderType.TRAILING_STOP_MARKET)
-        and sl_is_tracked
-    ):
         return True
     return False
 
@@ -381,6 +500,7 @@ class StopLossSubmitter:
         atr: Decimal | None,
         position: Position,
         tags: list[str] | None = None,
+        quantity: Quantity | Decimal | None = None,
     ) -> Order | None:
         """
         Create stop loss order.
@@ -416,7 +536,7 @@ class StopLossSubmitter:
         return self.create_order_from_price(
             instrument_id=instrument_id,
             side=side,
-            quantity=position.quantity,
+            quantity=position.quantity if quantity is None else quantity,
             stop_price=stop_price,
             tags=tags,  # pass-through signal_id tag
         )
@@ -425,7 +545,7 @@ class StopLossSubmitter:
         self,
         instrument_id: InstrumentId,
         side: OrderSide,
-        quantity: Quantity,
+        quantity: Quantity | Decimal,
         stop_price: Decimal,
         tags: list[str] | None = None,
     ) -> Order | None:
@@ -455,11 +575,16 @@ class StopLossSubmitter:
 
         tick_size = Decimal(str(instrument.price_increment))
         aligned_stop_price = align_stop_price_to_tick(stop_price, tick_size, side)
+        order_quantity = (
+            instrument.make_qty(quantity)
+            if isinstance(quantity, Decimal) and hasattr(instrument, "make_qty")
+            else quantity
+        )
 
         return self._order_factory.stop_market(
             instrument_id=instrument_id,
             order_side=side,
-            quantity=quantity,
+            quantity=order_quantity,
             trigger_price=Price(cast(float, aligned_stop_price), instrument.price_precision),
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
@@ -537,6 +662,7 @@ class NativeTrailingStopSubmitter:
         position: Position,
         trailing_cfg: StopLossTrailingConfig,
         tags: list[str] | None = None,
+        quantity: Quantity | Decimal | None = None,
     ) -> Order | None:
         """
         Create an exchange-managed trailing stop market order.
@@ -601,10 +727,19 @@ class NativeTrailingStopSubmitter:
             )
             trigger_type = TriggerType.MARK_PRICE
 
+        protection_quantity = position.quantity if quantity is None else quantity
+        order_quantity = (
+            instrument.make_qty(protection_quantity)
+            if quantity is not None
+            and isinstance(protection_quantity, Decimal)
+            and hasattr(instrument, "make_qty")
+            else protection_quantity
+        )
+
         return self._order_factory.trailing_stop_market(
             instrument_id=instrument_id,
             order_side=side,
-            quantity=position.quantity,
+            quantity=order_quantity,
             trailing_offset=trailing_offset,
             activation_price=activation_price,
             trigger_type=trigger_type,
@@ -659,6 +794,7 @@ class TakeProfitSubmitter:
         stop_loss: Decimal | None,
         position: Position,
         tags: list[str] | None = None,
+        quantity: Quantity | Decimal | None = None,
     ) -> Order | None:
         """
         Create single take profit limit order.
@@ -702,11 +838,19 @@ class TakeProfitSubmitter:
         # Align take profit price to tick size
         tick_size = Decimal(str(instrument.price_increment))
         aligned_tp_price = align_limit_price_to_tick(tp_price, tick_size, side)
+        protection_quantity = position.quantity if quantity is None else quantity
+        order_quantity = (
+            instrument.make_qty(protection_quantity)
+            if quantity is not None
+            and isinstance(protection_quantity, Decimal)
+            and hasattr(instrument, "make_qty")
+            else protection_quantity
+        )
 
         return self._order_factory.limit(
             instrument_id=instrument_id,
             order_side=side,
-            quantity=position.quantity,
+            quantity=order_quantity,
             price=Price(cast(float, aligned_tp_price), instrument.price_precision),
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
@@ -721,6 +865,7 @@ class TakeProfitSubmitter:
         position: Position,
         scaled_config: ScaledTakeProfitConfig,
         tags: list[str] | None = None,
+        quantity: Quantity | Decimal | None = None,
     ) -> list[Order]:
         """
         Create scaled take profit orders at multiple price levels.
@@ -754,7 +899,7 @@ class TakeProfitSubmitter:
 
         is_long = signal.direction == SignalDirection.ENTER_LONG
         side = OrderSide.SELL if is_long else OrderSide.BUY
-        total_qty = Decimal(str(position.quantity))
+        total_qty = Decimal(str(position.quantity if quantity is None else quantity))
 
         # Get tick size for price alignment
         tick_size = Decimal(str(instrument.price_increment))

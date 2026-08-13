@@ -93,7 +93,10 @@ def test_cancel_exchange_safety_sl_none_returns_false():
     from unittest.mock import MagicMock
 
     coord = _coord_with(MagicMock())
-    ctx = SimpleNamespace(pair="P", order_tracker=SimpleNamespace(exchange_sl_order_id=None))
+    ctx = SimpleNamespace(
+        pair="P",
+        order_tracker=SimpleNamespace(exchange_sl_order_ids=[]),
+    )
 
     assert coord.cancel_exchange_safety_sl(ctx) is False
 
@@ -107,7 +110,7 @@ def test_cancel_exchange_safety_sl_open_cancels_removes_returns_true():
     order = MagicMock(is_open=True)
     cache.order.return_value = order
     coord = _coord_with(cache)
-    tracker = MagicMock(exchange_sl_order_id="O-SAFE")
+    tracker = MagicMock(exchange_sl_order_ids=["O-SAFE"])
     ctx = SimpleNamespace(pair="P", order_tracker=tracker)
 
     assert coord.cancel_exchange_safety_sl(ctx) is True
@@ -123,9 +126,35 @@ def test_cancel_exchange_safety_sl_closed_order_removes_returns_false():
     cache = MagicMock()
     cache.order.return_value = MagicMock(is_open=False)
     coord = _coord_with(cache)
-    tracker = MagicMock(exchange_sl_order_id="O-SAFE")
+    tracker = MagicMock(exchange_sl_order_ids=["O-SAFE"])
     ctx = SimpleNamespace(pair="P", order_tracker=tracker)
 
     assert coord.cancel_exchange_safety_sl(ctx) is False
     coord._strategy.cancel_order.assert_not_called()
     tracker.remove_order.assert_called_once_with("O-SAFE")
+
+
+@requires_nautilus
+def test_cancel_sl_tp_orders_cancels_every_partial_fill_protection_lot():
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, call
+
+    from custos_toolkit_nautilus.adapter.orders import OrderTracker
+
+    first = MagicMock(is_open=True)
+    second = MagicMock(is_open=True)
+    cache = MagicMock()
+    cache.order.side_effect = lambda order_id: {
+        "stop-lot-1": first,
+        "stop-lot-2": second,
+    }[order_id]
+    coord = _coord_with(cache)
+    tracker = OrderTracker()
+    tracker.add_exchange_sl_order("stop-lot-1")
+    tracker.add_exchange_sl_order("stop-lot-2")
+    ctx = SimpleNamespace(pair="P", order_tracker=tracker)
+
+    assert coord.cancel_sl_tp_orders(ctx) == 2
+    assert coord._strategy.cancel_order.call_args_list == [call(first), call(second)]
+    assert tracker.exchange_sl_order_ids == []
+    assert tracker.has_pending_orders is False

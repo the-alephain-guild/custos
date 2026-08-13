@@ -8,24 +8,33 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from custos.core.fallback_breaker import FallbackBreaker
+from custos.core.log import get_logger
+
+_log = get_logger("custos.order_reservation_boundary")
 
 
 class RunnerReservationStore(Protocol):
-    def reserve_order_notional(self, **kwargs: Any) -> Any: ...
+    def reserve_order_notional_sync(self, **kwargs: Any) -> Any: ...
 
-    def load_order_reservation(
+    def load_order_reservation_sync(
         self,
         deployment_instance_id: UUID,
         client_order_id: str,
     ) -> Any: ...
 
-    def replace_order_reservation(self, **kwargs: Any) -> Any: ...
+    def has_order_reservation_sync(
+        self,
+        deployment_instance_id: UUID,
+        client_order_id: str,
+    ) -> bool: ...
 
-    def release_order_reservation(self, **kwargs: Any) -> Any: ...
+    def replace_order_reservation_sync(self, **kwargs: Any) -> Any: ...
 
-    def record_order_fill(self, **kwargs: Any) -> Any: ...
+    def release_order_reservation_sync(self, **kwargs: Any) -> Any: ...
 
-    def record_position_reduction(self, **kwargs: Any) -> Any: ...
+    def record_order_fill_sync(self, **kwargs: Any) -> Any: ...
+
+    def record_position_reduction_sync(self, **kwargs: Any) -> Any: ...
 
 
 class OrderSemantics(Protocol):
@@ -38,6 +47,29 @@ class OrderSemantics(Protocol):
     def order_is_risk_reducing(self, order: Any) -> bool: ...
 
     def event_is_risk_reducing(self, event: Any) -> bool: ...
+
+    def event_exposure_source_order_id(self, event: Any) -> str | None: ...
+
+
+class RunnerRiskIncreaseFrozenError(RuntimeError):
+    """The local fallback breaker intentionally refused new exposure."""
+
+
+def runner_command_id(command: Any) -> Any:
+    """Read the public Nautilus command identity across supported test doubles.
+
+    Nautilus documents the constructor argument as ``command_id`` but exposes the
+    resulting identity as ``id``.  Keeping that ABI translation at this boundary
+    prevents mocks with an invented ``command_id`` attribute from masking a live-only
+    failure.
+    """
+
+    identity = getattr(command, "id", None)
+    if identity is None:
+        identity = getattr(command, "command_id", None)
+    if identity is None:
+        raise RuntimeError("runner execution command has no public identity")
+    return identity
 
 
 @dataclass(frozen=True)
@@ -69,6 +101,11 @@ class RunnerReservationBoundary:
         self._fallback_breaker = fallback_breaker
         self._semantics = semantics
         self._pending_modifications: dict[str, _Modification] = {}
+        # Reduce-only orders deliberately bypass notional reservation so a frozen or
+        # temporarily unavailable policy store can never block risk reduction. Keep
+        # their local ownership separately, otherwise account-wide venue events from a
+        # sibling deployment are indistinguishable from this instance's protection.
+        self._risk_reducing_order_ids: set[str] = set()
 
     def bind_runtime(self, *, semantics: OrderSemantics) -> None:
         if self._semantics is None:
@@ -80,19 +117,19 @@ class RunnerReservationBoundary:
         message_bus.subscribe("events.order.*", self.on_order_event)
 
     def before_submit_order(self, command: Any) -> tuple[_Reservation, ...]:
-        return self._reserve_orders((command.order,), command_id=command.command_id)
+        return self._reserve_orders((command.order,), command_id=runner_command_id(command))
 
     def before_submit_order_list(self, command: Any) -> tuple[_Reservation, ...]:
         return self._reserve_orders(
             tuple(command.order_list.orders),
-            command_id=command.command_id,
+            command_id=runner_command_id(command),
         )
 
     def before_modify_order(self, command: Any) -> _Modification:
         self._require_risk_increasing_allowed()
         semantics = self._require_semantics()
         client_order_id = str(command.client_order_id)
-        prior = self._store.load_order_reservation(
+        prior = self._store.load_order_reservation_sync(
             self._deployment_instance_id,
             client_order_id,
         )
@@ -100,8 +137,8 @@ class RunnerReservationBoundary:
             client_order_id=client_order_id,
             prior_reserved_notional=Decimal(prior.reserved_notional),
         )
-        self._store.replace_order_reservation(
-            event_id=self._event_id("modify", command.command_id, client_order_id),
+        self._store.replace_order_reservation_sync(
+            event_id=self._event_id("modify", runner_command_id(command), client_order_id),
             deployment_instance_id=self._deployment_instance_id,
             client_order_id=client_order_id,
             new_reserved_notional=semantics.modified_order_notional(command),
@@ -116,7 +153,7 @@ class RunnerReservationBoundary:
         command_id: Any,
     ) -> None:
         for reservation in reservations:
-            self._store.release_order_reservation(
+            self._store.release_order_reservation_sync(
                 event_id=self._event_id(
                     "submit_dispatch_failed",
                     command_id,
@@ -128,7 +165,7 @@ class RunnerReservationBoundary:
             )
 
     def rollback_modify(self, modification: _Modification, *, event_id: Any) -> None:
-        self._store.replace_order_reservation(
+        self._store.replace_order_reservation_sync(
             event_id=self._event_id(
                 "modify_rejected",
                 event_id,
@@ -156,25 +193,59 @@ class RunnerReservationBoundary:
 
         if event_name == "OrderFilled":
             semantics = self._require_semantics()
+            risk_reducing = semantics.event_is_risk_reducing(event)
+            source_order_id = (
+                semantics.event_exposure_source_order_id(event) if risk_reducing else None
+            )
+            if risk_reducing:
+                if client_order_id not in self._risk_reducing_order_ids and (
+                    source_order_id is None or not self._has_reservation(source_order_id)
+                ):
+                    return
+            elif not self._has_reservation(client_order_id):
+                return
             notional = semantics.fill_notional(event)
-            if semantics.event_is_risk_reducing(event):
-                self._store.record_position_reduction(
-                    event_id=self._event_id("fill_reduce", stable_event_id, client_order_id),
-                    deployment_instance_id=self._deployment_instance_id,
+            try:
+                if risk_reducing:
+                    if source_order_id is None or not self._has_reservation(source_order_id):
+                        raise RuntimeError(
+                            "risk-reducing fill has no durable opening-order exposure"
+                        )
+                    self._store.record_position_reduction_sync(
+                        event_id=self._event_id("fill_reduce", stable_event_id, source_order_id),
+                        deployment_instance_id=self._deployment_instance_id,
+                        client_order_id=source_order_id,
+                        reduction_notional=notional,
+                    )
+                else:
+                    self._store.record_order_fill_sync(
+                        event_id=self._event_id("fill", stable_event_id, client_order_id),
+                        deployment_instance_id=self._deployment_instance_id,
+                        client_order_id=client_order_id,
+                        fill_notional=notional,
+                    )
+            except Exception as exc:
+                # An exchange fill is already authoritative and cannot be rejected after
+                # the fact. Never let an accounting mismatch tear down the execution
+                # loop (which would also prevent protective reduce-only orders). Freeze
+                # new risk and let the live portfolio rebuild reconcile conservatively.
+                self._fallback_breaker.fail_closed("runner_order_fill_accounting_failed")
+                _log.error(
+                    "runner_order_fill_accounting_failed",
+                    deployment_instance_id=str(self._deployment_instance_id),
+                    event_kind=event_name,
                     client_order_id=client_order_id,
-                    reduction_notional=notional,
-                )
-            else:
-                self._store.record_order_fill(
-                    event_id=self._event_id("fill", stable_event_id, client_order_id),
-                    deployment_instance_id=self._deployment_instance_id,
-                    client_order_id=client_order_id,
-                    fill_notional=notional,
+                    error_type=type(exc).__name__,
                 )
             return
 
         if event_name in {"OrderRejected", "OrderDenied"}:
-            self._store.release_order_reservation(
+            if client_order_id in self._risk_reducing_order_ids:
+                self._risk_reducing_order_ids.discard(client_order_id)
+                return
+            if not self._has_reservation(client_order_id):
+                return
+            self._store.release_order_reservation_sync(
                 event_id=self._event_id("rejected", stable_event_id, client_order_id),
                 deployment_instance_id=self._deployment_instance_id,
                 client_order_id=client_order_id,
@@ -183,7 +254,12 @@ class RunnerReservationBoundary:
             return
 
         if event_name in {"OrderCanceled", "OrderExpired"}:
-            self._store.release_order_reservation(
+            if client_order_id in self._risk_reducing_order_ids:
+                self._risk_reducing_order_ids.discard(client_order_id)
+                return
+            if not self._has_reservation(client_order_id):
+                return
+            self._store.release_order_reservation_sync(
                 event_id=self._event_id("canceled", stable_event_id, client_order_id),
                 deployment_instance_id=self._deployment_instance_id,
                 client_order_id=client_order_id,
@@ -211,10 +287,11 @@ class RunnerReservationBoundary:
         try:
             for order in orders:
                 if semantics.order_is_risk_reducing(order):
+                    self._risk_reducing_order_ids.add(str(order.client_order_id))
                     continue
                 self._require_risk_increasing_allowed()
                 client_order_id = str(order.client_order_id)
-                self._store.reserve_order_notional(
+                self._store.reserve_order_notional_sync(
                     event_id=self._event_id("submit", command_id, client_order_id),
                     deployment_instance_id=self._deployment_instance_id,
                     client_order_id=client_order_id,
@@ -229,7 +306,13 @@ class RunnerReservationBoundary:
 
     def _require_risk_increasing_allowed(self) -> None:
         if not self._fallback_breaker.allows_new_orders():
-            raise RuntimeError("runner fallback breaker is frozen")
+            raise RunnerRiskIncreaseFrozenError("runner fallback breaker is frozen")
+
+    def _has_reservation(self, client_order_id: str) -> bool:
+        return self._store.has_order_reservation_sync(
+            self._deployment_instance_id,
+            client_order_id,
+        )
 
     def _require_semantics(self) -> OrderSemantics:
         if self._semantics is None:
