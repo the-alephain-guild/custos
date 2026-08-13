@@ -105,8 +105,22 @@ def test_perpetual_account_balances_only_include_settlement_currencies() -> None
                     "availableBalance": "4462.00816174",
                 },
             ],
-            "positions": [],
-        }
+            "positions": [
+                {
+                    "symbol": "BTCUSDT",
+                    "positionSide": "BOTH",
+                    "positionAmt": "0.0070",
+                }
+            ],
+        },
+        futures_positions=[
+            {
+                "symbol": "BTCUSDT",
+                "positionSide": "BOTH",
+                "positionAmt": "0.0070",
+                "entryPrice": "63567.0",
+            }
+        ],
     )
 
     assert balances == [
@@ -117,4 +131,43 @@ def test_perpetual_account_balances_only_include_settlement_currencies() -> None
             "available": "4462.00816174",
         }
     ]
-    assert positions == []
+    assert positions == [
+        {
+            "venue_position_id": "BTCUSDT:BOTH",
+            "instrument": "BTCUSDT",
+            "side": "buy",
+            "quantity": "0.007",
+            "avg_entry_price": "63567",
+            "currency": "USDT",
+        }
+    ]
+
+
+def test_perpetual_position_risk_must_match_account_quantity() -> None:
+    source = _source()
+
+    try:
+        source._account_rows(
+            {
+                "assets": [],
+                "positions": [
+                    {
+                        "symbol": "BTCUSDT",
+                        "positionSide": "BOTH",
+                        "positionAmt": "0.0070",
+                    }
+                ],
+            },
+            futures_positions=[
+                {
+                    "symbol": "BTCUSDT",
+                    "positionSide": "BOTH",
+                    "positionAmt": "0.0060",
+                    "entryPrice": "63567.0",
+                }
+            ],
+        )
+    except RuntimeError as error:
+        assert "position-risk quantity differs" in str(error)
+    else:
+        raise AssertionError("mismatched account and position-risk quantities must fail closed")

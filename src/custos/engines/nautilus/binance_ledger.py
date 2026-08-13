@@ -93,11 +93,21 @@ class BinanceVenueLedgerSource:
         if observed_through < closed_at:
             raise BinanceVenueLedgerError("venue clock has not reached the requested close")
         account = self._signed_get("/fapi/v3/account" if self._futures else "/api/v3/account", {})
+        futures_positions: list[dict[str, Any]] | None = None
+        if self._futures:
+            futures_positions = []
+            for symbol in self._symbols:
+                futures_positions.extend(
+                    self._expect_list(self._signed_get("/fapi/v3/positionRisk", {"symbol": symbol}))
+                )
         trades: list[dict[str, Any]] = []
         for symbol in self._symbols:
             trades.extend(self._trade_history(symbol, coverage_from, closed_at))
         incomes = self._income_history(coverage_from, closed_at) if self._futures else []
-        balances, positions = self._account_rows(account)
+        balances, positions = self._account_rows(
+            account,
+            futures_positions=futures_positions,
+        )
         fills, fees = self._trade_rows(trades)
         fees.extend(self._income_fee_rows(incomes))
         source_state = {
@@ -199,7 +209,12 @@ class BinanceVenueLedgerSource:
             if page_number > 4096:
                 raise BinanceVenueLedgerError("Binance income pagination exceeded 4096 pages")
 
-    def _account_rows(self, account: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    def _account_rows(
+        self,
+        account: Any,
+        *,
+        futures_positions: Sequence[Mapping[str, Any]] | None = None,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         if not isinstance(account, dict):
             raise BinanceVenueLedgerError("Binance account response must be an object")
         balances: list[dict[str, Any]] = []
@@ -221,7 +236,16 @@ class BinanceVenueLedgerSource:
                         "available": self._decimal(row.get("availableBalance"), "availableBalance"),
                     }
                 )
-            for row in self._expect_list(account.get("positions")):
+            account_positions = self._expect_list(account.get("positions"))
+            if futures_positions is None:
+                raise BinanceVenueLedgerError(
+                    "Binance perpetual position-risk snapshot is unavailable"
+                )
+            account_active = self._active_position_quantities(account_positions)
+            risk_active = self._active_position_quantities(futures_positions)
+            if account_active != risk_active:
+                raise BinanceVenueLedgerError("Binance account and position-risk quantity differs")
+            for row in futures_positions:
                 symbol = str(row.get("symbol") or "")
                 if symbol not in self._symbols:
                     continue
@@ -256,6 +280,26 @@ class BinanceVenueLedgerSource:
                     }
                 )
         return balances, positions
+
+    def _active_position_quantities(
+        self, rows: Sequence[Mapping[str, Any]]
+    ) -> dict[tuple[str, str], Decimal]:
+        active: dict[tuple[str, str], Decimal] = {}
+        for row in rows:
+            symbol = str(row.get("symbol") or "")
+            if symbol not in self._symbols:
+                continue
+            side = str(row.get("positionSide") or "BOTH")
+            key = (symbol, side)
+            quantity = Decimal(self._decimal(row.get("positionAmt"), "positionAmt"))
+            if quantity == 0:
+                continue
+            if key in active:
+                raise BinanceVenueLedgerError(
+                    "Binance position snapshot repeats symbol and position side"
+                )
+            active[key] = quantity
+        return active
 
     def _trade_rows(
         self, trades: Sequence[Mapping[str, Any]]
