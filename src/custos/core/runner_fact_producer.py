@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -38,6 +40,8 @@ class RunnerFactDeployment:
     venue: str
     currency: str
     reconciliation_available: bool
+    strategy_version: str
+    timeframe: str
 
     def __post_init__(self) -> None:
         if (
@@ -47,6 +51,10 @@ class RunnerFactDeployment:
         ):
             raise RunnerFactContractError(
                 "RunnerFactDeployment identity differs from its signed authority"
+            )
+        if not self.strategy_version.strip() or not self.timeframe.strip():
+            raise RunnerFactContractError(
+                "RunnerFactDeployment requires strategy version and timeframe metadata"
             )
 
 
@@ -102,6 +110,37 @@ def _money(value: Any, field: str) -> tuple[str, str | None]:
     return amount, currency if separator else None
 
 
+def strategy_signal_metadata(spec: Mapping[str, Any]) -> tuple[str, str]:
+    """Derive honest signal labels from the accepted immutable deployment input."""
+
+    source = spec.get("artifact_source")
+    source = source if isinstance(source, Mapping) else {}
+    snapshot = source.get("snapshot")
+    snapshot = snapshot if isinstance(snapshot, Mapping) else {}
+    if source.get("kind") == "strategy_release" and type(snapshot.get("release_version")) is int:
+        strategy_version = f"v{snapshot['release_version']}"
+    elif source.get("kind") == "development_source" and isinstance(
+        snapshot.get("source_sha256"), str
+    ):
+        strategy_version = f"development-{snapshot['source_sha256'][:12]}"
+    else:
+        strategy_version = str(spec.get("strategy_version") or "unversioned").strip()
+
+    config = spec.get("strategy_config")
+    config = config if isinstance(config, Mapping) else {}
+    nautilus = spec.get("nautilus_config")
+    nautilus = nautilus if isinstance(nautilus, Mapping) else {}
+    timeframe = str(
+        config.get("timeframe")
+        or config.get("bar_type")
+        or nautilus.get("bar_type")
+        or "unspecified"
+    ).strip()
+    if not strategy_version or not timeframe:
+        raise RunnerFactContractError("strategy signal metadata is empty")
+    return strategy_version, timeframe
+
+
 class RunnerFactMessageBusBridge:
     """Synchronously commits execution events to SQLite before returning."""
 
@@ -126,7 +165,11 @@ class RunnerFactMessageBusBridge:
         )
 
     def _on_order_event(self, event: Any) -> None:
-        if type(event).__name__ != "OrderFilled":
+        event_name = type(event).__name__
+        if event_name == "OrderSubmitted":
+            self._on_order_submitted(event)
+            return
+        if event_name != "OrderFilled":
             return
         try:
             data = type(event).to_dict(event)
@@ -194,6 +237,60 @@ class RunnerFactMessageBusBridge:
             self._emitter.emit_sync(authority, facts)
         except Exception as exc:  # audit loss is loud but never kills the engine thread
             _log.error("runner_fact_execution_event_failed", error=str(exc))
+
+    def _on_order_submitted(self, event: Any) -> None:
+        try:
+            data = type(event).to_dict(event)
+            authority = self._deployment.authority
+            event_id = str(data.get("event_id") or "").strip()
+            client_order_id = str(data.get("client_order_id") or "").strip()
+            stable_identity = event_id or client_order_id
+            if not stable_identity:
+                raise RunnerFactContractError("OrderSubmitted has no stable event/order identity")
+            instrument = str(data.get("instrument_id") or "").strip()
+            if not instrument:
+                raise RunnerFactContractError("OrderSubmitted has no instrument identity")
+            side = str(data.get("order_side") or "").strip().lower().split(".")[-1]
+            if bool(data.get("reduce_only")):
+                direction = "flat"
+            elif side == "buy":
+                direction = "long"
+            elif side == "sell":
+                direction = "short"
+            else:
+                raise RunnerFactContractError("OrderSubmitted has an unsupported order side")
+            occurred_at = _nt_timestamp(data.get("ts_event"))
+            input_document = {
+                "client_order_id": client_order_id or None,
+                "direction": direction,
+                "event_id": event_id or None,
+                "instrument": instrument,
+                "occurred_at": occurred_at,
+                "strategy_version": self._deployment.strategy_version,
+                "timeframe": self._deployment.timeframe,
+            }
+            input_digest = hashlib.sha256(
+                json.dumps(
+                    input_document,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest()
+            self._emitter.emit_strategy_signal_sync(
+                authority,
+                fact_id=_scoped_event_id(authority, "strategy_signal", stable_identity),
+                instrument=instrument,
+                client_order_id=client_order_id or None,
+                timeframe=self._deployment.timeframe,
+                direction=direction,
+                occurred_at=occurred_at,
+                input_digest=input_digest,
+                strategy_version=self._deployment.strategy_version,
+                trace_id=_scoped_event_id(authority, "strategy_trace", stable_identity),
+            )
+        except Exception as exc:  # audit loss is loud but never kills the engine thread
+            _log.error("runner_strategy_signal_event_failed", error=str(exc))
 
     def _on_position_event(self, event: Any) -> None:
         if type(event).__name__ != "PositionClosed":

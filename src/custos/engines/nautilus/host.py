@@ -44,6 +44,7 @@ from custos.core.runner_fact_producer import (
     RunnerFactDeployment,
     RunnerFactMessageBusBridge,
     VenueLedgerEvidence,
+    strategy_signal_metadata,
 )
 from custos.engines.nautilus.portfolio_snapshot import (
     NautilusPortfolioSnapshotProvider,
@@ -521,6 +522,7 @@ class NtTradingNodeHost:
             from custos.engines.nautilus.binance_ledger import BinanceVenueLedgerSource
 
             provider = BinanceVenueLedgerSource(spec=spec, credential=credential)
+        strategy_version, timeframe = strategy_signal_metadata(spec)
         deployment = RunnerFactDeployment(
             authority=authority,
             deployment_instance_id=deployment_instance_id,
@@ -529,6 +531,8 @@ class NtTradingNodeHost:
             venue="BINANCE",
             currency=currency,
             reconciliation_available=provider is not None,
+            strategy_version=strategy_version,
+            timeframe=timeframe,
         )
         return deployment, provider
 

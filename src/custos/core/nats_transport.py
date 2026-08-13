@@ -40,6 +40,7 @@ RUNNER_CONTROL_STREAM_LIVE = "CRUCIBLE_RUNNER_CONTROL_LIVE_V1"
 RUNNER_COMMAND_SUBJECT_PREFIX = "crucible.runner.command.v1"
 RUNNER_POLICY_SUBJECT_PREFIX = "crucible.runner.policy.v1"
 RUNNER_FACT_SUBJECT_PREFIX = "crucible.runner.fact.v1"
+RUNNER_STRATEGY_SIGNAL_SUBJECT_PREFIX = "crucible.runner.strategy-signal.v1"
 RUNNER_CONTROL_DELIVERY_SUBJECT_PREFIX = "custos.runner.control.v1.delivery"
 TRADING_MODES = ("sandbox", "testnet", "live")
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -252,6 +253,7 @@ def _expected_permission_profile(
         "transport_domain": domain,
         "publish_allow": [
             f"{RUNNER_FACT_SUBJECT_PREFIX}.{tenant_id}.{runner}.{trading_mode}",
+            f"{RUNNER_STRATEGY_SIGNAL_SUBJECT_PREFIX}.{tenant_id}.{runner}.{trading_mode}",
             f"$JS.ACK.{stream}.{durable}.>",
             f"$JS.API.CONSUMER.INFO.{stream}.{durable}",
         ],
@@ -1154,10 +1156,13 @@ class DevelopmentLocalNatsConnectionProfile:
         return None
 
     def assert_publish_subject(self, subject: str) -> None:
-        expected = f"{RUNNER_FACT_SUBJECT_PREFIX}.{self.tenant_id}.{self.runner_id}.sandbox"
-        if subject != expected:
+        expected = {
+            f"{RUNNER_FACT_SUBJECT_PREFIX}.{self.tenant_id}.{self.runner_id}.sandbox",
+            f"{RUNNER_STRATEGY_SIGNAL_SUBJECT_PREFIX}.{self.tenant_id}.{self.runner_id}.sandbox",
+        }
+        if subject not in expected:
             raise RunnerNatsTransportError(
-                "RunnerFact subject is outside the local sandbox authority"
+                "Runner fact subject is outside the local sandbox authority"
             )
 
     async def connect(

@@ -62,8 +62,12 @@ RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS: Final[tuple[str, ...]] = (
     "deployment_spec_digest",
     "generation",
     "strategy_id",
+    "capability_version_id",
+    "capability_version",
+    "capability_manifest_digest",
     "strategy_version",
     "instrument",
+    "client_order_id",
     "timeframe",
     "direction",
     "occurred_at",
@@ -665,6 +669,7 @@ def signed_strategy_signal_fact(
     input_digest: str,
     strategy_version: str,
     trace_id: UUID | str,
+    client_order_id: str | None = None,
 ) -> dict[str, Any]:
     """Build one independently signed, scope-complete strategy signal fact.
 
@@ -678,6 +683,20 @@ def signed_strategy_signal_fact(
         raise RunnerFactContractError("source_sequence must be a positive integer")
     if not _LOWER_HEX_64.fullmatch(input_digest):
         raise RunnerFactContractError("input_digest must be lowercase SHA-256")
+    normalized_strategy_version = _non_empty(strategy_version, "strategy_version")
+    normalized_instrument = _non_empty(instrument, "instrument")
+    normalized_timeframe = _non_empty(timeframe, "timeframe")
+    normalized_client_order_id = (
+        _non_empty(client_order_id, "client_order_id") if client_order_id else None
+    )
+    if len(normalized_strategy_version) > 120:
+        raise RunnerFactContractError("strategy_version exceeds 120 characters")
+    if len(normalized_instrument) > 120:
+        raise RunnerFactContractError("instrument exceeds 120 characters")
+    if len(normalized_timeframe) > 32:
+        raise RunnerFactContractError("timeframe exceeds 32 characters")
+    if normalized_client_order_id is not None and len(normalized_client_order_id) > 512:
+        raise RunnerFactContractError("client_order_id exceeds 512 characters")
     runner_id = str(authority.runner_id)
     subject = (
         "crucible.runner.strategy-signal.v1."
@@ -696,9 +715,13 @@ def signed_strategy_signal_fact(
             "deployment_spec_digest": authority.deployment_spec_digest,
             "generation": authority.generation,
             "strategy_id": str(authority.strategy_id),
-            "strategy_version": _non_empty(strategy_version, "strategy_version"),
-            "instrument": _non_empty(instrument, "instrument"),
-            "timeframe": _non_empty(timeframe, "timeframe"),
+            "capability_version_id": str(authority.capability_version_id),
+            "capability_version": authority.capability_version,
+            "capability_manifest_digest": authority.capability_manifest_digest,
+            "strategy_version": normalized_strategy_version,
+            "instrument": normalized_instrument,
+            "client_order_id": normalized_client_order_id,
+            "timeframe": normalized_timeframe,
             "direction": direction,
             "occurred_at": _timestamp(occurred_at, "occurred_at"),
             "source_sequence": source_sequence,
@@ -1116,6 +1139,15 @@ class PendingRunnerFactBatch:
 
 
 @dataclass(frozen=True, slots=True)
+class PendingStrategySignal:
+    fact_id: UUID
+    stream_key: str
+    subject: str
+    payload: bytes
+    attempts: int
+
+
+@dataclass(frozen=True, slots=True)
 class RunnerFactPublicationReceipt:
     batch_id: UUID
     stream_key: str
@@ -1123,6 +1155,21 @@ class RunnerFactPublicationReceipt:
     source_seq_start: int
     source_seq_end: int
     batch_payload_sha256: str
+    broker_stream: str
+    broker_sequence: int
+    broker_domain: str | None
+    duplicate: bool
+    publish_attempts: int
+    published_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class StrategySignalPublicationReceipt:
+    fact_id: UUID
+    stream_key: str
+    subject: str
+    source_sequence: int
+    payload_sha256: str
     broker_stream: str
     broker_sequence: int
     broker_domain: str | None
@@ -1293,6 +1340,44 @@ class RunnerFactOutbox:
                     ON runner_fact_publication_receipt(
                         stream_key, source_seq_start, source_seq_end
                     );
+                CREATE TABLE IF NOT EXISTS strategy_signal_stream (
+                    stream_key TEXT PRIMARY KEY,
+                    next_sequence INTEGER NOT NULL CHECK (next_sequence > 0),
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS strategy_signal_seen (
+                    fact_id TEXT PRIMARY KEY,
+                    stream_key TEXT NOT NULL,
+                    source_sequence INTEGER NOT NULL CHECK (source_sequence > 0),
+                    recorded_at TEXT NOT NULL,
+                    UNIQUE(stream_key, source_sequence)
+                );
+                CREATE TABLE IF NOT EXISTS strategy_signal_outbox (
+                    fact_id TEXT PRIMARY KEY,
+                    stream_key TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    source_sequence INTEGER NOT NULL CHECK (source_sequence > 0),
+                    payload BLOB NOT NULL,
+                    created_at TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    UNIQUE(stream_key, source_sequence)
+                );
+                CREATE INDEX IF NOT EXISTS strategy_signal_outbox_delivery_order
+                    ON strategy_signal_outbox(stream_key, source_sequence);
+                CREATE TABLE IF NOT EXISTS strategy_signal_publication_receipt (
+                    fact_id TEXT PRIMARY KEY,
+                    stream_key TEXT NOT NULL,
+                    subject TEXT NOT NULL,
+                    source_sequence INTEGER NOT NULL CHECK (source_sequence > 0),
+                    payload_sha256 TEXT NOT NULL CHECK (length(payload_sha256) = 64),
+                    broker_stream TEXT NOT NULL,
+                    broker_sequence INTEGER NOT NULL CHECK (broker_sequence > 0),
+                    broker_domain TEXT,
+                    duplicate INTEGER NOT NULL CHECK (duplicate IN (0, 1)),
+                    publish_attempts INTEGER NOT NULL CHECK (publish_attempts >= 0),
+                    published_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS runner_state_schema (
                     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
                     schema_version INTEGER NOT NULL CHECK (schema_version > 0),
@@ -1654,6 +1739,123 @@ class RunnerFactOutbox:
         )
         return batch_id
 
+    async def enqueue_strategy_signal(
+        self,
+        authority: RunnerFactAuthority,
+        identity: RunnerFactIdentity,
+        *,
+        fact_id: UUID | str,
+        instrument: str,
+        timeframe: str,
+        direction: Literal["long", "short", "flat"],
+        occurred_at: datetime | str,
+        input_digest: str,
+        strategy_version: str,
+        trace_id: UUID | str,
+        client_order_id: str | None = None,
+    ) -> UUID | None:
+        return await asyncio.to_thread(
+            self.enqueue_strategy_signal_sync,
+            authority,
+            identity,
+            fact_id=fact_id,
+            instrument=instrument,
+            timeframe=timeframe,
+            direction=direction,
+            occurred_at=occurred_at,
+            input_digest=input_digest,
+            strategy_version=strategy_version,
+            trace_id=trace_id,
+            client_order_id=client_order_id,
+        )
+
+    def enqueue_strategy_signal_sync(
+        self,
+        authority: RunnerFactAuthority,
+        identity: RunnerFactIdentity,
+        *,
+        fact_id: UUID | str,
+        instrument: str,
+        timeframe: str,
+        direction: Literal["long", "short", "flat"],
+        occurred_at: datetime | str,
+        input_digest: str,
+        strategy_version: str,
+        trace_id: UUID | str,
+        client_order_id: str | None = None,
+    ) -> UUID | None:
+        canonical_fact_id = UUID(_uuid(fact_id, "fact_id"))
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            if connection.execute(
+                "SELECT 1 FROM strategy_signal_seen WHERE fact_id = ?",
+                (str(canonical_fact_id),),
+            ).fetchone() is not None:
+                connection.commit()
+                return None
+            row = connection.execute(
+                "SELECT next_sequence FROM strategy_signal_stream WHERE stream_key = ?",
+                (authority.stream_key,),
+            ).fetchone()
+            source_sequence = int(row[0]) if row else 1
+            fact = signed_strategy_signal_fact(
+                authority,
+                identity,
+                fact_id=canonical_fact_id,
+                instrument=instrument,
+                timeframe=timeframe,
+                direction=direction,
+                occurred_at=occurred_at,
+                source_sequence=source_sequence,
+                input_digest=input_digest,
+                strategy_version=strategy_version,
+                trace_id=trace_id,
+                client_order_id=client_order_id,
+            )
+            payload = _canonical_json_bytes(fact)
+            created_at = _utc_now()
+            connection.execute(
+                """
+                INSERT INTO strategy_signal_outbox (
+                    fact_id, stream_key, subject, source_sequence, payload, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(canonical_fact_id),
+                    authority.stream_key,
+                    fact["subject"],
+                    source_sequence,
+                    payload,
+                    created_at,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO strategy_signal_seen (
+                    fact_id, stream_key, source_sequence, recorded_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (str(canonical_fact_id), authority.stream_key, source_sequence, created_at),
+            )
+            connection.execute(
+                """
+                INSERT INTO strategy_signal_stream (stream_key, next_sequence, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(stream_key) DO UPDATE SET
+                    next_sequence = excluded.next_sequence,
+                    updated_at = excluded.updated_at
+                """,
+                (authority.stream_key, source_sequence + 1, created_at),
+            )
+            connection.commit()
+            return canonical_fact_id
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
     async def pending(self, limit: int = 64) -> list[PendingRunnerFactBatch]:
         return await asyncio.to_thread(self._pending, limit)
 
@@ -1673,6 +1875,31 @@ class RunnerFactOutbox:
                 batch_id=UUID(row["batch_id"]),
                 stream_key=row["stream_key"],
                 subject=row["subject"],
+                payload=bytes(row["payload"]),
+                attempts=int(row["attempts"]),
+            )
+            for row in rows
+        ]
+
+    async def pending_strategy_signals(self, limit: int = 64) -> list[PendingStrategySignal]:
+        return await asyncio.to_thread(self._pending_strategy_signals, limit)
+
+    def _pending_strategy_signals(self, limit: int) -> list[PendingStrategySignal]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT fact_id, stream_key, subject, payload, attempts
+                FROM strategy_signal_outbox
+                ORDER BY stream_key, source_sequence
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            PendingStrategySignal(
+                fact_id=UUID(row["fact_id"]),
+                stream_key=str(row["stream_key"]),
+                subject=str(row["subject"]),
                 payload=bytes(row["payload"]),
                 attempts=int(row["attempts"]),
             )
@@ -2007,6 +2234,158 @@ class RunnerFactOutbox:
                 WHERE batch_id = ?
                 """,
                 (error[:2048], str(batch_id)),
+            )
+
+    async def commit_strategy_signal_puback(
+        self,
+        fact_id: UUID,
+        *,
+        broker_stream: str,
+        broker_sequence: int,
+        broker_domain: str | None,
+        duplicate: bool,
+    ) -> StrategySignalPublicationReceipt:
+        return await asyncio.to_thread(
+            self._commit_strategy_signal_puback,
+            fact_id,
+            broker_stream,
+            broker_sequence,
+            broker_domain,
+            duplicate,
+        )
+
+    def _commit_strategy_signal_puback(
+        self,
+        fact_id: UUID,
+        broker_stream: str,
+        broker_sequence: int,
+        broker_domain: str | None,
+        duplicate: bool,
+    ) -> StrategySignalPublicationReceipt:
+        if not broker_stream.strip():
+            raise RunnerStateDurabilityError("StrategySignal PubAck stream is required")
+        if type(broker_sequence) is not int or broker_sequence < 1:
+            raise RunnerStateDurabilityError("StrategySignal PubAck sequence must be positive")
+        if broker_domain is not None and not broker_domain.strip():
+            raise RunnerStateDurabilityError("StrategySignal PubAck domain must be non-empty")
+        if not isinstance(duplicate, bool):
+            raise RunnerStateDurabilityError("StrategySignal PubAck duplicate flag must be boolean")
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT stream_key, subject, source_sequence, payload, attempts
+                FROM strategy_signal_outbox WHERE fact_id = ?
+                """,
+                (str(fact_id),),
+            ).fetchone()
+            if row is None:
+                raise RunnerStateDurabilityError(
+                    "StrategySignal PubAck has no matching durable outbox fact"
+                )
+            receipt = StrategySignalPublicationReceipt(
+                fact_id=fact_id,
+                stream_key=str(row["stream_key"]),
+                subject=str(row["subject"]),
+                source_sequence=int(row["source_sequence"]),
+                payload_sha256=_sha256_hex(bytes(row["payload"])),
+                broker_stream=broker_stream,
+                broker_sequence=broker_sequence,
+                broker_domain=broker_domain,
+                duplicate=duplicate,
+                publish_attempts=int(row["attempts"]),
+                published_at=_utc_now(),
+            )
+            connection.execute(
+                """
+                INSERT INTO strategy_signal_publication_receipt (
+                    fact_id, stream_key, subject, source_sequence, payload_sha256,
+                    broker_stream, broker_sequence, broker_domain, duplicate,
+                    publish_attempts, published_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(receipt.fact_id),
+                    receipt.stream_key,
+                    receipt.subject,
+                    receipt.source_sequence,
+                    receipt.payload_sha256,
+                    receipt.broker_stream,
+                    receipt.broker_sequence,
+                    receipt.broker_domain,
+                    int(receipt.duplicate),
+                    receipt.publish_attempts,
+                    receipt.published_at,
+                ),
+            )
+            deleted = connection.execute(
+                "DELETE FROM strategy_signal_outbox WHERE fact_id = ?",
+                (str(fact_id),),
+            )
+            if deleted.rowcount != 1:
+                raise RunnerStateDurabilityError(
+                    "StrategySignal PubAck could not retire its durable outbox fact"
+                )
+            connection.commit()
+            return receipt
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    async def strategy_signal_publication_receipt(
+        self,
+        fact_id: UUID,
+    ) -> StrategySignalPublicationReceipt | None:
+        return await asyncio.to_thread(self._strategy_signal_publication_receipt, fact_id)
+
+    def _strategy_signal_publication_receipt(
+        self,
+        fact_id: UUID,
+    ) -> StrategySignalPublicationReceipt | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM strategy_signal_publication_receipt WHERE fact_id = ?",
+                (str(fact_id),),
+            ).fetchone()
+        if row is None:
+            return None
+        return StrategySignalPublicationReceipt(
+            fact_id=UUID(str(row["fact_id"])),
+            stream_key=str(row["stream_key"]),
+            subject=str(row["subject"]),
+            source_sequence=int(row["source_sequence"]),
+            payload_sha256=str(row["payload_sha256"]),
+            broker_stream=str(row["broker_stream"]),
+            broker_sequence=int(row["broker_sequence"]),
+            broker_domain=str(row["broker_domain"]) if row["broker_domain"] else None,
+            duplicate=bool(row["duplicate"]),
+            publish_attempts=int(row["publish_attempts"]),
+            published_at=str(row["published_at"]),
+        )
+
+    async def record_strategy_signal_failure(
+        self,
+        fact_id: UUID,
+        error: BaseException,
+    ) -> None:
+        await asyncio.to_thread(
+            self._record_strategy_signal_failure,
+            fact_id,
+            type(error).__name__,
+        )
+
+    def _record_strategy_signal_failure(self, fact_id: UUID, error: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE strategy_signal_outbox
+                SET attempts = attempts + 1, last_error = ?
+                WHERE fact_id = ?
+                """,
+                (error[:2048], str(fact_id)),
             )
 
 
@@ -4694,6 +5073,54 @@ class RunnerFactJetStreamPublisher:
                 duplicate=duplicate,
             )
             delivered += 1
+        blocked_signal_streams: set[str] = set()
+        for signal in await self._outbox.pending_strategy_signals():
+            if signal.stream_key in blocked_signal_streams:
+                continue
+            try:
+                document = json.loads(signal.payload)
+                trading_mode = document.get("trading_mode") if isinstance(document, dict) else None
+                if trading_mode not in {"sandbox", "testnet", "live"}:
+                    raise RunnerFactError("StrategySignal has no valid signed trading_mode")
+                profile = self._connection_profiles.get(trading_mode)
+                if profile is None:
+                    raise RunnerFactError(
+                        f"StrategySignal mode {trading_mode!r} has no authenticated transport session"
+                    )
+                profile.assert_publish_subject(signal.subject)
+                jetstream = await self.connect(trading_mode)
+                ack = await jetstream.publish(
+                    signal.subject,
+                    signal.payload,
+                    headers={"Nats-Msg-Id": str(signal.fact_id)},
+                    timeout=self._publish_timeout,
+                )
+                broker_stream = getattr(ack, "stream", None)
+                broker_sequence = getattr(ack, "seq", None)
+                broker_domain = getattr(ack, "domain", None)
+                duplicate_value = getattr(ack, "duplicate", None)
+                if not isinstance(broker_stream, str) or not broker_stream:
+                    raise RunnerFactError("JetStream publish returned no stream acknowledgement")
+                if type(broker_sequence) is not int or broker_sequence < 1:
+                    raise RunnerFactError("JetStream publish returned no sequence acknowledgement")
+                if broker_domain is not None and not isinstance(broker_domain, str):
+                    raise RunnerFactError("JetStream publish returned an invalid domain")
+                if duplicate_value is not None and not isinstance(duplicate_value, bool):
+                    raise RunnerFactError("JetStream publish returned an invalid duplicate flag")
+                broker_domain = broker_domain or None
+                duplicate = bool(duplicate_value)
+            except Exception as exc:
+                await self._outbox.record_strategy_signal_failure(signal.fact_id, exc)
+                blocked_signal_streams.add(signal.stream_key)
+                continue
+            await self._outbox.commit_strategy_signal_puback(
+                signal.fact_id,
+                broker_stream=broker_stream,
+                broker_sequence=broker_sequence,
+                broker_domain=broker_domain,
+                duplicate=duplicate,
+            )
+            delivered += 1
         return delivered
 
     async def run(self, stop: asyncio.Event, idle_seconds: float = 0.5) -> None:
@@ -4747,6 +5174,35 @@ class RunnerFactEmitter:
     ) -> UUID | None:
         self._authority_guard()
         return self._outbox.enqueue_sync(authority, self._identity, tuple(facts))
+
+    def emit_strategy_signal_sync(
+        self,
+        authority: RunnerFactAuthority,
+        *,
+        fact_id: UUID | str,
+        instrument: str,
+        timeframe: str,
+        direction: Literal["long", "short", "flat"],
+        occurred_at: datetime | str,
+        input_digest: str,
+        strategy_version: str,
+        trace_id: UUID | str,
+        client_order_id: str | None = None,
+    ) -> UUID | None:
+        self._authority_guard()
+        return self._outbox.enqueue_strategy_signal_sync(
+            authority,
+            self._identity,
+            fact_id=fact_id,
+            instrument=instrument,
+            timeframe=timeframe,
+            direction=direction,
+            occurred_at=occurred_at,
+            input_digest=input_digest,
+            strategy_version=strategy_version,
+            trace_id=trace_id,
+            client_order_id=client_order_id,
+        )
 
 
 @dataclass(frozen=True, slots=True)

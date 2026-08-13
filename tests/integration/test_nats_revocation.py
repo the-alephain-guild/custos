@@ -135,6 +135,7 @@ def _permission_profile() -> dict[str, Any]:
         "transport_domain": _DOMAIN,
         "publish_allow": [
             f"crucible.runner.fact.v1.{_TENANT}.{runner}.{_MODE}",
+            f"crucible.runner.strategy-signal.v1.{_TENANT}.{runner}.{_MODE}",
             f"$JS.ACK.{stream}.{durable}.>",
             f"$JS.API.CONSUMER.INFO.{stream}.{durable}",
         ],

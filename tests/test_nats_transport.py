@@ -68,6 +68,9 @@ def test_development_local_profile_is_exact_loopback_sandbox() -> None:
         f"custos-control-v1-{_TENANT}-{_RUNNER}-sandbox"
     )
     profile.assert_publish_subject(f"crucible.runner.fact.v1.{_TENANT}.{_RUNNER}.sandbox")
+    profile.assert_publish_subject(
+        f"crucible.runner.strategy-signal.v1.{_TENANT}.{_RUNNER}.sandbox"
+    )
     with pytest.raises(RunnerNatsTransportError, match="local sandbox authority"):
         profile.assert_publish_subject(f"crucible.runner.fact.v1.{_TENANT}.{_RUNNER}.live")
 
@@ -156,6 +159,7 @@ def _permission_profile(trading_mode: str = _MODE) -> dict[str, object]:
         "transport_domain": domain,
         "publish_allow": [
             f"crucible.runner.fact.v1.{_TENANT}.{_RUNNER}.{trading_mode}",
+            f"crucible.runner.strategy-signal.v1.{_TENANT}.{_RUNNER}.{trading_mode}",
             f"$JS.ACK.{stream}.{durable}.>",
             f"$JS.API.CONSUMER.INFO.{stream}.{durable}",
         ],

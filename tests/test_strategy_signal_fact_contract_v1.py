@@ -94,3 +94,7 @@ def test_signal_fact_rejects_invalid_direction_digest_and_sequence() -> None:
         _fact(input_digest=hashlib.sha256(b"x").hexdigest().upper())
     with pytest.raises(RunnerFactContractError):
         _fact(source_sequence=0)
+    with pytest.raises(RunnerFactContractError):
+        _fact(timeframe="x" * 33)
+    with pytest.raises(RunnerFactContractError):
+        _fact(client_order_id="x" * 513)

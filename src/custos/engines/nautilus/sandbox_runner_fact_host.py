@@ -17,6 +17,7 @@ from custos.core.runner_fact import (
 from custos.core.runner_fact_producer import (
     RunnerFactDeployment,
     VenueLedgerEvidence,
+    strategy_signal_metadata,
 )
 from custos.engines.nautilus.host import SandboxSimulationHost
 from custos.engines.nautilus.settlement import (
@@ -137,6 +138,7 @@ class SandboxRunnerFactHost(SandboxSimulationHost):
         )
         currency = _settlement_currency(spec)
         starting_equity = _starting_equity(spec, currency)
+        strategy_version, timeframe = strategy_signal_metadata(spec)
         return (
             RunnerFactDeployment(
                 authority=authority,
@@ -146,6 +148,8 @@ class SandboxRunnerFactHost(SandboxSimulationHost):
                 venue="BINANCE",
                 currency=currency,
                 reconciliation_available=False,
+                strategy_version=strategy_version,
+                timeframe=timeframe,
             ),
             starting_equity,
         )
