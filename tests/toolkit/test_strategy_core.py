@@ -87,6 +87,7 @@ _RETAINED_SYMBOLS = (
     "_on_bar_risk_hygiene",
     "pause",
     "resume",
+    "prepare_shutdown",
     "is_paused",
 )
 

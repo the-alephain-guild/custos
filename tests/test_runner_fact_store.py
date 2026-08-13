@@ -152,7 +152,11 @@ def test_existing_outbox_database_upgrades_in_place_to_single_state_schema(
         version = connection.execute(
             "SELECT schema_version FROM runner_state_schema WHERE singleton = 1"
         ).fetchone()[0]
+        reservation_columns = {
+            row[1] for row in connection.execute("PRAGMA table_info(order_reservation)")
+        }
     assert version == RUNNER_STATE_SCHEMA_VERSION
+    assert "filled_quantity" in reservation_columns
     assert {
         "desired_deployments",
         "applied_deployments",
@@ -177,6 +181,16 @@ def test_newer_database_schema_is_never_silently_downgraded(tmp_path: Path) -> N
         )
 
     with pytest.raises(RunnerStateMigrationError, match="canonical first-production V1"):
+        RunnerFactOutbox(database)
+
+
+def test_pre_quantity_reservation_state_requires_explicit_rebuild(tmp_path: Path) -> None:
+    database = tmp_path / "runner-facts.sqlite3"
+    RunnerFactOutbox(database)
+    with sqlite3.connect(database) as connection:
+        connection.execute("ALTER TABLE order_reservation DROP COLUMN filled_quantity")
+
+    with pytest.raises(RunnerStateMigrationError, match="quantity-aware"):
         RunnerFactOutbox(database)
 
 
@@ -593,6 +607,7 @@ async def test_local_reservation_exposure_and_cross_tenant_guards(tmp_path: Path
         deployment_instance_id=verified.command.deployment_instance_id,
         client_order_id="order-1",
         fill_notional=Decimal("40"),
+        fill_quantity=Decimal("40"),
     )
     await store.record_exposure_checkpoint_reference(
         policy_id=str(POLICY_ID),

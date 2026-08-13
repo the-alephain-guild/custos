@@ -30,6 +30,16 @@ def test_cli_engine_defaults_to_nautilus() -> None:
     assert isinstance(host, NtTradingNodeHost)
 
 
+def test_cli_engine_passes_runner_shutdown_signal_owner_to_nautilus() -> None:
+    def callback() -> None:
+        pass
+
+    host = _build_host(_ns(), process_shutdown_requested=callback)
+
+    assert isinstance(host, NtTradingNodeHost)
+    assert host._process_shutdown_requested is callback
+
+
 def test_cli_engine_noop_is_explicit() -> None:
     assert isinstance(_build_host(_ns(engine="sandbox-sim")), SandboxSimulationHost)
 

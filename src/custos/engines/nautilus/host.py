@@ -16,8 +16,10 @@ without NT; NtTradingNodeHost.deploy fails fast if NT is missing.
 from __future__ import annotations
 
 import asyncio
+import signal
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from decimal import Decimal
 from inspect import isawaitable
 from uuid import UUID
@@ -89,6 +91,37 @@ _SUPPORTED_VENUES = frozenset({"binance", "binance_perpetual"})
 # material (NT config repr, adapter auth errors) — such messages are redacted
 # before logging so a raw key can never reach the log (non-custodial red line 0.1).
 _CREDENTIAL_HINTS = ("api_key", "api_secret", "secret", "authorization")
+
+
+@dataclass(frozen=True, slots=True)
+class _ShutdownPolicy:
+    position_policy: str
+    confirmation_timeout_secs: float
+
+
+def _shutdown_policy_from_spec(spec: dict) -> _ShutdownPolicy:
+    raw = spec.get("shutdown_policy")
+    if raw is None:
+        # Compatibility is deliberately non-liquidating. Canonical testnet input
+        # must opt into flattening, while legacy/live specs preserve exposure.
+        return _ShutdownPolicy(position_policy="preserve", confirmation_timeout_secs=30.0)
+    if hasattr(raw, "model_dump"):
+        raw = raw.model_dump(mode="python")
+    if not isinstance(raw, dict):
+        raise RuntimeError("shutdown policy must be an object")
+    if set(raw) != {"schema_version", "position_policy", "confirmation_timeout_secs"}:
+        raise RuntimeError("shutdown policy field set differs from V1")
+    version = raw.get("schema_version")
+    position_policy = str(raw.get("position_policy") or "")
+    timeout = raw.get("confirmation_timeout_secs")
+    if version != 1 or position_policy not in {"preserve", "flatten"}:
+        raise RuntimeError("shutdown policy V1 is invalid")
+    if isinstance(timeout, bool) or not isinstance(timeout, int) or not 1 <= timeout <= 120:
+        raise RuntimeError("shutdown confirmation timeout must be 1..=120 seconds")
+    return _ShutdownPolicy(
+        position_policy=position_policy,
+        confirmation_timeout_secs=float(timeout),
+    )
 
 
 def _sanitize_exception(exc: Exception) -> dict:
@@ -260,6 +293,7 @@ class NtTradingNodeHost:
         capability_receipt: RunnerCapabilityReceipt | None = None,
         portfolio_snapshot_provider: NautilusPortfolioSnapshotProvider | None = None,
         runner_safety_boundary_factory: Callable[[dict], object] | None = None,
+        process_shutdown_requested: Callable[[], None] | None = None,
     ) -> None:
         # deployment_instance_id -> (TradingNode, background run task). Never holds credentials.
         self._active_nodes: dict[str, tuple] = {}
@@ -279,12 +313,17 @@ class NtTradingNodeHost:
         # answer once a currency is named: a funded account holds several at once, so
         # without this they go unreliable on any real account and fail closed.
         self._settlement_currencies: dict[str, str] = {}
+        self._shutdown_policies: dict[str, _ShutdownPolicy] = {}
         self._stop_timeout_secs = _STOP_TIMEOUT_SECS
+        self._shutdown_poll_secs = 0.2
+        self._shutdown_stable_polls = 3
+        self._shutdown_close_retry_secs = 2.0
         self._tenant_id = tenant_id
         self._runner_id = runner_id
         self._runner_fact_emitter = runner_fact_emitter
         self._capability_receipt = capability_receipt
         self._runner_safety_boundary_factory = runner_safety_boundary_factory
+        self._process_shutdown_requested = process_shutdown_requested
         self._portfolio_snapshot_provider = portfolio_snapshot_provider or (
             NautilusPortfolioSnapshotProvider(price_type_mid=PriceType.MID if PriceType else None)
         )
@@ -347,6 +386,7 @@ class NtTradingNodeHost:
         spec_id = str(spec["deployment_spec_id"])
         deployment_instance_id = str(spec["deployment_instance_id"])
         lifecycle_authority = EngineLifecycleAuthority.from_spec(spec)
+        shutdown_policy = _shutdown_policy_from_spec(spec)
         if deployment_instance_id in self._active_nodes:
             # Idempotency guard: re-deploying a live spec must go through stop first
             # (structural changes are stop + re-deploy), never silently replace it.
@@ -409,6 +449,7 @@ class NtTradingNodeHost:
 
         try:
             node = TradingNode(config=node_config)
+            self._restore_runner_signal_ownership(node)
             node.add_data_client_factory(venue.BINANCE_VENUE, BinanceLiveDataClientFactory)
             node.add_exec_client_factory(venue.BINANCE_VENUE, exec_factory)
             node.build()
@@ -454,6 +495,7 @@ class NtTradingNodeHost:
         # Derived from the pairs rather than the open positions: at this moment there are
         # no positions, and the startup guards read equity immediately.
         self._settlement_currencies[deployment_instance_id] = settlement_currency
+        self._shutdown_policies[deployment_instance_id] = shutdown_policy
 
         _log.info(
             "nt_deploy_started",
@@ -464,8 +506,29 @@ class NtTradingNodeHost:
             permission_scope=credential.get("permission_scope"),
             artifact_activation_id=artifact.activation_id,
             strategy=type(strategy).__name__,
+            shutdown_position_policy=shutdown_policy.position_policy,
         )
         return deployment_instance_id
+
+    def _restore_runner_signal_ownership(self, node: object) -> None:
+        """Keep process termination on the Runner's ordered shutdown path.
+
+        ``TradingNode`` installs its own SIGINT/SIGTERM callbacks during
+        construction. In the long-running Runner daemon those callbacks would
+        stop Nautilus immediately and bypass ``host.close()``, including the
+        signed shutdown position policy. Reinstall the daemon callback after
+        every node construction so one process has one shutdown coordinator.
+        """
+
+        callback = self._process_shutdown_requested
+        if callback is None:
+            return
+        loop = getattr(getattr(node, "kernel", None), "loop", None)
+        add_signal_handler = getattr(loop, "add_signal_handler", None)
+        if not callable(add_signal_handler):
+            raise RuntimeError("Runner cannot reclaim Nautilus process signal ownership")
+        for process_signal in (signal.SIGINT, signal.SIGTERM):
+            add_signal_handler(process_signal, callback)
 
     def _build_exec_plan(self, trading_mode: str, spec: dict, credential: dict, venue):
         """Resolve (exec_config, exec_factory, reconciliation) for the trading mode.
@@ -611,12 +674,7 @@ class NtTradingNodeHost:
         return currency
 
     async def stop(self, deployment_instance_id: str) -> None:
-        self._peak_equity.pop(deployment_instance_id, None)
-        self._settlement_currencies.pop(deployment_instance_id, None)
-        self._runner_fact_contexts.pop(deployment_instance_id, None)
-        self._release_execution_account_partition(deployment_instance_id)
-        entry = self._active_nodes.pop(deployment_instance_id, None)
-        self._lifecycle_authorities.pop(deployment_instance_id, None)
+        entry = self._active_nodes.get(deployment_instance_id)
         if entry is None:
             # Idempotent: stopping an unknown / already-stopped spec is a no-op.
             _log.info(
@@ -626,6 +684,11 @@ class NtTradingNodeHost:
             return
 
         node, task = entry
+        policy = self._shutdown_policies.get(
+            deployment_instance_id,
+            _ShutdownPolicy(position_policy="preserve", confirmation_timeout_secs=30.0),
+        )
+        await self._apply_shutdown_policy(deployment_instance_id, node, policy)
         try:
             await asyncio.wait_for(node.stop_async(), timeout=self._stop_timeout_secs)
         except TimeoutError:
@@ -641,7 +704,175 @@ class NtTradingNodeHost:
                 await task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001 — reaping the run task
                 pass
+            self._peak_equity.pop(deployment_instance_id, None)
+            self._settlement_currencies.pop(deployment_instance_id, None)
+            self._runner_fact_contexts.pop(deployment_instance_id, None)
+            self._release_execution_account_partition(deployment_instance_id)
+            self._active_nodes.pop(deployment_instance_id, None)
+            self._lifecycle_authorities.pop(deployment_instance_id, None)
+            self._shutdown_policies.pop(deployment_instance_id, None)
         _log.info("nt_stop_completed", deployment_instance_id=deployment_instance_id)
+
+    async def _apply_shutdown_policy(
+        self,
+        deployment_instance_id: str,
+        node: object,
+        policy: _ShutdownPolicy,
+    ) -> None:
+        strategies = self._strategies_for_node(node)
+        for strategy in strategies:
+            prepare = getattr(strategy, "prepare_shutdown", None)
+            if callable(prepare):
+                prepare(policy.position_policy)
+            else:
+                pause = getattr(strategy, "pause", None)
+                if callable(pause):
+                    pause()
+
+        if policy.position_policy == "flatten":
+            await self._flatten_and_confirm_shutdown(
+                deployment_instance_id,
+                node,
+                strategies,
+                timeout_secs=policy.confirmation_timeout_secs,
+            )
+        else:
+            await self._preserve_and_confirm_shutdown(
+                deployment_instance_id,
+                node,
+                strategies,
+                timeout_secs=policy.confirmation_timeout_secs,
+            )
+
+    @staticmethod
+    def _open_venue_state(node: object) -> tuple[list, list]:
+        try:
+            positions = list(node.kernel.cache.positions_open())
+            orders = list(node.kernel.cache.orders_open())
+        except Exception as exc:  # noqa: BLE001 - an unreadable venue cache is not confirmation
+            raise RuntimeError("shutdown venue state could not be confirmed") from exc
+        return positions, orders
+
+    @staticmethod
+    def _strategies_for_node(node: object) -> tuple:
+        trader = getattr(node.kernel, "trader", getattr(node, "trader", None))
+        strategy_source = getattr(trader, "strategies", ())
+        return tuple(strategy_source() if callable(strategy_source) else strategy_source)
+
+    @staticmethod
+    def _instrument_ids(positions: list, orders: list) -> set:
+        return {
+            instrument_id
+            for item in (*positions, *orders)
+            if (instrument_id := getattr(item, "instrument_id", None)) is not None
+        }
+
+    async def _preserve_and_confirm_shutdown(
+        self,
+        deployment_instance_id: str,
+        node: object,
+        strategies: tuple,
+        *,
+        timeout_secs: float,
+    ) -> None:
+        """Preserve positions/protection while removing risk-increasing orders."""
+
+        deadline = asyncio.get_running_loop().time() + timeout_secs
+        while asyncio.get_running_loop().time() < deadline:
+            _positions, orders = self._open_venue_state(node)
+            risk_increasing = [
+                order for order in orders if not bool(getattr(order, "is_reduce_only", False))
+            ]
+            if not risk_increasing:
+                _log.info(
+                    "nt_shutdown_preserve_confirmed",
+                    deployment_instance_id=deployment_instance_id,
+                    protective_order_count=len(orders),
+                )
+                return
+            else:
+                canceler = next(
+                    (
+                        strategy
+                        for strategy in strategies
+                        if callable(getattr(strategy, "cancel_order", None))
+                    ),
+                    None,
+                )
+                if canceler is None:
+                    raise RuntimeError(
+                        "shutdown preserve cannot cancel risk-increasing venue orders"
+                    )
+                for order in risk_increasing:
+                    canceler.cancel_order(order)
+            await asyncio.sleep(self._shutdown_poll_secs)
+        raise RuntimeError("shutdown preserve confirmation timed out")
+
+    async def _flatten_and_confirm_shutdown(
+        self,
+        deployment_instance_id: str,
+        node: object,
+        strategies: tuple,
+        *,
+        timeout_secs: float,
+    ) -> None:
+        """Cancel, flatten and require a stable zero venue cache before disposal."""
+
+        deadline = asyncio.get_running_loop().time() + timeout_secs
+        stable_polls = 0
+        last_close_request: float | None = None
+        while asyncio.get_running_loop().time() < deadline:
+            now = asyncio.get_running_loop().time()
+            positions, orders = self._open_venue_state(node)
+            if not positions and not orders:
+                stable_polls += 1
+                if stable_polls >= self._shutdown_stable_polls:
+                    _log.info(
+                        "nt_shutdown_flatten_confirmed",
+                        deployment_instance_id=deployment_instance_id,
+                    )
+                    return
+                await asyncio.sleep(self._shutdown_poll_secs)
+                continue
+
+            stable_polls = 0
+            instrument_ids = self._instrument_ids(positions, orders)
+            if not instrument_ids:
+                raise RuntimeError("shutdown venue state has no instrument identity")
+
+            # Resting protection is canceled before the close so Binance does not
+            # reject the exact reduce-only market close with -2022. A just-submitted
+            # close gets a short acknowledgement window before any cancellation retry.
+            close_ack_pending = (
+                last_close_request is not None
+                and now - last_close_request < self._shutdown_close_retry_secs
+            )
+            if orders and not close_ack_pending:
+                canceler = next(
+                    (
+                        strategy
+                        for strategy in strategies
+                        if callable(getattr(strategy, "cancel_all_orders", None))
+                    ),
+                    None,
+                )
+                if canceler is None:
+                    raise RuntimeError("shutdown flatten cannot cancel venue orders")
+                for instrument_id in instrument_ids:
+                    canceler.cancel_all_orders(instrument_id)
+            elif not orders and positions and not close_ack_pending:
+                await self.flatten_positions(deployment_instance_id, "shutdown_policy")
+                last_close_request = now
+            await asyncio.sleep(self._shutdown_poll_secs)
+        positions, orders = self._open_venue_state(node)
+        _log.error(
+            "nt_shutdown_flatten_unconfirmed",
+            deployment_instance_id=deployment_instance_id,
+            position_count=len(positions),
+            order_count=len(orders),
+            timeout_secs=timeout_secs,
+        )
+        raise RuntimeError("shutdown flatten confirmation timed out")
 
     def attached(self, deployment_instance_id: str) -> bool:
         # Answered from the live node registry rather than the authority record:
@@ -895,7 +1126,7 @@ class NtTradingNodeHost:
                 reason=reason,
             )
             return
-        for strategy in node.kernel.trader.strategies():
+        for strategy in self._strategies_for_node(node):
             # NT's own close_all_positions is reduce-only, and a venue that refuses that
             # form refuses it here too -- leaving containment unable to contain at the
             # one moment it must. Toolkit strategies expose a close that drops
@@ -1024,6 +1255,7 @@ class NtTradingNodeHost:
             self._active_nodes.pop(deployment_instance_id, None)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)
+            self._shutdown_policies.pop(deployment_instance_id, None)
         if task.cancelled():
             return
         exc = task.exception()

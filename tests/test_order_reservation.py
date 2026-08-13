@@ -122,6 +122,7 @@ def test_synchronous_engine_callback_api_commits_the_reservation_lifecycle(
         deployment_instance_id=INSTANCE_A,
         client_order_id="order-sync",
         fill_notional=Decimal("10"),
+        fill_quantity=Decimal("10"),
     )
     released = store.release_order_reservation_sync(
         event_id="reject-sync",
@@ -154,6 +155,7 @@ def test_market_fill_can_settle_above_quote_reservation_within_signed_caps(
         deployment_instance_id=INSTANCE_A,
         client_order_id="order-market",
         fill_notional=Decimal("95"),
+        fill_quantity=Decimal("95"),
     )
 
     assert (filled.reserved_notional, filled.filled_exposure, filled.state) == (
@@ -161,6 +163,83 @@ def test_market_fill_can_settle_above_quote_reservation_within_signed_caps(
         Decimal("95"),
         "filled",
     )
+
+
+@pytest.mark.asyncio
+async def test_profitable_full_close_releases_entry_cost_basis_by_quantity(
+    tmp_path: Path,
+) -> None:
+    """Exit-price movement must not turn a flat venue position into a state error."""
+
+    store = _store(tmp_path / "runner-profitable-close-state.sqlite3")
+    store.reserve_order_notional_sync(
+        event_id="reserve-profitable-close",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-profitable-close",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("44.18442"),
+    )
+    filled = store.record_order_fill_sync(
+        event_id="fill-profitable-close",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-profitable-close",
+        fill_notional=Decimal("44.18442"),
+        fill_quantity=Decimal("0.007"),
+    )
+
+    closed = store.record_position_reduction_sync(
+        event_id="close-profitable-close",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-profitable-close",
+        reduction_notional=Decimal("44.20206"),
+        reduction_quantity=Decimal("0.007"),
+    )
+    exposure = await store.load_runner_exposure(POLICY_ID)
+
+    assert filled.filled_quantity == Decimal("0.007")
+    assert (closed.filled_quantity, closed.filled_exposure, closed.state) == (
+        Decimal("0"),
+        Decimal("0"),
+        "closed",
+    )
+    assert exposure.open_exposure == Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_partial_close_releases_proportional_entry_cost_basis(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path / "runner-partial-close-cost-basis.sqlite3")
+    await store.reserve_order_notional(
+        event_id="reserve-partial-close",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-partial-close",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("80"),
+    )
+    await store.record_order_fill(
+        event_id="fill-partial-close",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-partial-close",
+        fill_notional=Decimal("80"),
+        fill_quantity=Decimal("8"),
+    )
+
+    reduced = await store.record_position_reduction(
+        event_id="reduce-partial-close",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="order-partial-close",
+        reduction_notional=Decimal("26"),
+        reduction_quantity=Decimal("2"),
+    )
+    exposure = await store.load_runner_exposure(POLICY_ID)
+
+    assert (reduced.filled_quantity, reduced.filled_exposure, reduced.state) == (
+        Decimal("6"),
+        Decimal("60"),
+        "filled",
+    )
+    assert exposure.open_exposure == Decimal("60")
 
 
 def test_multiple_partial_fills_accumulate_without_dropping_the_source_reservation(
@@ -180,12 +259,14 @@ def test_multiple_partial_fills_accumulate_without_dropping_the_source_reservati
         deployment_instance_id=INSTANCE_A,
         client_order_id="order-partial",
         fill_notional=Decimal("31"),
+        fill_quantity=Decimal("31"),
     )
     second = store.record_order_fill_sync(
         event_id="fill-partial-2",
         deployment_instance_id=INSTANCE_A,
         client_order_id="order-partial",
         fill_notional=Decimal("39"),
+        fill_quantity=Decimal("39"),
     )
 
     assert (first.reserved_notional, first.filled_exposure, first.state) == (
@@ -268,6 +349,7 @@ async def test_fill_replace_cancel_and_close_preserve_exposure_invariants(
         deployment_instance_id=INSTANCE_A,
         client_order_id="order-a",
         fill_notional=Decimal("40"),
+        fill_quantity=Decimal("40"),
     )
     replaced = await store.replace_order_reservation(
         event_id="replace-1",
@@ -286,12 +368,14 @@ async def test_fill_replace_cancel_and_close_preserve_exposure_invariants(
         deployment_instance_id=INSTANCE_A,
         client_order_id="order-a",
         reduction_notional=Decimal("15"),
+        reduction_quantity=Decimal("15"),
     )
     closed = await store.record_position_reduction(
         event_id="close-2",
         deployment_instance_id=INSTANCE_A,
         client_order_id="order-a",
         reduction_notional=Decimal("25"),
+        reduction_quantity=Decimal("25"),
     )
     exposure = await store.load_runner_exposure(POLICY_ID)
 

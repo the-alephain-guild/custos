@@ -549,8 +549,15 @@ class NautilusTradingStrategy(NautilusStrategyCore):
 
         # Clean up each pair
         for _, ctx in self._contexts.items():
-            # Cancel all orders
-            self.cancel_all_orders(ctx.instrument_id)
+            if self._shutdown_position_policy == "preserve":
+                # A stopped live process must not leave future entry intent resting,
+                # but canceling reduce-only protection would turn a deliberately
+                # preserved position into an unprotected one.
+                for order in self.cache.orders_open(instrument_id=ctx.instrument_id):
+                    if not bool(getattr(order, "is_reduce_only", False)):
+                        self.cancel_order(order)
+            else:
+                self.cancel_all_orders(ctx.instrument_id)
 
             # Unsubscribe from bar data
             self.unsubscribe_bars(ctx.bar_type)

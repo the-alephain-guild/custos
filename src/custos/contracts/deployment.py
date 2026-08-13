@@ -83,6 +83,21 @@ class SandboxExecutionConfigV1(BaseModel):
     starting_balances: list[str] = Field(min_length=1)
 
 
+class ShutdownPositionPolicy(StrEnum):
+    PRESERVE = "preserve"
+    FLATTEN = "flatten"
+
+
+class RunnerShutdownPolicyV1(BaseModel):
+    """Owner-declared venue exposure disposition before engine disposal."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Annotated[StrictInt, Field(ge=1, le=1)]
+    position_policy: ShutdownPositionPolicy
+    confirmation_timeout_secs: Annotated[StrictInt, Field(ge=1, le=120)]
+
+
 class RunnerExecutionConfigV1(BaseModel):
     """Typed engine input carried by the sole first-production command V1."""
 
@@ -97,6 +112,7 @@ class RunnerExecutionConfigV1(BaseModel):
     log_level: str = "INFO"
     sandbox: SandboxExecutionConfigV1 | None = None
     nautilus_config: dict[str, Any] = Field(default_factory=dict)
+    shutdown_policy: RunnerShutdownPolicyV1 | None = None
 
 
 class CredentialScopeRefV1(BaseModel):
@@ -175,6 +191,7 @@ class DeploymentSpec(BaseModel):
     log_level: str = "INFO"
     sandbox: SandboxExecutionConfigV1 | None = None
     nautilus_config: dict[str, Any] = Field(default_factory=dict)
+    shutdown_policy: RunnerShutdownPolicyV1 | None = None
     promotion_id: UUID | None = None
     promotion_evidence_digest: Sha256Hex | None = None
 
@@ -281,6 +298,7 @@ def runtime_deployment_spec(
             "log_level": runtime.log_level,
             "sandbox": runtime.sandbox,
             "nautilus_config": runtime.nautilus_config,
+            "shutdown_policy": runtime.shutdown_policy,
             "promotion_id": canonical.get("promotion_id"),
             "promotion_evidence_digest": canonical.get("promotion_evidence_digest"),
         }

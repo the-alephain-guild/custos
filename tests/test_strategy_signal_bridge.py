@@ -59,12 +59,17 @@ class _OrderEvent:
         *,
         event_id: str = "60000000-0000-4000-8000-000000000001",
         reduce_only: bool = False,
+        order_side: str = "BUY",
+        order_type: str = "MARKET",
+        quantity: str = "0.007",
     ) -> None:
         self.values = {
             "event_id": event_id,
             "client_order_id": "supertrend-entry-1",
             "instrument_id": "BTCUSDT-PERP.BINANCE",
-            "order_side": "BUY",
+            "order_side": order_side,
+            "order_type": order_type,
+            "quantity": quantity,
             "reduce_only": reduce_only,
             "ts_event": 1_786_586_400_000_000_000,
         }
@@ -143,20 +148,55 @@ def test_order_initialization_emits_one_signal_before_submission_outcome() -> No
     assert first["timeframe"] == "1-MINUTE"
     assert len(str(first["input_digest"])) == 64
     json.dumps(first, default=str)
-    assert runtime_logs.events[0]["message"] == "order_submitted"
+    assert runtime_logs.events[0]["message"] == "order_initialized"
     assert runtime_logs.events[0]["structured_fields"] == {
         "client_order_id": "supertrend-entry-1",
         "instrument": "BTCUSDT-PERP.BINANCE",
         "side": "long",
+        "lifecycle": "initialized",
+        "order_role": "strategy_entry",
+        "order_type": "market",
+        "quantity": "0.007",
+    }
+    assert runtime_logs.events[1]["message"] == "order_submitted"
+    assert runtime_logs.events[1]["structured_fields"] == {
+        "client_order_id": "supertrend-entry-1",
+        "instrument": "BTCUSDT-PERP.BINANCE",
+        "side": "long",
         "lifecycle": "submitted",
+        "order_role": "strategy_entry",
     }
 
 
-def test_reduce_only_initialization_is_a_flat_signal() -> None:
+def test_protective_stop_is_owned_without_polluting_strategy_signals() -> None:
+    emitter = _Emitter()
+    runtime_logs = _RuntimeLogEmitter()
+
+    RunnerFactMessageBusBridge(
+        emitter=emitter,
+        deployment=_deployment(),
+        runtime_log_emitter=runtime_logs,
+    )._on_order_event(
+        OrderInitialized(reduce_only=True, order_side="SELL", order_type="STOP_MARKET")
+    )
+
+    assert emitter.signals == []
+    assert runtime_logs.events[0]["structured_fields"] == {
+        "client_order_id": "supertrend-entry-1",
+        "instrument": "BTCUSDT-PERP.BINANCE",
+        "side": "sell",
+        "lifecycle": "initialized",
+        "order_role": "protective_stop",
+        "order_type": "stop_market",
+        "quantity": "0.007",
+    }
+
+
+def test_reduce_only_strategy_exit_remains_a_flat_signal() -> None:
     emitter = _Emitter()
 
     RunnerFactMessageBusBridge(emitter=emitter, deployment=_deployment())._on_order_event(
-        OrderInitialized(reduce_only=True)
+        OrderInitialized(reduce_only=True, order_side="SELL")
     )
 
     assert emitter.signals[0]["direction"] == "flat"
@@ -174,7 +214,7 @@ def test_local_order_rejection_emits_structured_signed_lifecycle_fact() -> None:
     bridge._on_order_event(OrderInitialized())  # noqa: SLF001
     bridge._on_order_event(OrderRejected())  # noqa: SLF001
 
-    rejection = runtime_logs.events[0]
+    rejection = runtime_logs.events[1]
     assert rejection["level"] == "WARN"
     assert rejection["component"] == "custos.execution.order"
     assert rejection["message"] == "order_rejected"
@@ -183,6 +223,7 @@ def test_local_order_rejection_emits_structured_signed_lifecycle_fact() -> None:
         "instrument": "BTCUSDT-PERP.BINANCE",
         "side": "long",
         "lifecycle": "rejected",
+        "order_role": "strategy_entry",
         "reason_code": "custos_runner_notional_policy_rejected",
     }
 

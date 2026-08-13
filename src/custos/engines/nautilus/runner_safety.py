@@ -84,6 +84,9 @@ class NautilusCachedOrderSemantics:
             event.last_px,
         )
 
+    def fill_quantity(self, event: Any) -> Decimal:
+        return _decimal(event.last_qty, field="fill quantity")
+
     def order_is_risk_reducing(self, order: Any) -> bool:
         return _truthy_attr(order, "is_reduce_only")
 

@@ -100,6 +100,9 @@ class _Semantics:
     def fill_notional(self, event) -> Decimal:
         return Decimal(str(event.notional))
 
+    def fill_quantity(self, event) -> Decimal:
+        return Decimal(str(event.quantity))
+
     def order_is_risk_reducing(self, order) -> bool:
         return bool(order.reduce_only)
 
@@ -407,6 +410,7 @@ class OrderFilled:
         self.event_id = "fill-event-1"
         self.client_order_id = "order-3"
         self.notional = "7"
+        self.quantity = "0.007"
         self.reduce_only = reduce_only
         self.exposure_source_order_id = exposure_source_order_id
 
@@ -459,6 +463,7 @@ def test_order_events_advance_fill_and_cancel_reservations() -> None:
 
     assert [entry[0] for entry in log] == ["fill", "release"]
     assert log[0][1]["fill_notional"] == Decimal("7")
+    assert log[0][1]["fill_quantity"] == Decimal("0.007")
     assert log[1][1]["reason"] == "canceled"
 
 
@@ -488,6 +493,7 @@ def test_reduce_only_fill_releases_open_exposure_when_reservation_exists() -> No
 
     assert [entry[0] for entry in log] == ["reduce"]
     assert log[0][1]["reduction_notional"] == Decimal("7")
+    assert log[0][1]["reduction_quantity"] == Decimal("0.007")
 
 
 def test_unattributed_reduce_only_fill_freezes_new_risk_without_raising() -> None:

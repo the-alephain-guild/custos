@@ -16,6 +16,7 @@ Failure-mode contract (plan §failure-mode coverage table):
 from __future__ import annotations
 
 import asyncio
+import signal
 from dataclasses import dataclass, field
 from uuid import NAMESPACE_URL, uuid5
 
@@ -90,8 +91,35 @@ class _FakeMsgBus:
 
 
 class _FakeKernel:
-    def __init__(self) -> None:
+    def __init__(self, trader) -> None:
         self.msgbus = _FakeMsgBus()
+        self.trader = trader
+        self.cache = _FakeCache()
+        self.loop = _FakeLoop()
+
+
+class _FakeLoop:
+    def __init__(self) -> None:
+        self.signal_handlers: dict[signal.Signals, object] = {}
+
+    def add_signal_handler(self, process_signal, callback) -> None:
+        self.signal_handlers[process_signal] = callback
+
+
+class _FakeCache:
+    def __init__(self) -> None:
+        self.positions: list = []
+        self.orders: list = []
+
+    def positions_open(self, instrument_id=None) -> list:
+        if instrument_id is None:
+            return list(self.positions)
+        return [item for item in self.positions if item.instrument_id == instrument_id]
+
+    def orders_open(self, instrument_id=None) -> list:
+        if instrument_id is None:
+            return list(self.orders)
+        return [item for item in self.orders if item.instrument_id == instrument_id]
 
 
 class _FakeTradingNode:
@@ -106,7 +134,7 @@ class _FakeTradingNode:
         self.data_factories: list = []
         self.exec_factories: list = []
         self.trader = _FakeTrader()
-        self.kernel = _FakeKernel()
+        self.kernel = _FakeKernel(self.trader)
         self._stop = asyncio.Event()
         self.build_raises = False
         self.build_error_msg = "nt build boom"
@@ -184,6 +212,33 @@ async def test_deploy_sandbox_success(monkeypatch) -> None:
         assert [n for n, _ in node.exec_factories] == ["BINANCE"]
         assert [n for n, _ in node.data_factories] == ["BINANCE"]
         assert node.trader.strategies == [artifact.strategy]
+    finally:
+        await host.stop(deployment_instance_id)
+
+
+@pytest.mark.asyncio
+async def test_runner_daemon_reclaims_process_signals_after_node_construction(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    shutdown_requests: list[str] = []
+    host = NtTradingNodeHost(
+        process_shutdown_requested=lambda: shutdown_requests.append("requested")
+    )
+    deployment_instance_id = _deployment_instance_id("runner-signals")
+    await host.deploy(
+        _spec("runner-signals"),
+        _credential(),
+        _Artifact(),
+    )
+    try:
+        node = _FakeTradingNode.instances[-1]
+        assert set(node.kernel.loop.signal_handlers) == {
+            signal.SIGINT,
+            signal.SIGTERM,
+        }
+        node.kernel.loop.signal_handlers[signal.SIGTERM]()
+        assert shutdown_requests == ["requested"]
     finally:
         await host.stop(deployment_instance_id)
 
@@ -305,6 +360,100 @@ async def test_stop_timeout_forces_dispose(monkeypatch) -> None:
     assert "nt_stop_timeout" in [e.get("event") for e in logs]
     assert node.disposed is True
     assert deployment_instance_id not in host._active_nodes
+
+
+@dataclass(slots=True)
+class _VenuePosition:
+    instrument_id: str = "BTCUSDT-PERP.BINANCE"
+
+
+@dataclass(slots=True)
+class _VenueOrder:
+    is_reduce_only: bool
+    instrument_id: str = "BTCUSDT-PERP.BINANCE"
+
+
+class _ShutdownAwareStrategy:
+    def __init__(self) -> None:
+        self.node = None
+        self.prepared: list[str] = []
+        self.cancelled_all: list[str] = []
+        self.cancelled: list[_VenueOrder] = []
+        self.closed: list[str] = []
+
+    def prepare_shutdown(self, position_policy: str) -> None:
+        self.prepared.append(position_policy)
+
+    def cancel_all_orders(self, instrument_id: str) -> None:
+        self.cancelled_all.append(instrument_id)
+        self.node.kernel.cache.orders.clear()
+
+    def cancel_order(self, order: _VenueOrder) -> None:
+        self.cancelled.append(order)
+        self.node.kernel.cache.orders.remove(order)
+
+    def close_all_positions_with_fallback(self, instrument_id: str) -> None:
+        self.closed.append(instrument_id)
+        self.node.kernel.cache.positions.clear()
+
+
+@pytest.mark.asyncio
+async def test_explicit_flatten_shutdown_confirms_zero_before_dispose(monkeypatch) -> None:
+    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    strategy = _ShutdownAwareStrategy()
+    host = NtTradingNodeHost()
+    host._shutdown_poll_secs = 0
+    host._shutdown_stable_polls = 1
+    spec = _spec(
+        "flatten-stop",
+        trading_mode="testnet",
+        shutdown_policy={
+            "schema_version": 1,
+            "position_policy": "flatten",
+            "confirmation_timeout_secs": 5,
+        },
+    )
+    deployment_instance_id = spec["deployment_instance_id"]
+    await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
+    node = host._active_nodes[deployment_instance_id][0]
+    strategy.node = node
+    node.kernel.cache.positions.append(_VenuePosition())
+    node.kernel.cache.orders.append(_VenueOrder(is_reduce_only=True))
+
+    await host.stop(deployment_instance_id)
+
+    assert strategy.prepared == ["flatten"]
+    assert strategy.cancelled_all == ["BTCUSDT-PERP.BINANCE"]
+    assert strategy.closed == ["BTCUSDT-PERP.BINANCE"]
+    assert node.kernel.cache.positions == []
+    assert node.kernel.cache.orders == []
+    assert node.disposed is True
+
+
+@pytest.mark.asyncio
+async def test_default_preserve_shutdown_keeps_reduce_only_protection(monkeypatch) -> None:
+    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    strategy = _ShutdownAwareStrategy()
+    host = NtTradingNodeHost()
+    host._shutdown_poll_secs = 0
+    host._shutdown_stable_polls = 1
+    spec = _spec("preserve-stop", trading_mode="testnet")
+    deployment_instance_id = spec["deployment_instance_id"]
+    await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
+    node = host._active_nodes[deployment_instance_id][0]
+    strategy.node = node
+    risk_order = _VenueOrder(is_reduce_only=False)
+    protection = _VenueOrder(is_reduce_only=True)
+    node.kernel.cache.positions.append(_VenuePosition())
+    node.kernel.cache.orders.extend((risk_order, protection))
+
+    await host.stop(deployment_instance_id)
+
+    assert strategy.prepared == ["preserve"]
+    assert strategy.cancelled == [risk_order]
+    assert node.kernel.cache.positions == [_VenuePosition()]
+    assert node.kernel.cache.orders == [protection]
+    assert node.disposed is True
 
 
 @pytest.mark.asyncio

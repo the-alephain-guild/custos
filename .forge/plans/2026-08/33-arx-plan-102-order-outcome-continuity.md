@@ -108,8 +108,9 @@ reduce-only 清理和零仓位/零开放订单复查已完成；该数据不能�
 | `tests/toolkit/test_sltp_mode.py` | 31 |
 | `tests/toolkit/test_sltp_coordinator.py` | 14 |
 | `tests/toolkit/test_trade_event_handler.py` | 12 |
-| `tests/test_order_reservation.py` | 6 |
-| `tests/test_strategy_signal_bridge.py` | 5 |
+| `tests/test_nt_trading_node_host.py` | 25 |
+| `tests/test_order_reservation.py` | 8 |
+| `tests/test_strategy_signal_bridge.py` | 6 |
 | `tests/test_plan_closeout_counts.py` | 17 |
 
 ## 边界

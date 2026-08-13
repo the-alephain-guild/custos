@@ -44,6 +44,8 @@ class OrderSemantics(Protocol):
 
     def fill_notional(self, event: Any) -> Decimal: ...
 
+    def fill_quantity(self, event: Any) -> Decimal: ...
+
     def order_is_risk_reducing(self, order: Any) -> bool: ...
 
     def event_is_risk_reducing(self, event: Any) -> bool: ...
@@ -205,6 +207,7 @@ class RunnerReservationBoundary:
             elif not self._has_reservation(client_order_id):
                 return
             notional = semantics.fill_notional(event)
+            quantity = semantics.fill_quantity(event)
             try:
                 if risk_reducing:
                     if source_order_id is None or not self._has_reservation(source_order_id):
@@ -216,6 +219,7 @@ class RunnerReservationBoundary:
                         deployment_instance_id=self._deployment_instance_id,
                         client_order_id=source_order_id,
                         reduction_notional=notional,
+                        reduction_quantity=quantity,
                     )
                 else:
                     self._store.record_order_fill_sync(
@@ -223,6 +227,7 @@ class RunnerReservationBoundary:
                         deployment_instance_id=self._deployment_instance_id,
                         client_order_id=client_order_id,
                         fill_notional=notional,
+                        fill_quantity=quantity,
                     )
             except Exception as exc:
                 # An exchange fill is already authoritative and cannot be rejected after

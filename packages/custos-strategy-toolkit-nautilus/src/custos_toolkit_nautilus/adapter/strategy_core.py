@@ -289,6 +289,7 @@ class NautilusStrategyCore(Strategy, ABC):
     def __init__(self, config: StrategyConfig) -> None:
         super().__init__(config)
         self._paused: bool = False
+        self._shutdown_position_policy: str | None = None
         self._ready: bool = False
         self._ready_file: str = os.environ.get("STRATEGY_READY_FILE", "/tmp/strategy_ready")
 
@@ -304,6 +305,14 @@ class NautilusStrategyCore(Strategy, ABC):
     def resume(self) -> None:
         super().resume()
         self._paused = False
+
+    def prepare_shutdown(self, position_policy: str) -> None:
+        """Freeze strategy decisions under the owner-declared shutdown policy."""
+
+        if position_policy not in {"preserve", "flatten"}:
+            raise ValueError("shutdown position policy must be preserve or flatten")
+        self._shutdown_position_policy = position_policy
+        self._paused = True
 
     @property
     def is_ready(self) -> bool:
@@ -334,6 +343,8 @@ class NautilusStrategyCore(Strategy, ABC):
     # bar/tick so the engine keeps delivering the next one.
     def on_bar(self, bar: Bar) -> None:
         try:
+            if self._shutdown_position_policy is not None:
+                return
             self._on_bar_risk_hygiene(bar)
             if self._paused:
                 return

@@ -218,6 +218,7 @@ class OrderReservationSnapshot:
     policy_id: UUID
     reserved_notional: Decimal
     filled_exposure: Decimal
+    filled_quantity: Decimal
     state: str
 
 
@@ -1517,6 +1518,7 @@ class RunnerFactOutbox:
                     policy_id TEXT NOT NULL,
                     reserved_notional TEXT NOT NULL,
                     filled_exposure TEXT NOT NULL,
+                    filled_quantity TEXT NOT NULL,
                     state TEXT NOT NULL,
                     updated_at_ns INTEGER NOT NULL,
                     PRIMARY KEY (deployment_instance_id, client_order_id),
@@ -1558,6 +1560,14 @@ class RunnerFactOutbox:
             if not required_activation_columns.issubset(activation_columns):
                 raise RunnerStateMigrationError(
                     "runner state database predates the canonical V1 artifact-source shape; "
+                    "recreate the pre-production database"
+                )
+            reservation_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(order_reservation)")
+            }
+            if "filled_quantity" not in reservation_columns:
+                raise RunnerStateMigrationError(
+                    "runner state database predates quantity-aware exposure accounting; "
                     "recreate the pre-production database"
                 )
             connection.execute(
@@ -3680,8 +3690,9 @@ class RunnerStateStore:
                 """
                 INSERT INTO order_reservation (
                     deployment_instance_id, client_order_id, policy_id,
-                    reserved_notional, filled_exposure, state, updated_at_ns
-                ) VALUES (?, ?, ?, ?, '0', 'reserved', ?)
+                    reserved_notional, filled_exposure, filled_quantity,
+                    state, updated_at_ns
+                ) VALUES (?, ?, ?, ?, '0', '0', 'reserved', ?)
                 """,
                 (
                     instance,
@@ -3697,6 +3708,7 @@ class RunnerStateStore:
                 policy_id=UUID(policy),
                 reserved_notional=requested,
                 filled_exposure=Decimal("0"),
+                filled_quantity=Decimal("0"),
                 state="reserved",
             )
             self._record_reservation_event(
@@ -3891,6 +3903,7 @@ class RunnerStateStore:
         deployment_instance_id: UUID,
         client_order_id: str,
         fill_notional: Decimal,
+        fill_quantity: Decimal,
     ) -> OrderReservationSnapshot:
         return await asyncio.to_thread(
             self._record_order_fill,
@@ -3898,6 +3911,7 @@ class RunnerStateStore:
             deployment_instance_id,
             client_order_id,
             fill_notional,
+            fill_quantity,
         )
 
     def record_order_fill_sync(
@@ -3907,12 +3921,14 @@ class RunnerStateStore:
         deployment_instance_id: UUID,
         client_order_id: str,
         fill_notional: Decimal,
+        fill_quantity: Decimal,
     ) -> OrderReservationSnapshot:
         return self._record_order_fill(
             event_id,
             deployment_instance_id,
             client_order_id,
             fill_notional,
+            fill_quantity,
         )
 
     def _record_order_fill(
@@ -3921,15 +3937,18 @@ class RunnerStateStore:
         deployment_instance_id: UUID,
         client_order_id: str,
         fill_notional: Decimal,
+        fill_quantity: Decimal,
     ) -> OrderReservationSnapshot:
         instance = _uuid(deployment_instance_id, "deployment_instance_id")
         order = _non_empty(client_order_id, "client_order_id")
         fill = Decimal(_decimal(fill_notional, "fill_notional", positive=True))
+        quantity = Decimal(_decimal(fill_quantity, "fill_quantity", positive=True))
         payload = {
             "event_kind": "fill",
             "deployment_instance_id": instance,
             "client_order_id": order,
             "fill_notional": _decimal(fill, "fill_notional"),
+            "fill_quantity": _decimal(quantity, "fill_quantity"),
         }
         with self._outbox._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -3944,6 +3963,7 @@ class RunnerStateStore:
             )
             reserved = Decimal(str(row["reserved_notional"]))
             filled = Decimal(str(row["filled_exposure"])) + fill
+            filled_quantity = Decimal(str(row["filled_quantity"])) + quantity
             if filled > Decimal(str(policy_row["max_order_notional"])):
                 raise RunnerStateAuthorityError("fill exceeds the runner policy per-order cap")
             exposure = self._runner_exposure(connection, policy_row)
@@ -3956,12 +3976,14 @@ class RunnerStateStore:
             connection.execute(
                 """
                 UPDATE order_reservation
-                SET reserved_notional = ?, filled_exposure = ?, state = ?, updated_at_ns = ?
+                SET reserved_notional = ?, filled_exposure = ?, filled_quantity = ?,
+                    state = ?, updated_at_ns = ?
                 WHERE deployment_instance_id = ? AND client_order_id = ?
                 """,
                 (
                     _decimal(remaining, "remaining_reservation"),
                     _decimal(filled, "filled_exposure"),
+                    _decimal(filled_quantity, "filled_quantity"),
                     state,
                     recorded_at_ns,
                     instance,
@@ -3976,7 +3998,11 @@ class RunnerStateStore:
                 source_digest=self._reservation_event_fingerprint(payload),
             )
             snapshot = self._reservation_snapshot(
-                row, reserved=remaining, filled=filled, state=state
+                row,
+                reserved=remaining,
+                filled=filled,
+                filled_quantity=filled_quantity,
+                state=state,
             )
             self._record_reservation_event(
                 connection,
@@ -3995,6 +4021,7 @@ class RunnerStateStore:
         deployment_instance_id: UUID,
         client_order_id: str,
         reduction_notional: Decimal,
+        reduction_quantity: Decimal,
     ) -> OrderReservationSnapshot:
         return await asyncio.to_thread(
             self._record_position_reduction,
@@ -4002,6 +4029,7 @@ class RunnerStateStore:
             deployment_instance_id,
             client_order_id,
             reduction_notional,
+            reduction_quantity,
         )
 
     def record_position_reduction_sync(
@@ -4011,12 +4039,14 @@ class RunnerStateStore:
         deployment_instance_id: UUID,
         client_order_id: str,
         reduction_notional: Decimal,
+        reduction_quantity: Decimal,
     ) -> OrderReservationSnapshot:
         return self._record_position_reduction(
             event_id,
             deployment_instance_id,
             client_order_id,
             reduction_notional,
+            reduction_quantity,
         )
 
     def _record_position_reduction(
@@ -4025,15 +4055,18 @@ class RunnerStateStore:
         deployment_instance_id: UUID,
         client_order_id: str,
         reduction_notional: Decimal,
+        reduction_quantity: Decimal,
     ) -> OrderReservationSnapshot:
         instance = _uuid(deployment_instance_id, "deployment_instance_id")
         order = _non_empty(client_order_id, "client_order_id")
         reduction = Decimal(_decimal(reduction_notional, "reduction_notional", positive=True))
+        quantity = Decimal(_decimal(reduction_quantity, "reduction_quantity", positive=True))
         payload = {
             "event_kind": "position_reduction",
             "deployment_instance_id": instance,
             "client_order_id": order,
             "reduction_notional": _decimal(reduction, "reduction_notional"),
+            "reduction_quantity": _decimal(quantity, "reduction_quantity"),
         }
         with self._outbox._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -4047,11 +4080,18 @@ class RunnerStateStore:
                 deployment_instance_id=instance,
             )
             filled = Decimal(str(row["filled_exposure"]))
-            if reduction > filled:
+            filled_quantity = Decimal(str(row["filled_quantity"]))
+            if filled_quantity <= 0:
+                raise RunnerStateAuthorityError("position reduction has no durable filled quantity")
+            if quantity > filled_quantity:
                 raise RunnerStateAuthorityError(
-                    "position reduction exceeds durable filled exposure"
+                    "position reduction exceeds durable filled quantity"
                 )
-            remaining_filled = filled - reduction
+            remaining_quantity = filled_quantity - quantity
+            released_exposure = (
+                filled if remaining_quantity == 0 else filled * quantity / filled_quantity
+            )
+            remaining_filled = filled - released_exposure
             reserved = Decimal(str(row["reserved_notional"]))
             state = (
                 "partially_filled"
@@ -4062,11 +4102,12 @@ class RunnerStateStore:
             connection.execute(
                 """
                 UPDATE order_reservation
-                SET filled_exposure = ?, state = ?, updated_at_ns = ?
+                SET filled_exposure = ?, filled_quantity = ?, state = ?, updated_at_ns = ?
                 WHERE deployment_instance_id = ? AND client_order_id = ?
                 """,
                 (
                     _decimal(remaining_filled, "filled_exposure"),
+                    _decimal(remaining_quantity, "filled_quantity"),
                     state,
                     recorded_at_ns,
                     instance,
@@ -4076,7 +4117,7 @@ class RunnerStateStore:
             self._adjust_exposure_checkpoint(
                 connection,
                 str(row["policy_id"]),
-                -reduction,
+                -released_exposure,
                 recorded_at_ns,
                 source_digest=self._reservation_event_fingerprint(payload),
             )
@@ -4084,6 +4125,7 @@ class RunnerStateStore:
                 row,
                 reserved=reserved,
                 filled=remaining_filled,
+                filled_quantity=remaining_quantity,
                 state=state,
             )
             self._record_reservation_event(
@@ -4177,7 +4219,7 @@ class RunnerStateStore:
             connection.execute(
                 """
                 UPDATE order_reservation
-                SET reserved_notional = '0', filled_exposure = '0',
+                SET reserved_notional = '0', filled_exposure = '0', filled_quantity = '0',
                     state = 'released', updated_at_ns = ?
                 WHERE policy_id = ?
                 """,
@@ -4188,12 +4230,14 @@ class RunnerStateStore:
                     """
                     INSERT INTO order_reservation (
                         deployment_instance_id, client_order_id, policy_id,
-                        reserved_notional, filled_exposure, state, updated_at_ns
-                    ) VALUES (?, ?, ?, ?, '0', 'reserved', ?)
+                        reserved_notional, filled_exposure, filled_quantity,
+                        state, updated_at_ns
+                    ) VALUES (?, ?, ?, ?, '0', '0', 'reserved', ?)
                     ON CONFLICT(deployment_instance_id, client_order_id) DO UPDATE SET
                         policy_id = excluded.policy_id,
                         reserved_notional = excluded.reserved_notional,
                         filled_exposure = '0',
+                        filled_quantity = '0',
                         state = 'reserved',
                         updated_at_ns = excluded.updated_at_ns
                     """,
@@ -4369,6 +4413,7 @@ class RunnerStateStore:
         *,
         reserved: Decimal | None = None,
         filled: Decimal | None = None,
+        filled_quantity: Decimal | None = None,
         state: str | None = None,
     ) -> OrderReservationSnapshot:
         return OrderReservationSnapshot(
@@ -4380,6 +4425,11 @@ class RunnerStateStore:
             ),
             filled_exposure=(
                 filled if filled is not None else Decimal(str(row["filled_exposure"]))
+            ),
+            filled_quantity=(
+                filled_quantity
+                if filled_quantity is not None
+                else Decimal(str(row["filled_quantity"]))
             ),
             state=state if state is not None else str(row["state"]),
         )
@@ -4504,6 +4554,7 @@ class RunnerStateStore:
                 "policy_id": str(outcome.policy_id),
                 "reserved_notional": _decimal(outcome.reserved_notional, "reserved_notional"),
                 "filled_exposure": _decimal(outcome.filled_exposure, "filled_exposure"),
+                "filled_quantity": _decimal(outcome.filled_quantity, "filled_quantity"),
                 "state": outcome.state,
             }
             instance_id: str | None = str(outcome.deployment_instance_id)
@@ -4552,6 +4603,7 @@ class RunnerStateStore:
             policy_id=UUID(str(value["policy_id"])),
             reserved_notional=Decimal(str(value["reserved_notional"])),
             filled_exposure=Decimal(str(value["filled_exposure"])),
+            filled_quantity=Decimal(str(value["filled_quantity"])),
             state=str(value["state"]),
         )
 

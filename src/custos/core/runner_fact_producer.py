@@ -159,6 +159,7 @@ class RunnerFactMessageBusBridge:
         self._deployment = deployment
         self._runtime_log_emitter = runtime_log_emitter
         self._order_directions: dict[str, str] = {}
+        self._order_roles: dict[str, str] = {}
         self._owned_order_ids: set[str] = set()
 
     def bootstrap(self, message_bus: Any) -> None:
@@ -282,24 +283,63 @@ class RunnerFactMessageBusBridge:
             if not instrument:
                 raise RunnerFactContractError("OrderInitialized has no instrument identity")
             side = str(data.get("order_side") or "").strip().lower().split(".")[-1]
-            if bool(data.get("reduce_only")):
+            if side not in {"buy", "sell"}:
+                raise RunnerFactContractError("OrderInitialized has an unsupported order side")
+            reduce_only = bool(data.get("reduce_only"))
+            order_type = str(data.get("order_type") or "unknown").strip().upper()
+            quantity = str(data.get("quantity") or "").strip()
+            if not quantity:
+                raise RunnerFactContractError("OrderInitialized has no requested quantity")
+            protective = reduce_only and any(
+                marker in order_type for marker in ("STOP", "TAKE_PROFIT", "TRAILING")
+            )
+            if reduce_only:
                 direction = "flat"
             elif side == "buy":
                 direction = "long"
-            elif side == "sell":
-                direction = "short"
             else:
-                raise RunnerFactContractError("OrderInitialized has an unsupported order side")
+                direction = "short"
+            order_role = (
+                "protective_stop"
+                if protective
+                else "position_reduction"
+                if reduce_only
+                else "strategy_entry"
+            )
+            lifecycle_side = side if reduce_only else direction
             if client_order_id:
                 self._owned_order_ids.add(client_order_id)
-                self._order_directions[client_order_id] = direction
+                self._order_directions[client_order_id] = lifecycle_side
+                self._order_roles[client_order_id] = order_role
             occurred_at = _nt_timestamp(data.get("ts_event") or data.get("ts_init"))
+            if self._runtime_log_emitter is not None:
+                self._runtime_log_emitter.emit_sync(
+                    authority,
+                    level="INFO",
+                    component="custos.execution.order",
+                    message="order_initialized",
+                    structured_fields={
+                        "client_order_id": client_order_id,
+                        "instrument": instrument,
+                        "side": lifecycle_side,
+                        "lifecycle": "initialized",
+                        "order_role": order_role,
+                        "order_type": order_type.lower(),
+                        "quantity": quantity,
+                    },
+                    correlation_id=_scoped_event_id(
+                        authority, "order_trace", client_order_id or stable_identity
+                    ),
+                )
+            if protective:
+                return
             input_document = {
                 "client_order_id": client_order_id or None,
                 "direction": direction,
                 "event_id": event_id or None,
                 "instrument": instrument,
                 "occurred_at": occurred_at,
+                "quantity": quantity,
                 "strategy_version": self._deployment.strategy_version,
                 "timeframe": self._deployment.timeframe,
             }
@@ -355,6 +395,7 @@ class RunnerFactMessageBusBridge:
                 "instrument": instrument,
                 "side": side,
                 "lifecycle": lifecycle,
+                "order_role": self._order_roles.get(client_order_id, "strategy_order"),
             }
             if include_reason:
                 reason = str(data.get("reason") or "unknown_rejection").strip()
@@ -370,6 +411,7 @@ class RunnerFactMessageBusBridge:
             )
             if lifecycle in {"rejected", "canceled", "expired"}:
                 self._order_directions.pop(client_order_id, None)
+                self._order_roles.pop(client_order_id, None)
                 self._owned_order_ids.discard(client_order_id)
         except Exception as exc:  # signed lifecycle loss is visible but never kills execution
             _log.error("runner_order_lifecycle_event_failed", error=str(exc))
