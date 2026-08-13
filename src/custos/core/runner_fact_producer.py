@@ -170,12 +170,14 @@ def _capital_basis_fact(
         raise RunnerFactContractError("capital basis amounts must be non-negative")
     if snapshot.capital_mode not in {"compound", "fixed_capital"}:
         raise RunnerFactContractError("capital basis mode is not canonical")
-    correlation_id = _scoped_event_id(
-        authority, "capital_basis_correlation", observed_at.isoformat()
+    correlation_id = str(
+        _scoped_event_id(authority, "capital_basis_correlation", observed_at.isoformat())
     )
     return {
         "kind": "RunnerRuntimeLogFact.v1",
-        "event_id": _scoped_event_id(authority, "capital_basis", observed_at.isoformat()),
+        "event_id": str(
+            _scoped_event_id(authority, "capital_basis", observed_at.isoformat())
+        ),
         "occurred_at": observed_at.isoformat().replace("+00:00", "Z"),
         "level": "INFO",
         "component": "custos.capital_basis",

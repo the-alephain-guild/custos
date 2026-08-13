@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -46,6 +47,7 @@ class _CapturingEmitter:
         self.emissions = []
 
     async def emit(self, authority, facts):
+        json.dumps(facts, allow_nan=False, separators=(",", ":"), sort_keys=True)
         self.emissions.append((authority, tuple(facts)))
 
 
@@ -105,6 +107,8 @@ async def test_observability_emits_signed_capital_basis_without_log_inference() 
     assert len(emitter.emissions) == 1
     facts = emitter.emissions[0][1]
     capital = next(fact for fact in facts if fact["kind"] == "RunnerRuntimeLogFact.v1")
+    assert isinstance(capital["event_id"], str)
+    assert isinstance(capital["correlation_id"], str)
     assert capital["message"] == "runner_capital_basis_observed"
     assert capital["component"] == "custos.capital_basis"
     assert capital["structured_fields"] == {
