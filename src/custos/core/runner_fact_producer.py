@@ -114,8 +114,35 @@ def _money(value: Any, field: str) -> tuple[str, str | None]:
     return amount, currency if separator else None
 
 
-def strategy_signal_metadata(spec: Mapping[str, Any]) -> tuple[str, str]:
-    """Derive honest signal labels from the accepted immutable deployment input."""
+def _metadata_field(value: object, field: str) -> object | None:
+    if isinstance(value, Mapping):
+        return value.get(field)
+    return getattr(value, field, None)
+
+
+def _runtime_strategy_timeframe(strategy: object | None) -> str | None:
+    """Read the bar type the verified Nautilus strategy will actually use."""
+
+    if strategy is None:
+        return None
+    config = _metadata_field(strategy, "config")
+    platforms = _metadata_field(config, "platforms")
+    nautilus = _metadata_field(platforms, "nautilus")
+    bar_type = _metadata_field(nautilus, "bar_type")
+    if bar_type is None:
+        return None
+    timeframe = str(bar_type).strip()
+    if not timeframe:
+        raise RunnerFactContractError("verified runtime strategy timeframe is empty")
+    return timeframe
+
+
+def strategy_signal_metadata(
+    spec: Mapping[str, Any],
+    *,
+    runtime_strategy: object | None = None,
+) -> tuple[str, str]:
+    """Derive honest signal labels from signed input and verified runtime config."""
 
     source = spec.get("artifact_source")
     source = source if isinstance(source, Mapping) else {}
@@ -134,12 +161,20 @@ def strategy_signal_metadata(spec: Mapping[str, Any]) -> tuple[str, str]:
     config = config if isinstance(config, Mapping) else {}
     nautilus = spec.get("nautilus_config")
     nautilus = nautilus if isinstance(nautilus, Mapping) else {}
-    timeframe = str(
-        config.get("timeframe")
-        or config.get("bar_type")
-        or nautilus.get("bar_type")
-        or "unspecified"
-    ).strip()
+    declared_value = config.get("timeframe") or config.get("bar_type") or nautilus.get("bar_type")
+    declared_timeframe = str(declared_value).strip() if declared_value is not None else None
+    if declared_timeframe == "unspecified":
+        declared_timeframe = None
+    runtime_timeframe = _runtime_strategy_timeframe(runtime_strategy)
+    if (
+        declared_timeframe is not None
+        and runtime_timeframe is not None
+        and declared_timeframe != runtime_timeframe
+    ):
+        raise RunnerFactContractError(
+            "declared signal timeframe differs from verified runtime strategy timeframe"
+        )
+    timeframe = runtime_timeframe or declared_timeframe or "unspecified"
     if not strategy_version or not timeframe:
         raise RunnerFactContractError("strategy signal metadata is empty")
     return strategy_version, timeframe

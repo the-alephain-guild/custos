@@ -1,10 +1,17 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from uuid import UUID
 
-from custos.core.runner_fact import RunnerFactAuthority
-from custos.core.runner_fact_producer import RunnerFactDeployment, RunnerFactMessageBusBridge
+import pytest
+
+from custos.core.runner_fact import RunnerFactAuthority, RunnerFactContractError
+from custos.core.runner_fact_producer import (
+    RunnerFactDeployment,
+    RunnerFactMessageBusBridge,
+    strategy_signal_metadata,
+)
 
 
 def _authority() -> RunnerFactAuthority:
@@ -125,6 +132,42 @@ def _deployment() -> RunnerFactDeployment:
         strategy_version="v2",
         timeframe="1-MINUTE",
     )
+
+
+def test_strategy_signal_metadata_uses_verified_runtime_bar_type() -> None:
+    strategy = SimpleNamespace(
+        config=SimpleNamespace(
+            platforms=SimpleNamespace(
+                nautilus=SimpleNamespace(bar_type="1-MINUTE"),
+            )
+        )
+    )
+
+    _, timeframe = strategy_signal_metadata(
+        {"strategy_version": "v2", "strategy_config": {}, "nautilus_config": {}},
+        runtime_strategy=strategy,
+    )
+
+    assert timeframe == "1-MINUTE"
+
+
+def test_strategy_signal_metadata_rejects_declared_runtime_bar_type_drift() -> None:
+    strategy = SimpleNamespace(
+        config=SimpleNamespace(
+            platforms=SimpleNamespace(
+                nautilus=SimpleNamespace(bar_type="1-MINUTE"),
+            )
+        )
+    )
+
+    with pytest.raises(RunnerFactContractError, match="timeframe differs"):
+        strategy_signal_metadata(
+            {
+                "strategy_version": "v2",
+                "strategy_config": {"timeframe": "5-MINUTE"},
+            },
+            runtime_strategy=strategy,
+        )
 
 
 def test_order_initialization_emits_one_signal_before_submission_outcome() -> None:

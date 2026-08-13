@@ -463,7 +463,11 @@ class NtTradingNodeHost:
             self._release_execution_account_partition(deployment_instance_id)
             raise
 
-        fact_context = self._build_runner_fact_context(spec, credential)
+        fact_context = self._build_runner_fact_context(
+            spec,
+            credential,
+            runtime_strategy=strategy,
+        )
         try:
             self._attach_runtime_bridges(
                 node,
@@ -594,7 +598,13 @@ class NtTradingNodeHost:
                 ),
             ).bootstrap(msgbus)
 
-    def _build_runner_fact_context(self, spec: dict, credential: dict):
+    def _build_runner_fact_context(
+        self,
+        spec: dict,
+        credential: dict,
+        *,
+        runtime_strategy: object | None = None,
+    ):
         if self._runner_fact_emitter is None or self._capability_receipt is None:
             return None
         strategy_id = spec.get("strategy_id")
@@ -643,7 +653,10 @@ class NtTradingNodeHost:
             from custos.engines.nautilus.binance_ledger import BinanceVenueLedgerSource
 
             provider = BinanceVenueLedgerSource(spec=spec, credential=credential)
-        strategy_version, timeframe = strategy_signal_metadata(spec)
+        strategy_version, timeframe = strategy_signal_metadata(
+            spec,
+            runtime_strategy=runtime_strategy,
+        )
         deployment = RunnerFactDeployment(
             authority=authority,
             deployment_instance_id=deployment_instance_id,

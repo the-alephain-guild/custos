@@ -90,7 +90,7 @@ reduce-only 清理和零仓位/零开放订单复查已完成；该数据不能�
   单个保护单拒绝隔离）；完整 toolkit：1370/1370；执行边界、reservation、签名事实和
   host 组合：61/61。
 - Ruff：本计划触及文件 format/lint 通过；`git diff --check` 通过。
-- 全库 pytest：2384 passed、24 skipped、1 xfailed；另有一个既有 toolkit producer
+- 全库 pytest：2400 passed、24 skipped、1 xfailed；另有一个既有 toolkit producer
   receipt SHA 漂移失败，以及三个 RC wheel authority 测试因当前任务源码尚未提交而
   正确拒绝 dirty source。本轮此前出现过的本地 OCI registry `127.0.0.1` bind `EPERM`
   未再复现。计数门已按本计划新增测试更新并单独复跑为 17/17。
@@ -110,7 +110,7 @@ reduce-only 清理和零仓位/零开放订单复查已完成；该数据不能�
 | `tests/toolkit/test_trade_event_handler.py` | 12 |
 | `tests/test_nt_trading_node_host.py` | 25 |
 | `tests/test_order_reservation.py` | 8 |
-| `tests/test_strategy_signal_bridge.py` | 6 |
+| `tests/test_strategy_signal_bridge.py` | 8 |
 | `tests/test_plan_closeout_counts.py` | 17 |
 
 ## 边界
