@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from types import SimpleNamespace
 
 from custos.core.engine_protocol import EngineStatus
 from custos.core.engine_safety import EngineSafetySupervisor
@@ -257,6 +258,46 @@ async def test_host_marks_inactive_or_unreliable_status_fail_closed() -> None:
     assert status.phase == "degraded"
     assert status.reliable is False
     assert status.unreliable_reason == "portfolio_equity_invalid"
+
+
+async def test_host_capital_basis_uses_strategy_sizing_and_durable_exposure() -> None:
+    strategy = SimpleNamespace(
+        config=SimpleNamespace(
+            position=SimpleNamespace(initial_capital=Decimal("10000"), capital_mode="compound")
+        ),
+        _get_actual_balance=lambda: Decimal("4463.27"),
+        _get_effective_capital=lambda: Decimal("4463.27"),
+    )
+    node = SimpleNamespace(
+        kernel=SimpleNamespace(trader=SimpleNamespace(strategies=lambda: [strategy]))
+    )
+
+    class _Boundary:
+        async def exposure_snapshot(self):
+            return SimpleNamespace(
+                reserved_notional=Decimal("7"),
+                open_exposure=Decimal("443"),
+                total_exposure=Decimal("450"),
+                max_total_notional=Decimal("1000"),
+                within_policy=True,
+            )
+
+    host = NtTradingNodeHost(tenant_id="tenant", runner_id="runner")
+    host._active_nodes["instance"] = (node, None)
+    host._settlement_currencies["instance"] = "USDT"
+    host._runner_safety_boundaries["instance"] = _Boundary()
+
+    capital = await host.runner_fact_capital_snapshot("instance", "USDT")
+
+    assert capital.venue_available == "4463.27"
+    assert capital.strategy_sizing_basis == "4463.27"
+    assert capital.configured_initial_capital == "10000"
+    assert capital.capital_mode == "compound"
+    assert capital.reserved_notional == "7"
+    assert capital.open_exposure == "443"
+    assert capital.total_exposure == "450"
+    assert capital.max_total_notional == "1000"
+    assert capital.within_policy is True
 
 
 class _SafetyEngine:

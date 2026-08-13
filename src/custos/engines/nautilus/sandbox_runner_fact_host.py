@@ -15,6 +15,7 @@ from custos.core.runner_fact import (
     RunnerFactContractError,
 )
 from custos.core.runner_fact_producer import (
+    RunnerCapitalBasisSnapshot,
     RunnerFactDeployment,
     VenueLedgerEvidence,
     strategy_signal_metadata,
@@ -77,6 +78,33 @@ class SandboxRunnerFactHost(SandboxSimulationHost):
                 "sandbox risk snapshot currency differs from deployment authority"
             )
         return starting_equity, ()
+
+    async def runner_fact_capital_snapshot(
+        self, deployment_instance_id: str, currency: str
+    ) -> RunnerCapitalBasisSnapshot:
+        context = self._runner_fact_contexts.get(deployment_instance_id)
+        if context is None:
+            raise RunnerFactContractError(
+                f"unknown sandbox deployment instance {deployment_instance_id!r}"
+            )
+        deployment, starting_equity = context
+        if currency != deployment.currency:
+            raise RunnerFactContractError(
+                "sandbox capital basis currency differs from deployment authority"
+            )
+        amount = str(starting_equity)
+        return RunnerCapitalBasisSnapshot(
+            currency=currency,
+            venue_available=amount,
+            strategy_sizing_basis=amount,
+            configured_initial_capital=amount,
+            capital_mode="fixed_capital",
+            reserved_notional="0",
+            open_exposure="0",
+            total_exposure="0",
+            max_total_notional=amount,
+            within_policy=True,
+        )
 
     async def runner_fact_venue_ledger(
         self,

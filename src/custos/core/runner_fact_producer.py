@@ -72,12 +72,32 @@ class VenueLedgerEvidence:
     fees: Sequence[Mapping[str, Any]]
 
 
+@dataclass(frozen=True, slots=True)
+class RunnerCapitalBasisSnapshot:
+    """Non-secret execution-capital inputs observed by the running strategy."""
+
+    currency: str
+    venue_available: str
+    strategy_sizing_basis: str
+    configured_initial_capital: str
+    capital_mode: str
+    reserved_notional: str
+    open_exposure: str
+    total_exposure: str
+    max_total_notional: str
+    within_policy: bool
+
+
 class RunnerFactHost(Protocol):
     def runner_fact_deployments(self) -> Sequence[RunnerFactDeployment]: ...
 
     async def runner_fact_risk_snapshot(
         self, deployment_instance_id: str, currency: str
     ) -> tuple[Decimal, Sequence[Mapping[str, Any]]]: ...
+
+    async def runner_fact_capital_snapshot(
+        self, deployment_instance_id: str, currency: str
+    ) -> RunnerCapitalBasisSnapshot: ...
 
     async def runner_fact_venue_ledger(
         self, deployment_instance_id: str, coverage_from: datetime, closed_at: datetime
@@ -112,6 +132,64 @@ def _money(value: Any, field: str) -> tuple[str, str | None]:
         raise RunnerFactContractError(f"{field} is empty")
     amount, separator, currency = text.partition(" ")
     return amount, currency if separator else None
+
+
+def _capital_basis_fact(
+    authority: RunnerFactAuthority,
+    *,
+    observed_at: datetime,
+    venue_equity: Decimal | str | int,
+    snapshot: RunnerCapitalBasisSnapshot,
+) -> dict[str, Any]:
+    """Build one signed, structured capital-basis observation.
+
+    This is deliberately a typed message inside the existing signed RunnerFact
+    stream. It never parses stdout and contains no credential or order identity.
+    """
+
+    if snapshot.currency != str(snapshot.currency).strip().upper():
+        raise RunnerFactContractError("capital basis currency must be uppercase")
+    decimal_fields = {
+        "venue_equity": venue_equity,
+        "venue_available": snapshot.venue_available,
+        "strategy_sizing_basis": snapshot.strategy_sizing_basis,
+        "configured_initial_capital": snapshot.configured_initial_capital,
+        "reserved_notional": snapshot.reserved_notional,
+        "open_exposure": snapshot.open_exposure,
+        "total_exposure": snapshot.total_exposure,
+        "max_total_notional": snapshot.max_total_notional,
+    }
+    normalized = {}
+    for field, value in decimal_fields.items():
+        amount = Decimal(str(value))
+        text = format(amount, "f")
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        normalized[field] = text or "0"
+    if any(Decimal(value) < 0 for value in normalized.values()):
+        raise RunnerFactContractError("capital basis amounts must be non-negative")
+    if snapshot.capital_mode not in {"compound", "fixed_capital"}:
+        raise RunnerFactContractError("capital basis mode is not canonical")
+    correlation_id = _scoped_event_id(
+        authority, "capital_basis_correlation", observed_at.isoformat()
+    )
+    return {
+        "kind": "RunnerRuntimeLogFact.v1",
+        "event_id": _scoped_event_id(authority, "capital_basis", observed_at.isoformat()),
+        "occurred_at": observed_at.isoformat().replace("+00:00", "Z"),
+        "level": "INFO",
+        "component": "custos.capital_basis",
+        "message": "runner_capital_basis_observed",
+        "structured_fields": {
+            "schema_version": 1,
+            "currency": snapshot.currency,
+            **normalized,
+            "capital_mode": snapshot.capital_mode,
+            "within_policy": snapshot.within_policy,
+        },
+        "correlation_id": correlation_id,
+        "causation_id": None,
+    }
 
 
 def _metadata_field(value: object, field: str) -> object | None:
@@ -520,7 +598,7 @@ class RunnerFactProductionLoop:
             equity, positions = await self._host.runner_fact_risk_snapshot(
                 deployment.deployment_instance_id, deployment.currency
             )
-            facts = (
+            facts: tuple[dict[str, Any], ...] = (
                 equity_snapshot(
                     event_id=_scoped_event_id(authority, "equity", observed_at.isoformat()),
                     amount=equity,
@@ -538,6 +616,25 @@ class RunnerFactProductionLoop:
                     observed_at=observed_at,
                 ),
             )
+            try:
+                capital = await self._host.runner_fact_capital_snapshot(
+                    deployment.deployment_instance_id, deployment.currency
+                )
+                facts += (
+                    _capital_basis_fact(
+                        authority,
+                        observed_at=observed_at,
+                        venue_equity=equity,
+                        snapshot=capital,
+                    ),
+                )
+            except Exception as exc:
+                _log.error(
+                    "runner_fact_capital_snapshot_failed",
+                    deployment_instance_id=deployment.deployment_instance_id,
+                    deployment_spec_id=str(authority.deployment_spec_id),
+                    error=str(exc),
+                )
         except Exception as exc:
             _log.error(
                 "runner_fact_risk_snapshot_failed",

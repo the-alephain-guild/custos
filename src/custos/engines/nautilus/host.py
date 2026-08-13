@@ -36,6 +36,7 @@ from custos.core.engine_protocol import (
     PositionSnapshot,
 )
 from custos.core.log import get_logger
+from custos.core.order_reservation_boundary import RunnerReservationBoundary
 from custos.core.runner_fact import (
     SUPPORTED_CURRENCIES,
     RunnerCapabilityReceipt,
@@ -43,6 +44,7 @@ from custos.core.runner_fact import (
     RunnerFactEmitter,
 )
 from custos.core.runner_fact_producer import (
+    RunnerCapitalBasisSnapshot,
     RunnerFactDeployment,
     RunnerFactMessageBusBridge,
     VenueLedgerEvidence,
@@ -300,6 +302,7 @@ class NtTradingNodeHost:
         self._lifecycle_authorities: dict[str, EngineLifecycleAuthority] = {}
         # deployment_instance_id -> signed fact scope plus independent venue ledger adapter.
         self._runner_fact_contexts: dict[str, tuple[RunnerFactDeployment, object | None]] = {}
+        self._runner_safety_boundaries: dict[str, RunnerReservationBoundary] = {}
         # A real venue credential scope represents one account-level order/position
         # stream. Two active deployment nodes on the same scope would both observe and
         # mutate the same net position while claiming instance-scoped facts. Sandbox
@@ -481,11 +484,14 @@ class NtTradingNodeHost:
         try:
             if fact_context is not None:
                 self._runner_fact_contexts[fact_context[0].deployment_instance_id] = fact_context
+            if runner_safety_boundary is not None:
+                self._runner_safety_boundaries[deployment_instance_id] = runner_safety_boundary
             node.trader.add_strategy(strategy)
             settlement_currency = settlement_currency_for_pairs(spec.get("pairs") or [])
             task = asyncio.create_task(node.run_async())
         except Exception:
             self._runner_fact_contexts.pop(deployment_instance_id, None)
+            self._runner_safety_boundaries.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)
             node.dispose()
             raise
@@ -720,6 +726,7 @@ class NtTradingNodeHost:
             self._peak_equity.pop(deployment_instance_id, None)
             self._settlement_currencies.pop(deployment_instance_id, None)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
+            self._runner_safety_boundaries.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)
             self._active_nodes.pop(deployment_instance_id, None)
             self._lifecycle_authorities.pop(deployment_instance_id, None)
@@ -1051,6 +1058,39 @@ class NtTradingNodeHost:
             raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
         return snapshot.equity, snapshot.runner_fact_rows()
 
+    async def runner_fact_capital_snapshot(
+        self, deployment_instance_id: str, currency: str
+    ) -> RunnerCapitalBasisSnapshot:
+        entry = self._active_nodes.get(deployment_instance_id)
+        boundary = self._runner_safety_boundaries.get(deployment_instance_id)
+        if entry is None or boundary is None:
+            raise RuntimeError("capital basis requires an active, guarded deployment")
+        node, _task = entry
+        strategies = self._strategies_for_node(node)
+        if len(strategies) != 1:
+            raise RuntimeError("capital basis requires exactly one strategy per deployment")
+        strategy = strategies[0]
+        if self._declared_currency(deployment_instance_id) != currency:
+            raise RuntimeError("capital basis currency differs from deployment settlement")
+        position = getattr(getattr(strategy, "config", None), "position", None)
+        effective = getattr(strategy, "_get_effective_capital", None)
+        available = getattr(strategy, "_get_actual_balance", None)
+        if position is None or not callable(effective) or not callable(available):
+            raise RuntimeError("strategy does not expose the canonical capital basis interface")
+        exposure = await boundary.exposure_snapshot()
+        return RunnerCapitalBasisSnapshot(
+            currency=currency,
+            venue_available=str(available()),
+            strategy_sizing_basis=str(effective()),
+            configured_initial_capital=str(position.initial_capital),
+            capital_mode=str(position.capital_mode),
+            reserved_notional=str(exposure.reserved_notional),
+            open_exposure=str(exposure.open_exposure),
+            total_exposure=str(exposure.total_exposure),
+            max_total_notional=str(exposure.max_total_notional),
+            within_policy=bool(exposure.within_policy),
+        )
+
     async def runner_fact_venue_ledger(
         self, deployment_instance_id: str, coverage_from, closed_at
     ) -> VenueLedgerEvidence:
@@ -1267,6 +1307,7 @@ class NtTradingNodeHost:
         if entry is not None and entry[1] is task:
             self._active_nodes.pop(deployment_instance_id, None)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
+            self._runner_safety_boundaries.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)
             self._shutdown_policies.pop(deployment_instance_id, None)
         if task.cancelled():

@@ -72,6 +72,15 @@ async def test_sandbox_host_publishes_capability_bound_initial_equity(
     equity, positions = await host.runner_fact_risk_snapshot(spec["deployment_instance_id"], "USDT")
     assert equity == Decimal("10250.50")
     assert positions == ()
+    capital = await host.runner_fact_capital_snapshot(
+        spec["deployment_instance_id"], "USDT"
+    )
+    assert capital.currency == "USDT"
+    assert capital.venue_available == "10250.50"
+    assert capital.strategy_sizing_basis == "10250.50"
+    assert capital.configured_initial_capital == "10250.50"
+    assert capital.capital_mode == "fixed_capital"
+    assert capital.total_exposure == "0"
 
     await host.stop(spec["deployment_instance_id"])
     assert host.runner_fact_deployments() == ()

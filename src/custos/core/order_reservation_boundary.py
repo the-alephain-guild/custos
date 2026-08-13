@@ -36,6 +36,8 @@ class RunnerReservationStore(Protocol):
 
     def record_position_reduction_sync(self, **kwargs: Any) -> Any: ...
 
+    async def load_runner_exposure(self, policy_id: UUID) -> Any: ...
+
 
 class OrderSemantics(Protocol):
     def order_notional(self, order: Any) -> Decimal: ...
@@ -117,6 +119,11 @@ class RunnerReservationBoundary:
         if message_bus is None:
             raise RuntimeError("execution MessageBus unavailable for runner safety bridge")
         message_bus.subscribe("events.order.*", self.on_order_event)
+
+    async def exposure_snapshot(self) -> Any:
+        """Return the durable policy-scoped reservation/exposure aggregate."""
+
+        return await self._store.load_runner_exposure(self._policy_id)
 
     def before_submit_order(self, command: Any) -> tuple[_Reservation, ...]:
         return self._reserve_orders((command.order,), command_id=runner_command_id(command))
