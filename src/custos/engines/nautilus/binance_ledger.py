@@ -300,7 +300,7 @@ class BinanceVenueLedgerSource:
         rows: list[dict[str, Any]] = []
         for row in incomes:
             kind = str(row.get("incomeType") or "").upper()
-            if kind not in {"FUNDING_FEE", "INSURANCE_CLEAR"}:
+            if kind not in {"REALIZED_PNL", "FUNDING_FEE", "INSURANCE_CLEAR"}:
                 continue
             symbol = str(row.get("symbol") or "")
             if symbol and symbol not in self._symbols:
@@ -308,13 +308,23 @@ class BinanceVenueLedgerSource:
             currency = str(row.get("asset") or "").upper()
             if currency not in SUPPORTED_CURRENCIES:
                 raise BinanceVenueLedgerError(f"unsupported Binance income currency {currency}")
-            amount = abs(Decimal(self._decimal(row.get("income"), "income")))
+            income = Decimal(self._decimal(row.get("income"), "income"))
+            if kind == "REALIZED_PNL":
+                economic_kind = "realized_pnl_credit" if income >= 0 else "realized_pnl_debit"
+            elif kind == "FUNDING_FEE":
+                economic_kind = "funding_credit" if income >= 0 else "funding_cost"
+            else:
+                economic_kind = "insurance_credit" if income >= 0 else "insurance_cost"
             rows.append(
                 {
                     "fee_id": f"income:{row.get('tranId')}:{kind}",
-                    "kind": kind.lower(),
+                    # RunnerFact v1 keeps this legacy collection named `fees`,
+                    # while `kind` carries the accounting direction. Amounts
+                    # stay non-negative so the pinned wire schema remains
+                    # unchanged and consumers never infer a sign from `abs()`.
+                    "kind": economic_kind,
                     "currency": currency,
-                    "amount": self._render(amount),
+                    "amount": self._render(abs(income)),
                     "occurred_at": self._timestamp_ms(row.get("time")),
                 }
             )
