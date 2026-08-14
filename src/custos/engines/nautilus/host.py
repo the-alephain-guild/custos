@@ -480,7 +480,7 @@ class NtTradingNodeHost:
             )
         except Exception:
             self._release_execution_account_partition(deployment_instance_id)
-            node.dispose()
+            self._dispose_node_preserving_runner_loop(node)
             raise
         try:
             if fact_context is not None:
@@ -494,7 +494,7 @@ class NtTradingNodeHost:
             self._runner_fact_contexts.pop(deployment_instance_id, None)
             self._runner_safety_boundaries.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)
-            node.dispose()
+            self._dispose_node_preserving_runner_loop(node)
             raise
         task.add_done_callback(
             lambda task, instance_id=deployment_instance_id: self._on_node_task_done(
@@ -735,7 +735,7 @@ class NtTradingNodeHost:
                 timeout_secs=self._stop_timeout_secs,
             )
         finally:
-            node.dispose()
+            self._dispose_node_preserving_runner_loop(node)
             task.cancel()
             try:
                 await task
@@ -750,6 +750,35 @@ class NtTradingNodeHost:
             self._lifecycle_authorities.pop(deployment_instance_id, None)
             self._shutdown_policies.pop(deployment_instance_id, None)
         _log.info("nt_stop_completed", deployment_instance_id=deployment_instance_id)
+
+    @staticmethod
+    def _dispose_node_preserving_runner_loop(node: object) -> None:
+        """Release one Nautilus node without canceling the Runner-owned loop.
+
+        Nautilus ``TradingNode.dispose()`` assumes the node owns its event loop:
+        while that loop is running it cancels every task on the loop and calls
+        ``loop.stop()``. Custos deliberately hosts the node on the long-running
+        Runner loop, so invoking that method would terminate the lifecycle
+        supervisor before its durable restart budget can schedule another
+        attempt. ``stop_async()`` has already stopped the engines at this point;
+        release only the node-scoped streaming task, kernel, and executor.
+        """
+
+        streaming_task = getattr(node, "_task_streaming", None)
+        if streaming_task is not None:
+            streaming_task.cancel()
+            node._task_streaming = None
+
+        kernel = getattr(node, "kernel", None)
+        dispose_kernel = getattr(kernel, "dispose", None)
+        if not callable(dispose_kernel):
+            raise RuntimeError("Nautilus node lacks a kernel disposal boundary")
+        dispose_kernel()
+
+        executor = getattr(kernel, "executor", None)
+        shutdown_executor = getattr(executor, "shutdown", None)
+        if callable(shutdown_executor):
+            shutdown_executor(wait=True, cancel_futures=True)
 
     async def _apply_shutdown_policy(
         self,

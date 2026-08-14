@@ -96,14 +96,23 @@ class _FakeKernel:
         self.trader = trader
         self.cache = _FakeCache()
         self.loop = _FakeLoop()
+        self.executor = None
+        self.disposed = False
+
+    def dispose(self) -> None:
+        self.disposed = True
 
 
 class _FakeLoop:
     def __init__(self) -> None:
         self.signal_handlers: dict[signal.Signals, object] = {}
+        self.stopped = False
 
     def add_signal_handler(self, process_signal, callback) -> None:
         self.signal_handlers[process_signal] = callback
+
+    def stop(self) -> None:
+        self.stopped = True
 
 
 class _FakeCache:
@@ -162,6 +171,7 @@ class _FakeTradingNode:
 
     def dispose(self) -> None:
         self.disposed = True
+        self.kernel.loop.stop()
 
 
 @pytest.fixture(autouse=True)
@@ -358,8 +368,33 @@ async def test_stop_timeout_forces_dispose(monkeypatch) -> None:
     with structlog.testing.capture_logs() as logs:
         await host.stop(deployment_instance_id)
     assert "nt_stop_timeout" in [e.get("event") for e in logs]
-    assert node.disposed is True
+    assert node.kernel.disposed is True
+    assert node.disposed is False
+    assert node.kernel.loop.stopped is False
     assert deployment_instance_id not in host._active_nodes
+
+
+@pytest.mark.asyncio
+async def test_failed_start_cleanup_preserves_runner_loop_for_restart_budget(monkeypatch) -> None:
+    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    host = NtTradingNodeHost()
+    spec = _spec("retry-after-first-connect-failure", trading_mode="testnet")
+    deployment_instance_id = spec["deployment_instance_id"]
+
+    await host.deploy(spec, _credential(), _Artifact())
+    failed_node = host._active_nodes[deployment_instance_id][0]
+    await host.stop(deployment_instance_id)
+
+    assert failed_node.kernel.disposed is True
+    assert failed_node.disposed is False
+    assert failed_node.kernel.loop.stopped is False
+
+    restarted_handle = await host.deploy(spec, _credential(), _Artifact())
+    try:
+        assert restarted_handle == deployment_instance_id
+        assert len(_FakeTradingNode.instances) == 2
+    finally:
+        await host.stop(deployment_instance_id)
 
 
 @dataclass(slots=True)
@@ -427,7 +462,9 @@ async def test_explicit_flatten_shutdown_confirms_zero_before_dispose(monkeypatc
     assert strategy.closed == ["BTCUSDT-PERP.BINANCE"]
     assert node.kernel.cache.positions == []
     assert node.kernel.cache.orders == []
-    assert node.disposed is True
+    assert node.kernel.disposed is True
+    assert node.disposed is False
+    assert node.kernel.loop.stopped is False
 
 
 @pytest.mark.asyncio
@@ -453,7 +490,9 @@ async def test_default_preserve_shutdown_keeps_reduce_only_protection(monkeypatc
     assert strategy.cancelled == [risk_order]
     assert node.kernel.cache.positions == [_VenuePosition()]
     assert node.kernel.cache.orders == [protection]
-    assert node.disposed is True
+    assert node.kernel.disposed is True
+    assert node.disposed is False
+    assert node.kernel.loop.stopped is False
 
 
 @pytest.mark.asyncio
