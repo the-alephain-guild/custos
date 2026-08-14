@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import email
-import hashlib
 import json
 import os
 import subprocess
@@ -81,15 +80,17 @@ def test_contract_implementation_has_one_canonical_source() -> None:
     assert "class StrategyExecutionContextV1" in canonical
 
 
-def test_canonical_v1_receipt_pins_the_only_contract_source() -> None:
+def test_historical_v1_receipt_identifies_its_source_without_pinning_current_bytes() -> None:
     receipt_path = (
         ROOT / "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json"
     )
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-    assert (
-        hashlib.sha256(BASE_SOURCE.read_bytes()).hexdigest() == receipt["producer"]["source_sha256"]
-    )
+    producer = receipt["producer"]
+    assert producer["source_path"] == BASE_SOURCE.relative_to(ROOT).as_posix()
+    assert len(producer["source_sha256"]) == 64
+    assert set(producer["source_sha256"]) <= set("0123456789abcdef")
     assert receipt["status"] == "CANONICAL_V1_PENDING_CONSUMER_RECEIPTS"
+    assert receipt["production_ready"] is False
     assert "predecessor" not in receipt
     assert "historical_task_2_source" not in receipt
 

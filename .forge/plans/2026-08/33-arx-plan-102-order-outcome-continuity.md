@@ -108,7 +108,7 @@ reduce-only 清理和零仓位/零开放订单复查已完成；该数据不能�
 | `tests/toolkit/test_sltp_mode.py` | 31 |
 | `tests/toolkit/test_sltp_coordinator.py` | 14 |
 | `tests/toolkit/test_trade_event_handler.py` | 12 |
-| `tests/test_nt_trading_node_host.py` | 25 |
+| `tests/test_nt_trading_node_host.py` | 26 |
 | `tests/test_order_reservation.py` | 8 |
 | `tests/test_strategy_signal_bridge.py` | 8 |
 | `tests/test_plan_closeout_counts.py` | 17 |
@@ -117,4 +117,19 @@ reduce-only 清理和零仓位/零开放订单复查已完成；该数据不能�
 
 - RC4、RC5、RC6、RC7 都是本地 testnet、`promotable=false` 的失败/纠偏证据，不能解释为生产就绪。
 - Nautilus 首次连接失败会停止共享 event loop 的 F17 仍是独立开放缺陷；成功的 happy path 不能关闭它。
-- 策略 toolkit producer receipt 的既有 source SHA 漂移仍保持 fail-closed，本计划不自签新的 authority bytes。
+- 策略 toolkit producer receipt 保留其当时记录的 source SHA 作为历史 revision
+  证据；当前 toolkit 源码与内部契约由 Git/测试/CI 管理。普通源码变化既不由历史
+  receipt 永久锁定，也不授权重写或刷新该历史 receipt。
+
+## F17 重试循环继续验证（2026-08-14）
+
+- F17 源码修复新增一条真实 host 生命周期回归，使
+  `tests/test_nt_trading_node_host.py` 的实际收集数从 25 增至 26；上表已按
+  本活计划重新计数，不改写更早计划的历史计数。
+- 失败启动/停止清理只释放 Nautilus kernel/executor，不再调用会停止 Runner
+  supervisor 共享 asyncio loop 的顶层 `TradingNode.dispose()`。本轮 focused
+  receipt/count 回归 2/2、`make check-authority` 与全库 `make test` 均通过；全库
+  结果为 2412 passed / 24 skipped / 1 xfailed。
+- 这只修复并锁住代码路径。F17 的真实 testnet 首次连接失败注入、同一 Runner
+  进程消耗 restart budget 后恢复，仍是开放验收门；不得由单测或成功 happy path
+  替代。

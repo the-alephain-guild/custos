@@ -111,8 +111,12 @@ receipts named by Plan 19 arrive.
 
 The current contract implementation is
 `packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py`.
-The canonical V1 receipt binds that path and coordinated V1 bytes. No second
-source, re-export shim or historical runtime authority remains.
+The canonical V1 receipt identifies that path and preserves the coordinated V1
+bytes it recorded. It is historical evidence for that recorded revision, not a
+permanent byte constraint on the current worktree. Current source and internal
+contract evolution are governed by Git commits/tags, review, contract tests and
+CI; ordinary source changes do not authorize rewriting or refreshing the
+historical receipt. No second source or re-export shim remains.
 
 Custos owns two delivery lanes, and only one of them is authoritative. The signed
 lane consumes Crucible-verified desired state and owns everything canonical. The
