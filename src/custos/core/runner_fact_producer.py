@@ -548,9 +548,10 @@ class RunnerFactMessageBusBridge:
 
     @staticmethod
     def _event_client_order_id(event: Any) -> str:
+        # Third-party event decoding must fail closed without killing execution.
         try:
             data = type(event).to_dict(event)
-        except Exception:
+        except Exception:  # noqa: BLE001
             data = {}
         return str(data.get("client_order_id") or getattr(event, "client_order_id", "")).strip()
 
