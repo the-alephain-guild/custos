@@ -16,6 +16,7 @@ from custos_toolkit.contracts.strategy_execution import (
 )
 
 from custos.artifacts.activation import (
+    ActivatedStrategyProviderV1,
     ArtifactActivationCandidateV1,
     DurableArtifactActivatorV1,
     DurableArtifactRuntimeState,
@@ -80,11 +81,18 @@ class PreparedDevelopmentStrategyArtifact:
 class ActivatedDevelopmentStrategyArtifact:
     prepared: PreparedDevelopmentStrategyArtifact
     activation_root: Path
-    strategy: object
+    strategy_provider: ActivatedStrategyProviderV1
 
     @property
     def activation_id(self) -> str:
         return self.prepared.activation_id
+
+    @property
+    def strategy(self) -> object:
+        return self.strategy_provider.create_strategy()
+
+    def create_strategy(self) -> object:
+        return self.strategy_provider.create_strategy()
 
 
 class DevelopmentStrategyArtifactRuntimeV1:
@@ -211,7 +219,7 @@ class DevelopmentStrategyArtifactRuntimeV1:
         return ActivatedDevelopmentStrategyArtifact(
             prepared=prepared,
             activation_root=materialized.activation_root,
-            strategy=materialized.strategy,
+            strategy_provider=materialized.strategy_provider,
         )
 
 

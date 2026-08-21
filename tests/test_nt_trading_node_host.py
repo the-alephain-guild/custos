@@ -16,6 +16,7 @@ Failure-mode contract (plan §failure-mode coverage table):
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import signal
 from dataclasses import dataclass, field
 from uuid import NAMESPACE_URL, uuid5
@@ -72,6 +73,18 @@ def _credential() -> dict:
 class _Artifact:
     activation_id: str = "activation-test"
     strategy: object = field(default_factory=object)
+
+
+class _RenewableArtifact:
+    activation_id = "activation-renewable"
+
+    def __init__(self) -> None:
+        self.instances: list[object] = []
+
+    def create_strategy(self) -> object:
+        strategy = object()
+        self.instances.append(strategy)
+        return strategy
 
 
 class _FakeTrader:
@@ -135,6 +148,7 @@ class _FakeTradingNode:
     """Stand-in for nautilus_trader TradingNode: records calls, no network."""
 
     instances: list = []
+    install_executor_as_loop_default = False
 
     def __init__(self, config) -> None:
         self.config = config
@@ -144,6 +158,9 @@ class _FakeTradingNode:
         self.exec_factories: list = []
         self.trader = _FakeTrader()
         self.kernel = _FakeKernel(self.trader)
+        if self.install_executor_as_loop_default:
+            self.kernel.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            asyncio.get_running_loop().set_default_executor(self.kernel.executor)
         self._stop = asyncio.Event()
         self.build_raises = False
         self.build_error_msg = "nt build boom"
@@ -177,8 +194,10 @@ class _FakeTradingNode:
 @pytest.fixture(autouse=True)
 def _reset_fake_nodes():
     _FakeTradingNode.instances.clear()
+    _FakeTradingNode.install_executor_as_loop_default = False
     yield
     _FakeTradingNode.instances.clear()
+    _FakeTradingNode.install_executor_as_loop_default = False
 
 
 @pytest.mark.asyncio
@@ -377,6 +396,7 @@ async def test_stop_timeout_forces_dispose(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_failed_start_cleanup_preserves_runner_loop_for_restart_budget(monkeypatch) -> None:
     monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    _FakeTradingNode.install_executor_as_loop_default = True
     host = NtTradingNodeHost()
     spec = _spec("retry-after-first-connect-failure", trading_mode="testnet")
     deployment_instance_id = spec["deployment_instance_id"]
@@ -388,11 +408,34 @@ async def test_failed_start_cleanup_preserves_runner_loop_for_restart_budget(mon
     assert failed_node.kernel.disposed is True
     assert failed_node.disposed is False
     assert failed_node.kernel.loop.stopped is False
+    assert await asyncio.to_thread(lambda: "runner-executor-alive") == "runner-executor-alive"
 
     restarted_handle = await host.deploy(spec, _credential(), _Artifact())
     try:
         assert restarted_handle == deployment_instance_id
         assert len(_FakeTradingNode.instances) == 2
+    finally:
+        await host.stop(deployment_instance_id)
+
+
+@pytest.mark.asyncio
+async def test_restart_requests_fresh_strategy_from_activated_artifact(monkeypatch) -> None:
+    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    host = NtTradingNodeHost()
+    artifact = _RenewableArtifact()
+    spec = _spec("retry-with-fresh-strategy", trading_mode="testnet")
+    deployment_instance_id = spec["deployment_instance_id"]
+
+    await host.deploy(spec, _credential(), artifact)
+    first_node = host._active_nodes[deployment_instance_id][0]
+    await host.stop(deployment_instance_id)
+    await host.deploy(spec, _credential(), artifact)
+    second_node = host._active_nodes[deployment_instance_id][0]
+    try:
+        assert len(artifact.instances) == 2
+        assert first_node.trader.strategies[0] is artifact.instances[0]
+        assert second_node.trader.strategies[0] is artifact.instances[1]
+        assert artifact.instances[0] is not artifact.instances[1]
     finally:
         await host.stop(deployment_instance_id)
 

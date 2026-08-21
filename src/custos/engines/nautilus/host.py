@@ -19,6 +19,7 @@ import asyncio
 import signal
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -322,6 +323,7 @@ class NtTradingNodeHost:
         self._shutdown_poll_secs = 0.2
         self._shutdown_stable_polls = 3
         self._shutdown_close_retry_secs = 2.0
+        self._runner_executor: ThreadPoolExecutor | None = None
         self._tenant_id = tenant_id
         self._runner_id = runner_id
         self._runner_fact_emitter = runner_fact_emitter
@@ -400,7 +402,8 @@ class NtTradingNodeHost:
 
         if not artifact.activation_id.strip():
             raise RuntimeError("verified artifact activation identity is required")
-        strategy = artifact.strategy
+        create_strategy = getattr(artifact, "create_strategy", None)
+        strategy = create_strategy() if callable(create_strategy) else artifact.strategy
 
         # Imported lazily: venue_binance imports NautilusTrader at module top.
         from custos.engines.nautilus import venue_binance as venue
@@ -691,6 +694,12 @@ class NtTradingNodeHost:
             strategy_version=strategy_version,
             timeframe=timeframe,
             reconciliation_coverage_started_at=coverage_started_at,
+            valuation_checkpoint_available=(
+                self._capability_receipt.capability_manifest.get("runner_fact_contracts", {})
+                .get("reconciliation", {})
+                .get("valuation_checkpoint")
+                == "v1"
+            ),
         )
         return deployment, provider
 
@@ -751,8 +760,7 @@ class NtTradingNodeHost:
             self._shutdown_policies.pop(deployment_instance_id, None)
         _log.info("nt_stop_completed", deployment_instance_id=deployment_instance_id)
 
-    @staticmethod
-    def _dispose_node_preserving_runner_loop(node: object) -> None:
+    def _dispose_node_preserving_runner_loop(self, node: object) -> None:
         """Release one Nautilus node without canceling the Runner-owned loop.
 
         Nautilus ``TradingNode.dispose()`` assumes the node owns its event loop:
@@ -773,10 +781,22 @@ class NtTradingNodeHost:
         dispose_kernel = getattr(kernel, "dispose", None)
         if not callable(dispose_kernel):
             raise RuntimeError("Nautilus node lacks a kernel disposal boundary")
-        dispose_kernel()
 
         executor = getattr(kernel, "executor", None)
         shutdown_executor = getattr(executor, "shutdown", None)
+        if callable(shutdown_executor):
+            # Nautilus installs its per-node executor as the shared event loop's
+            # default. Restore a Runner-owned executor before closing the node's
+            # pool, otherwise the durable restart write immediately following
+            # stop() fails inside asyncio.to_thread with an already-shut-down pool.
+            if self._runner_executor is None:
+                self._runner_executor = ThreadPoolExecutor(
+                    thread_name_prefix="custos-runner",
+                )
+            asyncio.get_running_loop().set_default_executor(self._runner_executor)
+
+        dispose_kernel()
+
         if callable(shutdown_executor):
             shutdown_executor(wait=True, cancel_futures=True)
 
@@ -1104,6 +1124,21 @@ class NtTradingNodeHost:
         if not snapshot.reliable:
             raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
         return snapshot.equity, snapshot.runner_fact_rows()
+
+    async def runner_fact_valuation_snapshot(
+        self, deployment_instance_id: str, currency: str
+    ) -> tuple[Decimal, list[dict]]:
+        context = self._runner_fact_contexts.get(deployment_instance_id)
+        entry = self._active_nodes.get(deployment_instance_id)
+        if entry is None or context is None:
+            raise RuntimeError(
+                f"RunnerFact DeploymentInstance {deployment_instance_id!r} is not active"
+            )
+        node, _task = entry
+        snapshot = self._portfolio_snapshot_provider.snapshot(node, currency=currency)
+        if not snapshot.reliable:
+            raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
+        return snapshot.equity, snapshot.valuation_rows()
 
     async def runner_fact_capital_snapshot(
         self, deployment_instance_id: str, currency: str

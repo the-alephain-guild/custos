@@ -120,6 +120,7 @@ RUNNER_FACT_KIND_PROJECTORS: Final[Mapping[str, str]] = MappingProxyType(
         "venue_ledger_snapshot_manifest": "reconciliation",
         "venue_ledger_snapshot_chunk": "reconciliation",
         "reconciliation_period_closed": "reconciliation",
+        "RunnerValuationCheckpointFact.v1": "reconciliation",
         "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle",
     }
 )
@@ -149,6 +150,7 @@ RUNNER_FACT_PROJECTOR_CONTRACTS: Final[Mapping[str, Mapping[str, object]]] = Map
                 "venue_ledger_snapshot_manifest": "v1",
                 "venue_ledger_snapshot_chunk": "v1",
                 "reconciliation_period_closed": "v1",
+                "valuation_checkpoint": "v1",
             }
         ),
         "health": MappingProxyType(
@@ -843,6 +845,81 @@ def position_snapshot(
         "event_id": _uuid(event_id, "event_id"),
         "positions": normalized,
         "observed_at": _timestamp(observed_at, "observed_at"),
+    }
+
+
+def valuation_checkpoint(
+    *,
+    event_id: UUID | str,
+    checkpoint_id: UUID | str,
+    venue_snapshot_id: UUID | str,
+    venue: str,
+    currency: str,
+    venue_watermark: str,
+    collection_started_at: datetime | str,
+    observed_at: datetime | str,
+    internal_equity: Decimal | str | int,
+    venue_wallet_balance: Decimal | str | int,
+    positions: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Bind both ledgers to one owner-observed mark set in one signed fact."""
+
+    checkpoint_currency = _currency(currency)
+    started = _timestamp(collection_started_at, "collection_started_at")
+    observed = _timestamp(observed_at, "observed_at")
+    if datetime.fromisoformat(started.replace("Z", "+00:00")) > datetime.fromisoformat(
+        observed.replace("Z", "+00:00")
+    ):
+        raise RunnerFactContractError("collection_started_at must not follow observed_at")
+    normalized_positions = [
+        {
+            "instrument": _non_empty(row.get("instrument"), "positions.instrument"),
+            "currency": _currency(row.get("currency")),
+            "internal_quantity": _signed_decimal(
+                row.get("internal_quantity"), "positions.internal_quantity"
+            ),
+            "internal_avg_entry_price": _decimal(
+                row.get("internal_avg_entry_price"), "positions.internal_avg_entry_price"
+            ),
+            "internal_mark_price": _decimal(
+                row.get("internal_mark_price"), "positions.internal_mark_price", positive=True
+            ),
+            "venue_quantity": _signed_decimal(
+                row.get("venue_quantity"), "positions.venue_quantity"
+            ),
+            "venue_avg_entry_price": _decimal(
+                row.get("venue_avg_entry_price"), "positions.venue_avg_entry_price"
+            ),
+            "common_mark_price": _decimal(
+                row.get("common_mark_price"), "positions.common_mark_price", positive=True
+            ),
+        }
+        for row in positions
+    ]
+    if any(row["currency"] != checkpoint_currency for row in normalized_positions):
+        raise RunnerFactContractError("checkpoint position currency differs from checkpoint")
+    normalized_positions.sort(key=lambda row: str(row["instrument"]))
+    instruments = [str(row["instrument"]) for row in normalized_positions]
+    if len(instruments) != len(set(instruments)):
+        raise RunnerFactContractError("checkpoint positions contains duplicate instrument")
+
+    digest_payload = {
+        "checkpoint_id": _uuid(checkpoint_id, "checkpoint_id"),
+        "venue_snapshot_id": _uuid(venue_snapshot_id, "venue_snapshot_id"),
+        "venue": _non_empty(venue, "venue"),
+        "currency": checkpoint_currency,
+        "venue_watermark": _non_empty(venue_watermark, "venue_watermark"),
+        "collection_started_at": started,
+        "observed_at": observed,
+        "internal_equity": _signed_decimal(internal_equity, "internal_equity"),
+        "venue_wallet_balance": _signed_decimal(venue_wallet_balance, "venue_wallet_balance"),
+        "positions": normalized_positions,
+    }
+    return {
+        "kind": "RunnerValuationCheckpointFact.v1",
+        "event_id": _uuid(event_id, "event_id"),
+        **digest_payload,
+        "checkpoint_digest": _sha256_hex(_canonical_json_bytes(digest_payload)),
     }
 
 
@@ -5632,14 +5709,27 @@ class RunnerCapabilityReceipt:
         manifest = document["capability_manifest"]
         if not isinstance(manifest, dict):
             raise RunnerFactContractError("receipt capability_manifest must be an object")
+        current_projectors = dict(RUNNER_FACT_KIND_PROJECTORS)
+        current_contracts = {
+            projector: dict(contract)
+            for projector, contract in RUNNER_FACT_PROJECTOR_CONTRACTS.items()
+        }
+        legacy_projectors = dict(current_projectors)
+        legacy_projectors.pop("RunnerValuationCheckpointFact.v1")
+        legacy_contracts = {
+            projector: dict(contract) for projector, contract in current_contracts.items()
+        }
+        legacy_contracts["reconciliation"].pop("valuation_checkpoint")
+        declared_contract = (
+            manifest.get("fact_kind_projectors"),
+            manifest.get("runner_fact_contracts"),
+        )
+        known_contract = declared_contract == (current_projectors, current_contracts) or (
+            declared_contract == (legacy_projectors, legacy_contracts)
+        )
         if (
             manifest.get("closed_fact_union") is not True
-            or manifest.get("fact_kind_projectors") != dict(RUNNER_FACT_KIND_PROJECTORS)
-            or manifest.get("runner_fact_contracts")
-            != {
-                projector: dict(contract)
-                for projector, contract in RUNNER_FACT_PROJECTOR_CONTRACTS.items()
-            }
+            or not known_contract
             or manifest.get("unknown_fact_kind") != "terminal_unsupported_contract"
         ):
             raise RunnerFactContractError(

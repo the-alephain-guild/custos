@@ -39,7 +39,7 @@ PRE_IMPORT_NEGATIVE_PATH = (
     "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json"
 )
 CONTRACT_RECEIPT_PATH = "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json"
-HISTORICAL_STRATEGY_CONTRACT_EVIDENCE_PATHS = {
+HISTORICAL_CONTRACT_EVIDENCE_PATHS = {
     INDEX_PATH,
     CONTRACT_RECEIPT_PATH,
 }
@@ -52,6 +52,12 @@ RUNNER_COMMAND_CONSUMER_INDEX_PATH = (
 )
 RUNNER_COMMAND_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json"
+)
+HISTORICAL_CONTRACT_EVIDENCE_PATHS.update(
+    {
+        RUNNER_COMMAND_CONSUMER_INDEX_PATH,
+        RUNNER_COMMAND_CONSUMER_RECEIPT_PATH,
+    }
 )
 RUNNER_COMMAND_CONSUMER_SOURCE = "src/custos/contracts/crucible_runner_command.py"
 RUNNER_COMMAND_CONSUMER_TEST = "tests/test_runner_deployment_command_golden.py"
@@ -755,7 +761,7 @@ def main() -> int:
     managed_assets = {
         relative: expected
         for relative, expected in assets.items()
-        if relative not in HISTORICAL_STRATEGY_CONTRACT_EVIDENCE_PATHS
+        if relative not in HISTORICAL_CONTRACT_EVIDENCE_PATHS
     }
     drift: list[str] = []
     for relative, expected in managed_assets.items():

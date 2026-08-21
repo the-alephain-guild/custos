@@ -3,6 +3,7 @@ from __future__ import annotations
 import email
 import json
 import os
+import runpy
 import subprocess
 import sys
 import tomllib
@@ -80,7 +81,7 @@ def test_contract_implementation_has_one_canonical_source() -> None:
     assert "class StrategyExecutionContextV1" in canonical
 
 
-def test_historical_v1_receipt_identifies_its_source_without_pinning_current_bytes() -> None:
+def test_historical_v1_evidence_identifies_its_source_without_pinning_current_bytes() -> None:
     receipt_path = (
         ROOT / "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json"
     )
@@ -93,6 +94,29 @@ def test_historical_v1_receipt_identifies_its_source_without_pinning_current_byt
     assert receipt["production_ready"] is False
     assert "predecessor" not in receipt
     assert "historical_task_2_source" not in receipt
+
+    generator = runpy.run_path(
+        str(ROOT / "scripts/generate_strategy_contract_assets.py"),
+        run_name="strategy_contract_asset_generator_test",
+    )
+    assert generator["HISTORICAL_CONTRACT_EVIDENCE_PATHS"] == {
+        "docs/authority/strategy-contract-assets-v1.json",
+        "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
+        "docs/authority/crucible-runner-command-consumer-assets-v1.json",
+        "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
+    }
+
+    checker = runpy.run_path(
+        str(ROOT / "scripts/check-authority-docs.py"),
+        run_name="authority_docs_checker_test",
+    )
+    errors: list[str] = []
+    checker["validate_historical_asset_record"](
+        {"path": "recorded/revision/source.py", "sha256": "a" * 64, "size_bytes": 7},
+        errors,
+        label="runner command consumer asset",
+    )
+    assert errors == []
 
 
 def test_lightweight_base_import_does_not_load_nautilus_or_mutate_sys_path() -> None:

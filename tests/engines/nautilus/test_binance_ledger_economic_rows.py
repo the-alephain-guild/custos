@@ -200,3 +200,34 @@ def test_perpetual_position_risk_must_match_account_quantity() -> None:
         assert "position-risk quantity differs" in str(error)
     else:
         raise AssertionError("mismatched account and position-risk quantities must fail closed")
+
+
+def test_common_valuation_inputs_use_wallet_balance_and_position_risk_mark() -> None:
+    source = _source()
+
+    assert source._wallet_balances(
+        {
+            "assets": [
+                {"asset": "BTC", "walletBalance": "1"},
+                {"asset": "USDT", "walletBalance": "4466.5"},
+            ]
+        }
+    ) == {"USDT": "4466.5"}
+    assert source._valuation_positions(
+        [
+            {
+                "symbol": "BTCUSDT",
+                "positionAmt": "-0.0070",
+                "entryPrice": "63567.0",
+                "markPrice": "63504.9",
+            }
+        ]
+    ) == [
+        {
+            "instrument": "BTCUSDT-PERP.BINANCE",
+            "currency": "USDT",
+            "quantity": "-0.007",
+            "avg_entry_price": "63567",
+            "mark_price": "63504.9",
+        }
+    ]

@@ -122,6 +122,95 @@ async def test_first_reconciliation_period_can_cover_from_signed_command_time() 
     assert manifest["coverage_from"] == "2026-08-13T22:25:21Z"
 
 
+class _ValuationHost(_CoverageHost):
+    async def runner_fact_venue_ledger(self, deployment_instance_id, coverage_from, closed_at):
+        evidence = await super().runner_fact_venue_ledger(
+            deployment_instance_id, coverage_from, closed_at
+        )
+        return VenueLedgerEvidence(
+            **{
+                field: getattr(evidence, field)
+                for field in (
+                    "venue",
+                    "source",
+                    "watermark",
+                    "coverage_from",
+                    "observed_through",
+                    "completeness",
+                    "balances",
+                    "positions",
+                    "fills",
+                    "fees",
+                )
+            },
+            valuation_collection_started_at=closed_at - timedelta(seconds=1),
+            venue_wallet_balances={"USDT": "1000"},
+            valuation_positions=(
+                {
+                    "instrument": "BTCUSDT-PERP.BINANCE",
+                    "currency": "USDT",
+                    "quantity": "2",
+                    "avg_entry_price": "95",
+                    "mark_price": "101",
+                },
+            ),
+        )
+
+    async def runner_fact_valuation_snapshot(self, deployment_instance_id, currency):
+        assert currency == "USDT"
+        return (
+            "1010",
+            (
+                {
+                    "instrument": "BTCUSDT-PERP.BINANCE",
+                    "currency": "USDT",
+                    "quantity": "2",
+                    "avg_entry_price": "95",
+                    "mark_price": "100",
+                },
+            ),
+        )
+
+
+async def test_period_close_emits_one_owner_signed_common_valuation_fact() -> None:
+    host = _ValuationHost()
+    emitter = _CapturingEmitter()
+    loop = RunnerFactProductionLoop(
+        host=host,
+        emitter=emitter,
+        snapshot_interval_secs=1,
+        period_secs=60,
+        period_retry_secs=1,
+    )
+    started_at = datetime(2026, 8, 14, 12, 0, tzinfo=UTC)
+    authority = SimpleNamespace(
+        stream_key="default:testnet:runner:instance",
+        deployment_spec_id=uuid4(),
+        trading_mode="testnet",
+    )
+    deployment = SimpleNamespace(
+        authority=authority,
+        deployment_instance_id=str(uuid4()),
+        currency="USDT",
+        reconciliation_available=True,
+        valuation_checkpoint_available=True,
+    )
+
+    assert await loop._close_reconciliation_period(
+        deployment, started_at, started_at + timedelta(seconds=60)
+    )
+
+    checkpoint = next(
+        facts[0]
+        for _, facts in emitter.emissions
+        if facts[0]["kind"] == "RunnerValuationCheckpointFact.v1"
+    )
+    assert checkpoint["venue_wallet_balance"] == "1000"
+    assert checkpoint["positions"][0]["internal_mark_price"] == "100"
+    assert checkpoint["positions"][0]["common_mark_price"] == "101"
+    assert checkpoint["venue_snapshot_id"] == emitter.emissions[0][1][0]["snapshot_id"]
+
+
 class _CapitalBasisHost:
     def __init__(self, deployment) -> None:
         self.deployment = deployment

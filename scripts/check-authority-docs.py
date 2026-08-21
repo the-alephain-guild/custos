@@ -149,6 +149,32 @@ def load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def validate_historical_asset_record(
+    asset: object,
+    errors: list[str],
+    *,
+    label: str,
+) -> None:
+    """Validate a receipt's recorded pin without comparing it to today's worktree."""
+
+    if not isinstance(asset, dict):
+        errors.append(f"{label} entry must be an object")
+        return
+    path = asset.get("path")
+    digest = asset.get("sha256")
+    size_bytes = asset.get("size_bytes")
+    if not isinstance(path, str) or not path:
+        errors.append(f"{label} path is invalid")
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        errors.append(f"{label} recorded digest is invalid")
+    if (
+        not isinstance(size_bytes, int)
+        or isinstance(size_bytes, bool)
+        or size_bytes < 0
+    ):
+        errors.append(f"{label} recorded size is invalid")
+
+
 def _nested(value: object, path: tuple[str, ...]) -> object:
     current = value
     for part in path:
@@ -569,27 +595,21 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
     if not isinstance(model, dict) or model.get("path") != RUNNER_COMMAND_CONSUMER_SOURCE:
         errors.append("runner command consumer consumer model differs")
     else:
-        if model.get("sha256") != hashlib.sha256(source_path.read_bytes()).hexdigest():
-            errors.append("runner command consumer consumer model digest differs")
-        if model.get("size_bytes") != source_path.stat().st_size:
-            errors.append("runner command consumer consumer model size differs")
+        validate_historical_asset_record(
+            model,
+            errors,
+            label="runner command consumer model",
+        )
     consumer_assets = index.get("consumer_assets")
     if not isinstance(consumer_assets, list):
         errors.append("runner command consumer assets must be a list")
         consumer_assets = []
     for asset in consumer_assets:
-        if not isinstance(asset, dict):
-            errors.append("runner command consumer asset entry must be an object")
-            continue
-        asset_path = resolve(str(asset.get("path") or ""))
-        if not asset_path.is_file():
-            errors.append(f"runner command consumer asset is missing: {asset_path}")
-            continue
-        asset_bytes = asset_path.read_bytes()
-        if asset.get("sha256") != hashlib.sha256(asset_bytes).hexdigest() or asset.get(
-            "size_bytes"
-        ) != len(asset_bytes):
-            errors.append(f"runner command consumer asset digest differs: {asset_path}")
+        validate_historical_asset_record(
+            asset,
+            errors,
+            label="runner command consumer asset",
+        )
     fixture = (
         next(
             (
@@ -604,9 +624,9 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
     )
     if (
         not isinstance(fixture, dict)
-        or fixture.get("sha256") != hashlib.sha256(fixture_path.read_bytes()).hexdigest()
+        or fixture.get("path") != RUNNER_COMMAND_GOLDEN_PATH
     ):
-        errors.append("runner command consumer V1 fixture digest differs")
+        errors.append("runner command consumer V1 fixture record differs")
     producer = index.get("producer_authority")
     if not isinstance(producer, dict):
         errors.append("runner command consumer producer authority is missing")

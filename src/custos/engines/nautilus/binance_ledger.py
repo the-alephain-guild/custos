@@ -88,8 +88,8 @@ class BinanceVenueLedgerSource:
     def _collect(self, coverage_from: datetime, closed_at: datetime) -> VenueLedgerEvidence:
         coverage_from = coverage_from.astimezone(UTC)
         closed_at = closed_at.astimezone(UTC)
-        server_ms = self._server_time_ms()
-        observed_through = datetime.fromtimestamp(server_ms / 1000, UTC)
+        collection_started_ms = self._server_time_ms()
+        observed_through = datetime.fromtimestamp(collection_started_ms / 1000, UTC)
         if observed_through < closed_at:
             raise BinanceVenueLedgerError("venue clock has not reached the requested close")
         account = self._signed_get("/fapi/v3/account" if self._futures else "/api/v3/account", {})
@@ -110,8 +110,13 @@ class BinanceVenueLedgerSource:
         )
         fills, fees = self._trade_rows(trades)
         fees.extend(self._income_fee_rows(incomes))
+        observed_ms = self._server_time_ms()
+        observed_through = datetime.fromtimestamp(observed_ms / 1000, UTC)
+        venue_wallet_balances = self._wallet_balances(account)
+        valuation_positions = self._valuation_positions(futures_positions or ())
         source_state = {
-            "server_time_ms": server_ms,
+            "collection_started_ms": collection_started_ms,
+            "observed_ms": observed_ms,
             "symbols": list(self._symbols),
             "trade_ids": sorted((str(row.get("symbol")), str(row.get("id"))) for row in trades),
             "income_ids": sorted(str(row.get("tranId")) for row in incomes),
@@ -133,6 +138,11 @@ class BinanceVenueLedgerSource:
             positions=positions,
             fills=fills,
             fees=fees,
+            valuation_collection_started_at=datetime.fromtimestamp(
+                collection_started_ms / 1000, UTC
+            ),
+            venue_wallet_balances=venue_wallet_balances,
+            valuation_positions=valuation_positions,
         )
 
     def _server_time_ms(self) -> int:
@@ -300,6 +310,44 @@ class BinanceVenueLedgerSource:
                 )
             active[key] = quantity
         return active
+
+    def _wallet_balances(self, account: Any) -> dict[str, str]:
+        if not self._futures:
+            return {}
+        if not isinstance(account, dict):
+            raise BinanceVenueLedgerError("Binance account response must be an object")
+        result: dict[str, str] = {}
+        for row in self._expect_list(account.get("assets")):
+            asset = str(row.get("asset") or "").upper()
+            if asset not in self._settlement_currencies:
+                continue
+            if asset in result:
+                raise BinanceVenueLedgerError("Binance account repeats settlement wallet")
+            result[asset] = self._decimal(row.get("walletBalance"), "walletBalance")
+        return result
+
+    def _valuation_positions(self, rows: Sequence[Mapping[str, Any]]) -> list[dict[str, str]]:
+        result: list[dict[str, str]] = []
+        for row in rows:
+            symbol = str(row.get("symbol") or "")
+            if symbol not in self._symbols:
+                continue
+            quantity = Decimal(self._decimal(row.get("positionAmt"), "positionAmt"))
+            if quantity == 0:
+                continue
+            result.append(
+                {
+                    "instrument": self._canonical_instrument(symbol),
+                    "currency": self._quote_currency(symbol),
+                    "quantity": self._render(quantity),
+                    "avg_entry_price": self._decimal(row.get("entryPrice"), "entryPrice"),
+                    "mark_price": self._decimal(row.get("markPrice"), "markPrice"),
+                }
+            )
+        result.sort(key=lambda row: row["instrument"])
+        if len({row["instrument"] for row in result}) != len(result):
+            raise BinanceVenueLedgerError("Binance valuation repeats instrument")
+        return result
 
     def _trade_rows(
         self, trades: Sequence[Mapping[str, Any]]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import shutil
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -78,10 +78,32 @@ class ArtifactActivationCandidateV1:
     artifact_authority_digest: str
 
 
+@dataclass(slots=True)
+class ActivatedStrategyProviderV1:
+    """Return the verified initial strategy once, then reconstruct fresh instances."""
+
+    initial_strategy: object
+    factory: Callable[[], object]
+    _initial_available: bool = True
+
+    def create_strategy(self) -> object:
+        if self._initial_available:
+            self._initial_available = False
+            return self.initial_strategy
+        return self.factory()
+
+
 @dataclass(frozen=True, slots=True)
 class ActivatedArtifactMaterializationV1:
     activation_root: Path
-    strategy: object
+    strategy_provider: ActivatedStrategyProviderV1
+
+    @property
+    def strategy(self) -> object:
+        return self.strategy_provider.create_strategy()
+
+    def create_strategy(self) -> object:
+        return self.strategy_provider.create_strategy()
 
 
 class DurableArtifactActivatorV1:
@@ -153,13 +175,16 @@ class DurableArtifactActivatorV1:
                     )
                 raise RuntimeError("durable activation failed before Python import") from error
 
-        try:
-            strategy = loader.load(
+        def load_strategy() -> object:
+            return loader.load(
                 activation_root=activation_root,
                 entry_point=candidate.entry_point,
                 effective_config=candidate.effective_config,
                 execution_context=candidate.execution_context,
             )
+
+        try:
+            strategy = load_strategy()
         except Exception as error:
             await self._state.quarantine_artifact_activation(
                 command=command,
@@ -169,12 +194,16 @@ class DurableArtifactActivatorV1:
             raise RuntimeError("verified entry point failed after durable activation") from error
         return ActivatedArtifactMaterializationV1(
             activation_root=activation_root,
-            strategy=strategy,
+            strategy_provider=ActivatedStrategyProviderV1(
+                initial_strategy=strategy,
+                factory=load_strategy,
+            ),
         )
 
 
 __all__ = [
     "ActivatedArtifactMaterializationV1",
+    "ActivatedStrategyProviderV1",
     "ArtifactActivationCandidateV1",
     "DurableArtifactActivatorV1",
     "DurableArtifactRuntimeState",

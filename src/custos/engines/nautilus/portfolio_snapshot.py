@@ -48,6 +48,14 @@ class NautilusPortfolioPosition:
             "currency": self.settlement_currency,
         }
 
+    def valuation_row(self) -> dict[str, str]:
+        """Return cost basis and the original mark for common-mark revaluation."""
+
+        return {
+            **self.runner_fact_row(),
+            "avg_entry_price": str(self.avg_px),
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class NautilusPortfolioSnapshot:
@@ -91,6 +99,9 @@ class NautilusPortfolioSnapshot:
 
     def runner_fact_rows(self) -> list[dict[str, str]]:
         return [position.runner_fact_row() for position in self.positions]
+
+    def valuation_rows(self) -> list[dict[str, str]]:
+        return [position.valuation_row() for position in self.positions]
 
 
 class NautilusPortfolioSnapshotProvider:

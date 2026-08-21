@@ -133,3 +133,23 @@ reduce-only 清理和零仓位/零开放订单复查已完成；该数据不能�
 - 这只修复并锁住代码路径。F17 的真实 testnet 首次连接失败注入、同一 Runner
   进程消耗 restart budget 后恢复，仍是开放验收门；不得由单测或成功 happy path
   替代。
+
+## F17 实服务注入补充收尾（2026-08-14）
+
+前一节的开放状态已由 ARX Plan 102 的同 Runner 实服务证据取代。真实首次连接失败继续
+暴露两项二阶缺陷：节点 executor 被关闭后仍是 Runner loop 的默认 executor，以及重试
+复用已 `DISPOSED` 的 strategy。两项均以失败测试先行修复；随后任务专用 testnet 外层
+容器在真实 Binance DNS/TCP refusal 后，于同一 Runner PID 566、同一 start tick
+`43466501` 内把 durable `restart_count` 从 0 消耗到 1 并恢复 `ready`。该结果只关闭
+local/testnet/non-production 的 F17 验收，不构成生产就绪。
+
+本补充新增一条 renewable strategy 回归，因此以最新 close-out 重新声明当前文件计数，
+不改写上方历史 26 条记录：
+
+| 测试文件 | 条数 |
+|---|---|
+| `tests/test_nt_trading_node_host.py` | 27 |
+
+变更后计数门 17/17 通过；全库 `make test` 为 2413 passed / 24 skipped /
+1 xfailed。此前一次全量运行的唯一失败正是该文件仍声明 26，追加最新声明后同一门与全库
+均转绿。

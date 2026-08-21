@@ -74,6 +74,8 @@ class ActivatedEngineArtifactV1(Protocol):
     @property
     def strategy(self) -> object: ...
 
+    def create_strategy(self) -> object: ...
+
 
 def _reject_float_money(instance: Any) -> None:
     """Raise ``TypeError`` if any money field on ``instance`` is not a
