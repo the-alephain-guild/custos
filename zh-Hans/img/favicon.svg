@@ -1,6 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" fill="#F2EFE6"/>
-  <text x="50%" y="54%" text-anchor="middle" dominant-baseline="middle"
-        font-family="Newsreader, Georgia, serif" font-style="italic"
-        font-weight="300" font-size="48" fill="#B8902F">c</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Custos · A · Chirograph, favicon cut</title>
+  <!-- Route A redrawn to fill the frame: at 16px the margins A and B leave are
+       pixels the mark cannot spare. Four teeth instead of six and a 4.2 stroke,
+       which widens the seam to 4.3 units so the cut still reads at 16. Both
+       colourways ship in this one file — Docusaurus serves one asset to both
+       themes, so a single-ink mark disappears on one of them. -->
+  <style>
+    .ink { stroke: #0F1115; }
+    @media (prefers-color-scheme: dark) {
+      .ink { stroke: #EDE9DD; }
+    }
+  </style>
+  <g class="ink" fill="none" stroke-width="4.2" stroke-linejoin="miter">
+    <path d="M4 4 L19 4 L27.4 18 L19 32 L27.4 46 L19 60 L4 60 Z"></path>
+    <path d="M60 4 L45 4 L36.6 18 L45 32 L36.6 46 L45 60 L60 60 Z"></path>
+  </g>
 </svg>
