@@ -1,6 +1,6 @@
 # 01 - NautilusTrader 1.230.0 → fork 2.0.0rc5 升级
 
-> **Status**: ⏳ In Progress（Task 0 ✅ 2026-09-11；Task 1a 阻塞于 fork 迁组织）
+> **Status**: ⏳ In Progress（Task 0 ✅ 2026-09-11，`make verify` 已在主干全绿；Task 1a 前置已就绪，待定钉的 fork sha）
 > **Created**: 2026-09-11
 > **Project**: custos（跨仓：philosophers-stone）
 > **multi_session_scope**: **true**（6 个 Slice、跨 2 仓库、涉及红线 0.1/0.2/0.4）
@@ -393,7 +393,7 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 
 | Task | Status | Completed | Notes |
 |---|---|---|---|
-| 0 | ✅ | 2026-09-11 | `2bf09e8`；mypy 4→0，test-baseline 2418 passed 与干净基线一致 |
+| 0 | ✅ | 2026-09-11 | `2bf09e8` + `7971bc8`；mypy 4→0、fmt 8→0、lint 2→0，`make verify` exit 0 |
 | 1a | 🔲 | | 前置：fork 迁组织 + 版本 label |
 | 1b | 🔲 | | 切换门：fork tag + CI wheel + Task 8 通过 |
 | 2a | 🔲 | | |
@@ -417,10 +417,10 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 |---|---|---|---|
 | DEV | `pyproject.toml` | **D1 改向：fork 发布 wheel，不用 path 源**。起草版接受「单仓 clone 装不起来」的代价，审查（`b0ff52a` C1/H1/H2）实证代价范围写窄：path 源还会击穿 3.11 base 承诺、`verify-base-clean` 与 Docker runtime lock，且 PS 规则禁 path 源。owner 2026-09-11 审查会话改向 wheel | ✅ owner（会话中口头，本 fix 落文）|
 | DEV | `pyproject.toml` / `Dockerfile` | **D1 再改为两阶段**：fork 活跃期用 git 源（1a），稳定后切 wheel（1b，有触发判据、未完成不得 close-out）。Docker 链的 git 阶段红实测根因是 `uv export` 对 git 源无 `--hash` 而 `Dockerfile:22-27` `--require-hashes`；解法走 custos 自有 wheel 已有的 `--no-deps` 路径 + `nt-builder` + sha 对账，**不登记 known-red**。多出的 `Dockerfile` / `Makefile:96-103` / `test_docker_runtime_contract.py` 三处已进清单 | ✅ owner 2026-09-12 |
-| DEV | `.python-version` / `tech-stack.md` | **D2 撤回**：「fork 仅 cp313 .so」是本机构建产物而非约束（`git ls-files` 0 条；fork `requires-python >=3.12`）。解释器保持 3.12，三处偏离取消。**假设**：owner 若仍要升 3.13 须另给理由 | ⏳ 待 owner 确认撤回 |
+| DEV | `.python-version` / `tech-stack.md` | **D2 撤回**：「fork 仅 cp313 .so」是本机构建产物而非约束（`git ls-files` 0 条；fork `requires-python >=3.12`）。解释器保持 3.12，三处偏离取消 | ✅ owner 2026-09-11 确认撤回 |
 | DEV | PS `shared/nautilus` | **D3 维持 Plan 60 Slice E defer**：不删不升，与 NT 2.0 正交 | ✅ owner |
 | DEV | `adapter/trading_config.py` | **D5b 根类形态已定**：普通子类 + kw-only `__init__` + `__setattr__` 冻结守卫 + `__eq__`，无 `__hash__`；失去的 msgspec 语义逐项列于 D5b。中风险模型结构变更，起草期定稿 | ✅ 本 fix 定稿（`68eab22` Fix 4）|
-| DEV | `host.py:92` / Task 8 | **D4 假设：本 plan 不交付 SoDEX live**。依据 plan 自述「只做能跑」与 Task 8 Step 3 只验 sandbox / testnet；白名单按 mode 拆分后 SoDEX 只进 sandbox / testnet 集合。owner 若要交付 live，另按高风险偏离审议 | ⏳ 待 owner 确认 |
+| DEV | `host.py:92` / Task 8 | **D4 假设：本 plan 不交付 SoDEX live**。依据 plan 自述「只做能跑」与 Task 8 Step 3 只验 sandbox / testnet；白名单按 mode 拆分后 SoDEX 只进 sandbox / testnet 集合。owner 若要交付 live，另按高风险偏离审议 | ✅ owner 2026-09-11 确认 |
 | DEV | `tests/toolkit/test_native_trailing_submitter.py` | **Task 0 Files 清单漏了测试文件**：三处 `make_qty` 的 `hasattr` 守卫实为迁就一个不忠实的 test double——4 个 `MockInstrument` 中 3 个已定义 `make_qty`，只有 trailing 那个漏了。补齐 mock 而非在生产代码保留守卫（教训 C4）。commit `2bf09e8` | ✅ 实施中发现 |
-| DEV | `make verify` 判据 | **Task 0 Step 3「`make verify` 在主干转绿」不可达**：`verify` 含 `fmt-check`，而主干有 8 个文件非 format-clean（`HEAD~1` 同为 8 个，与本 plan 无关）。其中 2 个在 `docs/authority/receipts|vendor` 有记录，但扰动实测格式化后 `check-authority` 仍 exit 0——pin 在 `tests/` 区域同样已失效。待 owner 定是否纳入本 plan 归零 | ⏳ 待 owner |
+| DEV | `pyproject.toml` / 8 个既有红文件 | **Task 0 扩展：主干三层既有红一并归零**（owner 2026-09-11 批准）。`verify` 红有三个独立原因，plan 只记了 typecheck 一个：另有 `fmt-check` 8 文件、`lint` 2 处 I001（后者此前被 fmt-check 短路挡住）。七个文件已格式化；第八个 `tests/integration/runner_fact_publication_process.py` 被 `receipts/custos-runner-fact-local-publication-v1.json` 按 sha256+size 钉住，格式化即 `check-authority` 报 source drift（实测），故加入 ruff `extend-exclude`，与 inventory-extracted 包同一处理方式——formatter 不碰、authority gate 验字节，条目注明解除条件。commit `7971bc8`，`make verify` 现 exit 0。**过程教训**：只扰动验了 8 个里的 1 个就声称「全部可安全格式化」，第一次尝试即被 gate 打回——断言宽于实证（生态 #46） | ✅ owner |
 | DEV | Task 2b | **`engine_version` 是跨仓契约字段**（mandatory-rules §3）：custos 只改自有 V1 文件，vendored golden 与 PS / Crucible 侧列为 Blocked，不得自行改写 | ✅ 规则约束，无需批准 |
