@@ -124,7 +124,7 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 | required_capabilities | `vcs.commit@native`、`shell.exec@native`、`fs.write@native` |
 | preferred_capabilities | `test.run@native`（缺失时降级为人工复跑并记录命令） |
 | fallback_policy | native-first；`test.run` 不可用时显式降级，其余 capability 缺失即 blocked |
-| task_dag | Slice A 串行前置（Task 0 → 1 → 2a；2b Blocked 不阻塞后续）；B / C 可并行；D 依赖 B+C；**E 依赖 A + Task 5**（PS Config 子类随 D5b 根类形态）；F 最后 |
+| task_dag | Slice A 串行前置（Task 0 → 1a → 2a；1b 在 Slice F 前；2b Blocked 不阻塞后续）；B / C 可并行；D 依赖 B+C；**E 依赖 A + Task 5**（PS Config 子类随 D5b 根类形态）；F 最后 |
 | host_context | orchestrator=custos worktree；workspace_owner=custos；nested_workspace_allowed=false |
 | dispatch_authority | user |
 
@@ -167,8 +167,8 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 | `Dockerfile` | Modify | 1a：加 `nt-builder` 阶段（`FROM rust:<pin>`，clone fork@sha，`maturin==1.15.0` 与 fork `[build-system]` 同 pin，`maturin build --release`），builder 阶段 `COPY --from=nt-builder` 后与 custos wheel 同路 `--no-deps` 安装；sha 由 `uv.lock` 推导而非手写；1b：删该阶段 |
 | `tests/test_docker_runtime_contract.py` | Modify | 1a：断言镜像内 `importlib.metadata.version("nautilus-trader")` 的 local label 与 `uv.lock` 钉的 sha 一致（教训 C7：清单从权威源推导） |
 | `Makefile` | Modify | 1a：`:96-97` `runtime-lock` 与 `:99-103` `check-runtime-lock` 加 `--no-emit-package nautilus-trader`，并加「lock sha vs Dockerfile 推导 sha」对账；1b：去掉排除，加与 `toolkit-dev` 同型的 wheel 安装 target |
-| `packages/custos-strategy-toolkit-nautilus/pyproject.toml` | Modify | NT pin 改 `2.0.0rc5+sodex.<short-sha>`；`requires-python` **不动** |
-| `packages/custos-strategy-toolkit/src/custos_toolkit/contracts/toolkit_rc.py` | Modify | `:113-118` 版本契约改 `2.0.0rc5+sodex.<short-sha>`（V1 in place，不留兼容别名） |
+| `packages/custos-strategy-toolkit-nautilus/pyproject.toml` | Modify | NT pin 改 `2.0.0rc5+sodex.<n>`；`requires-python` **不动** |
+| `packages/custos-strategy-toolkit/src/custos_toolkit/contracts/toolkit_rc.py` | Modify | `:113-118` 版本契约改 `2.0.0rc5+sodex.<n>`（V1 in place，不留兼容别名） |
 | `packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py` | Modify | `:140,197` `engine_version` Literal（V1 in place） |
 | `docs/gateway-contract/v1/{strategy_artifact_ref_v1,strategy_manifest_v1,strategy_artifact_pre_import_verification_receipt_v1}.schema.json` | Modify | `const` 改新值（**跨仓契约，见 Task 2b**） |
 | `scripts/{toolkit_rc_build,toolkit_rc_release_readiness,generate_strategy_contract_assets}.py` | Modify | 三处硬编码版本号 |
@@ -257,7 +257,7 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 #### Task 2a: 契约层版本号原地改 V1（custos 自有部分）
 **Files**: `toolkit_rc.py`, `strategy_execution.py:140,197`, 3 个 gateway schema 的 `const`, 3 个 authority json, 3 个 scripts, 8 个测试文件（`grep -rln '1\.230\.0' tests/`：7 个 `test_toolkit_*` + `test_runner_material_authority.py`）, `tech-stack.md`, docs-site 中英
 **Step 1（证伪）**: 跑现有断言 1.230.0 的测试，确认全绿（证明它们真的在断言）
-**Step 2（实现）**: 逐处改 `2.0.0rc5+sodex.<short-sha>`。**按 CLAUDE.md first-production V1 规则原地改，禁止加兼容别名或 predecessor parser**；`python_requires` 不动
+**Step 2（实现）**: 逐处改 `2.0.0rc5+sodex.<n>`。**按 CLAUDE.md first-production V1 规则原地改，禁止加兼容别名或 predecessor parser**；`python_requires` 不动
 **Step 3（证实）**: `make check-authority` exit 0；custos 自有文件 `grep -rn '1\.230\.0'` 只剩 `docs/authority/vendor/**`、历史 plan / marker / receipts 与 docs-site 历史记述
 **Step 4（失败模式）**: 构造 `nautilus_version="1.230.0"` 的 ToolkitRc，断言 `ValueError`
 **Step 5**: commit
