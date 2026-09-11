@@ -235,13 +235,18 @@ class TradeEventHandler:
         # Skip cancellation if SL/TP were just submitted for an incoming reversal position.
         pending_entry_signal = ctx.position_tracker.pending_signal
         pending_entry_atr = ctx.position_tracker.pending_entry_atr
-        reversal_entry_continues = bool(
-            ctx.order_tracker.entry_order_id is not None
-            and pending_entry_signal is not None
+        # Bind the signal itself rather than a bare flag: the invariant "a reversal
+        # entry continues only when a pending signal exists" is then stated once and
+        # carries through to the re-arm below.
+        reversal_entry_signal = (
+            pending_entry_signal
+            if ctx.order_tracker.entry_order_id is not None
             and (
                 ctx.sl_tp_submitted_for_reversal or getattr(ctx, "pending_entry_is_reversal", False)
             )
+            else None
         )
+        reversal_entry_continues = reversal_entry_signal is not None
 
         if ctx.sl_tp_submitted_for_reversal:
             s.log.info(
@@ -275,8 +280,8 @@ class TradeEventHandler:
                 )
 
         ctx.position_tracker.reset()
-        if reversal_entry_continues:
-            ctx.position_tracker.set_pending_signal(pending_entry_signal, pending_entry_atr)
+        if reversal_entry_signal is not None:
+            ctx.position_tracker.set_pending_signal(reversal_entry_signal, pending_entry_atr)
         # Position confirmed flat -> reset the consecutive close-reject halt count. Both the
         # normal and reversal close paths converge here, so this is the single point that
         # owns the reset (clear()/clear_closing() must not, they also run on the reject path).

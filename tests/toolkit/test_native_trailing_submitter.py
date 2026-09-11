@@ -35,6 +35,10 @@ class MockInstrument:
         self.price_precision = price_precision
         self.price_increment = Decimal(price_increment)
 
+    def make_qty(self, qty):
+        """Return quantity as-is for testing."""
+        return qty
+
 
 class MockPosition:
     """Mock Nautilus position for testing."""

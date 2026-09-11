@@ -575,11 +575,9 @@ class StopLossSubmitter:
 
         tick_size = Decimal(str(instrument.price_increment))
         aligned_stop_price = align_stop_price_to_tick(stop_price, tick_size, side)
-        order_quantity = (
-            instrument.make_qty(quantity)
-            if isinstance(quantity, Decimal) and hasattr(instrument, "make_qty")
-            else quantity
-        )
+        # make_qty is idempotent on Quantity and normalises Decimal to the
+        # instrument's size precision, so it applies unconditionally.
+        order_quantity = instrument.make_qty(quantity)
 
         return self._order_factory.stop_market(
             instrument_id=instrument_id,
@@ -728,13 +726,7 @@ class NativeTrailingStopSubmitter:
             trigger_type = TriggerType.MARK_PRICE
 
         protection_quantity = position.quantity if quantity is None else quantity
-        order_quantity = (
-            instrument.make_qty(protection_quantity)
-            if quantity is not None
-            and isinstance(protection_quantity, Decimal)
-            and hasattr(instrument, "make_qty")
-            else protection_quantity
-        )
+        order_quantity = instrument.make_qty(protection_quantity)
 
         return self._order_factory.trailing_stop_market(
             instrument_id=instrument_id,
@@ -839,13 +831,7 @@ class TakeProfitSubmitter:
         tick_size = Decimal(str(instrument.price_increment))
         aligned_tp_price = align_limit_price_to_tick(tp_price, tick_size, side)
         protection_quantity = position.quantity if quantity is None else quantity
-        order_quantity = (
-            instrument.make_qty(protection_quantity)
-            if quantity is not None
-            and isinstance(protection_quantity, Decimal)
-            and hasattr(instrument, "make_qty")
-            else protection_quantity
-        )
+        order_quantity = instrument.make_qty(protection_quantity)
 
         return self._order_factory.limit(
             instrument_id=instrument_id,
