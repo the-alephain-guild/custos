@@ -64,7 +64,8 @@ fork 工作树另有一份**未跟踪**的 `examples/live/sodex/paper_trading.py
 | Docker runtime lock | `docker/runtime-requirements.lock:175`；`Makefile:96-97,99-103` | `nautilus-trader==1.230.0`，由 `uv export --frozen --extra nautilus` 生成，`Dockerfile:22-27` 以 `--require-hashes` 安装；custos 自有三个 wheel 走 `Dockerfile:28-44` 的 `COPY dist/*.whl` + `--no-deps`，**不经 hash 清单** |
 | uv git 源导出形态 | 2026-09-12 一次性项目实测（uv 0.12.13） | `uv export --frozen` 对 git 源输出 `pkg @ git+https://…@<sha>`，**无 `--hash`**；不带 extra 导出时该包 0 行（git 源不污染 3.11 base） |
 | uv 导出排除开关 | `uv export --help`（uv 0.12.13） | `--no-emit-package <NAME>` 存在 |
-| fork 仓位置 | `git -C <fork> remote -v` | origin `wukai9203/nautilus_trader`（public fork）；`the-alephain-guild/nautilus_trader` 2026-09-12 尚不存在 |
+| fork 仓位置 | `git -C <fork> remote -v`（2026-09-12） | origin `the-alephain-guild/nautilus_trader`（public，`gh repo fork` 自 nautechsystems 建于 2026-09-12）；upstream `nautechsystems/nautilus_trader`；旧个人 fork 保留为 remote `wukai9203` |
+| fork 版本 label | fork `python/pyproject.toml:3`，commit `3345ad4c1c` | `version = "2.0.0rc5+sodex.1"`；`python/uv.lock:548` 同步；`crates/core/build.rs:30` 硬编码 `2.0.0rc5` 不改（断言是 `starts_with` 前缀匹配） |
 | V1 契约实现 | `packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py:140,197` | `engine_version: Literal["1.230.0"]` |
 | gateway schema const | `docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json:130`；`strategy_manifest_v1.schema.json:94`；`strategy_artifact_pre_import_verification_receipt_v1.schema.json:207` | `"const": "1.230.0"` |
 | Crucible vendored golden | `docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json:36,95,114,132,148,150,158,203,234` | `engine_version` 8 处内嵌于 canonical JSON；**Crucible 所有，custos 不得改** |
@@ -238,7 +239,7 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 
 #### Task 1a: fork git 源 + Docker 内构建（D1 阶段一）
 **Files**: `pyproject.toml`, `uv.lock`, `docker/runtime-requirements.lock`, `Makefile:96-103`, `Dockerfile`, `tests/test_docker_runtime_contract.py`, `packages/custos-strategy-toolkit-nautilus/pyproject.toml`
-**Step 0（前置，fork 仓）**: (a) fork 迁到 `the-alephain-guild/nautilus_trader`（public），根仓库 `CLAUDE.md` §8 登记表的 origin 同步改（跨仓项）；(b) fork `python/pyproject.toml` 版本改 `2.0.0rc5+sodex.<n>`；(c) 记下要钉的 sha。**没有 (a)(b) 本 Task 不能开始**——URL 与版本 label 都会进 lock 与三方契约，事后改要牵动 PS
+**Step 0（前置，fork 仓）**: (a) fork 迁到 `the-alephain-guild/nautilus_trader`（public），根仓库 `CLAUDE.md` §8 登记表的 origin 同步改（跨仓项）；(b) fork `python/pyproject.toml` 版本改 `2.0.0rc5+sodex.<n>`；(c) 记下要钉的 sha。**状态（2026-09-12）**：(a) 组织仓已建、本地 remotes 已改、根 `CLAUDE.md` §8 已登记，develop 的推送方式待 owner 定（组织 fork 初始为上游镜像，需强推或另开分支）；(b) 已提交 `3345ad4c1c`（`+sodex.1`）；(c) 待 (a) 推送后钉。**没有 (a)(b) 本 Task 不能开始**——URL 与版本 label 都会进 lock 与三方契约，事后改要牵动 PS
 **Step 1（证伪）**: 当前 venv `uv run python -c "import nautilus_trader; print(nautilus_trader.__version__)"` 输出 `1.230.0`；`make check-runtime-lock` 在加 git 源后 diff 非空（证明这道门确实会因 git 源变红，而不是本来就不看它）
 **Step 2（实现）**: `[tool.uv.sources]` 加 git 源（`rev` 写精确 sha，`subdirectory = "python"`）；`toolkit-nautilus` 的 NT pin 改新版本号；pandas 显式进依赖；`uv lock`；`Makefile` 两处 `uv export` 加 `--no-emit-package nautilus-trader` 并重生成 runtime lock；`Dockerfile` 加 `nt-builder` 阶段（sha 从 `uv.lock` 推导，不手写）；`test_docker_runtime_contract.py` 加 label 对账断言
 **Step 3（证实）**: 同一命令输出 `2.0.0rc5+sodex.<n>`；`python/nautilus_trader/adapters/sodex` 可 import；`grep -c 'path = ' uv.lock` 对 nautilus-trader 为 0 且有 `git+…@<sha>`；`make check-runtime-lock` exit 0；`make test-docker` 全绿（含新对账断言）
