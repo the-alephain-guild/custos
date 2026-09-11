@@ -6,6 +6,36 @@
 
 > **custos 内部 lesson 用 `C1` `C2` … 前缀区分生态数字编号** (见文末"记录新 lesson")。
 
+## C14 跨仓契约字段被当成自有常量 — 写出一条自己无权满足的验收项 (2026-09)
+
+- **事件**: Plan 01（NautilusTrader 1.230.0 → fork 2.0.0rc5）Task 2 只列 `toolkit_rc.py:113-118` 与三个 authority json，验证清单写「1.230.0 残留 grep 归零」。审计实读：`engine_version` 还以 `Literal["1.230.0"]` 写在 `custos_toolkit/contracts/strategy_execution.py:140,197`、以 `"const": "1.230.0"` 写在 `docs/gateway-contract/v1/` 三份 schema、以内嵌 canonical JSON 写在 `docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json` 8 处。最后那份由 Crucible 生成，authority-docs.md 明写「Never invent, vendor or pre-register downstream receipts」。
+- **根因**: 版本号出现在自有代码里就被当成自有常量。engine_version 同时以 Literal 写在 canonical V1 契约实现、以 const 写在三份 gateway-contract schema、以内嵌 JSON 写在 Crucible 所有的 vendored golden 里，是 PS / custos / Crucible 三方 exact-byte 握手的字段；plan 只列了 toolkit_rc.py 与三个 authority json，并写下「1.230.0 残留 grep 归零」——不改 Crucible 的文件就不可能满足，而那份文件 custos 无权改。
+- **教训**: 起 plan 改任何版本号、枚举值或字段常量前，先 grep docs/authority/vendor/** 与 docs/gateway-contract/**；命中即按 mandatory-rules §3 列为跨仓协调项并指名对端 owner，验收项按「自有文件归零」与「对端交付后复核」分列，不写一条自己无权满足的门。
+- **预防**:
+  - plan 起草的 Foundation Scan 加一条固定探针：对每个将改的常量值 `grep -rn '<值>' docs/authority/vendor docs/gateway-contract`，命中的文件按 owner 分栏列进 File Inventory（`Modify` / `Blocked`）。
+  - 验收项措辞禁用「全仓归零」；改为「custos 自有文件归零」+「对端 owner 交付后由 `make check-authority` 复核」。
+  - 与生态 #46 同族（断言的覆盖面大于实证的覆盖面）：这次窄的不是 grep 范围，是「谁有权改」的范围。
+- **Binding**: Plan 01 修订版 Task 2a / 2b 与「跨仓影响分析」段（commit `a47bdbd`）；审查原文 `.forge/reviews/2026-09/01-nautilus-trader-2-0-upgrade-review.md` C2。forge `planning/SKILL.md` Step 1.5 的探针待加（forge 仓）。
+
+<!-- hash: 2a752d4d4aba -->
+
+---
+
+## C13 构建产物不是仓库事实 — 未跟踪的本机 .so 被当成上游「物理约束」 (2026-09)
+
+- **事件**: Plan 01 的 D2 写「3.12 → 3.13，物理约束，非偏好：fork 唯一编译产物是 `_libnautilus.cpython-313-darwin.so`」，据此改 `.python-version`、改 `tech-stack.md`「固定 3.12」、放宽 toolkit 的 `requires-python`，并写了一条失败模式测试「3.12 解释器安装须 fail closed 且错误指向 cp313」。审计实读：`git -C <fork> ls-files 'python/nautilus_trader/_libnautilus*'` 返回 0 条；fork `Makefile:327` `maturin develop --release` 在本机 venv 下生成它，`:404` clean 会删；fork `python/pyproject.toml:25` `requires-python = ">=3.12,<3.15"`。三处偏离建立在空前提上，那条测试断言的失败在 path 源下根本不会发生。
+- **根因**: 把本机观察到的构建产物当成上游的约束。那份 .so 是 maturin develop 在本机 venv 下生成的、未被 git 跟踪、clean 目标会删，而 fork 自己声明 requires-python >=3.12。起草者看到目录里只有一个 cp313 文件就写下「物理约束」，没有问「它被版本控制跟踪吗、谁生成的、生成命令的输入是什么」。
+- **教训**: 凡把编译产物、lock、缓存、dist 目录里的东西当作「约束」引用，先 git ls-files 确认它是否被跟踪，再找到生成它的命令；未跟踪的产物只能证明「本机上次这么构建过」，不能证明上游要求如此。
+- **预防**:
+  - plan「契约证据」表里凡锚点指向 `*.so` / `*.dylib` / `dist/` / lock 文件，锚点内容列必须写明 `tracked` 或 `untracked（由 <命令> 生成）`，untracked 的不得作为决策依据。
+  - 以「物理约束」「唯一产物」措辞给出的决策，审查时固定问一句：约束方自己声明的范围是什么（`requires-python` / `Cargo.toml` / CI matrix），与观察到的产物是否一致。
+  - 与 #9/#11「不信推理信实证」同族，但这次实证了错的对象：读的是产物，该读的是产物的来源。
+- **Binding**: Plan 01 修订版 D2 撤回 + 契约证据表「fork 编译产物」行改述为「本机构建产物，非约束」（commit `a47bdbd`）；审查原文 `.forge/reviews/2026-09/01-nautilus-trader-2-0-upgrade-review.md` H1。forge `planning/SKILL.md` Step 1.5 的产物类锚点体例待加（forge 仓）。
+
+<!-- hash: 81592b3554c5 -->
+
+---
+
 ## C12 清理是被调度的 callback 时, "记录还在"与"东西还在"是两件事 — registry membership 不是 liveness (2026-07)
 
 - **事件**: Plan 26 修的正是「跨一个边界后仍相信旧记录」: `container_id` 描述引擎的附着, 而附着
