@@ -125,6 +125,10 @@ extend-exclude = [
     "packages/custos-strategy-toolkit/src/custos_toolkit/warmup",
     "packages/custos-strategy-toolkit-nautilus/src/custos_toolkit_nautilus/adapter",
     "packages/custos-strategy-toolkit-nautilus/src/custos_toolkit_nautilus/_vendor",
+    # Byte-pinned by receipts/custos-runner-fact-local-publication-v1.json (sha256 +
+    # size). Formatting it fails check-authority, so the formatter must leave it
+    # alone; drop this entry when that receipt is re-issued.
+    "tests/integration/runner_fact_publication_process.py",
 ]
 
 [tool.ruff.lint]

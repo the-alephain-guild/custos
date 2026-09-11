@@ -167,11 +167,7 @@ def validate_historical_asset_record(
         errors.append(f"{label} path is invalid")
     if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
         errors.append(f"{label} recorded digest is invalid")
-    if (
-        not isinstance(size_bytes, int)
-        or isinstance(size_bytes, bool)
-        or size_bytes < 0
-    ):
+    if not isinstance(size_bytes, int) or isinstance(size_bytes, bool) or size_bytes < 0:
         errors.append(f"{label} recorded size is invalid")
 
 
@@ -622,10 +618,7 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
         if isinstance(consumer_assets, list)
         else None
     )
-    if (
-        not isinstance(fixture, dict)
-        or fixture.get("path") != RUNNER_COMMAND_GOLDEN_PATH
-    ):
+    if not isinstance(fixture, dict) or fixture.get("path") != RUNNER_COMMAND_GOLDEN_PATH:
         errors.append("runner command consumer V1 fixture record differs")
     producer = index.get("producer_authority")
     if not isinstance(producer, dict):

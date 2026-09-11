@@ -105,9 +105,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
         "user_public_key": credential.user_public_key,
         "durable_name": credential.durable_config["durable_name"],
         "command_subject": credential.durable_config["filter_subjects"][0],
-        "command_payload_sha256": hashlib.sha256(
-            args.command_payload.encode("utf-8")
-        ).hexdigest(),
+        "command_payload_sha256": hashlib.sha256(args.command_payload.encode("utf-8")).hexdigest(),
         "command_acked": True,
         "user_seed_egress": False,
         "user_jwt_egress": False,

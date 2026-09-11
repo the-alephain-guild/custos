@@ -18,8 +18,8 @@ from custos.cli._daemon import (
     _build_strategy_release_runtime,
     _synchronize_runner_safety_policies,
 )
-from custos.core.fallback_breaker import FallbackBreakerConfig
 from custos.core.engine_protocol import EngineDependencyUnavailable
+from custos.core.fallback_breaker import FallbackBreakerConfig
 from custos.core.runner_fact import RunnerPolicyCommitResult, RunnerPolicyIdentityDecision
 
 POLICY_ID = UUID("22222222-2222-4222-8222-222222222222")

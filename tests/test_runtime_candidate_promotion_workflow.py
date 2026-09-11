@@ -34,8 +34,7 @@ def test_runtime_candidate_promotion_requires_both_signed_owner_receipts() -> No
         "runtime-candidate-deployed-round-trip-acceptance-v1.json"
     ) in source
     assert (
-        "docs/authority/external/philosophers-stone/"
-        "runtime-candidate-acceptance-v1.json"
+        "docs/authority/external/philosophers-stone/runtime-candidate-acceptance-v1.json"
     ) in source
     assert 'test -s "$CRUCIBLE_ACCEPTANCE"' in source
     assert 'test -s "$CRUCIBLE_ACCEPTANCE_BUNDLE"' in source
@@ -67,9 +66,7 @@ def test_workflow_is_locked_to_the_current_multi_platform_candidate() -> None:
     source = WORKFLOW.read_text(encoding="utf-8")
 
     digest = "2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753"
-    receipt_sha256 = (
-        "b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194"
-    )
+    receipt_sha256 = "b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194"
     assert f"group: runtime-candidate-promotion-sha256-{digest}" in source
     assert f"CANDIDATE_DIGEST: sha256:{digest}" in source
     assert f"PUBLICATION_RECEIPT_SHA256: {receipt_sha256}" in source

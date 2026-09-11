@@ -22,7 +22,6 @@ from custos.core.runner_command_intake import VerifiedRunnerCommand
 from custos.core.runner_fact import CommandOutcomeCommitResult, EngineLifecycleDurableState
 from custos.core.runtime_log_fact import RuntimeLogFactError, RuntimeLogRedactor
 
-
 log = get_logger("custos.engine-lifecycle")
 
 

@@ -26,6 +26,8 @@ CRUCIBLE_RECEIPT = (
     ROOT / "docs/authority/receipts/vendor/"
     "crucible-custos-strategy-contract-v1-consumer-receipt.json"
 )
+
+
 def _validate(document: dict[str, object]) -> None:
     StrategyArtifactPreImportVerificationReceiptV1.model_validate(document)
 
@@ -63,8 +65,9 @@ def test_schema_golden_and_index_are_the_same_v1_contract() -> None:
     assert "consumer_receipts" not in index
     assert "runtime_ready" not in index
     receipt = golden["receipt"]
-    assert receipt["artifact_ref"]["contract_schema_sha256"] == (
-        receipt["release_bom"]["execution_abi_schema_sha256"]
+    assert (
+        receipt["artifact_ref"]["contract_schema_sha256"]
+        == (receipt["release_bom"]["execution_abi_schema_sha256"])
     )
     assert [subject["name"] for subject in receipt["release_statement"]["subject"]] == [
         "strategy-release-bom-v1",
@@ -76,9 +79,7 @@ def test_schema_golden_and_index_are_the_same_v1_contract() -> None:
     assert claims["artifact_ref_digest"] == receipt["artifact_ref_digest"]
     assert claims["release_bom_digest"] == receipt["release_bom_digest"]
     crucible_receipt = json.loads(CRUCIBLE_RECEIPT.read_text(encoding="utf-8"))
-    assert crucible_receipt["producer"]["commit"] == (
-        "a83e6f6969709316b8f11bcc0618b2f7b32fc19f"
-    )
+    assert crucible_receipt["producer"]["commit"] == ("a83e6f6969709316b8f11bcc0618b2f7b32fc19f")
     assert crucible_receipt["consumer"] == "crucible-rust"
     assert crucible_receipt["runtime_ready"] is False
     assert crucible_receipt["production_ready"] is False
@@ -132,9 +133,7 @@ def test_pre_import_receipt_rejects_non_sigstore_publisher_profile() -> None:
 
 
 def test_pre_import_receipt_accepts_digest_bound_github_oidc_proof_wrapper() -> None:
-    receipt = copy.deepcopy(
-        json.loads(GOLDEN.read_text(encoding="utf-8"))["receipt"]
-    )
+    receipt = copy.deepcopy(json.loads(GOLDEN.read_text(encoding="utf-8"))["receipt"])
     evidence = receipt["crucible_artifact_evidence"]
     evidence["sigstore_proof"] = {
         "publisher_profile": "github_oidc",

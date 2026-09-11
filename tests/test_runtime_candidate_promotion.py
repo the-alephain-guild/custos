@@ -13,9 +13,7 @@ from scripts.runtime_candidate_promote import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLICATION = (
-    ROOT / "docs/authority/external/custos/runtime-image-publication-receipt-v1.json"
-)
+PUBLICATION = ROOT / "docs/authority/external/custos/runtime-image-publication-receipt-v1.json"
 PUBLICATION_SHA256 = "b7fca7c14deba4ad3b0566684a2bdad02fb2374102190dfb0e2fe4095ce51194"
 DIGEST = "sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753"
 SOURCE_REVISION = "4afffb96b1a768fb34f66692d4bb7f96652aeccf"
@@ -49,15 +47,10 @@ def _acceptance(owner: str) -> dict[str, Any]:
             "workflow_run_id": 1234,
         },
         "evidence": {
-            "commands": [
-                {"command": "make focused-acceptance", "result": "passed"}
-            ],
+            "commands": [{"command": "make focused-acceptance", "result": "passed"}],
             "receipts": [
                 {
-                    "path": (
-                        "docs/authority/receipts/"
-                        "runtime-candidate-acceptance-v1.json"
-                    ),
+                    "path": ("docs/authority/receipts/runtime-candidate-acceptance-v1.json"),
                     "sha256": "a" * 64,
                     "size_bytes": 1024,
                 }
@@ -125,9 +118,10 @@ def test_both_exact_owner_acceptances_emit_unchanged_digest_receipt(
         "registry_mutated": False,
     }
     assert receipt["inputs"]["publication"]["sha256"] == PUBLICATION_SHA256
-    assert receipt["inputs"]["crucible_acceptance"]["sha256"] == hashlib.sha256(
-        crucible_path.read_bytes()
-    ).hexdigest()
+    assert (
+        receipt["inputs"]["crucible_acceptance"]["sha256"]
+        == hashlib.sha256(crucible_path.read_bytes()).hexdigest()
+    )
     strategy_sha256 = hashlib.sha256(strategy_path.read_bytes()).hexdigest()
     assert receipt["inputs"]["strategy_owner_acceptance"]["sha256"] == strategy_sha256
     assert receipt["artifact_runtime_ready"] is True
@@ -217,9 +211,7 @@ def test_legacy_single_platform_publication_is_rejected(tmp_path: Path) -> None:
             candidate_receipt_path=legacy,
             crucible_acceptance_path=crucible_path,
             strategy_owner_acceptance_path=strategy_path,
-            expected_publication_receipt_sha256=hashlib.sha256(
-                legacy.read_bytes()
-            ).hexdigest(),
+            expected_publication_receipt_sha256=hashlib.sha256(legacy.read_bytes()).hexdigest(),
             observed_manifest_digest_before=DIGEST,
             observed_manifest_digest_after=DIGEST,
             workflow_revision="2" * 40,

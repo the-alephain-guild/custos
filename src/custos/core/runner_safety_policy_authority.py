@@ -121,9 +121,7 @@ def parse_runner_safety_policy_resolution(
         )
     subject = response.get("exact_subject")
     if not isinstance(subject, str) or not subject:
-        raise RunnerSafetyPolicyAuthorityRejectedError(
-            "runner safety policy subject is invalid"
-        )
+        raise RunnerSafetyPolicyAuthorityRejectedError("runner safety policy subject is invalid")
     envelope = _decode_base64url(
         response.get("signed_envelope_base64url"),
         "runner safety policy signed envelope",
