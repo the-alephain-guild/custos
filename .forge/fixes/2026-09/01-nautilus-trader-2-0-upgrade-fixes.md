@@ -1,6 +1,7 @@
 # 01 - nautilus-trader-2-0-upgrade-fixes
 
-> **Status**: 🔲 Not started
+> **Status**: ✅ Completed
+> **Completed**: 2026-09-11
 > **Created**: 2026-09-11
 > **Project**: custos
 > **Plan**: `.forge/plans/2026-09/01-nautilus-trader-2-0-upgrade.md`（commit `aa0d2a0`，Status 🔲 Not started）
@@ -109,11 +110,11 @@
 
 ## 验证清单 (Verification)
 
-- [ ] Fix 1–7 每条的 Step 3 grep 断言全部成立
-- [ ] plan 文件 `Status` 仍为 🔲（本 fix 不启动执行）
-- [ ] `.forge/README.md:58` 索引行与修订后 plan 的 D1 / D2 表述一致
-- [ ] 偏离日志无 ⏳ 残留；新增 DEV 条目登记本 fix 的两个假设（不交付 SoDEX live；解释器保持 3.12）
-- [ ] `git status --short` 只含本 fix 触碰的文件
+- [x] Fix 1–7 每条的 Step 3 grep 断言全部成立（17 条，实跑）
+- [x] plan 文件 `Status` 仍为 🔲（本 fix 不启动执行）
+- [x] `.forge/README.md:58` 索引行与修订后 plan 的 D1 / D2 表述一致（同 commit 更新）
+- [x] 偏离日志的「待实施时定」已消失；新增 3 条 DEV（D5b 定稿 / D4 假设 / Task 2b 跨仓）+ D1、D2 两行改写。**保留 2 个 ⏳**：D2 撤回与不交付 SoDEX live 两条假设等 owner 确认，这是有意留的，不是残留
+- [x] `git status --short` 只含本 fix 触碰的文件（plan + `.forge/README.md`）
 
 ## 偏离与改进日志
 
@@ -127,10 +128,26 @@
 
 | Fix | Priority | Status | Completed | Notes |
 |---|---|---|---|---|
-| 1 | P0 | 🔲 | | C1+H1+H2 |
-| 2 | P0 | 🔲 | | C2 |
-| 3 | P1 | 🔲 | | H4 |
-| 4 | P1 | 🔲 | | H3+M2 |
-| 5 | P2 | 🔲 | | M1 |
-| 6 | P3 | 🔲 | | L1–L4 |
-| 7 | P2 | 🔲 | | taste |
+| 1 | P0 | ✅ | 2026-09-11 | C1+H1+H2；`a47bdbd` |
+| 2 | P0 | ✅ | 2026-09-11 | C2；`a47bdbd` |
+| 3 | P1 | ✅ | 2026-09-11 | H4；`a47bdbd`；假设待 owner 确认 |
+| 4 | P1 | ✅ | 2026-09-11 | H3+M2；`a47bdbd` |
+| 5 | P2 | ✅ | 2026-09-11 | M1；`a47bdbd` |
+| 6 | P3 | ✅ | 2026-09-11 | L1–L4；`a47bdbd` |
+| 7 | P2 | ✅ | 2026-09-11 | taste；`a47bdbd` |
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-09-11
+- **总 Fix 数**: 7（P0 ×2 / P1 ×2 / P2 ×2 / P3 ×1）
+- **偏离数**: 3（见偏离日志：直接实施而非派 execute；两条待 owner 确认的假设）
+- **验证结果**: 全部通过——17 条 grep 断言实跑通过；表格管道符一致性检查通过；旧措辞残留 grep 归零（`path 依赖直指` / `Python 3.13 专用` / `≤ 基线` / `3.12 → 3.13` / `仅依赖 Slice A` / `随 Slice B Task 5` / `10 个测试文件` 全为 0）
+- **实施 commit 范围**: `a47bdbd`（plan 346 → 406 行，+119 / −59 含索引行）
+- **契约影响**: plan 文本；`.forge/README.md:58` 索引行同步。未改任何代码、schema 或 authority 文件
+- **红线守护**: 本 fix 不触碰代码。对红线 0.2 的贡献是把 plan 从「入白名单即声明可跑 live」的自相矛盾改为按 mode 的能力表，使「SoDEX 请求 live 被拒」成为可写的真实测试
+- **自省**: Round 1 抓到失败模式表 9 → 10 行后验证清单计数未同步，已修；Round 2 机械检查表格行宽，无问题
+- **遗留项**:
+  1. **两条假设等 owner 确认**（plan 偏离日志 ⏳ 两行）：解释器保持 3.12（撤回 D2）；本 plan 不交付 SoDEX live。不确认前 plan 不应进入执行。
+  2. **Task 1 Step 0 的 fork wheel 发布是外部前置**，本 fix 只把它写成前置，没有去 fork 仓做。fork 的 `build.yml` 引用了 maturin，可作 CI 化起点；本次先手工 `maturin build`。
+  3. **Task 2b 在对端交付前恒为 Blocked**：PS producer BOM 与 Crucible consumer receipt 的重签由对端 owner 完成，custos 侧只能提交精确新值。
+  4. **uv wheel 引用的具体形态未定**（`url` 源带 marker 按平台各一，或 `find-links` 指向 Release 资产页），留给 Task 1 Step 1 实测；验收判据已写死（lock 无 path 源、runtime lock 带 sha256、3.11 base 可装）。
