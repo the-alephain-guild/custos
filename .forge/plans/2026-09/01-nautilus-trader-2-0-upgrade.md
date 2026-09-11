@@ -61,7 +61,10 @@ fork 工作树另有一份**未跟踪**的 `examples/live/sodex/paper_trading.py
 | fork wheel 产出口 | fork `Makefile:337` | `maturin build --release --out ../dist` |
 | uv path 源行为 | PS `pyproject.toml:74-80`（commit `6dd552d`） | 「uv reads metadata for every path source in the lock even when its extra is not requested」——path 源会击穿不带 extra 的 3.11 base 安装 |
 | base 3.11 承诺 | `pyproject.toml:29-32` | 「package stays installable on Python 3.11 (audit / paper)」 |
-| Docker runtime lock | `docker/runtime-requirements.lock:175`；`Makefile:97` | `nautilus-trader==1.230.0`，由 `uv export --frozen --extra nautilus` 生成，`Dockerfile:25-27` 以 `--require-hashes` 安装 |
+| Docker runtime lock | `docker/runtime-requirements.lock:175`；`Makefile:96-97,99-103` | `nautilus-trader==1.230.0`，由 `uv export --frozen --extra nautilus` 生成，`Dockerfile:22-27` 以 `--require-hashes` 安装；custos 自有三个 wheel 走 `Dockerfile:28-44` 的 `COPY dist/*.whl` + `--no-deps`，**不经 hash 清单** |
+| uv git 源导出形态 | 2026-09-12 一次性项目实测（uv 0.12.13） | `uv export --frozen` 对 git 源输出 `pkg @ git+https://…@<sha>`，**无 `--hash`**；不带 extra 导出时该包 0 行（git 源不污染 3.11 base） |
+| uv 导出排除开关 | `uv export --help`（uv 0.12.13） | `--no-emit-package <NAME>` 存在 |
+| fork 仓位置 | `git -C <fork> remote -v` | origin `wukai9203/nautilus_trader`（public fork）；`the-alephain-guild/nautilus_trader` 2026-09-12 尚不存在 |
 | V1 契约实现 | `packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py:140,197` | `engine_version: Literal["1.230.0"]` |
 | gateway schema const | `docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json:130`；`strategy_manifest_v1.schema.json:94`；`strategy_artifact_pre_import_verification_receipt_v1.schema.json:207` | `"const": "1.230.0"` |
 | Crucible vendored golden | `docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json:36,95,114,132,148,150,158,203,234` | `engine_version` 8 处内嵌于 canonical JSON；**Crucible 所有，custos 不得改** |
@@ -142,7 +145,7 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 
 | 问题 | 决策 | 理由 |
 |---|---|---|
-| **D1** fork 如何进依赖链 | **fork 发布 wheel，两仓以带 sha256 的 wheel 引用消费；不用 path 源。** fork 侧 `maturin build --release --out ../dist`（fork `Makefile:337`）产 cp312 的 manylinux + macosx wheel，版本带 PEP 440 local label `2.0.0rc5+sodex.<short-sha>`；custos 与 PS 用 uv `url` 源（按平台各一）或 `find-links` 指向 Release 资产页，形态在 Task 1 Step 1 实测后定 | owner 2026-09-11 审查会话改向。path 源的真实代价不止「单仓 clone 装不起来」：fork build backend 是 maturin，path 源 = 每次 `uv sync` 现场编 Rust；PS `pyproject.toml:74-80` 实测 uv 会读 lock 里每个 path 源的元数据、不管 extra 有没有被请求，会击穿 `pyproject.toml:29-32` 的 3.11 base 承诺、`Makefile:76-77` `verify-base-clean` 与 `--require-hashes` 的 Docker runtime lock。wheel 方案三条链全保，PS 也沿用其 Plan 60 的命令式安装。**验收判据**：`uv.lock` 不含 path 源；`uv export --frozen` 产出的 `docker/runtime-requirements.lock` 带 sha256；3.11 base 无 nautilus extra 的 `uv sync` 仍成功。**前置依赖**：fork 先发布 wheel（Task 1 Step 0）。local label 同时让 `engine_version` 契约值与上游 `2.0.0rc5` 不混淆 |
+| **D1** fork 如何进依赖链 | **两阶段。1a（本 plan 主体，fork 活跃开发期）**：uv git 源 `{ git = "https://github.com/the-alephain-guild/nautilus_trader", rev = "<sha>", subdirectory = "python" }`，lock 钉精确 sha；Docker 链把 nautilus-trader 从「带 hash 的第三方包」改归为「本地构建 wheel」——`uv export` 加 `--no-emit-package nautilus-trader`，`Dockerfile` 加 `nt-builder` 阶段在 lock 钉的 sha 上 `maturin build`，与三个 custos wheel 同路 `--no-deps` 安装，并加一道「lock sha == 镜像内版本 label 里的 sha」对账。**1b（切换门，Slice F 前）**：fork 打 tag、CI 产 cp312 manylinux + macosx wheel、Release 挂载后，custos 与 PS 改为带 sha256 的 wheel 引用，删 `--no-emit-package` 与 `nt-builder`，Docker 回到今天的形状。**不用 path 源** | owner 2026-09-12 定案。git 源实测不污染 3.11 base（不带 extra 导出 0 行）、lock 自足、PS 规则不违反，省掉 fork 活跃期每个 commit 走发布的负担；代价是每台机器每个 sha 编一次 Rust（uv 按 sha 缓存）。Docker 红的根因是 `--require-hashes` 要求字节固定产物而 git 引用指向源码（实测导出无 hash），解法是走 custos 自有 wheel 已有的 `--no-deps` 路径而不是登记 known-red。**版本 label 与源形式无关，现在就要**：fork `pyproject.toml` 版本改 `2.0.0rc5+sodex.<n>`（API 变动递增 n），否则 `toolkit_rc` 按 `importlib.metadata` 比对时与上游 `2.0.0rc5` 无法区分（审查 C2）。**仓库位置先迁后钉**：lock 与三方契约 provenance 都记 URL，改一次牵动 PS lock，故先把 fork 迁到 `the-alephain-guild` 组织（保持 public，LGPL-3.0-only 不变）再钉。path 源的真实代价见审查 `b0ff52a` C1：maturin 现场编 Rust + PS `pyproject.toml:74-80` 实测 uv 读 lock 里每个 path 源元数据、击穿 `pyproject.toml:29-32` 的 3.11 base 承诺与 `Makefile:76-77` `verify-base-clean` |
 | **D2** Python 版本 | **保持 3.12，撤回升 3.13** | 起草时的理由「fork 唯一编译产物是 cp313 .so，物理约束」不成立：那份 `.so` 未被 git 跟踪，是本机 `maturin develop` 的产物；fork `requires-python = ">=3.12,<3.15"`，以 3.12 构建即得 cp312 wheel。于是 `.python-version`、`tech-stack.md`「固定 3.12」、`toolkit-nautilus` 的 `requires-python` 三处都不动，少三条偏离。Docker 基础镜像 `python:3.12.13-slim` 亦无需变 |
 | **D3** PS `shared/nautilus` 是否拉进来 | 不拉进来，维持 PS Plan 60 Slice E 的 defer | owner 2026-09-11 定案。实证：4 个 nautilus 策略本体已全部 import `custos_toolkit`，无一 import `shared`；`shared/nautilus` 现仅服务 crucible 两个 Dockerfile 与 hummingbot 侧，与 NT 2.0 正交。其删除前置（arx 上线、custos Plan 24）与本次无关 |
 | **D4** G6 venue 白名单 | **白名单改为按 mode 的能力表**：`sandbox` / `testnet` / `live` 三个集合，`supports_venue(venue, mode)`。SoDEX 两个 connector 本 plan **只进 sandbox 与 testnet**；`live` 集合维持 `binance` / `binance_perpetual` 不变。**不改为「NT 支持的全部交易所」** | 该集合的契约是「custos 已接线的 connector」而非「NT 支持什么」——`host.py:211`/`:349` 的 `supports_venue()` 消费它，而同 host `:346` 允许 `live`，单一集合意味着列入即等于声明该 venue 可跑 live。「可跑 live」在 custos 是 `venue_binance.py` 293 行逐项落实的（`_LIVE_MIN_APPROVERS = 2`、`require_live_owner_evidence()`、三套 exec config 构建、凭据处理），每 venue 各一套、无通用实现。本 plan 只做「能跑」、Task 8 只验 sandbox / testnet，若仍用单一集合就是 D4 自己描述的失败形态（教训 #22 同型）。按 mode 拆开后，SoDEX 请求 live 在 host gate 因不在 live 集合被拒——这是红线 0.2 的真实测试。**假设：本 plan 不交付 SoDEX live**；要交付须另按 deviation-protocol 高风险审议并补齐 live 侧全部落实项与真机证据（教训 C11）。drift-guard `tests/test_nt_binance_venue.py:53` 现断言 `_SUPPORTED_VENUES == frozenset(_BINANCE_CONNECTORS)`（**等号**），本次改为「三个 mode 集合分别等于该 mode 已接线 connector 的并集」并将该测试泛化改名 |
@@ -158,10 +161,12 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 
 | 文件路径 | 操作 | 描述 |
 |---|---|---|
-| `pyproject.toml` | Modify | fork wheel 引用（uv `url` 源或 `find-links`，带 sha256）；pandas 显式声明（fork 核心依赖为空） |
-| `uv.lock` | Modify | 重锁；验收：不含 path 源、fork wheel 条目带 hash |
-| `docker/runtime-requirements.lock` | Modify | `make check-runtime-lock` 重生成，fork wheel 带 sha256 |
-| `Makefile` | Modify | 加与 `toolkit-dev` 同型的 fork wheel 安装 target；`check-runtime-lock` 覆盖新条目 |
+| `pyproject.toml` | Modify | 1a：`[tool.uv.sources]` git 源钉 sha；1b：改带 sha256 的 wheel 引用；pandas 显式声明（fork 核心依赖为空） |
+| `uv.lock` | Modify | 重锁；验收：不含 path 源；1a 为 `git+…@<sha>`，1b 为带 hash 的 wheel |
+| `docker/runtime-requirements.lock` | Modify | 1a：`--no-emit-package nautilus-trader` 后重生成，不含该包；1b：恢复为带 sha256 的条目 |
+| `Dockerfile` | Modify | 1a：加 `nt-builder` 阶段（`FROM rust:<pin>`，clone fork@sha，`maturin==1.15.0` 与 fork `[build-system]` 同 pin，`maturin build --release`），builder 阶段 `COPY --from=nt-builder` 后与 custos wheel 同路 `--no-deps` 安装；sha 由 `uv.lock` 推导而非手写；1b：删该阶段 |
+| `tests/test_docker_runtime_contract.py` | Modify | 1a：断言镜像内 `importlib.metadata.version("nautilus-trader")` 的 local label 与 `uv.lock` 钉的 sha 一致（教训 C7：清单从权威源推导） |
+| `Makefile` | Modify | 1a：`:96-97` `runtime-lock` 与 `:99-103` `check-runtime-lock` 加 `--no-emit-package nautilus-trader`，并加「lock sha vs Dockerfile 推导 sha」对账；1b：去掉排除，加与 `toolkit-dev` 同型的 wheel 安装 target |
 | `packages/custos-strategy-toolkit-nautilus/pyproject.toml` | Modify | NT pin 改 `2.0.0rc5+sodex.<short-sha>`；`requires-python` **不动** |
 | `packages/custos-strategy-toolkit/src/custos_toolkit/contracts/toolkit_rc.py` | Modify | `:113-118` 版本契约改 `2.0.0rc5+sodex.<short-sha>`（V1 in place，不留兼容别名） |
 | `packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py` | Modify | `:140,197` `engine_version` Literal（V1 in place） |
@@ -196,8 +201,9 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 
 | 失败模式 | 为什么必须测 | 归属 Slice |
 |---|---|---|
-| fork wheel hash 被篡改 | `uv sync --frozen` 必须拒绝，证明 lock 真的钉住了字节 | A |
-| 3.11 base 无 nautilus extra 安装 | `pyproject.toml:29-32` 的 base 承诺在 lock 含 fork wheel 后仍成立（path 源会击穿它） | A |
+| lock 钉的 fork sha 与镜像内编的 sha 不一致 | 1a 把 nautilus-trader 移出 hash 清单后，唯一能证明「镜像装的就是 lock 钉的」是这道对账；缺了它「lock 钉 A、镜像编 B」不会变红 | A |
+| 1b：fork wheel hash 被篡改 | `uv sync --frozen` 必须拒绝，证明 lock 真的钉住了字节 | F |
+| 3.11 base 无 nautilus extra 安装 | `pyproject.toml:29-32` 的 base 承诺在 lock 含 git 源 / wheel 后仍成立（path 源会击穿它；git 源实测不带 extra 导出 0 行） | A |
 | `toolkit_rc` 收到 1.230.0 | 旧版本号必须被契约拒绝（证明改的是 V1 而非加了别名） | A |
 | Python 指标缺 `initialized` | 2.0 鸭子类型桥接靠 getattr，缺属性时须报错而非静默不更新 | B |
 | `StrategyConfig` 子类漏 `super().__init__()` | pyclass 未初始化的失败必须可诊断 | B |
@@ -230,14 +236,23 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 **Step 3（证实）**: `make toolkit-typecheck` exit 0；`make verify` 在主干转绿
 **Step 4**: commit（`fix(custos): zero the toolkit mypy baseline before the nautilus 2.0 upgrade`）
 
-#### Task 1: fork wheel 引用
-**Files**: `pyproject.toml`, `uv.lock`, `docker/runtime-requirements.lock`, `Makefile`, `packages/custos-strategy-toolkit-nautilus/pyproject.toml`
-**Step 0（前置，fork 仓）**: 在 fork 以 3.12 跑 `maturin build --release --out ../dist`，产 cp312 manylinux 与 macosx 两个 wheel，版本 `2.0.0rc5+sodex.<short-sha>`；挂到 fork 的 GitHub Release，记录两个 sha256。**没有这一步本 Task 不能开始**
-**Step 1（证伪）**: 当前 venv `uv run python -c "import nautilus_trader; print(nautilus_trader.__version__)"` 输出 `1.230.0`；实测 uv `url` 源（按平台各一）与 `find-links` 两种形态哪种能让 `uv lock` 为两个平台各写入一条带 hash 的条目，定一种
-**Step 2（实现）**: `pyproject.toml` 按实测形态引用 fork wheel；`toolkit-nautilus` 的 NT pin 改新版本号；pandas 显式进依赖（fork 核心依赖为空）；`uv lock`；`make check-runtime-lock` 重生成 Docker lock；`Makefile` 加命令式安装 target
-**Step 3（证实）**: 同一命令输出 `2.0.0rc5+sodex.<short-sha>`；`python/nautilus_trader/adapters/sodex` 可 import；`grep -c 'path = ' uv.lock` 对 nautilus-trader 为 0；`docker/runtime-requirements.lock` 中 fork wheel 带 `--hash=sha256:`
-**Step 4（失败模式）**: (a) 篡改 lock 里 fork wheel 的 hash 后 `uv sync --frozen` 必须拒绝；(b) 3.11 解释器下 `uv sync --package custos-runner --extra dev`（无 nautilus extra）必须成功；(c) `make check-runtime-lock` exit 0
+#### Task 1a: fork git 源 + Docker 内构建（D1 阶段一）
+**Files**: `pyproject.toml`, `uv.lock`, `docker/runtime-requirements.lock`, `Makefile:96-103`, `Dockerfile`, `tests/test_docker_runtime_contract.py`, `packages/custos-strategy-toolkit-nautilus/pyproject.toml`
+**Step 0（前置，fork 仓）**: (a) fork 迁到 `the-alephain-guild/nautilus_trader`（public），根仓库 `CLAUDE.md` §8 登记表的 origin 同步改（跨仓项）；(b) fork `python/pyproject.toml` 版本改 `2.0.0rc5+sodex.<n>`；(c) 记下要钉的 sha。**没有 (a)(b) 本 Task 不能开始**——URL 与版本 label 都会进 lock 与三方契约，事后改要牵动 PS
+**Step 1（证伪）**: 当前 venv `uv run python -c "import nautilus_trader; print(nautilus_trader.__version__)"` 输出 `1.230.0`；`make check-runtime-lock` 在加 git 源后 diff 非空（证明这道门确实会因 git 源变红，而不是本来就不看它）
+**Step 2（实现）**: `[tool.uv.sources]` 加 git 源（`rev` 写精确 sha，`subdirectory = "python"`）；`toolkit-nautilus` 的 NT pin 改新版本号；pandas 显式进依赖；`uv lock`；`Makefile` 两处 `uv export` 加 `--no-emit-package nautilus-trader` 并重生成 runtime lock；`Dockerfile` 加 `nt-builder` 阶段（sha 从 `uv.lock` 推导，不手写）；`test_docker_runtime_contract.py` 加 label 对账断言
+**Step 3（证实）**: 同一命令输出 `2.0.0rc5+sodex.<n>`；`python/nautilus_trader/adapters/sodex` 可 import；`grep -c 'path = ' uv.lock` 对 nautilus-trader 为 0 且有 `git+…@<sha>`；`make check-runtime-lock` exit 0；`make test-docker` 全绿（含新对账断言）
+**Step 4（失败模式）**: (a) 3.11 解释器下 `uv sync --package custos-runner --extra dev`（无 nautilus extra）必须成功；(b) 把 `uv.lock` 里的 sha 改一位后不重建镜像，对账断言必须变红（证明它是 live guard）；(c) `nt-builder` 里 `maturin` 版本与 fork `[build-system]` 不一致时构建必须失败而非静默用别的版本
 **Step 5**: commit
+
+#### Task 1b: 切换到 wheel（D1 阶段二，Slice F 收尾前的门）
+**Files**: `pyproject.toml`, `uv.lock`, `docker/runtime-requirements.lock`, `Makefile`, `Dockerfile`, PS `pyproject.toml` / `uv.lock`
+**触发判据（三条齐才开始）**: fork 打 tag；fork CI 产 cp312 manylinux + macosx wheel 并挂 Release（fork `build.yml` 已引用 maturin，可作起点）；Task 8 的 SoDEX sandbox / testnet 起停通过（adapter 的 Python 面冻结）
+**Step 1（证伪）**: `uv.lock` 仍含 `git+`；`Dockerfile` 仍含 `nt-builder`
+**Step 2（实现）**: git 源改带 sha256 的 wheel 引用（uv `url` 源按平台各一，或 `find-links` 指向 Release 资产页，实测定一种）；删 `--no-emit-package` 与 `nt-builder`；runtime lock 重生成后含带 hash 的 nautilus-trader；PS 同步改为命令式安装该 wheel
+**Step 3（证实）**: `uv.lock` 无 `git+`；`docker/runtime-requirements.lock` 中 nautilus-trader 带 `--hash=sha256:`；`Dockerfile` 回到无 `nt-builder` 的形状；`make test-docker` 全绿
+**Step 4（失败模式）**: 篡改 lock 里 wheel 的 hash 后 `uv sync --frozen` 必须拒绝
+**Step 5**: commit。**本 Task 未完成不得 close-out**：1a 的 `nt-builder` 是过渡方案，留着就是永久债务
 
 #### Task 2a: 契约层版本号原地改 V1（custos 自有部分）
 **Files**: `toolkit_rc.py`, `strategy_execution.py:140,197`, 3 个 gateway schema 的 `const`, 3 个 authority json, 3 个 scripts, 8 个测试文件（`grep -rln '1\.230\.0' tests/`：7 个 `test_toolkit_*` + `test_runner_material_authority.py`）, `tech-stack.md`, docs-site 中英
@@ -342,7 +357,7 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 3. `.claude/rules/verification.md` 追加 SoDEX 相关红线 grep 与 3.13 相关验证
 4. **填写「红线 gate 满足度」表**——逐条区分 code 覆盖与 runtime 接线，defer 项显式标注（教训 #40）
 5. **完成报告章节**，含 `### 功能验证（主路径）` 子段（操作者怎么试一遍 SoDEX sandbox 起停）
-6. **登记遗留项**：fork wheel 构建尚未进 fork CI（本次手工 `maturin build`），CI 化另起 follow-up；Task 2b 若对端仍未交付，遗留项写明阻塞方与 owner；D5 的 4 个指标薄包装未收敛到引擎原生；SoDEX live 未交付（D4 假设）
+6. **登记遗留项**：Task 1b 若因 fork 未打 tag 而未完成，plan **不得 close-out**（1a 的 `nt-builder` 是过渡方案）；Task 2b 若对端仍未交付，遗留项写明阻塞方与 owner；D5 的 4 个指标薄包装未收敛到引擎原生；SoDEX live 未交付（D4 假设）
 7. `git add` + `git commit -m "docs(custos): mark plan 01 as completed"`
 
 ## 品味收尾项（顺手，不另起 plan）
@@ -378,7 +393,8 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 | Task | Status | Completed | Notes |
 |---|---|---|---|
 | 0 | 🔲 | | mypy 基线归零 |
-| 1 | 🔲 | | 前置：fork 发布 wheel |
+| 1a | 🔲 | | 前置：fork 迁组织 + 版本 label |
+| 1b | 🔲 | | 切换门：fork tag + CI wheel + Task 8 通过 |
 | 2a | 🔲 | | |
 | 2b | ❌ | | Blocked：PS / Crucible 重签 |
 | 3 | 🔲 | | |
@@ -399,6 +415,7 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 | 类型 | 位置 | 描述 | 已批准 |
 |---|---|---|---|
 | DEV | `pyproject.toml` | **D1 改向：fork 发布 wheel，不用 path 源**。起草版接受「单仓 clone 装不起来」的代价，审查（`b0ff52a` C1/H1/H2）实证代价范围写窄：path 源还会击穿 3.11 base 承诺、`verify-base-clean` 与 Docker runtime lock，且 PS 规则禁 path 源。owner 2026-09-11 审查会话改向 wheel | ✅ owner（会话中口头，本 fix 落文）|
+| DEV | `pyproject.toml` / `Dockerfile` | **D1 再改为两阶段**：fork 活跃期用 git 源（1a），稳定后切 wheel（1b，有触发判据、未完成不得 close-out）。Docker 链的 git 阶段红实测根因是 `uv export` 对 git 源无 `--hash` 而 `Dockerfile:22-27` `--require-hashes`；解法走 custos 自有 wheel 已有的 `--no-deps` 路径 + `nt-builder` + sha 对账，**不登记 known-red**。多出的 `Dockerfile` / `Makefile:96-103` / `test_docker_runtime_contract.py` 三处已进清单 | ✅ owner 2026-09-12 |
 | DEV | `.python-version` / `tech-stack.md` | **D2 撤回**：「fork 仅 cp313 .so」是本机构建产物而非约束（`git ls-files` 0 条；fork `requires-python >=3.12`）。解释器保持 3.12，三处偏离取消。**假设**：owner 若仍要升 3.13 须另给理由 | ⏳ 待 owner 确认撤回 |
 | DEV | PS `shared/nautilus` | **D3 维持 Plan 60 Slice E defer**：不删不升，与 NT 2.0 正交 | ✅ owner |
 | DEV | `adapter/trading_config.py` | **D5b 根类形态已定**：普通子类 + kw-only `__init__` + `__setattr__` 冻结守卫 + `__eq__`，无 `__hash__`；失去的 msgspec 语义逐项列于 D5b。中风险模型结构变更，起草期定稿 | ✅ 本 fix 定稿（`68eab22` Fix 4）|
