@@ -191,8 +191,11 @@ from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStra
 
 def test_subclass_inherits_base_post_init():
     # A subclass is validated too, because __post_init__ runs along the chain.
-    class _SubConfig(NautilusTradingStrategyConfig, frozen=True):
-        extra: int = 0
+    class _SubConfig(NautilusTradingStrategyConfig):
+        # 2.0 shape: assign own fields before super().__init__(), which freezes.
+        def __init__(self, *, extra: int = 0, **kwargs: object) -> None:
+            object.__setattr__(self, "extra", extra)
+            super().__init__(**kwargs)
 
     with pytest.raises(ValueError, match="fixed_risk"):
         _SubConfig(
