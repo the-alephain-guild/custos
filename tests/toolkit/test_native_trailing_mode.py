@@ -748,8 +748,8 @@ def _tick_sub_stub(sl_tp_mode):
         _mode=SLTPMode(sl_tp_mode),
         _get_tick_monitoring_config=lambda: SimpleNamespace(enabled=True, tick_type="both"),
         _contexts={"BTC-USDT": ctx},
-        subscribe_trade_ticks=MagicMock(),
-        subscribe_quote_ticks=MagicMock(),
+        subscribe_trades=MagicMock(),
+        subscribe_quotes=MagicMock(),
         log=MagicMock(),
     )
 
@@ -757,16 +757,16 @@ def _tick_sub_stub(sl_tp_mode):
 def test_native_trailing_skips_tick_subscription():
     stub = _tick_sub_stub("native_trailing")
     PairContextCoordinator(stub).subscribe_ticks()
-    stub.subscribe_trade_ticks.assert_not_called()
-    stub.subscribe_quote_ticks.assert_not_called()
+    stub.subscribe_trades.assert_not_called()
+    stub.subscribe_quotes.assert_not_called()
 
 
 def test_hybrid_still_subscribes_ticks():
     """Gating must not regress tick/hybrid tick subscription."""
     stub = _tick_sub_stub("hybrid")
     PairContextCoordinator(stub).subscribe_ticks()
-    stub.subscribe_trade_ticks.assert_called_once()
-    stub.subscribe_quote_ticks.assert_called_once()
+    stub.subscribe_trades.assert_called_once()
+    stub.subscribe_quotes.assert_called_once()
 
 
 # The sl_tp_mode fallback tests went with _get_sl_tp_mode and _warn_sl_tp_mode_fallback:

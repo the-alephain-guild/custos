@@ -57,8 +57,13 @@ class _RestsThenCancels(NautilusStrategyCore):
     observably cancelled.
     """
 
+    # 2.0's Strategy is a pyclass that initialises in __new__, so every argument
+    # handed to the subclass reaches __new__ too. Absorb the extra one there.
+    def __new__(cls, config: NautilusTradingStrategyConfig, **kwargs: object):
+        return super().__new__(cls, config)
+
     def __init__(self, config: NautilusTradingStrategyConfig, *, bulk: bool) -> None:
-        super().__init__(config=config)
+        super().__init__(config)
         self._bulk = bulk
         self._order = None
         self.canceled_ids: list[str] = []
@@ -66,7 +71,7 @@ class _RestsThenCancels(NautilusStrategyCore):
     def on_start(self) -> None:
         # Order events arrive unasked; data does not. Without this the cancel tick never
         # lands and the test would fail looking exactly like a broken delegation.
-        self.subscribe_trade_ticks(_INSTRUMENT.id)
+        self.subscribe_trades(_INSTRUMENT.id)
         self._order = self.order_factory.limit(
             instrument_id=_INSTRUMENT.id,
             order_side=OrderSide.BUY,

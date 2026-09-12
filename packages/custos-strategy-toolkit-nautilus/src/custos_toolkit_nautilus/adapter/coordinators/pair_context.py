@@ -144,9 +144,9 @@ class PairContextCoordinator:
 
         for _, ctx in s._contexts.items():
             if tick_config.tick_type in ("trade", "both"):
-                s.subscribe_trade_ticks(ctx.instrument_id)
+                s.subscribe_trades(ctx.instrument_id)
             if tick_config.tick_type in ("quote", "both"):
-                s.subscribe_quote_ticks(ctx.instrument_id)
+                s.subscribe_quotes(ctx.instrument_id)
 
         s.log.info(f"Tick monitoring enabled for {len(s._contexts)} pairs: {tick_config.tick_type}")
 

@@ -569,9 +569,9 @@ class NautilusTradingStrategy(NautilusStrategyCore):
             tick_config = self._get_tick_monitoring_config()
             if tick_config and tick_config.enabled:
                 if tick_config.tick_type in ("trade", "both"):
-                    self.unsubscribe_trade_ticks(ctx.instrument_id)
+                    self.unsubscribe_trades(ctx.instrument_id)
                 if tick_config.tick_type in ("quote", "both"):
-                    self.unsubscribe_quote_ticks(ctx.instrument_id)
+                    self.unsubscribe_quotes(ctx.instrument_id)
 
         # Call strategy hook
         self.on_strategy_stop()

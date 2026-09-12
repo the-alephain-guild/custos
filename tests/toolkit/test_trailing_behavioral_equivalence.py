@@ -85,6 +85,11 @@ def run_handwritten(
 class _TrailingProbe(Strategy):
     """Opens a position, submits one native trailing stop, and records its fill."""
 
+    # 2.0's Strategy initialises in __new__, which sees whatever the subclass is
+    # called with; this absorbs the probe's own arguments.
+    def __new__(cls, *args: object, **kwargs: object):
+        return super().__new__(cls)
+
     def __init__(
         self,
         side: OrderSide,
@@ -109,8 +114,8 @@ class _TrailingProbe(Strategy):
         self.ts_to_index: dict[int, int] = {}  # ts to prices index, filled after the run
 
     def on_start(self) -> None:
-        self.subscribe_quote_ticks(_INSTRUMENT.id)
-        self.subscribe_trade_ticks(_INSTRUMENT.id)
+        self.subscribe_quotes(_INSTRUMENT.id)
+        self.subscribe_trades(_INSTRUMENT.id)
         # Open the position with a market order
         entry = self.order_factory.market(
             instrument_id=_INSTRUMENT.id,
