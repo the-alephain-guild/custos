@@ -496,7 +496,7 @@ readiness 的 `data_connectivity_ready` / `execution_connectivity_ready` 两个�
 - **运行期断连检测能力丢失**。1.x 可以在任意时刻问「现在还连着吗」，2.0 问不到。zombie
   watchdog 的输入因此退化为「节点还在跑吗」。红线 0.3 的 close-out 必须按这个如实写。
 
-两条出路，需 owner 定：(a) 本 Task 用 `handle().state` 顶上并显式降级声明；(b) 给公会 fork 加
+两条出路，owner 2026-09-12 选 **(a)**：本 Task 用 `handle().state` 顶上并显式降级声明。未选的 (b) 是给公会 fork 加
 两个只读 getter 暴露 `check_connected`——fork 是公会自有的，改动本身很小，但它会推进 sha、
 牵动 Task 1a 已钉的 `3fe857a351` 与一轮重编译，且是「往 fork 加自有 API」的先例。
 
@@ -710,10 +710,10 @@ downstream receipts」）。这条需要推对端交付。
 | DEV | Task 3 判据 | **证伪点失效**：`adapter/__init__.py:7-97` 的 `except ImportError: pass` 使包级 import 在 2.0 下照常成功。判据改为「`__all__` 逐名可达」，并把该静默吞没一并处理（教训 #21） | ✅ 实施中发现 |
 | DEV | Task 1a | **拆为 1a-1（Python 侧）/ 1a-2（Docker 侧）**：两条链路各自可独立验收，合并会让第一个绿等到两轮完整 Rust 编译（本地 + 容器）之后 | ✅ owner 2026-09-12 |
 | DEV | Task 2a 排序 | **2a 从 Slice A 末尾改排到 D 之后**：实测其 `Literal` 改动使 generator 校验 Crucible vendored golden 失败，`check-authority` 在 2b 交付前不可能绿；而 B/C/D 不依赖版本号常量。原顺序等于让整条中间期失去绿判据（C14 在执行顺序上的形态） | ✅ 实施中改排 |
-| DEV | `host.py` / Task 7a | **2.0 一个 event loop 只能跑一个 LiveNode**（`python/node.rs:989` 的 thread-local `HOSTED_RUN_ACTIVE`，理由是 runner senders 与 msgbus 都是 thread-local、两个交错的 hosted node 会串线）。custos host 按多 instance 建（三个 `dict[instance_id, …]` + `_claim_execution_account_partition`）。本 Task 采 fail closed：第二个 instance 在 host 内被明确拒绝。**这是能力缩减，去向需 owner 定**：维持单 instance / 每 instance 一线程 / 每 instance 一进程 | ⏳ 待 owner |
+| DEV | `host.py` / Task 7a | **2.0 一个 event loop 只能跑一个 LiveNode**（`python/node.rs:989` 的 thread-local `HOSTED_RUN_ACTIVE`，理由是 runner senders 与 msgbus 都是 thread-local、两个交错的 hosted node 会串线）。custos host 按多 instance 建（三个 `dict[instance_id, …]` + `_claim_execution_account_partition`）。本 Task 采 fail closed：第二个 instance 在 host 内被明确拒绝。**这是能力缩减**，去向已定（见偏离日志）：维持单 instance / 每 instance 一线程 / 每 instance 一进程。**owner 2026-09-12 定：维持单 instance，host 内 fail closed**；另两条各是独立 plan 的量，在那之前这道守卫都得在 | ✅ owner 2026-09-12 |
 | DEV | 两个红线桥接 | **事件可见窗口收窄为「策略 Running 期间」**（`strategy/mod.rs:1356` order、`:1468` position 的状态门；1.x 的 msgbus 订阅无此门）。停止侧安全（shutdown policy 跑在 `stop_async` 之前，且 2.0 无 `pause`），残留侧有缺口（stop 后迟到的终态回报不再进回调）。close-out 红线表按此如实降级（教训 #40） | ✅ 实施中发现 |
 | DEV | 转发器 | **Python 回调的异常被 Rust 丢弃**（`strategy/python/strategy.rs:973` / `:1045` 的 `let _ =`）。转发器必须自己把桥接失败变成可见信号，否则「对账不静默」在 2.0 下自动降级为静默 | ✅ 实施中发现 |
 | DEV | Task 7 前置调查 | **补第四条排除：`Strategy.subscribe_topic` 不是 msgbus 替代**。它走 `subscribe_any` → `bus.topics`，而 order/position 走 `publish_typed` → typed router，两张表不相交（`api.rs:243` vs `:1285`）。`BusTap` 能看到全部 publish但是 Rust-only、无 Python 面 | ✅ 实施中发现 |
-| DEV | `host.py:1232-1233` | **连接状态查询面在 Python 侧整个消失**（F6）：2.0 对 `check_connected` 无 Python 面，Rust 侧也只在启动与停机两端调它。启动判定可由 `handle().state == RUNNING` 顶上（进入 Running 蕴含启动时已连），**运行期断连检测能力丢失**，红线 0.3 按此如实降级。出路 (a) 降级声明 / (b) 给 fork 加只读 getter（推进 sha + 重编译）| ⏳ 待 owner |
+| DEV | `host.py:1232-1233` | **连接状态查询面在 Python 侧整个消失**（F6）：2.0 对 `check_connected` 无 Python 面，Rust 侧也只在启动与停机两端调它。启动判定可由 `handle().state == RUNNING` 顶上（进入 Running 蕴含启动时已连），**运行期断连检测能力丢失**，红线 0.3 按此如实降级。**owner 2026-09-12 定：(a) 降级声明**，用 `handle().state` 顶上，不给 fork 加自有 API；运行期断连检测登记为 follow-up | ✅ owner 2026-09-12 |
 | DEV | `host.py:527` / `:763` | **两处 1.x workaround 的理由在 2.0 下消失**：`run_async` 固定 `NodeRunMode::Hosted`、不装 signal handler（`python/node.rs:549` + `node/mod.rs:1461`），故 `_restore_runner_signal_ownership` 无对象；2.0 `dispose` 不碰 Python asyncio loop（`node/mod.rs:562-566`），故 `_dispose_node_preserving_runner_loop` 的 loop 保护无对象。两处删除而非改写 | ✅ 实施中发现 |
 | DEV | Task 2b | **`engine_version` 是跨仓契约字段**（mandatory-rules §3）：custos 只改自有 V1 文件，vendored golden 与 PS / Crucible 侧列为 Blocked，不得自行改写 | ✅ 规则约束，无需批准 |
