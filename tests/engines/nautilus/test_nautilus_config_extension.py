@@ -26,6 +26,7 @@ import pytest
 
 pytest.importorskip("nautilus_trader")
 
+from custos.core.engine_protocol import EngineLifecycleAuthority  # noqa: E402
 from custos.engines.nautilus import host as nautilus_host  # noqa: E402
 from custos.engines.nautilus.host import NtTradingNodeHost  # noqa: E402
 from tests.fixtures.fake_live_node import FakeLiveNode, FakeLiveNodeType  # noqa: E402
@@ -58,6 +59,17 @@ def _spec(label: str = "cfg-1", **overrides: Any) -> dict:
     }
     spec.update(overrides)
     return spec
+
+
+def _identity(spec: dict):
+    """The same reading of the spec that ``deploy`` makes, built the same way.
+
+    Hand-writing one here would let this test pass against a normalisation the real
+    path never performs.
+    """
+    return nautilus_host._deployment_identity(  # noqa: SLF001
+        spec, EngineLifecycleAuthority.from_spec(spec)
+    )
 
 
 def _credential() -> dict:
@@ -157,16 +169,22 @@ def test_real_venue_rejects_a_second_active_instance_on_the_same_credential_scop
     first = _spec("partition-a", trading_mode="testnet", sandbox=None)
     second = _spec("partition-b", trading_mode="testnet", sandbox=None)
 
-    host._claim_execution_account_partition(first)  # noqa: SLF001
+    host._claim_execution_account_partition(first, _identity(first))  # noqa: SLF001
 
     with pytest.raises(RuntimeError, match="credential scope already has an active"):
-        host._claim_execution_account_partition(second)  # noqa: SLF001
+        host._claim_execution_account_partition(second, _identity(second))  # noqa: SLF001
 
 
 def test_sandbox_instances_do_not_claim_a_real_venue_account_partition() -> None:
     host = NtTradingNodeHost()
 
-    host._claim_execution_account_partition(_spec("sandbox-a"))  # noqa: SLF001
-    host._claim_execution_account_partition(_spec("sandbox-b"))  # noqa: SLF001
+    sandbox_a = _spec("sandbox-a")
+    host._claim_execution_account_partition(  # noqa: SLF001
+        sandbox_a, _identity(sandbox_a)
+    )
+    sandbox_b = _spec("sandbox-b")
+    host._claim_execution_account_partition(  # noqa: SLF001
+        sandbox_b, _identity(sandbox_b)
+    )
 
     assert host._execution_account_partitions == {}  # noqa: SLF001

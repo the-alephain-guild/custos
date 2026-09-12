@@ -76,6 +76,12 @@ path.
 Currently wired: Binance (spot and USDT-perpetual) in all three modes; SoDEX
 (spot and perpetuals) in sandbox and testnet only.
 
+The same connector answers three further questions, each from one place: the venue
+named in signed RunnerFacts (and therefore scoping every fill event id), the
+independent ledger its reconciliation evidence is read from, and the venue's cap on
+a client order id. A venue that has no ledger source or no measured cap says so
+rather than borrowing another venue's.
+
 ## Runtime identity and safety
 
 `deployment_instance_id` keys active nodes, lifecycle authority, RunnerFact

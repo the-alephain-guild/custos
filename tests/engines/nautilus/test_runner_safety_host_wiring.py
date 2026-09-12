@@ -129,6 +129,7 @@ def test_the_installed_gate_records_its_refusals_as_facts() -> None:
 
     gate = RunnerSafetyOrderGate(
         boundary=_RefusingBoundary(),
+        client_order_id_len_limit=None,
         on_refusal=lambda refusal: bridge.record_local_refusal(
             client_order_id=refusal.client_order_id,
             instrument_id=refusal.instrument_id,

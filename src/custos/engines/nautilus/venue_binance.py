@@ -43,6 +43,8 @@ from nautilus_trader.model import (
     Venue,
 )
 
+from custos.engines.nautilus.venues import venue_for_connector
+
 # The sandbox exec config takes these as model enums, not as their string names.
 _ACCOUNT_TYPE_FUTURES = AccountType.MARGIN
 _ACCOUNT_TYPE_SPOT = AccountType.CASH
@@ -343,15 +345,24 @@ def build_exec_client_config_live(spec: dict, credential: dict) -> BinanceExecut
     return _build_binance_exec_config(spec, credential, BinanceEnvironment.LIVE)
 
 
+def venue_name(spec: dict) -> str:
+    """The venue this spec's connector trades on.
+
+    One venue for both product lines: spot and USDT-perpetual are the same exchange.
+    Read from the NT-free table so that the sandbox fact host, which must name the
+    venue without NautilusTrader installed, gets the same answer as this module.
+    Rejects a non-Binance connector on the way.
+    """
+    _binance_exchange_type(spec["connector"])
+    return venue_for_connector(str(spec["connector"]))
+
+
 def client_name(spec: dict) -> str:
     """The id this spec's data and execution clients register under.
 
-    One venue for both product lines: spot and USDT-perpetual are the same exchange
-    and the adapter registers one client per node. Rejects a non-Binance connector on
-    the way, so the host cannot name a client for a venue this module does not wire.
+    The venue name: the adapter registers one client per node for this exchange.
     """
-    _binance_exchange_type(spec["connector"])
-    return BINANCE_VENUE
+    return venue_name(spec)
 
 
 def data_client_factory() -> BinanceDataClientFactory:
@@ -373,3 +384,19 @@ def build_data_client_config_for_mode(
     knows the mode name.
     """
     return build_data_client_config(spec, credential, data_environment_for_mode(mode))
+
+
+def venue_ledger_source(spec: dict, credential: dict):
+    """The independent ledger this venue's reconciliation evidence is read from.
+
+    Independent of the Nautilus cache on purpose: reconciliation evidence that came
+    from the same place as the thing it reconciles proves nothing.
+    """
+    from custos.engines.nautilus.binance_ledger import BinanceVenueLedgerSource
+
+    return BinanceVenueLedgerSource(spec=spec, credential=credential)
+
+
+def client_order_id_len_limit() -> int | None:
+    """The venue's own cap on a client order id, measured against it."""
+    return BINANCE_CLIENT_ORDER_ID_LEN_LIMIT

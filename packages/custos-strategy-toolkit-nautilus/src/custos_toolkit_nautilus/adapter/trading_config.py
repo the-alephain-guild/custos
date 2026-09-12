@@ -36,7 +36,7 @@ from custos_toolkit_nautilus.adapter.config import (
     build_snapshot_config,
     build_trading_config,
 )
-from custos_toolkit_nautilus.adapter.utils import get_venue_from_connector, is_futures_connector
+from custos_toolkit_nautilus.adapter.utils import instrument_id_str
 
 # Valid level values in the (level, message) tuples returned by validation_warnings();
 # they map one-to-one onto the strategy's _validate_startup_config log-dispatch branches.
@@ -91,6 +91,20 @@ class NautilusTradingStrategyConfig(StrategyConfig):
     set them **before** calling `super().__init__()`, because this constructor
     freezes the instance on its way out.
     """
+
+    # Declared, not assigned. The sections are set through ``object.__setattr__`` in
+    # ``__init__`` because the instance freezes on the way out, and an assignment that
+    # goes around the class leaves no attribute for a reader -- human or checker -- to
+    # find. These annotations are the declaration; they create nothing at runtime.
+    trading: TradingConfig
+    position: PositionConfig
+    risk: RiskConfig
+    filters: FiltersConfig
+    platforms: PlatformsConfig
+    backtesting: BacktestingConfig
+    snapshot: SnapshotConfig
+    warmup: WarmupConfig | None
+    signal: SignalConfig
 
     _FROZEN_ATTR = "_nautilus_config_frozen"
     _SECTIONS = (
@@ -317,12 +331,9 @@ def build_nautilus_base_config(config_wrapper: ConfigWrapper) -> NautilusBaseCon
     else:
         trading_pairs = cast(list[str], trading_pairs_value)
 
-    venue = get_venue_from_connector(connector)
-    suffix = "-PERP" if is_futures_connector(connector) else ""
-    external_order_claims: list[InstrumentId] = []
-    for pair in trading_pairs:
-        symbol = pair.replace("-", "")
-        external_order_claims.append(InstrumentId.from_str(f"{symbol}{suffix}.{venue}"))
+    external_order_claims: list[InstrumentId] = [
+        InstrumentId.from_str(instrument_id_str(pair, connector)) for pair in trading_pairs
+    ]
 
     # Get snapshot config from wrapper if available
     snapshot_dict = getattr(config_wrapper, "snapshot", None)

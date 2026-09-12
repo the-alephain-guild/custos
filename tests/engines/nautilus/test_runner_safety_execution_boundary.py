@@ -18,6 +18,9 @@ from custos.engines.nautilus.runner_safety import (  # noqa: E402
     install_order_gate,
 )
 from custos.engines.nautilus.strategy_hooks import StrategyHookUnsupported  # noqa: E402
+from custos.engines.nautilus.venue_binance import (  # noqa: E402
+    BINANCE_CLIENT_ORDER_ID_LEN_LIMIT,
+)
 
 DEPLOYMENT_INSTANCE_ID = UUID("11111111-1111-4111-8111-111111111111")
 POLICY_ID = UUID("22222222-2222-4222-8222-222222222222")
@@ -126,9 +129,17 @@ class _Downstream:
         self.log.append(("modify_upstream", order.client_order_id))
 
 
-def _gate(boundary, refusals: list[OrderRefusal] | None = None) -> RunnerSafetyOrderGate:
+def _gate(
+    boundary,
+    refusals: list[OrderRefusal] | None = None,
+    *,
+    client_order_id_len_limit: int | None = BINANCE_CLIENT_ORDER_ID_LEN_LIMIT,
+) -> RunnerSafetyOrderGate:
+    # The Binance cap by default because that is the venue these cases are about; the
+    # parameter is here so a case can ask what a venue with no measured cap does.
     return RunnerSafetyOrderGate(
         boundary=boundary,
+        client_order_id_len_limit=client_order_id_len_limit,
         on_refusal=(refusals if refusals is None else refusals.append),
     )
 
@@ -704,7 +715,11 @@ def test_a_refusal_that_cannot_be_reported_does_not_let_the_order_out() -> None:
     def _sink_that_fails(_refusal: OrderRefusal) -> None:
         raise RuntimeError("fact stream unavailable")
 
-    gate = RunnerSafetyOrderGate(boundary=_boundary(store), on_refusal=_sink_that_fails)
+    gate = RunnerSafetyOrderGate(
+        boundary=_boundary(store),
+        client_order_id_len_limit=BINANCE_CLIENT_ORDER_ID_LEN_LIMIT,
+        on_refusal=_sink_that_fails,
+    )
 
     gate.submit_order(_Downstream(log).submit_order, _order("unreportable"))
 
@@ -787,3 +802,22 @@ def test_a_zero_mid_price_is_refused_too() -> None:
 
     with pytest.raises(RuntimeError, match="must be a positive decimal"):
         semantics.order_notional(market)
+
+
+def test_a_venue_with_no_measured_id_cap_refuses_nothing_on_length() -> None:
+    """A cap carried over from another exchange would be a claim nobody measured.
+
+    SoDEX declares none, so the guard stands down there rather than applying Binance's
+    36. What is lost is the local refusal: an over-long id would be refused by that
+    venue instead, one round trip later. What is not risked is this runner vouching
+    for a number it has never put to the venue.
+    """
+    log: list[tuple] = []
+    refusals: list[OrderRefusal] = []
+    gate = _gate(_boundary(_Store(log)), refusals, client_order_id_len_limit=None)
+    over_long = "O-20260730-044937-dcb00e520b45569e83b0-000-2"
+
+    gate.submit_order(_Downstream(log).submit_order, _order(over_long))
+
+    assert [refusal.reason_code for refusal in refusals] == []
+    assert ("submit", over_long) in log

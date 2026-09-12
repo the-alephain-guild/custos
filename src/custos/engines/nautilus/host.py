@@ -56,6 +56,7 @@ from custos.engines.nautilus.portfolio_snapshot import (
 )
 from custos.engines.nautilus.settlement import settlement_currency_for_pairs
 from custos.engines.nautilus.strategy_event_forwarding import StrategyEventForwarder
+from custos.engines.nautilus.venues import venue_for_connector, venue_module_name_for
 
 try:
     from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory
@@ -97,17 +98,6 @@ _VENUES_BY_MODE: dict[str, frozenset[str]] = {
     "live": _LIVE_VENUES,
 }
 
-# connector -> the module that turns a spec into that venue's NT client configs.
-# Every venue this runner executes needs an entry; a connector in the allow-list above
-# with no module here would be admitted and then fail at assembly, which is why the
-# drift guard checks the two against each other rather than trusting either.
-_VENUE_MODULE_BY_CONNECTOR: dict[str, str] = {
-    "binance": "venue_binance",
-    "binance_perpetual": "venue_binance",
-    "sodex": "venue_sodex",
-    "sodex_perpetual": "venue_sodex",
-}
-
 
 def _venue_module_for(connector: str):
     """The venue-config module for a connector.
@@ -118,13 +108,47 @@ def _venue_module_for(connector: str):
     """
     from importlib import import_module
 
-    module_name = _VENUE_MODULE_BY_CONNECTOR.get(connector.lower())
-    if module_name is None:
-        raise NotImplementedError(
-            f"connector {connector!r} has no venue wiring in this runner "
-            f"(wired: {', '.join(sorted(_VENUE_MODULE_BY_CONNECTOR))})"
-        )
-    return import_module(f"custos.engines.nautilus.{module_name}")
+    return import_module(f"custos.engines.nautilus.{venue_module_name_for(connector)}")
+
+
+@dataclass(frozen=True, slots=True)
+class _DeploymentIdentity:
+    """The spec fields this host routes on, read once.
+
+    A DeploymentSpec arrives as a plain dict, and every reader of it used to normalise
+    for itself -- six readings of the instance id, six of the mode, two derivations of
+    the settlement currency. Readings that disagree are not a style problem: the venue
+    a deployment trades on reaches the wire inside signed facts, so a second reader
+    that answered differently would sign a claim the first reader knew to be false.
+
+    Built after ``EngineLifecycleAuthority`` has validated the identity and the mode,
+    so nothing here re-parses or re-defaults them.
+    """
+
+    instance_id: str
+    spec_id: str
+    trading_mode: str
+    connector: str
+    venue: str
+    pairs: tuple[str, ...]
+    settlement_currency: str
+
+
+def _deployment_identity(spec: dict, authority: EngineLifecycleAuthority) -> _DeploymentIdentity:
+    connector = str(spec["connector"])
+    pairs = tuple(str(pair) for pair in (spec.get("pairs") or []))
+    return _DeploymentIdentity(
+        instance_id=str(authority.deployment_instance_id),
+        spec_id=str(authority.deployment_spec_id),
+        trading_mode=authority.trading_mode,
+        connector=connector,
+        venue=venue_for_connector(connector),
+        pairs=pairs,
+        # Derived here rather than at each use: the guards read it at startup and the
+        # facts carry it, and a deployment that settles in no single currency has no
+        # equity figure for either of them.
+        settlement_currency=settlement_currency_for_pairs(pairs),
+    )
 
 
 # Substrings that flag an exception message as potentially carrying credential
@@ -471,23 +495,20 @@ class NtTradingNodeHost:
     def supports_venue(self, venue: str, mode: str) -> bool:
         return venue.lower() in _VENUES_BY_MODE.get(mode.lower(), frozenset())
 
-    def _claim_execution_account_partition(self, spec: dict) -> None:
-        mode = str(spec.get("trading_mode") or "sandbox").lower()
-        if mode == "sandbox":
+    def _claim_execution_account_partition(self, spec: dict, identity: _DeploymentIdentity) -> None:
+        if identity.trading_mode == "sandbox":
             return
-        if mode not in {"testnet", "live"}:
-            raise RuntimeError("execution account partition has an invalid trading mode")
-        instance_id = str(spec.get("deployment_instance_id") or "").strip()
+        instance_id = identity.instance_id
         scope = spec.get("credential_scope")
         if isinstance(scope, dict):
             scope_id = str(scope.get("scope_id") or "").strip()
         else:
             scope_id = str(getattr(scope, "scope_id", "") or "").strip()
-        if not instance_id or not scope_id:
+        if not scope_id:
             raise RuntimeError(
                 "real-venue deployment requires instance and credential-scope identity"
             )
-        partition = (mode, scope_id)
+        partition = (identity.trading_mode, scope_id)
         conflicting_instance = next(
             (
                 owner
@@ -531,9 +552,10 @@ class NtTradingNodeHost:
         artifact: ActivatedEngineArtifactV1,
     ) -> str:
         self._ensure_nt_available()
-        spec_id = str(spec["deployment_spec_id"])
-        deployment_instance_id = str(spec["deployment_instance_id"])
         lifecycle_authority = EngineLifecycleAuthority.from_spec(spec)
+        identity = _deployment_identity(spec, lifecycle_authority)
+        spec_id = identity.spec_id
+        deployment_instance_id = identity.instance_id
         shutdown_policy = _shutdown_policy_from_spec(spec)
         if deployment_instance_id in self._active_nodes:
             # Idempotency guard: re-deploying a live spec must go through stop first
@@ -547,9 +569,9 @@ class NtTradingNodeHost:
         create_strategy = getattr(artifact, "create_strategy", None)
         strategy = create_strategy() if callable(create_strategy) else artifact.strategy
 
-        venue = _venue_module_for(str(spec["connector"]))
+        venue = _venue_module_for(identity.connector)
 
-        trading_mode = str(spec.get("trading_mode") or "sandbox").lower()
+        trading_mode = identity.trading_mode
         data_cfg = venue.build_data_client_config_for_mode(spec, credential, trading_mode)
         exec_cfg, exec_factory, reconciliation = self._build_exec_plan(
             trading_mode, spec, credential, venue
@@ -573,7 +595,7 @@ class NtTradingNodeHost:
 
         # Claim before constructing a node. A conflicting real-venue deployment must
         # fail without creating and then disposing a node.
-        self._claim_execution_account_partition(spec)
+        self._claim_execution_account_partition(spec, identity)
 
         try:
             builder = LiveNode.builder(
@@ -612,6 +634,7 @@ class NtTradingNodeHost:
         fact_context = self._build_runner_fact_context(
             spec,
             credential,
+            identity,
             runtime_strategy=strategy,
         )
         try:
@@ -621,6 +644,7 @@ class NtTradingNodeHost:
                 node.cache,
                 fact_context,
                 runner_safety_boundary,
+                client_order_id_len_limit=venue.client_order_id_len_limit(),
             )
         except Exception:
             self._release_execution_account_partition(deployment_instance_id)
@@ -632,7 +656,6 @@ class NtTradingNodeHost:
             if runner_safety_boundary is not None:
                 self._runner_safety_boundaries[deployment_instance_id] = runner_safety_boundary
             node.add_strategy(strategy)
-            settlement_currency = settlement_currency_for_pairs(spec.get("pairs") or [])
             # Captured before the run: run_async moves the node into the awaitable, and
             # reaching for these through the node afterwards raises.
             handle, cache, portfolio = node.handle(), node.cache, node.portfolio
@@ -661,7 +684,7 @@ class NtTradingNodeHost:
         self._lifecycle_authorities[deployment_instance_id] = lifecycle_authority
         # Derived from the pairs rather than the open positions: at this moment there are
         # no positions, and the startup guards read equity immediately.
-        self._settlement_currencies[deployment_instance_id] = settlement_currency
+        self._settlement_currencies[deployment_instance_id] = identity.settlement_currency
         self._shutdown_policies[deployment_instance_id] = shutdown_policy
 
         _log.info(
@@ -669,7 +692,8 @@ class NtTradingNodeHost:
             deployment_instance_id=deployment_instance_id,
             spec_id=spec_id,
             trading_mode=trading_mode,
-            connector=spec.get("connector"),
+            connector=identity.connector,
+            venue=identity.venue,
             permission_scope=credential.get("permission_scope"),
             artifact_activation_id=artifact.activation_id,
             strategy=type(strategy).__name__,
@@ -732,6 +756,8 @@ class NtTradingNodeHost:
         cache,
         fact_context,
         runner_safety_boundary=None,
+        *,
+        client_order_id_len_limit: int | None = None,
     ) -> None:
         """Wire the runner onto the strategy, or refuse the deploy.
 
@@ -769,9 +795,17 @@ class NtTradingNodeHost:
             fact_bridge.bootstrap(forwarder)
         forwarder.install(strategy)
         if runner_safety_boundary is not None:
-            self._install_order_gate(strategy, cache, runner_safety_boundary, fact_bridge)
+            self._install_order_gate(
+                strategy,
+                cache,
+                runner_safety_boundary,
+                fact_bridge,
+                client_order_id_len_limit,
+            )
 
-    def _install_order_gate(self, strategy, cache, boundary, fact_bridge) -> None:
+    def _install_order_gate(
+        self, strategy, cache, boundary, fact_bridge, client_order_id_len_limit: int | None
+    ) -> None:
         """Put the reservation gate in front of the strategy's outbound orders.
 
         A refusal produces no nautilus event -- the order is never submitted, and 2.0
@@ -796,6 +830,7 @@ class NtTradingNodeHost:
             strategy,
             RunnerSafetyOrderGate(
                 boundary=boundary,
+                client_order_id_len_limit=client_order_id_len_limit,
                 on_refusal=lambda refusal: fact_bridge.record_local_refusal(
                     client_order_id=refusal.client_order_id,
                     instrument_id=refusal.instrument_id,
@@ -830,6 +865,7 @@ class NtTradingNodeHost:
         self,
         spec: dict,
         credential: dict,
+        identity: _DeploymentIdentity,
         *,
         runtime_strategy: object | None = None,
     ):
@@ -838,30 +874,28 @@ class NtTradingNodeHost:
         strategy_id = spec.get("strategy_id")
         if not strategy_id:
             raise RuntimeError("validated DeploymentSpec lost its canonical strategy_id")
-        spec_id = spec["deployment_spec_id"]
-        deployment_instance_id = str(spec.get("deployment_instance_id") or "").strip()
         deployment_spec_digest = str(spec.get("deployment_spec_digest") or "").strip()
-        if not deployment_instance_id or not deployment_spec_digest:
+        if not deployment_spec_digest:
             raise RuntimeError(
                 "validated DeploymentSpec lacks explicit DeploymentInstance/spec digest authority"
             )
         required_projectors = ["settlement", "risk", "health"]
-        if spec["trading_mode"] in {"testnet", "live"}:
+        if identity.trading_mode in {"testnet", "live"}:
             required_projectors.append("reconciliation")
         self._capability_receipt.require_scope_bindings(
             projectors=required_projectors,
-            trading_mode=str(spec["trading_mode"]),
-            deployment_instance_id=deployment_instance_id,
-            deployment_spec_id=spec_id,
+            trading_mode=identity.trading_mode,
+            deployment_instance_id=identity.instance_id,
+            deployment_spec_id=identity.spec_id,
             deployment_spec_digest=deployment_spec_digest,
             strategy_id=strategy_id,
         )
         authority = RunnerFactAuthority(
             tenant_id=self._tenant_id or "",
-            trading_mode=str(spec["trading_mode"]),
+            trading_mode=identity.trading_mode,
             runner_id=self._capability_receipt.runner_id,
-            deployment_instance_id=UUID(deployment_instance_id),
-            deployment_spec_id=spec_id,
+            deployment_instance_id=UUID(identity.instance_id),
+            deployment_spec_id=UUID(identity.spec_id),
             deployment_spec_digest=deployment_spec_digest,
             generation=int(spec["generation"]),
             strategy_id=strategy_id,
@@ -869,18 +903,12 @@ class NtTradingNodeHost:
             capability_version=self._capability_receipt.capability_version,
             capability_manifest_digest=self._capability_receipt.manifest_digest,
         )
-        pairs = spec.get("pairs") or []
-        currencies = {str(pair).upper().replace("/", "-").split("-")[-1] for pair in pairs}
-        if len(currencies) != 1:
-            raise RuntimeError("RunnerFact v1 requires one settlement currency per deployment")
-        currency = next(iter(currencies))
+        currency = identity.settlement_currency
         if currency not in SUPPORTED_CURRENCIES:
             raise RuntimeError(f"settlement currency {currency!r} is outside RunnerFact v1")
         provider = None
-        if spec["trading_mode"] in {"testnet", "live"}:
-            from custos.engines.nautilus.binance_ledger import BinanceVenueLedgerSource
-
-            provider = BinanceVenueLedgerSource(spec=spec, credential=credential)
+        if identity.trading_mode in {"testnet", "live"}:
+            provider = _venue_module_for(identity.connector).venue_ledger_source(spec, credential)
         strategy_version, timeframe = strategy_signal_metadata(
             spec,
             runtime_strategy=runtime_strategy,
@@ -903,10 +931,10 @@ class NtTradingNodeHost:
                 ) from exc
         deployment = RunnerFactDeployment(
             authority=authority,
-            deployment_instance_id=deployment_instance_id,
-            deployment_spec_id=str(spec_id),
+            deployment_instance_id=identity.instance_id,
+            deployment_spec_id=identity.spec_id,
             deployment_spec_digest=deployment_spec_digest,
-            venue="BINANCE",
+            venue=identity.venue,
             currency=currency,
             reconciliation_available=provider is not None,
             strategy_version=strategy_version,

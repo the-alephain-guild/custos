@@ -31,6 +31,7 @@ def _spec(**overrides) -> dict:
         "generation": 1,
         "strategy_id": str(uuid4()),
         "trading_mode": "sandbox",
+        "connector": "binance_perpetual",
         "pairs": ["BTC-USDT"],
         "sandbox": {"starting_balances": ["10_000 USDT", "250.50 USDT"]},
     }
@@ -108,3 +109,36 @@ async def test_sandbox_host_rejects_non_settlement_starting_balance(
         )
 
     assert deployed is False
+
+
+async def test_sandbox_facts_name_the_venue_the_spec_trades_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A sandbox fill is still a claim about a venue, so it has to name the right one."""
+
+    async def deploy(self, spec, credential, artifact):
+        del self, spec, credential, artifact
+        return SimpleNamespace(engine_handle="sandbox-engine")
+
+    monkeypatch.setattr(SandboxSimulationHost, "deploy", deploy)
+    host = SandboxRunnerFactHost(tenant_id="tenant-a", capability_receipt=_CapabilityReceipt())
+
+    spec = _spec(
+        connector="sodex_perpetual",
+        pairs=["BTC-USD"],
+        sandbox={"starting_balances": ["10_000 USD"]},
+    )
+
+    await host.deploy(spec, {}, object())
+
+    assert [d.venue for d in host.runner_fact_deployments()] == ["SODEX_PERPS"]
+
+
+async def test_a_sandbox_spec_without_a_connector_cannot_name_a_venue() -> None:
+    """Refused rather than defaulted: a default here is a false claim about an exchange."""
+    host = SandboxRunnerFactHost(tenant_id="tenant-a", capability_receipt=_CapabilityReceipt())
+    spec = _spec()
+    del spec["connector"]
+
+    with pytest.raises(RunnerFactContractError, match="names no connector"):
+        await host.deploy(spec, {}, object())

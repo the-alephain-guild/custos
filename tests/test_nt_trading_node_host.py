@@ -30,6 +30,7 @@ from nautilus_trader.common import Environment  # noqa: E402
 
 from custos.engines.nautilus import host as nautilus_host  # noqa: E402
 from custos.engines.nautilus.host import NtTradingNodeHost  # noqa: E402
+from custos.engines.nautilus.settlement import SettlementCurrencyError  # noqa: E402
 from tests.fixtures.fake_live_node import (  # noqa: E402
     FakeBuilder,
     FakeLiveNode,
@@ -854,4 +855,121 @@ async def test_a_connector_with_no_venue_wiring_is_refused_before_a_node_exists(
     before = len(FakeLiveNode.instances)
     with pytest.raises(NotImplementedError, match="okx_perpetual"):
         await host.deploy(_spec("okx-1", connector="okx_perpetual"), _credential(), _Artifact())
+    assert len(FakeLiveNode.instances) == before
+
+
+class _FactCapabilityReceipt:
+    """The least a capability receipt can be and still bind a deployment."""
+
+    def __init__(self) -> None:
+        self.runner_id = uuid5(NAMESPACE_URL, "custos-test-runner")
+        self.capability_version_id = uuid5(NAMESPACE_URL, "custos-test-capability")
+        self.capability_version = 3
+        self.manifest_digest = "c" * 64
+        self.capability_manifest: dict = {}
+        # The runtime-log emitter refuses an unvalidated binding, and the fact bridge
+        # is built during deploy -- so a stand-in has to carry this to reach the code
+        # under test at all.
+        self.binding_status = "validated"
+        self.bindings: dict | None = None
+
+    def require_scope_bindings(self, **bindings) -> None:
+        self.bindings = bindings
+
+
+def _fact_spec(label: str, connector: str, **overrides) -> dict:
+    spec = _spec(
+        label,
+        connector=connector,
+        strategy_id=str(uuid5(NAMESPACE_URL, f"custos-test-strategy:{label}")),
+    )
+    spec.update(overrides)
+    return spec
+
+
+def _fact_host() -> tuple[NtTradingNodeHost, _FactCapabilityReceipt]:
+    receipt = _FactCapabilityReceipt()
+    host = NtTradingNodeHost(
+        tenant_id="tenant-a",
+        runner_fact_emitter=object(),
+        capability_receipt=receipt,
+    )
+    return host, receipt
+
+
+@pytest.mark.asyncio
+async def test_a_deployments_facts_name_the_venue_it_actually_trades_on(monkeypatch) -> None:
+    """The venue reaches the wire twice: as a field and inside the fill event id.
+
+    ``RunnerFactEventBridge`` takes it from the deployment (``runner_fact_producer``
+    binds ``venue = self._deployment.venue`` once and uses it for every fill), so a
+    deployment that names the wrong venue signs every fill under it. Nothing
+    downstream can catch that -- the value is the runner's own claim.
+    """
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host, _receipt = _fact_host()
+    spec = _sodex_spec(
+        "facts-sodex",
+        strategy_id=str(uuid5(NAMESPACE_URL, "custos-test-strategy:facts-sodex")),
+    )
+    await host.deploy(spec, _credential(), _Artifact())
+    try:
+        assert [d.venue for d in host.runner_fact_deployments()] == ["SODEX_PERPS"]
+    finally:
+        await host.stop(spec["deployment_instance_id"])
+
+
+@pytest.mark.asyncio
+async def test_a_binance_deployments_facts_still_name_binance(monkeypatch) -> None:
+    """The other half: naming the venue truthfully must not rename the old one."""
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host, _receipt = _fact_host()
+    spec = _fact_spec("facts-binance", "binance_perpetual")
+    await host.deploy(spec, _credential(), _Artifact())
+    try:
+        assert [d.venue for d in host.runner_fact_deployments()] == ["BINANCE"]
+    finally:
+        await host.stop(spec["deployment_instance_id"])
+
+
+@pytest.mark.asyncio
+async def test_pairs_with_no_quote_are_refused_as_having_no_settlement_currency(
+    monkeypatch,
+) -> None:
+    """One derivation of the settlement currency, not one per caller.
+
+    ``settlement_currency_for_pairs`` discards an empty quote and reports "these
+    pairs settle in none"; a second copy that skipped that step reported the empty
+    string as an unsupported currency instead, which sends the reader looking for a
+    currency rather than for a malformed pair.
+    """
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host, _receipt = _fact_host()
+    spec = _fact_spec("facts-badpair", "binance_perpetual", pairs=["BTC-"])
+    with pytest.raises(SettlementCurrencyError, match="settle in none"):
+        await host.deploy(spec, _credential(), _Artifact())
+
+
+@pytest.mark.asyncio
+async def test_the_mode_is_validated_once_and_everything_downstream_reads_that(
+    monkeypatch,
+) -> None:
+    """Why nothing in this host re-normalises the trading mode.
+
+    ``EngineLifecycleAuthority.from_spec`` runs first thing in ``deploy`` and accepts
+    only the three exact lower-case names, so by the time the exec plan, the account
+    partition or the capability binding read the mode, no other spelling can be
+    present. The ``.lower()`` calls that used to sit in front of each of those were
+    describing a case that cannot arrive, while a fourth reader compared raw -- and a
+    reader cannot tell which of the two was the deliberate one.
+    """
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host, _receipt = _fact_host()
+    before = len(FakeLiveNode.instances)
+    with pytest.raises(ValueError, match="trading mode is invalid"):
+        await host.deploy(
+            _fact_spec("facts-mode", "binance_perpetual", trading_mode="LIVE"),
+            _credential(),
+            _Artifact(),
+        )
     assert len(FakeLiveNode.instances) == before

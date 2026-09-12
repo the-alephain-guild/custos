@@ -27,7 +27,25 @@ VENUE_MAP = {
     "kucoin_perpetual": "KUCOIN",
     "gate": "GATE",
     "gate_perpetual": "GATE",
+    # Spot and perpetuals are separate venues here rather than one venue with a
+    # product type: they differ in signing domain, key set, balances and reference
+    # price, and the adapter models them apart for that reason.
+    "sodex": "SODEX_SPOT",
+    "sodex_perpetual": "SODEX_PERPS",
 }
+
+# Connectors whose configured pairs are already the venue's own symbols.
+#
+# The usual rule -- drop the dash, append -PERP for a perpetual -- is a convention of
+# the dash-joined CEX names above. It does not describe SoDEX, whose spot engine lists
+# the venue's v-prefixed tokens joined by an underscore (``vBTC_vUSDC``) and whose
+# perpetuals engine lists a dash-joined pair quoted in USD (``BTC-USD``). There is no
+# canonical BASE-QUOTE to translate from: the two engines quote different assets, so a
+# translation rule would have to invent one.
+#
+# Getting this wrong does not raise. It builds an instrument id the venue has never
+# listed, and the instrument set simply loads empty.
+PAIRS_ARE_VENUE_SYMBOLS = frozenset({"sodex", "sodex_perpetual"})
 
 
 def derive_instrument_id(trading_config: "TradingConfig") -> InstrumentId:
@@ -48,15 +66,22 @@ def derive_instrument_id(trading_config: "TradingConfig") -> InstrumentId:
     connector = trading_config.connector
 
     pair = pairs[0] if pairs else "BTC-USDT"
-    venue = VENUE_MAP.get(connector, "BINANCE")
-    is_futures = "perpetual" in connector
+    return InstrumentId.from_str(instrument_id_str(pair, trading_config.connector))
 
-    # Convert pair format: BTC-USDT -> BTCUSDT
+
+def instrument_id_str(pair: str, connector: str) -> str:
+    """Nautilus instrument id for one pair on one connector.
+
+    The single derivation. Three callers used to carry a copy of it, and a copy is
+    where a venue whose symbols do not follow the Binance convention gets missed.
+    """
+    venue = get_venue_from_connector(connector)
+    if connector in PAIRS_ARE_VENUE_SYMBOLS:
+        return f"{pair}.{venue}"
     symbol = pair.replace("-", "")
-    if is_futures:
+    if is_futures_connector(connector):
         symbol += "-PERP"
-
-    return InstrumentId.from_str(f"{symbol}.{venue}")
+    return f"{symbol}.{venue}"
 
 
 # Mapping from common timeframe strings to Nautilus bar format

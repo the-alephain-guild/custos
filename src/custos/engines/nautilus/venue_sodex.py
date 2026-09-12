@@ -52,6 +52,7 @@ from nautilus_trader.model import (
 )
 
 from custos.core.log import get_logger
+from custos.engines.nautilus.venues import venue_for_connector
 
 _log = get_logger("custos.venue_sodex")
 
@@ -120,8 +121,14 @@ def _market(connector: str) -> Market:
 
 
 def venue_name(spec: dict) -> str:
-    """The NT venue this spec's connector trades on: ``SODEX_SPOT`` or ``SODEX_PERPS``."""
-    return _wiring(spec["connector"])[1]
+    """The NT venue this spec's connector trades on: ``SODEX_SPOT`` or ``SODEX_PERPS``.
+
+    Read from the NT-free table so a caller without NautilusTrader installed gets the
+    same answer; the wiring below is still consulted first so an unwired connector is
+    refused by this module's own message.
+    """
+    _wiring(spec["connector"])
+    return venue_for_connector(str(spec["connector"]))
 
 
 def client_name(spec: dict) -> str:
@@ -324,3 +331,36 @@ def build_exec_client_config_sandbox(
         oms_type=_OMS_TYPE_NETTING,
         default_leverage=None,
     )
+
+
+def venue_ledger_source(spec: dict, credential: dict):
+    """Refuse: this venue has no independent ledger source yet.
+
+    Reached only for testnet and live, where a RunnerFact claims reconciliation
+    coverage. Returning ``None`` instead would publish facts that merely record the
+    coverage as unavailable, which reads like a runtime condition rather than like a
+    venue this runner cannot yet reconcile at all.
+    """
+    del spec, credential
+    raise NotImplementedError(
+        "SoDEX has no independent venue ledger source: reconciliation evidence for "
+        "testnet and live cannot be produced for this venue yet"
+    )
+
+
+def client_order_id_len_limit() -> int | None:
+    """No cap has been measured against this venue, so none is claimed.
+
+    Binance answers an over-long id with -4015 and the limit is written down with the
+    session that measured it. Nothing equivalent exists here: the adapter carries no
+    such constant and no order has been placed on this venue from this runner. Copying
+    Binance's 36 would be a claim about a different exchange, and a guard set from a
+    guess gives assurance it cannot support -- if this venue's real cap is shorter, the
+    guess passes ids the venue will refuse.
+
+    What this costs: an over-long id reaches the venue and is refused there, one round
+    trip later, with the venue's message rather than this runner's. The runner's own
+    ids are a fixed 32 characters, so it cannot be the source of one. Measure the cap
+    during the first real session on this venue and replace this.
+    """
+    return None

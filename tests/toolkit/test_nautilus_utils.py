@@ -12,6 +12,7 @@ from custos_toolkit_nautilus.adapter.utils import (
     derive_bar_type,
     derive_instrument_id,
     get_venue_from_connector,
+    instrument_id_str,
     is_futures_connector,
 )
 from nautilus_trader.model import BarType, InstrumentId
@@ -264,3 +265,52 @@ class TestDeepAsdict:
         assert deep_asdict("test") == "test"
         assert deep_asdict(True) is True
         assert deep_asdict(None) is None
+
+
+class TestInstrumentIdDerivation:
+    """One derivation of the instrument id, and the venues it does not describe."""
+
+    def test_the_dash_joined_venues_keep_their_convention(self):
+        assert instrument_id_str("BTC-USDT", "binance") == "BTCUSDT.BINANCE"
+        assert instrument_id_str("BTC-USDT", "binance_perpetual") == "BTCUSDT-PERP.BINANCE"
+
+    def test_sodex_pairs_are_the_venues_own_symbols_and_are_used_verbatim(self):
+        """The two engines quote different assets, so there is nothing to translate.
+
+        Spot lists the venue's v-prefixed tokens joined by an underscore; perpetuals
+        list a dash-joined pair quoted in USD. Dropping the dash and appending -PERP
+        would build ids the venue has never listed -- and that does not raise, it
+        loads an empty instrument set.
+        """
+        assert instrument_id_str("vBTC_vUSDC", "sodex") == "vBTC_vUSDC.SODEX_SPOT"
+        assert instrument_id_str("BTC-USD", "sodex_perpetual") == "BTC-USD.SODEX_PERPS"
+
+    def test_every_caller_derives_the_same_id(self, tmp_path):
+        """They used to hold a copy each, which is where a venue gets missed.
+
+        ``external_order_claims`` is the one that matters most: it is what tells the
+        engine which instruments this strategy owns, so an id the venue never listed
+        claims nothing and the strategy's own fills arrive unclaimed.
+        """
+        from custos_toolkit.config import load_config
+        from custos_toolkit_nautilus.adapter.config.trading import TradingConfig
+        from custos_toolkit_nautilus.adapter.trading_config import build_nautilus_base_config
+
+        for connector, pair in (
+            ("binance_perpetual", "BTC-USDT"),
+            ("sodex_perpetual", "BTC-USD"),
+            ("sodex", "vBTC_vUSDC"),
+        ):
+            expected = instrument_id_str(pair, connector)
+            assert str(derive_instrument_id(TradingConfig(connector=connector, pairs=[pair]))) == (
+                expected
+            )
+
+            path = tmp_path / f"{connector}.yaml"
+            path.write_text(
+                "strategy:\n  name: probe\n"
+                f"trading:\n  connector: {connector}\n  pairs:\n    - {pair}\n",
+                encoding="utf-8",
+            )
+            claims = build_nautilus_base_config(load_config(path))["external_order_claims"]
+            assert [str(claim) for claim in claims] == [expected]

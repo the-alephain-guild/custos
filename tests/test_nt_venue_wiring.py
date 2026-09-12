@@ -56,9 +56,10 @@ def _approved_spec(connector: str = "binance_perpetual") -> dict:
 # table rather than listed here, so a venue added there without a row below cannot
 # pass by being forgotten.
 def _venue_modules() -> dict[str, object]:
-    from custos.engines.nautilus.host import _VENUE_MODULE_BY_CONNECTOR, _venue_module_for
+    from custos.engines.nautilus.host import _venue_module_for
+    from custos.engines.nautilus.venues import VENUE_MODULE_BY_CONNECTOR
 
-    return {connector: _venue_module_for(connector) for connector in _VENUE_MODULE_BY_CONNECTOR}
+    return {connector: _venue_module_for(connector) for connector in VENUE_MODULE_BY_CONNECTOR}
 
 
 @pytest.mark.parametrize("mode", ["sandbox", "testnet", "live"])
@@ -437,3 +438,32 @@ def test_the_config_objects_do_not_read_the_credential_back() -> None:
         assert not hasattr(cfg, "api_secret")
         assert "key-material-abc" not in repr(cfg)
         assert "secret-material-xyz" not in repr(cfg)
+
+
+def test_the_nt_free_venue_names_match_the_adapters_own_constants() -> None:
+    """The table in ``venues`` duplicates constants the adapters define.
+
+    It has to: admission and the sandbox fact host answer on a base install where
+    NautilusTrader is absent, so they cannot read the adapter's own names. The
+    duplication is therefore held here rather than by care.
+    """
+    from nautilus_trader.adapters.sodex import SODEX_PERPS, SODEX_SPOT
+
+    from custos.engines.nautilus.venue_binance import BINANCE_VENUE
+    from custos.engines.nautilus.venues import VENUE_BY_CONNECTOR
+
+    assert VENUE_BY_CONNECTOR == {
+        "binance": BINANCE_VENUE,
+        "binance_perpetual": BINANCE_VENUE,
+        "sodex": SODEX_SPOT,
+        "sodex_perpetual": SODEX_PERPS,
+    }
+
+
+def test_the_venue_modules_and_the_nt_free_table_answer_alike() -> None:
+    """Two ways to ask the same question must not be two answers."""
+    from custos.engines.nautilus.host import _venue_module_for
+    from custos.engines.nautilus.venues import VENUE_BY_CONNECTOR
+
+    for connector, venue in VENUE_BY_CONNECTOR.items():
+        assert _venue_module_for(connector).venue_name({"connector": connector}) == venue

@@ -943,17 +943,9 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         Returns:
             NautilusTrader InstrumentId
         """
-        from custos_toolkit_nautilus.adapter.utils import VENUE_MAP
+        from custos_toolkit_nautilus.adapter.utils import instrument_id_str
 
-        connector = self.config.trading.connector
-        venue = VENUE_MAP.get(connector, "BINANCE")
-        is_futures = "perpetual" in connector
-
-        symbol = pair.replace("-", "")
-        if is_futures:
-            symbol += "-PERP"
-
-        return InstrumentId.from_str(f"{symbol}.{venue}")
+        return InstrumentId.from_str(instrument_id_str(pair, self.config.trading.connector))
 
     def _derive_bar_type_for_instrument(self, instrument_id: InstrumentId) -> BarType:
         """Derive BarType directly from an InstrumentId.

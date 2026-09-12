@@ -25,6 +25,7 @@ from custos.engines.nautilus.settlement import (
     SettlementCurrencyError,
     settlement_currency_for_pairs,
 )
+from custos.engines.nautilus.venues import venue_for_connector
 
 
 class SandboxRunnerFactHost(SandboxSimulationHost):
@@ -164,6 +165,7 @@ class SandboxRunnerFactHost(SandboxSimulationHost):
             capability_version=capability.capability_version,
             capability_manifest_digest=capability.manifest_digest,
         )
+        venue = _venue(spec)
         currency = _settlement_currency(spec)
         starting_equity = _starting_equity(spec, currency)
         strategy_version, timeframe = strategy_signal_metadata(spec)
@@ -173,7 +175,7 @@ class SandboxRunnerFactHost(SandboxSimulationHost):
                 deployment_instance_id=deployment_instance_id,
                 deployment_spec_id=deployment_spec_id,
                 deployment_spec_digest=deployment_spec_digest,
-                venue="BINANCE",
+                venue=venue,
                 currency=currency,
                 reconciliation_available=False,
                 strategy_version=strategy_version,
@@ -181,6 +183,24 @@ class SandboxRunnerFactHost(SandboxSimulationHost):
             ),
             starting_equity,
         )
+
+
+def _venue(spec: Mapping[str, Any]) -> str:
+    """The venue these facts are about.
+
+    Signed facts carry it and the fill event ids are scoped under it, so it has to be
+    the venue this deployment actually trades on. A spec that names no connector
+    cannot answer that, and guessing would sign a claim about the wrong exchange.
+    """
+    connector = str(spec.get("connector") or "").strip()
+    if not connector:
+        raise RunnerFactContractError(
+            "sandbox DeploymentSpec names no connector, so its facts cannot name a venue"
+        )
+    try:
+        return venue_for_connector(connector)
+    except NotImplementedError as exc:
+        raise RunnerFactContractError(str(exc)) from exc
 
 
 def _settlement_currency(spec: Mapping[str, Any]) -> str:

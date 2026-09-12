@@ -46,7 +46,6 @@ from custos.core.order_reservation_boundary import (
 )
 from custos.core.runner_fact import RunnerStateAuthorityError
 from custos.engines.nautilus.strategy_hooks import StrategyHookUnsupported, install_hook
-from custos.engines.nautilus.venue_binance import BINANCE_CLIENT_ORDER_ID_LEN_LIMIT
 
 _log = get_logger("custos.runner_safety")
 _POLICY_REJECTION_REASON = "custos_runner_notional_policy_rejected"
@@ -268,9 +267,14 @@ class RunnerSafetyOrderGate:
         self,
         *,
         boundary: RunnerReservationBoundary,
+        client_order_id_len_limit: int | None,
         on_refusal: Callable[[OrderRefusal], None] | None = None,
     ) -> None:
         self._boundary = boundary
+        # Required rather than defaulted: the cap belongs to the venue this deployment
+        # trades on, and both possible defaults are a claim about a venue -- one venue's
+        # measured number applied to another, or no cap at all.
+        self._client_order_id_len_limit = client_order_id_len_limit
         self._on_refusal = on_refusal
 
     def submit_order(self, submit: Callable[..., None], order: Any, *args: Any, **kwargs: Any):
@@ -383,8 +387,7 @@ class RunnerSafetyOrderGate:
             or getattr(order, "exec_algorithm_id", None) is not None
         )
 
-    @staticmethod
-    def _client_order_id_too_long(order: Any) -> bool:
+    def _client_order_id_too_long(self, order: Any) -> bool:
         """Refuse an id the venue will refuse, before it costs a round trip.
 
         The id's shape is chosen where the strategy config is built, and nothing after
@@ -394,12 +397,14 @@ class RunnerSafetyOrderGate:
         that builder. Both would reproduce the -4015 rejection of every order while
         every test about the builder stayed green.
 
-        Binance's limit applies to every order because Binance is the only venue this
-        runner assembles an execution config for -- `venue_binance._binance_exchange_type`
-        refuses any other connector before an order can exist. Wiring a second venue
-        means giving this a per-venue limit rather than leaving it to guess.
+        The cap comes from the venue module for the connector this deployment trades
+        on. A venue that has none measured against it declares ``None``, and this
+        refuses nothing there: a cap carried over from another exchange would be a
+        claim about a venue nobody has asked.
         """
-        return len(str(order.client_order_id)) >= BINANCE_CLIENT_ORDER_ID_LEN_LIMIT
+        if self._client_order_id_len_limit is None:
+            return False
+        return len(str(order.client_order_id)) >= self._client_order_id_len_limit
 
     def _refuse(self, orders: tuple, reason_code: str, *, exc: Exception | None = None) -> None:
         _log.warning(
