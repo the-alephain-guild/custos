@@ -148,7 +148,7 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 | required_capabilities | `vcs.commit@native`、`shell.exec@native`、`fs.write@native` |
 | preferred_capabilities | `test.run@native`（缺失时降级为人工复跑并记录命令） |
 | fallback_policy | native-first；`test.run` 不可用时显式降级，其余 capability 缺失即 blocked |
-| task_dag | Slice A 串行前置（Task 0 → 1a → 2a；1b 在 Slice F 前；2b Blocked 不阻塞后续）；B / C 可并行；D 依赖 B+C；**E 依赖 A + Task 5**（PS Config 子类随 D5b 根类形态）；F 最后 |
+| task_dag | Slice A 串行前置（Task 0 → 1a-1）；B / C 可并行；D 依赖 B+C；**E 依赖 A + Task 5**；**2a 与 2b 相邻、排在 D 之后**（2a 会让 generator 读 Crucible vendored golden 失败，在 2b 交付前必红，故不占前置位）；1b 在 F 前；F 最后 |
 | host_context | orchestrator=custos worktree；workspace_owner=custos；nested_workspace_allowed=false |
 | dispatch_authority | user |
 
@@ -279,6 +279,23 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 **Step 5**: commit。**本 Task 未完成不得 close-out**：1a 的 `nt-builder` 是过渡方案，留着就是永久债务
 
 #### Task 2a: 契约层版本号原地改 V1（custos 自有部分）
+
+> **⚠ 已改排到 Slice F 前，与 2b 相邻（2026-09-12 实测改排）**。原置于 Slice A 末尾，实测**不可行**：
+> `scripts/generate_strategy_contract_assets.py:214-223` 从 `docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json`
+> 读 `artifact_binding.artifact_ref`，再用 `StrategyArtifactRefV1.model_validate()` 校验。一旦把
+> `strategy_execution.py` 的 `Literal` 改成新值，那份 golden 里的 `engine_version = 1.230.0` 立刻不过，
+> generator 失败 → `make check-authority` 红 → `make verify` 红。而**那份 golden 归 Crucible，custos 不得改**
+> （`authority-docs.md`「Never invent, vendor or pre-register downstream receipts」），即 Task 2b。
+> 也就是说 **2a 的验收项「`make check-authority` exit 0」在 2b 交付前不可满足**——正是教训 C14 说的
+> 「写出一条自己无权满足的门」，这次出现在执行顺序上。
+>
+> **Slice B / C / D 不依赖版本号常量**（它们改 import 路径），故把 2a 推到它们之后、与 2b 相邻，
+> 让中间期 `check-authority` 保持绿、可继续充当判据。2a 的改动本身已验证过一遍并回退，
+> 落地时直接重做即可：源头是 `strategy_execution.py` 的 2 处 `Literal`、`toolkit_rc.py` 1 处、
+> `generate_strategy_contract_assets.py:180` 1 处，schema 与 golden 由 `make strategy-contract-assets`
+> **重新生成而非手改**（C7：清单从权威源推导）；另有 `toolkit_rc_build.py:177`（`"nautilus-trader==1.230.0"`
+> 依赖字符串形态）与 `toolkit_rc_release_readiness.py:755`，以及 7 个测试文件（实测 7 个，非 plan 原写的 8 个）。
+
 **Files**: `toolkit_rc.py`, `strategy_execution.py:140,197`, 3 个 gateway schema 的 `const`, 3 个 authority json, 3 个 scripts, 8 个测试文件（`grep -rln '1\.230\.0' tests/`：7 个 `test_toolkit_*` + `test_runner_material_authority.py`）, `tech-stack.md`, docs-site 中英
 **Step 1（证伪）**: 跑现有断言 1.230.0 的测试，确认全绿（证明它们真的在断言）
 **Step 2（实现）**: 逐处改 `2.0.0rc5+sodex.<n>`。**按 CLAUDE.md first-production V1 规则原地改，禁止加兼容别名或 predecessor parser**；`python_requires` 不动
@@ -421,7 +438,7 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 | 1a-1 | ✅ | 2026-09-12 | `2010309`；git 源钉 `3fe857a351`，NT 2.0.0rc5+sodex.1 |
 | 1a-2 | 🔲 | | Docker 侧：`nt-builder` + runtime lock + sha 对账断言 |
 | 1b | 🔲 | | 切换门：fork tag + CI wheel + Task 8 通过 |
-| 2a | 🔲 | | |
+| 2a | 🔲 | | 已改排到 D 之后、与 2b 相邻；改动已试做并回退 |
 | 2b | ❌ | | Blocked：PS / Crucible 重签 |
 | 3 | 🔲 | | |
 | 4 | 🔲 | | |
@@ -452,4 +469,5 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 | DEV | 失败模式契约「3.11 base」 | **原措辞不可能成立**：uv workspace 下 toolkit-nautilus 的 `requires-python` 把整个 workspace 解析为 `==3.12.*`，任何 3.11 sync 必失败，与 git 源无关。真实的门是 `Makefile:76-78` `verify-base-clean`（不指定解释器），已按它验证并通过 | ✅ 实施中更正 |
 | DEV | Task 3 判据 | **证伪点失效**：`adapter/__init__.py:7-97` 的 `except ImportError: pass` 使包级 import 在 2.0 下照常成功。判据改为「`__all__` 逐名可达」，并把该静默吞没一并处理（教训 #21） | ✅ 实施中发现 |
 | DEV | Task 1a | **拆为 1a-1（Python 侧）/ 1a-2（Docker 侧）**：两条链路各自可独立验收，合并会让第一个绿等到两轮完整 Rust 编译（本地 + 容器）之后 | ✅ owner 2026-09-12 |
+| DEV | Task 2a 排序 | **2a 从 Slice A 末尾改排到 D 之后**：实测其 `Literal` 改动使 generator 校验 Crucible vendored golden 失败，`check-authority` 在 2b 交付前不可能绿；而 B/C/D 不依赖版本号常量。原顺序等于让整条中间期失去绿判据（C14 在执行顺序上的形态） | ✅ 实施中改排 |
 | DEV | Task 2b | **`engine_version` 是跨仓契约字段**（mandatory-rules §3）：custos 只改自有 V1 文件，vendored golden 与 PS / Crucible 侧列为 Blocked，不得自行改写 | ✅ 规则约束，无需批准 |
