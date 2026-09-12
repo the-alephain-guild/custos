@@ -1,16 +1,13 @@
 """ADX (Average Directional Index) indicator wrapping pandas-ta."""
 
 import pandas as pd
-from nautilus_trader.indicators.base import Indicator
 from nautilus_trader.model import Bar
 
 from ._pandas_ta import ta
 
 
-class ADX(Indicator):
+class ADX:
     """
-    ADX (Average Directional Index) indicator using pandas-ta.
-
     Measures trend strength on a scale from 0 to 100.
     Values above 25 typically indicate a strong trend.
 
@@ -21,8 +18,6 @@ class ADX(Indicator):
     """
 
     def __init__(self, length: int = 14) -> None:
-        super().__init__(params=[length])
-
         if length < 1:
             raise ValueError("Length must be at least 1")
 

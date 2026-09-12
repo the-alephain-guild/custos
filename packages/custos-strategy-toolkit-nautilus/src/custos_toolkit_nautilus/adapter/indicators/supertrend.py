@@ -10,7 +10,6 @@ from collections import deque
 from typing import cast
 
 import pandas as pd
-from nautilus_trader.indicators.base import Indicator
 from nautilus_trader.model import Bar
 
 from ._pandas_ta import ta
@@ -35,10 +34,8 @@ def _supertrend_column_names(length: float, multiplier: float) -> tuple[str, str
     )
 
 
-class SuperTrend(Indicator):
+class SuperTrend:
     """
-    SuperTrend indicator using pandas-ta.
-
     ATR-based trend following indicator that provides dynamic support/resistance lines.
     When price is above the line, the trend is bullish; when below, the trend is bearish.
 
@@ -55,8 +52,6 @@ class SuperTrend(Indicator):
         length: int = 10,
         multiplier: float = 3.0,
     ) -> None:
-        super().__init__(params=[length, multiplier])
-
         if length < 1:
             raise ValueError("Length must be at least 1")
         if multiplier <= 0:

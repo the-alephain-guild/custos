@@ -1,16 +1,13 @@
 """ATR (Average True Range) indicator wrapping pandas-ta."""
 
 import pandas as pd
-from nautilus_trader.indicators.base import Indicator
 from nautilus_trader.model import Bar
 
 from ._pandas_ta import ta
 
 
-class ATR(Indicator):
+class ATR:
     """
-    ATR (Average True Range) indicator using pandas-ta.
-
     Measures market volatility by calculating the average range of price bars.
 
     Parameters
@@ -20,8 +17,6 @@ class ATR(Indicator):
     """
 
     def __init__(self, length: int = 14) -> None:
-        super().__init__(params=[length])
-
         if length < 1:
             raise ValueError("Length must be at least 1")
 

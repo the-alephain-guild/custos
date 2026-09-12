@@ -1,16 +1,13 @@
 """MACD (Moving Average Convergence Divergence) indicator wrapping pandas-ta."""
 
 import pandas as pd
-from nautilus_trader.indicators.base import Indicator
 from nautilus_trader.model import Bar
 
 from ._pandas_ta import ta
 
 
-class MACD(Indicator):
+class MACD:
     """
-    MACD (Moving Average Convergence Divergence) indicator using pandas-ta.
-
     MACD = EMA(fast) - EMA(slow)
     Signal = EMA(MACD, signal_period)
     Histogram = MACD - Signal
@@ -31,8 +28,6 @@ class MACD(Indicator):
         slow_period: int = 26,
         signal_period: int = 9,
     ) -> None:
-        super().__init__(params=[fast_period, slow_period, signal_period])
-
         if fast_period < 1:
             raise ValueError("Fast period must be at least 1")
         if slow_period < fast_period:

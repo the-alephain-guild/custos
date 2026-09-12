@@ -1,16 +1,13 @@
 """RSI (Relative Strength Index) indicator wrapping pandas-ta."""
 
 import pandas as pd
-from nautilus_trader.indicators.base import Indicator
 from nautilus_trader.model import Bar
 
 from ._pandas_ta import ta
 
 
-class RSI(Indicator):
+class RSI:
     """
-    RSI (Relative Strength Index) indicator using pandas-ta.
-
     RSI measures momentum on a scale from 0 to 100.
     Values below 30 typically indicate oversold, above 70 overbought.
 
@@ -21,8 +18,6 @@ class RSI(Indicator):
     """
 
     def __init__(self, period: int = 14) -> None:
-        super().__init__(params=[period])
-
         if period < 1:
             raise ValueError("Period must be at least 1")
 
