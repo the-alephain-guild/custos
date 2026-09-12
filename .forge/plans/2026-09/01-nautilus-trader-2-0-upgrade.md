@@ -1,6 +1,6 @@
 # 01 - NautilusTrader 1.230.0 → fork 2.0.0rc5 升级
 
-> **Status**: ⏳ In Progress（Task 0 / 1a-1 / **Slice B 全部 ✅** 2026-09-12；下一步 Slice C。**中间态**：adapter 59/59 可 import，`tests/toolkit` collection error 35→16，剩余 16 个是测试文件自身的 1.x 路径，归 Slice D）
+> **Status**: ⏳ In Progress（Task 0 / 1a-1 / Slice B / **7a / 10 ✅** 2026-09-12。全量 `pytest tests/` 由 `54 failed, 25 errors` 收敛到 `23 failed, 11 errors`；剩余归 Task 9（执行客户端迁移）与 Task 2a（`1.230.0` 断言））
 > **Created**: 2026-09-11
 > **Project**: custos（跨仓：philosophers-stone）
 > **multi_session_scope**: **true**（6 个 Slice、跨 2 仓库、涉及红线 0.1/0.2/0.4）
@@ -673,8 +673,8 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 | 7b | 🔲 | | 品味重构：typed 视图 + typed adapter |
 | 8 | 🔲 | | 红线 0.2 |
 | 9 | 🔲 | | 红线 0.3/0.4 |
-| 10 | 🔲 | | |
-| 11 | 🔲 | | |
+| 10 | ✅ | 2026-09-12 | `3dd7ff6`；27 测试文件拍平 + TestClock→`Clock.new_test()`；22 文件转绿、0 新红 |
+| 11 | ⏳ | | collection error 只剩 `adapters.sandbox.factory` 1 类（在 Task 9 在途文件内）；其余仍红归 Task 2a / 9 |
 | 12 | 🔲 | | PS 仓 |
 | 13 | 🔲 | | PS 仓 |
 | 14 | 🔲 | | |
@@ -800,4 +800,5 @@ downstream receipts」）。这条需要推对端交付。
 | DEV | close-out 计数 | **Task 7a 改动了若干测试文件的条数**（`test_nt_trading_node_host` 27→33、`test_nt_binance_venue` →34、新增 `test_strategy_event_forwarding` 11 等）。按 `progress-management.md` §数字类声明必须来自实跑，plan close-out 的逐文件表格须在 Slice D 之后按 `pytest --collect-only` 重数，不得沿用旧行 | ✅ 遗留登记 |
 | DEV | `host.py:1232-1233` | **连接状态查询面在 Python 侧整个消失**（F6）：2.0 对 `check_connected` 无 Python 面，Rust 侧也只在启动与停机两端调它。启动判定可由 `handle().state == RUNNING` 顶上（进入 Running 蕴含启动时已连），**运行期断连检测能力丢失**，红线 0.3 按此如实降级。**owner 2026-09-12 定：(a) 降级声明**，用 `handle().state` 顶上，不给 fork 加自有 API；运行期断连检测登记为 follow-up | ✅ owner 2026-09-12 |
 | DEV | `host.py:527` / `:763` | **两处 1.x workaround 的理由在 2.0 下消失**：`run_async` 固定 `NodeRunMode::Hosted`、不装 signal handler（`python/node.rs:549` + `node/mod.rs:1461`），故 `_restore_runner_signal_ownership` 无对象；2.0 `dispose` 不碰 Python asyncio loop（`node/mod.rs:562-566`），故 `_dispose_node_preserving_runner_loop` 的 loop 保护无对象。两处删除而非改写 | ✅ 实施中发现 |
+| DEV | 拍平工具（Slice D） | **两个假设在 tests/ 才暴露，adapter 从未触发**：(1) **函数级 import 的作用域**——按文件合并把 `test_pair_context.py` 16 处 per-method import 并到第一个方法、删掉其余 15 处，`BarType`/`InstrumentId` 在那 15 个方法里未定义（47 个 F821）。改为按 enclosing scope 合并，归属用「自 scope 向下走、遇嵌套 scope 即停」。(2) **`# noqa` 承载信息**——`E402`（`pytest.importorskip` 之后的 import）与 `F401`（仅用于可用性探测）；合并时静默丢了 35 个中的 26 个。现按被替换语句的 noqa 并集附加到合并行。两处都是**跑完读 diff/lint 才发现**，不是工具报的错（教训 C10 同族） | ✅ 实施中发现并修 |
 | DEV | Task 2b | **`engine_version` 是跨仓契约字段**（mandatory-rules §3）：custos 只改自有 V1 文件，vendored golden 与 PS / Crucible 侧列为 Blocked，不得自行改写 | ✅ 规则约束，无需批准 |
