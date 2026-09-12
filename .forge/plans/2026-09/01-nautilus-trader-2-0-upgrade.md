@@ -5,6 +5,7 @@
 > **Project**: custos（跨仓：philosophers-stone）
 > **multi_session_scope**: **true**（6 个 Slice、跨 2 仓库、涉及红线 0.1/0.2/0.4）
 > **For Claude**: 按 Slice 派工，**不要单 session 硬推**（教训 #31）
+> **接手请先读文末「交接 (Handoff) — Slice C 接手说明」**
 
 ## 上下文 (Context)
 
@@ -518,6 +519,71 @@ host 必须在 `add_strategy` 前校验策略具备转发契约，否则拒绝�
 | 12 | 🔲 | | PS 仓 |
 | 13 | 🔲 | | PS 仓 |
 | 14 | 🔲 | | |
+
+## 交接 (Handoff) — Slice C 接手说明
+
+> 上一轮单会话做完 Task 0 / 1a-1 / Slice B 后在此交接。plan 顶部写明「按 Slice 派工，不要单
+> session 硬推」（教训 #31），而 Slice C 是四条红线所在，故在此断开。本段是接手者的入口。
+
+### 起点
+
+先完整读本文件，重点是 **「Task 7 前置调查（2026-09-12 实测，Slice C 的实际起点）」**——
+Slice C 的调查已经做完并落盘（`619e19a` / `b2edde5`），那段是完整输入，**不需要重查**：
+2.0 取消 Python 侧 msgbus 访问的实证、三条替代路径的逐条排除、由 Strategy 回调转发的迁移
+方案、完整类型映射表、Environment 映射及其依据。
+
+### 交接时的状态
+
+- Slice B 收尾于 `8c77d5f`；调查落盘于 `619e19a`、Environment 映射于 `b2edde5`
+- 依赖已切到公会 fork：`nautilus_trader 2.0.0rc5+sodex.1`，uv git 源钉 `3fe857a351`
+- adapter **59/59 可 import**，`__all__` 75 名全可达
+- **`make verify` 在主干 exit 0** —— 这是新基线，此后任何红都是新引入的
+- 中间态：`tests/toolkit` 有 16 个 collection error，全部是测试文件自身的 1.x 路径，归
+  Slice D，**不是 Slice C 的责任**（见「中间态基线」段的分栏表）
+
+### 本次任务
+
+**Task 7a**：LiveNode API 迁移 + 两个红线桥接改由 Strategy 回调转发 + host 侧 admission 强制。
+（Task 7 已按规模拆为 7a / 7b；7b 是品味重构，不在本次范围。）
+
+最要紧的一条，前置调查里写了、这里重复一遍：**转发必须由 host 强制校验，不能靠策略自觉**。
+`host.py:405-406` 的策略来自签名 artifact，而全仓 `issubclass` grep 零命中——转发若只写在
+toolkit 基类里，一个不继承它的 artifact 会让红线 0.2/0.3 与「对账不静默」静默失效。这是
+教训 #22（多层 fail-fast，不靠任一层自觉）的直接适用。
+
+验证手段：`tests/test_nt_trading_node_host.py`（713 行）、`tests/engines/nautilus/` 下多个，
+其中两个真的构造 node。
+
+### 本地操作陷阱（上一轮实测，不属于 plan 正文但会真的绊住人）
+
+- `uv` 不在 PATH，命令前加 `export PATH=$HOME/.local/bin:$PATH`
+- `uv sync` 会现场编译 fork 的 Rust 扩展；首次约十几分钟，之后按 sha 缓存。放后台跑、输出
+  直写文件，**不要接管道**（管道会让退出码变成 `tail` 的——教训 #50 续编二）
+- `git checkout --` 被 guardrail 拦（拦得对）。还原单文件用 `git show HEAD:<path> > <path>`
+- `tests/integration/runner_fact_publication_process.py` 被 `receipts/custos-runner-fact-local-publication-v1.json`
+  按 sha256+size 钉住，已加进 ruff `extend-exclude`。**不要格式化它，也不要跑 `make fmt`**（那会扫全目录）
+- fork 在活跃开发中，HEAD 会前进；lock 钉的是 `3fe857a351`，引用 fork 行号前先核对
+
+### 纪律
+
+- 按仓库 `.claude/rules/` 执行；每个 Task 走「证伪 → 实现 → 证实 → 失败模式」
+- 批量改源码用 AST 级、整行唯一匹配、写前 `ast.parse`、改完看 diff（教训 C10）
+- commit 前先 `git status --short` 核对 index（教训 #27）
+- **断言的覆盖面不得大于实证的覆盖面**（教训 #46）——上一轮在这条上栽过一次：8 个待格式化
+  文件只扰动验了 1 个就声称「全部可安全格式化」，第一次 `make verify` 即被 authority gate 打回
+- plan 是活文档，实施中发现的偏离即时写进偏离日志并 commit
+
+### Slice C 之后还剩什么
+
+Task 8（SoDEX 接入 + 按 mode 的 G6 白名单）、Task 9（venue_binance / runner_safety 适配 +
+红线 0.3/0.4 回归）、Slice D（测试面 69 文件）、Slice E（PS 策略 8 文件，10 个符号对纯路径
+拍平、**零重写**）、Task 2a/2b（版本号；2a 已改排到 D 之后，因为它在 2b 交付前不可能绿）、
+Task 1b（wheel 切换门）、Task 14（close-out）。
+
+**Task 2b 仍是硬阻塞，且不是任何新会话能自己解决的**：`engine_version` 是 PS（producer BOM）
+↔ custos（execution ABI）↔ Crucible（consumer receipt）三方 exact-byte 握手字段，vendored
+golden 归 Crucible，custos 不得改（`authority-docs.md`「Never invent, vendor or pre-register
+downstream receipts」）。这条需要推对端交付。
 
 ## 偏离与改进日志 (Deviations & Improvements)
 
