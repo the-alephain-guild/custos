@@ -176,7 +176,7 @@ def _ticks_at(price: float, ts: int) -> list:
             _INSTRUMENT,
             price=price,
             size=1.0,
-            aggressor_side=AggressorSide.BUYER,
+            aggressor_side=AggressorSide.BUY,
             ts_event=ts,
             ts_init=ts,
         ),

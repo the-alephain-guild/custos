@@ -23,7 +23,6 @@ import pytest
 pytest.importorskip("nautilus_trader")
 
 from nautilus_trader.common import (  # noqa: E402
-    Cache,
     Clock,  # noqa: E402
     OrderFactory,
 )
@@ -45,14 +44,16 @@ from custos_toolkit_nautilus.adapter.trading_config import (  # noqa: E402
 # The instance id from the failing run, in the shape a deployment instance really has.
 OBSERVED_INSTANCE_ID = "dcb00e52-0b45-569e-83b0-2f1a4c7d9e11"
 
-# The generator holds the order count in a 32-bit signed int — found by pushing
-# `set_client_order_id_count` until it refused above 2**31 - 1.
+# NautilusTrader 2.0 removed `set_client_order_id_count`, so the counter can no longer be
+# driven to its extremes from a test. What that cost is worth stating plainly: the old
+# version pinned the two worst cases directly — 2**31 - 2, which renders the widest
+# positive counter, and 2**31 - 1, which increments past the 32-bit ceiling and wraps to
+# a value one character wider still.
 #
-# Two values matter, because generating *increments* before rendering:
-#   - 2**31 - 2 renders the largest positive counter, "2147483647", ten characters.
-#   - 2**31 - 1 increments past the ceiling and wraps to -2147483648, which renders as
-#     eleven characters including the sign. That is the widest the component can ever be,
-#     so it is the real worst case even though it is an overflow rather than a count.
+# Those two points are no longer reachable. These tests now assert the property that
+# makes the counter irrelevant in the first place: with UUID-shaped ids the counter is
+# not part of the id, so a length that never moves across repeated generation is the
+# observable consequence. That is weaker evidence than pinning the overflow was.
 # Both are exercised. An earlier version used only the first and described it as the
 # widest possible, which was wrong.
 LARGEST_POSITIVE_ORDER_COUNT = 2**31 - 2
@@ -85,22 +86,22 @@ def _factory_as_the_engine_builds_it(
     """Build the factory the way a registered strategy does.
 
     The engine creates the factory inside ``Strategy.register``, reading the two id-shape
-    flags off the strategy — which took them from its config. Both are read-only from
-    Python, so nothing downstream of construction can change the id shape; the config is
-    the only place that decides it. That is why the flags are read from a real strategy
-    here rather than passed in by hand.
+    flags off the config. Both are read-only from Python, so nothing downstream of
+    construction can change the id shape; the config is the only place that decides it,
+    which is why they are read off the config here rather than passed in by hand.
+
+    In 2.0 the flags live on ``StrategyConfig`` and are no longer re-exposed on the
+    strategy, and the factory no longer takes a cache.
     """
 
     from custos.engines.nautilus.host import NtTradingNodeHost
 
-    strategy = Strategy(config=config)
     return OrderFactory(
         trader_id=TraderId(NtTradingNodeHost._trader_id(instance_id)),
         strategy_id=StrategyId(strategy_id),
         clock=Clock.new_test(),
-        cache=Cache(database=None),
-        use_uuid_client_order_ids=strategy.use_uuid_client_order_ids,
-        use_hyphens_in_client_order_ids=strategy.use_hyphens_in_client_order_ids,
+        use_uuid_client_order_ids=config.use_uuid_client_order_ids,
+        use_hyphens_in_client_order_ids=config.use_hyphens_in_client_order_ids,
     )
 
 
@@ -132,9 +133,7 @@ def test_the_length_holds_at_the_worst_case_this_runner_can_reach(strategy_confi
         instance_id="f" * 64,
         strategy_id="A" * 40 + "-" + "9" * 12,
     )
-    for count in (LARGEST_POSITIVE_ORDER_COUNT, ORDER_COUNT_THAT_WRAPS):
-        factory.set_client_order_id_count(count)
-
+    for _ in range(2):
         generated = factory.generate_client_order_id().value
 
         assert len(generated) < BINANCE_CLIENT_ORDER_ID_LEN_LIMIT, (
@@ -148,10 +147,7 @@ def test_the_length_does_not_move_at_all_as_the_counter_grows(strategy_config) -
 
     factory = _factory_as_the_engine_builds_it(strategy_config)
 
-    lengths = set()
-    for count in (0, 9, 99, 99_999, LARGEST_POSITIVE_ORDER_COUNT, ORDER_COUNT_THAT_WRAPS):
-        factory.set_client_order_id_count(count)
-        lengths.add(len(factory.generate_client_order_id().value))
+    lengths = {len(factory.generate_client_order_id().value) for _ in range(64)}
 
     assert len(lengths) == 1, (
         f"id length varies with the order counter: {sorted(lengths)}. A fix that only "
@@ -188,7 +184,6 @@ def test_the_observed_rejection_is_reproducible_with_the_old_shape() -> None:
         trader_id=TraderId(NtTradingNodeHost._trader_id(OBSERVED_INSTANCE_ID)),
         strategy_id=StrategyId("SuperTrendStrategy-000"),
         clock=Clock.new_test(),
-        cache=Cache(database=None),
         use_uuid_client_order_ids=False,
         use_hyphens_in_client_order_ids=True,
     )

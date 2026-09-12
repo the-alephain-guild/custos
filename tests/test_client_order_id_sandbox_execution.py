@@ -102,7 +102,7 @@ def test_an_order_still_fills_locally_and_carries_the_short_id(tmp_path) -> None
                 _INSTRUMENT,
                 price=100.0,
                 size=1.0,
-                aggressor_side=AggressorSide.BUYER,
+                aggressor_side=AggressorSide.BUY,
                 ts_event=ts,
                 ts_init=ts,
             ),
