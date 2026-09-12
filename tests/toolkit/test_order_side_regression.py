@@ -36,8 +36,7 @@ from custos_toolkit.risk.orders import OrderPriceCalculator
 # Use normal imports - the dependency issue has been resolved
 from custos_toolkit.signals.types import Signal, SignalDirection
 from custos_toolkit_nautilus.adapter.orders import StopLossSubmitter, TakeProfitSubmitter
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId, OrderSide
 
 # =============================================================================
 # Mock Classes

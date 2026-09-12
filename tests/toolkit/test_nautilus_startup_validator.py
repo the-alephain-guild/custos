@@ -19,7 +19,7 @@ import pytest
 pytest.importorskip("nautilus_trader")
 
 from custos_toolkit_nautilus.adapter.coordinators import StartupValidator
-from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common import LogColor
 
 
 def _strategy(*, capital_mode="compound", initial_capital=1000, balance="5000", warnings=()):

@@ -115,7 +115,7 @@ def test_a_spent_attempt_without_a_refusal_is_still_protective() -> None:
 
 
 def test_emergency_close_keeps_the_protective_form_when_nothing_was_refused() -> None:
-    from nautilus_trader.model.enums import TimeInForce
+    from nautilus_trader.model import TimeInForce
 
     stub = _make_stub()
     position = _position()
@@ -129,7 +129,7 @@ def test_emergency_close_keeps_the_protective_form_when_nothing_was_refused() ->
 
 
 def test_emergency_close_drops_reduce_only_after_the_venue_refused_it() -> None:
-    from nautilus_trader.model.enums import TimeInForce
+    from nautilus_trader.model import TimeInForce
 
     tracker = OrderTracker()
     tracker.record_reduce_only_refusal()
@@ -147,7 +147,7 @@ def test_emergency_close_drops_reduce_only_after_the_venue_refused_it() -> None:
 
 def test_emergency_close_spends_the_plain_attempt_only_once() -> None:
     """A second emergency falls back to the protective form rather than a second plain order."""
-    from nautilus_trader.model.enums import TimeInForce
+    from nautilus_trader.model import TimeInForce
 
     tracker = OrderTracker()
     tracker.record_reduce_only_refusal()
@@ -185,7 +185,7 @@ def test_emergency_close_is_still_fail_safe_around_the_decision() -> None:
 
 
 def test_the_containment_flatten_uses_the_protective_form_by_default() -> None:
-    from nautilus_trader.model.enums import TimeInForce
+    from nautilus_trader.model import TimeInForce
 
     stub = _make_stub()
     position = _position()

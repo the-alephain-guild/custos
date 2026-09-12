@@ -40,7 +40,7 @@ from custos_toolkit_nautilus.adapter.cancel_audit import (
     CANCEL_REQUESTED,
 )
 from custos_toolkit_nautilus.adapter.strategy_core import NautilusStrategyCore
-from nautilus_trader.trading.strategy import Strategy
+from nautilus_trader.trading import Strategy
 
 
 def _RecordingStrategy(open_orders: list) -> SimpleNamespace:  # noqa: N802 — reads as a ctor
@@ -116,7 +116,7 @@ def test_a_bulk_cancel_with_nothing_open_records_nothing_and_still_delegates() -
 
 def test_a_bulk_cancel_restricted_to_one_side_records_only_that_side() -> None:
     """Recording the orders the venue was not asked about would inflate the left-hand side."""
-    from nautilus_trader.model.enums import OrderSide
+    from nautilus_trader.model import OrderSide
 
     strat = _RecordingStrategy([_order("O-BUY", OrderSide.BUY), _order("O-SELL", OrderSide.SELL)])
 
@@ -129,7 +129,7 @@ def test_a_bulk_cancel_restricted_to_one_side_records_only_that_side() -> None:
 
 def test_the_optional_arguments_reach_the_venue_untouched() -> None:
     """The override must not quietly narrow the API it stands in front of."""
-    from nautilus_trader.model.enums import OrderSide
+    from nautilus_trader.model import OrderSide
 
     strat = _RecordingStrategy([])
     order = _order("O-1")

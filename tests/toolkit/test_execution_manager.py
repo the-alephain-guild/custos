@@ -9,8 +9,7 @@ import pytest
 pytest.importorskip("nautilus_trader")
 from custos_toolkit.signals.types import Signal
 from custos_toolkit_nautilus.adapter.execution import ExecutionManager
-from nautilus_trader.model.enums import OrderSide, TimeInForce
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId, OrderSide, TimeInForce
 
 # =============================================================================
 # Mock Classes

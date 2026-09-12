@@ -24,20 +24,23 @@ from custos_toolkit_nautilus.adapter.trading_config import (  # noqa: E402
     NautilusTradingStrategyConfig,
     build_nautilus_base_config,
 )
-from nautilus_trader.backtest.engine import BacktestEngine, BacktestEngineConfig  # noqa: E402
-from nautilus_trader.config import LoggingConfig  # noqa: E402
-from nautilus_trader.model.currencies import USDT  # noqa: E402
-from nautilus_trader.model.enums import (  # noqa: E402
+from nautilus_trader.backtest import BacktestEngine  # noqa: E402
+from nautilus_trader.config import (
+    BacktestEngineConfig,  # noqa: E402
+    LoggingConfig,  # noqa: E402
+)
+from nautilus_trader.model import (
     AccountType,
     AggressorSide,
+    Money,
     OmsType,
     OrderSide,
     OrderStatus,
-)
-from nautilus_trader.model.identifiers import Venue  # noqa: E402
-from nautilus_trader.model.objects import Money  # noqa: E402
-from nautilus_trader.test_kit.providers import TestInstrumentProvider  # noqa: E402
+    Venue,
+)  # noqa: E402
+from nautilus_trader.model.currencies import USDT  # noqa: E402
 from nautilus_trader.test_kit.stubs.data import TestDataStubs  # noqa: E402
+from nautilus_trader.testkit.providers import TestInstrumentProvider  # noqa: E402
 
 _INSTRUMENT = TestInstrumentProvider.btcusdt_perp_binance()
 _VENUE = Venue("BINANCE")

@@ -216,7 +216,7 @@ class TestEmergencyClose:
 
     def test_emergency_close_flattens_all(self):
         """Each open position gets cancel_all_orders then close_position(reduce_only, IOC)."""
-        from nautilus_trader.model.enums import TimeInForce
+        from nautilus_trader.model import TimeInForce
 
         stub = _make_emergency_stub()
         pos1 = SimpleNamespace(instrument_id="BTCUSDT-PERP.BINANCE")

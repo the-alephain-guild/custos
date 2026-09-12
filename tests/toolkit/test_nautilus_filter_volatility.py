@@ -12,7 +12,7 @@ pytest.importorskip("nautilus_trader")
 
 from custos_toolkit_nautilus.adapter.config.filters import VolatilityFilterConfig  # noqa: E402
 from custos_toolkit_nautilus.adapter.filters import NautilusVolatilityFilter  # noqa: E402
-from nautilus_trader.indicators.volatility import AverageTrueRange  # noqa: E402
+from nautilus_trader.indicators import AverageTrueRange  # noqa: E402
 
 
 @dataclass

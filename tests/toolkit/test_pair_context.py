@@ -14,8 +14,7 @@ class TestPairContext:
     def test_pair_context_creation(self):
         """Test creating a PairContext."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
         bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
@@ -35,8 +34,7 @@ class TestPairContext:
         """Test that PairContext has position tracker."""
         from custos_toolkit.position import PositionTracker
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
         bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
@@ -54,8 +52,7 @@ class TestPairContext:
         """Test that PairContext has order tracker."""
         from custos_toolkit_nautilus.adapter.orders import OrderTracker
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
         bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
@@ -72,8 +69,7 @@ class TestPairContext:
     def test_pair_context_reset(self):
         """Test resetting PairContext."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
         bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
@@ -94,8 +90,7 @@ class TestPairContext:
     def test_pair_context_indicators_dict(self):
         """Test that indicators dict works."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
         bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
@@ -114,8 +109,7 @@ class TestPairContext:
     def test_pair_context_tick_monitor_default_none(self):
         """Test that tick_monitor defaults to None."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
         bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
@@ -131,8 +125,7 @@ class TestPairContext:
     def test_multiple_pair_contexts(self):
         """Test creating multiple PairContexts."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         btc_ctx = PairContext(
             pair="BTC-USDT",
@@ -156,8 +149,7 @@ class TestPairContext:
     def test_execution_components_default_none(self):
         """Test that execution components default to None."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
         bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
@@ -175,8 +167,7 @@ class TestPairContext:
     def test_reset_calls_tick_monitor_reset(self):
         """Test that reset calls tick_monitor.reset() when tick_monitor is present."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
         bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
@@ -199,8 +190,7 @@ class TestPairContext:
     def test_execution_components_can_be_set(self):
         """Test that execution components can be assigned."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
         bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
@@ -227,8 +217,7 @@ class TestPairContext:
     def test_filter_manager_default_none(self):
         """Test that filter_manager defaults to None."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
         bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
@@ -244,8 +233,7 @@ class TestPairContext:
     def test_filter_manager_can_be_set(self):
         """Test that filter_manager can be assigned."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
         bar_type = BarType.from_str("BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL")
@@ -265,8 +253,7 @@ class TestPairContext:
     def test_sl_tp_submitted_for_reversal_defaults_false(self):
         """SL/TP reversal guard starts False."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         ctx = PairContext(
             pair="BTC-USDT",
@@ -278,8 +265,7 @@ class TestPairContext:
     def test_sl_tp_submitted_for_reversal_reset(self):
         """reset() clears the SL/TP reversal guard flag."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         ctx = PairContext(
             pair="BTC-USDT",
@@ -293,8 +279,7 @@ class TestPairContext:
     def test_active_signal_id_defaults_none(self):
         """active_signal_id — the entry signal id of the open position — defaults to None."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         ctx = PairContext(
             pair="BTC-USDT",
@@ -306,8 +291,7 @@ class TestPairContext:
     def test_active_signal_id_reset(self):
         """reset() clears active_signal_id, so nothing survives a close or a reversal."""
         from custos_toolkit_nautilus.adapter.pair_context import PairContext
-        from nautilus_trader.model.data import BarType
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import BarType, InstrumentId
 
         ctx = PairContext(
             pair="BTC-USDT",

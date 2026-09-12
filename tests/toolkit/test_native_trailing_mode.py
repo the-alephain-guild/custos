@@ -39,9 +39,7 @@ from custos_toolkit_nautilus.adapter.coordinators import (
 )
 from custos_toolkit_nautilus.adapter.pair_context import PairContext
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.enums import OrderSide, OrderType
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import BarType, InstrumentId, OrderSide, OrderType
 
 INSTRUMENT = "BTCUSDT-PERP.BINANCE"
 BAR = "BTCUSDT-PERP.BINANCE-1-HOUR-LAST-EXTERNAL"

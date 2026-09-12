@@ -20,8 +20,13 @@ import pytest
 pytest.importorskip("nautilus_trader")
 from custos_toolkit.signals.types import Signal
 from custos_toolkit_nautilus.adapter.orders import NativeTrailingStopSubmitter
-from nautilus_trader.model.enums import OrderSide, TimeInForce, TrailingOffsetType, TriggerType
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import (
+    InstrumentId,
+    OrderSide,
+    TimeInForce,
+    TrailingOffsetType,
+    TriggerType,
+)
 
 # =============================================================================
 # Mock Classes / Fixtures

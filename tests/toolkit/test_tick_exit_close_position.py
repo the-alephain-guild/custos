@@ -19,7 +19,7 @@ pytest.importorskip("msgspec")
 
 def _can_import_nautilus() -> bool:
     try:
-        from nautilus_trader.trading.strategy import Strategy  # noqa: F401
+        from nautilus_trader.trading import Strategy  # noqa: F401
 
         return True
     except ImportError:

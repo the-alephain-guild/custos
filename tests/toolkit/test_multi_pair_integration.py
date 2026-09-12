@@ -7,8 +7,7 @@ from unittest.mock import MagicMock
 import pytest
 
 pytest.importorskip("nautilus_trader")
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import BarType, InstrumentId
 
 
 class TestMultiPairComponentsIntegration:

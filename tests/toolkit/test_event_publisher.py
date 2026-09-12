@@ -440,7 +440,7 @@ def test_create_entry_order_market_passes_tags():
     pytest.importorskip("nautilus_trader")
     from custos_toolkit.signals.types import Signal, SignalDirection
     from custos_toolkit_nautilus.adapter.execution import ExecutionManager
-    from nautilus_trader.model.identifiers import InstrumentId
+    from nautilus_trader.model import InstrumentId
 
     mock_factory = MagicMock()
     mock_cache = MagicMock()
@@ -482,8 +482,7 @@ def test_create_entry_order_limit_passes_tags():
     pytest.importorskip("nautilus_trader")
     from custos_toolkit.signals.types import Signal, SignalDirection
     from custos_toolkit_nautilus.adapter.execution import ExecutionManager
-    from nautilus_trader.model.identifiers import InstrumentId
-    from nautilus_trader.model.objects import Price
+    from nautilus_trader.model import InstrumentId, Price
 
     mock_factory = MagicMock()
     mock_cache = MagicMock()

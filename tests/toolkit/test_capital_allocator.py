@@ -33,7 +33,7 @@ class TestCapitalAllocatorBasic:
         """Test registering a trading pair."""
         from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import InstrumentId
 
         config = AllocationConfig(tiers={"BTC-USDT": 0.6})
         cache = MagicMock()
@@ -48,7 +48,7 @@ class TestCapitalAllocatorBasic:
         """Test registering a pair without pre-defined tier creates one."""
         from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import InstrumentId
 
         config = AllocationConfig(tiers={})  # No pre-defined tiers
         cache = MagicMock()
@@ -91,7 +91,7 @@ class TestCapitalAllocation:
         """Test getting available capital for a pair."""
         from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import InstrumentId
 
         config = AllocationConfig(tiers={"BTC-USDT": 0.6})
         allocator = CapitalAllocator(config, Decimal("10000"), MagicMock())
@@ -104,7 +104,7 @@ class TestCapitalAllocation:
         """Test successful allocation."""
         from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import InstrumentId
 
         config = AllocationConfig(tiers={"BTC-USDT": 0.6})
         allocator = CapitalAllocator(config, Decimal("10000"), MagicMock())
@@ -120,7 +120,7 @@ class TestCapitalAllocation:
         """Test allocation exceeding tier limit."""
         from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import InstrumentId
 
         config = AllocationConfig(tiers={"BTC-USDT": 0.6})
         allocator = CapitalAllocator(config, Decimal("10000"), MagicMock())
@@ -135,7 +135,7 @@ class TestCapitalAllocation:
         """Test releasing allocated capital."""
         from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import InstrumentId
 
         config = AllocationConfig(tiers={"BTC-USDT": 0.6})
         allocator = CapitalAllocator(config, Decimal("10000"), MagicMock())
@@ -150,7 +150,7 @@ class TestCapitalAllocation:
         """Test releasing more than allocated only releases what was allocated."""
         from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import InstrumentId
 
         config = AllocationConfig(tiers={"BTC-USDT": 0.6})
         allocator = CapitalAllocator(config, Decimal("10000"), MagicMock())
@@ -186,7 +186,7 @@ class TestPortfolioValue:
         """Test getting current portfolio weights."""
         from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import InstrumentId
 
         cache = MagicMock()
         cache.position.return_value = None
@@ -210,7 +210,7 @@ class TestPortfolioValue:
         """Test calculating rebalance amounts."""
         from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
-        from nautilus_trader.model.identifiers import InstrumentId
+        from nautilus_trader.model import InstrumentId
 
         cache = MagicMock()
         cache.position.return_value = None

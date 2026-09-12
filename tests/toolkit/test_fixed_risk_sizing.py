@@ -19,7 +19,7 @@ from custos_toolkit_nautilus.adapter.coordinators import (  # noqa: E402
     SizingCoordinator,  # noqa: E402
 )
 from custos_toolkit_nautilus.adapter.sizing import compute_fixed_risk_qty  # noqa: E402
-from nautilus_trader.test_kit.providers import TestInstrumentProvider  # noqa: E402
+from nautilus_trader.testkit.providers import TestInstrumentProvider  # noqa: E402
 
 
 class TestComputeFixedRiskQty:

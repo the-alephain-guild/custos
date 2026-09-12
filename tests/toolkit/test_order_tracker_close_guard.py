@@ -14,7 +14,7 @@ import pytest
 pytest.importorskip("nautilus_trader")
 
 from custos_toolkit_nautilus.adapter.orders import OrderTracker, is_stale_order  # noqa: E402
-from nautilus_trader.model.enums import OrderSide, OrderType  # noqa: E402
+from nautilus_trader.model import OrderSide, OrderType  # noqa: E402
 
 S = 1_000_000_000  # one second in nanoseconds
 

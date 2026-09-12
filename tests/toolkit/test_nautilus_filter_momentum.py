@@ -19,14 +19,12 @@ from custos_toolkit_nautilus.adapter.config.filters import (  # noqa: E402
     RsiConfig,
 )
 from custos_toolkit_nautilus.adapter.filters import NautilusMomentumFilter  # noqa: E402
-from nautilus_trader.indicators.averages import ExponentialMovingAverage  # noqa: E402
-from nautilus_trader.indicators.momentum import (  # noqa: E402
+from nautilus_trader.indicators import (
+    ExponentialMovingAverage,
+    MovingAverageConvergenceDivergence,
     RateOfChange,
     RelativeStrengthIndex,
-)
-from nautilus_trader.indicators.trend import (  # noqa: E402
-    MovingAverageConvergenceDivergence,
-)
+)  # noqa: E402
 
 
 @dataclass

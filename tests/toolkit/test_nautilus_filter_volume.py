@@ -9,10 +9,7 @@ pytest.importorskip("nautilus_trader")
 
 from custos_toolkit_nautilus.adapter.config.filters import VolumeFilterConfig  # noqa: E402
 from custos_toolkit_nautilus.adapter.filters import NautilusVolumeFilter  # noqa: E402
-from nautilus_trader.indicators.averages import (  # noqa: E402
-    ExponentialMovingAverage,
-    SimpleMovingAverage,
-)
+from nautilus_trader.indicators import ExponentialMovingAverage, SimpleMovingAverage  # noqa: E402
 
 
 @dataclass

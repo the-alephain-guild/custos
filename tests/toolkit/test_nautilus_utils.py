@@ -14,8 +14,7 @@ from custos_toolkit_nautilus.adapter.utils import (
     get_venue_from_connector,
     is_futures_connector,
 )
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import BarType, InstrumentId
 
 
 class TestDeriveInstrumentId:

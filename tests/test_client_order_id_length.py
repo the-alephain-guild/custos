@@ -22,11 +22,13 @@ import pytest
 
 pytest.importorskip("nautilus_trader")
 
-from nautilus_trader.cache.cache import Cache  # noqa: E402
-from nautilus_trader.common.component import TestClock  # noqa: E402
-from nautilus_trader.common.factories import OrderFactory  # noqa: E402
-from nautilus_trader.model.identifiers import StrategyId, TraderId  # noqa: E402
-from nautilus_trader.trading.strategy import Strategy  # noqa: E402
+from nautilus_trader.common import (  # noqa: E402
+    Cache,
+    Clock,  # noqa: E402
+    OrderFactory,
+)
+from nautilus_trader.model import StrategyId, TraderId  # noqa: E402
+from nautilus_trader.trading import Strategy  # noqa: E402
 
 from custos.engines.nautilus.venue_binance import (  # noqa: E402
     BINANCE_CLIENT_ORDER_ID_LEN_LIMIT,
@@ -95,7 +97,7 @@ def _factory_as_the_engine_builds_it(
     return OrderFactory(
         trader_id=TraderId(NtTradingNodeHost._trader_id(instance_id)),
         strategy_id=StrategyId(strategy_id),
-        clock=TestClock(),
+        clock=Clock.new_test(),
         cache=Cache(database=None),
         use_uuid_client_order_ids=strategy.use_uuid_client_order_ids,
         use_hyphens_in_client_order_ids=strategy.use_hyphens_in_client_order_ids,
@@ -185,7 +187,7 @@ def test_the_observed_rejection_is_reproducible_with_the_old_shape() -> None:
     old_shape = OrderFactory(
         trader_id=TraderId(NtTradingNodeHost._trader_id(OBSERVED_INSTANCE_ID)),
         strategy_id=StrategyId("SuperTrendStrategy-000"),
-        clock=TestClock(),
+        clock=Clock.new_test(),
         cache=Cache(database=None),
         use_uuid_client_order_ids=False,
         use_hyphens_in_client_order_ids=True,

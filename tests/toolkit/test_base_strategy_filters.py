@@ -15,7 +15,7 @@ import pytest
 def _can_import_nautilus():
     """Check if nautilus_trader can be imported."""
     try:
-        from nautilus_trader.trading.strategy import Strategy  # noqa: F401
+        from nautilus_trader.trading import Strategy  # noqa: F401
 
         return True
     except ImportError:

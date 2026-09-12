@@ -9,7 +9,7 @@ pytest.importorskip("nautilus_trader")
 
 from custos_toolkit_nautilus.adapter.config.filters import RegimeFilterConfig  # noqa: E402
 from custos_toolkit_nautilus.adapter.filters import NautilusRegimeFilter  # noqa: E402
-from nautilus_trader.indicators.momentum import EfficiencyRatio  # noqa: E402
+from nautilus_trader.indicators import EfficiencyRatio  # noqa: E402
 
 
 @dataclass

@@ -28,23 +28,24 @@ import pytest
 pytest.importorskip("nautilus_trader")
 
 from custos_toolkit_nautilus.adapter.tick_monitor import TrailingStopManager
-from nautilus_trader.backtest.engine import BacktestEngine, BacktestEngineConfig
-from nautilus_trader.config import LoggingConfig
-from nautilus_trader.model.currencies import USDT
-from nautilus_trader.model.enums import (
+from nautilus_trader.backtest import BacktestEngine
+from nautilus_trader.config import BacktestEngineConfig, LoggingConfig
+from nautilus_trader.model import (
     AccountType,
     AggressorSide,
+    Money,
     OmsType,
     OrderSide,
+    Quantity,
     TimeInForce,
     TrailingOffsetType,
     TriggerType,
+    Venue,
 )
-from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Money, Quantity
-from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from nautilus_trader.model.currencies import USDT
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
-from nautilus_trader.trading.strategy import Strategy
+from nautilus_trader.testkit.providers import TestInstrumentProvider
+from nautilus_trader.trading import Strategy
 
 _INSTRUMENT = TestInstrumentProvider.btcusdt_perp_binance()
 _VENUE = Venue("BINANCE")
