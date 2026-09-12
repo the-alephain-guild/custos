@@ -26,7 +26,7 @@ from custos_toolkit_nautilus.adapter.trading_config import (  # noqa: E402
 from nautilus_trader.backtest import BacktestEngine  # noqa: E402
 from nautilus_trader.config import (
     BacktestEngineConfig,  # noqa: E402
-    LoggingConfig,  # noqa: E402
+    LoggerConfig,  # noqa: E402
 )
 from nautilus_trader.model import (
     AccountType,
@@ -36,14 +36,16 @@ from nautilus_trader.model import (
     OrderSide,
     Venue,
 )  # noqa: E402
-from nautilus_trader.model.currencies import USDT  # noqa: E402
-from nautilus_trader.test_kit.stubs.data import TestDataStubs  # noqa: E402
+from tests.fixtures import nt_data_stubs as TestDataStubs  # noqa: E402
 from nautilus_trader.testkit.providers import TestInstrumentProvider  # noqa: E402
 from nautilus_trader.trading import Strategy  # noqa: E402
 
 from custos.engines.nautilus.venue_binance import (  # noqa: E402
     BINANCE_CLIENT_ORDER_ID_LEN_LIMIT,
 )
+from nautilus_trader.model import Currency
+
+USDT = Currency.from_str("USDT")
 
 _INSTRUMENT = TestInstrumentProvider.btcusdt_perp_binance()
 _VENUE = Venue("BINANCE")
@@ -77,7 +79,7 @@ def _strategy_config(directory) -> NautilusTradingStrategyConfig:
 
 
 def test_an_order_still_fills_locally_and_carries_the_short_id(tmp_path) -> None:
-    engine = BacktestEngine(config=BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)))
+    engine = BacktestEngine(config=BacktestEngineConfig(logging=LoggerConfig(bypass_logging=True)))
     engine.add_venue(
         venue=_VENUE,
         oms_type=OmsType.NETTING,

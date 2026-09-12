@@ -27,7 +27,7 @@ from custos_toolkit_nautilus.adapter.trading_config import (  # noqa: E402
 from nautilus_trader.backtest import BacktestEngine  # noqa: E402
 from nautilus_trader.config import (
     BacktestEngineConfig,  # noqa: E402
-    LoggingConfig,  # noqa: E402
+    LoggerConfig,  # noqa: E402
 )
 from nautilus_trader.model import (
     AccountType,
@@ -38,9 +38,11 @@ from nautilus_trader.model import (
     OrderStatus,
     Venue,
 )  # noqa: E402
-from nautilus_trader.model.currencies import USDT  # noqa: E402
-from nautilus_trader.test_kit.stubs.data import TestDataStubs  # noqa: E402
+from tests.fixtures import nt_data_stubs as TestDataStubs  # noqa: E402
 from nautilus_trader.testkit.providers import TestInstrumentProvider  # noqa: E402
+from nautilus_trader.model import Currency
+
+USDT = Currency.from_str("USDT")
 
 _INSTRUMENT = TestInstrumentProvider.btcusdt_perp_binance()
 _VENUE = Venue("BINANCE")
@@ -101,7 +103,7 @@ def _strategy_config(directory) -> NautilusTradingStrategyConfig:
 
 
 def _run(tmp_path, *, bulk: bool) -> tuple[list[str], list]:
-    engine = BacktestEngine(config=BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)))
+    engine = BacktestEngine(config=BacktestEngineConfig(logging=LoggerConfig(bypass_logging=True)))
     engine.add_venue(
         venue=_VENUE,
         oms_type=OmsType.NETTING,

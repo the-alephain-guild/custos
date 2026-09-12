@@ -15,7 +15,7 @@ from typing import Any, Literal, TypedDict, cast
 
 from custos_toolkit.config.loader import ConfigWrapper
 from custos_toolkit.warmup.snapshot import WarmupConfig, warmup_config_from_dict
-from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import InstrumentId, OmsType
 from nautilus_trader.trading import StrategyConfig
 
 from custos_toolkit_nautilus.adapter.config import (
@@ -299,7 +299,7 @@ def build_nautilus_base_config(config_wrapper: ConfigWrapper) -> NautilusBaseCon
     # ONEWAY -> NETTING (single position per instrument)
     # HEDGE -> HEDGING (separate long/short positions)
     position_mode = config_wrapper.trading.get("position_mode", "ONEWAY")
-    oms_type = "HEDGING" if position_mode == "HEDGE" else "NETTING"
+    oms_type = OmsType.HEDGING if position_mode == "HEDGE" else OmsType.NETTING
 
     # Build external_order_claims from trading config.
     # Multi-asset strategies such as rebalancing must claim all configured

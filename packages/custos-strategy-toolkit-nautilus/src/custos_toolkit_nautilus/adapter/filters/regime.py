@@ -71,7 +71,7 @@ class NautilusRegimeFilter:
         elif self.method == "atr_percentile":
             self._prices = deque(maxlen=self.lookback)
         else:  # adx_slope
-            wilder = MovingAverageType.WILDER
+            wilder = MovingAverageType.Wilder
             self._adx_dm = DirectionalMovement(self.adx_period, wilder)
             self._adx_atr = AverageTrueRange(self.adx_period, ma_type=wilder)
             self._adx_ma = WilderMovingAverage(self.adx_period)

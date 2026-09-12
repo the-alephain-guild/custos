@@ -48,7 +48,7 @@ class NautilusAdxFilter:
         self.period = config.period
         self.threshold = config.threshold
 
-        wilder = MovingAverageType.WILDER
+        wilder = MovingAverageType.Wilder
         self._dm = DirectionalMovement(self.period, wilder)
         self._atr = AverageTrueRange(self.period, ma_type=wilder)
         self._adx_ma = WilderMovingAverage(self.period)

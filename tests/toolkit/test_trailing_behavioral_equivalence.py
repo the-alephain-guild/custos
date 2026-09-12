@@ -29,7 +29,7 @@ pytest.importorskip("nautilus_trader")
 
 from custos_toolkit_nautilus.adapter.tick_monitor import TrailingStopManager
 from nautilus_trader.backtest import BacktestEngine
-from nautilus_trader.config import BacktestEngineConfig, LoggingConfig
+from nautilus_trader.config import BacktestEngineConfig, LoggerConfig
 from nautilus_trader.model import (
     AccountType,
     AggressorSide,
@@ -42,10 +42,12 @@ from nautilus_trader.model import (
     TriggerType,
     Venue,
 )
-from nautilus_trader.model.currencies import USDT
-from nautilus_trader.test_kit.stubs.data import TestDataStubs
+from tests.fixtures import nt_data_stubs as TestDataStubs
 from nautilus_trader.testkit.providers import TestInstrumentProvider
 from nautilus_trader.trading import Strategy
+from nautilus_trader.model import Currency
+
+USDT = Currency.from_str("USDT")
 
 _INSTRUMENT = TestInstrumentProvider.btcusdt_perp_binance()
 _VENUE = Venue("BINANCE")
@@ -150,7 +152,7 @@ class _TrailingProbe(Strategy):
 
 
 def _make_engine() -> BacktestEngine:
-    engine = BacktestEngine(config=BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True)))
+    engine = BacktestEngine(config=BacktestEngineConfig(logging=LoggerConfig(bypass_logging=True)))
     engine.add_venue(
         venue=_VENUE,
         oms_type=OmsType.NETTING,
