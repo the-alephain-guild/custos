@@ -476,6 +476,30 @@ Strategy 自己的 `subscribe_topic`（`.venv` `trading/__init__.pyi:974`，看�
 `BusTap`（`crates/common/src/msgbus/mod.rs:230`）能看到全部 publish 且早于组件状态门，但它是
 Rust-only（`on_publish(topic, &dyn Any)`），没有 Python 面，event_store 自用。
 
+**F6 — 连接状态查询面在 Python 侧整个消失（红线 0.3 的输入）**
+
+`host.py:1232-1233` 的 `check_engine_connected` 读 `node.kernel.data_engine.check_connected()`
+与 `.exec_engine.check_connected()`，供两处消费：`ConnectivityState` → `zombie_watchdog`，以及
+readiness 的 `data_connectivity_ready` / `execution_connectivity_ready` 两个字段。
+
+2.0 里这两个方法在 Rust 侧仍在（`node/mod.rs:825-826` 的启动超时诊断、`:790-791` 的停机诊断
+都在用），但**没有任何 Python 面**：`grep 'pyo3(name = "..." )'` 全 crates 对
+`is_connected` / `check_connected` / `connected` 零命中，`LiveNodeHandle` 只有
+`is_stopping` / `is_running` / `state` / `stop()`（`live/__init__.pyi:446-453`）。而且 Rust 侧
+自己也只在启动与停机两端调它，**运行期不轮询**。
+
+后果分两段，不可混为一谈：
+
+- **启动判定不受损**。进入 `NodeState::Running` 之前 NT 已经跑完 `connect_exec_phase`
+  （`node/mod.rs:2114`）与 `await_engines_connected`，所以「已 Running」蕴含「启动时连上了」。
+  readiness 的两个字段可以由 `handle().state == NodeState.RUNNING` 共同回答，语义不假。
+- **运行期断连检测能力丢失**。1.x 可以在任意时刻问「现在还连着吗」，2.0 问不到。zombie
+  watchdog 的输入因此退化为「节点还在跑吗」。红线 0.3 的 close-out 必须按这个如实写。
+
+两条出路，需 owner 定：(a) 本 Task 用 `handle().state` 顶上并显式降级声明；(b) 给公会 fork 加
+两个只读 getter 暴露 `check_connected`——fork 是公会自有的，改动本身很小，但它会推进 sha、
+牵动 Task 1a 已钉的 `3fe857a351` 与一轮重编译，且是「往 fork 加自有 API」的先例。
+
 **F5 — `kernel` 整体消失，不止 msgbus**
 
 前置调查的映射表只列了 `node.kernel.msgbus` 无对应。实际 host 用到 `node.kernel` 的
@@ -690,5 +714,6 @@ downstream receipts」）。这条需要推对端交付。
 | DEV | 两个红线桥接 | **事件可见窗口收窄为「策略 Running 期间」**（`strategy/mod.rs:1356` order、`:1468` position 的状态门；1.x 的 msgbus 订阅无此门）。停止侧安全（shutdown policy 跑在 `stop_async` 之前，且 2.0 无 `pause`），残留侧有缺口（stop 后迟到的终态回报不再进回调）。close-out 红线表按此如实降级（教训 #40） | ✅ 实施中发现 |
 | DEV | 转发器 | **Python 回调的异常被 Rust 丢弃**（`strategy/python/strategy.rs:973` / `:1045` 的 `let _ =`）。转发器必须自己把桥接失败变成可见信号，否则「对账不静默」在 2.0 下自动降级为静默 | ✅ 实施中发现 |
 | DEV | Task 7 前置调查 | **补第四条排除：`Strategy.subscribe_topic` 不是 msgbus 替代**。它走 `subscribe_any` → `bus.topics`，而 order/position 走 `publish_typed` → typed router，两张表不相交（`api.rs:243` vs `:1285`）。`BusTap` 能看到全部 publish但是 Rust-only、无 Python 面 | ✅ 实施中发现 |
+| DEV | `host.py:1232-1233` | **连接状态查询面在 Python 侧整个消失**（F6）：2.0 对 `check_connected` 无 Python 面，Rust 侧也只在启动与停机两端调它。启动判定可由 `handle().state == RUNNING` 顶上（进入 Running 蕴含启动时已连），**运行期断连检测能力丢失**，红线 0.3 按此如实降级。出路 (a) 降级声明 / (b) 给 fork 加只读 getter（推进 sha + 重编译）| ⏳ 待 owner |
 | DEV | `host.py:527` / `:763` | **两处 1.x workaround 的理由在 2.0 下消失**：`run_async` 固定 `NodeRunMode::Hosted`、不装 signal handler（`python/node.rs:549` + `node/mod.rs:1461`），故 `_restore_runner_signal_ownership` 无对象；2.0 `dispose` 不碰 Python asyncio loop（`node/mod.rs:562-566`），故 `_dispose_node_preserving_runner_loop` 的 loop 保护无对象。两处删除而非改写 | ✅ 实施中发现 |
 | DEV | Task 2b | **`engine_version` 是跨仓契约字段**（mandatory-rules §3）：custos 只改自有 V1 文件，vendored golden 与 PS / Crucible 侧列为 Blocked，不得自行改写 | ✅ 规则约束，无需批准 |
