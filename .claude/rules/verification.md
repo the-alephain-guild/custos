@@ -111,6 +111,31 @@ grep -rn 'stop_all_strategies\|force_shutdown' src/custos/
 grep -rnE 'float\(.*price|float\(.*amount|float\(.*notional' src/
 ```
 
+**红线 0.2 的 venue 面（多 venue 之后新增）**。白名单是按 **mode** 的三个集合，
+不是一个集合——列入 `live` 等于声明该 venue 能跑 live，而"能跑 live"是
+`venue_binance.py` 逐项落实的东西（晋升证据、凭据处理、三套 exec config）：
+
+```bash
+# 每个 mode 的白名单必须等于 venue 模块为该 mode 声明的并集，且每个配对真能 build
+uv run pytest tests/test_nt_venue_wiring.py -q
+
+# NT-free 表里的 venue 名必须与适配器常量一致 (BINANCE_VENUE / SODEX_SPOT / SODEX_PERPS)
+# ——那张表要在没装 nautilus extra 的 base install 上也能回答，所以它复制了常量
+uv run pytest tests/test_nt_venue_wiring.py -q -k nt_free_venue_names
+
+# live 集合不得因为新接 venue 而变动
+grep -n '^_LIVE_VENUES' src/custos/engines/nautilus/host.py
+```
+
+**venue 专属常量不得跨场所借用。** client order id 上限、结算币种、符号约定都属于
+"外部系统定义的约束"(C11)，必须由 venue 模块各自声明；没有实测值的场所声明 `None`
+并写明代价，而不是照搬另一个交易所的数字：
+
+```bash
+# 不该有第二处硬编码的场所名或场所常量
+grep -rn '"BINANCE"' src/ | grep -v venue_binance.py | grep -v venues.py | grep -v binance_ledger.py
+```
+
 ### wire contract 一致性
 
 若改 envelope schema (`docs/authority/nats-transport-contract.md` §schema versioning):

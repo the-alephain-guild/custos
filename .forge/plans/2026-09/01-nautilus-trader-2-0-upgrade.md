@@ -1,6 +1,6 @@
 # 01 - NautilusTrader 1.230.0 → fork 2.0.0rc5 升级
 
-> **Status**: ⏳ In Progress（Task 0 / 1a-1 / Slice B / 7a / **9 / Slice D 全部 ✅** 2026-09-12。全量 `pytest tests/` 由 `54 failed, 25 errors` 收敛到 **`7 failed, 3 errors`**，剩余 4 个文件全归 Task 2a 与 close-out 计数。未做：7b、8、12、13、1a-2、1b、2a/2b、14）
+> **Status**: ⏳ In Progress（19 行进度表中 14 行 ✅，2026-09-12。**Task 14 已做完除「翻 ✅」以外的全部内容**，Status 不翻——本 plan 自己的 Task 14 第 6 条禁止在 Task 1b 未完成时 close-out，四条阻塞项 1a-2 / 1b / 2a / 2b 的实证见「阶段性报告」。custos 全量 `pytest tests/` 由 `54 failed, 25 errors` 收敛到 `6 failed, 3 errors`，剩余 9 条全部落在 toolkit 发布链的三个文件里（`test_toolkit_distribution` / `test_toolkit_release_readiness` / `test_toolkit_release_candidate_build`），根因是 Task 2a 的 `nautilus-trader==1.230.0` 版本钉；PS `make verify` 全绿 996 passed / 18 skipped）
 > **Created**: 2026-09-11
 > **Project**: custos（跨仓：philosophers-stone）
 > **multi_session_scope**: **true**（6 个 Slice、跨 2 仓库、涉及红线 0.1/0.2/0.4）
@@ -677,7 +677,7 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 | 11 | ✅ | 2026-09-12 | `90eda67`→`fc51c28`；全量 `54 failed/25 err` → `7 failed/3 err`，剩余 4 文件全归 Task 2a（3 个断言 `1.230.0`）与 close-out 计数 |
 | 12 | ✅ | 2026-09-12 | PS `ef41c0c` + custos `c8ebc92`；9 个策略模块拍平 + 9 个 config 子类改 D5b 形态 + NT pin 改 fork git 引用；**7 个策略**在 PS 自己的环境（NT 2.0.0rc5+sodex.1）下 import、经 registry 从各自 config.yaml 解析并构造成功 |
 | 13 | ✅ | 2026-09-12 | PS `cab51b4`；收集从 9 文件报错→0，`make verify` 全绿（996 passed / 18 skipped）；退役 lane 具名跳过而非移植；另修两处「藏在绿色后面」的东西 |
-| 14 | 🔲 | | |
+| 14 | ⏳ | 2026-09-12 | 除「翻 ✅」外全部做完：红线 gate 满足度表、逐文件计数表（探针转绿）、阶段性报告含功能验证主路径、遗留项、`verification.md` 的 SoDEX 红线检查、索引条目。**Status 保持 ⏳**——本 Task 第 6 条禁止在 1b 未完成时 close-out，四条阻塞项已逐条实证 |
 
 ## 交接 (Handoff) — Slice C 接手说明
 
@@ -771,18 +771,143 @@ Task 1b（wheel 切换门）、Task 14（close-out）。
 golden 归 Crucible，custos 不得改（`authority-docs.md`「Never invent, vendor or pre-register
 downstream receipts」）。这条需要推对端交付。
 
-## close-out 测试计数（逐步累积）
+## 阶段性报告（Task 14 · 本 plan **未** close-out）
 
-完整的逐文件表在 Task 14 close-out 时按 `pytest --collect-only` 重数（见偏离日志里各 Task
-登记的条数）。这里先记退役的那一个——`tests/test_plan_closeout_counts.py` 按「最新认领该文件
-的 close-out 说了算」判定，计 0 即表示本 plan 删掉了它。
+- **日期**: 2026-09-12
+- **状态**: ⏳ In Progress。**Task 14 第 6 条明文禁止在此 close-out**，四个阻塞项逐条实证如下。
+- **实施 commit 范围**: `2bf09e8`..`96e5a92`（47 个 commit）
+- **进度**: 19 行进度表中 14 行 ✅；未完 1a-2 / 1b / 2a / 2b 与本条 14
+
+### 为什么不能 close-out（逐条实证，不看表格）
+
+| 阻塞项 | 判据 | 实测 |
+|---|---|---|
+| **Task 1b** 切换门 | fork 打 tag + CI 产 wheel 挂 Release + Task 8 通过 | fork 最新 tag 是 `v2.0.0rc4`，而本 plan 钉的 `3fe857a351` 是 `git describe` 下的 `v1.222.0-4149-g3fe857a351`——**无 tag 可达**；且 `v2.0.0rc3` / `v2.0.0rc4` 内 `crates/adapters/sodex` 文件数**均为 0**，现有 tag 都不含我们要的适配器；`gh release list` 空。三条判据只有 Task 8 ✅ |
+| **Task 1a-2** Docker 侧 | `nt-builder` + runtime lock + sha 对账 | `grep -c nt-builder Dockerfile` = **0** |
+| **Task 2a** 版本号 | `engine_version` 常量归零 | `strategy_execution.py:140,197` 仍是 `Literal["1.230.0"]` |
+| **Task 2b** 对端重签 | PS / Crucible 交付 exact-byte 收据 | ❌ Blocked，跨仓，非本仓可满足（C14）|
+
+plan 自己写的理由是「1a 的 `nt-builder` 是过渡方案」——git 源加本地构建能跑，但它不是可复现的
+发布形态，而 `custos-runner` 是要打镜像发出去的。在 fork 打 tag 之前把 plan 标完成，等于把一个
+过渡态记成终态。
+
+### 红线 gate 满足度（教训 #40：code 覆盖 ≠ runtime 接线）
+
+| 红线 | code 覆盖 | runtime 接线 | defer / 缩减 |
+|---|---|---|---|
+| **0.1** Key/KEK 不出进程 | ✅ venue 层两侧都有：Binance 仅把凭据放进本地 NT config；SoDEX 四个字段全部显式必填，并有一条**把 `SODEX_*` 环境变量全设上**的测试证明不走适配器的 env fallback；`_sanitize_exception` 命中凭据关键词即整段脱敏；`test_the_testnet_exec_config_carries_the_credential_and_reports_it_present` 断言 repr 不泄漏。grep 四条全空 | ✅ 在 `deploy` 主路径上 | — |
+| **0.2** G6 host gate 不绕过 | ✅ 白名单按 mode 拆三集合；admission 在 `engine_lifecycle.py:422` 判定；drift guard held 白名单与 venue 模块两侧；三条红线测试全部扰动验过会红 | ⚠️ **部分**：admission 已接线；但**执行门本身从 exec client 移到了 strategy 边缘**（Task 9，G1：2.0 对 Python 关闭了执行客户端层，`extract_exec_factory` 只认 Rust 侧登记的 adapter）。1.x 守在最靠近 venue 的地方、任何来源的命令都过；2.0 守在最靠近来源的地方、**只有经过 strategy 的命令才过**。覆盖面靠三条前提（三个 manage_* 开关默认 False + 单笔 emulation/exec-algorithm 可见可拒 + `market_exit` toolkit 零命中）论证，**不再是结构上的必然** | **SoDEX live 未交付**（D4 假设，owner 2026-09-11 确认）：`_LIVE_VENUES` 只有 binance 两个 connector，venue_sodex 的 live 构建器主动 `NotImplementedError` |
+| **0.3** 失联≠停止 | ✅ grep 空（无 `stop_all_strategies` / `force_shutdown`）；本 plan 未改其逻辑 | ✅ `_daemon.py:418` 在生产路径构造 `FallbackBreaker(limits.breaker)` | — |
+| **0.4** Money 用 Decimal | ✅ grep 空；Task 9 另把 `runner_safety` money 路径的 `getattr(...) or ...` 默认链改为逐级 `is not None` + 价格必须为正（`or` 会把 0 当缺失，而 0 价算出的 notional 通过任何 cap） | ✅ 在订单闸门路径上 | — |
+
+**三条未被任何 gate 覆盖的事实**，写在这里以免被上表的绿色掩盖：
+
+1. **没有任何订单到过 SoDEX。** Task 8 的装配与起停都在 `FakeLiveNode` 与本机真 `LiveNode.builder().build()` 上验证，**没有真机往返**。按 C11 的判据，一条通道的完成判据是「对端接受过」，不是本仓绿。
+2. **策略在 2.0 下还不能启动。** `trading_strategy.on_start` 曾无条件读 `self.msgbus` / `self.id`（2.0 两者都不存在）；该阻塞已随 `EventPublisher` 退役解除（`3d44aed`），但解除之后**仍未在真节点上跑过一次 `on_start`**。
+3. **SoDEX 尚无端到端策略路径。** toolkit 侧 instrument id 已按场所原生符号收口（`c34ffd0`），但 RunnerFact 的 signal / TCA 字段缺口需与 Crucible 协商（见偏离日志「RunnerFact 覆盖面缺口」条）。
+
+### 功能验证（主路径）
+
+操作者现在可以试的，就是「装配一个 SoDEX sandbox 部署并起停一轮」——**不含真机成交**：
+
+1. `make install` 后确认引擎版本：
+   `uv run python -c "import nautilus_trader; print(nautilus_trader.__version__)"` → `2.0.0rc5+sodex.1`
+2. 确认这台 runner 声称能跑哪些 venue（红线 0.2 的能力面）：
+   `uv run pytest tests/test_nautilus_host_capability.py tests/test_nt_venue_wiring.py -q`
+   → SoDEX 在 sandbox / testnet 为 True、live 为 False；Binance 三个 mode 均 True
+3. 装配一个 SoDEX sandbox 部署并起停：
+   `uv run pytest tests/test_nt_trading_node_host.py -q -k sodex`
+   → 数据客户端与模拟撮合客户端都注册在 `SODEX_PERPS` 下，`deploy` → `stop` 走完
+4. 在 PS 侧确认策略能被解析出来：
+   `cd ../../alchymia-labs/philosophers-stone && make verify`
+   → 996 passed / 18 skipped（18 个跳过的理由都具名，11 个指向退役的 crucible lane）
+
+### 遗留项
+
+| 项 | 状态 | 阻塞方 / 解除条件 |
+|---|---|---|
+| Task 1a-2 Docker 侧（`nt-builder` + runtime lock + sha 对账）| 🔲 | 本仓可做，未做 |
+| Task 1b 切换到 wheel | 🔲 | **fork 未打含 sodex 的 tag**、未产 Release wheel。owner: fork 维护方 |
+| Task 2a 版本号常量 | 🔲 | 本仓可做，但须与 2b 同批（改早了 `check-authority` 必红，见偏离日志「Task 2a 排序」条）|
+| Task 2b 对端重签 | ❌ | PS 与 Crucible 的 exact-byte 收据。owner: 两仓维护方（C14）|
+| D5 的 4 个指标薄包装未收敛到引擎原生 | 🔲 | 本仓可做，非阻塞 |
+| SoDEX live 未交付 | 🔲 | D4 假设，owner 2026-09-11 确认。要交付须另按 deviation-protocol 高风险审议并补齐 live 侧全部落实项与真机证据 |
+| SoDEX / 策略的真机证据 | 🔲 | 需网络与真实凭据（C11 同类）|
+| RunnerFact 的 signal / TCA 字段缺口 | 🔲 | 需与 **Crucible** 协商（不是 arx，见偏离日志）|
+| toolkit mypy 16 errors | 🔲 | 本 plan 验证清单要求全绿；84→19→16，剩余 16 条已逐条列于偏离日志 |
+
+## close-out 测试计数
+
+本 plan 实施期（`2bf09e8~1..HEAD`，47 个 commit）改动过的全部 `tests/` 文件，条数取自一次
+`pytest --collect-only`，非手写（`progress-management.md` §数字类声明必须来自实跑）。
+
+三个计 0 的是真的没了，各有去向：`test_nautilus_runner_safety_adapter.py` 随 Task 9 删除
+（它测的 guarded exec-client factory 在 2.0 没有位置，`781ccdd`）；`test_nt_binance_venue.py`
+改名为 `test_nt_venue_wiring.py`（Task 8，`00d0e74`）；`test_event_publisher.py` 随
+`EventPublisher` 退役（`3d44aed`）。
 
 | 测试文件 | 条数 |
 |---|---|
-| `tests/toolkit/test_event_publisher.py` | 0 |
-
-它随 `EventPublisher` 一并退役：它测的是 msgbus → Redis → sidecar → Crucible SSE 那条通道，
-而那条通道已退役、2.0 也移除了它发布所经的 Python 消息总线。
+| `tests/cli/test_cli_engine_dispatch.py` | 4 |
+| `tests/cli/test_runner_safety_daemon_composition.py` | 7 |
+| `tests/core/test_engine_protocol_contract.py` | 3 |
+| `tests/core/test_engine_protocol_tier2.py` | 9 |
+| `tests/engines/nautilus/test_nautilus_config_extension.py` | 5 |
+| `tests/engines/nautilus/test_readiness_checks_what_it_claims.py` | 14 |
+| `tests/engines/nautilus/test_runner_safety_execution_boundary.py` | 33 |
+| `tests/engines/nautilus/test_runner_safety_host_wiring.py` | 6 |
+| `tests/engines/nautilus/test_sandbox_runner_fact_host.py` | 4 |
+| `tests/engines/nautilus/test_state_snapshot_nautilus_impl.py` | 11 |
+| `tests/engines/nautilus/test_strategy_event_forwarding.py` | 11 |
+| `tests/test_cancel_still_reaches_the_venue.py` | 2 |
+| `tests/test_client_order_id_length.py` | 5 |
+| `tests/test_client_order_id_sandbox_execution.py` | 1 |
+| `tests/test_credential_lifecycle.py` | 2 |
+| `tests/test_engine_lifecycle.py` | 11 |
+| `tests/test_flatten_records_what_it_contained.py` | 4 |
+| `tests/test_main_host_selection.py` | 3 |
+| `tests/test_nautilus_host_capability.py` | 11 |
+| `tests/test_nt_sodex_venue.py` | 16 |
+| `tests/test_nt_trading_node_host.py` | 40 |
+| `tests/test_nt_venue_wiring.py` | 43 |
+| `tests/test_plan_closeout_counts.py` | 20 |
+| `tests/test_portfolio_snapshot.py` | 13 |
+| `tests/test_pre_import_contract.py` | 6 |
+| `tests/test_runtime_candidate_promotion.py` | 7 |
+| `tests/test_runtime_candidate_promotion_workflow.py` | 4 |
+| `tests/test_strategy_signal_bridge.py` | 8 |
+| `tests/test_toolkit_inventory.py` | 5 |
+| `tests/test_toolkit_zero_rewrite.py` | 5 |
+| `tests/toolkit/test_base_strategy_filters.py` | 13 |
+| `tests/toolkit/test_cancels_are_countable.py` | 11 |
+| `tests/toolkit/test_capital_allocator.py` | 15 |
+| `tests/toolkit/test_config_self_validation.py` | 32 |
+| `tests/toolkit/test_every_close_path_shares_one_decision.py` | 13 |
+| `tests/toolkit/test_execution_manager.py` | 10 |
+| `tests/toolkit/test_filter_direction.py` | 8 |
+| `tests/toolkit/test_fixed_risk_sizing.py` | 9 |
+| `tests/toolkit/test_multi_pair_integration.py` | 8 |
+| `tests/toolkit/test_native_trailing_mode.py` | 35 |
+| `tests/toolkit/test_native_trailing_submitter.py` | 16 |
+| `tests/toolkit/test_nautilus_filter_momentum.py` | 12 |
+| `tests/toolkit/test_nautilus_filter_regime.py` | 10 |
+| `tests/toolkit/test_nautilus_filter_volatility.py` | 10 |
+| `tests/toolkit/test_nautilus_filter_volume.py` | 10 |
+| `tests/toolkit/test_nautilus_startup_validator.py` | 7 |
+| `tests/toolkit/test_nautilus_utils.py` | 26 |
+| `tests/toolkit/test_order_side_regression.py` | 7 |
+| `tests/toolkit/test_order_submitters.py` | 20 |
+| `tests/toolkit/test_order_tracker_close_guard.py` | 15 |
+| `tests/toolkit/test_pair_context.py` | 16 |
+| `tests/toolkit/test_shutdown_position_policy.py` | 3 |
+| `tests/toolkit/test_signal_execution_coordinator.py` | 14 |
+| `tests/toolkit/test_strategy_core.py` | 12 |
+| `tests/toolkit/test_tick_exit_close_position.py` | 4 |
+| `tests/toolkit/test_trade_event_handler.py` | 12 |
+| `tests/toolkit/test_trailing_behavioral_equivalence.py` | 4 |
+| `tests/test_nautilus_runner_safety_adapter.py` | 0 |  (已删除)
+| `tests/test_nt_binance_venue.py` | 0 |  (已删除)
+| `tests/toolkit/test_event_publisher.py` | 0 |  (已删除)
 
 ## 偏离与改进日志 (Deviations & Improvements)
 
