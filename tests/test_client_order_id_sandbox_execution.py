@@ -31,19 +31,19 @@ from nautilus_trader.config import (
 from nautilus_trader.model import (
     AccountType,
     AggressorSide,
+    Currency,
     Money,
     OmsType,
     OrderSide,
     Venue,
 )  # noqa: E402
-from tests.fixtures import nt_data_stubs as TestDataStubs  # noqa: E402
 from nautilus_trader.testkit.providers import TestInstrumentProvider  # noqa: E402
 from nautilus_trader.trading import Strategy  # noqa: E402
 
 from custos.engines.nautilus.venue_binance import (  # noqa: E402
     BINANCE_CLIENT_ORDER_ID_LEN_LIMIT,
 )
-from nautilus_trader.model import Currency
+from tests.fixtures import nt_data_stubs as TestDataStubs  # noqa: E402
 
 USDT = Currency.from_str("USDT")
 

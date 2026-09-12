@@ -33,6 +33,7 @@ from nautilus_trader.config import BacktestEngineConfig, LoggerConfig
 from nautilus_trader.model import (
     AccountType,
     AggressorSide,
+    Currency,
     Money,
     OmsType,
     OrderSide,
@@ -42,10 +43,10 @@ from nautilus_trader.model import (
     TriggerType,
     Venue,
 )
-from tests.fixtures import nt_data_stubs as TestDataStubs
 from nautilus_trader.testkit.providers import TestInstrumentProvider
 from nautilus_trader.trading import Strategy
-from nautilus_trader.model import Currency
+
+from tests.fixtures import nt_data_stubs as TestDataStubs
 
 USDT = Currency.from_str("USDT")
 
