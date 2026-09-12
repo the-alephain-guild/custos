@@ -288,7 +288,7 @@ class TestInstrumentIdDerivation:
     def test_every_caller_derives_the_same_id(self, tmp_path):
         """They used to hold a copy each, which is where a venue gets missed.
 
-        ``external_order_claims`` is the one that matters most: it is what tells the
+        ``external_order_instrument_ids`` is the one that matters most: it tells the
         engine which instruments this strategy owns, so an id the venue never listed
         claims nothing and the strategy's own fills arrive unclaimed.
         """
@@ -312,5 +312,39 @@ class TestInstrumentIdDerivation:
                 f"trading:\n  connector: {connector}\n  pairs:\n    - {pair}\n",
                 encoding="utf-8",
             )
-            claims = build_nautilus_base_config(load_config(path))["external_order_claims"]
+            claims = build_nautilus_base_config(load_config(path))["external_order_instrument_ids"]
             assert [str(claim) for claim in claims] == [expected]
+
+
+def test_every_base_config_key_reaches_something() -> None:
+    """A keyword ``StrategyConfig`` does not know is accepted and then dropped.
+
+    Its constructor ends in ``**_kwargs``, so a renamed field does not raise -- it
+    lands nowhere and the attribute keeps its default. That is how
+    ``external_order_claims`` survived the 2.0 rename to
+    ``external_order_instrument_ids``: the list was built, passed, and discarded,
+    and the strategy claimed nothing.
+
+    The accepted set is read from the constructor rather than listed here, so this
+    keeps answering after the next rename.
+    """
+    import inspect
+    import tempfile
+    from pathlib import Path
+
+    from custos_toolkit.config import load_config
+    from custos_toolkit_nautilus.adapter.trading_config import (
+        NautilusTradingStrategyConfig,
+        build_nautilus_base_config,
+    )
+    from nautilus_trader.trading import StrategyConfig
+
+    accepted = set(inspect.signature(StrategyConfig).parameters) - {"_kwargs"}
+    accepted |= set(NautilusTradingStrategyConfig._SECTIONS)
+
+    with tempfile.TemporaryDirectory() as directory:
+        path = Path(directory) / "config.yaml"
+        path.write_text("strategy:\n  name: probe\n", encoding="utf-8")
+        emitted = set(build_nautilus_base_config(load_config(path)))
+
+    assert emitted <= accepted, f"nowhere to land: {sorted(emitted - accepted)}"

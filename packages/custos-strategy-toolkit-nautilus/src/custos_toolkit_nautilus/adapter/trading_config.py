@@ -47,7 +47,7 @@ class NautilusBaseConfigSections(TypedDict):
     """Exact common kwargs supplied to every registered strategy config."""
 
     oms_type: str
-    external_order_claims: list[InstrumentId]
+    external_order_instrument_ids: list[InstrumentId]
     use_uuid_client_order_ids: bool
     use_hyphens_in_client_order_ids: bool
     trading: TradingConfig
@@ -320,7 +320,7 @@ def build_nautilus_base_config(config_wrapper: ConfigWrapper) -> NautilusBaseCon
     position_mode = config_wrapper.trading.get("position_mode", "ONEWAY")
     oms_type = OmsType.HEDGING if position_mode == "HEDGE" else OmsType.NETTING
 
-    # Build external_order_claims from trading config.
+    # Build the external-order claim list from trading config.
     # Multi-asset strategies such as rebalancing must claim all configured
     # instruments instead of only the first pair.
     trading_cfg = config_wrapper.trading
@@ -331,7 +331,7 @@ def build_nautilus_base_config(config_wrapper: ConfigWrapper) -> NautilusBaseCon
     else:
         trading_pairs = cast(list[str], trading_pairs_value)
 
-    external_order_claims: list[InstrumentId] = [
+    external_order_instrument_ids: list[InstrumentId] = [
         InstrumentId.from_str(instrument_id_str(pair, connector)) for pair in trading_pairs
     ]
 
@@ -349,7 +349,11 @@ def build_nautilus_base_config(config_wrapper: ConfigWrapper) -> NautilusBaseCon
     raw = config_wrapper.raw
     return {
         "oms_type": oms_type,
-        "external_order_claims": external_order_claims,
+        # 2.0's name for it. The 1.x name was `external_order_claims`, and
+        # `StrategyConfig` absorbs unknown keywords into `**_kwargs` -- so under the old
+        # name the list was accepted, dropped, and the attribute stayed None. Nothing
+        # raised; the strategy simply claimed nothing.
+        "external_order_instrument_ids": external_order_instrument_ids,
         # Client order ids are a bare UUID with the hyphens removed: 32 characters, fixed.
         #
         # The framework's default builds them from the trader tag, the strategy tag and a
