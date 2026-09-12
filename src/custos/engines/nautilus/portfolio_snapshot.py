@@ -112,15 +112,19 @@ class NautilusPortfolioSnapshotProvider:
 
     def snapshot(
         self,
-        node: Any,
+        runtime: Any,
         currency: str | None = None,
     ) -> NautilusPortfolioSnapshot:
-        """Read equity, trusted marks, and PnL as one coherent snapshot."""
+        """Read equity, trusted marks, and PnL as one coherent snapshot.
+
+        Takes the host's captured runtime rather than the node: 2.0's ``run_async``
+        owns the node while it runs, so the cache and the portfolio have to be the
+        ones captured before the run started.
+        """
 
         try:
-            kernel = node.kernel
-            cache = kernel.cache
-            portfolio = kernel.portfolio
+            cache = runtime.cache
+            portfolio = runtime.portfolio
             positions = tuple(cache.positions_open())
 
             venue = self._resolve_venue(cache, positions)

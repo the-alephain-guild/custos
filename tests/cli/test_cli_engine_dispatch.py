@@ -30,14 +30,21 @@ def test_cli_engine_defaults_to_nautilus() -> None:
     assert isinstance(host, NtTradingNodeHost)
 
 
-def test_cli_engine_passes_runner_shutdown_signal_owner_to_nautilus() -> None:
-    def callback() -> None:
-        pass
+def test_the_daemon_keeps_its_own_signal_handlers() -> None:
+    """The host used to be handed the daemon's stop callback to reinstall.
 
-    host = _build_host(_ns(), process_shutdown_requested=callback)
+    1.x's TradingNode installed its own SIGINT/SIGTERM handlers during
+    construction, displacing the daemon's, so the host put them back. 2.0's
+    ``run_async`` runs the node hosted and installs no signal handlers at all, so
+    the daemon's own handlers -- registered on the loop before any node exists --
+    stay in force and the host has no part in it.
+    """
+    import inspect
 
-    assert isinstance(host, NtTradingNodeHost)
-    assert host._process_shutdown_requested is callback
+    from custos.engines.nautilus.host import NtTradingNodeHost as _Host
+
+    assert "process_shutdown_requested" not in inspect.signature(_Host).parameters
+    assert "process_shutdown_requested" not in inspect.signature(_build_host).parameters
 
 
 def test_cli_engine_noop_is_explicit() -> None:

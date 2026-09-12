@@ -9,7 +9,7 @@ import pytest
 from custos.core.runner_fact import RunnerFactAuthority, RunnerFactContractError
 from custos.core.runner_fact_producer import (
     RunnerFactDeployment,
-    RunnerFactMessageBusBridge,
+    RunnerFactEventBridge,
     strategy_signal_metadata,
 )
 
@@ -173,7 +173,7 @@ def test_strategy_signal_metadata_rejects_declared_runtime_bar_type_drift() -> N
 def test_order_initialization_emits_one_signal_before_submission_outcome() -> None:
     emitter = _Emitter()
     runtime_logs = _RuntimeLogEmitter()
-    bridge = RunnerFactMessageBusBridge(
+    bridge = RunnerFactEventBridge(
         emitter=emitter,
         deployment=_deployment(),
         runtime_log_emitter=runtime_logs,
@@ -215,7 +215,7 @@ def test_protective_stop_is_owned_without_polluting_strategy_signals() -> None:
     emitter = _Emitter()
     runtime_logs = _RuntimeLogEmitter()
 
-    RunnerFactMessageBusBridge(
+    RunnerFactEventBridge(
         emitter=emitter,
         deployment=_deployment(),
         runtime_log_emitter=runtime_logs,
@@ -238,7 +238,7 @@ def test_protective_stop_is_owned_without_polluting_strategy_signals() -> None:
 def test_reduce_only_strategy_exit_remains_a_flat_signal() -> None:
     emitter = _Emitter()
 
-    RunnerFactMessageBusBridge(emitter=emitter, deployment=_deployment())._on_order_event(
+    RunnerFactEventBridge(emitter=emitter, deployment=_deployment())._on_order_event(
         OrderInitialized(reduce_only=True, order_side="SELL")
     )
 
@@ -248,7 +248,7 @@ def test_reduce_only_strategy_exit_remains_a_flat_signal() -> None:
 def test_local_order_rejection_emits_structured_signed_lifecycle_fact() -> None:
     emitter = _Emitter()
     runtime_logs = _RuntimeLogEmitter()
-    bridge = RunnerFactMessageBusBridge(
+    bridge = RunnerFactEventBridge(
         emitter=emitter,
         deployment=_deployment(),
         runtime_log_emitter=runtime_logs,
@@ -274,7 +274,7 @@ def test_local_order_rejection_emits_structured_signed_lifecycle_fact() -> None:
 def test_foreign_order_events_do_not_enter_this_instance_fact_stream() -> None:
     emitter = _Emitter()
     runtime_logs = _RuntimeLogEmitter()
-    bridge = RunnerFactMessageBusBridge(
+    bridge = RunnerFactEventBridge(
         emitter=emitter,
         deployment=_deployment(),
         runtime_log_emitter=runtime_logs,
@@ -290,7 +290,7 @@ def test_foreign_order_events_do_not_enter_this_instance_fact_stream() -> None:
 
 def test_owned_partial_fills_remain_separate_execution_and_settlement_facts() -> None:
     emitter = _Emitter()
-    bridge = RunnerFactMessageBusBridge(emitter=emitter, deployment=_deployment())
+    bridge = RunnerFactEventBridge(emitter=emitter, deployment=_deployment())
     bridge._on_order_event(OrderInitialized())  # noqa: SLF001
 
     bridge._on_order_event(  # noqa: SLF001

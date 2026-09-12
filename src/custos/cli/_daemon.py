@@ -312,7 +312,6 @@ def _build_host(
     fact_emitter: RunnerFactEmitter | None = None,
     capability_receipt: RunnerCapabilityReceipt | None = None,
     runner_safety_boundary_factory=None,
-    process_shutdown_requested=None,
 ) -> RunnerExecutionHost:
     """Pick the execution engine host from the clean-break ``--engine`` enum.
 
@@ -335,7 +334,6 @@ def _build_host(
             runner_fact_emitter=fact_emitter,
             capability_receipt=capability_receipt,
             runner_safety_boundary_factory=runner_safety_boundary_factory,
-            process_shutdown_requested=process_shutdown_requested,
         )
     if engine == "sandbox-sim":
         from custos.engines.nautilus.sandbox_runner_fact_host import (
@@ -873,7 +871,6 @@ async def run_daemon(args: argparse.Namespace) -> int:
                     state_store=state_store,
                     safety_policy_resolver=safety_policy_resolver,
                 ),
-                process_shutdown_requested=stop.set,
             )
             artifact_capability = ArtifactRuntimeCapabilityV1.production_ready()
             lifecycle = EngineLifecycleSupervisor(

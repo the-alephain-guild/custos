@@ -115,10 +115,16 @@ class RunnerReservationBoundary:
         if self._semantics is None:
             self._semantics = semantics
 
-    def bootstrap(self, message_bus: Any) -> None:
-        if message_bus is None:
-            raise RuntimeError("execution MessageBus unavailable for runner safety bridge")
-        message_bus.subscribe("events.order.*", self.on_order_event)
+    def bootstrap(self, forwarder: Any) -> None:
+        """Register with the host's event forwarder.
+
+        Nautilus 2.0 has no python surface on the internal message bus, so the
+        wildcard subscription this used to hold is now a sink the host runs from the
+        strategy's typed order callback.
+        """
+        if forwarder is None:
+            raise RuntimeError("execution event forwarder unavailable for runner safety bridge")
+        forwarder.add_order_sink("order_reservations", self.on_order_event)
 
     async def exposure_snapshot(self) -> Any:
         """Return the durable policy-scoped reservation/exposure aggregate."""

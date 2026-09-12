@@ -16,24 +16,41 @@ against a live venue in the offline test suite. Indicator/band math uses float
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Any
 
 from nautilus_trader.indicators import AverageTrueRange
-from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.trading.strategy import Strategy, StrategyConfig
+from nautilus_trader.model import Bar, BarType, InstrumentId, OrderSide
+from nautilus_trader.trading import Strategy, StrategyConfig
 
 _DEFAULT_INSTRUMENT = "BTCUSDT-PERP.BINANCE"
 
 
-class MinimalSupertrendConfig(StrategyConfig, frozen=True):
-    """Config for the SuperTrend-shaped fixture strategy."""
+class MinimalSupertrendConfig(StrategyConfig):
+    """Config for the SuperTrend-shaped fixture strategy.
 
-    instrument_id: InstrumentId
-    bar_type: BarType
-    atr_period: int = 10
-    atr_multiplier: float = 3.0
-    trade_size: Decimal = Decimal("0.001")
+    ``StrategyConfig`` is a rust pyclass in 2.0, so this is a plain subclass with a
+    keyword-only constructor rather than a msgspec Struct. Fields are assigned
+    before ``super().__init__()``, matching the shape the toolkit's own config base
+    settled on.
+    """
+
+    def __init__(
+        self,
+        *,
+        instrument_id: InstrumentId,
+        bar_type: BarType,
+        atr_period: int = 10,
+        atr_multiplier: float = 3.0,
+        trade_size: Decimal = Decimal("0.001"),
+        **kwargs: Any,
+    ) -> None:
+        assign = object.__setattr__
+        assign(self, "instrument_id", instrument_id)
+        assign(self, "bar_type", bar_type)
+        assign(self, "atr_period", atr_period)
+        assign(self, "atr_multiplier", atr_multiplier)
+        assign(self, "trade_size", trade_size)
+        super().__init__(**kwargs)
 
 
 class MinimalSupertrendStrategy(Strategy):

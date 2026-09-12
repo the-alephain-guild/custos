@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from structlog.testing import capture_logs
 
-from custos.engines.nautilus.host import NtTradingNodeHost
+from custos.engines.nautilus.host import NtTradingNodeHost, _NodeRuntime
 
 
 class _Cache:
@@ -34,38 +34,39 @@ class _Strategy:
         self.closed.append(instrument_id)
 
 
-class _Trader:
-    def __init__(self, strategies: list) -> None:
-        self._strategies = strategies
-
-    def strategies(self):
-        return self._strategies
-
-
-class _Node:
-    def __init__(self, positions: list, strategy: _Strategy) -> None:
-        self.kernel = type(
-            "Kernel",
-            (),
-            {"cache": _Cache(positions), "trader": _Trader([strategy])},
-        )()
-
-
 class _Position:
     def __init__(self, instrument_id: str) -> None:
         self.instrument_id = instrument_id
 
 
-def _host_with(node: _Node) -> NtTradingNodeHost:
+class _UnfinishedTask:
+    def done(self) -> bool:
+        return False
+
+
+def _runtime(positions: list, strategy: _Strategy) -> _NodeRuntime:
+    """What deploy captured: the cache to read and the strategy it handed over."""
+    return _NodeRuntime(
+        node=None,
+        task=_UnfinishedTask(),
+        handle=None,
+        cache=_Cache(positions),
+        portfolio=None,
+        strategies=(strategy,),
+        reconciliation_enabled=False,
+    )
+
+
+def _host_with(runtime: _NodeRuntime) -> NtTradingNodeHost:
     host = NtTradingNodeHost(tenant_id="tenant", runner_id="runner")
-    host._active_nodes["instance"] = (node, None)
+    host._active_nodes["instance"] = runtime
     return host
 
 
 async def test_a_flatten_with_nothing_open_is_recorded_as_unconfirmed() -> None:
     """Zero instruments means nothing was contained, and the record has to say so."""
     strategy = _Strategy()
-    host = _host_with(_Node([], strategy))
+    host = _host_with(_runtime([], strategy))
 
     with capture_logs() as logs:
         await host.flatten_positions("instance", "portfolio_equity_ambiguous")
@@ -84,7 +85,7 @@ async def test_a_flatten_with_nothing_open_is_recorded_as_unconfirmed() -> None:
 async def test_a_flatten_that_closed_something_still_says_so() -> None:
     """The honest record cuts both ways: real containment keeps its own event."""
     strategy = _Strategy()
-    host = _host_with(_Node([_Position("BTCUSDT-PERP.BINANCE")], strategy))
+    host = _host_with(_runtime([_Position("BTCUSDT-PERP.BINANCE")], strategy))
 
     with capture_logs() as logs:
         await host.flatten_positions("instance", "max_notional_exceeded")
@@ -124,7 +125,7 @@ class _ToolkitStrategy(_Strategy):
 
 async def test_the_flatten_uses_the_toolkit_close_path_when_there_is_one() -> None:
     strategy = _ToolkitStrategy()
-    host = _host_with(_Node([_Position("BTCUSDT-PERP.BINANCE")], strategy))
+    host = _host_with(_runtime([_Position("BTCUSDT-PERP.BINANCE")], strategy))
 
     await host.flatten_positions("instance", "max_notional_exceeded")
 
@@ -136,7 +137,7 @@ async def test_the_flatten_uses_the_toolkit_close_path_when_there_is_one() -> No
 
 async def test_a_strategy_without_the_toolkit_close_path_is_unaffected() -> None:
     strategy = _Strategy()
-    host = _host_with(_Node([_Position("BTCUSDT-PERP.BINANCE")], strategy))
+    host = _host_with(_runtime([_Position("BTCUSDT-PERP.BINANCE")], strategy))
 
     await host.flatten_positions("instance", "max_notional_exceeded")
 

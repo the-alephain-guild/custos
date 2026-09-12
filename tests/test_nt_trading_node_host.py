@@ -16,8 +16,6 @@ Failure-mode contract (plan §failure-mode coverage table):
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
-import signal
 from dataclasses import dataclass, field
 from uuid import NAMESPACE_URL, uuid5
 
@@ -26,11 +24,18 @@ import structlog
 
 pytest.importorskip("nautilus_trader")
 
-from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory  # noqa: E402
-from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory  # noqa: E402
+from nautilus_trader.adapters.binance import BinanceExecutionClientFactory  # noqa: E402
+from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory  # noqa: E402
+from nautilus_trader.common import Environment  # noqa: E402
 
 from custos.engines.nautilus import host as nautilus_host  # noqa: E402
 from custos.engines.nautilus.host import NtTradingNodeHost  # noqa: E402
+from tests.fixtures.fake_live_node import (  # noqa: E402
+    FakeBuilder,
+    FakeLiveNode,
+    FakeLiveNodeType,
+    only_exec_client,
+)
 
 
 def _deployment_instance_id(label: str) -> str:
@@ -69,10 +74,30 @@ def _credential() -> dict:
     }
 
 
+class _StrategyDouble:
+    """The least a strategy can be and still be deployable.
+
+    2.0 delivers execution events only to these two callbacks, so the host installs
+    its event forwarding on them and refuses a strategy without them. A bare object
+    is therefore no longer a usable stand-in -- which is the point, and is asserted
+    directly by ``test_a_strategy_without_the_event_callbacks_is_refused``.
+    """
+
+    def __init__(self) -> None:
+        self.order_events: list = []
+        self.position_events: list = []
+
+    def on_order_event(self, event) -> None:
+        self.order_events.append(event)
+
+    def on_position_event(self, event) -> None:
+        self.position_events.append(event)
+
+
 @dataclass(frozen=True, slots=True)
 class _Artifact:
     activation_id: str = "activation-test"
-    strategy: object = field(default_factory=object)
+    strategy: object = field(default_factory=_StrategyDouble)
 
 
 class _RenewableArtifact:
@@ -82,127 +107,25 @@ class _RenewableArtifact:
         self.instances: list[object] = []
 
     def create_strategy(self) -> object:
-        strategy = object()
+        strategy = _StrategyDouble()
         self.instances.append(strategy)
         return strategy
 
 
-class _FakeTrader:
-    def __init__(self) -> None:
-        self.strategies: list = []
-
-    def add_strategy(self, strategy) -> None:
-        self.strategies.append(strategy)
-
-
-class _FakeMsgBus:
-    def __init__(self) -> None:
-        self.subscriptions: list = []
-
-    def subscribe(self, topic, handler) -> None:
-        self.subscriptions.append((topic, handler))
-
-
-class _FakeKernel:
-    def __init__(self, trader) -> None:
-        self.msgbus = _FakeMsgBus()
-        self.trader = trader
-        self.cache = _FakeCache()
-        self.loop = _FakeLoop()
-        self.executor = None
-        self.disposed = False
-
-    def dispose(self) -> None:
-        self.disposed = True
-
-
-class _FakeLoop:
-    def __init__(self) -> None:
-        self.signal_handlers: dict[signal.Signals, object] = {}
-        self.stopped = False
-
-    def add_signal_handler(self, process_signal, callback) -> None:
-        self.signal_handlers[process_signal] = callback
-
-    def stop(self) -> None:
-        self.stopped = True
-
-
-class _FakeCache:
-    def __init__(self) -> None:
-        self.positions: list = []
-        self.orders: list = []
-
-    def positions_open(self, instrument_id=None) -> list:
-        if instrument_id is None:
-            return list(self.positions)
-        return [item for item in self.positions if item.instrument_id == instrument_id]
-
-    def orders_open(self, instrument_id=None) -> list:
-        if instrument_id is None:
-            return list(self.orders)
-        return [item for item in self.orders if item.instrument_id == instrument_id]
-
-
-class _FakeTradingNode:
-    """Stand-in for nautilus_trader TradingNode: records calls, no network."""
-
-    instances: list = []
-    install_executor_as_loop_default = False
-
-    def __init__(self, config) -> None:
-        self.config = config
-        self.built = False
-        self.disposed = False
-        self.data_factories: list = []
-        self.exec_factories: list = []
-        self.trader = _FakeTrader()
-        self.kernel = _FakeKernel(self.trader)
-        if self.install_executor_as_loop_default:
-            self.kernel.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-            asyncio.get_running_loop().set_default_executor(self.kernel.executor)
-        self._stop = asyncio.Event()
-        self.build_raises = False
-        self.build_error_msg = "nt build boom"
-        self.stop_hangs = False
-        _FakeTradingNode.instances.append(self)
-
-    def add_data_client_factory(self, name, factory) -> None:
-        self.data_factories.append((name, factory))
-
-    def add_exec_client_factory(self, name, factory) -> None:
-        self.exec_factories.append((name, factory))
-
-    def build(self) -> None:
-        if self.build_raises:
-            raise RuntimeError(self.build_error_msg)
-        self.built = True
-
-    async def run_async(self) -> None:
-        await self._stop.wait()
-
-    async def stop_async(self) -> None:
-        if self.stop_hangs:
-            await asyncio.Event().wait()  # never resolves
-        self._stop.set()
-
-    def dispose(self) -> None:
-        self.disposed = True
-        self.kernel.loop.stop()
-
-
 @pytest.fixture(autouse=True)
 def _reset_fake_nodes():
-    _FakeTradingNode.instances.clear()
-    _FakeTradingNode.install_executor_as_loop_default = False
+    FakeLiveNode.instances.clear()
+    FakeBuilder.instances.clear()
+    FakeBuilder.build_raises = False
     yield
-    _FakeTradingNode.instances.clear()
-    _FakeTradingNode.install_executor_as_loop_default = False
+    FakeLiveNode.instances.clear()
+    FakeBuilder.instances.clear()
+    FakeBuilder.build_raises = False
 
 
 @pytest.mark.asyncio
 async def test_deploy_missing_nt_extra_fails_fast(monkeypatch) -> None:
-    monkeypatch.setattr(nautilus_host, "TradingNode", None)
+    monkeypatch.setattr(nautilus_host, "LiveNode", None)
     host = NtTradingNodeHost()
     with pytest.raises(RuntimeError, match="nautilus"):
         await host.deploy(_spec(), _credential(), _Artifact())
@@ -210,12 +133,8 @@ async def test_deploy_missing_nt_extra_fails_fast(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_build_failure_records_startup_error(monkeypatch) -> None:
-    def _factory(config):
-        node = _FakeTradingNode(config)
-        node.build_raises = True
-        return node
-
-    monkeypatch.setattr(nautilus_host, "TradingNode", _factory)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    monkeypatch.setattr(FakeBuilder, "build_raises", True)
     host = NtTradingNodeHost()
     with structlog.testing.capture_logs() as logs:
         with pytest.raises(RuntimeError, match="nt build boom"):
@@ -227,7 +146,7 @@ async def test_build_failure_records_startup_error(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_deploy_sandbox_success(monkeypatch) -> None:
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     artifact = _Artifact()
     deployment_instance_id = _deployment_instance_id("spec-42")
@@ -235,54 +154,55 @@ async def test_deploy_sandbox_success(monkeypatch) -> None:
     try:
         assert container_id == deployment_instance_id
         assert deployment_instance_id in host._active_nodes
-        node = _FakeTradingNode.instances[-1]
-        assert node.built is True
-        # sandbox exec + binance data factories registered under the venue name
-        assert [n for n, _ in node.exec_factories] == ["BINANCE"]
-        assert [n for n, _ in node.data_factories] == ["BINANCE"]
-        assert node.trader.strategies == [artifact.strategy]
+        node = FakeLiveNode.instances[-1]
+        # sandbox exec + binance data clients registered under the venue name
+        assert [name for name, _factory, _cfg in node.builder.data_clients] == ["BINANCE"]
+        assert only_exec_client(node)[0] == "BINANCE"
+        assert node.strategies == [artifact.strategy]
+        # A locally matched venue is a sandbox environment with a simulated client;
+        # both halves of that have to agree or the node matches somewhere else.
+        assert node.builder.environment == Environment.SANDBOX
+        assert node.builder.exec_clients == []
     finally:
         await host.stop(deployment_instance_id)
 
 
 @pytest.mark.asyncio
-async def test_runner_daemon_reclaims_process_signals_after_node_construction(
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
-    shutdown_requests: list[str] = []
-    host = NtTradingNodeHost(
-        process_shutdown_requested=lambda: shutdown_requests.append("requested")
-    )
-    deployment_instance_id = _deployment_instance_id("runner-signals")
-    await host.deploy(
-        _spec("runner-signals"),
-        _credential(),
-        _Artifact(),
-    )
-    try:
-        node = _FakeTradingNode.instances[-1]
-        assert set(node.kernel.loop.signal_handlers) == {
-            signal.SIGINT,
-            signal.SIGTERM,
-        }
-        node.kernel.loop.signal_handlers[signal.SIGTERM]()
-        assert shutdown_requests == ["requested"]
-    finally:
-        await host.stop(deployment_instance_id)
+async def test_a_strategy_without_the_event_callbacks_is_refused(monkeypatch) -> None:
+    """Red lines 0.2 and 0.3, and 'the reconciliation is never silent'.
+
+    2.0 delivers order and position events to nowhere but the strategy's typed
+    callbacks. A strategy that has none of them cannot be observed at all, and the
+    artifact it came from is signed rather than subclassed -- so this is refused at
+    deploy rather than discovered when the first fill goes unrecorded.
+    """
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+
+    with pytest.raises(RuntimeError, match="on_order_event"):
+        await host.deploy(
+            _spec("no-callbacks"),
+            _credential(),
+            _Artifact(strategy=object()),
+        )
+
+    assert host._active_nodes == {}
+    assert FakeLiveNode.instances[-1].disposed is True
 
 
 @pytest.mark.asyncio
 async def test_deploy_sandbox_uses_sandbox_exec_factory(monkeypatch) -> None:
     # Mode dispatch: sandbox routes to the locally-simulated exec factory, never
     # a real Binance one (regression guard on the mode fan-out).
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     deployment_instance_id = _deployment_instance_id("sb-1")
     await host.deploy(_spec("sb-1", trading_mode="sandbox"), _credential(), _Artifact())
     try:
-        node = _FakeTradingNode.instances[-1]
-        assert node.exec_factories[0][1] is SandboxLiveExecClientFactory
+        node = FakeLiveNode.instances[-1]
+        # Registered as simulated, which is the shape a locally matched venue takes.
+        assert node.builder.exec_clients == []
+        assert isinstance(node.builder.simulated_exec_clients[0][1], SandboxExecutionClientFactory)
     finally:
         await host.stop(deployment_instance_id)
 
@@ -291,21 +211,24 @@ async def test_deploy_sandbox_uses_sandbox_exec_factory(monkeypatch) -> None:
 async def test_deploy_testnet_uses_binance_exec_factory(monkeypatch) -> None:
     # testnet routes to the real Binance exec factory (against the testnet endpoint),
     # not the sandbox simulator.
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     deployment_instance_id = _deployment_instance_id("tn-1")
     await host.deploy(_spec("tn-1", trading_mode="testnet"), _credential(), _Artifact())
     try:
-        node = _FakeTradingNode.instances[-1]
-        assert node.exec_factories[0][1] is BinanceLiveExecClientFactory
-        assert node.exec_factories[0][1] is not SandboxLiveExecClientFactory
+        node = FakeLiveNode.instances[-1]
+        assert node.builder.simulated_exec_clients == []
+        assert isinstance(node.builder.exec_clients[0][1], BinanceExecutionClientFactory)
+        # A real endpoint, so the node's environment is LIVE even on testnet: which
+        # endpoint it is belongs to the adapter's own environment setting.
+        assert node.builder.environment == Environment.LIVE
     finally:
         await host.stop(deployment_instance_id)
 
 
 @pytest.mark.asyncio
 async def test_deploy_live_success_with_owner_evidence(monkeypatch) -> None:
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     spec = _spec(
         "live-ok",
@@ -317,8 +240,9 @@ async def test_deploy_live_success_with_owner_evidence(monkeypatch) -> None:
     with structlog.testing.capture_logs() as logs:
         await host.deploy(spec, _credential(), _Artifact())
     try:
-        node = _FakeTradingNode.instances[-1]
-        assert node.exec_factories[0][1] is BinanceLiveExecClientFactory
+        node = FakeLiveNode.instances[-1]
+        assert isinstance(node.builder.exec_clients[0][1], BinanceExecutionClientFactory)
+        assert node.builder.environment == Environment.LIVE
         assert "nt_live_deploy_requested" in [e.get("event") for e in logs]
     finally:
         await host.stop(deployment_instance_id)
@@ -327,11 +251,11 @@ async def test_deploy_live_success_with_owner_evidence(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_deploy_live_rejects_missing_owner_evidence(monkeypatch) -> None:
     # Custos verifies the immutable Crucible promotion receipt, not human SoD.
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     with pytest.raises(RuntimeError, match="live_owner_evidence_missing"):
         await host.deploy(_spec("live-bad", trading_mode="live"), _credential(), _Artifact())
-    assert _FakeTradingNode.instances == []
+    assert FakeLiveNode.instances == []
     assert host._active_nodes == {}
 
 
@@ -339,20 +263,20 @@ async def test_deploy_live_rejects_missing_owner_evidence(monkeypatch) -> None:
 async def test_deploy_unknown_trading_mode_rejected(monkeypatch) -> None:
     # An unrecognised trading_mode is refused at dispatch (no silent fallback to a
     # default execution path), before any node is constructed.
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     with pytest.raises(ValueError, match="trading mode"):
         await host.deploy(
             _spec("weird-1", trading_mode="paper_trading"), _credential(), _Artifact()
         )
-    assert _FakeTradingNode.instances == []
+    assert FakeLiveNode.instances == []
     assert host._active_nodes == {}
 
 
 @pytest.mark.asyncio
 async def test_deploy_does_not_retain_credential(monkeypatch) -> None:
     # non-custodial red line 0.1: credential must not live in host state after deploy.
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     cred = _credential()
     deployment_instance_id = _deployment_instance_id("spec-7")
@@ -376,65 +300,73 @@ async def test_stop_idempotent() -> None:
 
 @pytest.mark.asyncio
 async def test_stop_timeout_forces_dispose(monkeypatch) -> None:
-    # Failure-mode contract: a hung stop_async times out, then dispose is forced.
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    """Failure-mode contract: a run that ignores the handle times out, then disposes.
+
+    Stopping a hosted run means asking the handle and waiting for the run task. A
+    node that never ends must not hold the reconcile loop open indefinitely, and it
+    must still be disposed and dropped from the registry.
+    """
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     host._stop_timeout_secs = 0.05
     deployment_instance_id = _deployment_instance_id("spec-hang")
     await host.deploy(_spec("spec-hang"), _credential(), _Artifact())
-    node = host._active_nodes[deployment_instance_id][0]
+    node = host._active_nodes[deployment_instance_id].node
     node.stop_hangs = True
     with structlog.testing.capture_logs() as logs:
         await host.stop(deployment_instance_id)
     assert "nt_stop_timeout" in [e.get("event") for e in logs]
-    assert node.kernel.disposed is True
-    assert node.disposed is False
-    assert node.kernel.loop.stopped is False
+    assert node.disposed is True
     assert deployment_instance_id not in host._active_nodes
 
 
 @pytest.mark.asyncio
 async def test_failed_start_cleanup_preserves_runner_loop_for_restart_budget(monkeypatch) -> None:
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
-    _FakeTradingNode.install_executor_as_loop_default = True
+    """Disposing one node must leave the runner's own loop able to run the next.
+
+    In 1.x this needed care: TradingNode.dispose assumed it owned the loop and would
+    cancel every task on it, taking the lifecycle supervisor with it before the
+    restart budget could schedule another attempt. 2.0 disposal does not reach into
+    the host loop, so the guard is now that a restart still works -- asserted by
+    running work on the loop after the disposal and then redeploying.
+    """
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     spec = _spec("retry-after-first-connect-failure", trading_mode="testnet")
     deployment_instance_id = spec["deployment_instance_id"]
 
     await host.deploy(spec, _credential(), _Artifact())
-    failed_node = host._active_nodes[deployment_instance_id][0]
+    failed_node = host._active_nodes[deployment_instance_id].node
     await host.stop(deployment_instance_id)
 
-    assert failed_node.kernel.disposed is True
-    assert failed_node.disposed is False
-    assert failed_node.kernel.loop.stopped is False
+    assert failed_node.disposed is True
     assert await asyncio.to_thread(lambda: "runner-executor-alive") == "runner-executor-alive"
 
     restarted_handle = await host.deploy(spec, _credential(), _Artifact())
     try:
         assert restarted_handle == deployment_instance_id
-        assert len(_FakeTradingNode.instances) == 2
+        assert len(FakeLiveNode.instances) == 2
     finally:
         await host.stop(deployment_instance_id)
 
 
 @pytest.mark.asyncio
 async def test_restart_requests_fresh_strategy_from_activated_artifact(monkeypatch) -> None:
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     artifact = _RenewableArtifact()
     spec = _spec("retry-with-fresh-strategy", trading_mode="testnet")
     deployment_instance_id = spec["deployment_instance_id"]
 
     await host.deploy(spec, _credential(), artifact)
-    first_node = host._active_nodes[deployment_instance_id][0]
+    first_node = host._active_nodes[deployment_instance_id].node
     await host.stop(deployment_instance_id)
     await host.deploy(spec, _credential(), artifact)
-    second_node = host._active_nodes[deployment_instance_id][0]
+    second_node = host._active_nodes[deployment_instance_id].node
     try:
         assert len(artifact.instances) == 2
-        assert first_node.trader.strategies[0] is artifact.instances[0]
-        assert second_node.trader.strategies[0] is artifact.instances[1]
+        assert first_node.strategies[0] is artifact.instances[0]
+        assert second_node.strategies[0] is artifact.instances[1]
         assert artifact.instances[0] is not artifact.instances[1]
     finally:
         await host.stop(deployment_instance_id)
@@ -451,8 +383,9 @@ class _VenueOrder:
     instrument_id: str = "BTCUSDT-PERP.BINANCE"
 
 
-class _ShutdownAwareStrategy:
+class _ShutdownAwareStrategy(_StrategyDouble):
     def __init__(self) -> None:
+        super().__init__()
         self.node = None
         self.prepared: list[str] = []
         self.cancelled_all: list[str] = []
@@ -464,20 +397,20 @@ class _ShutdownAwareStrategy:
 
     def cancel_all_orders(self, instrument_id: str) -> None:
         self.cancelled_all.append(instrument_id)
-        self.node.kernel.cache.orders.clear()
+        self.node.cache.orders.clear()
 
     def cancel_order(self, order: _VenueOrder) -> None:
         self.cancelled.append(order)
-        self.node.kernel.cache.orders.remove(order)
+        self.node.cache.orders.remove(order)
 
     def close_all_positions_with_fallback(self, instrument_id: str) -> None:
         self.closed.append(instrument_id)
-        self.node.kernel.cache.positions.clear()
+        self.node.cache.positions.clear()
 
 
 @pytest.mark.asyncio
 async def test_explicit_flatten_shutdown_confirms_zero_before_dispose(monkeypatch) -> None:
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     strategy = _ShutdownAwareStrategy()
     host = NtTradingNodeHost()
     host._shutdown_poll_secs = 0
@@ -493,26 +426,24 @@ async def test_explicit_flatten_shutdown_confirms_zero_before_dispose(monkeypatc
     )
     deployment_instance_id = spec["deployment_instance_id"]
     await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
-    node = host._active_nodes[deployment_instance_id][0]
+    node = host._active_nodes[deployment_instance_id].node
     strategy.node = node
-    node.kernel.cache.positions.append(_VenuePosition())
-    node.kernel.cache.orders.append(_VenueOrder(is_reduce_only=True))
+    node.cache.positions.append(_VenuePosition())
+    node.cache.orders.append(_VenueOrder(is_reduce_only=True))
 
     await host.stop(deployment_instance_id)
 
     assert strategy.prepared == ["flatten"]
     assert strategy.cancelled_all == ["BTCUSDT-PERP.BINANCE"]
     assert strategy.closed == ["BTCUSDT-PERP.BINANCE"]
-    assert node.kernel.cache.positions == []
-    assert node.kernel.cache.orders == []
-    assert node.kernel.disposed is True
-    assert node.disposed is False
-    assert node.kernel.loop.stopped is False
+    assert node.cache.positions == []
+    assert node.cache.orders == []
+    assert node.disposed is True
 
 
 @pytest.mark.asyncio
 async def test_default_preserve_shutdown_keeps_reduce_only_protection(monkeypatch) -> None:
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     strategy = _ShutdownAwareStrategy()
     host = NtTradingNodeHost()
     host._shutdown_poll_secs = 0
@@ -520,22 +451,20 @@ async def test_default_preserve_shutdown_keeps_reduce_only_protection(monkeypatc
     spec = _spec("preserve-stop", trading_mode="testnet")
     deployment_instance_id = spec["deployment_instance_id"]
     await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
-    node = host._active_nodes[deployment_instance_id][0]
+    node = host._active_nodes[deployment_instance_id].node
     strategy.node = node
     risk_order = _VenueOrder(is_reduce_only=False)
     protection = _VenueOrder(is_reduce_only=True)
-    node.kernel.cache.positions.append(_VenuePosition())
-    node.kernel.cache.orders.extend((risk_order, protection))
+    node.cache.positions.append(_VenuePosition())
+    node.cache.orders.extend((risk_order, protection))
 
     await host.stop(deployment_instance_id)
 
     assert strategy.prepared == ["preserve"]
     assert strategy.cancelled == [risk_order]
-    assert node.kernel.cache.positions == [_VenuePosition()]
-    assert node.kernel.cache.orders == [protection]
-    assert node.kernel.disposed is True
-    assert node.disposed is False
-    assert node.kernel.loop.stopped is False
+    assert node.cache.positions == [_VenuePosition()]
+    assert node.cache.orders == [protection]
+    assert node.disposed is True
 
 
 @pytest.mark.asyncio
@@ -563,13 +492,11 @@ async def test_reconfigure_runtime_tunable_logs() -> None:
 async def test_exception_log_redacts_credential_material(monkeypatch) -> None:
     # non-custodial red line 0.1: an exception message that could carry credential
     # material must be redacted before it reaches the log.
-    def _factory(config):
-        node = _FakeTradingNode(config)
-        node.build_raises = True
-        node.build_error_msg = "connection failed with api_key=REAL_SECRET_KEY"
-        return node
-
-    monkeypatch.setattr(nautilus_host, "TradingNode", _factory)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    monkeypatch.setattr(FakeBuilder, "build_raises", True)
+    monkeypatch.setattr(
+        FakeBuilder, "build_error_msg", "connection failed with api_key=REAL_SECRET_KEY"
+    )
     host = NtTradingNodeHost()
     with structlog.testing.capture_logs() as logs:
         with pytest.raises(RuntimeError):
@@ -584,13 +511,9 @@ async def test_exception_log_redacts_credential_material(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_exception_log_passthrough_when_no_credential(monkeypatch) -> None:
     # Redaction is targeted, not blanket: a benign message is preserved for triage.
-    def _factory(config):
-        node = _FakeTradingNode(config)
-        node.build_raises = True
-        node.build_error_msg = "instrument BTCUSDT-PERP.BINANCE not found"
-        return node
-
-    monkeypatch.setattr(nautilus_host, "TradingNode", _factory)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    monkeypatch.setattr(FakeBuilder, "build_raises", True)
+    monkeypatch.setattr(FakeBuilder, "build_error_msg", "instrument BTCUSDT-PERP.BINANCE not found")
     host = NtTradingNodeHost()
     with structlog.testing.capture_logs() as logs:
         with pytest.raises(RuntimeError):
@@ -604,7 +527,7 @@ async def test_exception_log_passthrough_when_no_credential(monkeypatch) -> None
 @pytest.mark.asyncio
 async def test_deploy_duplicate_instance_id_raises(monkeypatch) -> None:
     # Re-deploying a live instance is rejected (must stop first), never silently replaced.
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     deployment_instance_id = _deployment_instance_id("dup-1")
     await host.deploy(_spec("dup-1"), _credential(), _Artifact())
@@ -612,7 +535,7 @@ async def test_deploy_duplicate_instance_id_raises(monkeypatch) -> None:
         with pytest.raises(RuntimeError, match="already deployed"):
             await host.deploy(_spec("dup-1"), _credential(), _Artifact())
         # original node untouched; the duplicate never constructed a second node
-        assert len(_FakeTradingNode.instances) == 1
+        assert len(FakeLiveNode.instances) == 1
         assert deployment_instance_id in host._active_nodes
     finally:
         await host.stop(deployment_instance_id)
@@ -621,20 +544,20 @@ async def test_deploy_duplicate_instance_id_raises(monkeypatch) -> None:
 @pytest.mark.asyncio
 async def test_task_done_callback_cleans_active_entry(monkeypatch) -> None:
     # A self-terminated node run task removes its own registry entry (no stale leak).
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     deployment_instance_id = _deployment_instance_id("self-term")
     await host.deploy(_spec("self-term"), _credential(), _Artifact())
-    node, task = host._active_nodes[deployment_instance_id]
-    node._stop.set()  # end the run loop without going through stop()
-    await task
+    runtime = host._active_nodes[deployment_instance_id]
+    runtime.node.request_stop()  # end the run loop without going through stop()
+    await runtime.task
     await asyncio.sleep(0.01)  # let the done-callback run
     assert deployment_instance_id not in host._active_nodes
 
 
 @pytest.mark.asyncio
 async def test_missing_strategy_activation_identity_builds_no_node(monkeypatch) -> None:
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     with pytest.raises(RuntimeError, match="activation identity"):
         await host.deploy(
@@ -642,7 +565,7 @@ async def test_missing_strategy_activation_identity_builds_no_node(monkeypatch) 
             _credential(),
             _Artifact(activation_id=""),
         )
-    assert _FakeTradingNode.instances == []
+    assert FakeLiveNode.instances == []
     assert host._active_nodes == {}
 
 
@@ -655,7 +578,7 @@ async def test_a_host_that_has_deployed_nothing_holds_nothing() -> None:
 
 @pytest.mark.asyncio
 async def test_a_deployed_instance_is_held_until_it_is_stopped(monkeypatch) -> None:
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     deployment_instance_id = _deployment_instance_id("held")
     await host.deploy(_spec("held"), _credential(), _Artifact())
@@ -677,14 +600,14 @@ async def test_a_node_that_ended_on_its_own_is_no_longer_held(monkeypatch) -> No
     would still claim the instance and send the next generation to reconfigure.
     """
 
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     deployment_instance_id = _deployment_instance_id("self-terminated")
     await host.deploy(_spec("self-terminated"), _credential(), _Artifact())
-    node, task = host._active_nodes[deployment_instance_id]
+    runtime = host._active_nodes[deployment_instance_id]
 
-    node._stop.set()
-    await task
+    runtime.node.request_stop()
+    await runtime.task
     await asyncio.sleep(0.01)
 
     assert host.attached(deployment_instance_id) is False
@@ -700,14 +623,161 @@ async def test_a_finished_node_is_not_held_before_its_callback_runs(monkeypatch)
     applied generation is healthy while its node has just exited.
     """
 
-    monkeypatch.setattr(nautilus_host, "TradingNode", _FakeTradingNode)
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     deployment_instance_id = _deployment_instance_id("just-finished")
     await host.deploy(_spec("just-finished"), _credential(), _Artifact())
-    node = _FakeTradingNode.instances[-1]
+    node = FakeLiveNode.instances[-1]
 
-    node._stop.set()
+    node.request_stop()
     await asyncio.sleep(0)
 
     assert deployment_instance_id in host._active_nodes, "the callback has not run yet"
     assert host.attached(deployment_instance_id) is False
+
+
+@pytest.mark.asyncio
+async def test_a_second_deployment_is_refused_while_one_holds_the_loop(monkeypatch) -> None:
+    """2.0 runs one live node per event loop, and the reason is not conservatism.
+
+    The runner's senders and the message bus are both thread-local, so two hosted
+    nodes on one loop deliver each other's events rather than fail. Nautilus refuses
+    the second run for that reason; the host refuses earlier so the message names the
+    deployment that already holds the loop, and so no node is built to be disposed.
+
+    This is a capability reduction against 1.x, where the host tracked several
+    instances. Running more than one per runner needs a thread or a process each.
+    """
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    first = _deployment_instance_id("loop-holder")
+    await host.deploy(_spec("loop-holder"), _credential(), _Artifact())
+
+    try:
+        with pytest.raises(RuntimeError, match="already holds this runner's event loop"):
+            await host.deploy(_spec("loop-contender"), _credential(), _Artifact())
+        # Refused before a node was built, so there is nothing to dispose.
+        assert len(FakeLiveNode.instances) == 1
+        assert list(host._active_nodes) == [first]
+    finally:
+        await host.stop(first)
+
+
+@pytest.mark.asyncio
+async def test_the_loop_is_free_again_once_the_holder_stops(monkeypatch) -> None:
+    """The guard tracks the running node, not a flag someone has to clear."""
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    first = _deployment_instance_id("serial-a")
+    second = _deployment_instance_id("serial-b")
+
+    await host.deploy(_spec("serial-a"), _credential(), _Artifact())
+    await host.stop(first)
+    await host.deploy(_spec("serial-b"), _credential(), _Artifact())
+
+    try:
+        assert list(host._active_nodes) == [second]
+    finally:
+        await host.stop(second)
+
+
+@pytest.mark.asyncio
+async def test_a_sink_that_failed_makes_the_deployment_report_itself_degraded(
+    monkeypatch,
+) -> None:
+    """'The reconciliation is never silent', under a dispatch that discards errors.
+
+    An event that never reached one of the runner's sinks left a fact unrecorded or
+    a reservation held. Raising is not an option -- the rust dispatch drops whatever
+    a python callback raises -- so the deployment has to stop claiming its own state
+    is trustworthy, which is what the reconciler reads.
+    """
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    deployment_instance_id = _deployment_instance_id("sink-failure")
+    await host.deploy(_spec("sink-failure"), _credential(), _Artifact())
+
+    try:
+        before = await host.get_engine_status(deployment_instance_id)
+        assert before.reliable is False  # no portfolio behind the fake, but not for this reason
+        assert "runner_event_forwarding" not in (before.unreliable_reason or "")
+
+        host._record_forwarding_failure(deployment_instance_id, "runner_facts", "boom")
+
+        after = await host.get_engine_status(deployment_instance_id)
+        assert after.reliable is False
+        assert after.phase == "degraded"
+        assert after.unreliable_reason == "runner_event_forwarding_failed:boom"
+    finally:
+        await host.stop(deployment_instance_id)
+
+
+@pytest.mark.asyncio
+async def test_the_degraded_mark_does_not_outlive_the_deployment(monkeypatch) -> None:
+    """A redeploy is a new deployment, and must not inherit the old one's failure."""
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    deployment_instance_id = _deployment_instance_id("degraded-reset")
+
+    await host.deploy(_spec("degraded-reset"), _credential(), _Artifact())
+    host._record_forwarding_failure(deployment_instance_id, "runner_facts", "boom")
+    await host.stop(deployment_instance_id)
+
+    await host.deploy(_spec("degraded-reset"), _credential(), _Artifact())
+    try:
+        status = await host.get_engine_status(deployment_instance_id)
+        assert "runner_event_forwarding" not in (status.unreliable_reason or "")
+    finally:
+        await host.stop(deployment_instance_id)
+
+
+@pytest.mark.asyncio
+async def test_the_forwarding_is_installed_before_the_node_is_given_the_strategy(
+    monkeypatch,
+) -> None:
+    """Order matters: a strategy the node already holds could receive an event
+    before the runner's sinks were attached to it."""
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    strategy = _StrategyDouble()
+    installed_when: list[int] = []
+
+    unwired = _StrategyDouble.on_order_event
+    real_add_strategy = FakeLiveNode.add_strategy
+
+    def _record_add_strategy(self, added):
+        # The wrapper replaces the bound method with a plain function, so a callback
+        # that still resolves to the class's own has not been wired yet.
+        installed_when.append(getattr(added.on_order_event, "__func__", None) is not unwired)
+        real_add_strategy(self, added)
+
+    monkeypatch.setattr(FakeLiveNode, "add_strategy", _record_add_strategy)
+    deployment_instance_id = _deployment_instance_id("install-order")
+    await host.deploy(_spec("install-order"), _credential(), _Artifact(strategy=strategy))
+
+    try:
+        assert installed_when == [True], "the strategy reached the node unwired"
+    finally:
+        await host.stop(deployment_instance_id)
+
+
+@pytest.mark.asyncio
+async def test_stop_asks_the_handle_rather_than_only_cancelling_the_task(monkeypatch) -> None:
+    """A hosted run is stopped through its handle, which runs the shutdown sequence.
+
+    Cancelling the run task alone also ends it, and ends it quietly enough that
+    every other test here would still pass -- which is why this asserts the request
+    was made. The sequence behind the handle is what disconnects clients and drains
+    residual events; skipping it would tear the node down mid-flight.
+    """
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    deployment_instance_id = _deployment_instance_id("graceful-stop")
+    await host.deploy(_spec("graceful-stop"), _credential(), _Artifact())
+    node = FakeLiveNode.instances[-1]
+
+    assert node.handle().stop_requests == 0
+
+    await host.stop(deployment_instance_id)
+
+    assert node.handle().stop_requests == 1

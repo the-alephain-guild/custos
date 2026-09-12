@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from custos.engines.nautilus.host import NtTradingNodeHost, SandboxSimulationHost
+from custos.engines.nautilus.host import NtTradingNodeHost, SandboxSimulationHost, _NodeRuntime
 
 
 class _FakeInstrumentId(str):
@@ -64,15 +64,30 @@ class _FakeCache:
         return position.avg_px_open
 
 
-class _FakeKernel:
-    def __init__(self, cache: _FakeCache) -> None:
-        self.cache = cache
-        self.portfolio = _FakePortfolio("250")
+def _runtime(cache, portfolio=None, strategies=()) -> _NodeRuntime:
+    """What deploy captured before the run, which is what the host reads.
+
+    2.0's run_async owns the node once it starts, so there is no node to reach
+    through: the cache, the portfolio and the strategies are held here instead.
+    """
+    return _NodeRuntime(
+        node=None,
+        task=_UnfinishedTask(),
+        handle=None,
+        cache=cache,
+        portfolio=portfolio,
+        strategies=tuple(strategies),
+        reconciliation_enabled=False,
+    )
 
 
-class _FakeNode:
-    def __init__(self, positions: list[_FakePosition]) -> None:
-        self.kernel = _FakeKernel(_FakeCache(positions))
+class _UnfinishedTask:
+    def done(self) -> bool:
+        return False
+
+
+def _open_notional_runtime(positions: list[_FakePosition]) -> _NodeRuntime:
+    return _runtime(_FakeCache(positions), _FakePortfolio("250"))
 
 
 def _host() -> NtTradingNodeHost:
@@ -81,8 +96,8 @@ def _host() -> NtTradingNodeHost:
 
 async def test_nt_host_get_open_notional_sums_positions_decimal() -> None:
     host = _host()
-    node = _FakeNode([_FakePosition("2", "100"), _FakePosition("-1", "50")])
-    host._active_nodes["spec-1"] = (node, None)
+    runtime = _open_notional_runtime([_FakePosition("2", "100"), _FakePosition("-1", "50")])
+    host._active_nodes["spec-1"] = runtime
 
     value = await host.get_open_notional("spec-1")
 
@@ -127,24 +142,17 @@ class _FakeFlattenCache:
         return self._positions
 
 
-class _FakeFlattenKernel:
-    def __init__(self, positions: list, strategies: list) -> None:
-        self.cache = _FakeFlattenCache(positions)
-        self.trader = _FakeTrader(strategies)
-
-
-class _FakeFlattenNode:
-    def __init__(self, positions: list, strategies: list) -> None:
-        self.kernel = _FakeFlattenKernel(positions, strategies)
+def _flatten_runtime(positions: list, strategies: list) -> _NodeRuntime:
+    return _runtime(_FakeFlattenCache(positions), strategies=strategies)
 
 
 async def test_flatten_positions_maps_to_close_all() -> None:
     host = _host()
     strategy = _FakeStrategy()
-    node = _FakeFlattenNode(
+    runtime = _flatten_runtime(
         [_FakeInstPosition("BTCUSDT"), _FakeInstPosition("ETHUSDT")], [strategy]
     )
-    host._active_nodes["spec-1"] = (node, None)
+    host._active_nodes["spec-1"] = runtime
 
     await host.flatten_positions("spec-1", "notional_breach")
 
@@ -216,27 +224,20 @@ class _FakeSnapshotCache:
         return position.avg_px_open
 
 
-class _FakeSnapshotKernel:
-    def __init__(self, positions: list, orders: list, equity: str) -> None:
-        self.cache = _FakeSnapshotCache(positions, orders)
-        self.portfolio = _FakePortfolio(equity)
-
-
-class _FakeSnapshotNode:
-    def __init__(self, positions: list, orders: list, equity: str = "1000") -> None:
-        self.kernel = _FakeSnapshotKernel(positions, orders, equity)
+def _snapshot_runtime(positions: list, orders: list, equity: str = "1000") -> _NodeRuntime:
+    return _runtime(_FakeSnapshotCache(positions, orders), _FakePortfolio(equity))
 
 
 async def test_nt_host_get_positions_returns_decimal_snapshots() -> None:
     host = _host()
-    node = _FakeSnapshotNode(
+    runtime = _snapshot_runtime(
         [
             _FakeSnapshotPosition("BTCUSDT", "2", "100", "5"),
             _FakeSnapshotPosition("ETHUSDT", "-1", "50", "-2.5"),
         ],
         orders=[],
     )
-    host._active_nodes["spec-1"] = (node, None)
+    host._active_nodes["spec-1"] = runtime
 
     positions = await host.get_positions("spec-1")
 
@@ -259,14 +260,14 @@ async def test_nt_host_get_positions_unknown_spec_empty() -> None:
 
 async def test_nt_host_get_orders_returns_decimal_snapshots() -> None:
     host = _host()
-    node = _FakeSnapshotNode(
+    runtime = _snapshot_runtime(
         positions=[],
         orders=[
             _FakeSnapshotOrder("c1", "BTCUSDT", "BUY", "1", "100", "ACCEPTED"),
             _FakeSnapshotOrder("c2", "ETHUSDT", "SELL", "2", "50", "SUBMITTED"),
         ],
     )
-    host._active_nodes["spec-1"] = (node, None)
+    host._active_nodes["spec-1"] = runtime
 
     orders = await host.get_orders("spec-1")
 
@@ -304,14 +305,14 @@ async def test_nt_host_get_orders_reports_market_orders_without_a_price() -> Non
     """
 
     host = _host()
-    node = _FakeSnapshotNode(
+    runtime = _snapshot_runtime(
         positions=[],
         orders=[
             _FakeMarketOrder("c1", "BTCUSDT", "BUY"),
             _FakeSnapshotOrder("c2", "ETHUSDT", "SELL", "2", "50", "SUBMITTED"),
         ],
     )
-    host._active_nodes["spec-1"] = (node, None)
+    host._active_nodes["spec-1"] = runtime
 
     orders = await host.get_orders("spec-1")
 
@@ -322,12 +323,12 @@ async def test_nt_host_get_orders_reports_market_orders_without_a_price() -> Non
 async def test_nt_host_get_engine_status_decimal_and_tracks_peak() -> None:
     host = _host()
     # First tick: peak = current (initial exposure).
-    node1 = _FakeSnapshotNode(
+    runtime1 = _snapshot_runtime(
         [_FakeSnapshotPosition("BTCUSDT", "1", "100", "10")],
         orders=[],
         equity="1000",
     )
-    host._active_nodes["spec-1"] = (node1, None)
+    host._active_nodes["spec-1"] = runtime1
 
     status1 = await host.get_engine_status("spec-1")
     assert status1.phase == "running"
@@ -340,12 +341,12 @@ async def test_nt_host_get_engine_status_decimal_and_tracks_peak() -> None:
     assert status1.drawdown_pct == Decimal("0")
 
     # Second tick: equity drops → drawdown_pct > 0 while peak stays.
-    node2 = _FakeSnapshotNode(
+    runtime2 = _snapshot_runtime(
         [_FakeSnapshotPosition("BTCUSDT", "1", "50", "-10")],
         orders=[],
         equity="400",
     )
-    host._active_nodes["spec-1"] = (node2, None)
+    host._active_nodes["spec-1"] = runtime2
 
     status2 = await host.get_engine_status("spec-1")
     assert status2.current_equity == Decimal("400")

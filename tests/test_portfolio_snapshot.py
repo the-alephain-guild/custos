@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from decimal import Decimal
 from types import SimpleNamespace
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 from custos.core.engine_protocol import EngineStatus
 from custos.core.engine_safety import EngineSafetySupervisor
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig
+from custos.engines.nautilus import host as nautilus_host
 from custos.engines.nautilus.host import NtTradingNodeHost
 from custos.engines.nautilus.portfolio_snapshot import (
     NautilusPortfolioPosition,
@@ -85,23 +87,52 @@ class _Portfolio:
         return self._missing
 
 
-class _Node:
+def _register(host, instance: str, *, cache=None, portfolio=None, strategies=()) -> None:
+    """Register a deployment the way deploy does, without building a node.
+
+    ``_active_nodes`` holds what the host captured before the run started, so a test
+    that wants the host to answer about a deployment has to provide that rather than
+    a node to reach through.
+    """
+    task: asyncio.Future = asyncio.get_event_loop().create_future()
+    task.set_result(None)
+    host._active_nodes[instance] = nautilus_host._NodeRuntime(
+        node=None,
+        task=task,
+        handle=None,
+        cache=cache if cache is not None else _EmptyCache(),
+        portfolio=portfolio,
+        strategies=tuple(strategies),
+        reconciliation_enabled=False,
+    )
+
+
+class _EmptyCache:
+    def positions_open(self, instrument_id=None):
+        return []
+
+    def orders_open(self, instrument_id=None):
+        return []
+
+
+class _Runtime:
+    """What the host captures before the run and hands to the provider.
+
+    2.0's run_async owns the node once it starts, so the cache and the portfolio
+    are captured beforehand and the provider reads them from here rather than
+    reaching through a node.
+    """
+
     def __init__(self, *, mark_price: object | None, portfolio: _Portfolio | None = None) -> None:
-        self.kernel = type(
-            "Kernel",
-            (),
-            {
-                "cache": _Cache(mark_price=mark_price),
-                "portfolio": portfolio or _Portfolio(),
-            },
-        )()
+        self.cache = _Cache(mark_price=mark_price)
+        self.portfolio = portfolio or _Portfolio()
 
 
 def test_provider_calls_unrealized_pnl_with_trusted_mark_without_conversion_syntax() -> None:
     mark = _DecimalValue("100")
-    node = _Node(mark_price=mark)
+    runtime = _Runtime(mark_price=mark)
     snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
-        node,
+        runtime,
         currency="USDT",
     )
 
@@ -109,7 +140,7 @@ def test_provider_calls_unrealized_pnl_with_trusted_mark_without_conversion_synt
     assert snapshot.equity == Decimal("1000")
     assert snapshot.open_notional == Decimal("200")
     assert snapshot.positions[0].unrealized_pnl == Decimal("20")
-    assert node.kernel.cache.position.mark_arguments == [mark]
+    assert runtime.cache.position.mark_arguments == [mark]
 
 
 def test_a_real_mark_price_update_is_unwrapped_before_it_is_priced_with() -> None:
@@ -132,9 +163,7 @@ def test_a_real_mark_price_update_is_unwrapped_before_it_is_priced_with() -> Non
     import pytest
 
     pytest.importorskip("nautilus_trader")
-    from nautilus_trader.model.data import MarkPriceUpdate
-    from nautilus_trader.model.identifiers import InstrumentId
-    from nautilus_trader.model.objects import Price
+    from nautilus_trader.model import InstrumentId, MarkPriceUpdate, Price
 
     price = Price.from_str("100.00")
     update = MarkPriceUpdate(
@@ -143,10 +172,10 @@ def test_a_real_mark_price_update_is_unwrapped_before_it_is_priced_with() -> Non
         ts_event=1,
         ts_init=1,
     )
-    node = _Node(mark_price=update)
+    runtime = _Runtime(mark_price=update)
 
     snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
-        node,
+        runtime,
         currency="USDT",
     )
 
@@ -155,18 +184,18 @@ def test_a_real_mark_price_update_is_unwrapped_before_it_is_priced_with() -> Non
         "was found and then could not be used"
     )
     assert snapshot.positions[0].mark_price == Decimal("100.00")
-    assert node.kernel.cache.position.mark_arguments == [price], (
+    assert runtime.cache.position.mark_arguments == [price], (
         "the Price inside the update must be what prices the position, not the update itself"
     )
 
 
 def test_missing_mark_or_equity_returns_typed_unreliable_snapshot() -> None:
     missing_mark = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
-        _Node(mark_price=None),
+        _Runtime(mark_price=None),
         currency="USDT",
     )
     missing_equity = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
-        _Node(mark_price=_DecimalValue("100"), portfolio=_Portfolio(equities={})),
+        _Runtime(mark_price=_DecimalValue("100"), portfolio=_Portfolio(equities={})),
         currency="USDT",
     )
 
@@ -183,7 +212,9 @@ class _RecordingProvider:
     def __post_init__(self) -> None:
         self.calls: list[str | None] = []
 
-    def snapshot(self, node: object, *, currency: str | None = None) -> NautilusPortfolioSnapshot:
+    def snapshot(
+        self, runtime: object, *, currency: str | None = None
+    ) -> NautilusPortfolioSnapshot:
         self.calls.append(currency)
         return self.value
 
@@ -212,8 +243,8 @@ async def test_host_status_breaker_inputs_and_runner_facts_share_one_provider() 
         runner_id="runner",
         portfolio_snapshot_provider=provider,
     )
-    node = _Node(mark_price=_DecimalValue("100"))
-    host._active_nodes["instance"] = (node, None)
+    runtime = _Runtime(mark_price=_DecimalValue("100"))
+    _register(host, "instance", cache=runtime.cache, portfolio=runtime.portfolio)
     host._runner_fact_contexts["instance"] = (object(), None)
     # deploy registers this beside the node; the guard paths read it so equity resolves
     # on an account that holds more than one currency.
@@ -253,7 +284,7 @@ async def test_host_marks_inactive_or_unreliable_status_fail_closed() -> None:
         runner_id="runner",
         portfolio_snapshot_provider=provider,
     )
-    host._active_nodes["instance"] = (_Node(mark_price=None), None)
+    _register(host, "instance")
     status = await host.get_engine_status("instance")
     assert status.phase == "degraded"
     assert status.reliable is False
@@ -268,9 +299,6 @@ async def test_host_capital_basis_uses_strategy_sizing_and_durable_exposure() ->
         _get_actual_balance=lambda: Decimal("4463.27"),
         _get_effective_capital=lambda: Decimal("4463.27"),
     )
-    node = SimpleNamespace(
-        kernel=SimpleNamespace(trader=SimpleNamespace(strategies=lambda: [strategy]))
-    )
 
     class _Boundary:
         async def exposure_snapshot(self):
@@ -283,7 +311,7 @@ async def test_host_capital_basis_uses_strategy_sizing_and_durable_exposure() ->
             )
 
     host = NtTradingNodeHost(tenant_id="tenant", runner_id="runner")
-    host._active_nodes["instance"] = (node, None)
+    _register(host, "instance", strategies=(strategy,))
     host._settlement_currencies["instance"] = "USDT"
     host._runner_safety_boundaries["instance"] = _Boundary()
 
@@ -390,9 +418,9 @@ def _multi_currency_portfolio() -> _Portfolio:
 
 def test_equity_is_ambiguous_on_a_multi_currency_account_when_none_is_declared() -> None:
     """The cause, pinned: with no currency asked for, more than one entry cannot resolve."""
-    node = _Node(mark_price=_DecimalValue("100"), portfolio=_multi_currency_portfolio())
+    runtime = _Runtime(mark_price=_DecimalValue("100"), portfolio=_multi_currency_portfolio())
 
-    snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(node)
+    snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(runtime)
 
     assert snapshot.reliable is False
     assert snapshot.unreliable_reason == "portfolio_equity_ambiguous"
@@ -400,10 +428,10 @@ def test_equity_is_ambiguous_on_a_multi_currency_account_when_none_is_declared()
 
 def test_declaring_the_currency_resolves_the_same_account() -> None:
     """Same account, same provider -- naming the currency is the whole difference."""
-    node = _Node(mark_price=_DecimalValue("100"), portfolio=_multi_currency_portfolio())
+    runtime = _Runtime(mark_price=_DecimalValue("100"), portfolio=_multi_currency_portfolio())
 
     snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
-        node, currency="USDT"
+        runtime, currency="USDT"
     )
 
     assert snapshot.reliable is True
@@ -417,13 +445,13 @@ async def test_the_guard_paths_stay_reliable_on_a_multi_currency_account() -> No
     These three are what the notional cap, the snapshot publisher and the fallback
     breaker read, so an ambiguous answer here is what tripped the breaker at startup.
     """
-    node = _Node(mark_price=_DecimalValue("100"), portfolio=_multi_currency_portfolio())
+    runtime = _Runtime(mark_price=_DecimalValue("100"), portfolio=_multi_currency_portfolio())
     host = NtTradingNodeHost(
         tenant_id="tenant",
         runner_id="runner",
         portfolio_snapshot_provider=NautilusPortfolioSnapshotProvider(price_type_mid="MID"),
     )
-    host._active_nodes["instance"] = (node, None)
+    _register(host, "instance", cache=runtime.cache, portfolio=runtime.portfolio)
     host._settlement_currencies["instance"] = "USDT"
 
     assert await host.get_open_notional("instance") == Decimal("200")

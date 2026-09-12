@@ -275,7 +275,7 @@ def strategy_signal_metadata(
     return strategy_version, timeframe
 
 
-class RunnerFactMessageBusBridge:
+class RunnerFactEventBridge:
     """Synchronously commits execution events to SQLite before returning."""
 
     def __init__(
@@ -292,11 +292,17 @@ class RunnerFactMessageBusBridge:
         self._order_roles: dict[str, str] = {}
         self._owned_order_ids: set[str] = set()
 
-    def bootstrap(self, message_bus: Any) -> None:
-        if message_bus is None:
-            raise RuntimeError("Nautilus MessageBus unavailable for RunnerFact bridge")
-        message_bus.subscribe("events.order.*", self._on_order_event)
-        message_bus.subscribe("events.position.*", self._on_position_event)
+    def bootstrap(self, forwarder: Any) -> None:
+        """Register with the host's event forwarder.
+
+        Nautilus 2.0 has no python surface on the internal message bus, so the
+        wildcard subscriptions this used to hold are now sinks the host runs from
+        the strategy's typed callbacks.
+        """
+        if forwarder is None:
+            raise RuntimeError("execution event forwarder unavailable for RunnerFact bridge")
+        forwarder.add_order_sink("runner_facts", self._on_order_event)
+        forwarder.add_position_sink("runner_facts", self._on_position_event)
         _log.info(
             "runner_fact_bridge_attached",
             deployment_instance_id=self._deployment.deployment_instance_id,

@@ -301,7 +301,7 @@ class RunnerRuntimeLogEmitter:
         correlation_id: UUID | str,
         causation_id: UUID | str | None = None,
     ) -> UUID | None:
-        """Commit a structured log from a synchronous engine MessageBus callback."""
+        """Commit a structured log from a synchronous engine event callback."""
 
         fact = self._fact(
             authority,

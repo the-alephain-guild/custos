@@ -19,12 +19,24 @@ gone from never true to true on two constants and a duplicate: a gate that never
 is at least loud, and one that always passes is silent. So all three are replaced by
 something the engine can actually be asked.
 
-What makes the reconciliation check possible is the kernel's own start sequence
-(``NautilusKernel.start_async``): engines start, clients connect, and then, if
-reconciliation is enabled, ``_await_execution_reconciliation()`` runs -- and on failure
-the method **returns without ever starting the trader**. A running trader is therefore
-proof that the reconciliation step was passed, which is the closest thing to a completion
-signal NautilusTrader offers; there is no ``reconciliation_complete`` flag to read.
+What makes the reconciliation check possible is the node's own start sequence: engines
+start, clients connect, and then, if reconciliation is enabled, it runs -- and on failure
+startup aborts rather than entering ``Running``. A node in ``Running`` is therefore proof
+that the reconciliation step was passed, which is the closest thing to a completion signal
+NautilusTrader offers; there is no ``reconciliation_complete`` flag to read.
+
+**What 2.0 took away.** Two of the seven fields are now weaker than they were:
+
+* the two connectivity fields have no per-client source any more. 2.0 exposes no
+  ``check_connected`` to python at all, so both are answered by the node's state.
+  Reaching ``Running`` does imply the connect phase passed, so readiness is not
+  overstated -- but a venue that drops mid-run no longer shows here.
+* ``reconciliation_initialized`` reads what the builder was told rather than what the
+  engine confirms, because 2.0 offers no read-back. It is the deployment's
+  configuration, not its behaviour.
+
+Both are recorded in the upgrade plan against red line 0.3. They are noted here too
+because a reader would otherwise take these fields for the evidence they used to be.
 """
 
 from __future__ import annotations
@@ -36,8 +48,10 @@ import pytest
 
 pytest.importorskip("nautilus_trader")
 
+from nautilus_trader.live import NodeState
+
 from custos.core.engine_protocol import EngineLifecycleAuthority
-from custos.engines.nautilus.host import NtTradingNodeHost
+from custos.engines.nautilus.host import NtTradingNodeHost, _NodeRuntime
 
 
 class _Task:
@@ -48,24 +62,29 @@ class _Task:
         return self._done
 
 
-def _node(
+def _runtime(
     *,
-    connected: bool = True,
+    node_running: bool = True,
     reconciliation: bool = True,
     portfolio_initialized: bool = True,
-    trader_running: bool = True,
     strategies_running: tuple[bool, ...] = (True,),
-) -> SimpleNamespace:
-    strategies = [SimpleNamespace(is_running=running) for running in strategies_running]
-    kernel = SimpleNamespace(
-        data_engine=SimpleNamespace(check_connected=lambda: connected),
-        exec_engine=SimpleNamespace(
-            check_connected=lambda: connected, reconciliation=reconciliation
-        ),
+    task=None,
+) -> _NodeRuntime:
+    """What the host captured at deploy, which is what readiness now reads.
+
+    ``node_running`` stands where ``connected`` and ``trader_running`` used to be two
+    separate knobs: in 2.0 they are one signal, and pretending otherwise here would
+    describe a distinction the host can no longer make.
+    """
+    return _NodeRuntime(
+        node=None,
+        task=task or _Task(),
+        handle=SimpleNamespace(state=NodeState.RUNNING if node_running else NodeState.STARTING),
+        cache=None,
         portfolio=SimpleNamespace(initialized=portfolio_initialized),
-        trader=SimpleNamespace(is_running=trader_running, strategies=lambda: strategies),
+        strategies=tuple(SimpleNamespace(is_running=running) for running in strategies_running),
+        reconciliation_enabled=reconciliation,
     )
-    return SimpleNamespace(kernel=kernel)
 
 
 def _authority(trading_mode: str) -> EngineLifecycleAuthority:
@@ -80,17 +99,17 @@ def _authority(trading_mode: str) -> EngineLifecycleAuthority:
     )
 
 
-def _host_with(authority: EngineLifecycleAuthority, node, task=None) -> NtTradingNodeHost:
+def _host_with(authority: EngineLifecycleAuthority, runtime) -> NtTradingNodeHost:
     host = NtTradingNodeHost(tenant_id="tenant", runner_id="runner")
     instance = str(authority.deployment_instance_id)
     host._lifecycle_authorities[instance] = authority
-    host._active_nodes[instance] = (node, task or _Task())
+    host._active_nodes[instance] = runtime
     return host
 
 
-async def _ready(authority, node, task=None) -> bool:
+async def _ready(authority, runtime) -> bool:
     """True when readiness is reached inside a deliberately tiny window."""
-    host = _host_with(authority, node, task)
+    host = _host_with(authority, runtime)
     try:
         await host.wait_ready(authority, timeout_secs=0.05)
     except TimeoutError:
@@ -112,14 +131,14 @@ async def test_a_testnet_node_can_become_ready_at_all() -> None:
     """
     authority = _authority("testnet")
 
-    assert await _ready(authority, _node())
+    assert await _ready(authority, _runtime())
 
 
 async def test_readiness_waits_for_the_trader_to_start() -> None:
     """A trader that has not started is a kernel that has not cleared reconciliation."""
     authority = _authority("testnet")
 
-    assert not await _ready(authority, _node(trader_running=False))
+    assert not await _ready(authority, _runtime(node_running=False))
 
 
 async def test_reconciliation_switched_off_on_a_real_venue_is_not_ready() -> None:
@@ -130,7 +149,7 @@ async def test_reconciliation_switched_off_on_a_real_venue_is_not_ready() -> Non
     """
     authority = _authority("testnet")
 
-    assert not await _ready(authority, _node(reconciliation=False))
+    assert not await _ready(authority, _runtime(reconciliation=False))
 
 
 async def test_sandbox_is_ready_although_reconciliation_never_runs() -> None:
@@ -140,7 +159,7 @@ async def test_sandbox_is_ready_although_reconciliation_never_runs() -> None:
     """
     authority = _authority("sandbox")
 
-    assert await _ready(authority, _node(reconciliation=False))
+    assert await _ready(authority, _runtime(reconciliation=False))
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +171,7 @@ async def test_an_uninitialised_portfolio_is_not_ready() -> None:
     """The old check asked whether the attribute existed, which it always does."""
     authority = _authority("testnet")
 
-    assert not await _ready(authority, _node(portfolio_initialized=False))
+    assert not await _ready(authority, _runtime(portfolio_initialized=False))
 
 
 # ---------------------------------------------------------------------------
@@ -167,20 +186,22 @@ async def test_a_strategy_that_is_not_running_is_not_ready() -> None:
     """
     authority = _authority("testnet")
 
-    assert not await _ready(authority, _node(strategies_running=(False,)), _Task(done=False))
+    assert not await _ready(
+        authority, _runtime(strategies_running=(False,), task=_Task(done=False))
+    )
 
 
 async def test_one_stopped_strategy_among_several_is_not_ready() -> None:
     authority = _authority("testnet")
 
-    assert not await _ready(authority, _node(strategies_running=(True, False)))
+    assert not await _ready(authority, _runtime(strategies_running=(True, False)))
 
 
 async def test_a_node_with_no_strategies_is_not_ready() -> None:
     """Nothing is accepting lifecycle commands if nothing was added."""
     authority = _authority("testnet")
 
-    assert not await _ready(authority, _node(strategies_running=()))
+    assert not await _ready(authority, _runtime(strategies_running=()))
 
 
 # ---------------------------------------------------------------------------
@@ -200,14 +221,14 @@ async def test_a_node_with_no_strategies_is_not_ready() -> None:
 
 async def test_a_ready_deployment_answers_the_poll() -> None:
     authority = _authority("testnet")
-    host = _host_with(authority, _node())
+    host = _host_with(authority, _runtime())
 
     assert await host.deployment_ready(str(authority.deployment_instance_id)) is True
 
 
 async def test_a_deployment_still_starting_answers_no() -> None:
     authority = _authority("testnet")
-    host = _host_with(authority, _node(trader_running=False))
+    host = _host_with(authority, _runtime(node_running=False))
 
     assert await host.deployment_ready(str(authority.deployment_instance_id)) is False
 
@@ -215,7 +236,7 @@ async def test_a_deployment_still_starting_answers_no() -> None:
 async def test_an_unknown_deployment_is_not_ready() -> None:
     """Fail closed on the readiness side too: unknown is not ready."""
     authority = _authority("testnet")
-    host = _host_with(authority, _node())
+    host = _host_with(authority, _runtime())
 
     assert await host.deployment_ready("no-such-instance") is False
 
@@ -223,7 +244,7 @@ async def test_an_unknown_deployment_is_not_ready() -> None:
 async def test_the_poll_and_the_wait_agree() -> None:
     """Same node, same verdict -- they must not be two opinions."""
     authority = _authority("testnet")
-    host = _host_with(authority, _node(portfolio_initialized=False))
+    host = _host_with(authority, _runtime(portfolio_initialized=False))
 
     assert await host.deployment_ready(str(authority.deployment_instance_id)) is False
     try:
@@ -265,7 +286,7 @@ async def test_the_sandbox_host_is_ready_as_soon_as_it_has_deployed() -> None:
 
 async def test_the_receipt_carries_the_checks_that_passed() -> None:
     authority = _authority("testnet")
-    host = _host_with(authority, _node())
+    host = _host_with(authority, _runtime())
 
     receipt = await host.wait_ready(authority, timeout_secs=0.05)
 

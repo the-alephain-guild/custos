@@ -16,10 +16,8 @@ without NT; NtTradingNodeHost.deploy fails fast if NT is missing.
 from __future__ import annotations
 
 import asyncio
-import signal
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -48,7 +46,7 @@ from custos.core.runner_fact import (
 from custos.core.runner_fact_producer import (
     RunnerCapitalBasisSnapshot,
     RunnerFactDeployment,
-    RunnerFactMessageBusBridge,
+    RunnerFactEventBridge,
     VenueLedgerEvidence,
     strategy_signal_metadata,
 )
@@ -57,25 +55,26 @@ from custos.engines.nautilus.portfolio_snapshot import (
     NautilusPortfolioSnapshotProvider,
 )
 from custos.engines.nautilus.settlement import settlement_currency_for_pairs
+from custos.engines.nautilus.strategy_event_forwarding import StrategyEventForwarder
 
 try:
-    from nautilus_trader.adapters.binance.factories import (
-        BinanceLiveDataClientFactory,
-        BinanceLiveExecClientFactory,
+    from nautilus_trader.adapters.binance import (
+        BinanceDataClientFactory,
+        BinanceExecutionClientFactory,
     )
-    from nautilus_trader.adapters.sandbox.factory import SandboxLiveExecClientFactory
-    from nautilus_trader.config import LiveExecEngineConfig, LoggingConfig, TradingNodeConfig
-    from nautilus_trader.core.rust.model import PriceType
-    from nautilus_trader.live.node import TradingNode
-    from nautilus_trader.model.identifiers import TraderId
+    from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory
+    from nautilus_trader.common import Environment, LoggerConfig, LogLevel
+    from nautilus_trader.live import LiveNode, NodeState
+    from nautilus_trader.model import PriceType, TraderId
 except ImportError:  # nautilus extra absent (audit / paper install) — deploy fails fast
-    BinanceLiveDataClientFactory = None
-    BinanceLiveExecClientFactory = None
-    SandboxLiveExecClientFactory = None
-    LiveExecEngineConfig = None
-    LoggingConfig = None
-    TradingNodeConfig = None
-    TradingNode = None
+    BinanceDataClientFactory = None
+    BinanceExecutionClientFactory = None
+    SandboxExecutionClientFactory = None
+    Environment = None
+    LoggerConfig = None
+    LogLevel = None
+    LiveNode = None
+    NodeState = None
     TraderId = None
     PriceType = None
 
@@ -95,6 +94,37 @@ _SUPPORTED_VENUES = frozenset({"binance", "binance_perpetual"})
 # material (NT config repr, adapter auth errors) — such messages are redacted
 # before logging so a raw key can never reach the log (non-custodial red line 0.1).
 _CREDENTIAL_HINTS = ("api_key", "api_secret", "secret", "authorization")
+
+
+@dataclass(frozen=True, slots=True)
+class _NodeRuntime:
+    """What the host keeps of one running node.
+
+    ``run_async`` takes ownership of the node: the cache, the portfolio and the
+    control handle have to be captured before the run begins, and reaching for them
+    through the node afterwards raises. Everything downstream reads them from here.
+
+    ``strategies`` is what the host handed to the node rather than what the node
+    reports back -- 2.0 exposes no trader to enumerate. ``reconciliation_enabled``
+    is likewise what the host asked the builder for: 2.0 has no read-back for it,
+    which is recorded in the plan as a narrowing of what readiness can prove.
+    """
+
+    node: object
+    task: asyncio.Task
+    handle: object
+    cache: object
+    portfolio: object
+    strategies: tuple
+    reconciliation_enabled: bool
+
+    @property
+    def is_running(self) -> bool:
+        """Whether the node reached Running, which is where nautilus puts it once
+        the trader has started -- and therefore once the connect and reconciliation
+        phases have passed."""
+        state = getattr(self.handle, "state", None)
+        return NodeState is not None and state == NodeState.RUNNING
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +156,59 @@ def _shutdown_policy_from_spec(spec: dict) -> _ShutdownPolicy:
         position_policy=position_policy,
         confirmation_timeout_secs=float(timeout),
     )
+
+
+def _environment_for_mode(trading_mode: str) -> object:
+    """The nautilus environment a custos trading mode runs in.
+
+    2.0 offers BACKTEST / SANDBOX / LIVE, and custos has sandbox / testnet / live.
+    The distinction nautilus draws is where matching happens, not whether the money
+    is real: sandbox fills locally, so it is SANDBOX, while testnet places real
+    orders against a test endpoint and is therefore LIVE, with the endpoint chosen
+    by the adapter's own environment setting.
+    """
+    if trading_mode == "sandbox":
+        return Environment.SANDBOX
+    return Environment.LIVE
+
+
+def _logger_config(spec: dict) -> object:
+    """The node's logger config at the spec's requested level."""
+    requested = str(spec.get("log_level", "INFO")).upper()
+    level = getattr(LogLevel, requested, None)
+    if level is None:
+        raise RuntimeError(f"log level {requested!r} is not a nautilus level")
+    return LoggerConfig(stdout_level=level)
+
+
+def _apply_nautilus_knobs(builder, nautilus_cfg: dict):
+    """Apply the operator-tunable startup knobs the spec carries.
+
+    Same keys as before, so an existing spec keeps working; only the builder methods
+    behind them are new. An absent key falls through to the nautilus default.
+    """
+    knobs = (
+        ("timeout_connection", builder.with_timeout_connection),
+        ("timeout_reconciliation", builder.with_timeout_reconciliation),
+        ("timeout_portfolio", builder.with_timeout_portfolio),
+        ("timeout_disconnection", builder.with_timeout_disconnection_secs),
+        ("reconciliation_lookback_mins", builder.with_reconciliation_lookback_mins),
+    )
+    for key, apply in knobs:
+        if key in nautilus_cfg:
+            builder = apply(nautilus_cfg[key])
+    return builder
+
+
+def _add_exec_client(builder, name: str, factory, config, trading_mode: str):
+    """Register the execution client under the shape its mode requires.
+
+    A locally matched venue is registered as simulated; a real endpoint, testnet or
+    live, goes through the ordinary path.
+    """
+    if trading_mode == "sandbox":
+        return builder.add_simulated_exec_client(name, factory, config)
+    return builder.add_exec_client(name, factory, config)
 
 
 def _sanitize_exception(exc: Exception) -> dict:
@@ -297,10 +380,15 @@ class NtTradingNodeHost:
         capability_receipt: RunnerCapabilityReceipt | None = None,
         portfolio_snapshot_provider: NautilusPortfolioSnapshotProvider | None = None,
         runner_safety_boundary_factory: Callable[[dict], object] | None = None,
-        process_shutdown_requested: Callable[[], None] | None = None,
     ) -> None:
-        # deployment_instance_id -> (TradingNode, background run task). Never holds credentials.
-        self._active_nodes: dict[str, tuple] = {}
+        # deployment_instance_id -> its running node and the state captured with it.
+        # Never holds credentials.
+        self._active_nodes: dict[str, _NodeRuntime] = {}
+        # deployment_instance_id -> why its observations stopped being trustworthy.
+        # An event sink that failed leaves a fact unrecorded or a reservation held,
+        # and the rust dispatch discards what the callback raised, so this is the
+        # only place that failure can still reach anyone.
+        self._event_forwarding_failures: dict[str, str] = {}
         self._lifecycle_authorities: dict[str, EngineLifecycleAuthority] = {}
         # deployment_instance_id -> signed fact scope plus independent venue ledger adapter.
         self._runner_fact_contexts: dict[str, tuple[RunnerFactDeployment, object | None]] = {}
@@ -323,20 +411,18 @@ class NtTradingNodeHost:
         self._shutdown_poll_secs = 0.2
         self._shutdown_stable_polls = 3
         self._shutdown_close_retry_secs = 2.0
-        self._runner_executor: ThreadPoolExecutor | None = None
         self._tenant_id = tenant_id
         self._runner_id = runner_id
         self._runner_fact_emitter = runner_fact_emitter
         self._capability_receipt = capability_receipt
         self._runner_safety_boundary_factory = runner_safety_boundary_factory
-        self._process_shutdown_requested = process_shutdown_requested
         self._portfolio_snapshot_provider = portfolio_snapshot_provider or (
             NautilusPortfolioSnapshotProvider(price_type_mid=PriceType.MID if PriceType else None)
         )
 
     @staticmethod
     def _ensure_nt_available() -> None:
-        if TradingNode is None:
+        if LiveNode is None:
             raise RuntimeError(
                 "NautilusTrader not installed — install `custos-runner[nautilus]` "
                 "(needs Python 3.12+) to run NtTradingNodeHost"
@@ -382,6 +468,25 @@ class NtTradingNodeHost:
     def _release_execution_account_partition(self, deployment_instance_id: str) -> None:
         self._execution_account_partitions.pop(deployment_instance_id, None)
 
+    def _require_the_only_node(self, deployment_instance_id: str) -> None:
+        """Refuse a second node on this runner's event loop.
+
+        Nautilus 2.0 binds the runner's senders and the message bus to thread-local
+        storage, so two hosted nodes on one loop would deliver each other's events
+        rather than fail. Nautilus refuses the second ``run_async`` for that reason;
+        refusing here names the deployment that already holds the loop, and does it
+        before a node is built and has to be disposed again.
+        """
+        held = [
+            instance for instance, runtime in self._active_nodes.items() if not runtime.task.done()
+        ]
+        if held:
+            raise RuntimeError(
+                f"deployment instance {held[0]!r} already holds this runner's event loop; "
+                "nautilus runs one live node per loop, so stop it before deploying "
+                f"{deployment_instance_id!r}"
+            )
+
     async def deploy(
         self,
         spec: dict,
@@ -420,46 +525,48 @@ class NtTradingNodeHost:
             spec,
         )
 
+        # The runner and the message bus are both thread-local in 2.0, so two hosted
+        # nodes on one event loop would cross-wire each other's events rather than
+        # fail. Nautilus refuses the second run for that reason; this refuses it here,
+        # where the message can say which deployment already holds the loop instead of
+        # naming a generic nautilus constraint. Running more than one deployment per
+        # runner needs a thread or a process per node, which is not this change.
+        self._require_the_only_node(deployment_instance_id)
+
         # ps runner.py._create_node_config exposes the NT startup timeouts and the
         # reconciliation lookback to strategy authors; custos accepts the same
         # knobs via a plain nautilus_config dict-key so operators can tune a slow
         # exchange without needing a code change. Every knob is optional — an
         # absent key falls through to the NT internal default.
         nautilus_cfg = spec.get("nautilus_config") or {}
-        node_kwargs: dict = {
-            "trader_id": TraderId(self._trader_id(deployment_instance_id)),
-            "logging": LoggingConfig(log_level=str(spec.get("log_level", "INFO"))),
-            "data_clients": {venue.BINANCE_VENUE: data_cfg},
-            "exec_clients": {venue.BINANCE_VENUE: exec_cfg},
-            # Real venues reconcile against exchange account state; the sandbox has none.
-            "exec_engine": LiveExecEngineConfig(
-                reconciliation=reconciliation,
-                reconciliation_lookback_mins=nautilus_cfg.get("reconciliation_lookback_mins"),
-            ),
-        }
-        for timeout_key in (
-            "timeout_connection",
-            "timeout_reconciliation",
-            "timeout_portfolio",
-            "timeout_disconnection",
-        ):
-            if timeout_key in nautilus_cfg:
-                node_kwargs[timeout_key] = nautilus_cfg[timeout_key]
 
-        node_config = TradingNodeConfig(**node_kwargs)
-
-        # Claim before constructing a TradingNode.  A conflicting real-venue
-        # deployment must fail without creating and then disposing a node,
-        # because Nautilus disposal can also stop the process-shared asyncio
-        # loop used by the already-active deployment.
+        # Claim before constructing a node. A conflicting real-venue deployment must
+        # fail without creating and then disposing a node.
         self._claim_execution_account_partition(spec)
 
         try:
-            node = TradingNode(config=node_config)
-            self._restore_runner_signal_ownership(node)
-            node.add_data_client_factory(venue.BINANCE_VENUE, BinanceLiveDataClientFactory)
-            node.add_exec_client_factory(venue.BINANCE_VENUE, exec_factory)
-            node.build()
+            builder = LiveNode.builder(
+                self._trader_id(deployment_instance_id),
+                TraderId(self._trader_id(deployment_instance_id)),
+                _environment_for_mode(trading_mode),
+            )
+            builder = builder.with_logging(_logger_config(spec))
+            # Real venues reconcile against exchange account state; the sandbox has none.
+            builder = builder.with_reconciliation(reconciliation)
+            builder = _apply_nautilus_knobs(builder, nautilus_cfg)
+            builder = builder.add_data_client(
+                venue.BINANCE_VENUE,
+                BinanceDataClientFactory(),
+                data_cfg,
+            )
+            builder = _add_exec_client(
+                builder,
+                venue.BINANCE_VENUE,
+                exec_factory,
+                exec_cfg,
+                trading_mode,
+            )
+            node = builder.build()
         except Exception as exc:  # noqa: BLE001 — reconciler maps this to degraded status
             _log.error(
                 "nt_startup_failure",
@@ -477,34 +584,47 @@ class NtTradingNodeHost:
         )
         try:
             self._attach_runtime_bridges(
-                node,
+                deployment_instance_id,
+                strategy,
                 fact_context,
                 runner_safety_boundary,
             )
         except Exception:
             self._release_execution_account_partition(deployment_instance_id)
-            self._dispose_node_preserving_runner_loop(node)
+            self._dispose_node(deployment_instance_id, node)
             raise
         try:
             if fact_context is not None:
                 self._runner_fact_contexts[fact_context[0].deployment_instance_id] = fact_context
             if runner_safety_boundary is not None:
                 self._runner_safety_boundaries[deployment_instance_id] = runner_safety_boundary
-            node.trader.add_strategy(strategy)
+            node.add_strategy(strategy)
             settlement_currency = settlement_currency_for_pairs(spec.get("pairs") or [])
+            # Captured before the run: run_async moves the node into the awaitable, and
+            # reaching for these through the node afterwards raises.
+            handle, cache, portfolio = node.handle(), node.cache, node.portfolio
             task = asyncio.create_task(node.run_async())
         except Exception:
             self._runner_fact_contexts.pop(deployment_instance_id, None)
             self._runner_safety_boundaries.pop(deployment_instance_id, None)
+            self._event_forwarding_failures.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)
-            self._dispose_node_preserving_runner_loop(node)
+            self._dispose_node(deployment_instance_id, node)
             raise
         task.add_done_callback(
             lambda task, instance_id=deployment_instance_id: self._on_node_task_done(
                 instance_id, task
             )
         )
-        self._active_nodes[deployment_instance_id] = (node, task)
+        self._active_nodes[deployment_instance_id] = _NodeRuntime(
+            node=node,
+            task=task,
+            handle=handle,
+            cache=cache,
+            portfolio=portfolio,
+            strategies=(strategy,),
+            reconciliation_enabled=reconciliation,
+        )
         self._lifecycle_authorities[deployment_instance_id] = lifecycle_authority
         # Derived from the pairs rather than the open positions: at this moment there are
         # no positions, and the startup guards read equity immediately.
@@ -524,26 +644,6 @@ class NtTradingNodeHost:
         )
         return deployment_instance_id
 
-    def _restore_runner_signal_ownership(self, node: object) -> None:
-        """Keep process termination on the Runner's ordered shutdown path.
-
-        ``TradingNode`` installs its own SIGINT/SIGTERM callbacks during
-        construction. In the long-running Runner daemon those callbacks would
-        stop Nautilus immediately and bypass ``host.close()``, including the
-        signed shutdown position policy. Reinstall the daemon callback after
-        every node construction so one process has one shutdown coordinator.
-        """
-
-        callback = self._process_shutdown_requested
-        if callback is None:
-            return
-        loop = getattr(getattr(node, "kernel", None), "loop", None)
-        add_signal_handler = getattr(loop, "add_signal_handler", None)
-        if not callable(add_signal_handler):
-            raise RuntimeError("Runner cannot reclaim Nautilus process signal ownership")
-        for process_signal in (signal.SIGINT, signal.SIGTERM):
-            add_signal_handler(process_signal, callback)
-
     def _build_exec_plan(self, trading_mode: str, spec: dict, credential: dict, venue):
         """Resolve (exec_config, exec_factory, reconciliation) for the trading mode.
 
@@ -557,10 +657,10 @@ class NtTradingNodeHost:
                 "starting_balances"
             ) or _DEFAULT_STARTING_BALANCES
             exec_cfg = venue.build_exec_client_config_sandbox(spec, credential, starting_balances)
-            return exec_cfg, SandboxLiveExecClientFactory, False
+            return exec_cfg, SandboxExecutionClientFactory(), False
         if trading_mode == "testnet":
             exec_cfg = venue.build_exec_client_config_testnet(spec, credential)
-            return exec_cfg, BinanceLiveExecClientFactory, True
+            return exec_cfg, BinanceExecutionClientFactory(), True
         if trading_mode == "live":
             _log.warning(
                 "nt_live_deploy_requested",
@@ -569,7 +669,7 @@ class NtTradingNodeHost:
                 promotion_id=spec.get("promotion_id"),
             )
             exec_cfg = venue.build_exec_client_config_live(spec, credential)
-            return exec_cfg, BinanceLiveExecClientFactory, True
+            return exec_cfg, BinanceExecutionClientFactory(), True
         raise RuntimeError(
             f"unsupported trading_mode {trading_mode!r} (expected sandbox / testnet / live)"
         )
@@ -588,17 +688,35 @@ class NtTradingNodeHost:
 
     def _attach_runtime_bridges(
         self,
-        node,
+        deployment_instance_id: str,
+        strategy,
         fact_context,
         runner_safety_boundary=None,
     ) -> None:
-        msgbus = node.kernel.msgbus
+        """Wire both bridges onto the strategy's typed callbacks, or refuse the deploy.
+
+        2.0 delivers order and position events nowhere else -- the internal message
+        bus these bridges used to subscribe to has no python surface. Installing the
+        forwarding is the host's job rather than the strategy's: the strategy arrives
+        from a signed artifact and nothing constrains its ancestry, so a bridge that
+        lived in a base class would quietly not exist for an artifact that did not
+        inherit it.
+
+        Safety first, then facts, matching the order the bus subscriptions were
+        registered in.
+        """
+        forwarder = StrategyEventForwarder(
+            deployment_instance_id=deployment_instance_id,
+            on_sink_failure=lambda sink, reason: self._record_forwarding_failure(
+                deployment_instance_id, sink, reason
+            ),
+        )
         if runner_safety_boundary is not None:
-            runner_safety_boundary.bootstrap(msgbus)
+            runner_safety_boundary.bootstrap(forwarder)
         if fact_context is not None and self._runner_fact_emitter is not None:
             if self._capability_receipt is None:
                 raise RuntimeError("RunnerFact bridge lacks its capability receipt")
-            RunnerFactMessageBusBridge(
+            RunnerFactEventBridge(
                 emitter=self._runner_fact_emitter,
                 deployment=fact_context[0],
                 runtime_log_emitter=RunnerRuntimeLogEmitter(
@@ -606,7 +724,29 @@ class NtTradingNodeHost:
                     capability=self._capability_receipt,
                     redactor=RuntimeLogRedactor(),
                 ),
-            ).bootstrap(msgbus)
+            ).bootstrap(forwarder)
+        forwarder.install(strategy)
+
+    def _record_forwarding_failure(
+        self,
+        deployment_instance_id: str,
+        sink: str,
+        reason: str,
+    ) -> None:
+        """Remember that an event never reached one of the runner's sinks.
+
+        A sink that failed left a fact unrecorded or a reservation held, so what this
+        deployment reports about itself is no longer trustworthy. get_engine_status
+        says so from here on, which is what makes the failure reach anyone at all --
+        the rust dispatch discarded the exception.
+        """
+        self._event_forwarding_failures.setdefault(deployment_instance_id, reason)
+        _log.error(
+            "nt_event_forwarding_degraded",
+            deployment_instance_id=deployment_instance_id,
+            sink=sink,
+            reason=reason,
+        )
 
     def _build_runner_fact_context(
         self,
@@ -720,8 +860,8 @@ class NtTradingNodeHost:
         return currency
 
     async def stop(self, deployment_instance_id: str) -> None:
-        entry = self._active_nodes.get(deployment_instance_id)
-        if entry is None:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None:
             # Idempotent: stopping an unknown / already-stopped spec is a no-op.
             _log.info(
                 "nt_stop_noop_unknown_instance",
@@ -729,84 +869,80 @@ class NtTradingNodeHost:
             )
             return
 
-        node, task = entry
+        task = runtime.task
         policy = self._shutdown_policies.get(
             deployment_instance_id,
             _ShutdownPolicy(position_policy="preserve", confirmation_timeout_secs=30.0),
         )
-        await self._apply_shutdown_policy(deployment_instance_id, node, policy)
+        # Before the node is asked to stop, while the strategy is still Running and
+        # therefore still receiving the events these bridges depend on.
+        await self._apply_shutdown_policy(deployment_instance_id, runtime, policy)
         try:
-            await asyncio.wait_for(node.stop_async(), timeout=self._stop_timeout_secs)
+            # The handle is how a hosted run is stopped: run_async owns the node, so
+            # calling stop on the node itself would be refused. Awaiting the task is
+            # what waits for the shutdown sequence to finish.
+            runtime.handle.stop()
+            await asyncio.wait_for(asyncio.shield(task), timeout=self._stop_timeout_secs)
         except TimeoutError:
             _log.error(
                 "nt_stop_timeout",
                 deployment_instance_id=deployment_instance_id,
                 timeout_secs=self._stop_timeout_secs,
             )
+        except Exception as exc:  # noqa: BLE001 — a node that died on its own is still stopped
+            _log.warning(
+                "nt_stop_run_task_error",
+                deployment_instance_id=deployment_instance_id,
+                **_sanitize_exception(exc),
+            )
         finally:
-            self._dispose_node_preserving_runner_loop(node)
             task.cancel()
             try:
                 await task
             except (asyncio.CancelledError, Exception):  # noqa: BLE001 — reaping the run task
                 pass
+            # Only once the run has ended: run_async holds the node until then, and
+            # 2.0 disposal releases the kernel without touching the runner's loop.
+            self._dispose_node(deployment_instance_id, runtime.node)
             self._peak_equity.pop(deployment_instance_id, None)
             self._settlement_currencies.pop(deployment_instance_id, None)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
             self._runner_safety_boundaries.pop(deployment_instance_id, None)
+            self._event_forwarding_failures.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)
             self._active_nodes.pop(deployment_instance_id, None)
             self._lifecycle_authorities.pop(deployment_instance_id, None)
             self._shutdown_policies.pop(deployment_instance_id, None)
         _log.info("nt_stop_completed", deployment_instance_id=deployment_instance_id)
 
-    def _dispose_node_preserving_runner_loop(self, node: object) -> None:
-        """Release one Nautilus node without canceling the Runner-owned loop.
+    def _dispose_node(self, deployment_instance_id: str, node: object) -> None:
+        """Release the node's kernel once its run has ended.
 
-        Nautilus ``TradingNode.dispose()`` assumes the node owns its event loop:
-        while that loop is running it cancels every task on the loop and calls
-        ``loop.stop()``. Custos deliberately hosts the node on the long-running
-        Runner loop, so invoking that method would terminate the lifecycle
-        supervisor before its durable restart budget can schedule another
-        attempt. ``stop_async()`` has already stopped the engines at this point;
-        release only the node-scoped streaming task, kernel, and executor.
+        The 1.x version of this took care to avoid ``TradingNode.dispose()``, which
+        assumed the node owned its event loop and would cancel every task on it. 2.0
+        disposal closes external ingress, disposes the kernel and marks the handle
+        stopped -- it does not reach into the host's loop -- so the care is no longer
+        warranted and the plain call is the whole of it.
+
+        Disposal failing does not leave the deployment running, and stop must finish
+        cleaning up regardless, so this reports rather than propagates.
         """
-
-        streaming_task = getattr(node, "_task_streaming", None)
-        if streaming_task is not None:
-            streaming_task.cancel()
-            node._task_streaming = None
-
-        kernel = getattr(node, "kernel", None)
-        dispose_kernel = getattr(kernel, "dispose", None)
-        if not callable(dispose_kernel):
-            raise RuntimeError("Nautilus node lacks a kernel disposal boundary")
-
-        executor = getattr(kernel, "executor", None)
-        shutdown_executor = getattr(executor, "shutdown", None)
-        if callable(shutdown_executor):
-            # Nautilus installs its per-node executor as the shared event loop's
-            # default. Restore a Runner-owned executor before closing the node's
-            # pool, otherwise the durable restart write immediately following
-            # stop() fails inside asyncio.to_thread with an already-shut-down pool.
-            if self._runner_executor is None:
-                self._runner_executor = ThreadPoolExecutor(
-                    thread_name_prefix="custos-runner",
-                )
-            asyncio.get_running_loop().set_default_executor(self._runner_executor)
-
-        dispose_kernel()
-
-        if callable(shutdown_executor):
-            shutdown_executor(wait=True, cancel_futures=True)
+        try:
+            node.dispose()
+        except Exception as exc:  # noqa: BLE001 — the run has already ended; report and continue
+            _log.error(
+                "nt_node_disposal_failed",
+                deployment_instance_id=deployment_instance_id,
+                **_sanitize_exception(exc),
+            )
 
     async def _apply_shutdown_policy(
         self,
         deployment_instance_id: str,
-        node: object,
+        runtime: _NodeRuntime,
         policy: _ShutdownPolicy,
     ) -> None:
-        strategies = self._strategies_for_node(node)
+        strategies = runtime.strategies
         for strategy in strategies:
             prepare = getattr(strategy, "prepare_shutdown", None)
             if callable(prepare):
@@ -819,32 +955,26 @@ class NtTradingNodeHost:
         if policy.position_policy == "flatten":
             await self._flatten_and_confirm_shutdown(
                 deployment_instance_id,
-                node,
+                runtime,
                 strategies,
                 timeout_secs=policy.confirmation_timeout_secs,
             )
         else:
             await self._preserve_and_confirm_shutdown(
                 deployment_instance_id,
-                node,
+                runtime,
                 strategies,
                 timeout_secs=policy.confirmation_timeout_secs,
             )
 
     @staticmethod
-    def _open_venue_state(node: object) -> tuple[list, list]:
+    def _open_venue_state(runtime: _NodeRuntime) -> tuple[list, list]:
         try:
-            positions = list(node.kernel.cache.positions_open())
-            orders = list(node.kernel.cache.orders_open())
+            positions = list(runtime.cache.positions_open())
+            orders = list(runtime.cache.orders_open())
         except Exception as exc:  # noqa: BLE001 - an unreadable venue cache is not confirmation
             raise RuntimeError("shutdown venue state could not be confirmed") from exc
         return positions, orders
-
-    @staticmethod
-    def _strategies_for_node(node: object) -> tuple:
-        trader = getattr(node.kernel, "trader", getattr(node, "trader", None))
-        strategy_source = getattr(trader, "strategies", ())
-        return tuple(strategy_source() if callable(strategy_source) else strategy_source)
 
     @staticmethod
     def _instrument_ids(positions: list, orders: list) -> set:
@@ -857,7 +987,7 @@ class NtTradingNodeHost:
     async def _preserve_and_confirm_shutdown(
         self,
         deployment_instance_id: str,
-        node: object,
+        runtime: _NodeRuntime,
         strategies: tuple,
         *,
         timeout_secs: float,
@@ -866,7 +996,7 @@ class NtTradingNodeHost:
 
         deadline = asyncio.get_running_loop().time() + timeout_secs
         while asyncio.get_running_loop().time() < deadline:
-            _positions, orders = self._open_venue_state(node)
+            _positions, orders = self._open_venue_state(runtime)
             risk_increasing = [
                 order for order in orders if not bool(getattr(order, "is_reduce_only", False))
             ]
@@ -898,7 +1028,7 @@ class NtTradingNodeHost:
     async def _flatten_and_confirm_shutdown(
         self,
         deployment_instance_id: str,
-        node: object,
+        runtime: _NodeRuntime,
         strategies: tuple,
         *,
         timeout_secs: float,
@@ -910,7 +1040,7 @@ class NtTradingNodeHost:
         last_close_request: float | None = None
         while asyncio.get_running_loop().time() < deadline:
             now = asyncio.get_running_loop().time()
-            positions, orders = self._open_venue_state(node)
+            positions, orders = self._open_venue_state(runtime)
             if not positions and not orders:
                 stable_polls += 1
                 if stable_polls >= self._shutdown_stable_polls:
@@ -951,7 +1081,7 @@ class NtTradingNodeHost:
                 await self.flatten_positions(deployment_instance_id, "shutdown_policy")
                 last_close_request = now
             await asyncio.sleep(self._shutdown_poll_secs)
-        positions, orders = self._open_venue_state(node)
+        positions, orders = self._open_venue_state(runtime)
         _log.error(
             "nt_shutdown_flatten_unconfirmed",
             deployment_instance_id=deployment_instance_id,
@@ -973,8 +1103,8 @@ class NtTradingNodeHost:
         # node loop finishing and that cleanup there is an entry with nothing
         # running behind it, and reporting it as held is the same false success
         # this query exists to prevent.
-        entry = self._active_nodes.get(deployment_instance_id)
-        return entry is not None and not entry[1].done()
+        runtime = self._active_nodes.get(deployment_instance_id)
+        return runtime is not None and not runtime.task.done()
 
     async def wait_ready(
         self,
@@ -991,11 +1121,10 @@ class NtTradingNodeHost:
         while asyncio.get_running_loop().time() < deadline:
             if self._lifecycle_authorities.get(instance_id) != authority:
                 raise RuntimeError("engine readiness authority differs from deployed instance")
-            entry = self._active_nodes.get(instance_id)
-            if entry is None:
+            runtime = self._active_nodes.get(instance_id)
+            if runtime is None:
                 raise RuntimeError("engine task exited before readiness")
-            node, task = entry
-            checks = await self._readiness_checks(authority, node, task)
+            checks = await self._readiness_checks(authority, runtime)
             if checks.ready:
                 return EngineReadyReceipt.from_authority(
                     authority,
@@ -1021,53 +1150,53 @@ class NtTradingNodeHost:
         An unknown deployment is not ready -- fail closed on this side too.
         """
         authority = self._lifecycle_authorities.get(deployment_instance_id)
-        entry = self._active_nodes.get(deployment_instance_id)
-        if authority is None or entry is None:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if authority is None or runtime is None:
             return False
-        node, task = entry
-        checks = await self._readiness_checks(authority, node, task)
+        checks = await self._readiness_checks(authority, runtime)
         return checks.ready
 
     async def _readiness_checks(
         self,
         authority: EngineLifecycleAuthority,
-        node: object,
-        task: object,
+        runtime: _NodeRuntime,
     ) -> EngineReadinessChecks:
         """Ask the engine what it has actually finished, field by field.
 
         Every field here used to be derivable from the deployment's trading mode, which
         is to say from what it was asked to do rather than from what it did. Three of the
         seven were: see the tests for what each one now proves.
+
+        One of them is now weaker than it was. 2.0 exposes no execution engine to ask
+        whether reconciliation is on, so this reports what the builder was told rather
+        than what the engine confirms. That is the deployment's configuration, not its
+        behaviour -- the plan records the narrowing.
         """
         connectivity = await self.check_engine_connected(str(authority.deployment_instance_id))
-        kernel = node.kernel
-        trader = getattr(kernel, "trader", None)
-        portfolio = getattr(kernel, "portfolio", None)
-        exec_engine = getattr(kernel, "exec_engine", None)
+        portfolio = runtime.portfolio
 
-        # A running trader is the closest thing to a reconciliation receipt that
-        # NautilusTrader offers: there is no completion flag to read, but
-        # ``NautilusKernel.start_async`` awaits reconciliation and *returns without
-        # starting the trader* if it fails. So a started trader means the step was
-        # passed -- either reconciled, or legitimately skipped.
-        trader_running = bool(trader is not None and trader.is_running)
-        strategies = tuple(trader.strategies()) if trader is not None else ()
+        # Reaching Running is the closest thing to a reconciliation receipt 2.0 offers:
+        # the node enters that state in ``finish_startup_trader``, after the connect
+        # phase and after the trader has started. A failed reconciliation aborts
+        # startup instead, so a Running node means the step was passed -- either
+        # reconciled, or legitimately skipped.
+        node_running = runtime.is_running
+        strategies = runtime.strategies
 
         # Skipping is only legitimate in sandbox, which fills locally against live
         # prices and has no exchange account to reconcile against (see
         # ``_build_exec_plan``). On testnet and live it is a misconfiguration, and
-        # the trader starts either way -- so passing it needs its own check.
+        # the node starts either way -- so passing it needs its own check.
         reconciliation_required = authority.trading_mode != "sandbox"
-        reconciliation_enabled = bool(getattr(exec_engine, "reconciliation", False))
+        reconciliation_enabled = runtime.reconciliation_enabled
 
         return EngineReadinessChecks(
-            node_task_alive=not task.done(),
+            node_task_alive=not runtime.task.done(),
             data_connectivity_ready=connectivity.data_connected,
             execution_connectivity_ready=connectivity.exec_connected,
             portfolio_initialized=bool(portfolio is not None and portfolio.initialized),
             reconciliation_initialized=(
-                trader_running and (reconciliation_enabled or not reconciliation_required)
+                node_running and (reconciliation_enabled or not reconciliation_required)
             ),
             strategy_accepting_lifecycle=bool(strategies)
             and all(strategy.is_running for strategy in strategies),
@@ -1081,14 +1210,14 @@ class NtTradingNodeHost:
         instance_id = str(authority.deployment_instance_id)
         if self._lifecycle_authorities.get(instance_id) != authority:
             raise RuntimeError("engine terminal authority differs from deployed instance")
-        entry = self._active_nodes.get(instance_id)
-        if entry is None:
+        runtime = self._active_nodes.get(instance_id)
+        if runtime is None:
             return EngineTerminalEvent.from_authority(
                 authority,
                 reason_code="engine_task_missing",
                 retryable=True,
             )
-        task = entry[1]
+        task = runtime.task
         try:
             await asyncio.shield(task)
         except asyncio.CancelledError:
@@ -1114,13 +1243,12 @@ class NtTradingNodeHost:
         self, deployment_instance_id: str, currency: str
     ) -> tuple[Decimal, list[dict]]:
         context = self._runner_fact_contexts.get(deployment_instance_id)
-        entry = self._active_nodes.get(deployment_instance_id)
-        if entry is None or context is None:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None or context is None:
             raise RuntimeError(
                 f"RunnerFact DeploymentInstance {deployment_instance_id!r} is not active"
             )
-        node, _task = entry
-        snapshot = self._portfolio_snapshot_provider.snapshot(node, currency=currency)
+        snapshot = self._portfolio_snapshot_provider.snapshot(runtime, currency=currency)
         if not snapshot.reliable:
             raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
         return snapshot.equity, snapshot.runner_fact_rows()
@@ -1129,13 +1257,12 @@ class NtTradingNodeHost:
         self, deployment_instance_id: str, currency: str
     ) -> tuple[Decimal, list[dict]]:
         context = self._runner_fact_contexts.get(deployment_instance_id)
-        entry = self._active_nodes.get(deployment_instance_id)
-        if entry is None or context is None:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None or context is None:
             raise RuntimeError(
                 f"RunnerFact DeploymentInstance {deployment_instance_id!r} is not active"
             )
-        node, _task = entry
-        snapshot = self._portfolio_snapshot_provider.snapshot(node, currency=currency)
+        snapshot = self._portfolio_snapshot_provider.snapshot(runtime, currency=currency)
         if not snapshot.reliable:
             raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
         return snapshot.equity, snapshot.valuation_rows()
@@ -1143,12 +1270,11 @@ class NtTradingNodeHost:
     async def runner_fact_capital_snapshot(
         self, deployment_instance_id: str, currency: str
     ) -> RunnerCapitalBasisSnapshot:
-        entry = self._active_nodes.get(deployment_instance_id)
+        runtime = self._active_nodes.get(deployment_instance_id)
         boundary = self._runner_safety_boundaries.get(deployment_instance_id)
-        if entry is None or boundary is None:
+        if runtime is None or boundary is None:
             raise RuntimeError("capital basis requires an active, guarded deployment")
-        node, _task = entry
-        strategies = self._strategies_for_node(node)
+        strategies = runtime.strategies
         if len(strategies) != 1:
             raise RuntimeError("capital basis requires exactly one strategy per deployment")
         strategy = strategies[0]
@@ -1207,12 +1333,11 @@ class NtTradingNodeHost:
 
     async def get_open_notional(self, deployment_instance_id: str) -> Decimal:
         """Return current marked notional from the canonical portfolio snapshot."""
-        entry = self._active_nodes.get(deployment_instance_id)
-        if entry is None:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None:
             return Decimal("0")
-        node, _task = entry
         snapshot = self._portfolio_snapshot_provider.snapshot(
-            node, currency=self._declared_currency(deployment_instance_id)
+            runtime, currency=self._declared_currency(deployment_instance_id)
         )
         if not snapshot.reliable:
             raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
@@ -1222,15 +1347,22 @@ class NtTradingNodeHost:
         """Data + execution engine connectivity for this spec's node. An unknown
         / not-yet-deployed spec is reported disconnected — a spec the reconciler
         believes is running but has no live node is exactly the zombie case."""
-        entry = self._active_nodes.get(deployment_instance_id)
-        if entry is None:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None:
             return ConnectivityState(
                 data_connected=False, exec_connected=False, checked_at_epoch_s=time.time()
             )
-        node, _task = entry
+        # Both answers come from the node's own state, which is narrower than what
+        # 1.x could say. 2.0 exposes no per-client connection query to python at all
+        # -- the rust engines keep one but only consult it at startup and shutdown --
+        # so what is observable here is that the node reached Running, which it does
+        # only after the connect phase passed. A venue that drops mid-run no longer
+        # shows up as disconnected; the plan records that narrowing against red line
+        # 0.3, and the zombie watchdog reads this as "the node is still up".
+        connected = runtime.is_running
         return ConnectivityState(
-            data_connected=bool(node.kernel.data_engine.check_connected()),
-            exec_connected=bool(node.kernel.exec_engine.check_connected()),
+            data_connected=connected,
+            exec_connected=connected,
             checked_at_epoch_s=time.time(),
         )
 
@@ -1239,16 +1371,15 @@ class NtTradingNodeHost:
         ``Strategy.close_all_positions`` — the engine-neutral ``flatten_positions``
         name maps here (NT has no ``flatten_positions``). An unknown spec is a
         logged no-op."""
-        entry = self._active_nodes.get(deployment_instance_id)
-        if entry is None:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None:
             _log.warning(
                 "flatten_positions_unknown_instance",
                 deployment_instance_id=deployment_instance_id,
                 reason=reason,
             )
             return
-        node, _task = entry
-        instrument_ids = {position.instrument_id for position in node.kernel.cache.positions_open()}
+        instrument_ids = {position.instrument_id for position in runtime.cache.positions_open()}
         if not instrument_ids:
             # Nothing was contained, and at startup that is not the same as nothing being
             # there: reconciliation may not yet have delivered the account's existing
@@ -1261,7 +1392,7 @@ class NtTradingNodeHost:
                 reason=reason,
             )
             return
-        for strategy in self._strategies_for_node(node):
+        for strategy in runtime.strategies:
             # NT's own close_all_positions is reduce-only, and a venue that refuses that
             # form refuses it here too -- leaving containment unable to contain at the
             # one moment it must. Toolkit strategies expose a close that drops
@@ -1283,12 +1414,11 @@ class NtTradingNodeHost:
 
     async def get_positions(self, deployment_instance_id: str) -> list[PositionSnapshot]:
         """Return positions valued by the canonical portfolio snapshot."""
-        entry = self._active_nodes.get(deployment_instance_id)
-        if entry is None:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None:
             return []
-        node, _task = entry
         snapshot = self._portfolio_snapshot_provider.snapshot(
-            node, currency=self._declared_currency(deployment_instance_id)
+            runtime, currency=self._declared_currency(deployment_instance_id)
         )
         if not snapshot.reliable:
             raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
@@ -1297,12 +1427,11 @@ class NtTradingNodeHost:
     async def get_orders(self, deployment_instance_id: str) -> list[OrderSnapshot]:
         """Materialise every open order as a Decimal-only ``OrderSnapshot``."""
 
-        entry = self._active_nodes.get(deployment_instance_id)
-        if entry is None:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None:
             return []
-        node, _task = entry
         snapshots: list[OrderSnapshot] = []
-        for order in node.kernel.cache.orders_open():
+        for order in runtime.cache.orders_open():
             # A market order has no ``price`` attribute at all, so reaching for it
             # raises rather than yielding None. Report the absence instead of
             # inventing a number a reader could mistake for a limit.
@@ -1321,8 +1450,8 @@ class NtTradingNodeHost:
 
     async def get_engine_status(self, deployment_instance_id: str) -> EngineStatus:
         """Return reliable portfolio equity or an explicit degraded snapshot."""
-        entry = self._active_nodes.get(deployment_instance_id)
-        if entry is None:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None:
             return EngineStatus(
                 phase="unknown",
                 position_count=0,
@@ -1334,14 +1463,29 @@ class NtTradingNodeHost:
                 reliable=False,
                 unreliable_reason="deployment_not_active",
             )
-        node, _task = entry
         try:
-            orders = list(node.kernel.cache.orders_open())
+            orders = list(runtime.cache.orders_open())
         except AttributeError:
             orders = []
+        forwarding_failure = self._event_forwarding_failures.get(deployment_instance_id)
         snapshot = self._portfolio_snapshot_provider.snapshot(
-            node, currency=self._declared_currency(deployment_instance_id)
+            runtime, currency=self._declared_currency(deployment_instance_id)
         )
+        if forwarding_failure is not None:
+            # An event never reached one of the runner's sinks, so a fact is missing or
+            # a reservation is still held. Whatever the portfolio says, what this
+            # deployment reports about itself no longer matches what happened.
+            return EngineStatus(
+                phase="degraded",
+                position_count=len(snapshot.positions),
+                order_count=len(orders),
+                open_notional=snapshot.open_notional,
+                peak_equity=self._peak_equity.get(deployment_instance_id, Decimal("0")),
+                current_equity=snapshot.equity if snapshot.reliable else Decimal("0"),
+                drawdown_pct=Decimal("0"),
+                reliable=False,
+                unreliable_reason=f"runner_event_forwarding_failed:{forwarding_failure}",
+            )
         if not snapshot.reliable:
             return EngineStatus(
                 phase="degraded",
@@ -1385,11 +1529,12 @@ class NtTradingNodeHost:
         # Also drop the registry entry so a self-terminated node doesn't linger;
         # guard on task identity so a re-deployed spec_id (new task) isn't cleared
         # by a stale callback.
-        entry = self._active_nodes.get(deployment_instance_id)
-        if entry is not None and entry[1] is task:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is not None and runtime.task is task:
             self._active_nodes.pop(deployment_instance_id, None)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
             self._runner_safety_boundaries.pop(deployment_instance_id, None)
+            self._event_forwarding_failures.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)
             self._shutdown_policies.pop(deployment_instance_id, None)
         if task.cancelled():

@@ -40,7 +40,7 @@ def test_build_host_uses_runner_fact_sandbox_when_explicit() -> None:
 async def test_build_host_nt_without_runtime_fails_fast(monkeypatch) -> None:
     # The nautilus engine selects the real host; if the runtime is absent it must fail
     # fast on deploy rather than silently doing nothing (no stub fallback).
-    monkeypatch.setattr(nautilus_host, "TradingNode", None)
+    monkeypatch.setattr(nautilus_host, "LiveNode", None)
     host = _build_host(_host_args())
     with pytest.raises(RuntimeError, match="nautilus"):
         await host.deploy(
