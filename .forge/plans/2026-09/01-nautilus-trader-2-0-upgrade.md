@@ -1,6 +1,6 @@
 # 01 - NautilusTrader 1.230.0 → fork 2.0.0rc5 升级
 
-> **Status**: ⏳ In Progress（Task 0 ✅ 2026-09-11，`make verify` 已在主干全绿；Task 1a 前置已就绪，待定钉的 fork sha）
+> **Status**: ⏳ In Progress（Task 0 ✅、Task 1a-1 ✅ 2026-09-12；下一步 Slice B 或 Task 1a-2。**中间态**：依赖已是 2.0 而 adapter 仍是 1.x 路径，`make test-baseline` 此刻必红，属预期）
 > **Created**: 2026-09-11
 > **Project**: custos（跨仓：philosophers-stone）
 > **multi_session_scope**: **true**（6 个 Slice、跨 2 仓库、涉及红线 0.1/0.2/0.4）
@@ -204,7 +204,7 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 |---|---|---|
 | lock 钉的 fork sha 与镜像内编的 sha 不一致 | 1a 把 nautilus-trader 移出 hash 清单后，唯一能证明「镜像装的就是 lock 钉的」是这道对账；缺了它「lock 钉 A、镜像编 B」不会变红 | A |
 | 1b：fork wheel hash 被篡改 | `uv sync --frozen` 必须拒绝，证明 lock 真的钉住了字节 | F |
-| 3.11 base 无 nautilus extra 安装 | `pyproject.toml:29-32` 的 base 承诺在 lock 含 git 源 / wheel 后仍成立（path 源会击穿它；git 源实测不带 extra 导出 0 行） | A |
+| base 安装不被击穿 | `pyproject.toml:26-32` 的承诺是「发布的包在 3.11 可装」，仓库的门是 `Makefile:76-78` `verify-base-clean`（`uv sync --package custos-runner --extra dev`，**不指定解释器**）。**原措辞「3.11 解释器下 uv sync」在 uv workspace 下不可能成立**——toolkit-nautilus 自己的 `requires-python` 把整个 workspace 解析为 `==3.12.*`（实测报错原文如此）。已改为验真实的门 | A ✅ 已验 |
 | `toolkit_rc` 收到 1.230.0 | 旧版本号必须被契约拒绝（证明改的是 V1 而非加了别名） | A |
 | Python 指标缺 `initialized` | 2.0 鸭子类型桥接靠 getattr，缺属性时须报错而非静默不更新 | B |
 | `StrategyConfig` 子类漏 `super().__init__()` | pyclass 未初始化的失败必须可诊断 | B |
@@ -273,9 +273,10 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 #### Task 3: import 路径拍平（40 符号对 / 38 文件）
 **Files**: `packages/custos-strategy-toolkit-nautilus/src/**/adapter/**`
 **手法约束（D6）**: AST/token 级替换器，每处要求整行唯一匹配（匹配数 ≠ 1 即拒绝，不猜），写前 `ast.parse`，改完**必须看 diff 而非只看 pytest**
-**Step 1（证伪）**: `uv run python -c "import custos_toolkit_nautilus.adapter"` 报 ImportError
-**Step 2（实现）**: 执行替换
-**Step 3（证实）**: 同一 import 成功；`pytest --collect-only tests/toolkit` 收集数不低于改前（教训 C10 同批第二条：全绿不含「有没有在跑」）
+**⚠ 判据失效更正（2026-09-12 实测）**: 原写的证伪点**不成立**。`adapter/__init__.py:7` 是一个大 `try:`，`:96` `except ImportError: pass`——在 NT 2.0 下包级 `import custos_toolkit_nautilus.adapter` **照常成功**，而 `orders` / `trading_config` / `strategy_core` / `indicators.supertrend` / `coordinators.execution` 逐个 import 全部 `ModuleNotFoundError`。`__all__` 仍列出那些并不存在的名字。用包级 import 当判据，Slice B 漏改几个文件也不会红。
+**Step 1（证伪）**: 逐个 import 具体子模块（至少 `orders` / `trading_config` / `strategy_core` / `indicators.supertrend` / `coordinators.execution`）确认 `ModuleNotFoundError`；并断言 `__all__` 中每个名字当前**不可达**
+**Step 2（实现）**: 执行替换；**顺手把 `__init__.py:7-97` 的静默 `except ImportError: pass` 处理掉**——它让「包能 import」与「内容可用」脱钩，是教训 #21 的形态
+**Step 3（证实）**: `__all__` 中每个名字逐个可达（不是包能 import 就算）；`pytest --collect-only tests/toolkit` 收集数不低于改前（教训 C10 同批第二条：全绿不含「有没有在跑」）
 **Step 4**: commit
 
 #### Task 4: 5 个指标类去 Indicator 基类
@@ -394,7 +395,8 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 | Task | Status | Completed | Notes |
 |---|---|---|---|
 | 0 | ✅ | 2026-09-11 | `2bf09e8` + `7971bc8`；mypy 4→0、fmt 8→0、lint 2→0，`make verify` exit 0 |
-| 1a | 🔲 | | 前置：fork 迁组织 + 版本 label |
+| 1a-1 | ✅ | 2026-09-12 | `2010309`；git 源钉 `3fe857a351`，NT 2.0.0rc5+sodex.1 |
+| 1a-2 | 🔲 | | Docker 侧：`nt-builder` + runtime lock + sha 对账断言 |
 | 1b | 🔲 | | 切换门：fork tag + CI wheel + Task 8 通过 |
 | 2a | 🔲 | | |
 | 2b | ❌ | | Blocked：PS / Crucible 重签 |
@@ -423,4 +425,8 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 | DEV | `host.py:92` / Task 8 | **D4 假设：本 plan 不交付 SoDEX live**。依据 plan 自述「只做能跑」与 Task 8 Step 3 只验 sandbox / testnet；白名单按 mode 拆分后 SoDEX 只进 sandbox / testnet 集合。owner 若要交付 live，另按高风险偏离审议 | ✅ owner 2026-09-11 确认 |
 | DEV | `tests/toolkit/test_native_trailing_submitter.py` | **Task 0 Files 清单漏了测试文件**：三处 `make_qty` 的 `hasattr` 守卫实为迁就一个不忠实的 test double——4 个 `MockInstrument` 中 3 个已定义 `make_qty`，只有 trailing 那个漏了。补齐 mock 而非在生产代码保留守卫（教训 C4）。commit `2bf09e8` | ✅ 实施中发现 |
 | DEV | `pyproject.toml` / 8 个既有红文件 | **Task 0 扩展：主干三层既有红一并归零**（owner 2026-09-11 批准）。`verify` 红有三个独立原因，plan 只记了 typecheck 一个：另有 `fmt-check` 8 文件、`lint` 2 处 I001（后者此前被 fmt-check 短路挡住）。七个文件已格式化；第八个 `tests/integration/runner_fact_publication_process.py` 被 `receipts/custos-runner-fact-local-publication-v1.json` 按 sha256+size 钉住，格式化即 `check-authority` 报 source drift（实测），故加入 ruff `extend-exclude`，与 inventory-extracted 包同一处理方式——formatter 不碰、authority gate 验字节，条目注明解除条件。commit `7971bc8`，`make verify` 现 exit 0。**过程教训**：只扰动验了 8 个里的 1 个就声称「全部可安全格式化」，第一次尝试即被 gate 打回——断言宽于实证（生态 #46） | ✅ owner |
+| DEV | `toolkit-nautilus/pyproject.toml` | **切换丢的不止 pandas**：fork 核心依赖为空，lock 移除 9 个原由 1.230.0 传递的包（click / fsspec / msgspec / portion / pyarrow / pytz / sortedcontainers / tqdm / uvloop）。逐个核对自有 import：7 个无人使用，**msgspec 被 adapter 15 源文件 + 3 测试使用**（全部 config struct 的基础），与 pandas 一并显式声明。plan 原只预见 pandas | ✅ 实施中发现 |
+| DEV | 失败模式契约「3.11 base」 | **原措辞不可能成立**：uv workspace 下 toolkit-nautilus 的 `requires-python` 把整个 workspace 解析为 `==3.12.*`，任何 3.11 sync 必失败，与 git 源无关。真实的门是 `Makefile:76-78` `verify-base-clean`（不指定解释器），已按它验证并通过 | ✅ 实施中更正 |
+| DEV | Task 3 判据 | **证伪点失效**：`adapter/__init__.py:7-97` 的 `except ImportError: pass` 使包级 import 在 2.0 下照常成功。判据改为「`__all__` 逐名可达」，并把该静默吞没一并处理（教训 #21） | ✅ 实施中发现 |
+| DEV | Task 1a | **拆为 1a-1（Python 侧）/ 1a-2（Docker 侧）**：两条链路各自可独立验收，合并会让第一个绿等到两轮完整 Rust 编译（本地 + 容器）之后 | ✅ owner 2026-09-12 |
 | DEV | Task 2b | **`engine_version` 是跨仓契约字段**（mandatory-rules §3）：custos 只改自有 V1 文件，vendored golden 与 PS / Crucible 侧列为 Blocked，不得自行改写 | ✅ 规则约束，无需批准 |
