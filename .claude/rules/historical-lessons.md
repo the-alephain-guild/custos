@@ -6,6 +6,37 @@
 
 > **custos 内部 lesson 用 `C1` `C2` … 前缀区分生态数字编号** (见文末"记录新 lesson")。
 
+## C16 并行 agent 的 `git add` 会带走你正在写的文件，且表现为「文件变回旧内容」(2026-09)
+
+- **事件**: NT 2.0 升级 Slice C 期间，另一个 agent 并行在做 Task 10（测试面迁 2.0 import layout）。
+  两者都要改 `tests/engines/nautilus/test_runner_safety_host_wiring.py`——我因为 Task 9 删掉了它
+  引用的类，对方因为 import 路径。我写入新版本、验证落地（`read_text() == content` 通过、
+  `wc -l` 对得上、测试 6 passed），随后它两次变回旧内容。我按 C15 的思路先怀疑字节码缓存，再怀疑
+  工具写入未落地（教训 #13），写了 probe 文件排除 `ruff format`，最后 `git log -- <file>` 才看到
+  一个不是我做的 commit `3dd7ff6` 改了它。对方 `git add` 时把我当时磁盘上的版本一并提交了，
+  所以内容没丢——但 commit message 只说「toolkit 与 host 测试迁 2.0 import layout」，实际含
+  Task 9 的重写。
+- **根因**: 两个 agent 共享一个工作区。教训 #27 讲的是「`git add <specific-file>` 会带走 index 里
+  别人 pre-staged 的改动」；这是它的反向形态——**对方按自己的文件清单 `git add`，而清单里的文件
+  正被另一个 agent 写着**，于是对方的 commit 里混进了我的工作，而我的下一次读取看到的是对方
+  写入的版本。「文件变回旧内容」这个表象与「写入没落地」「缓存陈旧」完全一样，而三者的排查方向
+  互不相同。
+- **教训**: 共享工作区里出现「我写的内容不见了」，**第一件事是 `git log --oneline -3` 与
+  `git log -- <file>`**，看有没有不是自己的 commit。工具返回成功、内容验证过、随后又变了，
+  这个组合指向并发写入，不指向自己的工具链。
+- **预防**:
+  - 排查顺序固定为：`git log -- <file>`（有没有别人的 commit）→ `git status`（是否已被 stage）
+    → 写 probe 验证工具链 → 最后才怀疑缓存。本次顺序反了，多花了两轮。
+  - 自己的改动**尽早 commit**，不要攒着（教训 #24 的另一个理由：并行场景下未提交的文件既可能丢，
+    也可能被别人提交并冠上别人的 message）。
+  - 发现自己的工作被别人提交后，不要重写历史去「取回」——内容已在 HEAD，重写会破坏对方的提交。
+    在偏离日志里记明哪个 commit 实际包含了什么即可。
+  - 与 #27 合并适用：#27 防「我的 commit 带走别人的」，本条防「别人的 commit 带走我的」，
+    两者是同一个共享 index 问题的两个方向。
+- **Binding**: 无代码 binding。plan 01 偏离日志「多 agent 并行」条记录了本次实例与受影响的 commit。
+
+---
+
 ## C15 同秒还原 + 等长改动 = pytest 跑的是旧字节码，扰动验证会骗人 (2026-09)
 
 - **事件**: NT 2.0 升级 Slice C 中，给新写的事件转发器做扰动验证：备份源文件 → 施加扰动 → 跑测试 →
