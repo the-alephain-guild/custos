@@ -670,7 +670,7 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 | 5 | ✅ | 2026-09-12 | `8c77d5f`；pyclass 子类 + 冻结守卫 + 移除静默 except |
 | 6 | ✅ | 2026-09-12 | `57c3a8b`；Instrument 改 Protocol，解锁 28→41 |
 | 7a | ✅ | 2026-09-12 | `65b7f1c` venue → `7506447` forwarder → `83dc8cb` host。含 venue_binance 提前迁移（host 的前置）|
-| 7b | ✅ | 2026-09-12 | spec 归一为 `_DeploymentIdentity`；venue 从硬编码改为按 connector 派生（signed facts 曾对 SoDEX 谎报 BINANCE）；新增 NT-free `venues.py` 单一表；client order id 上限改为按 venue；toolkit instrument id 三副本收口；toolkit mypy 84→19。typed adapter 一项经 grep 实证已由 7a 兑现 |
+| 7b | ✅ | 2026-09-12 | `c34ffd0`；spec 归一为 `_DeploymentIdentity`；venue 从硬编码改为按 connector 派生（signed facts 曾对 SoDEX 谎报 BINANCE）；新增 NT-free `venues.py` 单一表；client order id 上限改为按 venue；toolkit instrument id 三副本收口；toolkit mypy 84→19。typed adapter 一项经 grep 实证已由 7a 兑现 |
 | 8 | ✅ | 2026-09-12 | `00d0e74`；白名单按 mode 拆三集合 + `venue_sodex.py` + host 按 connector 分派；drift-guard 泛化为 `test_nt_venue_wiring.py`（41 条）；红线三条 + SoDEX venue 16 条全部扰动验过 |
 | 9 | ✅ | 2026-09-12 | `781ccdd`；执行门迁到 strategy 边缘 + 拒单进签名事实流 + money 路径去 or-chain；红线 grep 四条全过 |
 | 10 | ✅ | 2026-09-12 | `3dd7ff6`；27 测试文件拍平 + TestClock→`Clock.new_test()`；22 文件转绿、0 新红 |
