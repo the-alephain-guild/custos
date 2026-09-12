@@ -156,7 +156,7 @@ class _Engine:
     def supports_trading_mode(self, mode: str) -> bool:
         return mode == "sandbox"
 
-    def supports_venue(self, venue: str) -> bool:
+    def supports_venue(self, venue: str, mode: str) -> bool:
         return True
 
     async def get_open_notional(self, deployment_instance_id: str):
@@ -467,3 +467,64 @@ async def test_non_running_generation_stops_without_artifact_deploy() -> None:
     assert store.state.applied_generation == 2
     assert store.state.engine_handle is None
     assert store.state.observed_status == "paused"
+
+
+@pytest.mark.asyncio
+async def test_a_live_sodex_request_is_refused_for_the_venue_not_the_credential() -> None:
+    """Red line 0.2: the venue allow-list is per mode, and the message says which gate.
+
+    The distinction matters because the two refusals mean opposite things to whoever
+    reads the log. "Credential is not scoped for trade" invites someone to go fix the
+    credential; this venue has no live delivery at all, and no credential will change
+    that. The credential here is deliberately well-formed so the only thing left to
+    refuse is the venue.
+
+    The second half is what makes the first half mean something: the same request on
+    a venue that does have a live delivery gets past the venue gate and is stopped by
+    the next one. Without it, a gate that refused everything would pass just as well.
+    """
+    pytest.importorskip("nautilus_trader")
+    from custos.engines.nautilus.host import NtTradingNodeHost
+
+    real = NtTradingNodeHost()
+
+    @dataclass
+    class _RealCapabilityEngine(_Engine):
+        def supports_trading_mode(self, mode: str) -> bool:
+            return real.supports_trading_mode(mode)
+
+        def supports_venue(self, venue: str, mode: str) -> bool:
+            return real.supports_venue(venue, mode)
+
+    engine = _RealCapabilityEngine([_ready()])
+    with pytest.raises(EngineLifecycleBlocked, match="does not support the signed venue"):
+        await _supervisor(_Store(), engine).apply(
+            delivery_id="sodex-live",
+            verified=_verified(mode="live"),
+            runtime_spec={"trading_mode": "live", "connector": "sodex_perpetual"},
+            credential={"permission_scope": "trade_no_withdraw"},
+            artifact=_Artifact(),
+        )
+
+    with pytest.raises(EngineLifecycleBlocked, match="trade_no_withdraw"):
+        await _supervisor(_Store(), engine).apply(
+            delivery_id="binance-live",
+            verified=_verified(mode="live"),
+            runtime_spec={"trading_mode": "live", "connector": "binance_perpetual"},
+            credential={"permission_scope": "read_only"},
+            artifact=_Artifact(),
+        )
+
+    assert engine.events == []
+
+
+@pytest.mark.asyncio
+async def test_sodex_is_admitted_for_sandbox_and_testnet() -> None:
+    """The other half of the same allow-list: it is a per-mode table, not a ban."""
+    pytest.importorskip("nautilus_trader")
+    from custos.engines.nautilus.host import NtTradingNodeHost
+
+    real = NtTradingNodeHost()
+    for mode in ("sandbox", "testnet"):
+        for connector in ("sodex", "sodex_perpetual"):
+            assert real.supports_venue(connector, mode) is True

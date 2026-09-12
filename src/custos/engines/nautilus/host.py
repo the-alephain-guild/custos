@@ -58,17 +58,11 @@ from custos.engines.nautilus.settlement import settlement_currency_for_pairs
 from custos.engines.nautilus.strategy_event_forwarding import StrategyEventForwarder
 
 try:
-    from nautilus_trader.adapters.binance import (
-        BinanceDataClientFactory,
-        BinanceExecutionClientFactory,
-    )
     from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory
     from nautilus_trader.common import Environment, LoggerConfig, LogLevel
     from nautilus_trader.live import LiveNode, NodeState
     from nautilus_trader.model import PriceType, TraderId
 except ImportError:  # nautilus extra absent (audit / paper install) — deploy fails fast
-    BinanceDataClientFactory = None
-    BinanceExecutionClientFactory = None
     SandboxExecutionClientFactory = None
     Environment = None
     LoggerConfig = None
@@ -85,10 +79,53 @@ _log = get_logger("custos.nautilus_host")
 _DEFAULT_STARTING_BALANCES = ["10_000 USDT"]
 _STOP_TIMEOUT_SECS = 30.0
 
-# Venues NtTradingNodeHost can execute. Declared NT-free here so admission can
-# query capability on a base install, and kept in sync with the venue-config
-# module's wired connectors by a drift-guard test (test_nt_binance_venue.py).
-_SUPPORTED_VENUES = frozenset({"binance", "binance_perpetual"})
+# Venues this runner can execute, per trading mode. Kept NT-free so admission can
+# query capability on a base install, and kept in sync with the venue-config modules'
+# wired connectors by a drift-guard test (test_nt_venue_wiring.py).
+#
+# The split by mode is the point: listing a venue here is a claim that this runner can
+# take it all the way to that mode, and "can run live" is not one flag but everything
+# venue_binance.py spells out — a minimum approver count, owner evidence, three exec
+# configs, credential handling. SoDEX has the sandbox and testnet halves and not the
+# live one, so it appears in two sets and not the third.
+_SANDBOX_VENUES = frozenset({"binance", "binance_perpetual", "sodex", "sodex_perpetual"})
+_TESTNET_VENUES = frozenset({"binance", "binance_perpetual", "sodex", "sodex_perpetual"})
+_LIVE_VENUES = frozenset({"binance", "binance_perpetual"})
+_VENUES_BY_MODE: dict[str, frozenset[str]] = {
+    "sandbox": _SANDBOX_VENUES,
+    "testnet": _TESTNET_VENUES,
+    "live": _LIVE_VENUES,
+}
+
+# connector -> the module that turns a spec into that venue's NT client configs.
+# Every venue this runner executes needs an entry; a connector in the allow-list above
+# with no module here would be admitted and then fail at assembly, which is why the
+# drift guard checks the two against each other rather than trusting either.
+_VENUE_MODULE_BY_CONNECTOR: dict[str, str] = {
+    "binance": "venue_binance",
+    "binance_perpetual": "venue_binance",
+    "sodex": "venue_sodex",
+    "sodex_perpetual": "venue_sodex",
+}
+
+
+def _venue_module_for(connector: str):
+    """The venue-config module for a connector.
+
+    Imported here rather than at module scope: each venue module imports
+    NautilusTrader at its top, and this module has to stay importable on a base
+    install so admission can answer capability questions without the nautilus extra.
+    """
+    from importlib import import_module
+
+    module_name = _VENUE_MODULE_BY_CONNECTOR.get(connector.lower())
+    if module_name is None:
+        raise NotImplementedError(
+            f"connector {connector!r} has no venue wiring in this runner "
+            f"(wired: {', '.join(sorted(_VENUE_MODULE_BY_CONNECTOR))})"
+        )
+    return import_module(f"custos.engines.nautilus.{module_name}")
+
 
 # Substrings that flag an exception message as potentially carrying credential
 # material (NT config repr, adapter auth errors) — such messages are redacted
@@ -290,8 +327,8 @@ class SandboxSimulationHost:
         # full lifecycle in sandbox, but must never claim a real-venue mode.
         return mode == "sandbox"
 
-    def supports_venue(self, venue: str) -> bool:
-        return venue.lower() in _SUPPORTED_VENUES
+    def supports_venue(self, venue: str, mode: str) -> bool:
+        return venue.lower() in _VENUES_BY_MODE.get(mode.lower(), frozenset())
 
     async def get_open_notional(self, deployment_instance_id: str) -> Decimal:
         # The simulator holds no positions, so its observed exposure is exactly zero.
@@ -431,8 +468,8 @@ class NtTradingNodeHost:
     def supports_trading_mode(self, mode: str) -> bool:
         return mode in {"sandbox", "testnet", "live"}
 
-    def supports_venue(self, venue: str) -> bool:
-        return venue.lower() in _SUPPORTED_VENUES
+    def supports_venue(self, venue: str, mode: str) -> bool:
+        return venue.lower() in _VENUES_BY_MODE.get(mode.lower(), frozenset())
 
     def _claim_execution_account_partition(self, spec: dict) -> None:
         mode = str(spec.get("trading_mode") or "sandbox").lower()
@@ -510,13 +547,10 @@ class NtTradingNodeHost:
         create_strategy = getattr(artifact, "create_strategy", None)
         strategy = create_strategy() if callable(create_strategy) else artifact.strategy
 
-        # Imported lazily: venue_binance imports NautilusTrader at module top.
-        from custos.engines.nautilus import venue_binance as venue
+        venue = _venue_module_for(str(spec["connector"]))
 
         trading_mode = str(spec.get("trading_mode") or "sandbox").lower()
-        data_cfg = venue.build_data_client_config(
-            spec, credential, venue.data_environment_for_mode(trading_mode)
-        )
+        data_cfg = venue.build_data_client_config_for_mode(spec, credential, trading_mode)
         exec_cfg, exec_factory, reconciliation = self._build_exec_plan(
             trading_mode, spec, credential, venue
         )
@@ -551,14 +585,15 @@ class NtTradingNodeHost:
             # Real venues reconcile against exchange account state; the sandbox has none.
             builder = builder.with_reconciliation(reconciliation)
             builder = _apply_nautilus_knobs(builder, nautilus_cfg)
+            client_name = venue.client_name(spec)
             builder = builder.add_data_client(
-                venue.BINANCE_VENUE,
-                BinanceDataClientFactory(),
+                client_name,
+                venue.data_client_factory(),
                 data_cfg,
             )
             builder = _add_exec_client(
                 builder,
-                venue.BINANCE_VENUE,
+                client_name,
                 exec_factory,
                 exec_cfg,
                 trading_mode,
@@ -645,10 +680,11 @@ class NtTradingNodeHost:
     def _build_exec_plan(self, trading_mode: str, spec: dict, credential: dict, venue):
         """Resolve (exec_config, exec_factory, reconciliation) for the trading mode.
 
-        sandbox fills locally against live prices (no exchange contact); testnet /
-        live place real orders on the Binance testnet / live endpoints. Real venues
-        reconcile against exchange account state, the sandbox has none. A live plan
-        requires control-plane-signed promotion evidence inside the accepted spec.
+        sandbox fills locally against real-time prices (no exchange contact); testnet
+        and live place real orders on the venue's own endpoints. Real venues reconcile
+        against exchange account state, the sandbox has none. What a mode costs is the
+        venue module's to say -- a live plan on Binance requires control-plane-signed
+        promotion evidence, and a venue with no live delivery refuses outright.
         """
         if trading_mode == "sandbox":
             starting_balances = (spec.get("sandbox") or {}).get(
@@ -658,7 +694,7 @@ class NtTradingNodeHost:
             return exec_cfg, SandboxExecutionClientFactory(), False
         if trading_mode == "testnet":
             exec_cfg = venue.build_exec_client_config_testnet(spec, credential)
-            return exec_cfg, BinanceExecutionClientFactory(), True
+            return exec_cfg, venue.exec_client_factory(), True
         if trading_mode == "live":
             _log.warning(
                 "nt_live_deploy_requested",
@@ -667,7 +703,7 @@ class NtTradingNodeHost:
                 promotion_id=spec.get("promotion_id"),
             )
             exec_cfg = venue.build_exec_client_config_live(spec, credential)
-            return exec_cfg, BinanceExecutionClientFactory(), True
+            return exec_cfg, venue.exec_client_factory(), True
         raise RuntimeError(
             f"unsupported trading_mode {trading_mode!r} (expected sandbox / testnet / live)"
         )

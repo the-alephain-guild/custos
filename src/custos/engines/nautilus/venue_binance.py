@@ -26,8 +26,10 @@ from decimal import Decimal
 
 from nautilus_trader.adapters.binance import (
     BinanceDataClientConfig,
+    BinanceDataClientFactory,
     BinanceEnvironment,
     BinanceExecutionClientConfig,
+    BinanceExecutionClientFactory,
     BinanceInstrumentProviderConfig,
     BinanceProductType,
 )
@@ -65,6 +67,16 @@ BINANCE_VENUE = "BINANCE"
 _BINANCE_CONNECTORS: dict[str, str] = {
     "binance": "spot",
     "binance_perpetual": "futures",
+}
+
+# The connectors this module builds an execution config for, per trading mode. The
+# host's per-mode venue allow-list must equal the union of these across venue
+# modules; a drift-guard test asserts it, so widening one side alone turns red.
+# All three rows are the full set: this venue has a live exec builder.
+CONNECTORS_BY_MODE: dict[str, frozenset[str]] = {
+    "sandbox": frozenset(_BINANCE_CONNECTORS),
+    "testnet": frozenset(_BINANCE_CONNECTORS),
+    "live": frozenset(_BINANCE_CONNECTORS),
 }
 
 # trading_mode -> the Binance data-feed environment. Sandbox simulates fills
@@ -329,3 +341,35 @@ def build_exec_client_config_live(spec: dict, credential: dict) -> BinanceExecut
     """Real Binance exec against live, gated by signed control-plane owner evidence."""
     require_live_owner_evidence(spec)
     return _build_binance_exec_config(spec, credential, BinanceEnvironment.LIVE)
+
+
+def client_name(spec: dict) -> str:
+    """The id this spec's data and execution clients register under.
+
+    One venue for both product lines: spot and USDT-perpetual are the same exchange
+    and the adapter registers one client per node. Rejects a non-Binance connector on
+    the way, so the host cannot name a client for a venue this module does not wire.
+    """
+    _binance_exchange_type(spec["connector"])
+    return BINANCE_VENUE
+
+
+def data_client_factory() -> BinanceDataClientFactory:
+    return BinanceDataClientFactory()
+
+
+def exec_client_factory() -> BinanceExecutionClientFactory:
+    return BinanceExecutionClientFactory()
+
+
+def build_data_client_config_for_mode(
+    spec: dict,
+    credential: dict,
+    mode: str,
+) -> BinanceDataClientConfig:
+    """Uniform entry point the host calls for every venue.
+
+    Each venue decides for itself what a mode means for its data feed; the host only
+    knows the mode name.
+    """
+    return build_data_client_config(spec, credential, data_environment_for_mode(mode))

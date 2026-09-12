@@ -34,7 +34,7 @@ class _CompleteHost:
     def supports_trading_mode(self, mode: str) -> bool:
         return False
 
-    def supports_venue(self, venue: str) -> bool:
+    def supports_venue(self, venue: str, mode: str) -> bool:
         return False
 
     async def get_open_notional(self, spec_id: str) -> Decimal:
@@ -88,7 +88,7 @@ class _MissingDeploy:
     def supports_trading_mode(self, mode: str) -> bool:
         return False
 
-    def supports_venue(self, venue: str) -> bool:
+    def supports_venue(self, venue: str, mode: str) -> bool:
         return False
 
 
@@ -102,7 +102,7 @@ class _MissingSupportsLive:
     async def stop(self, spec_id: str) -> None:
         pass
 
-    def supports_venue(self, venue: str) -> bool:
+    def supports_venue(self, venue: str, mode: str) -> bool:
         return False
 
 

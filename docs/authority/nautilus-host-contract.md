@@ -46,7 +46,7 @@ Before engine start, `EngineLifecycleSupervisor` requires:
 
 1. artifact runtime capability is READY;
 2. signed command mode equals the local execution view;
-3. the engine supports the signed connector;
+3. the engine supports the signed connector **in the signed mode**;
 4. testnet/live credentials are `trade_no_withdraw`;
 5. live host capability is explicit;
 6. live has signed Crucible promotion evidence;
@@ -55,6 +55,26 @@ Before engine start, `EngineLifecycleSupervisor` requires:
 The default live enable gate is false. It becomes true only in the composition
 root that consumes the final exact-image receipt; it is not a compatibility or
 operator bypass flag.
+
+## Venue capability is per mode
+
+`supports_venue(venue, mode)` answers from one allow-list per trading mode, not
+from a single set. Listing a connector for a mode is a claim that this runner can
+take it all the way to that mode, and the modes do not cost the same: sandbox and
+testnet need a data feed and an execution config, while live additionally needs
+signed promotion evidence, live credential handling and real-venue evidence. A
+single set would make listing a connector at all a claim that it can run live.
+
+Every listed connector resolves to a venue module that builds its NT client
+configs. The allow-list is plain strings with no venue code behind it, so the two
+are held against each other mechanically rather than by convention: each mode's
+set must equal the union of what the venue modules declare for that mode, and
+each listed pairing must actually build. A venue module refuses the modes it does
+not deliver on its own, so widening the allow-list alone cannot open an execution
+path.
+
+Currently wired: Binance (spot and USDT-perpetual) in all three modes; SoDEX
+(spot and perpetuals) in sandbox and testnet only.
 
 ## Runtime identity and safety
 

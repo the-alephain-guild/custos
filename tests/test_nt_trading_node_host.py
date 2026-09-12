@@ -781,3 +781,77 @@ async def test_stop_asks_the_handle_rather_than_only_cancelling_the_task(monkeyp
     await host.stop(deployment_instance_id)
 
     assert node.handle().stop_requests == 1
+
+
+def _sodex_spec(label: str, **overrides) -> dict:
+    """A SoDEX deployment. Pairs are the venue's own symbols, not BASE-QUOTE.
+
+    The perps engine lists ``BTC-USD`` and settles in USD, so the sandbox wallet is
+    denominated in it; the spot engine lists ``vBTC_vUSDC``. Neither is derivable
+    from a canonical pair, which is why the spec carries them verbatim.
+    """
+    spec = _spec(
+        label,
+        connector="sodex_perpetual",
+        pairs=["BTC-USD"],
+        wallet_address="0x" + "a" * 40,
+        sodex_account_id=4242,
+        sandbox={"starting_balances": ["10_000 USD"]},
+    )
+    spec.update(overrides)
+    return spec
+
+
+@pytest.mark.asyncio
+async def test_deploy_sodex_sandbox_simulates_execution_against_the_venues_own_feed(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    spec = _sodex_spec("sodex-sb")
+    await host.deploy(spec, _credential(), _Artifact())
+    try:
+        node = FakeLiveNode.instances[-1]
+        # Both clients register under the engine's venue, not the adapter's registry
+        # key: one node can hold a spot and a perps client built from one factory.
+        assert node.builder.data_clients[0][0] == "SODEX_PERPS"
+        assert node.builder.simulated_exec_clients[0][0] == "SODEX_PERPS"
+        assert node.builder.exec_clients == []
+        assert isinstance(node.builder.simulated_exec_clients[0][1], SandboxExecutionClientFactory)
+    finally:
+        await host.stop(spec["deployment_instance_id"])
+
+
+@pytest.mark.asyncio
+async def test_deploy_sodex_testnet_uses_the_adapters_own_execution_client(monkeypatch) -> None:
+    from nautilus_trader.adapters.sodex import SodexExecutionClientFactory
+
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    spec = _sodex_spec("sodex-tn", trading_mode="testnet")
+    await host.deploy(spec, _credential(), _Artifact())
+    try:
+        node = FakeLiveNode.instances[-1]
+        assert node.builder.simulated_exec_clients == []
+        assert isinstance(node.builder.exec_clients[0][1], SodexExecutionClientFactory)
+        assert node.builder.environment == Environment.LIVE
+    finally:
+        await host.stop(spec["deployment_instance_id"])
+
+
+@pytest.mark.asyncio
+async def test_a_connector_with_no_venue_wiring_is_refused_before_a_node_exists(
+    monkeypatch,
+) -> None:
+    """Admission and assembly must agree on which venues exist.
+
+    Admission answers from a table of strings; this is the other end of it. A
+    connector that got past the allow-list with no module behind it has to fail here
+    with a message naming the connector, not deep inside a Binance config builder.
+    """
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    before = len(FakeLiveNode.instances)
+    with pytest.raises(NotImplementedError, match="okx_perpetual"):
+        await host.deploy(_spec("okx-1", connector="okx_perpetual"), _credential(), _Artifact())
+    assert len(FakeLiveNode.instances) == before

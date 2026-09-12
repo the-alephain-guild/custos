@@ -1,6 +1,12 @@
-"""Binance venue-config helpers — pure functions from spec+credential to NT config.
+"""Venue-config helpers — pure functions from spec+credential to NT client configs.
 
-Covers the failure-mode contract for the venue-assembly layer:
+Opens with the cross-venue drift guard: the host's per-mode venue allow-list is what
+execution admission answers from, and it is a plain set of strings with no venue code
+behind it. These tests hold it against what the venue modules can actually build, so
+widening one side alone turns red instead of admitting a deployment that then fails at
+assembly (or refusing one that would have worked).
+
+The rest covers the failure-mode contract for the Binance venue-assembly layer:
 - sandbox data uses the anonymous public feed and ignores bootstrap credentials
 - missing api_key in an authenticated mode -> KeyError (fail-fast, no NT build)
 - unsupported connector (non-binance) -> NotImplementedError (explicit reject)
@@ -46,13 +52,85 @@ def _approved_spec(connector: str = "binance_perpetual") -> dict:
     return spec
 
 
-def test_supported_venues_matches_wired_connectors() -> None:
-    # Drift guard: NtTradingNodeHost declares its live-venue capability with an
-    # NT-free constant; it must equal the set of connectors this module actually
-    # wires, or execution admission would advertise a venue with no exec config behind it.
-    from custos.engines.nautilus.host import _SUPPORTED_VENUES
+# Every venue module this runner dispatches to. Read from the host's own dispatch
+# table rather than listed here, so a venue added there without a row below cannot
+# pass by being forgotten.
+def _venue_modules() -> dict[str, object]:
+    from custos.engines.nautilus.host import _VENUE_MODULE_BY_CONNECTOR, _venue_module_for
 
-    assert _SUPPORTED_VENUES == frozenset(_BINANCE_CONNECTORS)
+    return {connector: _venue_module_for(connector) for connector in _VENUE_MODULE_BY_CONNECTOR}
+
+
+@pytest.mark.parametrize("mode", ["sandbox", "testnet", "live"])
+def test_the_allow_list_for_a_mode_is_exactly_what_the_venue_modules_wire(mode: str) -> None:
+    from custos.engines.nautilus.host import _VENUES_BY_MODE
+
+    wired: set[str] = set()
+    for module in set(_venue_modules().values()):
+        wired |= module.CONNECTORS_BY_MODE[mode]
+    assert _VENUES_BY_MODE[mode] == frozenset(wired)
+
+
+@pytest.mark.parametrize("mode", ["sandbox", "testnet", "live"])
+def test_every_allowed_connector_can_actually_build_that_modes_exec_config(mode: str) -> None:
+    """Declaring a mode is not wiring it — the builder has to exist and return.
+
+    The allow-list and CONNECTORS_BY_MODE are both declarations, so checking them
+    against each other alone would let a pair of matching lies through. This asks the
+    venue module to build the thing.
+    """
+    from custos.engines.nautilus.host import _VENUES_BY_MODE, _venue_module_for
+
+    for connector in _VENUES_BY_MODE[mode]:
+        module = _venue_module_for(connector)
+        spec = _spec_for(connector)
+        if mode == "sandbox":
+            config = module.build_exec_client_config_sandbox(
+                spec, _credential_for(connector), ["10_000 USDT"]
+            )
+        elif mode == "testnet":
+            config = module.build_exec_client_config_testnet(spec, _credential_for(connector))
+        else:
+            config = module.build_exec_client_config_live(spec, _credential_for(connector))
+        assert config is not None
+
+
+def test_a_venue_outside_a_modes_allow_list_refuses_to_build_that_mode() -> None:
+    """The second layer: SoDEX has no live delivery and says so itself.
+
+    Without this the allow-list would be the only thing standing between a widened
+    set and a live order path with no promotion gate behind it.
+    """
+    from custos.engines.nautilus.host import _VENUES_BY_MODE, _venue_module_for
+
+    sodex = _venue_module_for("sodex_perpetual")
+    assert "sodex_perpetual" not in _VENUES_BY_MODE["live"]
+    with pytest.raises(NotImplementedError):
+        sodex.build_exec_client_config_live(_spec_for("sodex_perpetual"), _credential_for("sodex"))
+
+
+def test_the_live_allow_list_is_unchanged_by_adding_a_sandbox_only_venue() -> None:
+    """Binance's live capability must cost nothing when a new venue arrives."""
+    from custos.engines.nautilus.host import _VENUES_BY_MODE
+
+    assert _VENUES_BY_MODE["live"] == frozenset(_BINANCE_CONNECTORS)
+
+
+def _spec_for(connector: str) -> dict:
+    if connector.startswith("sodex"):
+        pair = "vBTC_vUSDC" if connector == "sodex" else "BTC-USD"
+        return {
+            "connector": connector,
+            "pairs": [pair],
+            "wallet_address": "0x" + "a" * 40,
+            "sodex_account_id": 4242,
+        }
+    return _approved_spec(connector)
+
+
+def _credential_for(connector: str) -> dict:
+    del connector
+    return _credential()
 
 
 def _spec(connector: str = "binance_perpetual") -> dict:
@@ -236,21 +314,18 @@ def test_build_data_client_config_testnet_env() -> None:
     assert cfg.environment == BinanceEnvironment.TESTNET
 
 
-# ---------------------------------------------------------------------------
-# Leverage on a real venue
-#
-# Measured on testnet 2026-08-01: the spec said `leverage: 3` and the exchange
-# reported initial margin 447.77 against a notional of 447.77 at mark -- a margin
-# ratio of 1.0, so 1x. The map was being built and then only handed to the sandbox,
-# leaving the account default in force everywhere it mattered.
-#
-# It matters beyond position size: the strategy's startup check estimates liquidation
-# distance as 1/leverage to decide whether a fixed stop can trigger in time. That check
-# reads the spec. Nothing was making the venue agree with it.
-# ---------------------------------------------------------------------------
-
-
 def test_testnet_pins_the_declared_leverage() -> None:
+    """The declared leverage has to reach the exchange, not just the simulator.
+
+    Measured on testnet 2026-08-01: the spec said ``leverage: 3`` and the exchange
+    reported initial margin 447.77 against a notional of 447.77 at mark -- a margin
+    ratio of 1.0, so 1x. The map was being built and then only handed to the sandbox,
+    leaving the account default in force everywhere it mattered.
+
+    It matters beyond position size: the strategy's startup check estimates liquidation
+    distance as 1/leverage to decide whether a fixed stop can trigger in time. That
+    check reads the spec, and nothing was making the venue agree with it.
+    """
     cfg = build_exec_client_config_testnet(_spec("binance_perpetual"), _credential())
 
     assert cfg.futures_leverages == {"BTCUSDT": 3, "ETHUSDT": 3}
@@ -301,18 +376,14 @@ def test_margin_type_is_left_alone_until_the_spec_can_say() -> None:
     assert cfg.futures_margin_types is None
 
 
-# ---------------------------------------------------------------------------
-# Key type
-#
-# 1.x carried the declared key type into the client config. 2.0 dropped the field
-# and reads the key material instead, so the declaration now goes nowhere -- and a
-# key type 2.0 cannot sign with would only surface at the exchange, in a message
-# about the credential rather than about the type.
-# ---------------------------------------------------------------------------
-
-
 @pytest.mark.parametrize("key_type", ["HMAC", "hmac", "ED25519"])
 def test_a_supported_key_type_is_accepted(monkeypatch, key_type: str) -> None:
+    """The declared key type now goes nowhere, so this module has to read it.
+
+    1.x carried it into the client config. 2.0 dropped the field and reads the key
+    material instead, which means a key type 2.0 cannot sign with would only surface
+    at the exchange, in a message about the credential rather than about the type.
+    """
     credential = dict(_credential(), key_type=key_type)
     forwarded = _captured_kwargs(monkeypatch, "BinanceExecutionClientConfig")
 

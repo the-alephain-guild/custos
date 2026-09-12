@@ -419,7 +419,7 @@ class EngineLifecycleSupervisor:
         if not self._engine.supports_trading_mode(mode):
             raise EngineLifecycleBlocked(f"execution engine does not support signed mode {mode}")
         connector = str(runtime_spec.get("connector") or "")
-        if not connector or not self._engine.supports_venue(connector):
+        if not connector or not self._engine.supports_venue(connector, mode):
             raise EngineLifecycleBlocked("execution engine does not support the signed venue")
         if mode in {"testnet", "live"} and credential.get("permission_scope") != (
             "trade_no_withdraw"
