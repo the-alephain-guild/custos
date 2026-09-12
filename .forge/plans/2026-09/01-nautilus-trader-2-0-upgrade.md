@@ -671,7 +671,7 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 | 6 | ✅ | 2026-09-12 | `57c3a8b`；Instrument 改 Protocol，解锁 28→41 |
 | 7a | ✅ | 2026-09-12 | `65b7f1c` venue → `7506447` forwarder → `83dc8cb` host。含 venue_binance 提前迁移（host 的前置）|
 | 7b | 🔲 | | 品味重构：typed 视图 + typed adapter |
-| 8 | ✅ | 2026-09-12 | 白名单按 mode 拆三集合 + `venue_sodex.py` + host 按 connector 分派；drift-guard 泛化为 `test_nt_venue_wiring.py`（41 条）；红线三条 + SoDEX venue 16 条全部扰动验过 |
+| 8 | ✅ | 2026-09-12 | `00d0e74`；白名单按 mode 拆三集合 + `venue_sodex.py` + host 按 connector 分派；drift-guard 泛化为 `test_nt_venue_wiring.py`（41 条）；红线三条 + SoDEX venue 16 条全部扰动验过 |
 | 9 | ✅ | 2026-09-12 | `781ccdd`；执行门迁到 strategy 边缘 + 拒单进签名事实流 + money 路径去 or-chain；红线 grep 四条全过 |
 | 10 | ✅ | 2026-09-12 | `3dd7ff6`；27 测试文件拍平 + TestClock→`Clock.new_test()`；22 文件转绿、0 新红 |
 | 11 | ✅ | 2026-09-12 | `90eda67`→`fc51c28`；全量 `54 failed/25 err` → `7 failed/3 err`，剩余 4 文件全归 Task 2a（3 个断言 `1.230.0`）与 close-out 计数 |
