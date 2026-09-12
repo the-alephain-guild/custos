@@ -21,8 +21,6 @@ requires_nautilus = pytest.mark.skipif(
 
 # (callback on Strategy, method on TradeEventHandler)
 _DELEGATIONS = [
-    ("on_order_accepted", "handle_order_accepted"),
-    ("on_position_opened", "handle_position_opened"),
     ("on_order_canceled", "handle_order_canceled"),
     ("on_order_filled", "handle_order_filled"),
     ("on_position_closed", "handle_position_closed"),
@@ -49,14 +47,12 @@ def test_callback_delegates_to_component(callback, handler_method):
 @requires_nautilus
 def test_delegations_sentinel():
     # Guard against the parametrize list silently collapsing to empty.
-    assert len(_DELEGATIONS) == 5
+    assert len(_DELEGATIONS) == 3
 
 
 # Private handler bodies now on the component, gone from the Strategy class.
 _MOVED_HANDLERS = [
-    "_handle_order_accepted",
     "_handle_order_filled",
-    "_handle_position_opened",
     "_handle_position_closed",
     "_handle_order_canceled",
 ]
@@ -123,7 +119,6 @@ def test_handle_position_closed_resets_close_reject_count():
         _get_context_from_instrument=lambda _iid: ctx,
         log=MagicMock(),
         cache=MagicMock(),
-        _event_publisher=SimpleNamespace(enabled=False),
         _risk_controller=MagicMock(),
         _capital_allocator=None,
         _sltp_coordinator=SimpleNamespace(cancel_sl_tp_orders=lambda _c: 0),
@@ -180,7 +175,6 @@ def test_position_close_preserves_partial_reversal_entry_before_new_exposure():
         _get_context_from_instrument=lambda _iid: ctx,
         log=MagicMock(),
         cache=MagicMock(),
-        _event_publisher=SimpleNamespace(enabled=False),
         _risk_controller=MagicMock(),
         _capital_allocator=None,
         _sltp_coordinator=SimpleNamespace(cancel_sl_tp_orders=cancel_sl_tp_orders),
@@ -237,7 +231,6 @@ def test_position_close_keeps_new_protection_during_nonterminal_reversal_fill():
         _get_context_from_instrument=lambda _iid: ctx,
         log=MagicMock(),
         cache=MagicMock(),
-        _event_publisher=SimpleNamespace(enabled=False),
         _risk_controller=MagicMock(),
         _capital_allocator=None,
         _sltp_coordinator=SimpleNamespace(cancel_sl_tp_orders=cancel),
@@ -255,3 +248,16 @@ def test_position_close_keeps_new_protection_during_nonterminal_reversal_fill():
     assert tracker.exchange_sl_order_ids == ["new-short-stop"]
     assert position_tracker.pending_signal is pending
     assert ctx.sl_tp_submitted_for_reversal is False
+
+
+# accepted/opened had no body once the retired event lane went: their whole job was
+# publishing. Asserted here so a reader does not take their absence for an oversight.
+_CALLBACKS_WITHOUT_A_BODY = ["on_order_accepted", "on_position_opened"]
+
+
+@requires_nautilus
+@pytest.mark.parametrize("callback", _CALLBACKS_WITHOUT_A_BODY)
+def test_a_callback_with_nothing_left_to_do_is_not_overridden(callback):
+    from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
+
+    assert callback not in vars(NautilusTradingStrategy)

@@ -1,9 +1,9 @@
 """Trade-event tracking component.
 
-Holds the order/position event bodies: telemetry publishing, entry-order tracker
-cleanup, post-fill protection dispatch, and position-close cleanup. Injects a
-strategy reference and reaches ``cache`` / ``log`` / ``config``
-/ ``_mode`` plus ``_event_publisher`` / ``_order_signal_map``
+Holds the order/position event bodies: entry-order tracker cleanup, post-fill
+protection dispatch, and position-close cleanup. Injects a strategy reference and
+reaches ``cache`` / ``log`` / ``config``
+/ ``_mode`` plus ``_order_signal_map``
 / ``_risk_controller`` / ``_capital_allocator`` / ``_get_risk_equity`` /
 ``_sltp_coordinator`` / ``_get_context_from_instrument`` /
 ``on_trade_closed`` through it.
@@ -21,14 +21,10 @@ from typing import TYPE_CHECKING, cast
 from custos_toolkit.risk import RiskController
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import (
-    OrderAccepted,
     OrderCanceled,
     OrderFilled,
     PositionClosed,
-    PositionOpened,
 )
-
-from custos_toolkit_nautilus.adapter.event_publisher import extract_signal_id_from_tags
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
@@ -42,36 +38,6 @@ class TradeEventHandler:
 
     def __init__(self, strategy: NautilusTradingStrategy) -> None:
         self._strategy = strategy
-
-    def handle_order_accepted(self, event: OrderAccepted) -> None:
-        """Publish an order event (status=accepted) as soon as the venue accepts
-        the order, so WORKING SL/TP orders reach the persistence path (Path B
-        EventPersister has no terminal-state gate). Otherwise resting stop orders
-        would never be stored and signal SL/TP derivation would have no source.
-
-        signal_id prefers the order tags (persistent), falling back to the in-memory
-        map (use get, not pop -- the terminal-state hook still needs it). The base
-        on_order_accepted is a nautilus no-op, so no super() call is needed.
-        """
-        s = self._strategy
-        if not s._event_publisher.enabled:
-            return
-        _order = s.cache.order(event.client_order_id)
-        if _order is None:
-            return
-        _oid = str(event.client_order_id)
-        _sig_id = extract_signal_id_from_tags(_order.tags) or s._order_signal_map.get(_oid)
-        s._event_publisher.publish_order_event(
-            event=event,
-            order=_order,
-            signal_id=_sig_id,
-            side=_order.side.name,
-            order_type=_order.order_type.name,
-            quantity=str(_order.quantity),
-            status="accepted",
-            fill_price=None,
-            include_price=True,
-        )
 
     def handle_order_filled(self, event: OrderFilled) -> None:
         """Track filled orders - route to correct pair context."""
@@ -101,33 +67,11 @@ class TradeEventHandler:
             color=LogColor.CYAN,
         )
 
-        # Telemetry block (order filled) is locally isolated -- it runs before SL/TP
-        # submission, so an exception escaping here would be swallowed by the
-        # on_order_filled top-level guard and skip the money path too (new position
-        # left unprotected). Telemetry failure only logs; it never blocks what follows.
-        if s._event_publisher.enabled:
-            try:
-                _oid = str(event.client_order_id)
-                _sig_id = (
-                    s._order_signal_map.pop(_oid, None)
-                    if order_is_terminal
-                    else s._order_signal_map.get(_oid)
-                ) or extract_signal_id_from_tags(order.tags if order else None)
-                s._event_publisher.publish_order_event(
-                    event=event,
-                    order=order,
-                    signal_id=_sig_id,
-                    side=event.order_side.name,
-                    order_type=order.order_type.name if order else "UNKNOWN",
-                    quantity=str(event.last_qty),
-                    fill_price=str(event.last_px),
-                    status="filled",
-                    include_price=True,
-                )
-            except Exception as exc:
-                s.log.warning(
-                    f"[{ctx.pair}] Order-fill telemetry failed (money path continues): {exc}"
-                )
+        # The order is done, so its signal link can go. This used to ride along inside
+        # a telemetry block; the telemetry is gone and the cleanup is not optional --
+        # the map is per-order and nothing else drops entries on a fill.
+        if order_is_terminal:
+            s._order_signal_map.pop(str(event.client_order_id), None)
 
         protection_quantity = Decimal("0")
         initialize_position = False
@@ -175,22 +119,6 @@ class TradeEventHandler:
             ctx.position_tracker.clear_pending_signal()
             ctx.pending_entry_is_reversal = False
 
-    def handle_position_opened(self, event: PositionOpened) -> None:
-        """Handle position opened event -- publish position event."""
-        s = self._strategy
-        if s._event_publisher.enabled:
-            _order = (
-                s.cache.order(event.opening_order_id)
-                if hasattr(event, "opening_order_id")
-                else None
-            )
-            _sig_id = extract_signal_id_from_tags(_order.tags if _order else None)
-            s._event_publisher.publish_position_event(
-                event=event,
-                signal_id=_sig_id,
-                status="opened",
-            )
-
     def handle_position_closed(self, event: PositionClosed) -> None:
         """Track closed positions - route to correct pair context."""
         s = self._strategy
@@ -203,27 +131,6 @@ class TradeEventHandler:
         )
         pnl_color = LogColor.GREEN if realized_pnl > 0 else LogColor.RED
         s.log.info(f"[{ctx.pair}] Position CLOSED: realized_pnl={realized_pnl}", color=pnl_color)
-
-        # Telemetry block (position closed) is locally isolated -- it runs before SL/TP
-        # cancellation and tracker reset, so an exception escaping here would be swallowed
-        # by the top-level guard and skip the close cleanup too (orphaned SL left behind).
-        # Telemetry failure only logs.
-        if s._event_publisher.enabled:
-            try:
-                _sig_id = None
-                if hasattr(event, "opening_order_id"):
-                    _order = s.cache.order(event.opening_order_id)
-                    _sig_id = extract_signal_id_from_tags(_order.tags if _order else None)
-                s._event_publisher.publish_position_event(
-                    event=event,
-                    signal_id=_sig_id,
-                    status="closed",
-                    realized_pnl=str(realized_pnl),
-                )
-            except Exception as exc:
-                s.log.warning(
-                    f"[{ctx.pair}] Position-close telemetry failed (cleanup continues): {exc}"
-                )
 
         cast(RiskController, s._risk_controller).record_trade(realized_pnl)
 
@@ -304,23 +211,8 @@ class TradeEventHandler:
         if ctx is None:
             return
 
-        # Event emission: order canceled
-        if s._event_publisher.enabled:
-            _order = s.cache.order(event.client_order_id)
-            _oid = str(event.client_order_id)
-            _sig_id = s._order_signal_map.pop(_oid, None) or extract_signal_id_from_tags(
-                _order.tags if _order else None
-            )
-            s._event_publisher.publish_order_event(
-                event=event,
-                order=_order,
-                signal_id=_sig_id,
-                side=event.order_side.name if hasattr(event, "order_side") else "UNKNOWN",
-                order_type=_order.order_type.name if _order else "UNKNOWN",
-                quantity=str(_order.quantity) if _order else "0",
-                status="canceled",
-                fill_price=None,
-            )
+        # A canceled order will never fill, so its signal link goes here.
+        s._order_signal_map.pop(str(event.client_order_id), None)
 
         # Clean up entry order tracker if this was our tracked entry order
         if (

@@ -4,7 +4,7 @@ Holds the defense-in-depth order-protection cluster: restart position recovery,
 exchange SL / native_trailing claim, per-bar orphan reconciliation sweep, and
 severity-tiered reject breaker. Injects a strategy reference and reaches
 ``cache`` / ``clock`` / ``log`` / ``_contexts`` / ``_mode`` / ``cancel_all_orders`` /
-``cancel_order`` / ``_event_publisher`` / ``_order_signal_map`` /
+``cancel_order`` / ``_order_signal_map`` /
 ``_get_context_from_instrument`` through it, plus SL/TP submission via
 ``_sltp_coordinator.submit_*``.
 
@@ -26,7 +26,6 @@ from custos_toolkit.signals.types import Signal, SignalDirection
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import OrderCancelRejected, OrderRejected, OrderSide, OrderType
 
-from custos_toolkit_nautilus.adapter.event_publisher import extract_signal_id_from_tags
 from custos_toolkit_nautilus.adapter.orders import STALE_SWEEP_RETRY_COOLDOWN_NS, is_stale_order
 from custos_toolkit_nautilus.adapter.runtime_types import Order, Position
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
@@ -455,23 +454,8 @@ class OrderReconciler:
         }
         is_tracked_take_profit = event.client_order_id in set(ctx.order_tracker.tp_order_ids)
 
-        # Event emission: order rejected (same shape as cancel_rejected).
-        if s._event_publisher.enabled:
-            _oid = str(event.client_order_id)
-            _sig_id = s._order_signal_map.pop(_oid, None) or extract_signal_id_from_tags(
-                order.tags if order else None
-            )
-            s._event_publisher.publish_order_event(
-                event=event,
-                order=order,
-                signal_id=_sig_id,
-                side=order.side.name if order and hasattr(order, "side") else "UNKNOWN",
-                order_type=order.order_type.name if order else "UNKNOWN",
-                quantity=str(order.quantity) if order else "0",
-                status="rejected",
-                fill_price=None,
-                venue_from_event=False,
-            )
+        # A rejected order will never fill, so its signal link goes.
+        s._order_signal_map.pop(str(event.client_order_id), None)
 
         if is_tracked_stop:
             # A protective lot is not an active close attempt. Cancel-all/clear here
@@ -582,24 +566,9 @@ class OrderReconciler:
         if ctx is None:
             return
 
-        # Event emission: order cancel rejected
-        if s._event_publisher.enabled:
-            _order = s.cache.order(event.client_order_id)
-            _oid = str(event.client_order_id)
-            _sig_id = s._order_signal_map.pop(_oid, None) or extract_signal_id_from_tags(
-                _order.tags if _order else None
-            )
-            s._event_publisher.publish_order_event(
-                event=event,
-                order=_order,
-                signal_id=_sig_id,
-                side=_order.side.name if _order and hasattr(_order, "side") else "UNKNOWN",
-                order_type=_order.order_type.name if _order else "UNKNOWN",
-                quantity=str(_order.quantity) if _order else "0",
-                status="rejected",
-                fill_price=None,
-                venue_from_event=False,
-            )
+        # A rejected cancel means the order was already gone (see the tracker cleanup
+        # just below, which reads it the same way), so its signal link goes too.
+        s._order_signal_map.pop(str(event.client_order_id), None)
 
         # Clean up entry order tracker - the order is no longer on exchange
         # (either filled, expired, or already cancelled)

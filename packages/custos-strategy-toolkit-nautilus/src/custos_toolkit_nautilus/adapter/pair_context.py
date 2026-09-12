@@ -89,8 +89,8 @@ class PairContext:
     pending_entry_is_reversal: bool = False
 
     # Entry signal id of the current position (set on entry), used to link subsequent
-    # SL/TP orders to that signal (registered in strategy._order_signal_map -> SSE
-    # publish_order carries signal_id).
+    # SL/TP orders back to that signal -- both as an order tag and in
+    # strategy._order_signal_map. See adapter/signal_correlation.py.
     active_signal_id: str | None = None
 
     # Stale-order sweep rate guard: client_order_id -> last cancel attempt (ns)

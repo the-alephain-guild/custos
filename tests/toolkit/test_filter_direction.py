@@ -146,7 +146,6 @@ def _pipeline_stub(signal):
         _filter_coordinator=filter_coord,
         _signal_execution_coordinator=exec_coord,
         _risk_control_coordinator=risk_coord,
-        _event_publisher=SimpleNamespace(enabled=False),
         _is_direction_allowed=MagicMock(return_value=True),
         calculate_signal=MagicMock(return_value=signal),
         calculate_position_size=MagicMock(return_value=Decimal("1")),

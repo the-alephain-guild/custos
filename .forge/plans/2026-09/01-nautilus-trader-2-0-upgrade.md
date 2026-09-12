@@ -771,6 +771,19 @@ Task 1b（wheel 切换门）、Task 14（close-out）。
 golden 归 Crucible，custos 不得改（`authority-docs.md`「Never invent, vendor or pre-register
 downstream receipts」）。这条需要推对端交付。
 
+## close-out 测试计数（逐步累积）
+
+完整的逐文件表在 Task 14 close-out 时按 `pytest --collect-only` 重数（见偏离日志里各 Task
+登记的条数）。这里先记退役的那一个——`tests/test_plan_closeout_counts.py` 按「最新认领该文件
+的 close-out 说了算」判定，计 0 即表示本 plan 删掉了它。
+
+| 测试文件 | 条数 |
+|---|---|
+| `tests/toolkit/test_event_publisher.py` | 0 |
+
+它随 `EventPublisher` 一并退役：它测的是 msgbus → Redis → sidecar → Crucible SSE 那条通道，
+而那条通道已退役、2.0 也移除了它发布所经的 Python 消息总线。
+
 ## 偏离与改进日志 (Deviations & Improvements)
 
 | 类型 | 位置 | 描述 | 已批准 |
@@ -818,6 +831,12 @@ downstream receipts」）。这条需要推对端交付。
 | DEV | config 子类形态 | **9 个而非 plan 说的 3 个**：7 个只带 `parameters` 的 `NautilusTradingStrategyConfig` 子类，加 2 个带 4 个标量字段的 `StrategyConfig` 子类（两个 `strategy_core.py`）。一律按 D5b：去掉 `frozen=True` 类关键字、kw-only `__init__`、字段在 `super().__init__()` **之前**用 `object.__setattr__` 落位。**msgspec 参数 struct 不动**——它们是纯数据、从不继承 nautilus，`frozen=True` 在那里仍然成立 | ✅ 实施中实证 |
 | DEV | `external_order_claims` | **Task 12 暴露了一个让每个策略「什么都不认领」的缺陷**（custos 侧修，`c8ebc92`）。2.0 把该字段改名为 `external_order_instrument_ids`，而 toolkit 仍发旧名；`StrategyConfig` 的构造以 `**_kwargs` 收尾，不认识的关键字**被接受然后丢弃**，于是列表照建、照传、照丢，属性留在 `None`，**不抛任何异常**。守卫写成通用形态：从构造签名读取可接受名集合，要求 base config 发出的每个键都有去处——下次改名它还会答话（教训 #35 + #21） | ✅ 实施中发现 |
 | DEV | `deploy/nautilus/runner.py` | **PS 侧还有一处 1.x 装配未动**：它 import `TradingNode` / `BinanceAccountType` / `SandboxLiveExecClientFactory` 等 1.x 面，被 `deploy/nautilus/__init__.py` 与多个 `test_runner_*` 消费。不在 Task 12 的 Files 范围（那里只列 `refinement/nautilus/*.py`），归 Task 13。**Task 13 的起点已实测**：PS `pytest tests` 现有 **9 个文件收集期报错** | ✅ 遗留登记 |
+| DEV 🔴→✅ | `EventPublisher` 下线（owner 2026-09-12 定 B）| **7b 登记的阻塞发现已解决，方式是删掉它而不是修它**。owner 确认 sidecar 那条线（msgbus → Redis → sidecar SSE → Crucible EventPersister）已退役，故删 `event_publisher.py`、六个源文件的调用点、`on_order_accepted` / `on_position_opened` 两个只为发布而存在的覆写，以及 `test_event_publisher.py`。`trading_strategy.on_start` 里那句必炸的 `self.msgbus` / `self.id` 随之消失；toolkit mypy 19→16。**保留** signal-id 关联机制（`generate_signal_id` / `make_signal_tag` / `extract_signal_id_from_tags` / `_order_signal_map` / `PairContext.active_signal_id`），移到中性命名的 `adapter/signal_correlation.py`——它正是补齐工作要的那条链（见下一条）。当前**无人读取**它，模块 docstring 写明原因，防止下一个读者当死代码删掉 | ✅ owner 2026-09-12 |
+| DEV | `_order_signal_map` 清理 | **删除时发现一个既有泄漏**：两处 `pop` 原本写在 `if s._event_publisher.enabled:` 块内（`trade_event_handler` 成交路径、`order_reconciler` 拒单路径），而发布默认关闭——也就是说**默认配置下这张按订单键的 map 从不收缩**。现在 pop 无条件执行，并在注释里写明它不是可选项。副作用：两个 stub 测试因此必须带 `_order_signal_map`，那正是"这段清理真的跑了"的证据 | ✅ 实施中发现 |
+| DEV | 抽取清单的断言越界 | **`strategy-toolkit-inventory-v1.json` / `strategy-toolkit-extraction-v1.json` 是 commit 快照收据**（`typing-closure` 的 `verification_mode: exact_commit_snapshot`、`checkout_head: b5ff7ee9`，并按 sha256 钉住这两份文件），所以**不改它们**。越界的是测试：`assert all(_target(path).is_file())` 把「b5ff7ee9 时 241 个文件 1:1 抽取完成」变成了「这 241 个文件必须永远存在」——`authority-docs.md` 明文禁止用历史收据永久固定当前源码。改为「仍在，或在 `_RETIRED_SINCE_EXTRACTION` 里具名退役」，加一条即是一次可审的动作。扰动实测：另删一个未具名文件，两条断言仍红 | ✅ 实施中判定 |
+| DEV | close-out 计数探针 | **同一条「最新认领说了算」规则原本没覆盖删除**：`test_a_close_out_counts_no_test_file_that_has_since_been_deleted` 把**每一份** plan 的行都按今天的文件系统查，而该文件自己的 docstring 写的是「最新认领该文件的 close-out 才对今天负责，旧行是那一刻的记录」。现按同一规则处理：最新认领计 0 = 该 plan 删了它；并补一条反向断言（计 0 却还在 = 红），以免 0 变成消音开关 | ✅ 实施中判定 |
+| DEV | 补齐的对接方是 Crucible 不是 arx | **调查结论（owner 2026-09-12 提问）**：arx `backend/crates/coordination/src/execution_analytics_gateway.rs:1-4` 自述「Signed typed client for **Crucible-owned** execution analytics … does not persist or recompute execution facts owned by Crucible」，`coordination/src/lib.rs:3` 再述「ARX owns neither downstream business semantics nor the RunnerFact data plane」。arx **已有**整套 V1 契约（`ExecutionSignalV1` / `ExecutionOrderV1` / `ExecutionPositionV1` / **`ExecutionTcaV1`（含 `slippage_bps` / `latency_ms` / `benchmark_price` / `benchmark_source` / `completeness`）** / `ExecutionFlowV1`）与 `web/components/pages/tca/TCAPage.tsx`。所以要谈的是 Crucible 能否从 custos 的事实派生出这些，不是给 arx 加字段 | ✅ 实施中调查 |
+| DEV | RunnerFact 覆盖面缺口（四项，待跨仓协商）| **① signal 语义不是同一件事**：custos 的 `emit_strategy_signal_sync` 触发点在 `_on_order_initialized` 内（`runner_fact_producer.py:490`），`occurred_at` 取订单事件的 `ts_event`——它实际是「一张单被初始化了，方向是 X」，不是「策略在某时刻产出强度 0.8 的信号」。`strength` / `metadata` / `stop_loss` / `take_profit` / `price` 三方都没有。**② order 用日志事实承载结构化状态**：生命周期走 `RunnerRuntimeLogFact`（`component="custos.execution.order"`），Crucible 要投影成 `ExecutionOrderV1` 得解析 `structured_fields`，且缺 typed 的 `requested_at` 与 `venue_order_id`。**③ TCA 两个输入都没有**：`latency_ms` 缺 `requested_at`，`slippage_bps` 缺 benchmark。**已实证可得**：2.0 的 `MarketOrder` / `LimitOrder` 都有 `ts_submitted` / `ts_accepted` / `ts_closed`（删掉的 `_compute_fill_latency_ms` 正是用 `ts_submitted` 作提交锚、缺失则退到 `ts_init`），benchmark 可由 `NautilusPortfolioSnapshotProvider` 的 mark price 产出——都是「能拿到但没接线」。**④ 入场↔保护单的关联**：custos 按 `client_order_id` 做确定性关联，而保护单的 id 与入场单不同，所以它知道 `order_role` 却不知道某张保护单保护的是哪次入场——`ExecutionOrderV1.signal_fact_id` / `ExecutionTcaV1.signal_fact_id` 要的正是这个，也正是保留 `signal_correlation` 的理由 | 🔲 待跨仓协商 |
 | DEV | close-out 计数 | **Task 7a 改动了若干测试文件的条数**（`test_nt_trading_node_host` 27→33、`test_nt_binance_venue` →34、新增 `test_strategy_event_forwarding` 11 等）。按 `progress-management.md` §数字类声明必须来自实跑，plan close-out 的逐文件表格须在 Slice D 之后按 `pytest --collect-only` 重数，不得沿用旧行 | ✅ 遗留登记 |
 | DEV | `runner_safety.py` | **执行门从 exec client 迁到 strategy 边缘**（owner 2026-09-12 定，选项 (a)）。1.x 的 `GuardedLiveExecutionClient` 与 `guarded_exec_client_factory` 删除而非移植——2.0 无 Python 可继承的执行客户端基类，且 `add_exec_client` 的 factory 走 Rust 注册表按名查 extractor。新位置的覆盖面靠三条前提成立：三个 config 开关在 admission 被拒、带 `emulation_trigger`/`exec_algorithm_id` 的单在 gate 被拒、`market_exit()` 被拒。**位置比 1.x 靠上，这是红线 0.2 的实质弱化**，close-out 的红线表按此写 | ✅ owner 2026-09-12 |
 | DEV | `runner_fact_producer.py` | **拒单自己发 RunnerFact**（owner 2026-09-12 定，选项 (a)）。2.0 只在 submit 内部把订单入 cache 并发 OrderInitialized，所以在 gate 拒掉的单从未存在、NT 不会有任何事件说这件事。新增 `record_local_refusal`，走既有 runtime-log 事实通道（`lifecycle="refused"`），不改 schema。**没有事实通道的 gate 在 deploy 时被拒**——「守住了资金、丢掉了记录」不接受 | ✅ owner 2026-09-12 |

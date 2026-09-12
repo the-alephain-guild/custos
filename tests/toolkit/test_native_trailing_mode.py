@@ -225,12 +225,12 @@ def test_handle_order_filled_dispatches_native_trailing():
     stub = SimpleNamespace(
         _get_context_from_instrument=lambda _iid: ctx,
         log=MagicMock(),
-        _event_publisher=MagicMock(enabled=False),
         cache=cache,
         config=MagicMock(position=MagicMock(capital_mode="compound")),
         _get_effective_capital=lambda: Decimal("1000"),
         _get_risk_equity=lambda: Decimal("1000"),
         _risk_controller=MagicMock(),
+        _order_signal_map={},
         _mode=SLTPMode.NATIVE_TRAILING,
         _sltp_coordinator=SimpleNamespace(
             submit_native_trailing=MagicMock(),
@@ -263,7 +263,6 @@ def test_foreign_fill_does_not_consume_pending_entry_or_submit_protection():
     stub = SimpleNamespace(
         _get_context_from_instrument=lambda _iid: ctx,
         log=MagicMock(),
-        _event_publisher=MagicMock(enabled=False),
         cache=cache,
         config=MagicMock(position=MagicMock(capital_mode="compound")),
         _get_risk_equity=lambda: Decimal("1000"),
@@ -304,10 +303,10 @@ def test_partial_entry_fills_keep_correlation_and_protect_each_exposure_lot():
     stub = SimpleNamespace(
         _get_context_from_instrument=lambda _iid: ctx,
         log=MagicMock(),
-        _event_publisher=MagicMock(enabled=False),
         cache=cache,
         config=MagicMock(position=MagicMock(capital_mode="fixed")),
         _risk_controller=MagicMock(),
+        _order_signal_map={},
         _mode=mode,
     )
     first = SimpleNamespace(
@@ -635,7 +634,6 @@ def test_rejected_partial_fill_stop_preserves_entry_and_other_protection():
         cache=cache,
         clock=MagicMock(timestamp_ns=MagicMock(return_value=1_000_000_000_000)),
         log=MagicMock(),
-        _event_publisher=MagicMock(enabled=False),
         _order_signal_map={},
         cancel_all_orders=MagicMock(),
         pause=MagicMock(),

@@ -29,6 +29,24 @@ def _target(relative: str) -> Path:
     raise AssertionError(f"unsupported target namespace: {relative}")
 
 
+# Targets retired after the extraction snapshot.
+#
+# The inventory and the extraction manifest record what was moved at commit
+# b5ff7ee9 and are pinned byte-for-byte by the typing-closure receipt, so they do
+# not get rewritten when the toolkit later drops a module -- `authority-docs.md`
+# is explicit that a receipt attests its own revision and must not permanently fix
+# the current tree. What the assertion below can honestly check is that every
+# recorded target is either still here or is named here as deliberately retired.
+#
+# Adding a line is the deliberate act. Say why.
+_RETIRED_SINCE_EXTRACTION = {
+    # The msgbus -> Redis -> sidecar -> Crucible SSE lane it fed is retired, and 2.0
+    # removed the python message bus it published through. The signal-id linkage it
+    # carried lives on in adapter/signal_correlation.py.
+    "custos_toolkit_nautilus/adapter/event_publisher.py",
+}
+
+
 def test_frozen_inventory_cardinality_and_classification_are_immutable() -> None:
     inventory = _load(INVENTORY_PATH)
     files = inventory["files"]
@@ -49,7 +67,14 @@ def test_inventory_maps_each_legacy_path_to_one_physical_target() -> None:
     assert len(set(legacy_paths)) == len(legacy_paths)
     assert len(set(targets)) == len(targets)
     assert all(not (ROOT / path).exists() for path in legacy_paths)
-    assert all(_target(path).is_file() for path in targets)
+    missing = [p for p in targets if not _target(p).is_file()]
+    assert set(missing) <= _RETIRED_SINCE_EXTRACTION, (
+        f"extracted target vanished without being recorded as retired: "
+        f"{sorted(set(missing) - _RETIRED_SINCE_EXTRACTION)}"
+    )
+    assert _RETIRED_SINCE_EXTRACTION <= set(targets), (
+        "a path listed as retired was never in the inventory to begin with"
+    )
 
 
 def test_extraction_manifest_has_the_same_one_to_one_mapping() -> None:

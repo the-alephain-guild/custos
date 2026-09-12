@@ -20,7 +20,7 @@ from custos_toolkit.signals.types import Signal
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import OrderSide, Quantity
 
-from custos_toolkit_nautilus.adapter.event_publisher import make_signal_tag
+from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
 from custos_toolkit_nautilus.adapter.orders import StopLossSubmitter, TakeProfitSubmitter
 from custos_toolkit_nautilus.adapter.runtime_types import Order, Position
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
@@ -42,10 +42,9 @@ class SLTPCoordinator:
     def _link_order_to_signal(self, order: Order, ctx: PairContext) -> None:
         """Link an SL/TP order to the open position's entry signal.
 
-        Registered in ``_order_signal_map``; the SSE on_order_* publish_order path
-        prefers this map for the signal_id so Crucible attaches the SL/TP order to
-        its signal. This complements the order-tags path (the map is lost on process
-        restart, whereas tags persist with the order).
+        Registered in ``_order_signal_map``, which complements the tag the order also
+        carries: the tag survives a restart and the map survives a fill (a market
+        order's tags are gone from the cache once it fills).
         """
         s = self._strategy
         if order is not None and ctx.active_signal_id:
@@ -54,10 +53,8 @@ class SLTPCoordinator:
     def _signal_tags(self, ctx: PairContext) -> list[str] | None:
         """Order tag for the open position's entry signal.
 
-        Tags SL/TP orders with ``signal_id:<id>`` so they link to the signal on both
-        persistence paths: the SSE publish_order extract_signal_id_from_tags fallback
-        and the sidecar HTTP push (which reads signal_id only from order.tags). More
-        robust than the in-memory map alone (restart / HTTP-only persistence). Returns
+        Tags SL/TP orders with ``signal_id:<id>`` so a protective order says which
+        entry it is protecting -- nothing else in the execution stream does. Returns
         None when there is no entry signal.
         """
         if ctx.active_signal_id:

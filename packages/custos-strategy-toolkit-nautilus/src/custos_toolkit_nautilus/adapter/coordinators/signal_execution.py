@@ -20,7 +20,7 @@ from custos_toolkit.signals.types import SignalDirection
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import Bar
 
-from custos_toolkit_nautilus.adapter.event_publisher import make_signal_tag
+from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
 from custos_toolkit_nautilus.adapter.execution import ExecutionManager
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
 from custos_toolkit_nautilus.adapter.strategy_core import CloseAttempt, plan_close_attempt

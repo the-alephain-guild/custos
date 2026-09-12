@@ -153,7 +153,6 @@ def _make_pipeline_stub(manager, signal):
         _signal_execution_coordinator=manager.sig,
         calculate_signal=lambda _ctx, _bar: signal,
         log=MagicMock(),
-        _event_publisher=SimpleNamespace(enabled=False),
         _is_direction_allowed=lambda _d: True,
         _equity_provider=SimpleNamespace(is_risk_equity_reliable=lambda: True),
         calculate_position_size=lambda _ctx, _sig: 100,

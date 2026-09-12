@@ -112,10 +112,6 @@ class Logger(Protocol):
     def warning(self, message: str, *, color: object = ...) -> None: ...
 
 
-class MessageBus(Protocol):
-    def publish(self, topic: str, payload: bytes) -> None: ...
-
-
 class OrderFactory(Protocol):
     def market(
         self,

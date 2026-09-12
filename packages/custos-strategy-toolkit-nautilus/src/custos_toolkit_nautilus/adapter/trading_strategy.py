@@ -77,11 +77,8 @@ from custos_toolkit_nautilus.adapter.coordinators import (
     TradeEventHandler,
     WarmupCoordinator,
 )
-from custos_toolkit_nautilus.adapter.event_publisher import (
-    EventPublisher,
+from custos_toolkit_nautilus.adapter.signal_correlation import (
     generate_signal_id,
-    resolve_event_strategy_id,
-    strategy_id_env_missing,
 )
 from custos_toolkit_nautilus.adapter.filter_manager import FilterManager
 from custos_toolkit_nautilus.adapter.orders import OrderTracker
@@ -94,11 +91,6 @@ from custos_toolkit_nautilus.adapter.utils import (
     derive_bar_type,
 )
 from custos_toolkit_nautilus.adapter.warmup_manager import WarmupManager
-
-
-class _StrategyId(Protocol):
-    @property
-    def value(self) -> str: ...
 
 
 class NautilusTradingStrategy(NautilusStrategyCore):
@@ -274,15 +266,9 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         # Risk limit log dedup: only log when reason changes
         self._last_risk_reason: str = ""
 
-        # Order → signal_id mapping: MARKET orders lose tags after fill in NautilusTrader
-        # cache (exchange fill events don't carry tags). This map preserves the linkage.
+        # Order → signal_id mapping: a market order loses its tags in the cache once
+        # filled (the venue's fill event carries none), so the link lives here too.
         self._order_signal_map: dict[str, str] = {}
-
-        # Event publishing: placeholder, re-initialized in on_start once self.msgbus and
-        # self.clock are available. Toggled by env var EVENT_PUBLISHING_ENABLED (default off).
-        self._event_publisher: EventPublisher = EventPublisher(
-            msgbus=None, strategy_id="", enabled=False
-        )
 
         # Note: the _paused flag has been pushed down to NautilusStrategyCore.__init__ and
         # is inherited automatically via super().__init__(config); no longer redefined here.
@@ -460,31 +446,6 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         # Step 1: log expected configuration before initialization
         self._log_config_summary()
 
-        # Initialize EventPublisher with the live msgbus/clock
-        events_enabled = os.environ.get("EVENT_PUBLISHING_ENABLED", "").lower() in ("1", "true")
-        self._event_publisher = EventPublisher(
-            msgbus=self.msgbus,
-            # Use the Crucible slug (STRATEGY_ID env) rather than the Nautilus internal id,
-            # otherwise the EventPersister upsert hits orders_strategy_id_fkey -> the SSE
-            # persistence path dies silently.
-            strategy_id=resolve_event_strategy_id(
-                cast(_StrategyId, self.id).value if self.id else ""
-            ),
-            clock=self.clock,
-            enabled=events_enabled,
-        )
-        if events_enabled:
-            self.log.info("Event publishing ENABLED", color=LogColor.GREEN)
-            # Enabled but STRATEGY_ID missing -> events fall back to the Nautilus internal
-            # id and hit the Crucible FK -> Path B is silently lost entirely. Warn so the
-            # silent fallback can't recur unnoticed.
-            if strategy_id_env_missing():
-                self.log.warning(
-                    "EVENT_PUBLISHING_ENABLED but STRATEGY_ID env missing — events will use "
-                    "Nautilus internal id and fail Crucible FK. Set STRATEGY_ID.",
-                    color=LogColor.RED,
-                )
-
         # 1. Initialize global components
         self._filter_coordinator.init_global()
         self._risk_control_coordinator.init_risk_controls()
@@ -651,18 +612,11 @@ class NautilusTradingStrategy(NautilusStrategyCore):
             + (f" | {metadata_str}" if metadata_str else "")
         )
 
-        # 6b. Event emission: signal event
-        if self._event_publisher.enabled and signal.is_actionable():
-            _signal_id = generate_signal_id()
-            signal.metadata["_signal_id"] = _signal_id
-            self._event_publisher.publish_signal(
-                signal_id=_signal_id,
-                direction=signal.direction.name,
-                pair=pair,
-                price=str(signal.price),
-                strength=signal.strength,
-                metadata={k: v for k, v in signal.metadata.items() if not k.startswith("_")},
-            )
+        # 6b. Give the signal an id so the orders it produces can be traced back to it.
+        # Unconditional: it used to be gated on a publisher that no longer exists, which
+        # meant the link was only ever recorded when an env var happened to be set.
+        if signal.is_actionable():
+            signal.metadata["_signal_id"] = generate_signal_id()
 
         # 7. Process signal. Exits bypass entry filters and risk limits; entries are
         # gated by direction permission, risk limits, and direction-aware filters.
@@ -785,16 +739,6 @@ class NautilusTradingStrategy(NautilusStrategyCore):
 
     # ---- Trade result tracking ----
 
-    def on_order_accepted(self, event: OrderAccepted) -> None:
-        """Handle order accepted with top-level exception protection."""
-        try:
-            self._trade_event_handler.handle_order_accepted(event)
-        except Exception as exc:  # noqa: BLE001 — engine doesn't guard callbacks; log and continue
-            self.log.error(
-                f"Exception in on_order_accepted: {type(exc).__name__}: {exc}",
-                color=LogColor.RED,
-            )
-
     def on_order_filled(self, event: OrderFilled) -> None:
         """Handle order filled with top-level exception protection."""
         try:
@@ -802,16 +746,6 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         except Exception as exc:  # noqa: BLE001 — engine doesn't guard callbacks; log and continue
             self.log.error(
                 f"Exception in on_order_filled: {type(exc).__name__}: {exc}",
-                color=LogColor.RED,
-            )
-
-    def on_position_opened(self, event: PositionOpened) -> None:
-        """Handle position opened with top-level exception protection."""
-        try:
-            self._trade_event_handler.handle_position_opened(event)
-        except Exception as exc:  # noqa: BLE001 — engine doesn't guard callbacks; log and continue
-            self.log.error(
-                f"Exception in on_position_opened: {type(exc).__name__}: {exc}",
                 color=LogColor.RED,
             )
 

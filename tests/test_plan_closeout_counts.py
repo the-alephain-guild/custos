@@ -100,23 +100,44 @@ def _newest_claim() -> dict[str, tuple[str, int]]:
 
 @pytest.mark.parametrize("plan", _plans_with_test_tables(), ids=lambda p: p.name)
 def test_a_close_out_counts_no_test_file_that_has_since_been_deleted(plan: Path) -> None:
-    """A count of a file nobody kept is the loudest thing a close-out can say."""
+    """A count of a file nobody kept is the loudest thing a close-out can say.
+
+    Retiring a file follows the same rule as growing one: the newest close-out to count
+    it is the one held to today, and counting it 0 is how a plan says it deleted the
+    file. The older row keeps its number -- it records what that plan delivered, and a
+    later deletion does not make it wrong.
+    """
 
     claimed = dict(_ROW.findall(plan.read_text(encoding="utf-8")))
+    retired = {path for path, (_plan, count) in _newest_claim().items() if count == 0}
 
-    missing = [path for path in claimed if not (ROOT / path).is_file()]
+    missing = [path for path in claimed if not (ROOT / path).is_file() and path not in retired]
 
     assert not missing, f"{plan.name} counts test files that do not exist: {missing}"
+
+
+def test_a_file_counted_as_zero_is_really_gone() -> None:
+    """The other half: 0 is a claim about the tree, not a way to silence a row."""
+
+    still_here = [
+        path
+        for path, (_plan, count) in _newest_claim().items()
+        if count == 0 and (ROOT / path).is_file()
+    ]
+
+    assert not still_here, f"counted 0 but present: {still_here}"
 
 
 def test_the_newest_count_of_every_test_file_matches_what_pytest_collects() -> None:
     claim = _newest_claim()
 
-    collected, skipped = _collect(sorted(claim))
+    # A file the newest claim counts 0 is gone; asking pytest to collect it would be an
+    # error, not a count.
+    collected, skipped = _collect(sorted(path for path, (_p, n) in claim.items() if n))
     wrong = {
         path: {"plan": plan, "claimed": count, "collected": collected.get(path, 0)}
         for path, (plan, count) in claim.items()
-        if path not in skipped and collected.get(path, 0) != count
+        if count and path not in skipped and collected.get(path, 0) != count
     }
 
     assert not wrong, (

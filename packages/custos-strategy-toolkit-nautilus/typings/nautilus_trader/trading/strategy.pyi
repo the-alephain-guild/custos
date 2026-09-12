@@ -95,9 +95,6 @@ class _Logger:
     def info(self, message: str, *, color: object = ...) -> None: ...
     def warning(self, message: str, *, color: object = ...) -> None: ...
 
-class _MessageBus:
-    def publish(self, topic: str, payload: bytes) -> None: ...
-
 class _OrderFactory:
     def market(
         self,
@@ -155,10 +152,14 @@ class Strategy:
     cache: _Cache
     clock: _Clock
     log: _Logger
-    msgbus: _MessageBus
     order_factory: _OrderFactory
     portfolio: _Portfolio
-    id: object
+    # Neither `msgbus` nor `id` exists on 2.0's Strategy (measured against
+    # nautilus_trader 2.0.0rc5): the message bus has no python surface, and the
+    # identity attribute is `strategy_id`. Declaring them here would let code that
+    # reads them type-check and then fail at runtime, which is how the last one
+    # survived.
+    strategy_id: object
 
     def __init__(self, config: StrategyConfig) -> None: ...
     def __init_subclass__(cls, **kwargs: object) -> None: ...
