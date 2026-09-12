@@ -532,6 +532,57 @@ readiness 的 `data_connectivity_ready` / `execution_connectivity_ready` 两个�
 **Step 4（失败模式 · 红线 0.2）**: (a) SoDEX 请求 **live** 在 host gate 被拒，且拒绝理由是「不在 live 集合」而非凭据缺失；(b) `NoopHost` 下 live 必须拒；(c) Binance 的 live 集合与改前逐字相等（不因本次改动缩小）。**这三条是红线测试，不得跳过**
 **Step 5**: commit
 
+#### Task 9 前置调查（2026-09-12，fork `3fe857a351` + 已装 2.0 实读）
+
+Task 7a 收尾时只知道「guarded exec factory 建在 1.x 基类上，Task 9 要重建」。往下查发现
+**重建在原位置是不可能的**，红线 0.2 的承载点必须换地方。
+
+**G1 — 执行客户端层在 2.0 对 Python 是关闭的**
+
+`runner_safety.py:276` 的 `GuardedLiveExecutionClient(LiveExecutionClient)` 与 `:370` 的
+`guarded_exec_client_factory(upstream_factory: type[LiveExecClientFactory])` 依赖两个 1.x 基类
+（`:11-12` 的 import）。2.0 两个都没有：
+
+- `nautilus_trader.execution` 只导出 fill / fee model，`grep -c 'class.*ExecutionClient\b'`
+  在它的 `.pyi` 上是 **0**。全 `.pyi` 里唯一带这个名字的是 `live.ExecutionClientConfig`。
+- 更硬的一层：`builder.add_exec_client(name, factory, config)` 不接受任意 Python 对象。
+  `crates/system/src/python/registry.rs:175` 的 `extract_exec_factory` 拿 `factory.name()` 去一张
+  Rust 注册表里查 extractor，查不到就 `:190` `No execution factory extractor registered for
+  '{factory_name}'`。只有 Rust 侧登记过的 adapter（binance / sandbox / sodex …）在表里。
+
+所以「包一层 upstream factory」这个手法在 2.0 无处落脚，不是改几个符号的事。
+
+**G2 — 唯一可用的拦截点是 Strategy 的下单方法，覆盖面因此要单独论证**
+
+toolkit 的下单全部经 `s.submit_order(order)`（`packages/**/adapter/` 下 grep 实测 10 处，分布在
+`strategy_core.py` 与 `coordinators/{signal_execution,execution,sltp}.py`），所以策略主动下的单
+可以 100% 覆盖 —— 手法与 Task 7a 的事件转发同源：host 在实例上装包装并验证装上了。
+
+**绕过路径有三条，都可以被 host 关掉或看见**，这是它能算数的前提：
+
+| 绕过 | 触发条件 | 是否可拦 |
+|---|---|---|
+| order manager 代下单（contingent / emulated）| `StrategyConfig.manage_contingent_orders` 等三个开关；命中后走 `strategy/mod.rs:1410 dispatch_manager_actions` → `:1420 SubmitToEmulator` / `:1423 SubmitToRisk`，不经 Python | 三个开关在 `trading/__init__.pyi:988` 起**默认全 `False`**，admission 校验即可 |
+| 单笔带 emulation / exec-algorithm | `order.emulation_trigger` / `order.exec_algorithm_id` | 这两条仍经 `submit_order_native`，包装看得见，拒绝即可 |
+| `market_exit()` | 策略主动调；`strategy/mod.rs:1692` 置 `is_exiting` 后由 NT 代平仓 | Strategy 的公开方法，toolkit grep 零命中，包装或 admission 可处理 |
+
+**位置本身是弱化**：1.x 守在 exec client（最靠近 venue，任何来源的命令都过），2.0 守在 strategy
+（最靠近来源，只有经过它的命令才过）。上面三条堵上之后覆盖面可论证，但「堵上」是一组前提，
+不再是结构上的必然。
+
+**G3 — 拒绝的语义变了，而且这次是变干净了；代价在别处**
+
+`crates/trading/src/strategy/mod.rs:2318 submit_order_native` 里，`:2364` 才
+`cache.add_order(...)`、`:2367` 才 `publish_order_initialized(order)`。也就是说**在 Python 层拦住
+不调 `submit_order`，订单从未进 cache、从未发出任何事件**——它只是一个被丢弃的 Python 对象。
+1.x 需要补一个 `generate_order_rejected` 让已经在 cache 里的订单闭合，2.0 不需要，也没法：
+Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的 `generate_order_*` 随 G1
+一起没了。
+
+**代价是拒绝不再产生任何 NT 事件**。1.x 的 OrderRejected 会经 RunnerFact 桥接落进签名事实流；
+2.0 拦在这里，NT 什么都不会说。所以「对账不静默」要求 custos 在拒绝时**自己**发 RunnerFact，
+否则每一次守卫生效都是静默的——守住了资金，丢掉了记录。
+
 #### Task 9: venue_binance / runner_safety 适配 + 红线 0.3/0.4 回归
 **Files**: `venue_binance.py`, `runner_safety.py`
 **Step 1-3**: Binance adapter 符号路径 + `PriceType` 适配
