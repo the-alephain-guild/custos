@@ -17,21 +17,23 @@ import pytest
 
 pytest.importorskip("nautilus_trader")
 
-from nautilus_trader.adapters.binance.common.enums import (  # noqa: E402
-    BinanceAccountType,
+from nautilus_trader.adapters.binance import (  # noqa: E402
     BinanceEnvironment,
+    BinanceProductType,
 )
-from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
-from nautilus_trader.model.identifiers import InstrumentId  # noqa: E402
+from nautilus_trader.model import AccountType, Money, Venue  # noqa: E402
 
+from custos.engines.nautilus import venue_binance  # noqa: E402
 from custos.engines.nautilus.venue_binance import (  # noqa: E402
     _BINANCE_CONNECTORS,
+    binance_account_id,
+    build_binance_futures_leverages,
     build_data_client_config,
     build_exec_client_config_live,
     build_exec_client_config_sandbox,
     build_exec_client_config_testnet,
-    build_futures_leverages,
-    build_instrument_ids,
+    build_instrument_id_strings,
+    build_sandbox_leverage,
     data_environment_for_mode,
     require_live_owner_evidence,
 )
@@ -69,86 +71,91 @@ def _credential() -> dict:
     }
 
 
+def _captured_kwargs(monkeypatch, config_name: str) -> dict:
+    """Record what is handed to an NT config constructor.
+
+    2.0's config objects do not read the credential back: there is no ``api_key``
+    attribute and the repr redacts it (asserted separately). That is the behaviour
+    red line 0.1 wants, and it also means the only place to observe what this module
+    forwarded is the call itself.
+    """
+    captured: dict = {}
+    original = getattr(venue_binance, config_name)
+
+    def _record(**kwargs):
+        captured.update(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(venue_binance, config_name, _record)
+    return captured
+
+
 def test_build_instrument_ids() -> None:
-    ids = build_instrument_ids(_spec("binance_perpetual"))
-    assert ids == frozenset(
-        {
-            InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
-            InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
-        }
-    )
+    ids = build_instrument_id_strings(_spec("binance_perpetual"))
+    assert ids == ("BTCUSDT-PERP.BINANCE", "ETHUSDT-PERP.BINANCE")
 
 
 def test_build_instrument_ids_spot() -> None:
-    ids = build_instrument_ids(_spec("binance"))
-    assert ids == frozenset(
-        {
-            InstrumentId.from_str("BTCUSDT.BINANCE"),
-            InstrumentId.from_str("ETHUSDT.BINANCE"),
-        }
-    )
+    ids = build_instrument_id_strings(_spec("binance"))
+    assert ids == ("BTCUSDT.BINANCE", "ETHUSDT.BINANCE")
 
 
 def test_build_instrument_ids_singular_pair_fallback() -> None:
-    ids = build_instrument_ids({"connector": "binance_perpetual", "pair": "SOL-USDT"})
-    assert ids == frozenset({InstrumentId.from_str("SOLUSDT-PERP.BINANCE")})
+    ids = build_instrument_id_strings({"connector": "binance_perpetual", "pair": "SOL-USDT"})
+    assert ids == ("SOLUSDT-PERP.BINANCE",)
 
 
-def test_build_futures_leverages_keyed_by_instrument_id() -> None:
-    leverages = build_futures_leverages(_spec("binance_perpetual"))
-    assert leverages == {
-        InstrumentId.from_str("BTCUSDT-PERP.BINANCE"): Decimal("3"),
-        InstrumentId.from_str("ETHUSDT-PERP.BINANCE"): Decimal("3"),
-    }
+def test_the_sandbox_leverage_is_the_declared_one() -> None:
+    assert build_sandbox_leverage(_spec("binance_perpetual")) == Decimal("3")
 
 
-def test_build_data_client_config_perpetual() -> None:
+def test_build_data_client_config_perpetual(monkeypatch) -> None:
     spec = _spec("binance_perpetual")
     spec["trading_mode"] = "live"
+    forwarded = _captured_kwargs(monkeypatch, "BinanceDataClientConfig")
     cfg = build_data_client_config(spec, _credential())
-    assert cfg.api_key == "test-key"
-    assert cfg.api_secret == "test-secret"
-    assert cfg.account_type == BinanceAccountType.USDT_FUTURES
+    assert forwarded["api_key"] == "test-key"
+    assert forwarded["api_secret"] == "test-secret"
+    assert cfg.product_type == BinanceProductType.USD_M
     assert cfg.environment == BinanceEnvironment.LIVE
     assert cfg.instrument_provider.load_all is False
-    assert InstrumentId.from_str("BTCUSDT-PERP.BINANCE") in cfg.instrument_provider.load_ids
+    assert "BTCUSDT-PERP.BINANCE" in cfg.instrument_provider.load_ids
 
 
 def test_build_data_client_config_spot() -> None:
     spec = _spec("binance")
     spec["trading_mode"] = "live"
     cfg = build_data_client_config(spec, _credential())
-    assert cfg.account_type == BinanceAccountType.SPOT
+    assert cfg.product_type == BinanceProductType.SPOT
 
 
-def test_build_data_client_config_sandbox_uses_anonymous_public_feed() -> None:
+def test_build_data_client_config_sandbox_uses_anonymous_public_feed(monkeypatch) -> None:
     spec = _spec("binance_perpetual")
     spec["trading_mode"] = "sandbox"
+    forwarded = _captured_kwargs(monkeypatch, "BinanceDataClientConfig")
 
-    cfg = build_data_client_config(spec, _credential())
+    build_data_client_config(spec, _credential())
 
-    assert cfg.api_key is None
-    assert cfg.api_secret is None
+    assert forwarded["api_key"] is None
+    assert forwarded["api_secret"] is None
 
 
 def test_build_exec_client_config_sandbox_futures() -> None:
     cfg = build_exec_client_config_sandbox(
         _spec("binance_perpetual"), _credential(), ["10_000 USDT"]
     )
-    assert cfg.venue == "BINANCE"
-    # NT config stores the enum field as its string name; node.build() rejects
-    # the enum object, so the helper must emit "MARGIN"/"CASH" (regression guard).
-    assert cfg.account_type == "MARGIN"
-    assert cfg.starting_balances == ["10_000 USDT"]
-    assert cfg.leverages == {
-        InstrumentId.from_str("BTCUSDT-PERP.BINANCE"): Decimal("3"),
-        InstrumentId.from_str("ETHUSDT-PERP.BINANCE"): Decimal("3"),
-    }
+    assert cfg.venue == Venue("BINANCE")
+    assert cfg.account_id == binance_account_id()
+    assert cfg.account_type == AccountType.MARGIN
+    assert cfg.starting_balances == [Money.from_str("10_000 USDT")]
+    # 2.0 replaced the per-instrument map with one account-wide default. The spec
+    # carries a single leverage, so the old map said this same thing per instrument.
+    assert cfg.default_leverage == Decimal("3")
 
 
 def test_build_exec_client_config_sandbox_spot_is_cash() -> None:
     cfg = build_exec_client_config_sandbox(_spec("binance"), _credential(), ["10_000 USDT"])
-    assert cfg.account_type == "CASH"
+    assert cfg.account_type == AccountType.CASH
 
 
 def test_missing_api_key_raises() -> None:
@@ -169,20 +176,20 @@ def test_unsupported_connector_notimpl() -> None:
 def test_testnet_env_pin() -> None:
     cfg = build_exec_client_config_testnet(_spec("binance_perpetual"), _credential())
     assert cfg.environment == BinanceEnvironment.TESTNET
-    assert cfg.account_type == BinanceAccountType.USDT_FUTURES
-    assert cfg.api_key == "test-key"
+    assert cfg.product_type == BinanceProductType.USD_M
+    assert cfg.account_id == binance_account_id()
 
 
 def test_testnet_env_pin_spot() -> None:
     cfg = build_exec_client_config_testnet(_spec("binance"), _credential())
     assert cfg.environment == BinanceEnvironment.TESTNET
-    assert cfg.account_type == BinanceAccountType.SPOT
+    assert cfg.product_type == BinanceProductType.SPOT
 
 
 def test_live_env_pin() -> None:
     cfg = build_exec_client_config_live(_approved_spec("binance_perpetual"), _credential())
     assert cfg.environment == BinanceEnvironment.LIVE
-    assert cfg.account_type == BinanceAccountType.USDT_FUTURES
+    assert cfg.product_type == BinanceProductType.USD_M
 
 
 def test_live_missing_owner_evidence_rejected() -> None:
@@ -246,36 +253,36 @@ def test_build_data_client_config_testnet_env() -> None:
 def test_testnet_pins_the_declared_leverage() -> None:
     cfg = build_exec_client_config_testnet(_spec("binance_perpetual"), _credential())
 
-    assert cfg.futures_leverages == {
-        BinanceSymbol("BTCUSDT-PERP"): 3,
-        BinanceSymbol("ETHUSDT-PERP"): 3,
-    }
+    assert cfg.futures_leverages == {"BTCUSDT": 3, "ETHUSDT": 3}
 
 
 def test_live_pins_the_declared_leverage() -> None:
     cfg = build_exec_client_config_live(_approved_spec("binance_perpetual"), _credential())
 
-    assert cfg.futures_leverages == {
-        BinanceSymbol("BTCUSDT-PERP"): 3,
-        BinanceSymbol("ETHUSDT-PERP"): 3,
-    }
+    assert cfg.futures_leverages == {"BTCUSDT": 3, "ETHUSDT": 3}
 
 
 def test_the_pinned_leverage_is_keyed_the_way_binance_reads_it() -> None:
-    """Not a drop-in from the sandbox map, which is why this was easy to leave unwired.
+    """Each key is sent to the venue as the ``symbol`` of a set-leverage call.
 
-    ``build_futures_leverages`` is keyed by ``InstrumentId`` with ``Decimal`` values;
-    this field wants ``BinanceSymbol`` keys and plain ``int``. BinanceSymbol also drops
-    the ``-PERP`` suffix, so the key the venue sees is ``BTCUSDT``. msgspec does not
-    validate on direct construction, so handing it the wrong shape would pass here and
-    fail somewhere further away.
+    So it has to be the exchange's own symbol -- ``BTCUSDT`` -- not the instrument id,
+    which carries a ``-PERP`` suffix the venue does not know. The 1.x adapter had a
+    ``BinanceSymbol`` type that stripped it; 2.0 takes plain strings, so nothing would
+    complain about an id-shaped key until the exchange rejected the call.
     """
     cfg = build_exec_client_config_testnet(_spec("binance_perpetual"), _credential())
 
     for symbol, value in cfg.futures_leverages.items():
-        assert isinstance(symbol, BinanceSymbol), f"{symbol!r} is not a BinanceSymbol"
+        assert "-PERP" not in symbol, f"{symbol!r} is an instrument id, not a venue symbol"
         assert type(value) is int, f"{value!r} is {type(value).__name__}, not int"
     assert set(cfg.futures_leverages) == {"BTCUSDT", "ETHUSDT"}
+
+
+def test_the_leverage_map_is_built_from_the_spec_alone() -> None:
+    assert build_binance_futures_leverages(_spec("binance_perpetual")) == {
+        "BTCUSDT": 3,
+        "ETHUSDT": 3,
+    }
 
 
 def test_spot_declares_no_leverage() -> None:
@@ -292,3 +299,70 @@ def test_margin_type_is_left_alone_until_the_spec_can_say() -> None:
     cfg = build_exec_client_config_testnet(_spec("binance_perpetual"), _credential())
 
     assert cfg.futures_margin_types is None
+
+
+# ---------------------------------------------------------------------------
+# Key type
+#
+# 1.x carried the declared key type into the client config. 2.0 dropped the field
+# and reads the key material instead, so the declaration now goes nowhere -- and a
+# key type 2.0 cannot sign with would only surface at the exchange, in a message
+# about the credential rather than about the type.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("key_type", ["HMAC", "hmac", "ED25519"])
+def test_a_supported_key_type_is_accepted(monkeypatch, key_type: str) -> None:
+    credential = dict(_credential(), key_type=key_type)
+    forwarded = _captured_kwargs(monkeypatch, "BinanceExecutionClientConfig")
+
+    build_exec_client_config_testnet(_spec("binance_perpetual"), credential)
+
+    assert forwarded["api_key"] == "test-key"
+
+
+def test_an_absent_key_type_means_hmac(monkeypatch) -> None:
+    credential = {"api_key": "test-key", "api_secret": "test-secret"}
+    forwarded = _captured_kwargs(monkeypatch, "BinanceExecutionClientConfig")
+
+    build_exec_client_config_testnet(_spec("binance_perpetual"), credential)
+
+    assert forwarded["api_key"] == "test-key"
+
+
+def test_rsa_is_refused_here_rather_than_at_the_exchange() -> None:
+    credential = dict(_credential(), key_type="RSA")
+
+    with pytest.raises(RuntimeError, match="key type 'RSA' is not supported"):
+        build_exec_client_config_testnet(_spec("binance_perpetual"), credential)
+
+
+def test_the_data_client_refuses_it_too() -> None:
+    """The exec client is not the only authenticated one; testnet and live data
+    clients sign as well, so the same credential has to be refused on both paths."""
+    spec = dict(_spec("binance_perpetual"), trading_mode="testnet")
+    credential = dict(_credential(), key_type="RSA")
+
+    with pytest.raises(RuntimeError, match="key type 'RSA' is not supported"):
+        build_data_client_config(spec, credential, BinanceEnvironment.TESTNET)
+
+
+def test_the_config_objects_do_not_read_the_credential_back() -> None:
+    """Red line 0.1, and stronger than it was in 1.x.
+
+    The 2.0 config exposes no ``api_key`` attribute at all and its repr redacts the
+    material, so a credential cannot reach a log through a config repr -- which is
+    exactly the accident this red line is about. Asserted rather than assumed,
+    because the whole authenticated path hands real keys to these constructors.
+    """
+    spec = dict(_spec("binance_perpetual"), trading_mode="testnet")
+    credential = {"api_key": "key-material-abc", "api_secret": "secret-material-xyz"}
+
+    exec_cfg = build_exec_client_config_testnet(spec, credential)
+    data_cfg = build_data_client_config(spec, credential, BinanceEnvironment.TESTNET)
+
+    for cfg in (exec_cfg, data_cfg):
+        assert not hasattr(cfg, "api_key")
+        assert not hasattr(cfg, "api_secret")
+        assert "key-material-abc" not in repr(cfg)
+        assert "secret-material-xyz" not in repr(cfg)

@@ -5,7 +5,7 @@ NautilusTrader client-config objects. Three execution modes:
 - sandbox: real-time Binance *data* feed + a locally simulated *execution* venue
   (``SandboxExecutionClientConfig`` + ``SandboxLiveExecClientFactory``), so no
   real orders reach the exchange.
-- testnet: real Binance exec (``BinanceExecClientConfig`` with environment
+- testnet: real Binance exec (``BinanceExecutionClientConfig`` with environment
   TESTNET) against the Binance testnet endpoint, with a testnet data feed.
 - live: same but environment LIVE against the real exchange; a live exec config
   cannot be built without separation-of-duties approval (>= 2 approvers).
@@ -24,25 +24,39 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from nautilus_trader.adapters.binance.common.enums import (
-    BinanceAccountType,
-    BinanceEnvironment,
-)
-from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
-from nautilus_trader.adapters.binance.config import (
+from nautilus_trader.adapters.binance import (
     BinanceDataClientConfig,
-    BinanceExecClientConfig,
-    BinanceKeyType,
+    BinanceEnvironment,
+    BinanceExecutionClientConfig,
+    BinanceInstrumentProviderConfig,
+    BinanceProductType,
 )
-from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
-from nautilus_trader.config import InstrumentProviderConfig
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
+from nautilus_trader.model import (
+    AccountId,
+    AccountType,
+    InstrumentId,
+    Money,
+    OmsType,
+    Venue,
+)
 
-# NT config stores these enum fields as their string name (not the enum object);
-# node.build() rejects the enum instances. Pass the names directly.
-_ACCOUNT_TYPE_FUTURES = "MARGIN"
-_ACCOUNT_TYPE_SPOT = "CASH"
-_OMS_TYPE_NETTING = "NETTING"
+# The sandbox exec config takes these as model enums, not as their string names.
+_ACCOUNT_TYPE_FUTURES = AccountType.MARGIN
+_ACCOUNT_TYPE_SPOT = AccountType.CASH
+_OMS_TYPE_NETTING = OmsType.NETTING
+
+# The exchange account this runner's execution client speaks for. One node holds
+# one credential scope, so one account id per venue is exact; the number is the
+# NautilusTrader convention for the account's ordinal at the issuer, not an
+# account selector.
+_ACCOUNT_ORDINAL = "001"
+
+# 2.0 detects an Ed25519 key from the key material itself and dropped the explicit
+# key-type field, so these two are what its Binance clients can sign with. RSA was
+# accepted by the 1.x adapter and has no 2.0 equivalent: a credential declaring it is
+# refused here rather than handed over to fail later as an exchange-side auth error.
+_SUPPORTED_KEY_TYPES = frozenset({"HMAC", "ED25519"})
 
 BINANCE_VENUE = "BINANCE"
 
@@ -100,6 +114,21 @@ def require_live_owner_evidence(spec: dict) -> None:
         raise RuntimeError("live_owner_evidence_missing")
 
 
+def require_supported_key_type(credential: dict) -> None:
+    """Refuse a credential whose key type this adapter cannot sign with.
+
+    The declared type is not forwarded anywhere -- 2.0 reads the key material -- so
+    without this check an RSA credential would be accepted here and only fail at the
+    exchange, where the message names the credential rather than the reason.
+    """
+    key_type = str(credential.get("key_type") or "HMAC").upper()
+    if key_type not in _SUPPORTED_KEY_TYPES:
+        raise RuntimeError(
+            f"binance key type {key_type!r} is not supported by this adapter "
+            f"(supported: {', '.join(sorted(_SUPPORTED_KEY_TYPES))})"
+        )
+
+
 def _binance_exchange_type(connector: str) -> str:
     """Resolve connector to spot/futures, rejecting non-Binance venues."""
     exchange_type = _BINANCE_CONNECTORS.get(connector)
@@ -127,39 +156,52 @@ def _format_instrument_id(pair: str, connector: str) -> str:
     return f"{symbol}.{BINANCE_VENUE}"
 
 
-def build_instrument_ids(spec: dict) -> frozenset[InstrumentId]:
-    """InstrumentId set for the configured pairs."""
-    connector = spec["connector"]
-    return frozenset(
-        InstrumentId.from_str(_format_instrument_id(pair, connector))
-        for pair in _trading_pairs(spec)
-    )
+def build_instrument_id_strings(spec: dict) -> tuple[str, ...]:
+    """Instrument ids for the configured pairs, in the order the spec lists them.
 
-
-def build_futures_leverages(spec: dict) -> dict[InstrumentId, Decimal]:
-    """Per-instrument leverage map for the configured pairs, in the sandbox's shape.
-
-    Keyed by InstrumentId with Decimal values, which is what the sandbox exec config's
-    ``leverages`` field takes. Binance wants a different shape entirely -- see
-    ``build_binance_futures_leverages``. Without pinning, the account default (e.g. 20x)
-    would apply.
+    Strings rather than ``InstrumentId``: the instrument-provider config takes a
+    sequence of id strings. Order follows the spec so the loaded set is reproducible.
     """
     connector = spec["connector"]
-    leverage = Decimal(str(spec.get("leverage", 1)))
-    return {
-        InstrumentId.from_str(_format_instrument_id(pair, connector)): leverage
-        for pair in _trading_pairs(spec)
-    }
+    return tuple(_format_instrument_id(pair, connector) for pair in _trading_pairs(spec))
 
 
-def build_binance_futures_leverages(spec: dict) -> dict[BinanceSymbol, int]:
-    """The same declaration in the shape ``BinanceExecClientConfig`` reads.
+def _binance_product_type(connector: str) -> BinanceProductType:
+    """The venue's product line for a connector: USD-margined futures, or spot."""
+    if _binance_exchange_type(connector) == "futures":
+        return BinanceProductType.USD_M
+    return BinanceProductType.SPOT
 
-    Not a reshaping of the sandbox map for the sake of it: that one is keyed by
-    ``InstrumentId`` with ``Decimal`` values, this field is keyed by ``BinanceSymbol``
-    with ``int``, and ``BinanceSymbol`` drops the ``-PERP`` suffix, so the venue is keyed
-    by ``BTCUSDT``. msgspec does not type-check on direct construction, so passing the
-    sandbox map here would be accepted and then mean nothing.
+
+def binance_account_id() -> AccountId:
+    """The account this runner's Binance clients speak for.
+
+    2.0 requires the execution client to name its account rather than deriving one.
+    A node holds exactly one credential scope, so a single ordinal at this issuer is
+    exact -- it is not selecting between accounts.
+    """
+    return AccountId.from_str(f"{BINANCE_VENUE}-{_ACCOUNT_ORDINAL}")
+
+
+def build_sandbox_leverage(spec: dict) -> Decimal:
+    """The declared leverage as the sandbox venue's account-wide default.
+
+    The sandbox exec config takes one ``default_leverage`` rather than the
+    per-instrument map it used to take. Nothing is lost: the spec carries a single
+    ``leverage`` and the old map filled every instrument with that same value.
+    Without it the account default (e.g. 20x) would apply.
+    """
+    return Decimal(str(spec.get("leverage", 1)))
+
+
+def build_binance_futures_leverages(spec: dict) -> dict[str, int]:
+    """The same declaration in the shape the Binance exec config reads.
+
+    Each key goes straight into the venue's set-leverage call as its ``symbol``
+    parameter, so it has to be the exchange's own symbol -- ``BTCUSDT``, without the
+    ``-PERP`` the instrument id carries. The 1.x adapter had a ``BinanceSymbol`` type
+    that stripped the suffix on construction; 2.0 takes plain strings, so the stripping
+    is done here.
 
     ``leverage`` is a positive integer in the spec contract, so it converts exactly; a
     float would have to round, and silently rounding a risk parameter is not a thing to
@@ -168,11 +210,14 @@ def build_binance_futures_leverages(spec: dict) -> dict[BinanceSymbol, int]:
     connector = spec["connector"]
     leverage = int(spec.get("leverage", 1))
     return {
-        BinanceSymbol(InstrumentId.from_str(_format_instrument_id(pair, connector)).symbol.value): (
-            leverage
-        )
+        _venue_symbol(_format_instrument_id(pair, connector)): leverage
         for pair in _trading_pairs(spec)
     }
+
+
+def _venue_symbol(instrument_id: str) -> str:
+    """The exchange's symbol for an instrument id: ``BTCUSDT-PERP.BINANCE`` -> ``BTCUSDT``."""
+    return InstrumentId.from_str(instrument_id).symbol.value.removesuffix("-PERP")
 
 
 def build_data_client_config(
@@ -188,29 +233,23 @@ def build_data_client_config(
     clients so their credential failures remain fail-fast.
     """
     connector = spec["connector"]
-    exchange_type = _binance_exchange_type(connector)
     trading_mode = str(spec.get("trading_mode") or "sandbox").lower()
     if trading_mode == "sandbox":
         api_key = None
         api_secret = None
-        key_type = BinanceKeyType.HMAC
     else:
         # Fail-fast on a malformed credential before any NT object is built.
+        require_supported_key_type(credential)
         api_key = credential["api_key"]
         api_secret = credential["api_secret"]
-        key_type = BinanceKeyType[str(credential.get("key_type", "HMAC")).upper()]
-    account_type = (
-        BinanceAccountType.USDT_FUTURES if exchange_type == "futures" else BinanceAccountType.SPOT
-    )
     return BinanceDataClientConfig(
         api_key=api_key,
         api_secret=api_secret,
-        key_type=key_type,
-        account_type=account_type,
+        product_type=_binance_product_type(connector),
         environment=environment,
-        instrument_provider=InstrumentProviderConfig(
+        instrument_provider=BinanceInstrumentProviderConfig(
             load_all=False,
-            load_ids=build_instrument_ids(spec),
+            load_ids=build_instrument_id_strings(spec),
         ),
     )
 
@@ -230,16 +269,17 @@ def build_exec_client_config_sandbox(
     exchange_type = _binance_exchange_type(connector)
     if exchange_type == "futures":
         account_type = _ACCOUNT_TYPE_FUTURES
-        leverages = build_futures_leverages(spec)
+        default_leverage = build_sandbox_leverage(spec)
     else:
         account_type = _ACCOUNT_TYPE_SPOT
-        leverages = {}
+        default_leverage = None
     return SandboxExecutionClientConfig(
-        venue=BINANCE_VENUE,
-        starting_balances=starting_balances,
+        venue=Venue(BINANCE_VENUE),
+        starting_balances=[Money.from_str(balance) for balance in starting_balances],
+        account_id=binance_account_id(),
         account_type=account_type,
         oms_type=_OMS_TYPE_NETTING,
-        leverages=leverages,
+        default_leverage=default_leverage,
     )
 
 
@@ -247,7 +287,7 @@ def _build_binance_exec_config(
     spec: dict,
     credential: dict,
     environment: BinanceEnvironment,
-) -> BinanceExecClientConfig:
+) -> BinanceExecutionClientConfig:
     """Real Binance exec-client config (testnet / live) for the given environment.
 
     Fills are placed on the exchange, so the live credential is forwarded into
@@ -256,38 +296,36 @@ def _build_binance_exec_config(
     """
     connector = spec["connector"]
     exchange_type = _binance_exchange_type(connector)
+    require_supported_key_type(credential)
     api_key = credential["api_key"]
     api_secret = credential["api_secret"]
-    key_type = BinanceKeyType[str(credential.get("key_type", "HMAC")).upper()]
-    account_type = (
-        BinanceAccountType.USDT_FUTURES if exchange_type == "futures" else BinanceAccountType.SPOT
-    )
     # Spot has no futures leverage to set. Margin type is left to the account: isolated
     # and cross imply different liquidation distances and the spec cannot say which, so
     # choosing one here would be inventing the policy rather than carrying it.
     futures_leverages = (
         build_binance_futures_leverages(spec) if exchange_type == "futures" else None
     )
-    return BinanceExecClientConfig(
+    return BinanceExecutionClientConfig(
+        account_id=binance_account_id(),
         api_key=api_key,
         api_secret=api_secret,
-        key_type=key_type,
-        account_type=account_type,
+        product_type=_binance_product_type(connector),
         environment=environment,
+        oms_type=_OMS_TYPE_NETTING,
         futures_leverages=futures_leverages,
-        instrument_provider=InstrumentProviderConfig(
+        instrument_provider=BinanceInstrumentProviderConfig(
             load_all=False,
-            load_ids=build_instrument_ids(spec),
+            load_ids=build_instrument_id_strings(spec),
         ),
     )
 
 
-def build_exec_client_config_testnet(spec: dict, credential: dict) -> BinanceExecClientConfig:
+def build_exec_client_config_testnet(spec: dict, credential: dict) -> BinanceExecutionClientConfig:
     """Real Binance exec against the testnet endpoint (test funds)."""
     return _build_binance_exec_config(spec, credential, BinanceEnvironment.TESTNET)
 
 
-def build_exec_client_config_live(spec: dict, credential: dict) -> BinanceExecClientConfig:
+def build_exec_client_config_live(spec: dict, credential: dict) -> BinanceExecutionClientConfig:
     """Real Binance exec against live, gated by signed control-plane owner evidence."""
     require_live_owner_evidence(spec)
     return _build_binance_exec_config(spec, credential, BinanceEnvironment.LIVE)
