@@ -408,6 +408,90 @@ host 必须在 `add_strategy` 前校验策略具备转发契约，否则拒绝�
 （让 host 能跑，可由 `tests/test_nt_trading_node_host.py` 713 行等验证）；7b = plan 原列的品味
 重构（spec 归一 typed 视图 + NT 能力收成 typed adapter，27 处 `getattr` 收口）。
 
+#### Task 7a 实施期补充调查（2026-09-12，fork `3fe857a351` 实读）
+
+上面那段前置调查停在「msgbus 没了、改走 Strategy 回调」。实施期再往下扫一层，发现的不是
+API 名而是**语义与能力边界**的五处变化。四维 Foundation Scan 里这属于影响面维（教训 #33b）：
+第一层是符号路径，第二层是 msgbus 不存在，第三层（本段）是替代路径自身带着 1.x 没有的条件。
+
+**F1 — 一个 event loop 只能跑一个 LiveNode（架构级，需 owner 决策）**
+
+`crates/live/src/python/node.rs:989` 在 `run_async` 里检查 thread-local `HOSTED_RUN_ACTIVE`
+（`:216` 定义），命中即抛 `another LiveNode is already running on this event loop; run one
+concurrent LiveNode per process`。`:214-215` 给的理由是硬的：「the runner binds its senders
+into thread-local storage and the msgbus is thread-local, so two interleaved hosted nodes would
+cross-wire each other's events rather than fail」——不是保守限制，是会串线。
+
+而 custos host 是按多 instance 建的：`_active_nodes` / `_lifecycle_authorities` /
+`_runner_fact_contexts` 都是 `dict[instance_id, …]`，`_claim_execution_account_partition`
+（`host.py:351`）专门防同一 credential scope 上出现第二个 testnet/live instance——这个守卫的
+存在本身就说明「同一 runner 上多个 instance」是设计内的。
+
+本 Task 采取 **fail closed**：deploy 第二个 instance 时在 host 内明确拒绝，理由指名 NT 2.0 的
+per-loop 约束，而不是让它走到 `run_async` 去撞一个 NT 的通用错误、更不是让两个 node 串线。
+**这是能力缩减，需 owner 定去向**：(a) 维持单 instance（本 Task 的选择）；(b) 每 instance 一个
+线程 + 独立 loop；(c) 每 instance 一个进程（NT 自己的建议）。(b)/(c) 都是独立 plan 的量。
+
+**F2 — 事件回调受 `ComponentState::Running` 门控（红线兑现范围）**
+
+`crates/trading/src/strategy/mod.rs:1356`（order）与 `:1468`（position）在分发前一律
+`if state != ComponentState::Running { return; }`，`:1354-1355` 的注释写明用意：「Events are
+logged unconditionally so residual events received after stop remain observable, but dispatch is
+gated on the running state.」
+
+1.x 的 `msgbus.subscribe("events.order.*", …)` 没有这个门，订阅到 dispose 前一直有效。所以
+迁移后两个红线桥接的可见窗口从「订阅期间」收窄为「策略 Running 期间」。已核实的两侧边界：
+
+- **停止侧安全**：`host.py:737` `_apply_shutdown_policy` 在 `node.stop_async()` **之前**跑完，
+  flatten / preserve 的撤单与平仓都发生在策略仍 Running 时。另外 2.0 的 Strategy **没有
+  `pause`**（`.venv` 的 `trading/__init__.pyi:472-` 有 `stop`/`resume`/`degrade`/`fault`，无
+  `pause`），所以 `_apply_shutdown_policy` 里 `getattr(strategy, "pause", None)` 那条 fallback
+  在 2.0 下恒为 None——它不会把策略提前踢出 Running。
+- **残留侧有缺口**：`stop` 之后交易所迟到的终态回报（cancel ack / 迟到 fill）不再进回调。1.x
+  下 msgbus 仍会送达。影响：RunnerFact 少一条迟到事实、reservation 少一次释放。
+- **启动侧影响小**：reconciliation 期间的事件不属于本进程初始化的订单，`_owned_order_ids`
+  （`runner_fact_producer.py:293`）与 `_has_reservation` 本来就会丢弃它们。
+
+close-out 的红线表必须按这个窗口如实写，不得承袭红线名（教训 #40）。
+
+**F3 — Python 回调抛的异常被 Rust 侧丢弃**
+
+`crates/trading/src/python/strategy.rs:973` 是 `let _ = self.dispatch_on_order_event(event);`，
+position 侧 `:1045` 同形。也就是说桥接里 `raise` 传不回 NT，什么都不会停。1.x 下 msgbus 回调
+的异常同样不保证传播，但当时桥接是唯一订阅者；现在转发器夹在 NT 与桥接之间，**必须自己**把
+失败变成可见信号，否则「对账不静默」在 2.0 下自动降级为静默。
+
+**F4 — `subscribe_topic` 不是替代路径（补前置调查的第四条排除）**
+
+前置调查排除了 `add_stream_processor` / `with_external_msgbus_factory` / 2.0 `Actor`，漏了
+Strategy 自己的 `subscribe_topic`（`.venv` `trading/__init__.pyi:974`，看起来最像 msgbus 的
+替代）。它收不到 order/position 事件，路由表是两张：
+
+- `subscribe_topic` → `crates/common/src/python/msgbus.rs:842` → `msgbus_api::subscribe_any`
+  （`crates/common/src/msgbus/api.rs:243`），写进 `MessageBus.topics` / `.subscriptions`
+- order/position 事件 → `api.rs:1172 publish_order_event` / `:1184 publish_position_event`
+  → `:1285 publish_typed`，只填 typed router（`bus.router_order_events`）与 tls handler buffer，
+  **不查** `bus.topics`
+
+`BusTap`（`crates/common/src/msgbus/mod.rs:230`）能看到全部 publish 且早于组件状态门，但它是
+Rust-only（`on_publish(topic, &dyn Any)`），没有 Python 面，event_store 自用。
+
+**F5 — `kernel` 整体消失，不止 msgbus**
+
+前置调查的映射表只列了 `node.kernel.msgbus` 无对应。实际 host 用到 `node.kernel` 的
+`cache` / `trader` / `portfolio` / `exec_engine` / `loop` / `executor` / `dispose` 七处，2.0 的
+`LiveNode` 一个 `kernel` 属性都没有（`.venv` `live/__init__.pyi:358-399`）。逐条：
+
+| 1.x | 2.0 | 依据 |
+|---|---|---|
+| `node.kernel.cache` / `.portfolio` | `node.cache` / `node.portfolio`，**必须在 `run_async()` 之前捕获** | `python/node.rs:798` `node_consumed_err`：run_async 把 node move 进 awaitable，之后取属性抛「use the `cache` and `portfolio` captured before the run」 |
+| `node.kernel.trader.strategies()` | 无。host 自己持有它 add 进去的策略 | `live/__init__.pyi:385` 只有 `add_strategy` |
+| `node.kernel.trader.is_running` | `node.handle().state == NodeState.RUNNING` | `node/mod.rs:2153 finish_startup_trader` 在 trader 起来后才 `try_set_running`，与 1.x「started trader 即 reconciliation 通过的收据」同义 |
+| `node.kernel.exec_engine.reconciliation` | 无读回面（只有 `builder.with_reconciliation()` 写入） | `live/__init__.pyi:412` |
+| `node.kernel.loop` + `add_signal_handler` | **不再需要** | Python `run_async` 固定 `NodeRunMode::Hosted`（`python/node.rs:549`），`node/mod.rs:1461` 「A hosted node never installs signal handlers」。`_restore_runner_signal_ownership`（`host.py:527`）的存在理由消失 |
+| `node.kernel.dispose` + executor 保护 | `node.dispose()` | 2.0 `dispose` 只做 `close_external_ingress` + `kernel.dispose` + `handle.set_stopped`（`node/mod.rs:562-566`），不碰 Python 的 asyncio loop，所以 `_dispose_node_preserving_runner_loop`（`host.py:763`）那段「NT 会 cancel loop 上所有 task 并 loop.stop()」的理由也消失 |
+| `node.stop_async()` | `node.handle().stop()` → await run task → `node.dispose()` | `python/node.rs:897`：handle 在 run_async 期间仍有效，是 hosted run 的受支持停法 |
+
 #### Task 7: TradingNode → LiveNode
 **Files**: `src/custos/engines/nautilus/host.py`
 **Step 1（证伪）**: `import nautilus_trader.live.node` 报 ImportError
@@ -602,4 +686,9 @@ downstream receipts」）。这条需要推对端交付。
 | DEV | Task 3 判据 | **证伪点失效**：`adapter/__init__.py:7-97` 的 `except ImportError: pass` 使包级 import 在 2.0 下照常成功。判据改为「`__all__` 逐名可达」，并把该静默吞没一并处理（教训 #21） | ✅ 实施中发现 |
 | DEV | Task 1a | **拆为 1a-1（Python 侧）/ 1a-2（Docker 侧）**：两条链路各自可独立验收，合并会让第一个绿等到两轮完整 Rust 编译（本地 + 容器）之后 | ✅ owner 2026-09-12 |
 | DEV | Task 2a 排序 | **2a 从 Slice A 末尾改排到 D 之后**：实测其 `Literal` 改动使 generator 校验 Crucible vendored golden 失败，`check-authority` 在 2b 交付前不可能绿；而 B/C/D 不依赖版本号常量。原顺序等于让整条中间期失去绿判据（C14 在执行顺序上的形态） | ✅ 实施中改排 |
+| DEV | `host.py` / Task 7a | **2.0 一个 event loop 只能跑一个 LiveNode**（`python/node.rs:989` 的 thread-local `HOSTED_RUN_ACTIVE`，理由是 runner senders 与 msgbus 都是 thread-local、两个交错的 hosted node 会串线）。custos host 按多 instance 建（三个 `dict[instance_id, …]` + `_claim_execution_account_partition`）。本 Task 采 fail closed：第二个 instance 在 host 内被明确拒绝。**这是能力缩减，去向需 owner 定**：维持单 instance / 每 instance 一线程 / 每 instance 一进程 | ⏳ 待 owner |
+| DEV | 两个红线桥接 | **事件可见窗口收窄为「策略 Running 期间」**（`strategy/mod.rs:1356` order、`:1468` position 的状态门；1.x 的 msgbus 订阅无此门）。停止侧安全（shutdown policy 跑在 `stop_async` 之前，且 2.0 无 `pause`），残留侧有缺口（stop 后迟到的终态回报不再进回调）。close-out 红线表按此如实降级（教训 #40） | ✅ 实施中发现 |
+| DEV | 转发器 | **Python 回调的异常被 Rust 丢弃**（`strategy/python/strategy.rs:973` / `:1045` 的 `let _ =`）。转发器必须自己把桥接失败变成可见信号，否则「对账不静默」在 2.0 下自动降级为静默 | ✅ 实施中发现 |
+| DEV | Task 7 前置调查 | **补第四条排除：`Strategy.subscribe_topic` 不是 msgbus 替代**。它走 `subscribe_any` → `bus.topics`，而 order/position 走 `publish_typed` → typed router，两张表不相交（`api.rs:243` vs `:1285`）。`BusTap` 能看到全部 publish但是 Rust-only、无 Python 面 | ✅ 实施中发现 |
+| DEV | `host.py:527` / `:763` | **两处 1.x workaround 的理由在 2.0 下消失**：`run_async` 固定 `NodeRunMode::Hosted`、不装 signal handler（`python/node.rs:549` + `node/mod.rs:1461`），故 `_restore_runner_signal_ownership` 无对象；2.0 `dispose` 不碰 Python asyncio loop（`node/mod.rs:562-566`），故 `_dispose_node_preserving_runner_loop` 的 loop 保护无对象。两处删除而非改写 | ✅ 实施中发现 |
 | DEV | Task 2b | **`engine_version` 是跨仓契约字段**（mandatory-rules §3）：custos 只改自有 V1 文件，vendored golden 与 PS / Crucible 侧列为 Blocked，不得自行改写 | ✅ 规则约束，无需批准 |
