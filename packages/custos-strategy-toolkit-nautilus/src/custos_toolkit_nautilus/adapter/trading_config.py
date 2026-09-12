@@ -11,7 +11,7 @@ Provides a base config class that includes common sections shared by all strateg
 Strategies extend NautilusTradingStrategyConfig and add their own parameters section.
 """
 
-from typing import Literal, TypedDict, cast
+from typing import Any, Literal, TypedDict, cast
 
 from custos_toolkit.config.loader import ConfigWrapper
 from custos_toolkit.warmup.snapshot import WarmupConfig, warmup_config_from_dict
@@ -61,7 +61,7 @@ class NautilusBaseConfigSections(TypedDict):
     signal: SignalConfig
 
 
-class NautilusTradingStrategyConfig(StrategyConfig, frozen=True):
+class NautilusTradingStrategyConfig(StrategyConfig):
     """
     Base configuration for Nautilus strategies.
 
@@ -70,8 +70,10 @@ class NautilusTradingStrategyConfig(StrategyConfig, frozen=True):
     parameters field.
 
     Example:
-        class SuperTrendStrategyConfig(NautilusTradingStrategyConfig, frozen=True):
-            parameters: SuperTrendParametersConfig
+        class SuperTrendStrategyConfig(NautilusTradingStrategyConfig):
+            def __init__(self, *, parameters: SuperTrendParametersConfig, **kwargs):
+                object.__setattr__(self, "parameters", parameters)
+                super().__init__(**kwargs)
 
     Attributes:
         trading: Trading configuration (order types, execution settings)
@@ -83,19 +85,75 @@ class NautilusTradingStrategyConfig(StrategyConfig, frozen=True):
         snapshot: Snapshot persistence settings (Redis-based indicator state)
         warmup: Indicator warmup configuration (snapshot restore, history requests)
         signal: Signal processing configuration (OKX Signal Bot compatibility)
+
+    Subclassing note: `StrategyConfig` is a Rust pyclass in 2.0, so this is a
+    plain subclass rather than a msgspec Struct. A subclass that adds fields must
+    set them **before** calling `super().__init__()`, because this constructor
+    freezes the instance on its way out.
     """
 
-    trading: TradingConfig
-    position: PositionConfig
-    risk: RiskConfig
-    filters: FiltersConfig
-    platforms: PlatformsConfig
-    backtesting: BacktestingConfig
-    snapshot: SnapshotConfig = SnapshotConfig()
-    warmup: WarmupConfig | None = None
-    signal: SignalConfig = SignalConfig()
+    _FROZEN_ATTR = "_nautilus_config_frozen"
+    _SECTIONS = (
+        "trading",
+        "position",
+        "risk",
+        "filters",
+        "platforms",
+        "backtesting",
+        "snapshot",
+        "warmup",
+        "signal",
+    )
 
-    def __post_init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        trading: TradingConfig,
+        position: PositionConfig,
+        risk: RiskConfig,
+        filters: FiltersConfig,
+        platforms: PlatformsConfig,
+        backtesting: BacktestingConfig,
+        snapshot: SnapshotConfig | None = None,
+        warmup: WarmupConfig | None = None,
+        signal: SignalConfig | None = None,
+        **_kwargs: Any,
+    ) -> None:
+        assign = object.__setattr__
+        assign(self, "trading", trading)
+        assign(self, "position", position)
+        assign(self, "risk", risk)
+        assign(self, "filters", filters)
+        assign(self, "platforms", platforms)
+        assign(self, "backtesting", backtesting)
+        assign(self, "snapshot", SnapshotConfig() if snapshot is None else snapshot)
+        assign(self, "warmup", warmup)
+        assign(self, "signal", SignalConfig() if signal is None else signal)
+        self._validate()
+        super().__init__(**_kwargs)
+        assign(self, self._FROZEN_ATTR, True)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if getattr(self, self._FROZEN_ATTR, False):
+            raise AttributeError(
+                f"{type(self).__name__} is immutable once constructed; "
+                f"cannot set {name!r}. Subclasses must assign their own fields "
+                "before calling super().__init__()."
+            )
+        object.__setattr__(self, name, value)
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, NautilusTradingStrategyConfig):
+            return NotImplemented
+        return all(
+            getattr(self, name) == getattr(other, name) for name in self._SECTIONS
+        )
+
+    # Sections are not hashable and nothing hashes a config; stay unhashable
+    # rather than inventing an identity that equality would contradict.
+    __hash__ = None  # type: ignore[assignment]
+
+    def _validate(self) -> None:
         # Boundary fail-fast for non-Optional sections: msgspec's plain constructor
         # does not type-check, so explicitly reject None to make "non-Optional sections
         # are never None" a runtime guarantee rather than just a static contract (warmup

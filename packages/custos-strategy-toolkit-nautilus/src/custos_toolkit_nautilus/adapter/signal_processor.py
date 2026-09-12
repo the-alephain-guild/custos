@@ -18,7 +18,7 @@ from custos_toolkit_nautilus.adapter.trading_config import NautilusTradingStrate
 from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
 
 
-class SignalProcessorConfig(NautilusTradingStrategyConfig, frozen=True):
+class SignalProcessorConfig(NautilusTradingStrategyConfig):
     """
     Configuration for SignalProcessorStrategy.
 
