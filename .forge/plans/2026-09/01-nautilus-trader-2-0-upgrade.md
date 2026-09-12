@@ -1,6 +1,6 @@
 # 01 - NautilusTrader 1.230.0 → fork 2.0.0rc5 升级
 
-> **Status**: ⏳ In Progress（Task 0 / 1a-1 / Slice B / **7a / 10 ✅** 2026-09-12。全量 `pytest tests/` 由 `54 failed, 25 errors` 收敛到 `23 failed, 11 errors`；剩余归 Task 9（执行客户端迁移）与 Task 2a（`1.230.0` 断言））
+> **Status**: ⏳ In Progress（Task 0 / 1a-1 / Slice B / 7a / **9 / Slice D 全部 ✅** 2026-09-12。全量 `pytest tests/` 由 `54 failed, 25 errors` 收敛到 **`7 failed, 3 errors`**，剩余 4 个文件全归 Task 2a 与 close-out 计数。未做：7b、8、12、13、1a-2、1b、2a/2b、14）
 > **Created**: 2026-09-11
 > **Project**: custos（跨仓：philosophers-stone）
 > **multi_session_scope**: **true**（6 个 Slice、跨 2 仓库、涉及红线 0.1/0.2/0.4）
@@ -674,7 +674,7 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 | 8 | 🔲 | | 红线 0.2 |
 | 9 | ✅ | 2026-09-12 | `781ccdd`；执行门迁到 strategy 边缘 + 拒单进签名事实流 + money 路径去 or-chain；红线 grep 四条全过 |
 | 10 | ✅ | 2026-09-12 | `3dd7ff6`；27 测试文件拍平 + TestClock→`Clock.new_test()`；22 文件转绿、0 新红 |
-| 11 | ⏳ | | collection error 只剩 `adapters.sandbox.factory` 1 类（在 Task 9 在途文件内）；其余仍红归 Task 2a / 9 |
+| 11 | ✅ | 2026-09-12 | `90eda67`→`fc51c28`；全量 `54 failed/25 err` → `7 failed/3 err`，剩余 4 文件全归 Task 2a（3 个断言 `1.230.0`）与 close-out 计数 |
 | 12 | 🔲 | | PS 仓 |
 | 13 | 🔲 | | PS 仓 |
 | 14 | 🔲 | | |
@@ -806,5 +806,9 @@ downstream receipts」）。这条需要推对端交付。
 | DEV | 多 agent 并行 | **另一个 agent 并行在做 Task 10**，其 `3dd7ff6` 把我当时正在重写的 `test_runner_safety_host_wiring.py` 一并 commit 了（commit message 只说 toolkit/host 测试迁 2.0 import layout，实际含 Task 9 的重写）。内容没丢，但期间两次表现为「文件变回旧内容」，我误判为工具写入未落地、排查了两轮。已登记为 lesson C16 | ✅ 实施中发现 |
 | DEV | `host.py:1232-1233` | **连接状态查询面在 Python 侧整个消失**（F6）：2.0 对 `check_connected` 无 Python 面，Rust 侧也只在启动与停机两端调它。启动判定可由 `handle().state == RUNNING` 顶上（进入 Running 蕴含启动时已连），**运行期断连检测能力丢失**，红线 0.3 按此如实降级。**owner 2026-09-12 定：(a) 降级声明**，用 `handle().state` 顶上，不给 fork 加自有 API；运行期断连检测登记为 follow-up | ✅ owner 2026-09-12 |
 | DEV | `host.py:527` / `:763` | **两处 1.x workaround 的理由在 2.0 下消失**：`run_async` 固定 `NodeRunMode::Hosted`、不装 signal handler（`python/node.rs:549` + `node/mod.rs:1461`），故 `_restore_runner_signal_ownership` 无对象；2.0 `dispose` 不碰 Python asyncio loop（`node/mod.rs:562-566`），故 `_dispose_node_preserving_runner_loop` 的 loop 保护无对象。两处删除而非改写 | ✅ 实施中发现 |
+| DEV | `strategy_core.py` 数据回调 | **2.0 下 toolkit 策略收不到任何 tick**：回调去掉了后缀（`on_trade_tick` → `on_trade`、`on_quote_tick` → `on_quote`），toolkit 仍定义旧名，于是那两个方法**从未被调用**。`on_core_*` 是 toolkit 对策略的契约、不改。Slice B 只改了 import 路径，这层没覆盖到；单测全绿，是 Slice D 的真引擎测试逼出来的 | ✅ 实施中发现 |
+| DEV | `strategy_core.py` 单笔 cancel | **2.0 的 `cancel_order` 收 `ClientOrderId` 而非 order 对象**，而它的 stub 写 `order: Any`——传 order 能通过类型检查，运行时才在回调内抛 `TypeError`，被外层 handler 吞成一行日志。可观测结果是 cancel 永不到达 venue 而无人变红，正是该测试 docstring 预言的「交易所留着一个活着的 stop-loss，日志还愉快地记着请求」。另：`cancel_all_orders` 仍收 `params` 而 `cancel_order` 不再收，传了就显式拒绝、不静默丢 | ✅ 实施中发现 |
+| DEV | Slice D 其余 2.0 改名 | `AggressorSide.BUYER`→`BUY`、`MovingAverageType.WILDER`→`Wilder`、`oms_type` 需 `OmsType` 枚举、`LoggingConfig`→`LoggerConfig`、`Cache(database=)`→`Cache(config=)`、`OrderFactory` 不再收 cache 且 id-shape flags 移到 config、`model.currencies` 删除（改 `Currency.from_str`）、`test_kit` 删除（两个 tick 工厂重建于 `tests/fixtures/nt_data_stubs.py`）。**2.0 的 risk engine 还强制 instrument 最小名义值**，测试的挂单需自带足额 notional | ✅ 实施中发现 |
+| DEV | `set_client_order_id_count` | **能力降级**：2.0 移除该 setter，计数器无法从测试驱动到 `2**31-2` / `2**31-1` 两个最坏点（C11 当初直接钉住的正是它们）。改为断言「UUID 形态下计数器不参与 id，故重复生成长度恒定」，证据强度低于原来，已写进该模块注释 | ✅ 实施中发现 |
 | DEV | 拍平工具（Slice D） | **两个假设在 tests/ 才暴露，adapter 从未触发**：(1) **函数级 import 的作用域**——按文件合并把 `test_pair_context.py` 16 处 per-method import 并到第一个方法、删掉其余 15 处，`BarType`/`InstrumentId` 在那 15 个方法里未定义（47 个 F821）。改为按 enclosing scope 合并，归属用「自 scope 向下走、遇嵌套 scope 即停」。(2) **`# noqa` 承载信息**——`E402`（`pytest.importorskip` 之后的 import）与 `F401`（仅用于可用性探测）；合并时静默丢了 35 个中的 26 个。现按被替换语句的 noqa 并集附加到合并行。两处都是**跑完读 diff/lint 才发现**，不是工具报的错（教训 C10 同族） | ✅ 实施中发现并修 |
 | DEV | Task 2b | **`engine_version` 是跨仓契约字段**（mandatory-rules §3）：custos 只改自有 V1 文件，vendored golden 与 PS / Crucible 侧列为 Blocked，不得自行改写 | ✅ 规则约束，无需批准 |
