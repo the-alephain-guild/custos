@@ -96,6 +96,12 @@ members = [
 [tool.uv.sources]
 custos-strategy-toolkit = { workspace = true }
 custos-strategy-toolkit-nautilus = { workspace = true }
+# Guild fork, pinned to an exact commit. A git source keeps the lock
+# self-contained without requiring a published wheel for every fork commit, at
+# the cost of building the Rust extension once per sha on each machine. Plan 01
+# Task 1b replaces this with a hashed wheel once the fork tags a release; see
+# .forge/plans/2026-09/01-nautilus-trader-2-0-upgrade.md decision D1.
+nautilus-trader = { git = "https://github.com/the-alephain-guild/nautilus_trader", rev = "3fe857a351cccdac991c1df3f11b43e428e73a60", subdirectory = "python" }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
