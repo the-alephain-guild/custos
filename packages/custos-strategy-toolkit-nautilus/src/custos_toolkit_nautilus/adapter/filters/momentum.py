@@ -20,9 +20,12 @@ from typing import TYPE_CHECKING
 from custos_toolkit.protocols.bar import BarProtocol
 from custos_toolkit.protocols.filter import FilterResult
 from custos_toolkit.signals.types import SignalDirection
-from nautilus_trader.indicators.averages import ExponentialMovingAverage
-from nautilus_trader.indicators.momentum import RateOfChange, RelativeStrengthIndex
-from nautilus_trader.indicators.trend import MovingAverageConvergenceDivergence
+from nautilus_trader.indicators import (
+    ExponentialMovingAverage,
+    MovingAverageConvergenceDivergence,
+    RateOfChange,
+    RelativeStrengthIndex,
+)
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.config.filters import MomentumFilterConfig

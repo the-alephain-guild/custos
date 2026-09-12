@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from nautilus_trader.indicators.volatility import AverageTrueRange
+from nautilus_trader.indicators import AverageTrueRange
 from custos_toolkit.protocols.bar import BarProtocol
 from custos_toolkit.protocols.filter import FilterResult
 

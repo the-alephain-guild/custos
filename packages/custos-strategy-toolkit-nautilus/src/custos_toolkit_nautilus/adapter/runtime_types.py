@@ -6,19 +6,24 @@ from collections.abc import Mapping
 from decimal import Decimal
 from typing import Protocol
 
-from nautilus_trader.core.nautilus_pyo3 import Currency, Venue
-from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.enums import (
+from nautilus_trader.model import (
+    Bar,
+    BarType,
+    ClientOrderId,
+    Currency,
+    InstrumentId,
+    Money,
     OrderSide,
     OrderType,
     PositionSide,
+    Price,
+    Quantity,
     TimeInForce,
     TrailingOffsetType,
     TriggerType,
+    Venue,
 )
-from nautilus_trader.model.identifiers import ClientOrderId, InstrumentId
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.objects import Money, Price, Quantity
 
 
 class Order(Protocol):

@@ -14,14 +14,16 @@ from typing import TYPE_CHECKING, cast
 
 from custos_toolkit.risk.orders import OrderPriceCalculator
 from custos_toolkit.signals.types import Signal, SignalDirection
-from nautilus_trader.model.enums import (
+from nautilus_trader.model import (
+    ClientOrderId,
+    InstrumentId,
     OrderSide,
+    Price,
+    Quantity,
     TimeInForce,
     TrailingOffsetType,
     TriggerType,
 )
-from nautilus_trader.model.identifiers import ClientOrderId, InstrumentId
-from nautilus_trader.model.objects import Price, Quantity
 
 from .runtime_types import Cache, Logger, Order, OrderFactory, Position
 

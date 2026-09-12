@@ -9,8 +9,7 @@ Provides helper functions for deriving runtime values from configuration:
 from typing import TYPE_CHECKING, Protocol, cast, overload
 
 import msgspec
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import BarAggregation, BarType, InstrumentId
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.config.platforms import PlatformsConfig
@@ -212,7 +211,6 @@ def get_bar_duration_ns(bar_type: BarType) -> int:
         >>> get_bar_duration_ns(bar_type)
         3600000000000  # 1 hour in nanoseconds
     """
-    from nautilus_trader.model.data import BarAggregation
 
     bar_spec = bar_type.spec
     step = bar_spec.step

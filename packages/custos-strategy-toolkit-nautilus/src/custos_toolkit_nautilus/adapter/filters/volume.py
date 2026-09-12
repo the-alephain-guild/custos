@@ -15,10 +15,7 @@ from typing import TYPE_CHECKING
 
 from custos_toolkit.protocols.bar import BarProtocol
 from custos_toolkit.protocols.filter import FilterResult
-from nautilus_trader.indicators.averages import (
-    ExponentialMovingAverage,
-    SimpleMovingAverage,
-)
+from nautilus_trader.indicators import ExponentialMovingAverage, SimpleMovingAverage
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.config.filters import VolumeFilterConfig

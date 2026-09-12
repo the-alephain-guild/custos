@@ -17,12 +17,12 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common import LogColor
+from nautilus_trader.model import OrderSide, QuoteTick, TimeInForce, TradeTick
 
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
 
 if TYPE_CHECKING:
-    from nautilus_trader.model.data import QuoteTick, TradeTick
 
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
     from custos_toolkit_nautilus.adapter.tick_monitor import ExitAction
@@ -118,7 +118,6 @@ class ExecutionCoordinator:
         if exit_qty <= 0:
             return
 
-        from nautilus_trader.model.enums import OrderSide, TimeInForce
 
         order = s.order_factory.market(
             instrument_id=ctx.instrument_id,
@@ -183,7 +182,6 @@ class ExecutionCoordinator:
         # auto-reverses side, closes the full position.quantity, and is idempotent
         # for an already-closed position (is_closed_c). Pass IOC explicitly
         # (default GTC) + reduce_only=True to keep the current semantics.
-        from nautilus_trader.model.enums import TimeInForce
 
         s.close_position(
             position,

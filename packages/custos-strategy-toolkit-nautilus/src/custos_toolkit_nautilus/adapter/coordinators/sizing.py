@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Protocol, cast
 
 import msgspec
-from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common import LogColor
 
 from custos_toolkit_nautilus.adapter.sizing import compute_fixed_risk_qty
 

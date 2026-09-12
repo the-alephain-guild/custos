@@ -23,8 +23,8 @@ from custos_toolkit.risk.exchange_errors import (
     is_reduce_only_refusal,
 )
 from custos_toolkit.signals.types import Signal, SignalDirection
-from nautilus_trader.common.enums import LogColor
-from nautilus_trader.model.events import OrderCancelRejected, OrderRejected
+from nautilus_trader.common import LogColor
+from nautilus_trader.model import OrderCancelRejected, OrderRejected, OrderSide, OrderType
 
 from custos_toolkit_nautilus.adapter.event_publisher import extract_signal_id_from_tags
 from custos_toolkit_nautilus.adapter.orders import STALE_SWEEP_RETRY_COOLDOWN_NS, is_stale_order
@@ -223,7 +223,6 @@ class OrderReconciler:
         Returns:
             Order object if found, None otherwise
         """
-        from nautilus_trader.model.enums import OrderSide, OrderType
 
         # Get all open orders for this instrument
         open_orders = self._strategy.cache.orders_open(instrument_id=ctx.instrument_id)
@@ -348,7 +347,6 @@ class OrderReconciler:
         Looks for a reduce-only TRAILING_STOP_MARKET on the protective side
         (SELL for long, BUY for short).
         """
-        from nautilus_trader.model.enums import OrderSide, OrderType
 
         open_orders = self._strategy.cache.orders_open(instrument_id=ctx.instrument_id)
         expected_side = OrderSide.SELL if position.is_long else OrderSide.BUY

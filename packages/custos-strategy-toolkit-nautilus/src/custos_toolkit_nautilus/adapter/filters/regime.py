@@ -19,10 +19,13 @@ from typing import TYPE_CHECKING
 
 from custos_toolkit.protocols.bar import BarProtocol
 from custos_toolkit.protocols.filter import FilterResult
-from nautilus_trader.indicators.averages import MovingAverageType, WilderMovingAverage
-from nautilus_trader.indicators.momentum import EfficiencyRatio
-from nautilus_trader.indicators.trend import DirectionalMovement
-from nautilus_trader.indicators.volatility import AverageTrueRange
+from nautilus_trader.indicators import (
+    AverageTrueRange,
+    DirectionalMovement,
+    EfficiencyRatio,
+    MovingAverageType,
+    WilderMovingAverage,
+)
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.config.filters import RegimeFilterConfig

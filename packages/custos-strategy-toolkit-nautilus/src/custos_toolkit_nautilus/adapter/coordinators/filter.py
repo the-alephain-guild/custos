@@ -17,7 +17,7 @@ from custos_toolkit_nautilus.adapter.filter_manager import FilterManager
 
 if TYPE_CHECKING:
     from custos_toolkit.signals.types import SignalDirection
-    from nautilus_trader.model.data import Bar, BarType
+    from nautilus_trader.model import Bar, BarType
 
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
@@ -74,7 +74,6 @@ class FilterCoordinator:
     def _parse_bar_type_string(self, bar_type_str: "str | BarType") -> "BarType | None":
         """Parse bar type string to BarType object."""
         try:
-            from nautilus_trader.model.data import BarType
 
             return (
                 bar_type_str

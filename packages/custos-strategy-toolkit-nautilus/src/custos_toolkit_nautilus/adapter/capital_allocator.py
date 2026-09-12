@@ -7,7 +7,7 @@ and exposure monitoring across multiple trading pairs.
 
 from decimal import Decimal
 
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
 
 from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
 

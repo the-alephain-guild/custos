@@ -39,18 +39,21 @@ from custos_toolkit.risk import OrderPriceCalculator, RiskController, RiskManage
 from custos_toolkit.signals.types import Signal, SignalDirection
 from custos_toolkit.warmup import WarmupConfig
 from custos_toolkit.warmup.exceptions import CheckpointValidationError
-from nautilus_trader.common.enums import LogColor
-from nautilus_trader.model.data import Bar, BarType, QuoteTick, TradeTick
-from nautilus_trader.model.events import (
+from nautilus_trader.common import LogColor
+from nautilus_trader.model import (
+    Bar,
+    BarType,
+    InstrumentId,
     OrderAccepted,
-    OrderCanceled,
     OrderCancelRejected,
+    OrderCanceled,
     OrderFilled,
     OrderRejected,
     PositionClosed,
     PositionOpened,
+    QuoteTick,
+    TradeTick,
 )
-from nautilus_trader.model.identifiers import InstrumentId
 
 from custos_toolkit_nautilus.adapter.cancel_audit import (
     record_cancel_confirmed,

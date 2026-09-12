@@ -9,8 +9,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from custos_toolkit.position import PositionTracker
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import BarType, InstrumentId
 
 from custos_toolkit_nautilus.adapter.orders import OrderTracker
 from custos_toolkit_nautilus.adapter.tick_monitor import TickMonitorManager

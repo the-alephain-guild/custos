@@ -14,11 +14,10 @@ from typing import TYPE_CHECKING, Protocol, cast, runtime_checkable
 
 from custos_toolkit.warmup.exceptions import CheckpointValidationError
 from custos_toolkit.warmup.snapshot import Checkpoint, PriceSnapshot, WarmupConfig
-from nautilus_trader.common.enums import LogColor
-from nautilus_trader.model.data import Bar
+from nautilus_trader.common import LogColor
+from nautilus_trader.model import Bar, InstrumentId
 
 if TYPE_CHECKING:
-    from nautilus_trader.model.identifiers import InstrumentId
 
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
 

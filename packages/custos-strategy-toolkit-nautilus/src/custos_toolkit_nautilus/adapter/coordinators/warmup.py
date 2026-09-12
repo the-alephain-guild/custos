@@ -19,8 +19,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, cast
 
 import pandas as pd
-from nautilus_trader.common.enums import LogColor
-from nautilus_trader.model.data import Bar
+from nautilus_trader.common import LogColor
+from nautilus_trader.model import Bar
 
 from custos_toolkit_nautilus.adapter.utils import get_bar_duration_ns
 from custos_toolkit_nautilus.adapter.warmup_manager import WarmupManager

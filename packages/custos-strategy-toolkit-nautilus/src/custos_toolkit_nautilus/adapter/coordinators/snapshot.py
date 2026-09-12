@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
-from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common import LogColor
 
 from custos_toolkit_nautilus.adapter.state_persistence import (
     build_snapshot,

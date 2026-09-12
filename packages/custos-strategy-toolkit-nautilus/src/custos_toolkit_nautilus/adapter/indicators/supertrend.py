@@ -11,7 +11,7 @@ from typing import cast
 
 import pandas as pd
 from nautilus_trader.indicators.base import Indicator
-from nautilus_trader.model.data import Bar
+from nautilus_trader.model import Bar
 
 from ._pandas_ta import ta
 

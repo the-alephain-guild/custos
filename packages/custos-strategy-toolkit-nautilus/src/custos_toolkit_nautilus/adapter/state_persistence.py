@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 import msgspec
 
 if TYPE_CHECKING:
-    from nautilus_trader.model.identifiers import InstrumentId
+    from nautilus_trader.model import InstrumentId
 
     from .pair_context import PairContext
 

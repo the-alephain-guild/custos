@@ -11,7 +11,7 @@ from collections import deque
 from decimal import Decimal
 
 from custos_toolkit.signals import Signal, SignalResolver
-from nautilus_trader.model.data import Bar
+from nautilus_trader.model import Bar
 
 from custos_toolkit_nautilus.adapter.pair_context import PairContext
 from custos_toolkit_nautilus.adapter.trading_config import NautilusTradingStrategyConfig

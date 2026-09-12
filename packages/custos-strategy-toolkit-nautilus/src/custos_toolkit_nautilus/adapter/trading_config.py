@@ -15,8 +15,8 @@ from typing import Literal, TypedDict, cast
 
 from custos_toolkit.config.loader import ConfigWrapper
 from custos_toolkit.warmup.snapshot import WarmupConfig, warmup_config_from_dict
-from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.trading import StrategyConfig
 
 from custos_toolkit_nautilus.adapter.config import (
     BacktestingConfig,

@@ -17,7 +17,8 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, Protocol, cast
 
 from custos_toolkit.signals.types import SignalDirection
-from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common import LogColor
+from nautilus_trader.model import Bar
 
 from custos_toolkit_nautilus.adapter.event_publisher import make_signal_tag
 from custos_toolkit_nautilus.adapter.execution import ExecutionManager
@@ -26,7 +27,6 @@ from custos_toolkit_nautilus.adapter.strategy_core import CloseAttempt, plan_clo
 
 if TYPE_CHECKING:
     from custos_toolkit.signals.types import Signal
-    from nautilus_trader.model.data import Bar
 
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy

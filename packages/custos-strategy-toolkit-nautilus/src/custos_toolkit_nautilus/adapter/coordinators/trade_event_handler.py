@@ -19,8 +19,8 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
 from custos_toolkit.risk import RiskController
-from nautilus_trader.common.enums import LogColor
-from nautilus_trader.model.events import (
+from nautilus_trader.common import LogColor
+from nautilus_trader.model import (
     OrderAccepted,
     OrderCanceled,
     OrderFilled,

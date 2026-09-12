@@ -29,10 +29,8 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model.data import Bar, QuoteTick, TradeTick
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.trading.strategy import Strategy
+from nautilus_trader.model import Bar, InstrumentId, OrderSide, QuoteTick, TimeInForce, TradeTick
+from nautilus_trader.trading import Strategy, StrategyConfig
 
 from custos_toolkit_nautilus.adapter.cancel_audit import record_cancel_requested
 from custos_toolkit_nautilus.adapter.state_persistence import (
@@ -460,7 +458,6 @@ class NautilusStrategyCore(Strategy, ABC):
         The enumeration is best-effort: if the cache cannot be read, the cancel still
         goes out unrecorded. Losing a record is bad; losing a cancel is worse.
         """
-        from nautilus_trader.model.enums import OrderSide
 
         if order_side is None:
             order_side = OrderSide.NO_ORDER_SIDE
@@ -530,7 +527,6 @@ class NautilusStrategyCore(Strategy, ABC):
 
     def _close_position_with_fallback(self, position: Any) -> None:
         """Submit one close, in the strongest form the evidence allows."""
-        from nautilus_trader.model.enums import TimeInForce
 
         try:
             tracker = self.order_tracker_for(position.instrument_id)

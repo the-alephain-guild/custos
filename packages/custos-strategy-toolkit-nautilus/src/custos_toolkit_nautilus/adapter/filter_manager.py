@@ -14,8 +14,7 @@ import msgspec
 from custos_toolkit.protocols.bar import BarProtocol
 from custos_toolkit.protocols.filter import FilterResult as CheckResult
 from custos_toolkit.signals.types import SignalDirection
-from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model import Bar, BarType, InstrumentId
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.config.filters import BehaviorConfig, FiltersConfig

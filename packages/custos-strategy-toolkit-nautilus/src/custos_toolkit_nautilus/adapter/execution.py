@@ -10,10 +10,7 @@ from decimal import ROUND_DOWN, ROUND_UP, Decimal
 from typing import cast
 
 from custos_toolkit.signals.types import Signal, SignalDirection
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.enums import OrderSide, TimeInForce
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.objects import Price
+from nautilus_trader.model import Bar, InstrumentId, OrderSide, Price, TimeInForce
 
 from .runtime_types import Cache, Logger, Order, OrderFactory
 

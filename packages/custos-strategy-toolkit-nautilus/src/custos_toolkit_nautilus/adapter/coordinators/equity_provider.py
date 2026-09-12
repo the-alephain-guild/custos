@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from custos_toolkit.risk import resolve_risk_equity
 
 if TYPE_CHECKING:
-    from nautilus_trader.model.identifiers import InstrumentId
+    from nautilus_trader.model import InstrumentId
 
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
 

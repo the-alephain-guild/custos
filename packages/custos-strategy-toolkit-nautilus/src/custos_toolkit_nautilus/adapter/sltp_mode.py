@@ -20,7 +20,7 @@ from custos_toolkit.signals.types import SignalDirection
 
 if TYPE_CHECKING:
     from custos_toolkit.signals.types import Signal
-    from nautilus_trader.model.objects import Quantity
+    from nautilus_trader.model import Quantity
 
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy

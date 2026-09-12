@@ -17,9 +17,8 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
 from custos_toolkit.signals.types import Signal
-from nautilus_trader.common.enums import LogColor
-from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.objects import Quantity
+from nautilus_trader.common import LogColor
+from nautilus_trader.model import OrderSide, Quantity
 
 from custos_toolkit_nautilus.adapter.event_publisher import make_signal_tag
 from custos_toolkit_nautilus.adapter.orders import StopLossSubmitter, TakeProfitSubmitter

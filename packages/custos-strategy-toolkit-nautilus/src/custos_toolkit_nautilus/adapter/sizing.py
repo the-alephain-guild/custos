@@ -10,8 +10,8 @@ from decimal import Decimal
 from typing import cast
 
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.objects import Money, Quantity
-from nautilus_trader.risk.sizing import FixedRiskSizer
+from nautilus_trader.model import Money, Quantity
+from nautilus_trader.risk import FixedRiskSizer
 
 
 def compute_fixed_risk_qty(

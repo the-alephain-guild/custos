@@ -12,7 +12,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common import LogColor
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
