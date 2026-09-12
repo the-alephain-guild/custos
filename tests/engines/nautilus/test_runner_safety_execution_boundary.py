@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import UUID
@@ -9,27 +8,16 @@ import pytest
 
 pytest.importorskip("nautilus_trader")
 
-from nautilus_trader.common.providers import InstrumentProvider  # noqa: E402
-from nautilus_trader.core.rust.model import AccountType, OmsType  # noqa: E402
-from nautilus_trader.live.execution_client import LiveExecutionClient  # noqa: E402
-from nautilus_trader.live.factories import LiveExecClientFactory  # noqa: E402
-from nautilus_trader.model.identifiers import ClientId, Venue  # noqa: E402
-from nautilus_trader.model.objects import Currency, Price  # noqa: E402
-from nautilus_trader.test_kit.providers import TestInstrumentProvider  # noqa: E402
-from nautilus_trader.test_kit.stubs.commands import TestCommandStubs  # noqa: E402
-from nautilus_trader.test_kit.stubs.component import TestComponentStubs  # noqa: E402
-from nautilus_trader.test_kit.stubs.data import TestDataStubs  # noqa: E402
-from nautilus_trader.test_kit.stubs.execution import TestExecStubs  # noqa: E402
-
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig  # noqa: E402
 from custos.core.order_reservation_boundary import RunnerReservationBoundary  # noqa: E402
 from custos.core.runner_fact import RunnerStateAuthorityError  # noqa: E402
 from custos.engines.nautilus.runner_safety import (  # noqa: E402
-    GuardedLiveExecutionClient,
     NautilusCachedOrderSemantics,
-    RunnerSafetyExecutionDispatch,
-    guarded_exec_client_factory,
+    OrderRefusal,
+    RunnerSafetyOrderGate,
+    install_order_gate,
 )
+from custos.engines.nautilus.strategy_hooks import StrategyHookUnsupported  # noqa: E402
 
 DEPLOYMENT_INSTANCE_ID = UUID("11111111-1111-4111-8111-111111111111")
 POLICY_ID = UUID("22222222-2222-4222-8222-222222222222")
@@ -94,8 +82,10 @@ class _Semantics:
     def order_notional(self, order) -> Decimal:
         return Decimal(str(order.notional))
 
-    def modified_order_notional(self, command) -> Decimal:
-        return Decimal(str(command.notional))
+    def modified_order_notional(self, intent) -> Decimal:
+        # The real one reads the cached order and the requested quantity; this double
+        # only needs the requested quantity, which is what the gate passes through.
+        return Decimal(str(intent.quantity))
 
     def fill_notional(self, event) -> Decimal:
         return Decimal(str(event.notional))
@@ -113,60 +103,65 @@ class _Semantics:
         return getattr(event, "exposure_source_order_id", None)
 
 
-class _InnerClient:
+class _Downstream:
+    """The nautilus methods the gate wraps: reached only if the gate allows it.
+
+    These stand where the execution client used to. In 2.0 the gate sits on the
+    strategy, so what it lets through is a call to the strategy's own submit, and
+    what it refuses simply never happens -- there is no rejection event to record
+    because the order was never submitted (see the module docstring in
+    ``runner_safety``).
+    """
+
     def __init__(self, log: list[tuple]) -> None:
         self.log = log
-        self.rejections: list[tuple] = []
 
-    def submit_order(self, command) -> None:
-        self.log.append(("submit", command.order.client_order_id))
+    def submit_order(self, order, *_args, **_kwargs) -> None:
+        self.log.append(("submit", order.client_order_id))
 
-    def submit_order_list(self, command) -> None:
-        self.log.append(
-            ("submit_list", tuple(o.client_order_id for o in command.order_list.orders))
-        )
+    def submit_order_list(self, order_list, *_args, **_kwargs) -> None:
+        self.log.append(("submit_list", tuple(o.client_order_id for o in order_list.orders)))
 
-    def modify_order(self, command) -> None:
-        self.log.append(("modify_upstream", command.client_order_id))
+    def modify_order(self, order, *_args, **_kwargs) -> None:
+        self.log.append(("modify_upstream", order.client_order_id))
 
-    def cancel_order(self, command) -> None:
-        self.log.append(("cancel_upstream", command.client_order_id))
 
-    def cancel_all_orders(self, command) -> None:
-        self.log.append(("cancel_all_upstream", command.command_id))
+def _gate(boundary, refusals: list[OrderRefusal] | None = None) -> RunnerSafetyOrderGate:
+    return RunnerSafetyOrderGate(
+        boundary=boundary,
+        on_refusal=(refusals if refusals is None else refusals.append),
+    )
 
-    def batch_cancel_orders(self, command) -> None:
-        self.log.append(("batch_cancel_upstream", command.command_id))
 
-    def generate_order_rejected(
-        self,
-        strategy_id,
-        instrument_id,
-        client_order_id,
-        reason,
-        ts_event,
-    ) -> None:
-        self.rejections.append((strategy_id, instrument_id, client_order_id, reason, ts_event))
+class _GatedStrategy:
+    """A strategy shaped enough for the gate to be installed on it."""
 
-    def generate_order_modify_rejected(
-        self,
-        strategy_id,
-        instrument_id,
-        client_order_id,
-        venue_order_id,
-        reason,
-        ts_event,
-    ) -> None:
-        self.rejections.append(
-            (
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                venue_order_id,
-                reason,
-                ts_event,
-            )
-        )
+    config = SimpleNamespace(
+        manage_contingent_orders=False,
+        manage_gtd_expiry=False,
+        manage_stop=False,
+    )
+
+    def __init__(self) -> None:
+        self.submitted: list = []
+
+    def submit_order(self, order, *_args, **_kwargs) -> None:
+        self.submitted.append(order)
+
+    def submit_order_list(self, order_list, *_args, **_kwargs) -> None:
+        self.submitted.extend(order_list.orders)
+
+    def modify_order(self, order, *_args, **_kwargs) -> None:
+        self.submitted.append(order)
+
+    def market_exit(self, *_args, **_kwargs) -> None:
+        self.submitted.append("market_exit")
+
+    def cancel_order(self, order, *_args, **_kwargs) -> None: ...
+
+    def cancel_all_orders(self, instrument_id, *_args, **_kwargs) -> None: ...
+
+    def close_position(self, position, *_args, **_kwargs) -> None: ...
 
 
 def _order(
@@ -174,18 +169,19 @@ def _order(
     *,
     notional: str = "25",
     reduce_only: bool = False,
+    emulation_trigger=None,
+    exec_algorithm_id=None,
 ):
     return SimpleNamespace(
         client_order_id=client_order_id,
         strategy_id="STRATEGY-001",
         instrument_id="BTCUSDT-PERP.BINANCE",
+        side="OrderSide.BUY",
         notional=notional,
         reduce_only=reduce_only,
+        emulation_trigger=emulation_trigger,
+        exec_algorithm_id=exec_algorithm_id,
     )
-
-
-def _submit_command(order, command_id: str = "submit-1"):
-    return SimpleNamespace(order=order, command_id=command_id)
 
 
 def _breaker() -> FallbackBreaker:
@@ -228,36 +224,6 @@ def test_market_order_uses_the_subscribed_mark_when_mid_price_is_unavailable() -
     assert semantics.order_notional(order) == Decimal("445.945500")
 
 
-def test_real_nautilus_submit_uses_the_public_command_id_abi() -> None:
-    log: list[tuple] = []
-    cache = TestComponentStubs.cache()
-    instrument = TestInstrumentProvider.btcusdt_perp_binance()
-    cache.add_instrument(instrument)
-    cache.add_mark_price(TestDataStubs.mark_price(instrument.id, Price.from_str("63809.1")))
-    order = TestExecStubs.market_order(
-        instrument=instrument,
-        quantity=instrument.make_qty(0.007),
-    )
-    command = TestCommandStubs.submit_order_command(order)
-    boundary = RunnerReservationBoundary(
-        store=_Store(log),
-        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
-        policy_id=POLICY_ID,
-        fallback_breaker=_breaker(),
-        semantics=NautilusCachedOrderSemantics(cache),
-    )
-    dispatch = RunnerSafetyExecutionDispatch(
-        inner=_InnerClient(log),
-        boundary=boundary,
-        timestamp_ns=lambda: 19,
-    )
-
-    dispatch.submit_order(command)
-
-    assert [entry[0] for entry in log] == ["reserve", "submit"]
-    assert str(command.id) in log[0][1]["event_id"]
-
-
 def _boundary(
     store: _Store,
     *,
@@ -272,15 +238,12 @@ def _boundary(
     )
 
 
-def test_direct_submit_reserves_before_the_upstream_client() -> None:
+def test_direct_submit_reserves_before_the_order_leaves() -> None:
     log: list[tuple] = []
-    dispatch = RunnerSafetyExecutionDispatch(
-        inner=_InnerClient(log),
-        boundary=_boundary(_Store(log)),
-        timestamp_ns=lambda: 17,
-    )
+    downstream = _Downstream(log)
+    gate = _gate(_boundary(_Store(log)))
 
-    dispatch.submit_order(_submit_command(_order("order-1")))
+    gate.submit_order(downstream.submit_order, _order("order-1"))
 
     assert [entry[0] for entry in log] == ["reserve", "submit"]
     assert log[0][1]["deployment_instance_id"] == DEPLOYMENT_INSTANCE_ID
@@ -288,27 +251,23 @@ def test_direct_submit_reserves_before_the_upstream_client() -> None:
     assert log[0][1]["requested_notional"] == Decimal("25")
 
 
-def test_cap_rejection_emits_standard_order_rejected_without_submit() -> None:
+def test_a_capped_order_is_not_submitted_and_the_refusal_is_reported() -> None:
+    """Nautilus produces no event for this, so the report is the only record."""
     log: list[tuple] = []
     store = _Store(log)
     store.reject_reservation = True
-    inner = _InnerClient(log)
-    dispatch = RunnerSafetyExecutionDispatch(
-        inner=inner,
-        boundary=_boundary(store),
-        timestamp_ns=lambda: 23,
-    )
+    refusals: list[OrderRefusal] = []
+    gate = _gate(_boundary(store), refusals)
 
-    dispatch.submit_order(_submit_command(_order("order-denied")))
+    gate.submit_order(_Downstream(log).submit_order, _order("order-denied"))
 
-    assert [entry[0] for entry in log] == ["reserve"]
-    assert inner.rejections == [
-        (
-            "STRATEGY-001",
-            "BTCUSDT-PERP.BINANCE",
-            "order-denied",
-            "custos_runner_notional_policy_rejected",
-            23,
+    assert [entry[0] for entry in log] == ["reserve"], "the order reached the venue"
+    assert refusals == [
+        OrderRefusal(
+            client_order_id="order-denied",
+            instrument_id="BTCUSDT-PERP.BINANCE",
+            side="buy",
+            reason_code="custos_runner_notional_policy_rejected",
         )
     ]
 
@@ -319,54 +278,60 @@ def test_unexpected_safety_failure_is_not_mislabeled_as_a_notional_rejection() -
         def before_submit_order(_command):
             raise AttributeError("simulated boundary ABI failure")
 
-    inner = _InnerClient([])
-    dispatch = RunnerSafetyExecutionDispatch(
-        inner=inner,
-        boundary=BrokenBoundary(),
-        timestamp_ns=lambda: 27,
-    )
+    refusals: list[OrderRefusal] = []
+    gate = _gate(BrokenBoundary(), refusals)
 
-    dispatch.submit_order(_submit_command(_order("safety-unavailable")))
+    gate.submit_order(_Downstream([]).submit_order, _order("safety-unavailable"))
 
-    assert inner.rejections[0][3] == "custos_runner_safety_boundary_unavailable"
+    assert refusals[0].reason_code == "custos_runner_safety_boundary_unavailable"
 
 
-def test_risk_reducing_and_cancel_commands_are_never_blocked() -> None:
+def test_a_risk_reducing_order_is_never_blocked() -> None:
     log: list[tuple] = []
     store = _Store(log)
     store.reject_reservation = True
-    inner = _InnerClient(log)
-    dispatch = RunnerSafetyExecutionDispatch(
-        inner=inner,
-        boundary=_boundary(store),
-        timestamp_ns=lambda: 29,
+    refusals: list[OrderRefusal] = []
+    gate = _gate(_boundary(store), refusals)
+
+    gate.submit_order(
+        _Downstream(log).submit_order,
+        _order("reduce-1", notional="500", reduce_only=True),
     )
 
-    dispatch.submit_order(_submit_command(_order("reduce-1", notional="500", reduce_only=True)))
-    dispatch.cancel_order(SimpleNamespace(client_order_id="reduce-1", command_id="cancel-1"))
-
-    assert [entry[0] for entry in log] == ["submit", "cancel_upstream"]
-    assert inner.rejections == []
+    assert [entry[0] for entry in log] == ["submit"]
+    assert refusals == []
 
 
-def test_frozen_breaker_rejects_risk_increasing_but_not_reduce_only_or_cancel() -> None:
+def test_cancelling_is_not_something_the_gate_can_refuse() -> None:
+    """Cancels reduce exposure, so the gate does not sit on them at all.
+
+    1.x passed them straight through a client it had wrapped. Here they are simply
+    not wrapped, which says the same thing in a way that cannot be got wrong: there
+    is no code path on which a cancel could be refused.
+    """
+    strategy = _GatedStrategy()
+    install_order_gate(strategy, _gate(_boundary(_Store([]))))
+
+    for untouched in ("cancel_order", "cancel_all_orders", "close_position"):
+        assert untouched not in vars(strategy), (
+            f"{untouched} was wrapped, so a cancel could be refused"
+        )
+
+
+def test_frozen_breaker_refuses_risk_increasing_but_not_reduce_only() -> None:
     log: list[tuple] = []
     breaker = _breaker()
     breaker.fail_closed("portfolio_snapshot_unreliable")
-    inner = _InnerClient(log)
-    dispatch = RunnerSafetyExecutionDispatch(
-        inner=inner,
-        boundary=_boundary(_Store(log), fallback_breaker=breaker),
-        timestamp_ns=lambda: 30,
-    )
+    refusals: list[OrderRefusal] = []
+    downstream = _Downstream(log)
+    gate = _gate(_boundary(_Store(log), fallback_breaker=breaker), refusals)
 
-    dispatch.submit_order(_submit_command(_order("risk-increasing")))
-    dispatch.submit_order(_submit_command(_order("reduce-only", reduce_only=True)))
-    dispatch.cancel_order(SimpleNamespace(client_order_id="reduce-only", command_id="cancel"))
+    gate.submit_order(downstream.submit_order, _order("risk-increasing"))
+    gate.submit_order(downstream.submit_order, _order("reduce-only", reduce_only=True))
 
-    assert [entry[0] for entry in log] == ["submit", "cancel_upstream"]
-    assert inner.rejections[0][2] == "risk-increasing"
-    assert inner.rejections[0][3] == "custos_runner_fallback_breaker_frozen"
+    assert [entry[0] for entry in log] == ["submit"]
+    assert refusals[0].client_order_id == "risk-increasing"
+    assert refusals[0].reason_code == "custos_runner_fallback_breaker_frozen"
 
 
 def test_modify_reserves_new_notional_before_upstream() -> None:
@@ -380,21 +345,19 @@ def test_modify_reserves_new_notional_before_upstream() -> None:
         requested_notional=Decimal("10"),
     )
     log.clear()
-    dispatch = RunnerSafetyExecutionDispatch(
-        inner=_InnerClient(log),
-        boundary=_boundary(store),
-        timestamp_ns=lambda: 31,
-    )
-    command = SimpleNamespace(
-        command_id="modify-1",
-        client_order_id="order-2",
-        strategy_id="STRATEGY-001",
-        instrument_id="BTCUSDT-PERP.BINANCE",
-        venue_order_id="venue-2",
-        notional="40",
-    )
+    gate = _gate(_boundary(store))
 
-    dispatch.modify_order(command)
+    gate.modify_order(
+        _Downstream(log).modify_order,
+        SimpleNamespace(
+            client_order_id="order-2",
+            strategy_id="STRATEGY-001",
+            instrument_id="BTCUSDT-PERP.BINANCE",
+            venue_order_id="venue-2",
+            notional="40",
+        ),
+        "40",
+    )
 
     assert [entry[0] for entry in log] == ["replace", "modify_upstream"]
     assert log[0][1]["new_reserved_notional"] == Decimal("40")
@@ -434,12 +397,18 @@ class OrderCanceled:
         }
 
 
-class _MessageBus:
-    def __init__(self) -> None:
-        self.subscriptions: dict[str, object] = {}
+class _Forwarder:
+    """Stands in for the host's event forwarder, which replaced the message bus."""
 
-    def subscribe(self, topic: str, handler) -> None:
-        self.subscriptions[topic] = handler
+    def __init__(self) -> None:
+        self.order_sinks: list = []
+        self.position_sinks: list = []
+
+    def add_order_sink(self, _name: str, sink) -> None:
+        self.order_sinks.append(sink)
+
+    def add_position_sink(self, _name: str, sink) -> None:
+        self.position_sinks.append(sink)
 
 
 def test_order_events_advance_fill_and_cancel_reservations() -> None:
@@ -454,10 +423,10 @@ def test_order_events_advance_fill_and_cancel_reservations() -> None:
     )
     log.clear()
     boundary = _boundary(store)
-    bus = _MessageBus()
-    boundary.bootstrap(bus)
+    forwarder = _Forwarder()
+    boundary.bootstrap(forwarder)
 
-    handler = bus.subscriptions["events.order.*"]
+    (handler,) = forwarder.order_sinks
     handler(OrderFilled())
     handler(OrderCanceled())
 
@@ -501,7 +470,7 @@ def test_unattributed_reduce_only_fill_freezes_new_risk_without_raising() -> Non
     breaker = _breaker()
     boundary = _boundary(_Store(log), fallback_breaker=breaker)
     boundary.before_submit_order(
-        _submit_command(_order("order-3", reduce_only=True), command_id="reduce-submit")
+        SimpleNamespace(order=_order("order-3", reduce_only=True), id="reduce-submit")
     )
 
     boundary.on_order_event(OrderFilled(reduce_only=True))
@@ -554,98 +523,6 @@ def test_foreign_reduce_only_fill_is_ignored_without_freezing_this_instance() ->
     assert log == []
 
 
-class _UpstreamFactory(LiveExecClientFactory):
-    @staticmethod
-    def create(**kwargs):
-        return SimpleNamespace(kwargs=kwargs)
-
-
-def test_guarded_factory_remains_a_public_factory_and_preserves_adapter_name() -> None:
-    boundary = _boundary(_Store([]))
-
-    factory = guarded_exec_client_factory(_UpstreamFactory, boundary)
-
-    assert issubclass(factory, LiveExecClientFactory)
-    assert factory is not _UpstreamFactory
-    assert factory.__name__ == _UpstreamFactory.__name__
-
-
-class _DummyLiveExecutionClient(LiveExecutionClient):
-    async def _connect(self) -> None:
-        return None
-
-    async def _disconnect(self) -> None:
-        return None
-
-    async def _submit_order(self, command) -> None:
-        return None
-
-    async def _submit_order_list(self, command) -> None:
-        return None
-
-    async def _modify_order(self, command) -> None:
-        return None
-
-    async def _cancel_order(self, command) -> None:
-        return None
-
-    async def _cancel_all_orders(self, command) -> None:
-        return None
-
-    async def _batch_cancel_orders(self, command) -> None:
-        return None
-
-    async def generate_order_status_report(self, command):
-        return None
-
-    async def generate_order_status_reports(self, command):
-        return []
-
-    async def generate_fill_reports(self, command):
-        return []
-
-    async def generate_position_status_reports(self, command):
-        return []
-
-
-def test_guarded_client_is_a_real_live_execution_client() -> None:
-    loop = asyncio.new_event_loop()
-    try:
-        clock = TestComponentStubs.clock()
-        message_bus = TestComponentStubs.msgbus()
-        cache = TestComponentStubs.cache()
-        inner = _DummyLiveExecutionClient(
-            loop=loop,
-            client_id=ClientId("BINANCE"),
-            venue=Venue("BINANCE"),
-            oms_type=OmsType.NETTING,
-            account_type=AccountType.MARGIN,
-            base_currency=Currency.from_str("USDT"),
-            instrument_provider=InstrumentProvider(),
-            msgbus=message_bus,
-            cache=cache,
-            clock=clock,
-        )
-
-        guarded = GuardedLiveExecutionClient(
-            inner=inner,
-            boundary=_boundary(_Store([])),
-            loop=loop,
-            msgbus=message_bus,
-            cache=cache,
-            clock=clock,
-            config=None,
-        )
-
-        assert isinstance(guarded, LiveExecutionClient)
-        assert guarded.id == inner.id
-        assert guarded.venue == inner.venue
-        assert guarded.account_id == inner.account_id
-        assert guarded.is_connected is inner.is_connected
-    finally:
-        loop.close()
-
-
 def test_an_id_the_venue_would_refuse_is_rejected_here_instead() -> None:
     """The venue's id-length limit is enforced at the boundary, not just in the builder.
 
@@ -660,62 +537,253 @@ def test_an_id_the_venue_would_refuse_is_rejected_here_instead() -> None:
     """
 
     log: list[tuple] = []
-    inner = _InnerClient(log)
-    dispatch = RunnerSafetyExecutionDispatch(
-        inner=inner,
-        boundary=_boundary(_Store(log)),
-        timestamp_ns=lambda: 17,
-    )
+    refusals: list[OrderRefusal] = []
+    gate = _gate(_boundary(_Store(log)), refusals)
 
     # The exact id the venue refused: 44 characters, the shape before the fix.
     refused = "O-20260730-044937-dcb00e520b45569e83b0-000-2"
-    dispatch.submit_order(_submit_command(_order(refused)))
+    gate.submit_order(_Downstream(log).submit_order, _order(refused))
 
     assert log == [], "the order reached the reservation or the venue despite an unusable id"
-    assert [entry[3] for entry in inner.rejections] == [
+    assert [refusal.reason_code for refusal in refusals] == [
         "custos_runner_client_order_id_too_long_for_venue"
-    ], "rejected for the wrong reason, so the cause would not be diagnosable from the event"
+    ], "refused for the wrong reason, so the cause would not be diagnosable from the record"
 
 
 def test_the_boundary_lets_the_shape_the_builder_produces_through() -> None:
     """The guard must not reject what the fix produces, or it would block every order."""
 
     log: list[tuple] = []
-    inner = _InnerClient(log)
-    dispatch = RunnerSafetyExecutionDispatch(
-        inner=inner,
-        boundary=_boundary(_Store(log)),
-        timestamp_ns=lambda: 17,
-    )
+    refusals: list[OrderRefusal] = []
+    gate = _gate(_boundary(_Store(log)), refusals)
 
     # A hyphen-free UUID, which is what build_nautilus_base_config now asks for.
-    dispatch.submit_order(_submit_command(_order("33e0789d38f9419aa8a0e00e98d07878")))
+    gate.submit_order(_Downstream(log).submit_order, _order("33e0789d38f9419aa8a0e00e98d07878"))
 
     assert [entry[0] for entry in log] == ["reserve", "submit"]
-    assert inner.rejections == []
+    assert refusals == []
 
 
 def test_one_unusable_id_fails_the_whole_order_list() -> None:
     """A partly-submitted bracket is worse than none: the venue would refuse that leg."""
 
     log: list[tuple] = []
-    inner = _InnerClient(log)
-    dispatch = RunnerSafetyExecutionDispatch(
-        inner=inner,
-        boundary=_boundary(_Store(log)),
-        timestamp_ns=lambda: 17,
-    )
+    refusals: list[OrderRefusal] = []
+    gate = _gate(_boundary(_Store(log)), refusals)
     orders = (
         _order("33e0789d38f9419aa8a0e00e98d07878"),
         _order("O-20260730-044937-dcb00e520b45569e83b0-000-2"),
     )
 
-    dispatch.submit_order_list(
-        SimpleNamespace(order_list=SimpleNamespace(orders=orders), command_id="submit-list-1")
+    gate.submit_order_list(
+        _Downstream(log).submit_order_list,
+        SimpleNamespace(orders=orders),
     )
 
     assert log == [], "part of the list reached the venue"
-    assert len(inner.rejections) == 2, "both legs must be rejected, not only the unusable one"
-    assert {entry[3] for entry in inner.rejections} == {
+    assert len(refusals) == 2, "both legs must be refused, not only the unusable one"
+    assert {refusal.reason_code for refusal in refusals} == {
         "custos_runner_client_order_id_too_long_for_venue"
     }
+
+
+# ---------------------------------------------------------------------------
+# What holds the gate's coverage together
+#
+# 1.x wrapped the execution client, so every command crossed the guard whatever
+# sent it. 2.0 has no seat there for python, and the strategy edge does not have
+# that property for free: nautilus can submit on the strategy's behalf. Each way
+# it can is closed below, and these are the tests that say so.
+# ---------------------------------------------------------------------------
+
+
+def test_the_gate_sits_on_every_outbound_method() -> None:
+    strategy = _GatedStrategy()
+
+    install_order_gate(strategy, _gate(_boundary(_Store([]))))
+
+    # Installed hooks live on the instance; anything still resolving to the class is
+    # a path the gate never took over.
+    for wrapped in ("submit_order", "submit_order_list", "modify_order", "market_exit"):
+        assert wrapped in vars(strategy), (
+            f"{wrapped} still reaches nautilus without passing the gate"
+        )
+
+
+def test_a_strategy_that_lets_nautilus_submit_for_it_is_refused() -> None:
+    """The order manager submits contingent and emulated orders from inside the
+    engine, where the gate is not. The switch defaults off; this is what makes
+    'defaults off' into 'is off'."""
+    strategy = _GatedStrategy()
+    strategy.config = SimpleNamespace(
+        manage_contingent_orders=True,
+        manage_gtd_expiry=False,
+        manage_stop=False,
+    )
+
+    with pytest.raises(StrategyHookUnsupported, match="manage_contingent_orders"):
+        install_order_gate(strategy, _gate(_boundary(_Store([]))))
+
+
+@pytest.mark.parametrize(
+    "switch",
+    ["manage_contingent_orders", "manage_gtd_expiry", "manage_stop"],
+)
+def test_each_bypass_switch_is_refused_on_its_own(switch: str) -> None:
+    strategy = _GatedStrategy()
+    switches = dict.fromkeys(
+        ("manage_contingent_orders", "manage_gtd_expiry", "manage_stop"), False
+    )
+    switches[switch] = True
+    strategy.config = SimpleNamespace(**switches)
+
+    with pytest.raises(StrategyHookUnsupported, match=switch):
+        install_order_gate(strategy, _gate(_boundary(_Store([]))))
+
+
+@pytest.mark.parametrize(
+    ("attribute", "value"),
+    [("emulation_trigger", "LAST_PRICE"), ("exec_algorithm_id", "TWAP-001")],
+)
+def test_an_order_nautilus_would_resubmit_itself_is_refused(attribute: str, value: str) -> None:
+    """Both are routed away from the ordinary path and resubmitted from inside the
+    engine, so the reservation taken here would stop describing what is working."""
+    log: list[tuple] = []
+    refusals: list[OrderRefusal] = []
+    gate = _gate(_boundary(_Store(log)), refusals)
+
+    gate.submit_order(
+        _Downstream(log).submit_order,
+        _order("routed-away", **{attribute: value}),
+    )
+
+    assert log == [], "the order was reserved or submitted despite being routed away"
+    assert [refusal.reason_code for refusal in refusals] == [
+        "custos_runner_order_would_bypass_the_gate"
+    ]
+
+
+def test_market_exit_is_refused_because_nautilus_performs_it_itself() -> None:
+    log: list[tuple] = []
+    refusals: list[OrderRefusal] = []
+    strategy = _GatedStrategy()
+    install_order_gate(strategy, _gate(_boundary(_Store(log)), refusals))
+
+    strategy.market_exit()
+
+    assert strategy.submitted == [], "the exit ran, and everything it submits skips the gate"
+    assert [refusal.reason_code for refusal in refusals] == [
+        "custos_runner_market_exit_bypasses_the_gate"
+    ]
+
+
+def test_an_installed_gate_reserves_before_the_strategys_own_submit() -> None:
+    """End to end through the installed hook rather than through the gate directly:
+    what the strategy calls is what a real strategy calls."""
+    log: list[tuple] = []
+    strategy = _GatedStrategy()
+    install_order_gate(strategy, _gate(_boundary(_Store(log))))
+
+    order = _order("through-the-hook")
+    strategy.submit_order(order)
+
+    assert [entry[0] for entry in log] == ["reserve"]
+    assert strategy.submitted == [order]
+
+
+def test_a_refusal_that_cannot_be_reported_does_not_let_the_order_out() -> None:
+    """Reporting is how a refusal becomes visible, but it is not what enforces it.
+
+    If the fact sink throws, the exposure still has to stay contained -- losing the
+    record is bad, losing the containment because the record failed would be worse.
+    """
+    log: list[tuple] = []
+    store = _Store(log)
+    store.reject_reservation = True
+
+    def _sink_that_fails(_refusal: OrderRefusal) -> None:
+        raise RuntimeError("fact stream unavailable")
+
+    gate = RunnerSafetyOrderGate(boundary=_boundary(store), on_refusal=_sink_that_fails)
+
+    gate.submit_order(_Downstream(log).submit_order, _order("unreportable"))
+
+    assert [entry[0] for entry in log] == ["reserve"], "the order was submitted anyway"
+
+
+# ---------------------------------------------------------------------------
+# Money path: a price of zero is a broken price, not a cheap order
+# ---------------------------------------------------------------------------
+
+
+class _CacheWithPrice:
+    def __init__(self, price) -> None:
+        self._price = price
+
+    def instrument(self, _instrument_id):
+        return SimpleNamespace(notional_value=lambda quantity, price: Decimal(str(price)) * 2)
+
+    def price(self, _instrument_id, _price_type):
+        return self._price
+
+    def order(self, _client_order_id):
+        return None
+
+
+def _priced_order(price):
+    return SimpleNamespace(
+        client_order_id="O-1",
+        instrument_id="BTCUSDT-PERP.BINANCE",
+        quantity="2",
+        price=price,
+        is_quote_quantity=False,
+        is_reduce_only=False,
+    )
+
+
+def test_a_zero_price_is_refused_rather_than_valued_at_nothing() -> None:
+    """A zero notional reserves nothing and passes every cap there is.
+
+    The old chain used ``or``, which treats zero as absent and falls through to the
+    next source -- valuing the order off a price the venue is not using, and doing
+    it silently.
+    """
+    semantics = NautilusCachedOrderSemantics(_CacheWithPrice(price="0"))
+
+    with pytest.raises(RuntimeError, match="must be a positive decimal"):
+        semantics.order_notional(_priced_order("0"))
+
+
+def test_a_real_price_is_valued_normally() -> None:
+    semantics = NautilusCachedOrderSemantics(_CacheWithPrice(price="100"))
+
+    assert semantics.order_notional(_priced_order("50")) == Decimal("100")
+
+
+def test_a_market_order_falls_through_to_the_mid_price() -> None:
+    """A market order genuinely has neither price nor trigger_price in 2.0, so the
+    fall-through is the real path rather than defensive padding."""
+    semantics = NautilusCachedOrderSemantics(_CacheWithPrice(price="30"))
+    market = SimpleNamespace(
+        client_order_id="O-2",
+        instrument_id="BTCUSDT-PERP.BINANCE",
+        quantity="1",
+        is_quote_quantity=False,
+        is_reduce_only=False,
+    )
+
+    assert semantics.order_notional(market) == Decimal("60")
+
+
+def test_a_zero_mid_price_is_refused_too() -> None:
+    semantics = NautilusCachedOrderSemantics(_CacheWithPrice(price="0"))
+    market = SimpleNamespace(
+        client_order_id="O-3",
+        instrument_id="BTCUSDT-PERP.BINANCE",
+        quantity="1",
+        is_quote_quantity=False,
+        is_reduce_only=False,
+    )
+
+    with pytest.raises(RuntimeError, match="must be a positive decimal"):
+        semantics.order_notional(market)

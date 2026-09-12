@@ -502,6 +502,44 @@ class RunnerFactEventBridge:
         except Exception as exc:  # audit loss is loud but never kills the engine thread
             _log.error("runner_strategy_signal_event_failed", error=str(exc))
 
+    def record_local_refusal(
+        self,
+        *,
+        client_order_id: str,
+        instrument_id: str,
+        side: str,
+        reason_code: str,
+    ) -> None:
+        """Record an order the runner refused before nautilus ever saw it.
+
+        2.0 only adds an order to the cache and publishes its initialized event
+        inside submit, so an order the safety gate stops never existed as far as
+        nautilus is concerned and produces no rejection event. Without this the
+        refusal would appear in no signed fact at all -- the exposure would be
+        contained and the containment unrecorded.
+        """
+        if self._runtime_log_emitter is None:
+            return
+        authority = self._deployment.authority
+        fields = {
+            "client_order_id": client_order_id,
+            "instrument": instrument_id,
+            "side": side or "unknown",
+            "lifecycle": "refused",
+            "order_role": self._order_roles.get(client_order_id, "strategy_order"),
+            "reason_code": reason_code,
+        }
+        self._runtime_log_emitter.emit_sync(
+            authority,
+            level="WARN",
+            component="custos.execution.order",
+            message="order_refused",
+            structured_fields=fields,
+            correlation_id=_scoped_event_id(authority, "order_trace", client_order_id),
+        )
+        self._order_directions.pop(client_order_id, None)
+        self._order_roles.pop(client_order_id, None)
+
     def _on_order_lifecycle(
         self,
         event: Any,

@@ -31,6 +31,7 @@ from collections.abc import Callable
 from typing import Any
 
 from custos.core.log import get_logger
+from custos.engines.nautilus.strategy_hooks import install_hook
 
 __all__ = [
     "ORDER_EVENT_CALLBACK",
@@ -45,10 +46,6 @@ _log = get_logger("custos.nautilus_host.event_forwarding")
 # subscribing here is equivalent to the 1.x wildcard topics the bridges used.
 ORDER_EVENT_CALLBACK = "on_order_event"
 POSITION_EVENT_CALLBACK = "on_position_event"
-
-
-class StrategyForwardingUnsupported(RuntimeError):
-    """The strategy cannot carry the runner's event forwarding."""
 
 
 class StrategyEventForwarder:
@@ -81,13 +78,7 @@ class StrategyEventForwarder:
         return len(self._order_sinks) + len(self._position_sinks)
 
     def install(self, strategy: Any) -> None:
-        """Wrap the strategy's typed callbacks, or refuse the strategy.
-
-        Verifies the wrapper is actually reachable afterwards rather than trusting
-        that the assignment took: a strategy with ``__slots__``, a custom
-        ``__setattr__`` or a property of that name would otherwise leave the
-        forwarding installed in name only.
-        """
+        """Wrap the strategy's typed callbacks, or refuse the strategy."""
         self._install_one(strategy, ORDER_EVENT_CALLBACK, self._order_sinks)
         self._install_one(strategy, POSITION_EVENT_CALLBACK, self._position_sinks)
         _log.info(
@@ -104,33 +95,18 @@ class StrategyEventForwarder:
         callback_name: str,
         sinks: list[tuple[str, Callable[[Any], None]]],
     ) -> None:
-        handler = getattr(strategy, callback_name, None)
-        if not callable(handler):
-            raise StrategyForwardingUnsupported(
-                f"strategy {type(strategy).__name__} has no callable {callback_name!r}; "
-                "the runner cannot observe its execution events"
-            )
+        def wrap(handler: Callable[[Any], None]) -> Callable[[Any], None]:
+            def forwarding(event: Any) -> None:
+                for sink_name, sink in sinks:
+                    try:
+                        sink(event)
+                    except Exception as exc:  # noqa: BLE001 - one sink must not silence others
+                        self._record_sink_failure(sink_name, callback_name, event, exc)
+                handler(event)
 
-        def forwarding(event: Any, _handler=handler, _sinks=sinks, _kind=callback_name) -> None:
-            for sink_name, sink in _sinks:
-                try:
-                    sink(event)
-                except Exception as exc:  # noqa: BLE001 - one sink must not silence the others
-                    self._record_sink_failure(sink_name, _kind, event, exc)
-            _handler(event)
+            return forwarding
 
-        try:
-            setattr(strategy, callback_name, forwarding)
-        except (AttributeError, TypeError) as exc:
-            raise StrategyForwardingUnsupported(
-                f"strategy {type(strategy).__name__} does not accept runner event "
-                f"forwarding on {callback_name!r}"
-            ) from exc
-        if getattr(strategy, callback_name, None) is not forwarding:
-            raise StrategyForwardingUnsupported(
-                f"runner event forwarding on {callback_name!r} did not take effect for "
-                f"strategy {type(strategy).__name__}"
-            )
+        install_hook(strategy, callback_name, wrap)
 
     def _record_sink_failure(
         self,

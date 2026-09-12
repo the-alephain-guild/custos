@@ -23,8 +23,8 @@ from custos.engines.nautilus.strategy_event_forwarding import (
     ORDER_EVENT_CALLBACK,
     POSITION_EVENT_CALLBACK,
     StrategyEventForwarder,
-    StrategyForwardingUnsupported,
 )
+from custos.engines.nautilus.strategy_hooks import StrategyHookUnsupported
 
 _INSTANCE = "11111111-1111-4111-8111-111111111111"
 
@@ -121,7 +121,7 @@ def test_a_strategy_without_the_callback_is_refused() -> None:
     class _NoCallbacks:
         pass
 
-    with pytest.raises(StrategyForwardingUnsupported, match=ORDER_EVENT_CALLBACK):
+    with pytest.raises(StrategyHookUnsupported, match=ORDER_EVENT_CALLBACK):
         _forwarder().install(_NoCallbacks())
 
 
@@ -129,7 +129,7 @@ def test_a_strategy_missing_only_the_position_callback_is_refused() -> None:
     class _OrdersOnly:
         def on_order_event(self, event: object) -> None: ...
 
-    with pytest.raises(StrategyForwardingUnsupported, match=POSITION_EVENT_CALLBACK):
+    with pytest.raises(StrategyHookUnsupported, match=POSITION_EVENT_CALLBACK):
         _forwarder().install(_OrdersOnly())
 
 
@@ -142,7 +142,7 @@ def test_a_strategy_that_will_not_accept_the_wrapper_is_refused() -> None:
         def on_order_event(self, event: object) -> None: ...
         def on_position_event(self, event: object) -> None: ...
 
-    with pytest.raises(StrategyForwardingUnsupported, match="does not accept"):
+    with pytest.raises(StrategyHookUnsupported, match="does not accept"):
         _forwarder().install(_Slotted())
 
 
@@ -161,7 +161,7 @@ def test_a_wrapper_that_does_not_take_effect_is_refused() -> None:
         def on_order_event(self, event: object) -> None: ...
         def on_position_event(self, event: object) -> None: ...
 
-    with pytest.raises(StrategyForwardingUnsupported, match="did not take effect"):
+    with pytest.raises(StrategyHookUnsupported, match="did not take effect"):
         _forwarder().install(_SwallowsAssignment())
 
 

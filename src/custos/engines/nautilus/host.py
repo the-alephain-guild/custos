@@ -520,10 +520,7 @@ class NtTradingNodeHost:
         exec_cfg, exec_factory, reconciliation = self._build_exec_plan(
             trading_mode, spec, credential, venue
         )
-        exec_factory, runner_safety_boundary = await self._build_guarded_exec_plan(
-            exec_factory,
-            spec,
-        )
+        runner_safety_boundary = await self._build_runner_safety_boundary(spec)
 
         # The runner and the message bus are both thread-local in 2.0, so two hosted
         # nodes on one event loop would cross-wire each other's events rather than
@@ -586,6 +583,7 @@ class NtTradingNodeHost:
             self._attach_runtime_bridges(
                 deployment_instance_id,
                 strategy,
+                node.cache,
                 fact_context,
                 runner_safety_boundary,
             )
@@ -674,26 +672,32 @@ class NtTradingNodeHost:
             f"unsupported trading_mode {trading_mode!r} (expected sandbox / testnet / live)"
         )
 
-    async def _build_guarded_exec_plan(self, exec_factory, spec: dict):
-        if self._runner_safety_boundary_factory is None:
-            return exec_factory, None
-        from custos.engines.nautilus.runner_safety import guarded_exec_client_factory
+    async def _build_runner_safety_boundary(self, spec: dict):
+        """Build the reservation boundary this deployment's orders answer to.
 
+        It no longer wraps the execution client: 2.0 has no seat there for python,
+        so the gate goes on the strategy instead (see ``runner_safety``). What is
+        built here is the boundary; ``_attach_runtime_bridges`` puts it in front of
+        the strategy once the node exists and its cache can be read.
+        """
+        if self._runner_safety_boundary_factory is None:
+            return None
         boundary = self._runner_safety_boundary_factory(spec)
         if isawaitable(boundary):
             boundary = await boundary
         if boundary is None:
             raise RuntimeError("runner safety boundary factory returned no boundary")
-        return guarded_exec_client_factory(exec_factory, boundary), boundary
+        return boundary
 
     def _attach_runtime_bridges(
         self,
         deployment_instance_id: str,
         strategy,
+        cache,
         fact_context,
         runner_safety_boundary=None,
     ) -> None:
-        """Wire both bridges onto the strategy's typed callbacks, or refuse the deploy.
+        """Wire the runner onto the strategy, or refuse the deploy.
 
         2.0 delivers order and position events nowhere else -- the internal message
         bus these bridges used to subscribe to has no python surface. Installing the
@@ -711,12 +715,13 @@ class NtTradingNodeHost:
                 deployment_instance_id, sink, reason
             ),
         )
+        fact_bridge: RunnerFactEventBridge | None = None
         if runner_safety_boundary is not None:
             runner_safety_boundary.bootstrap(forwarder)
         if fact_context is not None and self._runner_fact_emitter is not None:
             if self._capability_receipt is None:
                 raise RuntimeError("RunnerFact bridge lacks its capability receipt")
-            RunnerFactEventBridge(
+            fact_bridge = RunnerFactEventBridge(
                 emitter=self._runner_fact_emitter,
                 deployment=fact_context[0],
                 runtime_log_emitter=RunnerRuntimeLogEmitter(
@@ -724,8 +729,45 @@ class NtTradingNodeHost:
                     capability=self._capability_receipt,
                     redactor=RuntimeLogRedactor(),
                 ),
-            ).bootstrap(forwarder)
+            )
+            fact_bridge.bootstrap(forwarder)
         forwarder.install(strategy)
+        if runner_safety_boundary is not None:
+            self._install_order_gate(strategy, cache, runner_safety_boundary, fact_bridge)
+
+    def _install_order_gate(self, strategy, cache, boundary, fact_bridge) -> None:
+        """Put the reservation gate in front of the strategy's outbound orders.
+
+        A refusal produces no nautilus event -- the order is never submitted, and 2.0
+        only publishes an order's initialized event inside submit -- so the refusal is
+        routed to the signed fact stream here. Without a fact bridge there is nowhere
+        for it to go, and the deploy is refused rather than run with a gate that
+        contains silently.
+        """
+        from custos.engines.nautilus.runner_safety import (
+            NautilusCachedOrderSemantics,
+            RunnerSafetyOrderGate,
+            install_order_gate,
+        )
+
+        if fact_bridge is None:
+            raise RuntimeError(
+                "runner safety gate requires the signed fact stream: a refusal it does "
+                "not record is exposure contained without evidence"
+            )
+        boundary.bind_runtime(semantics=NautilusCachedOrderSemantics(cache))
+        install_order_gate(
+            strategy,
+            RunnerSafetyOrderGate(
+                boundary=boundary,
+                on_refusal=lambda refusal: fact_bridge.record_local_refusal(
+                    client_order_id=refusal.client_order_id,
+                    instrument_id=refusal.instrument_id,
+                    side=refusal.side,
+                    reason_code=refusal.reason_code,
+                ),
+            ),
+        )
 
     def _record_forwarding_failure(
         self,
