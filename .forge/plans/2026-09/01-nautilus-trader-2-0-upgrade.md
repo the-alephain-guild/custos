@@ -103,6 +103,29 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 「historical evidence for that recorded revision, not a permanent byte constraint」）。
 教训 C6 在本区域**已失效**，改 adapter 不需重签 receipt。
 
+### 中间态基线（2026-09-12，Task 1a-1 之后）
+
+依赖已切到 2.0 而应用代码仍是 1.x 路径，这是 task_dag 决定的必经中间态。**Slice B / C 的判据
+以本快照为参照**，不是「test-baseline 绿」——那要到 Slice D 才可能。
+
+`uv run pytest tests/ -q`：**45 个 collection error，收集期即 Interrupted，零测试执行**
+（对照干净基线 `2418 passed`）。运行期失败数为 0 不是好消息，是根本没跑到（教训 #50）。
+
+| 目录 | collection error | 归属 |
+|---|---|---|
+| `tests/toolkit/` | 35 | Slice B |
+| `tests/engines/` | 3 | Slice C |
+| `tests/` 根（7 个文件） | 7 | Slice C（host / venue / runner_safety 相关） |
+
+收敛判据分两层，逐层验、不合并：
+
+1. **collection 归零**——该 Slice 范围内的 error 数降到 0（`pytest --collect-only` 逐文件比对，
+   被 skip 或 uncollectable 的文件点名报告，不得静默豁免）
+2. **运行期回到基线**——全部 collection 修好后，passed 数不低于 2418
+
+完整文件清单见实施期 scratchpad；关键是**每个 Slice 只对自己那一栏负责**，跨栏的红留给对应 Slice，
+不在本 Slice 里顺手改、也不算本 Slice 的失败。
+
 ## 目标 (Goal)
 
 把 custos 的 toolkit、daemon engine host 与 PS 策略本体从 NautilusTrader 1.230.0 升到公会 fork
