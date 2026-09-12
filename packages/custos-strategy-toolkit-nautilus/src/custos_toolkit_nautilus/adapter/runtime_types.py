@@ -23,7 +23,6 @@ from nautilus_trader.model import (
     TriggerType,
     Venue,
 )
-from nautilus_trader.model.instruments import Instrument
 
 
 class Order(Protocol):
@@ -68,6 +67,29 @@ class Position(Protocol):
     def quantity(self) -> Quantity: ...
     @property
     def side(self) -> PositionSide: ...
+
+
+class Instrument(Protocol):
+    """The instrument surface the adapter actually uses.
+
+    2.0 exposes concrete instrument types (CurrencyPair, CryptoPerpetual, ...)
+    with no shared `Instrument` base on the Python side, so the contract is
+    stated structurally here. `FixedRiskSizer` accepts `Any`, so a structural
+    type is enough for the one place that hands an instrument to nautilus.
+    """
+
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def price_increment(self) -> Price: ...
+    @property
+    def size_precision(self) -> int: ...
+    @property
+    def size_increment(self) -> Quantity: ...
+    @property
+    def quote_currency(self) -> Currency: ...
+    def make_qty(self, value: Decimal | Quantity | float | str) -> Quantity: ...
+    def make_price(self, value: Decimal | Price | float | str) -> Price: ...
 
 
 class Cache(Protocol):

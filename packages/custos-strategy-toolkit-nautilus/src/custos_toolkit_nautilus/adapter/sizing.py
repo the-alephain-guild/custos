@@ -9,9 +9,10 @@ fixed-risk sizing lives in ``shared/nautilus/`` rather than ``shared/position/``
 from decimal import Decimal
 from typing import cast
 
-from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model import Money, Quantity
 from nautilus_trader.risk import FixedRiskSizer
+
+from .runtime_types import Instrument
 
 
 def compute_fixed_risk_qty(
