@@ -645,9 +645,36 @@ Slice C 的调查已经做完并落盘（`619e19a` / `b2edde5`），那段是完
 - Slice B 收尾于 `8c77d5f`；调查落盘于 `619e19a`、Environment 映射于 `b2edde5`
 - 依赖已切到公会 fork：`nautilus_trader 2.0.0rc5+sodex.1`，uv git 源钉 `3fe857a351`
 - adapter **59/59 可 import**，`__all__` 75 名全可达
-- **`make verify` 在主干 exit 0** —— 这是新基线，此后任何红都是新引入的
+- ~~**`make verify` 在主干 exit 0** —— 这是新基线，此后任何红都是新引入的~~ **这句不成立**，见下方「接手点实测基线」
 - 中间态：`tests/toolkit` 有 16 个 collection error，全部是测试文件自身的 1.x 路径，归
   Slice D，**不是 Slice C 的责任**（见「中间态基线」段的分栏表）
+
+### 接手点实测基线（2026-09-12，Task 7a 接手时在 `f790169` 上跑）
+
+上面划掉的那句是交接时写的，**实测推翻**。在 `f790169` 上 `uv run pytest tests/
+--continue-on-collection-errors`：
+
+```
+55 failed, 2046 passed, 41 skipped, 1 xfailed, 29 errors
+```
+
+`make verify` 的 `test-baseline` 就是 `uv run pytest tests/`（`Makefile:62-64`），所以它在接手时
+是红的，不是 exit 0。不带 `--continue-on-collection-errors` 时更红：收集期即 Interrupted。
+
+**这不改变判据，只是把判据换成可用的那个**——「此后任何红都是新引入的」在一个本就红的基线上无法
+执行。可执行的判据是**逐文件比对**：Task 7a 完成后同一命令得到
+
+```
+54 failed, 2132 passed, 41 skipped, 1 xfailed, 25 errors
+```
+
+失败文件集合 `comm` 对照的结果是：接手点红而现在绿的有 1 个（`test_portfolio_snapshot.py`），
+现在红而接手点绿的有 **0 个**，两边都红的 12 个（全部是 `tests/toolkit/**` 的 1.x 路径与
+`MovingAverageType.WILDER`，归 Slice D；以及断言 `1.230.0` 的两个文件，归 Task 2a）。
+
+**给下一个接手者**：不要引用「基线是绿的」这类状态声明而不复核（生态教训 #49）。要判断自己有没有
+弄坏东西，跑上面那条命令并对失败文件集合做 `comm` 比对，不要比对总数——总数会同时被修好的和新
+引入的两边推动。
 
 ### 本次任务
 
