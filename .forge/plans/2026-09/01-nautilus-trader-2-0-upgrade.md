@@ -618,7 +618,7 @@ readiness 的 `data_connectivity_ready` / `execution_connectivity_ready` 两个�
 | 4 | ✅ | 2026-09-12 | `261dc7a`；5 指标去基类 + docstring 去重 |
 | 5 | ✅ | 2026-09-12 | `8c77d5f`；pyclass 子类 + 冻结守卫 + 移除静默 except |
 | 6 | ✅ | 2026-09-12 | `57c3a8b`；Instrument 改 Protocol，解锁 28→41 |
-| 7a | 🔲 | | LiveNode 迁移 + 桥接改回调 + admission 强制 |
+| 7a | ✅ | 2026-09-12 | `65b7f1c` venue → `7506447` forwarder → `83dc8cb` host。含 venue_binance 提前迁移（host 的前置）|
 | 7b | 🔲 | | 品味重构：typed 视图 + typed adapter |
 | 8 | 🔲 | | 红线 0.2 |
 | 9 | 🔲 | | 红线 0.3/0.4 |
@@ -714,6 +714,12 @@ downstream receipts」）。这条需要推对端交付。
 | DEV | 两个红线桥接 | **事件可见窗口收窄为「策略 Running 期间」**（`strategy/mod.rs:1356` order、`:1468` position 的状态门；1.x 的 msgbus 订阅无此门）。停止侧安全（shutdown policy 跑在 `stop_async` 之前，且 2.0 无 `pause`），残留侧有缺口（stop 后迟到的终态回报不再进回调）。close-out 红线表按此如实降级（教训 #40） | ✅ 实施中发现 |
 | DEV | 转发器 | **Python 回调的异常被 Rust 丢弃**（`strategy/python/strategy.rs:973` / `:1045` 的 `let _ =`）。转发器必须自己把桥接失败变成可见信号，否则「对账不静默」在 2.0 下自动降级为静默 | ✅ 实施中发现 |
 | DEV | Task 7 前置调查 | **补第四条排除：`Strategy.subscribe_topic` 不是 msgbus 替代**。它走 `subscribe_any` → `bus.topics`，而 order/position 走 `publish_typed` → typed router，两张表不相交（`api.rs:243` vs `:1285`）。`BusTap` 能看到全部 publish但是 Rust-only、无 Python 面 | ✅ 实施中发现 |
+| DEV | `venue_binance.py` | **Task 9 的 venue 部分提前到 7a**：host 的 `deploy` import 该模块，其 1.x import 让 Slice C 的每个测试都收集失败——7a 无法自证。改动不止符号路径：`account_type`→`product_type`、sandbox 的 per-instrument `leverages`→单个 `default_leverage`、`futures_leverages` 键改交易所符号（要自己剥 `-PERP`，1.x 由 `BinanceSymbol` 构造时剥）、exec config 新增必填 `account_id`。Task 9 保留 runner_safety 与红线 0.3/0.4 回归 | ✅ 实施中改排 |
+| DEV | `venue_binance.py` | **2.0 只认 HMAC 与 Ed25519（读密钥材料自动判别），无 RSA**；而 `binance_ledger.py:70` 的 credential 契约允许 RSA。key-type 字段消失意味着声明值不再传给任何人，一个 RSA 凭据会被静默接受、到交易所才失败，且错误指向凭据而非类型。已在 venue 层 fail closed | ✅ 实施中发现 |
+| DEV | `runner_safety.py` / Task 9 | **guarded exec factory 建在 1.x 的 `LiveExecClientFactory` / `LiveExecutionClient` 上，2.0 无这两个基类**，整段需重建。7a 下配了 `runner_safety_boundary_factory` 的 deploy 会在 lazy import 处失败——即 fail closed，不会出现「无守卫照跑」。Task 9 的实质工作，6 个测试文件（`test_runner_safety_*` / `test_client_order_id_*` / `test_cancel_still_reaches_the_venue` / `test_nautilus_runner_safety_adapter`）随之仍红 | ✅ 范围界定 |
+| DEV | `_daemon.py` / `host.py` | **`process_shutdown_requested` 随两个 workaround 一起删**：它唯一的消费者是 `_restore_runner_signal_ownership`。删前实证两件事——`_daemon.py:790-791` daemon 自己在 loop 上装 SIGINT/SIGTERM，以及 `_daemon.py` **未被** authority gate 按字节固定（改一行后 `make check-authority` 仍 exit 0，C6 的 pin 清单不含它）| ✅ 实施中发现 |
+| DEV | 扰动验证流程 | **我的验证工具骗了我一次**：改文件后在同一秒内 `cp` 还原，且扰动只是重排行、字节数不变，于是 `.pyc` 的 (mtime 秒, size) 判据认为缓存仍有效，pytest 跑的是扰动版字节码而磁盘是正确版。表现为「还原后测试仍红」，一度让我以为提交了坏代码。**此后所有扰动一律 `PYTHONPYCACHEPREFIX` 指向每次唯一的目录**，先前四次结论作废并重做（七处全部重验会红）。教训 #50 家族，已登记为 custos lesson C15 | ✅ 实施中发现 |
+| DEV | close-out 计数 | **Task 7a 改动了若干测试文件的条数**（`test_nt_trading_node_host` 27→33、`test_nt_binance_venue` →34、新增 `test_strategy_event_forwarding` 11 等）。按 `progress-management.md` §数字类声明必须来自实跑，plan close-out 的逐文件表格须在 Slice D 之后按 `pytest --collect-only` 重数，不得沿用旧行 | ✅ 遗留登记 |
 | DEV | `host.py:1232-1233` | **连接状态查询面在 Python 侧整个消失**（F6）：2.0 对 `check_connected` 无 Python 面，Rust 侧也只在启动与停机两端调它。启动判定可由 `handle().state == RUNNING` 顶上（进入 Running 蕴含启动时已连），**运行期断连检测能力丢失**，红线 0.3 按此如实降级。**owner 2026-09-12 定：(a) 降级声明**，用 `handle().state` 顶上，不给 fork 加自有 API；运行期断连检测登记为 follow-up | ✅ owner 2026-09-12 |
 | DEV | `host.py:527` / `:763` | **两处 1.x workaround 的理由在 2.0 下消失**：`run_async` 固定 `NodeRunMode::Hosted`、不装 signal handler（`python/node.rs:549` + `node/mod.rs:1461`），故 `_restore_runner_signal_ownership` 无对象；2.0 `dispose` 不碰 Python asyncio loop（`node/mod.rs:562-566`），故 `_dispose_node_preserving_runner_loop` 的 loop 保护无对象。两处删除而非改写 | ✅ 实施中发现 |
 | DEV | Task 2b | **`engine_version` 是跨仓契约字段**（mandatory-rules §3）：custos 只改自有 V1 文件，vendored golden 与 PS / Crucible 侧列为 Blocked，不得自行改写 | ✅ 规则约束，无需批准 |

@@ -6,6 +6,30 @@
 
 > **custos 内部 lesson 用 `C1` `C2` … 前缀区分生态数字编号** (见文末"记录新 lesson")。
 
+## C15 同秒还原 + 等长改动 = pytest 跑的是旧字节码，扰动验证会骗人 (2026-09)
+
+- **事件**: NT 2.0 升级 Slice C 中，给新写的事件转发器做扰动验证：备份源文件 → 施加扰动 → 跑测试 →
+  `cp` 还原 → 再跑。其中一个扰动是把两段代码**互换顺序**（字节数完全不变），还原发生在同一秒内。
+  于是 `.pyc` 的失效判据（源文件的 mtime **秒**数 + size）两项都没变，pytest 复用了扰动版字节码。
+  表现为「还原之后测试仍然红」，而 `git show HEAD:<path>` 与磁盘内容都是正确的。一度以为自己提交了
+  坏代码，实际提交的内容没问题、跑的字节码有问题。`PYTHONPYCACHEPREFIX` 指向一个新目录后立刻全绿。
+- **根因**: CPython 默认按 `(源文件 mtime 秒, size)` 判断 `.pyc` 是否新鲜。`cp` 会更新 mtime，但
+  精度只到秒；一次「改→跑→还原」在一秒内完成、且改动不改变字节数时，两项判据都骗过了它。这类
+  改动在扰动验证里**特别常见**——交换两段代码的顺序、把 `if X:` 换成等长的 `if Y:`，都是等长的。
+- **教训**: 扰动验证的结论只有在字节码确实被重新编译时才成立。而"是否重新编译"这件事默认不可见，
+  也不会报错。
+- **预防**:
+  - 每次扰动跑测试都带 `PYTHONPYCACHEPREFIX=<每次唯一的目录>`，把缓存写到别处，从根上绕开判据。
+    比 `touch` 可靠：`touch` 仍受同秒问题影响。
+  - 还原后那次「应该全绿」的确认跑，同样要带（否则它自己就是下一个受害者）。
+  - 一旦出现「还原后仍红」，**先怀疑字节码而不是怀疑自己的改动**：比对 `inspect.getsource()`
+    与实际行为，两者不一致即可确诊（本次正是这么确诊的）。
+  - 与生态 #50 同族：那条讲"自建观测工具要先被证伪"，本条是它在**验证流程**自身上的形态——
+    扰动验证是一种观测手段，它也会在看起来正常工作时给出错误结论。
+- **Binding**: 无代码 binding（这是流程纪律）。plan 01 偏离日志「扰动验证流程」条记录了本次实例。
+
+---
+
 ## C14 跨仓契约字段被当成自有常量 — 写出一条自己无权满足的验收项 (2026-09)
 
 - **事件**: Plan 01（NautilusTrader 1.230.0 → fork 2.0.0rc5）Task 2 只列 `toolkit_rc.py:113-118` 与三个 authority json，验证清单写「1.230.0 残留 grep 归零」。审计实读：`engine_version` 还以 `Literal["1.230.0"]` 写在 `custos_toolkit/contracts/strategy_execution.py:140,197`、以 `"const": "1.230.0"` 写在 `docs/gateway-contract/v1/` 三份 schema、以内嵌 canonical JSON 写在 `docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json` 8 处。最后那份由 Crucible 生成，authority-docs.md 明写「Never invent, vendor or pre-register downstream receipts」。
