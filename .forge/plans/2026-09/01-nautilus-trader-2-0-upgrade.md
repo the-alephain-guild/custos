@@ -1,6 +1,6 @@
 # 01 - NautilusTrader 1.230.0 → fork 2.0.0rc5 升级
 
-> **Status**: ⏳ In Progress（Task 0 ✅、Task 1a-1 ✅ 2026-09-12；下一步 Slice B 或 Task 1a-2。**中间态**：依赖已是 2.0 而 adapter 仍是 1.x 路径，`make test-baseline` 此刻必红，属预期）
+> **Status**: ⏳ In Progress（Task 0 / 1a-1 / **Slice B 全部 ✅** 2026-09-12；下一步 Slice C。**中间态**：adapter 59/59 可 import，`tests/toolkit` collection error 35→16，剩余 16 个是测试文件自身的 1.x 路径，归 Slice D）
 > **Created**: 2026-09-11
 > **Project**: custos（跨仓：philosophers-stone）
 > **multi_session_scope**: **true**（6 个 Slice、跨 2 仓库、涉及红线 0.1/0.2/0.4）
@@ -440,10 +440,10 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 | 1b | 🔲 | | 切换门：fork tag + CI wheel + Task 8 通过 |
 | 2a | 🔲 | | 已改排到 D 之后、与 2b 相邻；改动已试做并回退 |
 | 2b | ❌ | | Blocked：PS / Crucible 重签 |
-| 3 | 🔲 | | |
-| 4 | 🔲 | | |
-| 5 | 🔲 | | |
-| 6 | 🔲 | | |
+| 3 | ✅ | 2026-09-12 | `9fecab3`；37 文件 AST 拍平；判据改为 `__all__` 逐名可达 |
+| 4 | ✅ | 2026-09-12 | `261dc7a`；5 指标去基类 + docstring 去重 |
+| 5 | ✅ | 2026-09-12 | `8c77d5f`；pyclass 子类 + 冻结守卫 + 移除静默 except |
+| 6 | ✅ | 2026-09-12 | `57c3a8b`；Instrument 改 Protocol，解锁 28→41 |
 | 7 | 🔲 | | |
 | 8 | 🔲 | | 红线 0.2 |
 | 9 | 🔲 | | 红线 0.3/0.4 |
