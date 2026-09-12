@@ -130,7 +130,12 @@ class NautilusTradingStrategyConfig(StrategyConfig):
         assign(self, "warmup", warmup)
         assign(self, "signal", SignalConfig() if signal is None else signal)
         self._validate()
-        super().__init__(**_kwargs)
+        # The 2.0 base is a pyo3 pyclass: it initialises in __new__ and leaves
+        # object.__init__ in the MRO, which rejects arguments once __new__ is
+        # overridden. Forwarding **_kwargs here raises "object.__init__() takes
+        # exactly one argument". The fork's own example calls it bare for the
+        # same reason; _kwargs exists to absorb what subclasses pass through.
+        super().__init__()
         assign(self, self._FROZEN_ATTR, True)
 
     def __setattr__(self, name: str, value: object) -> None:
