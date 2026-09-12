@@ -387,9 +387,21 @@ host 必须在 `add_strategy` 前校验策略具备转发契约，否则拒绝�
 | `LiveExecEngineConfig` | `LiveExecutionEngineConfig` | `live/__init__.pyi:124` |
 | `SandboxLiveExecClientFactory` | `SandboxExecutionClientFactory` | `adapters/sandbox/__init__.pyi:96` |
 
-**待定**：`Environment` 只有 `BACKTEST` / `SANDBOX` / `LIVE`（`common/__init__.pyi:1668-1671`），
-而 custos 有 sandbox / testnet / live 三种 trading_mode。testnet 映射到哪一个会影响 NT 行为，
-须在实施时按 2.0 对 Environment 的实际语义决定并记入偏离。
+**Environment 映射（2026-09-12 定，有实证）**：`Environment` 只有 `BACKTEST` / `SANDBOX` / `LIVE`
+（`common/__init__.pyi:1668-1671`），而 custos 有 sandbox / testnet / live。区分点不是「是不是测试」，
+而是**撮合在本地还是在对端**：
+
+| custos trading_mode | 2.0 Environment | exec client 注册方式 |
+|---|---|---|
+| `sandbox`（本地撮合）| `Environment.SANDBOX` | `builder.add_simulated_exec_client(...)`（收 `SimulatedExecutionClientFactory`，`crates/live/src/node/builder.rs:527-532`）|
+| `testnet`（连测试网端点）| `Environment.LIVE` | `builder.add_exec_client(...)`，测试网由适配器自身的 environment 参数表达 |
+| `live` | `Environment.LIVE` | `builder.add_exec_client(...)` |
+
+依据：fork 示例连真实交易所一律 `Environment.LIVE`，**包括**适配器级 sandbox 的那个
+（`examples/live/architect_ax/exec_tester.py:67` 用 `Environment.LIVE` 而 `:82` 是
+`AxDataClientConfig(environment=AxEnvironment.SANDBOX)`）；`Environment::Sandbox` 在 Rust 侧
+（`crates/live/src/node/mod.rs:5749+`）用于本地模拟。所以 custos 现有的
+`SandboxLiveExecClientFactory` 路径对应 `SANDBOX` + simulated 注册，Binance testnet 走 `LIVE`。
 
 **Task 7 因此拆为 7a / 7b**：7a = LiveNode API 迁移 + 桥接改回调转发 + host admission 强制
 （让 host 能跑，可由 `tests/test_nt_trading_node_host.py` 713 行等验证）；7b = plan 原列的品味
