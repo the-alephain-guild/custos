@@ -75,7 +75,10 @@ class _RestsThenCancels(NautilusStrategyCore):
         self._order = self.order_factory.limit(
             instrument_id=_INSTRUMENT.id,
             order_side=OrderSide.BUY,
-            quantity=_INSTRUMENT.make_qty(1.0),
+            # 2.0's risk engine enforces the instrument's minimum notional (10 USDT
+            # here) and denies anything under it, so the quantity carries the notional
+            # while the price stays far below the market and the order rests.
+            quantity=_INSTRUMENT.make_qty(20.0),
             price=_INSTRUMENT.make_price(1.0),  # far below the market, so it rests
         )
         self.submit_order(self._order)

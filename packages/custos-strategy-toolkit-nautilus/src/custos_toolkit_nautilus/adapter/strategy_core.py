@@ -274,7 +274,7 @@ class NautilusStrategyCore(Strategy, ABC):
 
     # ---- Sidecar control capabilities (pushed down to Core) ----
 
-    _TEMPLATE_METHODS = frozenset({"on_bar", "on_trade_tick", "on_quote_tick"})
+    _TEMPLATE_METHODS = frozenset({"on_bar", "on_trade", "on_quote"})
 
     def __init_subclass__(cls, **kw: object) -> None:
         super().__init_subclass__(**kw)
@@ -350,21 +350,21 @@ class NautilusStrategyCore(Strategy, ABC):
         except Exception as exc:
             self._log_error(f"on_bar: {type(exc).__name__}: {exc}")
 
-    def on_trade_tick(self, tick: TradeTick) -> None:
+    def on_trade(self, tick: TradeTick) -> None:
         try:
             if self._paused:
                 return
             self.on_core_trade_tick(tick)
         except Exception as exc:
-            self._log_error(f"on_trade_tick: {type(exc).__name__}: {exc}")
+            self._log_error(f"on_trade: {type(exc).__name__}: {exc}")
 
-    def on_quote_tick(self, tick: QuoteTick) -> None:
+    def on_quote(self, tick: QuoteTick) -> None:
         try:
             if self._paused:
                 return
             self.on_core_quote_tick(tick)
         except Exception as exc:
-            self._log_error(f"on_quote_tick: {type(exc).__name__}: {exc}")
+            self._log_error(f"on_quote: {type(exc).__name__}: {exc}")
 
     def on_core_bar(self, bar: Bar) -> None: ...
 
@@ -480,11 +480,16 @@ class NautilusStrategyCore(Strategy, ABC):
     # The handoff to the framework's own implementations, named so that the recording
     # above can be exercised without a running engine -- the Cython base needs one.
     def _venue_cancel_order(self, order: Any, client_id: Any, params: Any) -> None:
-        cast(_NautilusRuntimeSurface, super()).cancel_order(
-            order,
-            client_id=client_id,
-            params=params,
-        )
+        # 2.0's cancel_order takes (order, client_id) only — cancel_all_orders still
+        # takes params, so the two diverged. Dropping params silently would send a
+        # different cancel than the caller asked for, so refuse instead.
+        if params is not None:
+            raise TypeError("nautilus 2.0 cancel_order accepts no params")
+        # 2.0 takes the ClientOrderId, not the order. Its stub says `order: Any`, so
+        # passing the order object type-checks and then fails at runtime inside the
+        # callback, where the surrounding handler logs it and the cancel never goes out.
+        client_order_id = getattr(order, "client_order_id", order)
+        cast(_NautilusRuntimeSurface, super()).cancel_order(client_order_id, client_id=client_id)
 
     def _venue_cancel_all_orders(
         self, instrument_id: Any, order_side: Any, client_id: Any, params: Any
