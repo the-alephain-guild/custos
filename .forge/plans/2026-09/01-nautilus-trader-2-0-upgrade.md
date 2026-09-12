@@ -342,6 +342,59 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 
 ### Slice C — daemon engine host（2,091 行，红线所在，可与 B 并行）
 
+#### Task 7 前置调查（2026-09-12 实测，Slice C 的实际起点）
+
+**结论：这不是「换 API 名」，2.0 取消了 Python 侧对内部消息总线的访问。** custos 有两个桥接挂在
+`node.kernel.msgbus` 上（`host.py:595`），都订阅 `events.order.*` 通配符：
+
+| 桥接 | 订阅 | 承载 |
+|---|---|---|
+| `RunnerFactMessageBusBridge` | `events.order.*` + `events.position.*`（`runner_fact_producer.py:298-299`）| 签名 RunnerFact 发射，「对账不静默」|
+| `OrderReservationBoundary` | `events.order.*`（`order_reservation_boundary.py:121`）| runner safety 边界，红线 0.2 / 0.3 |
+
+2.0 的 `LiveNode` 只暴露 `environment` / `trader_id` / `instance_id` / `is_running` / `cache` /
+`portfolio`（`live/__init__.pyi:358-371`）。逐条排除的替代：
+
+- `add_stream_processor`——**不适用**。`crates/live/src/node/mod.rs:355-362` 写明它处理
+  「supported typed **external** messages」的 inbound streaming，是外部入站通道而非内部事件总线。
+- `with_external_msgbus_factory`——**不适用**，注入外部后端，不读内部流。
+- 2.0 `Actor`——**无事件回调**。`crates/common/src/python/actor.rs` 只有 `subscribe_data` /
+  `subscribe_signal` / `subscribe_instruments` 等数据订阅，order/position 事件回调 grep 零命中。
+
+**迁移路径（owner 2026-09-12 定案：由 Strategy 回调转发）**：2.0 把事件分发移到 Strategy 的
+typed 回调，`trading/__init__.pyi:442-463` 提供 `on_order_event` / `on_order_submitted` /
+`on_order_rejected` / `on_order_accepted` … 与 `on_position_event` / `on_position_opened` /
+`on_position_changed` / `on_position_closed`，覆盖两个桥接所需的全部事件。
+
+**必须由 host 强制，不能靠策略自觉**：`host.py:405-406` 的策略来自签名 artifact
+（`create_strategy()` 或 `artifact.strategy`），**全仓 `issubclass` grep 零命中**——当前没有任何
+基类约束。若转发只写在 toolkit 基类里，一个不继承它的 artifact 就会让两条红线静默失效。因此
+host 必须在 `add_strategy` 前校验策略具备转发契约，否则拒绝（教训 #22：多层 fail-fast，不靠
+任一层自觉）。
+
+**类型映射（实测）**：
+
+| 1.x | 2.0 | 锚点 |
+|---|---|---|
+| `TradingNodeConfig(**kwargs)` | `LiveNode.builder(name, trader_id, environment)` + `.with_*()` 链 | `live/__init__.pyi:374` |
+| `TradingNode(config=...)` + `node.build()` | `builder.build()` | `live/__init__.pyi:445` |
+| `node.add_data_client_factory(venue, f)` | `builder.add_data_client(name, factory, config, routing)` | `live/__init__.pyi:425` |
+| `node.add_exec_client_factory(venue, f)` | `builder.add_exec_client(...)` / `add_simulated_exec_client(...)` | `live/__init__.pyi:431,440` |
+| `node.trader.add_strategy(s)` | `node.add_strategy(s)` | `live/__init__.pyi:385` |
+| `node.kernel.msgbus` | **无对应**，见上 | — |
+| `node.stop_async()` | `node.stop()` / `handle()` | `live/__init__.pyi:382` |
+| `LoggingConfig` | `common.LoggerConfig` | `common/__init__.pyi:184` |
+| `LiveExecEngineConfig` | `LiveExecutionEngineConfig` | `live/__init__.pyi:124` |
+| `SandboxLiveExecClientFactory` | `SandboxExecutionClientFactory` | `adapters/sandbox/__init__.pyi:96` |
+
+**待定**：`Environment` 只有 `BACKTEST` / `SANDBOX` / `LIVE`（`common/__init__.pyi:1668-1671`），
+而 custos 有 sandbox / testnet / live 三种 trading_mode。testnet 映射到哪一个会影响 NT 行为，
+须在实施时按 2.0 对 Environment 的实际语义决定并记入偏离。
+
+**Task 7 因此拆为 7a / 7b**：7a = LiveNode API 迁移 + 桥接改回调转发 + host admission 强制
+（让 host 能跑，可由 `tests/test_nt_trading_node_host.py` 713 行等验证）；7b = plan 原列的品味
+重构（spec 归一 typed 视图 + NT 能力收成 typed adapter，27 处 `getattr` 收口）。
+
 #### Task 7: TradingNode → LiveNode
 **Files**: `src/custos/engines/nautilus/host.py`
 **Step 1（证伪）**: `import nautilus_trader.live.node` 报 ImportError
@@ -444,7 +497,8 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 | 4 | ✅ | 2026-09-12 | `261dc7a`；5 指标去基类 + docstring 去重 |
 | 5 | ✅ | 2026-09-12 | `8c77d5f`；pyclass 子类 + 冻结守卫 + 移除静默 except |
 | 6 | ✅ | 2026-09-12 | `57c3a8b`；Instrument 改 Protocol，解锁 28→41 |
-| 7 | 🔲 | | |
+| 7a | 🔲 | | LiveNode 迁移 + 桥接改回调 + admission 强制 |
+| 7b | 🔲 | | 品味重构：typed 视图 + typed adapter |
 | 8 | 🔲 | | 红线 0.2 |
 | 9 | 🔲 | | 红线 0.3/0.4 |
 | 10 | 🔲 | | |
