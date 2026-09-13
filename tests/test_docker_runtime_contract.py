@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -177,6 +178,44 @@ def test_official_image_has_source_revision_label() -> None:
     assert re.fullmatch(r"[0-9a-f]{40}", revision)
     if EXPECTED_REVISION is not None:
         assert revision == EXPECTED_REVISION
+
+
+def _locked_engine_version() -> str:
+    """The NautilusTrader version uv.lock resolves to.
+
+    Read straight out of the lock rather than through any helper, so that it
+    keeps answering across a change of source form: the version is recorded
+    the same way whether the engine resolves from a git commit or from a
+    published wheel.
+    """
+    lock = tomllib.loads((Path(__file__).resolve().parent.parent / "uv.lock").read_text())
+    versions = {p["version"] for p in lock["package"] if p["name"] == "nautilus-trader"}
+    assert len(versions) == 1, f"uv.lock pins more than one engine version: {sorted(versions)}"
+    return versions.pop()
+
+
+@pytest.mark.docker
+def test_the_installed_engine_is_the_version_the_lock_pins() -> None:
+    """An image outlives the tree that produced it.
+
+    Nothing else in the image disagrees with a lock that has since moved on,
+    so without this the only way to learn which engine an image carries is to
+    unpack it -- which is how a stale artifact once kept a contract green for
+    weeks (historical-lessons C7).
+    """
+    _require_image()
+
+    proc = _run_image(
+        "-c",
+        "from importlib.metadata import version; print(version('nautilus_trader'))",
+        entrypoint="python",
+    )
+
+    assert proc.returncode == 0, (
+        f"official image must carry an installed NautilusTrader; "
+        f"stdout={proc.stdout!r}\nstderr={proc.stderr!r}"
+    )
+    assert proc.stdout.strip() == _locked_engine_version()
 
 
 @pytest.mark.docker

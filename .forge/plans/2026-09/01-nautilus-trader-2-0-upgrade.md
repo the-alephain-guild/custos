@@ -272,9 +272,9 @@ commit，本 plan 的 typecheck 验收判据是「全绿」。** 不先钉住基
 
 #### Task 1b: 切换到 wheel（D1 阶段二，Slice F 收尾前的门）
 **Files**: `pyproject.toml`, `uv.lock`, `docker/runtime-requirements.lock`, `Makefile`, `Dockerfile`, PS `pyproject.toml` / `uv.lock`
-**触发判据（三条齐才开始）**: fork 打 tag；fork CI 产 cp312 manylinux + macosx wheel 并挂 Release（fork `build.yml` 已引用 maturin，可作起点）；Task 8 的 SoDEX sandbox / testnet 起停通过（adapter 的 Python 面冻结）
+**触发判据（2026-09-13 重写，原判据不可满足——见偏离日志）**: 原文要求 fork CI 产 wheel 并挂 Release，实测该 fork 从未运行过任何 workflow（`actions/runs` `total_count = 0`）且注册了 0 个 self-hosted runner，而产 wheel 的 job 在 push 事件下全部要求 `["self-hosted","Linux","X64","build"]`。现判据三条：(1) 三平台 wheel 就位并各记 sha256——darwin-arm64 / linux-aarch64 / linux-x86_64，均由 fork `3fe857a351` 构建，版本 `2.0.0rc5+sodex.1`；(2) Release 已由 `gh release create` 发布且各资产 URL 可取（**不经 CI**）；(3) Task 8 的 SoDEX sandbox / testnet 起停通过（已满足，adapter 的 Python 面冻结）
 **Step 1（证伪）**: `uv.lock` 仍含 `git+`；`Dockerfile` 仍含 `nt-builder`
-**Step 2（实现）**: git 源改带 sha256 的 wheel 引用（uv `url` 源按平台各一，或 `find-links` 指向 Release 资产页，实测定一种）；删 `--no-emit-package` 与 `nt-builder`；runtime lock 重生成后含带 hash 的 nautilus-trader；PS 同步改为命令式安装该 wheel
+**Step 2（实现）**: **2026-09-13 实测定案，取 `url` 源按平台各一 + `marker`**（不取 `find-links`）。实测依据：`file://` 被 uv 拒（`URL scheme is not allowed`）；http(s) 源下 lock 为每个平台各记一条 `[[package]]`，含 `source.url` / `resolution-markers` / `wheels[].hash`，uv 自算的 sha256 与独立 `shasum -a 256` 一致；`uv export` 随之吐出带 marker 且带 `--hash=sha256:` 的行，正是 `--require-hashes` 要的形态。配套：`pyproject.toml` `[tool.uv]` 新增 `environments` 列三平台（否则全平台解析在无 wheel 的环境上解不开）；删 `--no-emit-package`；`Dockerfile` 保持无 `nt-builder` 的形状；退役 `docker/nautilus-wheel.dockerfile`、`make nautilus-wheel` 与 `scripts/nautilus_source_pin.py`（它们只服务 git-源阶段）；runtime lock 重生成后含带 hash 的 nautilus-trader；PS 同步改为同一组 wheel 引用
 **Step 3（证实）**: `uv.lock` 无 `git+`；`docker/runtime-requirements.lock` 中 nautilus-trader 带 `--hash=sha256:`；`Dockerfile` 回到无 `nt-builder` 的形状；`make test-docker` 全绿
 **Step 4（失败模式）**: 篡改 lock 里 wheel 的 hash 后 `uv sync --frozen` 必须拒绝
 **Step 5**: commit。**本 Task 未完成不得 close-out**：1a 的 `nt-builder` 是过渡方案，留着就是永久债务
@@ -661,8 +661,8 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 |---|---|---|---|
 | 0 | ✅ | 2026-09-11 | `2bf09e8` + `7971bc8`；mypy 4→0、fmt 8→0、lint 2→0，`make verify` exit 0 |
 | 1a-1 | ✅ | 2026-09-12 | `2010309`；git 源钉 `3fe857a351`，NT 2.0.0rc5+sodex.1 |
-| 1a-2 | 🔲 | | Docker 侧：`nt-builder` + runtime lock + sha 对账断言 |
-| 1b | 🔲 | | 切换门：fork tag + CI wheel + Task 8 通过 |
+| 1a-2 | ❌ 撤销 | 2026-09-13 | **撤销而非阻塞**（状态表例无此标记，故加字说明）。`nt-builder` 已实现并跑到最后一个 crate，因 `release.yml:155` 的两平台构建装不下而放弃，详见偏离日志。**已落地的 runtime lock 部分保留为过渡**（`--no-emit-package` + 重生成，`make check-runtime-lock` 由红转绿、`make dist` 解锁），随 1b 一并撤 |
+| 1b | ⏳ | | 触发判据已重写（见偏离日志）：本地造 wheel + `gh release create`，不经 CI。macOS arm64 已就位——`3fe857a351` 所建，sha256 `0a06c389f63e4c7d9825c2b68e8a225db2db6e92561bcf623eb6d81b2693af97`，内含 `adapters/sodex`，maturin 1.15.0。缺 linux aarch64（待 Docker 内存上调）与 linux x86_64（本机仅能 QEMU，需 x86 机器或另议） |
 | 2a | 🔲 | | 已改排到 D 之后、与 2b 相邻；改动已试做并回退 |
 | 2b | ❌ | | Blocked：PS / Crucible 重签 |
 | 3 | ✅ | 2026-09-12 | `9fecab3`；37 文件 AST 拍平；判据改为 `__all__` 逐名可达 |
@@ -905,6 +905,8 @@ plan 自己写的理由是「1a 的 `nt-builder` 是过渡方案」——git 源
 | `tests/toolkit/test_tick_exit_close_position.py` | 4 |
 | `tests/toolkit/test_trade_event_handler.py` | 12 |
 | `tests/toolkit/test_trailing_behavioral_equivalence.py` | 4 |
+| `tests/test_nautilus_source_pin.py` | 8 |
+| `tests/test_docker_runtime_contract.py` | 20 |
 | `tests/test_nautilus_runner_safety_adapter.py` | 0 |  (已删除)
 | `tests/test_nt_binance_venue.py` | 0 |  (已删除)
 | `tests/toolkit/test_event_publisher.py` | 0 |  (已删除)
@@ -983,3 +985,9 @@ plan 自己写的理由是「1a 的 `nt-builder` 是过渡方案」——git 源
 | DEV | `set_client_order_id_count` | **能力降级**：2.0 移除该 setter，计数器无法从测试驱动到 `2**31-2` / `2**31-1` 两个最坏点（C11 当初直接钉住的正是它们）。改为断言「UUID 形态下计数器不参与 id，故重复生成长度恒定」，证据强度低于原来，已写进该模块注释 | ✅ 实施中发现 |
 | DEV | 拍平工具（Slice D） | **两个假设在 tests/ 才暴露，adapter 从未触发**：(1) **函数级 import 的作用域**——按文件合并把 `test_pair_context.py` 16 处 per-method import 并到第一个方法、删掉其余 15 处，`BarType`/`InstrumentId` 在那 15 个方法里未定义（47 个 F821）。改为按 enclosing scope 合并，归属用「自 scope 向下走、遇嵌套 scope 即停」。(2) **`# noqa` 承载信息**——`E402`（`pytest.importorskip` 之后的 import）与 `F401`（仅用于可用性探测）；合并时静默丢了 35 个中的 26 个。现按被替换语句的 noqa 并集附加到合并行。两处都是**跑完读 diff/lint 才发现**，不是工具报的错（教训 C10 同族） | ✅ 实施中发现并修 |
 | DEV | Task 2b | **`engine_version` 是跨仓契约字段**（mandatory-rules §3）：custos 只改自有 V1 文件，vendored golden 与 PS / Crucible 侧列为 Blocked，不得自行改写 | ✅ 规则约束，无需批准 |
+| DEV | `Dockerfile` / Task 1a-2 | **`nt-builder` 放弃，D1 阶段一取消，直接做阶段二（Task 1b）**。实施到底后否决，理由两条且第二条才是决定性的：(1) 本机 Docker VM 只有 7.7 GiB，`nautilus-pyo3` 编到 4845s 被 `SIGKILL`，BuildKit 报 `ResourceExhausted: cannot allocate memory`——根因是 fork `[profile.release]` 的 `lto = "fat"` + `codegen-units = 1`；宿主机 64 GiB，属配置问题，可修。(2) **决定性的是它装不进 custos 自己的发布流水线**：`release.yml:155` 以 `platforms: linux/amd64,linux/arm64` 在 `ubuntu-24.04`（16 GiB / 4 核）构建镜像，带上 `nt-builder` 等于每次发布把 NT 整个 Rust 工作区编两遍、其中一遍走 QEMU 模拟；参照系是本机 10 核原生 arm64 编到 81 分钟仍未完成。另：`release.yml` 只传 `labels:` 未传 `build-args:`，新 Dockerfile 的参数校验会让该构建直接失败，而计划 File Inventory **未列 `release.yml`**——这是计划的覆盖缺口，不是实施偏离 | ✅ owner 2026-09-13 选 B |
+| DEV | Task 1b 触发判据 | **原判据不可满足，按实测重写**。原文要求「fork 打 tag；fork CI 产 cp312 manylinux + macosx wheel 并挂 Release」。实测 fork 的 `actions/runs` `total_count = 0`（该仓从未运行过任何 workflow）、`actions/runners` `total_count = 0`、environments / secrets / variables 均为 0，而产 wheel 的 job 及其全部前置在 push 事件下都要求 `["self-hosted","Linux","X64","build"]`（`build.yml:122` / `:198` / `:299` / `:444`）。**CI 造不出 wheel，也造不出 tag**（`tag-release` 门在 `refs/heads/master`）。改为：wheel 本地构建、`gh release create` 上传（不经 CI）；判据改为 (1) 三平台 wheel 就位并各记 sha256 (2) Release 已发布且 URL 可取 (3) Task 8 通过（已满足） | ✅ owner 2026-09-13 |
+| DEV | 发布版本的选择 | **发 `2.0.0rc5+sodex.1`（fork `3fe857a351`），不发 develop HEAD**。Task 8 / 12 / 13 验证的正是该 commit；develop 已多 16 个 commit（+566 行 adapter）无人复验，跟着发等于把未验代码推给 PS 与 custos。同时 fork `python/pyproject.toml` 已 bump 到 `+sodex.2`（fork commit `7ef69a64a4`，**未推送**），使 `sodex.1` 从此永久指 `3fe857a351`、`sodex.2` 指 develop 新代码，消除「一个标签指两套字节」 | ✅ owner 2026-09-13 |
+| DEV | Task 1a Step 4(a) 验收措辞 | **写了一条机制上不成立的门**。原文「3.11 解释器下 `uv sync --package custos-runner --extra dev` 必须成功」——实测 workspace 在 3.11 上根本无法解析，`custos-strategy-toolkit-nautilus` 的 `requires-python == 3.12.*` 直接拒绝，与本任务改动无关；`tech-stack.md` 本就写明 3.11 兼容性「由独立 wheel/import gate 验证，不能从 workspace interpreter 推断」。改为可满足且同义的判据：base 导出（不带 `--extra nautilus`）不含 NautilusTrader——实测 45 个包、0 处 nautilus 引用。教训 C14 同型，这次出现在验收项措辞上 | ✅ 实施中发现 |
+| DEV | `pyproject.toml` `[tool.uv]` | **切 wheel 源强制声明支持平台集**。实测 uv 默认做全平台解析，wheel 源下没有对应 wheel 的环境会让 lock 解不开（uv 自己提示 `consider limiting the environments with tool.uv.environments`）。custos `pyproject.toml:80` 的 `[tool.uv]` 需新增 `environments`，列出 darwin-arm64 / linux-aarch64 / linux-x86_64。不影响 base 的 3.11 可安装性——base wheel 是 `py3-none-any`，其兼容性不由 lock 的平台集决定 | ✅ 实施中发现 |
+| DEV | 发布资产命名 | **uv 不校验 wheel 内部 tag 与文件名是否一致**（实测：把 macOS wheel 改名成 `manylinux_2_34_x86_64` 后 uv 照常接受并记入 lock）。故 Release 资产的平台 tag 必须由构建产出、不得手工改名；并保留「镜像内 NT 能 import 且版本与 lock 一致」的断言作为兜底——命名错误只会在运行期暴露 | ✅ 实施中发现 |
