@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1
+
 # Builds the NautilusTrader wheel from the Guild fork at the commit uv.lock pins.
 #
 # This is a tool, not part of any image. The runtime image installs
@@ -83,16 +85,37 @@ RUN set -eux; \
     pip install --root-user-action=ignore "maturin==${maturin_pin}"; \
     maturin --version | grep -Fq "${maturin_pin}"
 
-# `--locked` keeps Cargo.lock authoritative. The wheel is matched by the exact
-# version the lock pins, so a build that silently produced some other version
-# leaves the glob unmatched and fails here rather than downstream.
-RUN set -eux; \
+# `--locked` keeps Cargo.lock authoritative. The wheel is found by a glob that
+# says nothing about the version, and the version is then checked against the
+# filename -- accepting either the literal spelling or the escaped one, because
+# whether maturin escapes `+` in a local version is its business, not an
+# assumption worth betting a build on. An unmatched glob leaves the pattern
+# itself as the single argument, so `test -f` rather than the count is what
+# catches an empty output directory.
+# The cargo target directory is cached so that a retry does not recompile the
+# six hundred odd dependency crates again; cargo's own fingerprints decide what
+# is still valid, so the cache cannot make the wheel stale.
+#
+# Memory is sampled because this step is the one that fails on a machine that
+# is merely large. A trajectory printed every thirty seconds survives the OOM
+# killer, which a final measurement would not.
+RUN --mount=type=cache,target=/src/target,sharing=locked \
+    set -eux; \
     cd "${NT_SUBDIRECTORY}"; \
+    ( while sleep 30; do \
+        printf 'cgroup memory: current=%s peak=%s\n' \
+          "$(cat /sys/fs/cgroup/memory.current 2>/dev/null || echo unavailable)" \
+          "$(cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo unavailable)"; \
+      done ) & \
+    sampler="$!"; \
     maturin build --locked --release --out /wheels; \
-    expected="$(python -c "import re, sys; print(re.sub(r'[^\w\d.]+', '_', sys.argv[1]))" "${NT_VERSION}")"; \
-    set -- /wheels/nautilus_trader-"${expected}"-*.whl; \
+    kill "$sampler" 2>/dev/null || true; \
+    printf 'cgroup memory peak: %s\n' "$(cat /sys/fs/cgroup/memory.peak 2>/dev/null || echo unavailable)"; \
+    set -- /wheels/nautilus_trader-*.whl; \
     test "$#" -eq 1; \
-    test -f "$1"
+    test -f "$1"; \
+    python -c "import re, sys; name, version = sys.argv[1], sys.argv[2]; escaped = re.sub(r'[^\w\d.]+', '_', version); sys.exit('built %s, which carries neither %s nor %s' % (name, version, escaped)) if ('-' + version + '-') not in name and ('-' + escaped + '-') not in name else None" "$(basename "$1")" "${NT_VERSION}"; \
+    printf 'built %s\n' "$(basename "$1")"
 
 # `docker build --output` copies this stage's filesystem out; keeping it to the
 # wheel alone means the caller receives exactly the artifact and nothing else.

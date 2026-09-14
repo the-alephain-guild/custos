@@ -1,0 +1,41 @@
+name: Runner capacity probe
+
+# Measures what a GitHub-hosted runner actually offers, on each architecture we
+# would build the NautilusTrader wheel for. Linking that wheel is memory-hungry
+# enough that a local 23 GiB Docker VM could not finish it, so the question of
+# whether CI can is a question about specific numbers -- not about what the
+# documentation says a runner has. Run it before wiring a real build.
+#
+# Manual only. It builds nothing and publishes nothing.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  capacity:
+    name: capacity on ${{ matrix.runner }}
+    # An unavailable label leaves the job queued rather than failing, so do not
+    # let a missing arm64 runner hold the whole workflow open.
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Report capacity
+        run: |
+          set -eux
+          echo "runner label : ${{ matrix.runner }}"
+          uname -m
+          nproc
+          free -h
+          swapon --show || echo "no swap configured"
+          df -h /
+          docker version --format '{{.Server.Version}}' || echo "no docker daemon"
+          cat /sys/fs/cgroup/memory.max 2>/dev/null || echo "no cgroup v2 memory.max"
