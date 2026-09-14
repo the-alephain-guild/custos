@@ -1,0 +1,38 @@
+{
+  "canonical_name": "Custos strategy contract V1 receipt",
+  "command_consumer_ready": false,
+  "consumers": {
+    "crucible_rust": {
+      "receipt": null,
+      "repository": "tesseract-trading/crucible-rust"
+    },
+    "philosophers_stone": {
+      "receipt": null,
+      "repository": "alchymia-labs/philosophers-stone"
+    }
+  },
+  "contract_asset_index": {
+    "path": "docs/authority/strategy-contract-assets-v1.json",
+    "sha256": "2d3255adf204714da3600ddd59b108292cb7532fef781cbe3426413099fdaecf",
+    "size_bytes": 2828
+  },
+  "contract_consumer_ready": false,
+  "open_blockers": [
+    "Philosophers Stone canonical V1 consumer receipt",
+    "Crucible canonical V1 consumer receipt for the Nautilus 2 asset commit"
+  ],
+  "policy_boundary": {
+    "crucible_local_policy_decision_reused": false,
+    "runner_local_policy_decision_required": true
+  },
+  "producer": {
+    "repository": "tesseract-trading/custos",
+    "source_path": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
+    "source_sha256": "b90ff33debffa177ccc8519f31da6d30e555bf8c303fecb3da261c02250b1e47"
+  },
+  "production_ready": false,
+  "receipt_schema_version": 1,
+  "runtime_ready": false,
+  "status": "CANONICAL_V1_PENDING_CONSUMER_RECEIPTS",
+  "strategy_artifact_pre_import_verification_receipt_v1_published": true
+}

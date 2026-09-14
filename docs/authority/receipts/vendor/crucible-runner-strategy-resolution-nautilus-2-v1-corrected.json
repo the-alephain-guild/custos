@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "receipt_id": "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-NAUTILUS-2-V1",
+  "owner": "crucible-rust",
+  "consumer": "custos",
+  "status": "CURRENT_ENGINE_CONTRACT_READY",
+  "authority_coordinate": "crucible.runner-strategy-resolution.v1",
+  "engine": "nautilus",
+  "engine_version": "2.0.0rc5+sodex.1",
+  "producer_commit": "dfa9619e3a5e26a289c9baa8d89cdd088cba5acd",
+  "runtime_code_commit": "dfa9619e3a5e26a289c9baa8d89cdd088cba5acd",
+  "contract_commit": "dfa9619e3a5e26a289c9baa8d89cdd088cba5acd",
+  "supersedes_incomplete_receipt": "docs/authority/receipts/crucible-runner-strategy-resolution-nautilus-2-v1.json",
+  "strategy_release_binding": {
+    "request_accepts_strategy_release_id": false,
+    "release_derived_from_persisted_deployment_spec": true,
+    "release_version_semantics": "StrategyRelease.release_number",
+    "lifecycle_evidence_fence": "StrategyReleaseSnapshot.snapshot_digest",
+    "complete_artifact_binding_returned": true,
+    "complete_artifact_evidence_returned": true,
+    "artifact_evidence_digest_input_returned": true,
+    "credential_or_attestation_bundle_bytes_returned": false,
+    "signed_subject_claims_complete": true
+  },
+  "contract_assets": [
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.schema.json",
+      "sha256": "807e347558f7d637046d3effb3f39e77c806a46257e0a86d03308c0bf71aad7d",
+      "size_bytes": 9179
+    },
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.schema.json.sha256",
+      "sha256": "d1884a9f0f3a49ccc4d2bc2b717bbaf4fa0e1642a4632f359eaf36860b067eae",
+      "size_bytes": 116
+    },
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.golden.json",
+      "sha256": "88c566508ce34bdc73a6da0fee982859cd1bbfc8a7bd64c345a7e4ca4c91240d",
+      "size_bytes": 31094
+    },
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
+      "sha256": "5eb1bc0eb378de3820ebe59df8ab25c44c3e4a3da8464f21b5ebb05cea4302c1",
+      "size_bytes": 116
+    }
+  ],
+  "generator": {
+    "path": "scripts/regenerate-runner-strategy-release-golden.py",
+    "sha256": "f7b4a2b308fa0e5f79a7d3429397772108b3294e45601209ec897b6aa7a98b59",
+    "size_bytes": 8553,
+    "check_passed": true
+  },
+  "acceptance": {
+    "domain_contracts": "cargo test -p domain --lib --tests --no-fail-fast",
+    "runner_resolution": "cargo test -p server-http strategy_release -- --nocapture",
+    "authority": "make check-authority",
+    "custos_generator_rejection_of_incomplete_claims_observed": true,
+    "local_postgresql_integration": true
+  },
+  "runtime_ready": false,
+  "live_ready": false,
+  "production_ready": false,
+  "open_blockers": [
+    "PS producer BOM regeneration and publication",
+    "Custos vendored consumer update and full gate",
+    "coordinated image lock and deployed acceptance"
+  ]
+}

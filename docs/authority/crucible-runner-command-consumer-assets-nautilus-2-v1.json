@@ -1,0 +1,167 @@
+{
+  "asset_index_schema_version": 1,
+  "canonical_name": "Custos canonical V1 Crucible DeploymentSpec consumer assets",
+  "command_contains_deployment_spec_only": true,
+  "command_contract_consumer_ready": true,
+  "consumer_assets": [
+    {
+      "path": "src/custos/contracts/crucible_runner_command.py",
+      "sha256": "84de385402c2d84222301b95ff70bb44c095a4a3ceeb605b946af55ff794cdb9",
+      "size_bytes": 13993
+    },
+    {
+      "path": "tests/test_runner_deployment_command_golden.py",
+      "sha256": "61826e6ba51a0ab233098930629db8009e6057e46d58e0f28ae9add8ae647d9c",
+      "size_bytes": 7350
+    },
+    {
+      "path": "src/custos/core/runner_material_authority.py",
+      "sha256": "8217d0ae122f57d38319fa0d13081a7281780e0abad261aad560c8de2a58b4b8",
+      "size_bytes": 25111
+    },
+    {
+      "path": "tests/test_runner_material_authority.py",
+      "sha256": "b8f6cf7fdb389b4e2040b86c595ed8289460c4203cc00e4306fdf5b6cd7602bf",
+      "size_bytes": 18848
+    },
+    {
+      "path": "src/custos/artifacts/development_runtime.py",
+      "sha256": "8c799b71f8d2b596fc5224702832cfea1e8172959559d4ad5333ffb51cee7fb8",
+      "size_bytes": 9019
+    },
+    {
+      "path": "docs/authority/runner-deployment-command-golden-v1.json",
+      "sha256": "126ee972334509ff59272b0145b1c237a582e522cf4ba9318bf1c28beaef83f7",
+      "size_bytes": 18598
+    },
+    {
+      "path": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
+      "sha256": "d1cd8c60c725d41307453c91f5f01505dc71a82ddced42e3fa0f3e3ce6d94443",
+      "size_bytes": 107
+    },
+    {
+      "path": "tests/fixtures/runner_command/runner_command_fingerprint_v1.json",
+      "sha256": "81312eb60b0a29c2e3eb021508a4f27267fa35223cb4e3bf865d556cc580a9c6",
+      "size_bytes": 604
+    },
+    {
+      "path": "docs/authority/receipts/vendor/crucible-runner-command-publication-v1.json",
+      "sha256": "9a2eb21b090a32354980aff260278accc60c93267007fd2678f443edc581ee2e",
+      "size_bytes": 9973
+    },
+    {
+      "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-nautilus-2-v1-corrected.json",
+      "sha256": "b6d4714bc2421c26167b90c9b120fd7b11c199cd15f4dee7faad1b787acd9955",
+      "size_bytes": 2861
+    },
+    {
+      "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
+      "sha256": "807e347558f7d637046d3effb3f39e77c806a46257e0a86d03308c0bf71aad7d",
+      "size_bytes": 9179
+    },
+    {
+      "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json.sha256",
+      "sha256": "d1884a9f0f3a49ccc4d2bc2b717bbaf4fa0e1642a4632f359eaf36860b067eae",
+      "size_bytes": 116
+    },
+    {
+      "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",
+      "sha256": "88c566508ce34bdc73a6da0fee982859cd1bbfc8a7bd64c345a7e4ca4c91240d",
+      "size_bytes": 31094
+    },
+    {
+      "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json.sha256",
+      "sha256": "5eb1bc0eb378de3820ebe59df8ab25c44c3e4a3da8464f21b5ebb05cea4302c1",
+      "size_bytes": 116
+    }
+  ],
+  "consumer_code_ready": true,
+  "consumer_model": {
+    "path": "src/custos/contracts/crucible_runner_command.py",
+    "public_export": "CrucibleRunnerDeploymentCommandV1",
+    "sha256": "84de385402c2d84222301b95ff70bb44c095a4a3ceeb605b946af55ff794cdb9",
+    "size_bytes": 13993
+  },
+  "consumer_scope": [
+    "deployment_spec_command",
+    "durable_runner_intake",
+    "development_material_resolution",
+    "strategy_release_material_resolution"
+  ],
+  "custos_publishes_command_schema": false,
+  "development_material_resolution_ready": true,
+  "exact_event_command_fingerprint_pinned": true,
+  "exact_signed_event_bytes_retained": true,
+  "producer_authority": {
+    "contract": "CrucibleRunnerDeploymentCommandV1",
+    "producer_commit": "8c2c4eff20ae1ba38bbab54cdf7844ef25e1187d",
+    "producer_receipt": {
+      "contract_assets": [
+        {
+          "path": "docs/authority/runner-deployment-command-golden-v1.json",
+          "producer_path": "docs/authority/runner-deployment-command-golden-v1.json",
+          "role": "runner_command_golden",
+          "sha256": "126ee972334509ff59272b0145b1c237a582e522cf4ba9318bf1c28beaef83f7",
+          "size_bytes": 18598
+        },
+        {
+          "path": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
+          "producer_path": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
+          "role": "runner_command_golden_sha256",
+          "sha256": "d1cd8c60c725d41307453c91f5f01505dc71a82ddced42e3fa0f3e3ce6d94443",
+          "size_bytes": 107
+        }
+      ],
+      "path": "docs/authority/receipts/vendor/crucible-runner-command-publication-v1.json",
+      "sha256": "9a2eb21b090a32354980aff260278accc60c93267007fd2678f443edc581ee2e",
+      "size_bytes": 9973,
+      "status": "LOCAL_AUTHENTICATED_PG_JETSTREAM_PUBACK_RECOVERY_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
+    },
+    "producer_receipt_commit": "72c0ba90623e61641e14a3ede8168f3e379e6f4c",
+    "repository": "tesseract-trading/crucible-rust",
+    "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED",
+    "strategy_resolution_receipt": {
+      "contract_assets": [
+        {
+          "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
+          "producer_path": "docs/authority/runner-strategy-release-resolution-v1.schema.json",
+          "sha256": "807e347558f7d637046d3effb3f39e77c806a46257e0a86d03308c0bf71aad7d",
+          "size_bytes": 9179
+        },
+        {
+          "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json.sha256",
+          "producer_path": "docs/authority/runner-strategy-release-resolution-v1.schema.json.sha256",
+          "sha256": "d1884a9f0f3a49ccc4d2bc2b717bbaf4fa0e1642a4632f359eaf36860b067eae",
+          "size_bytes": 116
+        },
+        {
+          "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",
+          "producer_path": "docs/authority/runner-strategy-release-resolution-v1.golden.json",
+          "sha256": "88c566508ce34bdc73a6da0fee982859cd1bbfc8a7bd64c345a7e4ca4c91240d",
+          "size_bytes": 31094
+        },
+        {
+          "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json.sha256",
+          "producer_path": "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
+          "sha256": "5eb1bc0eb378de3820ebe59df8ab25c44c3e4a3da8464f21b5ebb05cea4302c1",
+          "size_bytes": 116
+        }
+      ],
+      "contract_commit": "dfa9619e3a5e26a289c9baa8d89cdd088cba5acd",
+      "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-nautilus-2-v1-corrected.json",
+      "producer_commit": "dfa9619e3a5e26a289c9baa8d89cdd088cba5acd",
+      "receipt_commit": "179cea1c46c2beb59e2d4f176a336590588723f9",
+      "sha256": "b6d4714bc2421c26167b90c9b120fd7b11c199cd15f4dee7faad1b787acd9955",
+      "size_bytes": 2861,
+      "status": "CURRENT_ENGINE_CONTRACT_READY"
+    },
+    "subject_template": "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
+  },
+  "production_ready": false,
+  "runner_command_producer_receipt_consumed": true,
+  "runtime_ready": false,
+  "signature_bytes_in_fingerprint": false,
+  "status": "LOCAL_STRATEGY_RESOLUTION_CONTRACT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN",
+  "strategy_release_authority_resolution": "sole V1 schema, golden and local HTTP/PG producer receipt consumed; daemon activation remains open",
+  "strategy_release_resolution_contract_ready": true
+}

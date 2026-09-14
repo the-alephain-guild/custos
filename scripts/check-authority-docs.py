@@ -13,7 +13,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "authority-manifest.json"
 STRATEGY_CONTRACT_RECEIPT_PATH = (
-    "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json"
+    "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json"
 )
 CANONICAL_INDEX_PATH = "docs/authority/strategy-contract-assets-v1.json"
 CANONICAL_ARTIFACT_REF_SCHEMA_PATH = "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json"
@@ -28,10 +28,10 @@ CANONICAL_PRE_IMPORT_NEGATIVE_PATH = (
     "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json"
 )
 RUNNER_COMMAND_CONSUMER_INDEX_PATH = (
-    "docs/authority/crucible-runner-command-consumer-assets-v1.json"
+    "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json"
 )
 RUNNER_COMMAND_CONSUMER_RECEIPT_PATH = (
-    "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json"
+    "docs/authority/receipts/custos-crucible-runner-command-nautilus-2-v1-consumer-receipt.json"
 )
 RUNNER_FACT_DURABLE_STATE_RECEIPT_PATH = (
     "docs/authority/receipts/custos-runner-durable-state-v1-receipt.json"
@@ -96,11 +96,12 @@ RUNNER_COMMAND_CONTRACT_ASSETS = (
     ),
 )
 RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
-    "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json"
+    "docs/authority/receipts/vendor/"
+    "crucible-runner-strategy-resolution-nautilus-2-v1-corrected.json"
 )
-RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df"
-RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT = "a4972de"
-RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "5a531c2bbc8c9ec08a631d51ebedae5650fc05a0"
+RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "dfa9619e3a5e26a289c9baa8d89cdd088cba5acd"
+RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT = RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
+RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "179cea1c46c2beb59e2d4f176a336590588723f9"
 RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS = (
     (
         "docs/authority/runner-strategy-release-resolution-v1.schema.json",
@@ -379,10 +380,6 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
         "pre_import_golden": resolve(CANONICAL_PRE_IMPORT_GOLDEN_PATH),
         "pre_import_negative": resolve(CANONICAL_PRE_IMPORT_NEGATIVE_PATH),
         "receipt": resolve(STRATEGY_CONTRACT_RECEIPT_PATH),
-        "crucible_consumer_receipt": resolve(
-            "docs/authority/receipts/vendor/"
-            "crucible-custos-strategy-contract-v1-consumer-receipt.json"
-        ),
     }
     missing = [str(path) for path in required_paths.values() if not path.is_file()]
     if missing:
@@ -396,9 +393,6 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
             required_paths["pre_import_schema"].read_text(encoding="utf-8")
         )
         receipt = json.loads(required_paths["receipt"].read_text(encoding="utf-8"))
-        crucible_consumer_receipt = json.loads(
-            required_paths["crucible_consumer_receipt"].read_text(encoding="utf-8")
-        )
     except (OSError, json.JSONDecodeError) as exc:
         errors.append(f"canonical V1 strategy contract assets are unreadable: {exc}")
         return
@@ -526,42 +520,8 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
     receipt_consumers = receipt.get("consumers", {})
     if receipt_consumers.get("philosophers_stone", {}).get("receipt") is not None:
         errors.append("Custos receipt must not fabricate the pending PS consumer receipt")
-    crucible_receipt_pin = {
-        "repository": "tesseract-trading/crucible-rust",
-        "commit": "4abd73eb320ac99bf16e443c5e572e5d1047391d",
-        "path": (
-            "docs/authority/receipts/crucible-custos-strategy-contract-v1-consumer-receipt.json"
-        ),
-        "vendored_path": (
-            "docs/authority/receipts/vendor/"
-            "crucible-custos-strategy-contract-v1-consumer-receipt.json"
-        ),
-        "sha256": hashlib.sha256(
-            required_paths["crucible_consumer_receipt"].read_bytes()
-        ).hexdigest(),
-    }
-    if receipt_consumers.get("crucible_rust", {}).get("receipt") != crucible_receipt_pin:
-        errors.append("Custos producer receipt does not pin the exact Crucible consumer receipt")
-    if (
-        set(crucible_consumer_receipt)
-        != {
-            "canonical_name",
-            "consumer",
-            "producer",
-            "production_ready",
-            "receipt_schema_version",
-            "runtime_ready",
-            "status",
-        }
-        or crucible_consumer_receipt.get("consumer") != "crucible-rust"
-        or crucible_consumer_receipt.get("producer", {}).get("commit")
-        != "a83e6f6969709316b8f11bcc0618b2f7b32fc19f"
-        or crucible_consumer_receipt.get("status")
-        != "EXACT_CUSTOS_V1_CONTRACT_PINNED_PENDING_PRODUCER_HANDOFF"
-        or crucible_consumer_receipt.get("runtime_ready") is not False
-        or crucible_consumer_receipt.get("production_ready") is not False
-    ):
-        errors.append("vendored Crucible consumer receipt semantics differ")
+    if receipt_consumers.get("crucible_rust", {}).get("receipt") is not None:
+        errors.append("pending Custos receipt must not fabricate a Crucible consumer receipt")
 
 
 def verify_runner_command_consumer(errors: list[str]) -> None:
@@ -728,9 +688,13 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
             if resolution_pin != expected_resolution_pin:
                 errors.append("runner strategy resolution producer receipt pin differs")
             if (
-                resolution_receipt.get("receipt_id") != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-V1"
+                resolution_receipt.get("receipt_id")
+                != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-NAUTILUS-2-V1"
                 or resolution_receipt.get("authority_coordinate")
                 != "crucible.runner-strategy-resolution.v1"
+                or resolution_receipt.get("status") != "CURRENT_ENGINE_CONTRACT_READY"
+                or resolution_receipt.get("engine") != "nautilus"
+                or resolution_receipt.get("engine_version") != "2.0.0rc5+sodex.1"
                 or resolution_receipt.get("producer_commit")
                 != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
                 or resolution_receipt.get("runtime_code_commit")

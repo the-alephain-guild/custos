@@ -205,7 +205,7 @@
       "role": "strategy_artifact_pre_import_verification_negative_v1"
     },
     {
-      "path": "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
+      "path": "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json",
       "role": "strategy_contract_receipt_v1"
     },
     {
@@ -281,7 +281,7 @@
     },
     {
       "role": "crucible_runner_command_consumer_asset_index_v1",
-      "path": "docs/authority/crucible-runner-command-consumer-assets-v1.json",
+      "path": "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json",
       "status": "LOCAL_STRATEGY_RESOLUTION_CONTRACT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN",
       "consumer_code_ready": true,
       "command_contract_consumer_ready": true,
@@ -292,10 +292,10 @@
     },
     {
       "role": "crucible_runner_strategy_resolution_producer_receipt_v1",
-      "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json",
-      "producer_commit": "34e0f139c64b5e1ed8fe5136a432e7b00aeea9df",
-      "producer_contract_commit": "e36c6cd11008542c63fb21f8837afcb02d31ac70",
-      "producer_receipt_commit": "84cfca9a80000d86f780fdcfe66e9aee617858c0",
+      "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-nautilus-2-v1-corrected.json",
+      "producer_commit": "dfa9619e3a5e26a289c9baa8d89cdd088cba5acd",
+      "producer_contract_commit": "dfa9619e3a5e26a289c9baa8d89cdd088cba5acd",
+      "producer_receipt_commit": "179cea1c46c2beb59e2d4f176a336590588723f9",
       "runtime_ready": false,
       "production_ready": false
     },
@@ -317,7 +317,7 @@
     },
     {
       "role": "runner_command_consumer_receipt_v1",
-      "path": "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
+      "path": "docs/authority/receipts/custos-crucible-runner-command-nautilus-2-v1-consumer-receipt.json",
       "receipt_status": "LOCAL_STRATEGY_RESOLUTION_CONTRACT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN",
       "consumer_code_ready": true,
       "command_contract_consumer_ready": true,
@@ -423,12 +423,15 @@
       "CLAUDE.md",
       "Makefile",
       "docs/authority/crucible-runner-command-consumer-assets-v1.json",
+      "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json",
       "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
+      "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json",
       "docs/authority/receipts/vendor/crucible-custos-strategy-contract-v1-consumer-receipt.json",
       "docs/authority/receipts/custos-toolkit-rc-authority-v1.json",
       "docs/authority/receipts/custos-toolkit-rc-authority-v1.json.sha256",
       "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
-      "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-v1.json",
+      "docs/authority/receipts/custos-crucible-runner-command-nautilus-2-v1-consumer-receipt.json",
+      "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-nautilus-2-v1-corrected.json",
       "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
       "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json.sha256",
       "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",
@@ -600,7 +603,7 @@
       ]
     },
     {
-      "path": "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
+      "path": "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json",
       "must_contain": [
         "Custos strategy contract V1 receipt",
         "CANONICAL_V1_PENDING_CONSUMER_RECEIPTS",
@@ -608,7 +611,7 @@
       ]
     },
     {
-      "path": "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
+      "path": "docs/authority/receipts/custos-crucible-runner-command-nautilus-2-v1-consumer-receipt.json",
       "must_contain": [
         "LOCAL_STRATEGY_RESOLUTION_CONTRACT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN",
         "\"deployment_spec_only\": true",
