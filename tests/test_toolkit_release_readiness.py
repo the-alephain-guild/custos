@@ -49,7 +49,7 @@ def build_candidate(
             "requires_python": "<3.13,>=3.12",
             "requires_dist": [
                 "custos-strategy-toolkit==0.1.0rc1",
-                "nautilus-trader==1.230.0",
+                "nautilus-trader==2.0.0rc5+sodex.1",
                 "pyyaml>=6",
                 "packaging",
             ],
@@ -139,7 +139,7 @@ def test_formal_cyclonedx_and_lock_evidence_are_exact_and_deterministic(
         },
         "custos-strategy-toolkit-nautilus": {
             "custos-strategy-toolkit==0.1.0rc1",
-            "nautilus-trader==1.230.0",
+            "nautilus-trader==2.0.0rc5+sodex.1",
             "packaging==26.2",
             "pyyaml==6.0.3",
         },

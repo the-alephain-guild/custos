@@ -57,7 +57,7 @@ class ResolvedDependency:
     name: str
     version: str
     requirement: str
-    source: Mapping[str, str]
+    source: Mapping[str, object]
     artifact_sha256: tuple[str, ...]
 
     def document(self) -> dict[str, object]:
@@ -119,7 +119,7 @@ def _read_json(path: Path, label: str) -> tuple[bytes, dict[str, Any]]:
     return content, document
 
 
-def _locked_package_map(lock_path: Path) -> dict[str, Mapping[str, Any]]:
+def _locked_package_map(lock_path: Path) -> dict[str, tuple[Mapping[str, Any], ...]]:
     try:
         lock_document = tomllib.loads(lock_path.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -127,15 +127,13 @@ def _locked_package_map(lock_path: Path) -> dict[str, Mapping[str, Any]]:
     packages = lock_document.get("package")
     if not isinstance(packages, list):
         raise ReleaseReadinessError("uv.lock has no package records")
-    result: dict[str, Mapping[str, Any]] = {}
+    grouped: dict[str, list[Mapping[str, Any]]] = {}
     for package in packages:
         if not isinstance(package, dict) or not isinstance(package.get("name"), str):
             raise ReleaseReadinessError("uv.lock contains an invalid package record")
         name = canonicalize_name(package["name"])
-        if name in result:
-            raise ReleaseReadinessError(f"uv.lock contains ambiguous versions for {name}")
-        result[name] = package
-    return result
+        grouped.setdefault(name, []).append(package)
+    return {name: tuple(entries) for name, entries in grouped.items()}
 
 
 def _artifact_hashes(package: Mapping[str, Any]) -> tuple[str, ...]:
@@ -176,18 +174,52 @@ def resolve_locked_dependencies(
             source: Mapping[str, str] = {"toolkit_rc_candidate": candidate_version}
             hashes: tuple[str, ...] = ()
         else:
-            package = packages.get(name)
-            if package is None or not isinstance(package.get("version"), str):
+            package_entries = packages.get(name)
+            if not package_entries:
                 raise ReleaseReadinessError(f"dependency {name} is not locked in uv.lock")
-            version_text = package["version"]
-            source_value = package.get("source")
-            if not isinstance(source_value, dict) or not all(
-                isinstance(key, str) and isinstance(value, str)
-                for key, value in source_value.items()
-            ):
-                raise ReleaseReadinessError(f"dependency {name} has no immutable lock source")
-            source = source_value
-            hashes = _artifact_hashes(package)
+            versions = {entry.get("version") for entry in package_entries}
+            if len(versions) != 1 or not all(isinstance(value, str) for value in versions):
+                raise ReleaseReadinessError(f"uv.lock contains ambiguous versions for {name}")
+            version_text = next(iter(versions))
+            if len(package_entries) == 1:
+                source_value = package_entries[0].get("source")
+                if not isinstance(source_value, dict) or not all(
+                    isinstance(key, str) and isinstance(value, str)
+                    for key, value in source_value.items()
+                ):
+                    raise ReleaseReadinessError(f"dependency {name} has no immutable lock source")
+                source = source_value
+            else:
+                urls: list[str] = []
+                markers: list[str] = []
+                for entry in package_entries:
+                    source_value = entry.get("source")
+                    resolution_markers = entry.get("resolution-markers")
+                    if (
+                        not isinstance(source_value, dict)
+                        or set(source_value) != {"url"}
+                        or not isinstance(source_value.get("url"), str)
+                        or not isinstance(resolution_markers, list)
+                        or len(resolution_markers) != 1
+                        or not isinstance(resolution_markers[0], str)
+                    ):
+                        raise ReleaseReadinessError(
+                            f"dependency {name} has ambiguous non-platform lock entries"
+                        )
+                    urls.append(source_value["url"])
+                    markers.append(resolution_markers[0])
+                if len(set(urls)) != len(urls) or len(set(markers)) != len(markers):
+                    raise ReleaseReadinessError(
+                        f"dependency {name} repeats a platform source or marker"
+                    )
+                source = {
+                    "kind": "platform-wheel-set",
+                    "urls": sorted(urls),
+                    "resolution_markers": sorted(markers),
+                }
+            hashes = tuple(
+                sorted({value for entry in package_entries for value in _artifact_hashes(entry)})
+            )
             if "registry" in source and not hashes:
                 raise ReleaseReadinessError(
                     f"registry dependency {name} has no locked artifact hashes"
@@ -752,7 +784,7 @@ def assemble_toolkit_rc_publication_inputs(
                     ">=3.11" if role is ToolkitRcMemberRole.BASE_CONTRACTS_WHEEL else ">=3.12,<3.13"
                 ),
                 nautilus_version=(
-                    None if role is ToolkitRcMemberRole.BASE_CONTRACTS_WHEEL else "1.230.0"
+                    None if role is ToolkitRcMemberRole.BASE_CONTRACTS_WHEEL else "2.0.0rc5+sodex.1"
                 ),
                 top_level_modules=wheel.top_level_modules,
                 dependencies=tuple(dependencies),

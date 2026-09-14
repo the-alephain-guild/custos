@@ -7,7 +7,7 @@ dependencies = [
     "custos-strategy-toolkit==0.1.0",
     "nautilus-trader==2.0.0rc5+sodex.1",
     # The fork declares no core dependencies, so everything this package used to
-    # inherit from nautilus-trader 1.230.0 has to be named here. Of the nine
+    # inherit from the earlier NautilusTrader line has to be named here. Of the nine
     # packages the switch dropped, exactly two are used by our own code: pandas
     # (by the vendored pandas_ta) and msgspec (by the adapter config structs).
     # The pandas range matches the fork's own bound in its `visualization` extra.

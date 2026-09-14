@@ -75,7 +75,7 @@
     "canonical_contract_source": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
     "base_contracts_python": ">=3.11",
     "nautilus_distribution_python": ">=3.12,<3.13",
-    "nautilus_trader": "1.230.0",
+    "nautilus_trader": "2.0.0rc5+sodex.1",
     "asset_index": "docs/authority/strategy-contract-assets-v1.json",
     "strategy_contract_producer_receipt": "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
     "legacy_python_lane": "independently supported, non-gating, and never a v1.team fallback",

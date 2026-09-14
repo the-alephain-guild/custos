@@ -123,8 +123,8 @@ def _promotion_case(
                 },
                 {
                     "name": "nautilus-trader",
-                    "version": "1.230.0",
-                    "requirement": "nautilus-trader==1.230.0",
+                    "version": "2.0.0rc5+sodex.1",
+                    "requirement": "nautilus-trader==2.0.0rc5+sodex.1",
                 },
             ],
         },
@@ -188,8 +188,8 @@ def _promotion_case(
                 ),
                 LockedToolkitDependencyV1(
                     name="nautilus-trader",
-                    version="1.230.0",
-                    requirement="nautilus-trader==1.230.0",
+                    version="2.0.0rc5+sodex.1",
+                    requirement="nautilus-trader==2.0.0rc5+sodex.1",
                 ),
             )
         )
@@ -216,7 +216,7 @@ def _promotion_case(
                 "distribution_name": distribution,
                 "version": VERSION,
                 "python_requires": ">=3.11" if is_base else ">=3.12,<3.13",
-                "nautilus_version": None if is_base else "1.230.0",
+                "nautilus_version": None if is_base else "2.0.0rc5+sodex.1",
                 "top_level_modules": ("custos_toolkit" if is_base else "custos_toolkit_nautilus",),
                 "dependencies": dependencies,
                 "wheel": wheel,

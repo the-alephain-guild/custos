@@ -70,7 +70,7 @@ def test_real_wheels_enforce_rc_metadata_and_ephemeral_sbom_inputs(
     assert nautilus.requires_python == "<3.13,>=3.12"
     assert {
         "custos-strategy-toolkit==0.1.0rc1",
-        "nautilus-trader==1.230.0",
+        "nautilus-trader==2.0.0rc5+sodex.1",
     }.issubset(nautilus.requires_dist)
 
     for wheel in (base, nautilus):

@@ -12,7 +12,7 @@ custos 是**独立开源仓库** (Apache-2.0), 单栈 Python daemon. 本文件�
 > **Plan 18 过渡边界**: root runner/base contracts 保持 Python >=3.11。现有 root
 > `nautilus` extra 是待迁移 legacy packaging。目标
 > `custos-strategy-toolkit-nautilus` 是独立 distribution，要求 Python
-> >=3.12,<3.13、exact `nautilus-trader==1.230.0` 和 exact matching base version。
+> >=3.12,<3.13、exact `nautilus-trader==2.0.0rc5+sodex.1` 和 exact matching base version。
 > 禁止用 PEP 508 marker 在 Python 3.11 静默跳过 Nautilus 依赖。
 
 uv workspace 的开发/lock interpreter 固定为 Python 3.12，这是三个 workspace members
@@ -53,7 +53,7 @@ implementation。新 artifact chain 只接受独立 Nautilus distribution；base
 
 | 库 | 用途 | 备注 |
 |----|------|------|
-| `custos-strategy-toolkit-nautilus==0.1.0` | NT toolkit/host dependency boundary | 传递 exact `nautilus-trader==1.230.0`；Python 3.11 resolution fail closed |
+| `custos-strategy-toolkit-nautilus==0.1.0` | NT toolkit/host dependency boundary | 传递 exact `nautilus-trader==2.0.0rc5+sodex.1`；Python 3.11 resolution fail closed |
 | `pyyaml>=6` | 读 strategy config.yaml | nautilus 内使用 |
 
 `nautilus` extra 在 extraction 完成前维持现有 runner 行为。Plan 18 使用 Python

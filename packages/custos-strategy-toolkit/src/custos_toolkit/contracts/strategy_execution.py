@@ -137,7 +137,7 @@ class StrategyManifestV1(_StrictFrozenModel):
     entry_point_group: Literal["alephain.strategy_runtime.v1"]
     entry_point: NonEmptyString
     engine: Literal["nautilus"]
-    engine_version: Literal["1.230.0"]
+    engine_version: Literal["2.0.0rc5+sodex.1"]
     requires_python: Literal[">=3.12,<3.13"]
     base_contracts_version: NonEmptyString
     engine_toolkit_version: NonEmptyString
@@ -194,7 +194,7 @@ class StrategyArtifactRefV1(_StrictFrozenModel):
     normalized_source_tree_sha256: Sha256Hex
     python_version: Annotated[str, StringConstraints(pattern=r"^3\.12\.[0-9]+$")]
     engine: Literal["nautilus"]
-    engine_version: Literal["1.230.0"]
+    engine_version: Literal["2.0.0rc5+sodex.1"]
     base_contracts_version: NonEmptyString
     engine_toolkit_version: NonEmptyString
     build_inputs: tuple[DigestBindingV1, ...] = Field(min_length=1)

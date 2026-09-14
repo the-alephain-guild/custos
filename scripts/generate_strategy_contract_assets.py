@@ -177,7 +177,7 @@ def _build_artifact_ref_assets() -> dict[str, bytes]:
         normalized_source_tree_sha256="3" * 64,
         python_version="3.12.4",
         engine="nautilus",
-        engine_version="1.230.0",
+        engine_version="2.0.0rc5+sodex.1",
         base_contracts_version="1.0.0rc1",
         engine_toolkit_version="1.0.0rc1",
         build_inputs=(DigestBindingV1(name="uv.lock", sha256="9" * 64),),

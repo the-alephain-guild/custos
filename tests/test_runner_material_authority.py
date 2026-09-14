@@ -186,7 +186,7 @@ def _strategy_material_fixture() -> tuple[
         "entry_point_group": "alephain.strategy_runtime.v1",
         "entry_point": "strategy.runtime:build",
         "engine": "nautilus",
-        "engine_version": "1.230.0",
+        "engine_version": "2.0.0rc5+sodex.1",
         "requires_python": ">=3.12,<3.13",
         "base_contracts_version": "1.0.0rc1",
         "engine_toolkit_version": "1.0.0rc1",

@@ -71,7 +71,7 @@ def test_distribution_metadata_has_disjoint_python_baselines_and_exact_runtime()
     assert nautilus["tool"]["mypy"]["strict"] is True
     dependencies = nautilus["project"]["dependencies"]
     assert "custos-strategy-toolkit==0.1.0" in dependencies
-    assert "nautilus-trader==1.230.0" in dependencies
+    assert "nautilus-trader==2.0.0rc5+sodex.1" in dependencies
     assert all("python_version" not in dependency for dependency in dependencies)
 
 
@@ -150,7 +150,7 @@ def test_built_wheels_are_namespace_isolated_and_have_exact_metadata(tmp_path: P
     assert nautilus_metadata["Requires-Python"] == "<3.13,>=3.12"
     requires_dist = nautilus_metadata.get_all("Requires-Dist") or []
     assert "custos-strategy-toolkit==0.1.0" in requires_dist
-    assert "nautilus-trader==1.230.0" in requires_dist
+    assert "nautilus-trader==2.0.0rc5+sodex.1" in requires_dist
     assert all("python_version" not in dependency for dependency in requires_dist)
 
 

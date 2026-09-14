@@ -37,7 +37,7 @@ def _member(role: ToolkitRcMemberRole, **overrides: object) -> ToolkitRcMemberV1
         ),
         "version": "0.1.0rc1",
         "python_requires": ">=3.11" if is_base else ">=3.12,<3.13",
-        "nautilus_version": None if is_base else "1.230.0",
+        "nautilus_version": None if is_base else "2.0.0rc5+sodex.1",
         "top_level_modules": ("custos_toolkit",) if is_base else ("custos_toolkit_nautilus",),
         "dependencies": (
             LockedToolkitDependencyV1(

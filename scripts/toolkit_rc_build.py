@@ -174,7 +174,7 @@ def _validate_dependencies(distribution: str, dependencies: tuple[str, ...], ver
     if distribution == "custos-strategy-toolkit-nautilus":
         required = {
             f"custos-strategy-toolkit=={version}",
-            "nautilus-trader==1.230.0",
+            "nautilus-trader==2.0.0rc5+sodex.1",
         }
         if not required.issubset(dependencies):
             raise ValueError("Nautilus wheel dependency policy differs")
