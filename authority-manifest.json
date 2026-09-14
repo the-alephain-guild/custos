@@ -347,13 +347,13 @@
     },
     {
       "role": "toolkit_rc_authority_receipt_v1",
-      "path": "docs/authority/receipts/custos-toolkit-rc-authority-v1.json",
+      "path": "docs/authority/receipts/custos-toolkit-rc7-authority-v1.json",
       "contract_only": false,
       "ready_receipt_published": true
     },
     {
       "role": "toolkit_rc_authority_receipt_v1_sha256",
-      "path": "docs/authority/receipts/custos-toolkit-rc-authority-v1.json.sha256",
+      "path": "docs/authority/receipts/custos-toolkit-rc7-authority-v1.json.sha256",
       "contract_only": false,
       "ready_receipt_published": true
     }
@@ -427,8 +427,8 @@
       "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
       "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json",
       "docs/authority/receipts/vendor/crucible-custos-strategy-contract-v1-consumer-receipt.json",
-      "docs/authority/receipts/custos-toolkit-rc-authority-v1.json",
-      "docs/authority/receipts/custos-toolkit-rc-authority-v1.json.sha256",
+      "docs/authority/receipts/custos-toolkit-rc7-authority-v1.json",
+      "docs/authority/receipts/custos-toolkit-rc7-authority-v1.json.sha256",
       "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
       "docs/authority/receipts/custos-crucible-runner-command-nautilus-2-v1-consumer-receipt.json",
       "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-nautilus-2-v1-corrected.json",
