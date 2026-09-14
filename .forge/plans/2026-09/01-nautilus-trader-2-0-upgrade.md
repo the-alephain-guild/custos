@@ -836,7 +836,47 @@ plan 自己写的理由是「1a 的 `nt-builder` 是过渡方案」——git 源
 | RunnerFact 的 signal / TCA 字段缺口 | 🔲 | 需与 **Crucible** 协商（不是 arx，见偏离日志）|
 | toolkit mypy 16 errors | 🔲 | 本 plan 验证清单要求全绿；84→19→16，剩余 16 条已逐条列于偏离日志 |
 
+## 换引擎版本时怎么做（owner 2026-09-14 定）
+
+本 plan 把引擎钉成了按 sha256 固定的已发布 wheel。SoDEX 仍在开发，fork 会反复动，
+所以下面写的是**下一次要换版本的人**需要知道的事——不是本 plan 的遗留项，是它留下的
+操作知识。
+
+**开发期只造 macOS wheel，并且不动 `uv.lock`。** 要试 fork 的新 adapter，就在本机编一份
+macOS wheel 直接装进 venv 验；验完 `uv sync` 还原。三份全造一次约 2.5 小时，而开发迭代
+用不上 Linux。
+
+**但「只钉 macOS」这个形态不成立，别去试。** `packages/custos-strategy-toolkit-nautilus/pyproject.toml`
+钉的是 `nautilus-trader==<精确版本>`，而 uv 做全平台解析——两者合起来要求 lock 里所有
+声明的平台是同一个版本，没法 darwin 钉新版、linux 留旧版。实测：只给 darwin 一个源时
+uv 直接报 `requirements are unsatisfiable` 并提示用 `tool.uv.environments` 收窄；收窄之后
+lock 确实能解开，代价是它根本不覆盖 Linux，于是镜像建不了、跑在 `ubuntu-24.04` 上的 CI
+也装不上。所以手装 wheel 是**开发实践**，不是 lock 状态。
+
+**手装之后 venv 与 lock 不一致，这件事必须是明确且临时的。** 否则很容易发生「我以为测的是
+钉住的版本，其实测的是手装的那个」——与 C7 同型。每次手装前后都要说清当前 venv 处于哪种
+状态，收尾用 `uv sync` 还原。
+
+**稳定后一次性重来：三平台各造一份、发新 Release、重钉、重验。** 造 wheel 的工具在本 plan
+的 1b 里退役了（`docker/nautilus-wheel.dockerfile` / `make nautilus-wheel` /
+`scripts/nautilus_source_pin.py` 与其测试，删除于 `d648e02`），要用先从 `900fd76` 取回：
+`git show 900fd76:docker/nautilus-wheel.dockerfile`。它们只服务 git-源阶段，所以随 1b 一起
+撤是对的，但这意味着重建时要先把它们捡回来。
+
+实测的成本，按目标架构各自预留，**不要拿单一架构的数当通用需求**：
+
+| 目标 | 峰值内存 | 耗时 |
+|---|---|---|
+| `manylinux_2_39_aarch64`（原生） | 41.81 GiB | 36.7 分钟 |
+| `manylinux_2_39_x86_64`（Rosetta） | 24.18 GiB | 72.2 分钟 |
+| `macosx_11_0_arm64` | 未单独测（由 uv 在 `uv sync` 时构建） | — |
+
+Apple Silicon 上 `linux/amd64` 走的是 Rosetta 而非 QEMU，编译折算约 2 倍原生，这是
+x86_64 wheel 能在本机造出来的前提。aarch64 那份需要 VM ≥ 48 GB；41.81 GiB 是真实需求，
+更低的配置下测得的「峰值」都是被可用内存截断的假值。
+
 ## close-out 测试计数
+
 
 本 plan 实施期（`2bf09e8~1..HEAD`，47 个 commit）改动过的全部 `tests/` 文件，条数取自一次
 `pytest --collect-only`，非手写（`progress-management.md` §数字类声明必须来自实跑）。
