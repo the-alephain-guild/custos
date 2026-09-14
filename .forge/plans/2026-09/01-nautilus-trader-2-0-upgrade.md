@@ -1,6 +1,6 @@
 # 01 - NautilusTrader 1.230.0 → fork 2.0.0rc5 升级
 
-> **Status**: ⏳ In Progress（19 行进度表中 14 行 ✅，2026-09-12。**Task 14 已做完除「翻 ✅」以外的全部内容**，Status 不翻——本 plan 自己的 Task 14 第 6 条禁止在 Task 1b 未完成时 close-out，四条阻塞项 1a-2 / 1b / 2a / 2b 的实证见「阶段性报告」。custos 全量 `pytest tests/` 由 `54 failed, 25 errors` 收敛到 `6 failed, 3 errors`，剩余 9 条全部落在 toolkit 发布链的三个文件里（`test_toolkit_distribution` / `test_toolkit_release_readiness` / `test_toolkit_release_candidate_build`），根因是 Task 2a 的 `nautilus-trader==1.230.0` 版本钉；PS `make verify` 全绿 996 passed / 18 skipped）
+> **Status**: ⏳ In Progress（19 行进度表中 15 行 ✅，2026-09-14。**Task 14 已做完除「翻 ✅」以外的全部内容**，Status 不翻——本 plan 自己的 Task 14 第 6 条禁止在 Task 2b 未完成时 close-out；剩余契约协调为 2a / 2b。Task 1b 已发布并切换三平台 hash-pinned wheel，PS `make verify` 在该切换后全绿 998 passed / 18 skipped）
 > **Created**: 2026-09-11
 > **Project**: custos（跨仓：philosophers-stone）
 > **multi_session_scope**: **true**（6 个 Slice、跨 2 仓库、涉及红线 0.1/0.2/0.4）
@@ -662,7 +662,7 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 | 0 | ✅ | 2026-09-11 | `2bf09e8` + `7971bc8`；mypy 4→0、fmt 8→0、lint 2→0，`make verify` exit 0 |
 | 1a-1 | ✅ | 2026-09-12 | `2010309`；git 源钉 `3fe857a351`，NT 2.0.0rc5+sodex.1 |
 | 1a-2 | ❌ 撤销 | 2026-09-13 | **撤销而非阻塞**（状态表例无此标记，故加字说明）。`nt-builder` 已实现并跑到最后一个 crate，因 `release.yml:155` 的两平台构建装不下而放弃，详见偏离日志。**已落地的 runtime lock 部分保留为过渡**（`--no-emit-package` + 重生成，`make check-runtime-lock` 由红转绿、`make dist` 解锁），随 1b 一并撤 |
-| 1b | ⏳ | | 触发判据已重写（见偏离日志）：本地造 wheel + `gh release create`，不经 CI。**三份 wheel 已全部就位**，均出自 fork `3fe857a351`、版本 `2.0.0rc5+sodex.1`、maturin 1.15.0、fat LTO，三份的纯 Python 内容完全一致、各自的平台 tag 与内部原生扩展自洽：`macosx_11_0_arm64` `0a06c389f63e4c7d9825c2b68e8a225db2db6e92561bcf623eb6d81b2693af97`（uv 构建缓存）；`manylinux_2_39_aarch64` `d1e56ae74547712441eea7d3a46783655a59489a5c4f9dbd297db7b9f1aff754`（峰值 41.81 GiB / 36.7 分钟）；`manylinux_2_39_x86_64` `b5d0f1e483c534e39dfa8215a6816381baf3b873cfb686dea141dc3fbc9849d5`（Rosetta 下 `NAUTILUS_WHEEL_PLATFORM=linux/amd64`，峰值 24.18 GiB / 72.2 分钟）。**下一步需 owner 批准**：推 tag + `gh release create` 上传（fork 为公开仓，属对外动作），之后才能切 `uv.lock` 到 wheel 源并收尾 |
+| 1b | ✅ | 2026-09-14 | Release `guild-v2.0.0rc5+sodex.1`从fork `3fe857a351`发布三平台wheel；三份摘要分别为`0a06c389…` / `d1e56ae7…` / `b5d0f1e4…`。Custos改为三个互斥marker URL source，`uv.lock`与runtime lock逐资产绑定SHA-256，git-source builder/Make target/parser/tests退役；官方ARM64 Docker runtime 23/23通过。PS `ae04bfee4bbf88486116ef879af9f5fa1e56d316`同步三wheel并完成998 passed / 18 skipped全量验证 |
 | 2a | 🔲 | | 已改排到 D 之后、与 2b 相邻；改动已试做并回退 |
 | 2b | ❌ | | Blocked：PS / Crucible 重签 |
 | 3 | ✅ | 2026-09-12 | `9fecab3`；37 文件 AST 拍平；判据改为 `__all__` 逐名可达 |
@@ -677,7 +677,7 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 | 11 | ✅ | 2026-09-12 | `90eda67`→`fc51c28`；全量 `54 failed/25 err` → `7 failed/3 err`，剩余 4 文件全归 Task 2a（3 个断言 `1.230.0`）与 close-out 计数 |
 | 12 | ✅ | 2026-09-12 | PS `ef41c0c` + custos `c8ebc92`；9 个策略模块拍平 + 9 个 config 子类改 D5b 形态 + NT pin 改 fork git 引用；**7 个策略**在 PS 自己的环境（NT 2.0.0rc5+sodex.1）下 import、经 registry 从各自 config.yaml 解析并构造成功 |
 | 13 | ✅ | 2026-09-12 | PS `cab51b4`；收集从 9 文件报错→0，`make verify` 全绿（996 passed / 18 skipped）；退役 lane 具名跳过而非移植；另修两处「藏在绿色后面」的东西 |
-| 14 | ⏳ | 2026-09-12 | 除「翻 ✅」外全部做完：红线 gate 满足度表、逐文件计数表（探针转绿）、阶段性报告含功能验证主路径、遗留项、`verification.md` 的 SoDEX 红线检查、索引条目。**Status 保持 ⏳**——本 Task 第 6 条禁止在 1b 未完成时 close-out，四条阻塞项已逐条实证 |
+| 14 | ⏳ | 2026-09-14 | 除「翻 ✅」外全部做完：红线 gate 满足度表、逐文件计数表（探针转绿）、阶段性报告含功能验证主路径、遗留项、`verification.md` 的 SoDEX 红线检查、索引条目。Task 1b已关闭；**Status保持⏳**直到2a/2b跨仓engine-version契约协调完成 |
 
 ## 交接 (Handoff) — Slice C 接手说明
 
@@ -841,7 +841,10 @@ plan 自己写的理由是「1a 的 `nt-builder` 是过渡方案」——git 源
 本 plan 实施期（`2bf09e8~1..HEAD`，47 个 commit）改动过的全部 `tests/` 文件，条数取自一次
 `pytest --collect-only`，非手写（`progress-management.md` §数字类声明必须来自实跑）。
 
-三个计 0 的是真的没了，各有去向：`test_nautilus_runner_safety_adapter.py` 随 Task 9 删除
+四个计 0 的是真的没了，各有去向：`test_nautilus_source_pin.py` 随 Task 1b 退役——它读的是
+git 源，而 1b 把引擎换成按 sha256 钉住的已发布 wheel，连同 `docker/nautilus-wheel.dockerfile`
+与 `make nautilus-wheel` 一起撤，其职责由 `test_nautilus_wheel_sources.py` 接替；
+`test_nautilus_runner_safety_adapter.py` 随 Task 9 删除
 （它测的 guarded exec-client factory 在 2.0 没有位置，`781ccdd`）；`test_nt_binance_venue.py`
 改名为 `test_nt_venue_wiring.py`（Task 8，`00d0e74`）；`test_event_publisher.py` 随
 `EventPublisher` 退役（`3d44aed`）。
@@ -905,8 +908,9 @@ plan 自己写的理由是「1a 的 `nt-builder` 是过渡方案」——git 源
 | `tests/toolkit/test_tick_exit_close_position.py` | 4 |
 | `tests/toolkit/test_trade_event_handler.py` | 12 |
 | `tests/toolkit/test_trailing_behavioral_equivalence.py` | 4 |
-| `tests/test_nautilus_source_pin.py` | 8 |
+| `tests/test_nautilus_wheel_sources.py` | 3 |
 | `tests/test_docker_runtime_contract.py` | 20 |
+| `tests/test_nautilus_source_pin.py` | 0 |  (已删除)
 | `tests/test_nautilus_runner_safety_adapter.py` | 0 |  (已删除)
 | `tests/test_nt_binance_venue.py` | 0 |  (已删除)
 | `tests/toolkit/test_event_publisher.py` | 0 |  (已删除)

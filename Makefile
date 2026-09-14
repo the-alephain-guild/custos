@@ -3,7 +3,7 @@
 # Standalone open-source repository entrypoint. Standardized validation targets
 # keep shell execution deterministic and avoid permission drift from ad-hoc commands.
 
-.PHONY: help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication verify-runner-fact-publication-network clean toolkit-sync-check strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign nautilus-wheel docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
+.PHONY: help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication verify-runner-fact-publication-network clean toolkit-sync-check strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
 
 # Default target: help
 .DEFAULT_GOAL := help
@@ -92,12 +92,10 @@ clean:  ## Remove pycache / pytest cache / ruff cache
 LOCAL_IMAGE ?= custos-runner:v0.3.0
 SOURCE_REVISION := $(shell git rev-parse HEAD)
 
-# NautilusTrader is deliberately absent from this export. It resolves to a git
-# commit, a git requirement carries no hash, and the image installs with
-# `pip install --require-hashes` -- which rejects an unhashed line outright.
-# The `nt-builder` stage compiles that same commit instead. Both the writer and
-# the drift check share one command so they cannot disagree about the flags.
-RUNTIME_LOCK_EXPORT := uv export --frozen --no-dev --extra nautilus --no-emit-workspace --no-header --no-emit-package nautilus-trader --format requirements-txt
+# NautilusTrader resolves from released, platform-specific wheel URLs. uv.lock
+# binds each asset digest, so the runtime export can include it in the same
+# `pip --require-hashes` contract as every other third-party dependency.
+RUNTIME_LOCK_EXPORT := uv export --frozen --no-dev --extra nautilus --no-emit-workspace --no-header --format requirements-txt
 
 runtime-lock:  ## Export the sole hash-pinned production dependency set from uv.lock
 	mkdir -p docker
@@ -117,43 +115,6 @@ dist: check-runtime-lock  ## Build the runner sdist and all three exact runtime 
 
 sign:  ## Sign every wheel under dist/ with sigstore keyless (requires OIDC; runs in CI)
 	bash .github/workflows/scripts/sign-wheel.sh
-
-# Producing the NautilusTrader wheel is a separate job from building the image:
-# the image installs it from a published, hash-pinned artifact. Both the commit
-# and the version come out of uv.lock, never out of a hand-written constant.
-# This target, `docker/nautilus-wheel.dockerfile` and
-# `scripts/nautilus_source_pin.py` retire together with the git source.
-NT_PIN = uv run --quiet python scripts/nautilus_source_pin.py --field
-NAUTILUS_WHEEL_OUT ?= dist/nautilus
-# Empty builds for the host architecture. Set it to cross-build the other one:
-# on Apple Silicon, `linux/amd64` runs through Rosetta at close to native speed,
-# which is what makes an x86_64 wheel obtainable here at all. The compile needs
-# the same memory either way -- upwards of 42 GiB.
-NAUTILUS_WHEEL_PLATFORM ?=
-
-nautilus-wheel:  ## Build the NautilusTrader wheel from the fork commit uv.lock pins
-	@set -eu; \
-	nt_url="$$($(NT_PIN) url)"; \
-	nt_sha="$$($(NT_PIN) sha)"; \
-	nt_version="$$($(NT_PIN) version)"; \
-	nt_subdirectory="$$($(NT_PIN) subdirectory)"; \
-	platform_arg=""; \
-	if [ -n "$(NAUTILUS_WHEEL_PLATFORM)" ]; then \
-		platform_arg="--platform=$(NAUTILUS_WHEEL_PLATFORM)"; \
-	fi; \
-	mkdir -p "$(NAUTILUS_WHEEL_OUT)"; \
-	docker build $$platform_arg \
-		--file docker/nautilus-wheel.dockerfile \
-		--build-arg NT_GIT_URL="$$nt_url" \
-		--build-arg NT_GIT_SHA="$$nt_sha" \
-		--build-arg NT_VERSION="$$nt_version" \
-		--build-arg NT_SUBDIRECTORY="$$nt_subdirectory" \
-		--target wheel \
-		--output "type=local,dest=$(NAUTILUS_WHEEL_OUT)" \
-		.; \
-	for wheel in "$(NAUTILUS_WHEEL_OUT)"/nautilus_trader-*.whl; do \
-		printf '%s\n  sha256 = %s\n' "$$wheel" "$$(shasum -a 256 "$$wheel" | cut -d' ' -f1)"; \
-	done
 
 docker-build: dist  ## Build custos-runner:test image from the local dist/*.whl wheel
 	docker build \

@@ -79,6 +79,11 @@ path = "hatch_build.py"
 
 [tool.uv]
 package = true
+environments = [
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
 # sigstore-python 3.x pulls `sigstore-protobuf-specs` from PyPI as a
 # pre-release build (0.3.3.dev-family), so resolving the `lts` extra with the
 # default uv setting fails ("pre-releases weren't enabled"). This lock is
@@ -96,12 +101,15 @@ members = [
 [tool.uv.sources]
 custos-strategy-toolkit = { workspace = true }
 custos-strategy-toolkit-nautilus = { workspace = true }
-# Guild fork, pinned to an exact commit. A git source keeps the lock
-# self-contained without requiring a published wheel for every fork commit, at
-# the cost of building the Rust extension once per sha on each machine. Plan 01
-# Task 1b replaces this with a hashed wheel once the fork tags a release; see
-# .forge/plans/2026-09/01-nautilus-trader-2-0-upgrade.md decision D1.
-nautilus-trader = { git = "https://github.com/the-alephain-guild/nautilus_trader", rev = "3fe857a351cccdac991c1df3f11b43e428e73a60", subdirectory = "python" }
+# The fork release publishes one CPython 3.12 wheel for each supported runtime
+# platform. Markers are mutually exclusive and every URL is independently
+# hash-pinned by uv.lock; unsupported platforms fail resolution instead of
+# compiling the Rust workspace from a mutable source checkout.
+nautilus-trader = [
+    { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-macosx_11_0_arm64.whl", marker = "sys_platform == 'darwin' and platform_machine == 'arm64'" },
+    { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_aarch64.whl", marker = "sys_platform == 'linux' and platform_machine == 'aarch64'" },
+    { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_x86_64.whl", marker = "sys_platform == 'linux' and platform_machine == 'x86_64'" },
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
