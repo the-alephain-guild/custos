@@ -15,6 +15,7 @@ from custos_toolkit.contracts.strategy_execution import (
     RunnerLocalArtifactPolicyDecisionV1,
     StrategyArtifactPreImportVerificationReceiptV1,
     StrategyArtifactRefV1,
+    StrategyManifestV1,
     canonical_model_digest,
 )
 from custos_toolkit.contracts.toolkit_rc import (
@@ -38,12 +39,24 @@ PRE_IMPORT_GOLDEN_PATH = "docs/authority/strategy-artifact-pre-import-verificati
 PRE_IMPORT_NEGATIVE_PATH = (
     "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json"
 )
+STRATEGY_MANIFEST_SCHEMA_PATH = "docs/gateway-contract/v1/strategy_manifest_v1.schema.json"
 CONTRACT_RECEIPT_PATH = (
-    "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json"
+    "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-handoff-receipt.json"
 )
 HISTORICAL_CONTRACT_EVIDENCE_PATHS = {
-    "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json"
+    "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
+    "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json",
 }
+CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH = (
+    "docs/authority/receipts/vendor/"
+    "crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+)
+CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "3e85acbbf4c8b298dd2bd5d51911bdf08dd6d7a3"
+PS_STRATEGY_CONSUMER_RECEIPT_PATH = (
+    "docs/authority/receipts/vendor/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+)
+PS_STRATEGY_CONSUMER_COMMIT = "11f4fcf9ec0c2d7a4fd928b6cd6bab88ceee8769"
+STRATEGY_CONTRACT_PRODUCER_COMMIT = "8bf45ac6b0f42018aae2a74ac9e743e41f9ca789"
 RUNNER_COMMAND_CONSUMER_INDEX_PATH = (
     "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json"
 )
@@ -133,6 +146,37 @@ def json_bytes(value: object) -> bytes:
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def consumer_receipt_pin(
+    *,
+    local_path: str,
+    producer_path: str,
+    repository: str,
+    commit: str,
+) -> dict[str, str]:
+    content = (ROOT / local_path).read_bytes()
+    document = json.loads(content)
+    producer = document.get("producer", {})
+    consumer = document.get("consumer", {})
+    contract = document.get("contract", {})
+    engine_version = document.get("engine_version", contract.get("engine_version"))
+    if (
+        document.get("status") != "CUSTOS_NAUTILUS_2_V1_CONTRACT_ACCEPTED"
+        or producer.get("repository") != "tesseract-trading/custos"
+        or producer.get("commit") != STRATEGY_CONTRACT_PRODUCER_COMMIT
+        or consumer.get("repository") != repository
+        or engine_version != "2.0.0rc5+sodex.1"
+        or document.get("runtime_ready") is not False
+        or document.get("production_ready") is not False
+    ):
+        raise ValueError(f"consumer receipt semantics differ: {local_path}")
+    return {
+        "commit": commit,
+        "path": producer_path,
+        "vendored_path": local_path,
+        "sha256": sha256(content),
+    }
 
 
 def member(
@@ -452,11 +496,40 @@ def build_v1_contract_assets() -> dict[str, bytes]:
         }
     )
     generated[INDEX_PATH] = index
+    generated[STRATEGY_MANIFEST_SCHEMA_PATH] = json_bytes(
+        StrategyManifestV1.model_json_schema(mode="validation")
+    )
+    consumer_receipts = {
+        "philosophers_stone": {
+            "repository": "alchymia-labs/philosophers-stone",
+            "receipt": consumer_receipt_pin(
+                local_path=PS_STRATEGY_CONSUMER_RECEIPT_PATH,
+                producer_path=(
+                    "docs/authority/receipts/"
+                    "ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+                ),
+                repository="alchymia-labs/philosophers-stone",
+                commit=PS_STRATEGY_CONSUMER_COMMIT,
+            ),
+        },
+        "crucible_rust": {
+            "repository": "tesseract-trading/crucible-rust",
+            "receipt": consumer_receipt_pin(
+                local_path=CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH,
+                producer_path=(
+                    "docs/authority/receipts/"
+                    "crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+                ),
+                repository="tesseract-trading/crucible-rust",
+                commit=CRUCIBLE_STRATEGY_CONSUMER_COMMIT,
+            ),
+        },
+    }
     generated[CONTRACT_RECEIPT_PATH] = json_bytes(
         {
             "receipt_schema_version": 1,
             "canonical_name": "Custos strategy contract V1 receipt",
-            "status": "CANONICAL_V1_PENDING_CONSUMER_RECEIPTS",
+            "status": "CANONICAL_V1_CONSUMER_HANDOFF_COMPLETE",
             "producer": {
                 "repository": "tesseract-trading/custos",
                 "source_path": str(SOURCE_MODEL.relative_to(ROOT)),
@@ -467,29 +540,17 @@ def build_v1_contract_assets() -> dict[str, bytes]:
                 "sha256": sha256(index),
                 "size_bytes": len(index),
             },
-            "consumers": {
-                "philosophers_stone": {
-                    "repository": "alchymia-labs/philosophers-stone",
-                    "receipt": None,
-                },
-                "crucible_rust": {
-                    "repository": "tesseract-trading/crucible-rust",
-                    "receipt": None,
-                },
-            },
+            "consumers": consumer_receipts,
             "policy_boundary": {
                 "crucible_local_policy_decision_reused": False,
                 "runner_local_policy_decision_required": True,
             },
             "strategy_artifact_pre_import_verification_receipt_v1_published": True,
-            "contract_consumer_ready": False,
-            "command_consumer_ready": False,
+            "contract_consumer_ready": True,
+            "command_consumer_ready": True,
             "runtime_ready": False,
             "production_ready": False,
-            "open_blockers": [
-                "Philosophers Stone canonical V1 consumer receipt",
-                "Crucible canonical V1 consumer receipt for the Nautilus 2 asset commit",
-            ],
+            "open_blockers": [],
         }
     )
     return generated
@@ -550,8 +611,7 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
         )
         producer_contract_assets.append({"path": producer_path, **pin})
     if (
-        resolution_receipt.get("receipt_id")
-        != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-NAUTILUS-2-V1"
+        resolution_receipt.get("receipt_id") != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-NAUTILUS-2-V1"
         or resolution_receipt.get("owner") != "crucible-rust"
         or resolution_receipt.get("consumer") != "custos"
         or resolution_receipt.get("status") != "CURRENT_ENGINE_CONTRACT_READY"
@@ -560,8 +620,7 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
         or resolution_receipt.get("producer_commit") != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
         or resolution_receipt.get("runtime_code_commit")
         != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
-        or resolution_receipt.get("contract_commit")
-        != RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT
+        or resolution_receipt.get("contract_commit") != RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT
         or resolution_receipt.get("contract_assets") != producer_contract_assets
         or resolution_receipt.get("authority_coordinate")
         != "crucible.runner-strategy-resolution.v1"

@@ -98,7 +98,8 @@ class CapitalAllocator:
         if not instrument_id:
             return Decimal(0)
 
-        position = self._cache.position(instrument_id)
+        positions = self._cache.positions_open(instrument_id=instrument_id)
+        position = positions[0] if positions else None
         if position is None or position.quantity.as_decimal() == 0:
             return Decimal(0)
 

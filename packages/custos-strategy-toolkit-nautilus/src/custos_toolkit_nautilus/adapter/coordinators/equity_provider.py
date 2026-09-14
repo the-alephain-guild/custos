@@ -83,7 +83,7 @@ class EquityProvider:
             quote_currency = instrument.quote_currency
 
             if quote_currency in balances:
-                return balances[quote_currency].free.as_decimal()
+                return Decimal(str(balances[quote_currency].free.as_decimal()))
 
             s.log.warning(f"Quote currency {quote_currency} not found in balances")
 

@@ -28,7 +28,7 @@ class TestMultiPairComponentsIntegration:
 
         # Create allocator with config
         cache = MagicMock()
-        cache.position.return_value = None
+        cache.positions_open.return_value = []
 
         allocator = CapitalAllocator(
             config=config,
@@ -73,7 +73,7 @@ class TestMultiPairComponentsIntegration:
 
         config = AllocationConfig(tiers={"BTC-USDT": 0.5, "ETH-USDT": 0.3, "SOL-USDT": 0.2})
         cache = MagicMock()
-        cache.position.return_value = None
+        cache.positions_open.return_value = []
 
         allocator = CapitalAllocator(config, Decimal("100000"), cache)
 
@@ -105,7 +105,7 @@ class TestMultiPairComponentsIntegration:
 
         config = AllocationConfig(tiers={"BTC-USDT": 0.6, "ETH-USDT": 0.4})
         cache = MagicMock()
-        cache.position.return_value = None
+        cache.positions_open.return_value = []
 
         allocator = CapitalAllocator(config, Decimal("10000"), cache)
 
@@ -161,7 +161,7 @@ class TestMultiPairComponentsIntegration:
 
         # Create allocator from config
         cache = MagicMock()
-        cache.position.return_value = None
+        cache.positions_open.return_value = []
 
         allocator = CapitalAllocator(
             config=trading_config.allocation,
@@ -179,7 +179,7 @@ class TestMultiPairComponentsIntegration:
 
         config = AllocationConfig(tiers={"BTC-USDT": 0.5, "ETH-USDT": 0.5})
         cache = MagicMock()
-        cache.position.return_value = None
+        cache.positions_open.return_value = []
 
         allocator = CapitalAllocator(config, Decimal("10000"), cache)
         allocator.register_pair("BTC-USDT", InstrumentId.from_str("BTCUSDT-PERP.BINANCE"))

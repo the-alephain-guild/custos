@@ -100,8 +100,8 @@ def test_historical_v1_evidence_identifies_its_source_without_pinning_current_by
         run_name="strategy_contract_asset_generator_test",
     )
     assert generator["HISTORICAL_CONTRACT_EVIDENCE_PATHS"] == {
-        "docs/authority/strategy-contract-assets-v1.json",
         "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
+        "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json",
         "docs/authority/crucible-runner-command-consumer-assets-v1.json",
         "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
     }

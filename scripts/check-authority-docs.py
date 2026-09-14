@@ -13,8 +13,17 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "authority-manifest.json"
 STRATEGY_CONTRACT_RECEIPT_PATH = (
-    "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json"
+    "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-handoff-receipt.json"
 )
+CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH = (
+    "docs/authority/receipts/vendor/"
+    "crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+)
+CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "3e85acbbf4c8b298dd2bd5d51911bdf08dd6d7a3"
+PS_STRATEGY_CONSUMER_RECEIPT_PATH = (
+    "docs/authority/receipts/vendor/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+)
+PS_STRATEGY_CONSUMER_COMMIT = "11f4fcf9ec0c2d7a4fd928b6cd6bab88ceee8769"
 CANONICAL_INDEX_PATH = "docs/authority/strategy-contract-assets-v1.json"
 CANONICAL_ARTIFACT_REF_SCHEMA_PATH = "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json"
 CANONICAL_ARTIFACT_REF_GOLDEN_PATH = "docs/authority/strategy-artifact-ref-v1.golden.json"
@@ -380,6 +389,8 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
         "pre_import_golden": resolve(CANONICAL_PRE_IMPORT_GOLDEN_PATH),
         "pre_import_negative": resolve(CANONICAL_PRE_IMPORT_NEGATIVE_PATH),
         "receipt": resolve(STRATEGY_CONTRACT_RECEIPT_PATH),
+        "crucible_consumer_receipt": resolve(CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH),
+        "ps_consumer_receipt": resolve(PS_STRATEGY_CONSUMER_RECEIPT_PATH),
     }
     missing = [str(path) for path in required_paths.values() if not path.is_file()]
     if missing:
@@ -393,6 +404,12 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
             required_paths["pre_import_schema"].read_text(encoding="utf-8")
         )
         receipt = json.loads(required_paths["receipt"].read_text(encoding="utf-8"))
+        crucible_consumer_receipt = json.loads(
+            required_paths["crucible_consumer_receipt"].read_text(encoding="utf-8")
+        )
+        ps_consumer_receipt = json.loads(
+            required_paths["ps_consumer_receipt"].read_text(encoding="utf-8")
+        )
     except (OSError, json.JSONDecodeError) as exc:
         errors.append(f"canonical V1 strategy contract assets are unreadable: {exc}")
         return
@@ -504,24 +521,64 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
             "StrategyArtifactPreImportVerificationReceiptV1 schema_version must be const 1"
         )
 
-    if receipt.get("status") != "CANONICAL_V1_PENDING_CONSUMER_RECEIPTS":
-        errors.append("canonical V1 contract receipt must remain pending consumer receipts")
-    readiness_fields = (
-        "contract_consumer_ready",
-        "command_consumer_ready",
-        "runtime_ready",
-        "production_ready",
-    )
-    if any(receipt.get(field) is not False for field in readiness_fields):
-        errors.append(
-            "canonical V1 readiness flags must remain false until the coordinated reset is pinned"
-        )
+    if receipt.get("status") != "CANONICAL_V1_CONSUMER_HANDOFF_COMPLETE":
+        errors.append("canonical V1 contract receipt must record complete consumer handoff")
+    if (
+        receipt.get("contract_consumer_ready") is not True
+        or receipt.get("command_consumer_ready") is not True
+        or receipt.get("runtime_ready") is not False
+        or receipt.get("production_ready") is not False
+    ):
+        errors.append("canonical V1 contract handoff readiness fields differ")
 
     receipt_consumers = receipt.get("consumers", {})
-    if receipt_consumers.get("philosophers_stone", {}).get("receipt") is not None:
-        errors.append("Custos receipt must not fabricate the pending PS consumer receipt")
-    if receipt_consumers.get("crucible_rust", {}).get("receipt") is not None:
-        errors.append("pending Custos receipt must not fabricate a Crucible consumer receipt")
+    expected_consumers = {
+        "philosophers_stone": {
+            "repository": "alchymia-labs/philosophers-stone",
+            "receipt": {
+                "commit": PS_STRATEGY_CONSUMER_COMMIT,
+                "path": (
+                    "docs/authority/receipts/"
+                    "ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+                ),
+                "vendored_path": PS_STRATEGY_CONSUMER_RECEIPT_PATH,
+                "sha256": hashlib.sha256(
+                    required_paths["ps_consumer_receipt"].read_bytes()
+                ).hexdigest(),
+            },
+        },
+        "crucible_rust": {
+            "repository": "tesseract-trading/crucible-rust",
+            "receipt": {
+                "commit": CRUCIBLE_STRATEGY_CONSUMER_COMMIT,
+                "path": (
+                    "docs/authority/receipts/"
+                    "crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+                ),
+                "vendored_path": CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH,
+                "sha256": hashlib.sha256(
+                    required_paths["crucible_consumer_receipt"].read_bytes()
+                ).hexdigest(),
+            },
+        },
+    }
+    if receipt_consumers != expected_consumers:
+        errors.append("Custos receipt consumer Git revisions or vendored evidence differ")
+    for document, repository in (
+        (ps_consumer_receipt, "alchymia-labs/philosophers-stone"),
+        (crucible_consumer_receipt, "tesseract-trading/crucible-rust"),
+    ):
+        engine_version = document.get(
+            "engine_version", document.get("contract", {}).get("engine_version")
+        )
+        if (
+            document.get("status") != "CUSTOS_NAUTILUS_2_V1_CONTRACT_ACCEPTED"
+            or document.get("consumer", {}).get("repository") != repository
+            or document.get("producer", {}).get("commit")
+            != "8bf45ac6b0f42018aae2a74ac9e743e41f9ca789"
+            or engine_version != "2.0.0rc5+sodex.1"
+        ):
+            errors.append(f"{repository} strategy consumer receipt semantics differ")
 
 
 def verify_runner_command_consumer(errors: list[str]) -> None:

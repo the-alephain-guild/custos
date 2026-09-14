@@ -127,7 +127,9 @@ class TradeEventHandler:
             return
 
         realized_pnl = (
-            event.realized_pnl.as_decimal() if hasattr(event, "realized_pnl") else Decimal("0")
+            event.realized_pnl.as_decimal()
+            if event.realized_pnl is not None
+            else Decimal("0")
         )
         pnl_color = LogColor.GREEN if realized_pnl > 0 else LogColor.RED
         s.log.info(f"[{ctx.pair}] Position CLOSED: realized_pnl={realized_pnl}", color=pnl_color)

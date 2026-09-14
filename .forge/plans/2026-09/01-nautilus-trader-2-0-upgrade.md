@@ -883,7 +883,7 @@ git 源，而 1b 把引擎换成按 sha256 钉住的已发布 wheel，连同 `do
 | `tests/test_toolkit_zero_rewrite.py` | 5 |
 | `tests/toolkit/test_base_strategy_filters.py` | 13 |
 | `tests/toolkit/test_cancels_are_countable.py` | 11 |
-| `tests/toolkit/test_capital_allocator.py` | 15 |
+| `tests/toolkit/test_capital_allocator.py` | 16 |
 | `tests/toolkit/test_config_self_validation.py` | 32 |
 | `tests/toolkit/test_every_close_path_shares_one_decision.py` | 13 |
 | `tests/toolkit/test_execution_manager.py` | 10 |

@@ -1,0 +1,31 @@
+{
+  "canonical_name": "Crucible Custos strategy contract Nautilus 2 V1 consumer receipt",
+  "consumer": {
+    "accepted_at_commit": "9ce821143854a54ef7f6e0ada42c9e52a855d3bb",
+    "repository": "tesseract-trading/crucible-rust"
+  },
+  "contract": {
+    "artifact_ref": "StrategyArtifactRefV1",
+    "engine_version": "2.0.0rc5+sodex.1",
+    "pre_import_receipt": "StrategyArtifactPreImportVerificationReceiptV1"
+  },
+  "producer": {
+    "accepted_paths": [
+      "docs/authority/strategy-artifact-ref-v1.golden.json",
+      "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json",
+      "docs/authority/strategy-contract-assets-v1.json",
+      "docs/gateway-contract/v1/strategy_artifact_pre_import_verification_receipt_v1.schema.json"
+    ],
+    "commit": "8bf45ac6b0f42018aae2a74ac9e743e41f9ca789",
+    "repository": "tesseract-trading/custos"
+  },
+  "production_ready": false,
+  "receipt_schema_version": 1,
+  "runtime_ready": false,
+  "status": "CUSTOS_NAUTILUS_2_V1_CONTRACT_ACCEPTED",
+  "verification": {
+    "authority_gate": "passed",
+    "consumer_contract_tests": "passed",
+    "producer_revision_governed_by": "git"
+  }
+}

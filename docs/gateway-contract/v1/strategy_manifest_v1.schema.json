@@ -91,7 +91,7 @@
       "type": "string"
     },
     "engine_version": {
-      "const": "1.230.0",
+      "const": "2.0.0rc5+sodex.1",
       "title": "Engine Version",
       "type": "string"
     },

@@ -46,7 +46,7 @@ WarningLevel = Literal["error", "warning", "info"]
 class NautilusBaseConfigSections(TypedDict):
     """Exact common kwargs supplied to every registered strategy config."""
 
-    oms_type: str
+    oms_type: OmsType
     external_order_instrument_ids: list[InstrumentId]
     use_uuid_client_order_ids: bool
     use_hyphens_in_client_order_ids: bool

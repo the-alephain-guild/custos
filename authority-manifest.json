@@ -205,12 +205,16 @@
       "role": "strategy_artifact_pre_import_verification_negative_v1"
     },
     {
-      "path": "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json",
+      "path": "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-handoff-receipt.json",
       "role": "strategy_contract_receipt_v1"
     },
     {
-      "path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-v1-consumer-receipt.json",
+      "path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json",
       "role": "crucible_strategy_contract_consumer_receipt_v1"
+    },
+    {
+      "path": "docs/authority/receipts/vendor/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json",
+      "role": "philosophers_stone_strategy_contract_consumer_receipt_v1"
     },
     {
       "role": "runner_policy_consumer_asset_index_v1",
@@ -426,7 +430,10 @@
       "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json",
       "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
       "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json",
+      "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-handoff-receipt.json",
       "docs/authority/receipts/vendor/crucible-custos-strategy-contract-v1-consumer-receipt.json",
+      "docs/authority/receipts/vendor/crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json",
+      "docs/authority/receipts/vendor/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json",
       "docs/authority/receipts/custos-toolkit-rc7-authority-v1.json",
       "docs/authority/receipts/custos-toolkit-rc7-authority-v1.json.sha256",
       "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
@@ -603,10 +610,10 @@
       ]
     },
     {
-      "path": "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json",
+      "path": "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-handoff-receipt.json",
       "must_contain": [
         "Custos strategy contract V1 receipt",
-        "CANONICAL_V1_PENDING_CONSUMER_RECEIPTS",
+        "CANONICAL_V1_CONSUMER_HANDOFF_COMPLETE",
         "\"runner_local_policy_decision_required\": true"
       ]
     },

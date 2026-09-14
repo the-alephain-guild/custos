@@ -29,7 +29,15 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
-from nautilus_trader.model import Bar, InstrumentId, OrderSide, QuoteTick, TimeInForce, TradeTick
+from nautilus_trader.model import (
+    Bar,
+    ClientId,
+    InstrumentId,
+    OrderSide,
+    QuoteTick,
+    TimeInForce,
+    TradeTick,
+)
 from nautilus_trader.trading import Strategy, StrategyConfig
 
 from custos_toolkit_nautilus.adapter.cancel_audit import record_cancel_requested
@@ -58,17 +66,18 @@ class _NautilusRuntimeSurface(Protocol):
 
     def cancel_order(
         self,
-        order: object,
-        client_id: object | None = None,
-        params: dict[str, object] | None = None,
+        client_order_id: object,
+        client_id: ClientId | None = None,
+        params: dict[Any, Any] | None = None,
     ) -> None: ...
 
     def cancel_all_orders(
         self,
-        instrument_id: object,
-        order_side: object,
-        client_id: object | None = None,
-        params: dict[str, object] | None = None,
+        instrument_id: InstrumentId,
+        order_side: OrderSide | None = None,
+        client_id: ClientId | None = None,
+        strategy_only: bool = True,
+        params: dict[Any, Any] | None = None,
     ) -> None: ...
 
 
@@ -312,7 +321,6 @@ class NautilusStrategyCore(Strategy, ABC):
         self._shutdown_position_policy = position_policy
         self._paused = True
 
-    @property
     def is_ready(self) -> bool:
         return self._ready
 
@@ -443,10 +451,11 @@ class NautilusStrategyCore(Strategy, ABC):
 
     def cancel_all_orders(
         self,
-        instrument_id: Any,
-        order_side: Any = None,
-        client_id: Any = None,
-        params: Any = None,
+        instrument_id: InstrumentId,
+        order_side: OrderSide | None = None,
+        client_id: ClientId | None = None,
+        strategy_only: bool = True,
+        params: dict[Any, Any] | None = None,
     ) -> None:
         """Cancel this instrument's open orders, recording one line per order.
 
@@ -475,29 +484,39 @@ class NautilusStrategyCore(Strategy, ABC):
         except Exception as exc:  # noqa: BLE001 — see docstring: the cancel outranks the record
             self._log_warning(f"cancel_all_orders: could not enumerate open orders: {exc}")
 
-        self._venue_cancel_all_orders(instrument_id, order_side, client_id, params)
+        self._venue_cancel_all_orders(
+            instrument_id,
+            order_side,
+            client_id,
+            strategy_only,
+            params,
+        )
 
     # The handoff to the framework's own implementations, named so that the recording
     # above can be exercised without a running engine -- the Cython base needs one.
     def _venue_cancel_order(self, order: Any, client_id: Any, params: Any) -> None:
-        # 2.0's cancel_order takes (order, client_id) only — cancel_all_orders still
-        # takes params, so the two diverged. Dropping params silently would send a
-        # different cancel than the caller asked for, so refuse instead.
-        if params is not None:
-            raise TypeError("nautilus 2.0 cancel_order accepts no params")
-        # 2.0 takes the ClientOrderId, not the order. Its stub says `order: Any`, so
-        # passing the order object type-checks and then fails at runtime inside the
-        # callback, where the surrounding handler logs it and the cancel never goes out.
+        # 2.0 takes the ClientOrderId, not the order object used by our compatibility
+        # surface. Preserve the optional client and params arguments when delegating.
         client_order_id = getattr(order, "client_order_id", order)
-        cast(_NautilusRuntimeSurface, super()).cancel_order(client_order_id, client_id=client_id)
+        cast(_NautilusRuntimeSurface, super()).cancel_order(
+            client_order_id,
+            client_id=client_id,
+            params=params,
+        )
 
     def _venue_cancel_all_orders(
-        self, instrument_id: Any, order_side: Any, client_id: Any, params: Any
+        self,
+        instrument_id: InstrumentId,
+        order_side: OrderSide | None,
+        client_id: ClientId | None,
+        strategy_only: bool,
+        params: dict[Any, Any] | None,
     ) -> None:
         cast(_NautilusRuntimeSurface, super()).cancel_all_orders(
             instrument_id,
             order_side=order_side,
             client_id=client_id,
+            strategy_only=strategy_only,
             params=params,
         )
 

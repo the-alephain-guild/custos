@@ -20,7 +20,7 @@ from custos_toolkit.signals.types import SignalDirection
 
 if TYPE_CHECKING:
     from custos_toolkit.signals.types import Signal
-    from nautilus_trader.model import Quantity
+    from nautilus_trader.model import Price, Quantity
 
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
@@ -82,7 +82,7 @@ class SLTPMode(str, Enum):  # noqa: UP042 - preserve pre-T4b str(Enum) runtime s
         ctx: PairContext,
         signal: Signal,
         position: Position | None,
-        entry_px: Decimal | float,
+        entry_px: Decimal | Price | float,
         entry_atr: Decimal | float | None,
         *,
         protection_quantity: Quantity | Decimal | None = None,
@@ -112,7 +112,7 @@ def _init_tick_position(
     ctx: PairContext,
     signal: Signal,
     position: Position | None,
-    entry_px: Decimal | float,
+    entry_px: Decimal | Price | float,
     entry_atr: Decimal | float | None,
 ) -> None:
     """Seed the tick monitor with the just-opened position (tick/hybrid)."""

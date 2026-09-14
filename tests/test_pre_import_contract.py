@@ -21,10 +21,16 @@ SCHEMA = (
 GOLDEN = ROOT / "docs/authority/strategy-artifact-pre-import-verification-v1.golden.json"
 NEGATIVE = ROOT / "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json"
 INDEX = ROOT / "docs/authority/strategy-contract-assets-v1.json"
-RECEIPT = ROOT / "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json"
+RECEIPT = (
+    ROOT / "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-handoff-receipt.json"
+)
 CRUCIBLE_RECEIPT = (
     ROOT / "docs/authority/receipts/vendor/"
-    "crucible-custos-strategy-contract-v1-consumer-receipt.json"
+    "crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+)
+PS_RECEIPT = (
+    ROOT / "docs/authority/receipts/vendor/"
+    "ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
 )
 
 
@@ -79,8 +85,11 @@ def test_schema_golden_and_index_are_the_same_v1_contract() -> None:
     assert claims["artifact_ref_digest"] == receipt["artifact_ref_digest"]
     assert claims["release_bom_digest"] == receipt["release_bom_digest"]
     crucible_receipt = json.loads(CRUCIBLE_RECEIPT.read_text(encoding="utf-8"))
-    assert crucible_receipt["producer"]["commit"] == ("a83e6f6969709316b8f11bcc0618b2f7b32fc19f")
-    assert crucible_receipt["consumer"] == "crucible-rust"
+    assert crucible_receipt["producer"]["commit"] == ("8bf45ac6b0f42018aae2a74ac9e743e41f9ca789")
+    assert crucible_receipt["consumer"] == {
+        "accepted_at_commit": "9ce821143854a54ef7f6e0ada42c9e52a855d3bb",
+        "repository": "tesseract-trading/crucible-rust",
+    }
     assert crucible_receipt["runtime_ready"] is False
     assert crucible_receipt["production_ready"] is False
 
@@ -229,15 +238,17 @@ def test_pre_import_receipt_accepts_digest_bound_github_oidc_proof_wrapper() -> 
     _validate(receipt)
 
 
-def test_contract_receipt_stays_pending_until_both_consumers_pin_v1() -> None:
+def test_contract_receipt_records_both_nautilus_2_consumers() -> None:
     receipt = json.loads(RECEIPT.read_text(encoding="utf-8"))
 
-    assert receipt["status"] == "CANONICAL_V1_PENDING_CONSUMER_RECEIPTS"
-    assert receipt["contract_consumer_ready"] is False
-    assert receipt["command_consumer_ready"] is False
+    assert receipt["status"] == "CANONICAL_V1_CONSUMER_HANDOFF_COMPLETE"
+    assert receipt["contract_consumer_ready"] is True
+    assert receipt["command_consumer_ready"] is True
     assert receipt["runtime_ready"] is False
     assert receipt["production_ready"] is False
-    assert receipt["consumers"]["philosophers_stone"]["receipt"] is None
+    ps_pin = receipt["consumers"]["philosophers_stone"]["receipt"]
+    assert ps_pin["commit"] == "11f4fcf9ec0c2d7a4fd928b6cd6bab88ceee8769"
+    assert ps_pin["sha256"] == hashlib.sha256(PS_RECEIPT.read_bytes()).hexdigest()
     crucible_pin = receipt["consumers"]["crucible_rust"]["receipt"]
-    assert crucible_pin["commit"] == "4abd73eb320ac99bf16e443c5e572e5d1047391d"
+    assert crucible_pin["commit"] == "3e85acbbf4c8b298dd2bd5d51911bdf08dd6d7a3"
     assert crucible_pin["sha256"] == hashlib.sha256(CRUCIBLE_RECEIPT.read_bytes()).hexdigest()

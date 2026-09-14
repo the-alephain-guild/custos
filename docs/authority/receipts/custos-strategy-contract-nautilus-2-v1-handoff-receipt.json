@@ -1,0 +1,45 @@
+{
+  "canonical_name": "Custos strategy contract V1 receipt",
+  "command_consumer_ready": true,
+  "consumers": {
+    "crucible_rust": {
+      "receipt": {
+        "commit": "3e85acbbf4c8b298dd2bd5d51911bdf08dd6d7a3",
+        "path": "docs/authority/receipts/crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json",
+        "sha256": "88a50e6050caaffb0a755981a5aa3ef3704bececc506c5367d5e2accf7884d54",
+        "vendored_path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+      },
+      "repository": "tesseract-trading/crucible-rust"
+    },
+    "philosophers_stone": {
+      "receipt": {
+        "commit": "11f4fcf9ec0c2d7a4fd928b6cd6bab88ceee8769",
+        "path": "docs/authority/receipts/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json",
+        "sha256": "19209b11b5c307e81f019234fc7909bce74ed52fed3b3c21379b453577bd7634",
+        "vendored_path": "docs/authority/receipts/vendor/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+      },
+      "repository": "alchymia-labs/philosophers-stone"
+    }
+  },
+  "contract_asset_index": {
+    "path": "docs/authority/strategy-contract-assets-v1.json",
+    "sha256": "2d3255adf204714da3600ddd59b108292cb7532fef781cbe3426413099fdaecf",
+    "size_bytes": 2828
+  },
+  "contract_consumer_ready": true,
+  "open_blockers": [],
+  "policy_boundary": {
+    "crucible_local_policy_decision_reused": false,
+    "runner_local_policy_decision_required": true
+  },
+  "producer": {
+    "repository": "tesseract-trading/custos",
+    "source_path": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
+    "source_sha256": "b90ff33debffa177ccc8519f31da6d30e555bf8c303fecb3da261c02250b1e47"
+  },
+  "production_ready": false,
+  "receipt_schema_version": 1,
+  "runtime_ready": false,
+  "status": "CANONICAL_V1_CONSUMER_HANDOFF_COMPLETE",
+  "strategy_artifact_pre_import_verification_receipt_v1_published": true
+}

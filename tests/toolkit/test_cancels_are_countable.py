@@ -135,11 +135,15 @@ def test_the_optional_arguments_reach_the_venue_untouched() -> None:
     order = _order("O-1")
 
     strat.cancel_order(order, "CLIENT-A", {"k": "v"})
-    strat.cancel_all_orders("BTCUSDT-PERP.BINANCE", OrderSide.SELL, "CLIENT-A", {"k": "v"})
+    strat.cancel_all_orders("BTCUSDT-PERP.BINANCE", OrderSide.SELL, "CLIENT-A", False, {"k": "v"})
 
     assert strat.delegated == [
         ("cancel_order", (order, "CLIENT-A", {"k": "v"}), {}),
-        ("cancel_all_orders", ("BTCUSDT-PERP.BINANCE", OrderSide.SELL, "CLIENT-A", {"k": "v"}), {}),
+        (
+            "cancel_all_orders",
+            ("BTCUSDT-PERP.BINANCE", OrderSide.SELL, "CLIENT-A", False, {"k": "v"}),
+            {},
+        ),
     ]
 
 

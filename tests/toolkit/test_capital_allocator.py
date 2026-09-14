@@ -172,7 +172,7 @@ class TestPortfolioValue:
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
 
         cache = MagicMock()
-        cache.position.return_value = None
+        cache.positions_open.return_value = []
 
         config = AllocationConfig(tiers={"BTC-USDT": 0.5, "ETH-USDT": 0.5})
         allocator = CapitalAllocator(config, Decimal("10000"), cache)
@@ -182,6 +182,23 @@ class TestPortfolioValue:
 
         assert value == Decimal("10000")
 
+    def test_get_position_value_queries_by_instrument(self):
+        """Nautilus 2 Cache.position takes PositionId, not InstrumentId."""
+        from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
+        from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
+        from nautilus_trader.model import InstrumentId
+
+        cache = MagicMock()
+        position = MagicMock()
+        position.quantity.as_decimal.return_value = Decimal("2")
+        cache.positions_open.return_value = [position]
+        instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
+        allocator = CapitalAllocator(AllocationConfig(), Decimal("10000"), cache)
+        allocator.register_pair("BTC-USDT", instrument_id)
+
+        assert allocator.get_position_value("BTC-USDT", Decimal("100")) == Decimal("200")
+        cache.positions_open.assert_called_once_with(instrument_id=instrument_id)
+
     def test_get_current_weights(self):
         """Test getting current portfolio weights."""
         from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
@@ -189,7 +206,7 @@ class TestPortfolioValue:
         from nautilus_trader.model import InstrumentId
 
         cache = MagicMock()
-        cache.position.return_value = None
+        cache.positions_open.return_value = []
 
         config = AllocationConfig(tiers={"BTC-USDT": 0.6, "ETH-USDT": 0.4})
         allocator = CapitalAllocator(config, Decimal("10000"), cache)
@@ -213,7 +230,7 @@ class TestPortfolioValue:
         from nautilus_trader.model import InstrumentId
 
         cache = MagicMock()
-        cache.position.return_value = None
+        cache.positions_open.return_value = []
 
         # Use higher tier limits to allow uneven allocation
         config = AllocationConfig(tiers={"BTC-USDT": 0.7, "ETH-USDT": 0.3})
@@ -249,7 +266,7 @@ class TestExposure:
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
 
         cache = MagicMock()
-        cache.position.return_value = None
+        cache.positions_open.return_value = []
 
         config = AllocationConfig()
         allocator = CapitalAllocator(config, Decimal("10000"), cache)
@@ -265,7 +282,7 @@ class TestExposure:
         from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
 
         cache = MagicMock()
-        cache.position.return_value = None
+        cache.positions_open.return_value = []
 
         config = AllocationConfig(max_total_exposure=0.8)
         allocator = CapitalAllocator(config, Decimal("10000"), cache)
