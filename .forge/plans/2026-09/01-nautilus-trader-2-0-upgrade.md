@@ -1,6 +1,6 @@
 # 01 - NautilusTrader 1.230.0 → fork 2.0.0rc5 升级
 
-> **Status**: ✅ Completed（19 行进度表全部闭合，2026-09-14。三平台 hash-pinned engine wheel、Custos toolkit RC7、PS producer BOM 与 Crucible/PS consumer handoff 均已落地；Custos `make verify` 2472 passed / 25 skipped / 1 xfailed，toolkit mypy 41 + 60 source files strict zero；PS `make verify` 998 passed / 18 skipped）
+> **Status**: ✅ Completed（19 行进度表 18 ✅ + 1 撤销——1a-2 的 `nt-builder` 方案被否决而非阻塞，理由见偏离日志，2026-09-14。三平台 hash-pinned engine wheel、Custos toolkit RC7、PS producer BOM 与 Crucible/PS consumer handoff 均已落地；Custos `make verify` 2472 passed / 25 skipped / 1 xfailed，toolkit mypy 41 + 60 source files strict zero；PS `make verify` 999 passed / 18 skipped（取自 PS `148cbaf`；进度表 1b 行记的 998 取自更早的 PS `ae04bfe`，其后 `11f4fcf` 新增一条测试——两个数字各自对应其 revision，均为实跑））
 > **Created**: 2026-09-11
 > **Project**: custos（跨仓：philosophers-stone）
 > **multi_session_scope**: **true**（6 个 Slice、跨 2 仓库、涉及红线 0.1/0.2/0.4）
@@ -677,7 +677,7 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 | 11 | ✅ | 2026-09-12 | `90eda67`→`fc51c28`；全量 `54 failed/25 err` → `7 failed/3 err`，剩余 4 文件全归 Task 2a（3 个断言 `1.230.0`）与 close-out 计数 |
 | 12 | ✅ | 2026-09-12 | PS `ef41c0c` + custos `c8ebc92`；9 个策略模块拍平 + 9 个 config 子类改 D5b 形态 + NT pin 改 fork git 引用；**7 个策略**在 PS 自己的环境（NT 2.0.0rc5+sodex.1）下 import、经 registry 从各自 config.yaml 解析并构造成功 |
 | 13 | ✅ | 2026-09-12 | PS `cab51b4`；收集从 9 文件报错→0，`make verify` 全绿（996 passed / 18 skipped）；退役 lane 具名跳过而非移植；另修两处「藏在绿色后面」的东西 |
-| 14 | ✅ | 2026-09-14 | `187177e` 后最终 `make verify`：2472 passed / 25 skipped / 1 xfailed，authority 通过，base toolkit mypy 41 files strict zero，Nautilus toolkit mypy 60 files strict zero；PS `make verify` 998 passed / 18 skipped。RC7 真实发布和两端 consumer handoff 已闭合，Plan 完成。 |
+| 14 | ✅ | 2026-09-14 | `187177e` 后最终 `make verify`：2472 passed / 25 skipped / 1 xfailed，authority 通过，base toolkit mypy 41 files strict zero，Nautilus toolkit mypy 60 files strict zero；PS `make verify` 999 passed / 18 skipped（PS `148cbaf`）。RC7 真实发布和两端 consumer handoff 已闭合，Plan 完成。 |
 
 ## 交接 (Handoff) — Slice C 接手说明
 
