@@ -36,6 +36,11 @@ ARG NT_VERSION
 ARG NT_SUBDIRECTORY
 ARG CARGO_BUILD_JOBS=2
 
+# BuildKit supplies this. The cargo cache is keyed by it because a container
+# built for another architecture reports that architecture as its host triple,
+# so both would write the same `target/release` path and invalidate each other.
+ARG TARGETPLATFORM
+
 # Mirrors the fork's own build environment (.docker/nautilus_trader.dockerfile).
 ENV CC=clang \
     PYO3_PYTHON=/usr/local/bin/python3 \
@@ -71,10 +76,25 @@ RUN set -eux; \
 
 # The toolchain is whatever the checkout asks for. Naming a version here would
 # let this file and `rust-toolchain.toml` disagree silently.
+#
+# Retried because the toolchain download is the one step that reaches a host
+# outside our control mid-build, and it has been seen to fail with a TLS
+# handshake cut short while the same URL answers fine from the host. A network
+# blip should not cost an hour of compilation, and a bounded retry cannot hide
+# a real outage -- three failures in a row still stop the build.
 RUN set -eux; \
     channel="$(python -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('rust-toolchain.toml').read_text())['toolchain']['channel'])")"; \
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \
-      | sh -s -- -y --no-modify-path --profile minimal --default-toolchain "${channel}"; \
+    attempt=1; \
+    until curl --proto '=https' --tlsv1.2 --retry 3 --retry-connrefused -sSf https://sh.rustup.rs \
+            | sh -s -- -y --no-modify-path --profile minimal --default-toolchain "${channel}"; do \
+      if [ "${attempt}" -ge 3 ]; then \
+        echo "rustup could not install ${channel} after ${attempt} attempts" >&2; \
+        exit 1; \
+      fi; \
+      attempt=$((attempt + 1)); \
+      echo "rustup install failed; retrying (attempt ${attempt})" >&2; \
+      sleep 15; \
+    done; \
     rustc --version | grep -Fq "${channel}"
 
 # The fork pins maturin exactly; we install that pin and then check the binary
@@ -99,7 +119,7 @@ RUN set -eux; \
 # Memory is sampled because this step is the one that fails on a machine that
 # is merely large. A trajectory printed every thirty seconds survives the OOM
 # killer, which a final measurement would not.
-RUN --mount=type=cache,target=/src/target,sharing=locked \
+RUN --mount=type=cache,target=/src/target,sharing=locked,id=nautilus-target-${TARGETPLATFORM} \
     set -eux; \
     cd "${NT_SUBDIRECTORY}"; \
     ( while sleep 30; do \

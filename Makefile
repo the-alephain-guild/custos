@@ -125,6 +125,11 @@ sign:  ## Sign every wheel under dist/ with sigstore keyless (requires OIDC; run
 # `scripts/nautilus_source_pin.py` retire together with the git source.
 NT_PIN = uv run --quiet python scripts/nautilus_source_pin.py --field
 NAUTILUS_WHEEL_OUT ?= dist/nautilus
+# Empty builds for the host architecture. Set it to cross-build the other one:
+# on Apple Silicon, `linux/amd64` runs through Rosetta at close to native speed,
+# which is what makes an x86_64 wheel obtainable here at all. The compile needs
+# the same memory either way -- upwards of 42 GiB.
+NAUTILUS_WHEEL_PLATFORM ?=
 
 nautilus-wheel:  ## Build the NautilusTrader wheel from the fork commit uv.lock pins
 	@set -eu; \
@@ -132,8 +137,12 @@ nautilus-wheel:  ## Build the NautilusTrader wheel from the fork commit uv.lock 
 	nt_sha="$$($(NT_PIN) sha)"; \
 	nt_version="$$($(NT_PIN) version)"; \
 	nt_subdirectory="$$($(NT_PIN) subdirectory)"; \
+	platform_arg=""; \
+	if [ -n "$(NAUTILUS_WHEEL_PLATFORM)" ]; then \
+		platform_arg="--platform=$(NAUTILUS_WHEEL_PLATFORM)"; \
+	fi; \
 	mkdir -p "$(NAUTILUS_WHEEL_OUT)"; \
-	docker build \
+	docker build $$platform_arg \
 		--file docker/nautilus-wheel.dockerfile \
 		--build-arg NT_GIT_URL="$$nt_url" \
 		--build-arg NT_GIT_SHA="$$nt_sha" \
