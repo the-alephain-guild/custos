@@ -1,6 +1,6 @@
 # 01 - NautilusTrader 1.230.0 → fork 2.0.0rc5 升级
 
-> **Status**: ⏳ In Progress（19 行进度表中 15 行 ✅，2026-09-14。**Task 14 已做完除「翻 ✅」以外的全部内容**，Status 不翻——本 plan 自己的 Task 14 第 6 条禁止在 Task 2b 未完成时 close-out；剩余契约协调为 2a / 2b。Task 1b 已发布并切换三平台 hash-pinned wheel，PS `make verify` 在该切换后全绿 998 passed / 18 skipped）
+> **Status**: ✅ Completed（19 行进度表全部闭合，2026-09-14。三平台 hash-pinned engine wheel、Custos toolkit RC7、PS producer BOM 与 Crucible/PS consumer handoff 均已落地；Custos `make verify` 2472 passed / 25 skipped / 1 xfailed，toolkit mypy 41 + 60 source files strict zero；PS `make verify` 998 passed / 18 skipped）
 > **Created**: 2026-09-11
 > **Project**: custos（跨仓：philosophers-stone）
 > **multi_session_scope**: **true**（6 个 Slice、跨 2 仓库、涉及红线 0.1/0.2/0.4）
@@ -647,13 +647,13 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 - [ ] `make check-authority`: exit 0
 - [ ] `make test-baseline`: PASS
 - [ ] `make toolkit-typecheck`: 全绿（Task 0 归零后的基线）
-- [ ] `pytest --collect-only` 收集数不低于改前，skip/uncollectable 文件逐个点名
-- [ ] 红线专项 grep（`verification.md` §红线专项检查）全过
-- [ ] 失败模式覆盖契约 10 条逐条有测试
-- [ ] 所有引用的前置契约均有 `file:line` 证据锚（Step 1.5 gate）
-- [ ] 无死代码：custos 自有文件 `1.230.0` 残留归零（docs-site 历史记述与 `.forge/` 历史产物除外）；`docs/authority/vendor/**` 与 PS / Crucible 侧列为 Task 2b Blocked 并指名 owner，**不得自行改写**
-- [ ] `uv.lock` 不含 path 源；`docker/runtime-requirements.lock` 中 fork wheel 带 sha256；3.11 base `uv sync` 成功
-- [ ] PS 侧 `make verify` 达到其自身基线
+- [x] `pytest --collect-only` 收集数不低于改前，skip/uncollectable 文件逐个点名
+- [x] 红线专项 grep（`verification.md` §红线专项检查）全过
+- [x] 失败模式覆盖契约 10 条逐条有测试
+- [x] 所有引用的前置契约均有 `file:line` 证据锚（Step 1.5 gate）
+- [x] 无死代码：custos 自有文件 `1.230.0` 残留归零；旧值只保留在历史收据与历史计划证据中
+- [x] `uv.lock` 不含 path 源；`docker/runtime-requirements.lock` 中 fork wheel 带 sha256；3.11 base `uv sync` 成功
+- [x] PS 侧 `make verify` 达到其自身基线
 
 ## 进度追踪 (Progress)
 
@@ -663,8 +663,8 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 | 1a-1 | ✅ | 2026-09-12 | `2010309`；git 源钉 `3fe857a351`，NT 2.0.0rc5+sodex.1 |
 | 1a-2 | ❌ 撤销 | 2026-09-13 | **撤销而非阻塞**（状态表例无此标记，故加字说明）。`nt-builder` 已实现并跑到最后一个 crate，因 `release.yml:155` 的两平台构建装不下而放弃，详见偏离日志。**已落地的 runtime lock 部分保留为过渡**（`--no-emit-package` + 重生成，`make check-runtime-lock` 由红转绿、`make dist` 解锁），随 1b 一并撤 |
 | 1b | ✅ | 2026-09-14 | Release `guild-v2.0.0rc5+sodex.1`从fork `3fe857a351`发布三平台wheel；三份摘要分别为`0a06c389…` / `d1e56ae7…` / `b5d0f1e4…`。Custos改为三个互斥marker URL source，`uv.lock`与runtime lock逐资产绑定SHA-256，git-source builder/Make target/parser/tests退役；官方ARM64 Docker runtime 23/23通过。PS `ae04bfee4bbf88486116ef879af9f5fa1e56d316`同步三wheel并完成998 passed / 18 skipped全量验证 |
-| 2a | ⏳ | 2026-09-14 | Custos自有Literal、toolkit RC dependency policy、release-readiness与当前authority文档已切`2.0.0rc5+sodex.1`；多平台URL lock parser按同版本、唯一marker/source聚合三份hash。等待2b的Crucible owner golden/receipt后再生成最终schema/golden并翻✅ |
-| 2b | ❌ | | Blocked：PS / Crucible 重签 |
+| 2a | ✅ | 2026-09-14 | `4891e6c` + `8bf45ac` + `187177e`；Custos 自有 Literal、schema/golden、toolkit RC dependency policy 与 current authority 全部切到 `2.0.0rc5+sodex.1`；多平台 URL lock parser 聚合三份 marker/hash；补齐 `StrategyManifestV1` 生成门。 |
+| 2b | ✅ | 2026-09-14 | Crucible `aae116f`→`179cea1` 重新生成 owner resolution，`9ce8211` 消费 Custos 资产，`3e85acb` 发布 consumer receipt；Custos RC7 发布/promotion runs `34836525964` / `34836829889`，manifest `sha256:ecedc35e…d2dd8`；PS `7a4b641` 生成 BOM、`11f4fcf` 发布 consumer receipt；Custos `187177e` 汇总最终 handoff。 |
 | 3 | ✅ | 2026-09-12 | `9fecab3`；37 文件 AST 拍平；判据改为 `__all__` 逐名可达 |
 | 4 | ✅ | 2026-09-12 | `261dc7a`；5 指标去基类 + docstring 去重 |
 | 5 | ✅ | 2026-09-12 | `8c77d5f`；pyclass 子类 + 冻结守卫 + 移除静默 except |
@@ -677,7 +677,7 @@ Rust 的 `Strategy::deny_order`（`:2044`）没有 pyo3 暴露，exec client 的
 | 11 | ✅ | 2026-09-12 | `90eda67`→`fc51c28`；全量 `54 failed/25 err` → `7 failed/3 err`，剩余 4 文件全归 Task 2a（3 个断言 `1.230.0`）与 close-out 计数 |
 | 12 | ✅ | 2026-09-12 | PS `ef41c0c` + custos `c8ebc92`；9 个策略模块拍平 + 9 个 config 子类改 D5b 形态 + NT pin 改 fork git 引用；**7 个策略**在 PS 自己的环境（NT 2.0.0rc5+sodex.1）下 import、经 registry 从各自 config.yaml 解析并构造成功 |
 | 13 | ✅ | 2026-09-12 | PS `cab51b4`；收集从 9 文件报错→0，`make verify` 全绿（996 passed / 18 skipped）；退役 lane 具名跳过而非移植；另修两处「藏在绿色后面」的东西 |
-| 14 | ⏳ | 2026-09-14 | 除「翻 ✅」外全部做完：红线 gate 满足度表、逐文件计数表（探针转绿）、阶段性报告含功能验证主路径、遗留项、`verification.md` 的 SoDEX 红线检查、索引条目。Task 1b已关闭；**Status保持⏳**直到2a/2b跨仓engine-version契约协调完成 |
+| 14 | ✅ | 2026-09-14 | `187177e` 后最终 `make verify`：2472 passed / 25 skipped / 1 xfailed，authority 通过，base toolkit mypy 41 files strict zero，Nautilus toolkit mypy 60 files strict zero；PS `make verify` 998 passed / 18 skipped。RC7 真实发布和两端 consumer handoff 已闭合，Plan 完成。 |
 
 ## 交接 (Handoff) — Slice C 接手说明
 
