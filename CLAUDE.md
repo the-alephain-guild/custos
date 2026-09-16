@@ -72,8 +72,8 @@
 以下四条**不可绕过**, 违反 = CRITICAL. 详见 [`.claude/rules/mandatory-rules.md`](.claude/rules/mandatory-rules.md) §0:
 
 1. **Key / KEK 永不出进程** — 禁 log / publish / send raw key material; 禁 cloud SDK
-2. **G6 host gate 不绕过** — live venue 必须过 `NtTradingNodeHost` G6 gate; `NoopHost` 只允许 sandbox/testnet
-3. **Reconcile 失联 ≠ 停止** — 云端断线时本地 safety breaker + `max_notional_per_runner` cap 继续守护
+2. **引擎启动前的七道 fail-closed 门不绕过** — 门清单见 `docs/authority/nautilus-host-contract.md` "Fail-closed gates"; `SandboxSimulationHost` 只允许 `sandbox`; live 必须走 `NtTradingNodeHost`, 且需签名 promotion evidence 与不可变生产收据启用
+3. **Reconcile 失联 ≠ 停止** — 云端断线时本地 `FallbackBreaker` (`src/custos/core/fallback_breaker.py`) 与已验证 runner safety policy 的 `max_total_notional` 上限 (`RunnerSafetyOrderGate` 在策略出站边执行, `src/custos/engines/nautilus/runner_safety.py`) 继续守护
 4. **Money math 用 `Decimal`, wire 用 `str`** — 禁 `float()` 参与 money 路径
 
 离线通道不放宽以上任何一条. 它止步于 live: `src/custos/offline/mode_guard.py` 在 spec
@@ -100,7 +100,7 @@ tailing stdout or forwarding raw exception text is forbidden.
 | Lint | `make lint` |
 | 发布门 | `make verify` (= `check + test-baseline`) |
 | 列全部 target | `make help` |
-| 单跑 G6 gate 测试 | `uv run pytest tests/test_g6_gate.py -v` |
+| 单跑引擎启动门测试 | `uv run pytest tests/test_engine_lifecycle.py tests/test_nautilus_host_capability.py -v` |
 | Non-Custodial 红线 grep | 见 `.claude/rules/verification.md` §红线专项检查 |
 | Docker 门 (image size + non-root + entrypoint smoke) | `make test-docker` |
 | Release rehearsal (wheel + docker + sign, 本地) | `make release` |

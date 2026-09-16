@@ -54,11 +54,11 @@ contract 多个技术边界; 以下是历次开发中命中的典型陷阱, 修�
 - **修**: `nautilus_host.py` 用 `_recreate_node()` 而非直接重跑 `start()`
 - **参考**: `docs-site/docs/07-engines/nautilus-trader.md`
 
-### G6 gate 检查通不过 (`NoopHost` 上 live)
+### 引擎启动门拒绝 (`SandboxSimulationHost` 上 testnet/live)
 
-- **症状**: Plan 00c 之后, `LIVE_MODE=true` 时 `start()` 报 `G6DenyLive: NoopHost cannot execute live`
-- **原因**: 红线 0.2, 设计上如此; `NoopHost` 只允许 paper/sim
-- **修**: 生产用户先跑 Plan 00a `NtTradingNodeHost` 真实现, 否则保持 `paper_only=True`
+- **症状**: 签名命令 mode 为 `testnet` 或 `live` 时, `EngineLifecycleSupervisor` 在引擎启动前拒绝, 因为 `SandboxSimulationHost.supports_trading_mode` 只对 `sandbox` 返回 True (`src/custos/engines/nautilus/host.py`)
+- **原因**: 红线 2, 设计上如此; `SandboxSimulationHost` 是本地模拟边界, 永不宣称真实场所 mode
+- **修**: testnet/live 必须组合 `NtTradingNodeHost`; live 另需签名 promotion evidence 与不可变生产收据启用 (门清单见 `docs/authority/nautilus-host-contract.md` "Fail-closed gates")
 
 ### NT MessageBus 事件订阅漏事件
 

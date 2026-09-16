@@ -20,7 +20,7 @@
 - Pydantic 模型 (DeploymentSpec / DeploymentStatus) 结构变更
 - NATS subject 命名规则变更
 - 新增 / 移除 Python 依赖 (超出 pyproject.toml 已声明)
-- **G6 gate 参数微调** (非绕过, 只调节 tolerance)
+- **引擎启动 fail-closed 门参数微调** (非绕过, 只调节 tolerance)
 
 **处理**:
 1. 在 PR / commit message 中说明变更原因和影响
@@ -35,7 +35,7 @@
 
 - 触及 **Non-Custodial 4 红线** 任一条 (`mandatory-rules.md` §0)
   - Key/KEK 出进程规则松动
-  - G6 gate 绕过或降级
+  - 引擎启动 fail-closed 门绕过或降级
   - 失联降级策略调整
   - Money math 从 Decimal 松动到 float
 - 顶层领域词汇结构性变更 (`docs-site/docs/01-introduction/what-is-custos.md`)
@@ -76,7 +76,7 @@
 即使生产事故:
 
 - Key / KEK 出进程 → **禁止**紧急偏离. 优先降级 (`paper_only=true`), 而非把 key 送云端
-- G6 gate → **禁止**紧急绕过. 事故期间用 `NoopHost` 停 live, 不是绕过 gate 直接下单
+- 引擎启动 fail-closed 门 → **禁止**紧急绕过. 事故期间停止新建 live instance、改用 `SandboxSimulationHost` 跑 sandbox, 不是绕过门直接下单
 - Money math float → **禁止**紧急退回 float. 用户资金精度事故不可挽回
 - 失联降级 → local fallback 是**本来就该 work** 的行为, 不算偏离
 

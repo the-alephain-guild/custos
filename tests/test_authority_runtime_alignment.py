@@ -17,7 +17,7 @@ def test_authority_snapshot_pins_single_topology_and_heads() -> None:
     assert snapshot["fact_kind"] == "RunnerDeploymentLifecycleFact.v1"
     assert snapshot["deployment_spec_digest"]["algorithm"] == "sha256-canonical-json-v1"
     assert snapshot["migration_heads"] == {
-        "arx": "0068",
+        "arx": "0116",
         "crucible_control": "0027",
         "crucible_mode": "0115",
     }
