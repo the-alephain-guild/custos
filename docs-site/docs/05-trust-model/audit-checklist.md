@@ -38,6 +38,6 @@ This checks the built image contract and its revision label. It does not include
 
 ## Boundaries to review
 
-Signed commands require upstream authority; offline commands are explicit unsigned sandbox/testnet input. Offline material cannot authorize live execution. Current live composition remains disabled. A venue key's actual permissions and host access controls need operator verification beyond a local scope declaration.
+Signed commands require upstream authority; offline commands are explicit unsigned sandbox/testnet input. Offline material cannot authorize live execution. Live remains disabled without verified runtime approval. A venue key's actual permissions and host access controls need operator verification beyond a local scope declaration.
 
 Follow [release verification](/trust-model/signed-release-chain) for signed artifacts and [release status](/release-governance/release-status) for open acceptance boundaries.

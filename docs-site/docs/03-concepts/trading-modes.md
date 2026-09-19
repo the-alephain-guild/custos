@@ -27,7 +27,7 @@ The Nautilus 2 host admits one active node per event loop. Multiple enabled mode
 
 ## Admission
 
-Signed commands are checked for exact mode binding, host/connector support, artifact capability and credential scope. Live additionally requires enabled execution capability and signed promotion evidence. The current daemon sets live execution to disabled.
+Signed commands are checked for exact mode binding, host/connector support, artifact capability and credential scope. Live additionally requires enabled execution capability and signed promotion evidence. Live is disabled unless matching runtime approval passes cryptographic verification.
 
 Offline input uses a separate contract and admission path. It does not require signed deployment approval, but still rejects live and keeps local credentials and safety checks. Neither offline results nor sandbox development artifacts can be promoted locally to production.
 

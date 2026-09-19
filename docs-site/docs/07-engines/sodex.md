@@ -5,36 +5,16 @@ sidebar_position: 4
 
 Custos provides separate SoDEX spot and perpetual connectors. Custos wires `sodex` to `SODEX_SPOT` and `sodex_perpetual` to `SODEX_PERPS`.
 
-## Support boundaries
+## Configuration and modes
 
-| Path | Current behavior |
-|---|---|
-| Sandbox adapter | Production market data with local matching |
-| Testnet adapter | Builds a testnet execution client when all required account fields are supplied |
-| Offline CLI testnet | Incomplete: its spec does not carry the required SoDEX account fields |
-| Live | Refused by both the host declaration and execution config builder |
+Sandbox uses production prices and local matching. Testnet uses the test network execution client. Live uses mainnet and requires runtime and signed deployment approval.
 
-The offline spec rejects unknown fields and currently has no `wallet_address` or `sodex_account_id`. Adding these keys to a JSON example will fail validation. The offline CLI cannot currently supply the complete input required for SoDEX testnet, so no launch recipe is provided for that path.
+Set `wallet_address`, positive integer `sodex_account_id`, `settlement_currency` and `margin_mode` (`cross` or `isolated`) inside `nautilus_config.venue`. These are signed engine settings, not top-level deployment fields. Spot leverage must be 1. Perpetual leverage and margin mode must match the account; startup compares them with independent exchange state.
 
-## Sandbox configuration
+Vault `api_key` is the key name and `api_secret` is the signing private key. Spot and perpetuals use their own accounts and keys. The wallet/account must identify the trading account; the API key address is not a substitute.
 
-Use a compatible strategy directory with `config.yaml` and select `--engine nautilus`. Set the connector, venue-native pair and starting balance together:
+Use venue-native symbols, such as `vBTC_vUSDC` for spot or `BTC-USD` for perpetuals. Read settlement currency from exchange instrument metadata instead of inferring USD from the symbol. `vUSDC` and `USDC` are distinct assets; preserve the actual asset in balances and signed risk policy.
 
-| Connector | Example pair | Example balance | Account type |
-|---|---|---|---|
-| `sodex` | `vBTC_vUSDC` | `10000 vUSDC` | Cash |
-| `sodex_perpetual` | `BTC-USD` | `10000 USD` | Margin |
+Independent evidence reads balances, positions, trades, funding and closed-position history. Truncated queries, mismatched accounts or inconsistent block snapshots refuse reconciliation. Liquidation and additional builder fees remain refused until their economic events have complete reconciliation support.
 
-These illustrate symbol spelling; check the feed's available instruments. Custos uses the pair verbatim and appends `.SODEX_SPOT` or `.SODEX_PERPS`. It does not translate Binance-style symbols. Sandbox data requires no venue secret, but the offline runner still resolves its declared vault entry; use a local demo entry only for sandbox simulation.
-
-The lifecycle-only directory in [standalone sandbox](/getting-started/standalone-sandbox) is not a trading strategy. Replace it with compatible strategy code before selecting Nautilus.
-
-## Testnet account inputs
-
-The adapter requires vault `api_key` (key name) and `api_secret` (signing private key), plus spec `wallet_address` and numeric `sodex_account_id`. Missing values fail before client construction; environment credentials are not a fallback. Spot and perpetual identities must match their own venue accounts.
-
-## Diagnosing startup
-
-An empty instrument set usually requires checking the exact pair and selected network. `portfolio_prices_missing:<instrument>` identifies the missing valuation input. Check the mark/quote asset named by the error; a connected data client can still lack a price needed for equity valuation.
-
-Track upstream support and complete input-path verification before treating testnet or production execution as available.
+See [production preparation](/operator-guide/production-preparation). Local configuration tests do not establish acceptance of an exchange account on testnet or production.

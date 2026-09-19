@@ -16,9 +16,9 @@ Signed deployments pass admission before engine construction. A refused deployme
 | Live execution enabled in the composition | Live |
 | Bound signed promotion evidence present | Live |
 
-The current daemon explicitly disables live execution. A host's live declaration, published candidate or valid policy does not enable it. There is no operator switch to override this decision.
+Live execution is disabled by default. The signed daemon accepts a verified runtime approval bound to the installed image and source revision. This approval does not replace the signed deployment promotion, artifact checks or current risk policy. See [production preparation](/operator-guide/production-preparation).
 
-`sandbox-sim` supports sandbox only. Nautilus connector declarations vary by mode; see the generated [connector table](/engines/nautilus-trader). SoDEX live is unsupported.
+`sandbox-sim` supports sandbox only. Nautilus connector declarations vary by mode; see the generated [connector table](/engines/nautilus-trader). Binance, SoDEX and OKX each have spot and linear perpetual configuration paths; account and release acceptance remain separate requirements.
 
 ## Offline admission
 

@@ -9,7 +9,7 @@ Custos 是非托管执行 runner，运行在你自己的基础设施上，在本
 
 | 通道 | 输入 | 身份 | 输出 | 模式 |
 |---|---|---|---|---|
-| 签名通道 | ARX 签发的目标状态 | 注册后的机器身份 | 签名 RunnerFact 和策略信号 | 可执行 sandbox/testnet；当前未启用 live 执行准入 |
+| 签名通道 | ARX 签发的目标状态 | 注册后的机器身份 | 签名 RunnerFact 和策略信号 | 可执行 sandbox/testnet；live 须通过运行环境和部署授权验证 |
 | 离线通道 | 操作者发布的 `OfflineDeploymentSpec` | 本地独立身份或已注册身份 | 未签名的本地部署状态 | 仅 sandbox/testnet |
 
 离线通道用于不依赖 ARX 后端的本地策略开发，仍然使用 NATS，也可能连接行情或测试网。它需要显式选择，不能运行 live，不产生晋升证据，也不会在签名通道失败后自动接管。
@@ -35,4 +35,4 @@ Custos 保存机器和交易所凭据、验证签名输入、应用目标状态�
 
 ## 当前支持情况
 
-引擎能力声明、软件包发布和生产验收是不同状态。选择产物前请查看[发布状态](/release-governance/release-status)。当前 daemon 组合未启用 live 执行。
+引擎能力声明、软件包发布和生产验收是不同状态。选择产物前请查看[发布状态](/release-governance/release-status)。live 默认关闭，须通过运行环境批准材料验证及签名部署准入。

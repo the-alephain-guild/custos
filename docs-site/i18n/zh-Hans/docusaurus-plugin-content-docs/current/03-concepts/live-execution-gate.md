@@ -16,9 +16,9 @@ sidebar_position: 3
 | 运行组合已启用 live 执行 | Live |
 | 存在正确绑定的签名晋升证据 | Live |
 
-当前 daemon 明确禁用 live 执行。宿主声明支持 live、候选版本已发布或策略有效，都不会启用它，也没有可供操作者覆盖这一决定的参数。
+live 默认关闭。签名 daemon 会验证与当前镜像及源码版本匹配的运行环境批准材料。通过后仍须验证每次部署的签名晋升证据、产物和风险策略，详见[生产准备](/operator-guide/production-preparation)。
 
-`sandbox-sim` 仅支持 sandbox。Nautilus 的 connector 声明按模式区分，详见自动生成的[支持表](/engines/nautilus-trader)。SoDEX 不支持 live。
+`sandbox-sim` 仅支持 sandbox。Nautilus 的 connector 声明按模式区分，详见自动生成的[支持表](/engines/nautilus-trader)。Binance、SoDEX 和 OKX 均提供现货及线性永续配置路径；账户与发布验收仍需分别完成。
 
 ## 离线准入
 

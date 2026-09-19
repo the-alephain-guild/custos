@@ -1634,10 +1634,10 @@ This continuation retains the existing plan's ownership and production gates.
 | Task | Status | Deliverable and verification |
 |---|---|---|
 | T10a | In progress | Restore real NATS revocation and preserve a separate full service-issued daemon/command/fact acceptance using the current producer rendezvous; test both boundaries honestly. |
-| T10b | Pending | Consume the existing cryptographically verified runtime promotion receipt, bind it to deployed image/revision, and retain per-deployment signed promotion/policy checks; absent or invalid evidence remains blocked. |
-| T10c | Pending | Complete SoDEX spot/perpetual live configuration, account input and independent ledger evidence without weakening offline/live isolation. |
-| T10d | Pending | Add OKX spot/perpetual venue configuration, credential handling and ledger support using the installed adapter/API contract. |
-| T10e | Pending | Six-combination engine/strategy regression, isolated transport and Linux image verification; preserve negative tests for every admission boundary. |
+| T10b | Implemented; local verification passed | Consume the existing cryptographically verified runtime promotion receipt, bind it to deployed image/revision, and retain per-deployment signed promotion/policy checks; absent or invalid evidence remains blocked. |
+| T10c | Implemented; account acceptance pending | Complete SoDEX spot/perpetual live configuration, account input and independent ledger evidence without weakening offline/live isolation. |
+| T10d | Implemented; account acceptance pending | Add OKX spot/perpetual venue configuration, credential handling and ledger support using the installed adapter/API contract. |
+| T10e | In progress | Six-combination engine/strategy regression, isolated transport and Linux image verification; preserve negative tests for every admission boundary. |
 | T10f | External input required | Ubuntu deployment, operator-provisioned venue accounts, signed full-chain acceptance, bounded live canary authorization and deployed evidence. No real order is authorized by this implementation step. |
 
 Source anchors: `tests/integration/test_nats_revocation.py`,
@@ -1651,3 +1651,20 @@ signed deployment intent and risk policy remain independently mandatory.
 Changing evolving source does not refresh historical receipts. A new candidate
 and new evidence must identify the selected release revision. Cross-repository
 changes stage individual files and preserve unrelated dirty work.
+
+### Local implementation checkpoint (2026-09-19)
+
+The signed daemon now consumes a cryptographically verified runtime approval;
+offline live remains prohibited. OKX and SoDEX have spot/perpetual configuration,
+read-only account preflight and independent ledger collectors. Contract quantities,
+fee currencies, rebates and distinct SoDEX assets are preserved through the wire.
+Current contract generation includes the existing valuation checkpoint kind;
+historical producer/consumer receipts were preserved.
+
+Verification: source regression excluding the clean-commit wheel-build suite
+passed 2551 tests (1 skipped, 27 deselected, 1 expected failure); the additional
+SoDEX leverage case passed with its focused suite (29 tests). Formatting/lint and
+the standalone authority gate passed. Signature and malformed-evidence negative
+tests remain active. Full service-process acceptance and Linux image verification
+are still in progress. No venue credential, production account, or live order was
+used. Do not interpret these source tests as an approved production release.

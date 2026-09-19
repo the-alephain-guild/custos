@@ -3,7 +3,7 @@ title: "Live execution is gated"
 sidebar_position: 3
 ---
 
-Live execution requires signed deployment authority, a compatible engine and connector, a permitted credential, verified artifact capability and bound promotion evidence. The current daemon composition keeps live disabled.
+Live execution requires signed deployment authority, a compatible engine and connector, a permitted credential, verified artifact capability and bound promotion evidence. Live is disabled by default and requires verified runtime approval in addition to these deployment checks.
 
 The complete condition table is maintained in [execution admission](/concepts/live-execution-gate). `SandboxSimulationHost` declares only sandbox, and the offline lane rejects live independently. Starting a live transport session cannot change these execution checks.
 

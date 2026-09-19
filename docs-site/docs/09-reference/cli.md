@@ -308,6 +308,11 @@ The following tables are generated from the actual parser. Defaults are shown wi
 | `--runner-fact-snapshot-interval-secs` | optional | `10.0` | — |
 | `--runner-fact-period-secs` | optional | `86400` | — |
 | `--runner-fact-period-retry-secs` | optional | `30.0` | — |
+| `--runtime-promotion-receipt` | optional | — | — |
+| `--runtime-promotion-bundle` | optional | — | — |
+| `--runtime-sigstore-trusted-root` | optional | — | — |
+| `--runtime-image-digest` | optional | — | — |
+| `--runtime-source-revision` | optional | — | — |
 | `--production-state-root` | optional | — | — |
 
 ### vault
@@ -319,6 +324,7 @@ The following tables are generated from the actual parser. Defaults are shown wi
 | `--key-id` | required | — | — |
 | `--tenant-id` | required | — | — |
 | `--api-key` | required | — | — |
+| `--api-passphrase-env` | optional | — | — |
 | `--scope-digest` | required | — | — |
 | `--api-secret-stdin` | one in group | `False` | — |
 | `--api-secret-env` | one in group | — | — |

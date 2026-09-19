@@ -9,7 +9,7 @@ Custos currently ships a NautilusTrader host and a sandbox simulation host. The 
 
 An engine adapter must implement the lifecycle, capability, readiness, terminal-event, risk and connectivity contracts in `ExecutionEngineProtocol`. It must preserve local credential handling, execution admission, containment and exact money representations.
 
-The current Nautilus host declares sandbox/testnet/live capability by connector, but the daemon keeps live disabled. See [NautilusTrader](/engines/nautilus-trader) for actual limits and [release status](/release-governance/release-status) for acceptance.
+The current Nautilus host declares sandbox/testnet/live capability by connector, with live disabled until matching runtime approval is verified. See [NautilusTrader](/engines/nautilus-trader) for actual limits and [release status](/release-governance/release-status) for acceptance.
 
 ## Candidates
 

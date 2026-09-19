@@ -9,7 +9,7 @@ Custos 当前提供 NautilusTrader 宿主和 sandbox 模拟宿主。`hummingbot`
 
 引擎适配器必须实现 `ExecutionEngineProtocol` 中的生命周期、能力、就绪、终止事件、风险和连接契约，并保留本地凭据处理、执行准入、风险控制及精确金额表示。
 
-当前 Nautilus 宿主按 connector 声明 sandbox/testnet/live 能力，但 daemon 仍禁用 live。实际限制见[NautilusTrader](/engines/nautilus-trader)，验收情况见[发布状态](/release-governance/release-status)。
+当前 Nautilus 宿主按 connector 声明 sandbox/testnet/live 能力，live 默认关闭，须验证运行环境批准材料。实际限制见[NautilusTrader](/engines/nautilus-trader)，验收情况见[发布状态](/release-governance/release-status)。
 
 ## 候选方向
 

@@ -8,7 +8,7 @@ sidebar_position: 1
 | 要求 | 执行范围 |
 |---|---|
 | [密钥保留在本地](./keys-never-leave-the-host) | 本地加密；遥测、日志和上游消息不包含秘密密钥 |
-| [Live 执行准入](./live-execution-is-gated) | 签名准入；当前 daemon 禁用 live；离线输入拒绝 live |
+| [Live 执行准入](./live-execution-is-gated) | 签名准入；live 默认关闭且须验证运行环境批准材料；离线输入拒绝 live |
 | [断线时持续保护](./safety-survives-disconnect) | 本地敞口/回撤检查独立于传输 |
 | [金额使用十进制运算](./exact-money-arithmetic) | 类型化金额边界与规范 wire 表示 |
 

@@ -30,12 +30,14 @@ The signed simulation composition adds fact publication around the simulator. Th
 |---|---|---|---|
 | `binance` | declared | declared | declared |
 | `binance_perpetual` | declared | declared | declared |
-| `sodex` | declared | declared | unsupported |
-| `sodex_perpetual` | declared | declared | unsupported |
+| `okx` | declared | declared | declared |
+| `okx_perpetual` | declared | declared | declared |
+| `sodex` | declared | declared | declared |
+| `sodex_perpetual` | declared | declared | declared |
 
 <!-- /generated:venues -->
 
-These are host declarations, not production acceptance. Live execution is disabled by the current daemon. SoDEX testnet also has an input-contract limitation; read [SoDEX](/engines/sodex) before configuring it.
+These are host declarations, not production acceptance. Live is disabled by default. See [production preparation](/operator-guide/production-preparation) for runtime approval and [SoDEX](/engines/sodex) for account configuration.
 
 ## Concurrency and readiness
 

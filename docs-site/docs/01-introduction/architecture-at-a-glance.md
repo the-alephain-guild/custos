@@ -40,7 +40,7 @@ Signed runtime operations use `deployment_instance_id`; spec id, digest and gene
 
 The supervisor accepts repeated `--enabled-mode` flags for signed transport sessions. The Nautilus 2 host permits only one active node on an event loop. Use separate runner processes and state directories for concurrent nodes; declaring multiple modes does not remove this limit.
 
-Exchange credentials remain on the host. Money calculations use `Decimal` and wire values use integers or canonical decimal strings. Live admission remains disabled in the current daemon composition.
+Exchange credentials remain on the host. Money calculations use `Decimal` and wire values use integers or canonical decimal strings. Live admission defaults to disabled and requires verified runtime approval.
 
 ## Reading paths
 

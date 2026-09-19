@@ -3,7 +3,7 @@ title: "Live 执行准入"
 sidebar_position: 3
 ---
 
-Live 执行要求签名部署授权、兼容引擎与 connector、允许的凭据、验证后的产物能力和正确绑定的晋升证据。当前 daemon 组合仍禁用 live。
+Live 执行要求签名部署授权、兼容引擎与 connector、允许的凭据、验证后的产物能力和正确绑定的晋升证据。live 默认关闭，另需验证匹配当前安装版本的运行环境批准材料。
 
 完整条件表统一维护在[执行准入](/concepts/live-execution-gate)。`SandboxSimulationHost` 只声明 sandbox，离线通道也独立拒绝 live。建立 live 传输会话不会改变这些执行检查。
 

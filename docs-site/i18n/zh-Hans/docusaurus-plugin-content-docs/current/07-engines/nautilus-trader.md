@@ -30,12 +30,14 @@ Custos 通过可选的 `nautilus` extra 集成 NautilusTrader。在 Python 3.12 
 |---|---|---|---|
 | `binance` | 声明支持 | 声明支持 | 声明支持 |
 | `binance_perpetual` | 声明支持 | 声明支持 | 声明支持 |
-| `sodex` | 声明支持 | 声明支持 | 不支持 |
-| `sodex_perpetual` | 声明支持 | 声明支持 | 不支持 |
+| `okx` | 声明支持 | 声明支持 | 声明支持 |
+| `okx_perpetual` | 声明支持 | 声明支持 | 声明支持 |
+| `sodex` | 声明支持 | 声明支持 | 声明支持 |
+| `sodex_perpetual` | 声明支持 | 声明支持 | 声明支持 |
 
 <!-- /generated:venues -->
 
-表中为宿主能力声明，不是生产验收结果。当前 daemon 未启用 live 执行。SoDEX testnet 还有输入契约限制，配置前请阅读[SoDEX](/engines/sodex)。
+表中为宿主能力声明，不是生产验收结果。live 默认关闭。运行环境验证要求见[生产准备](/operator-guide/production-preparation)，账户配置见[SoDEX](/engines/sodex)。
 
 ## 并发与就绪
 

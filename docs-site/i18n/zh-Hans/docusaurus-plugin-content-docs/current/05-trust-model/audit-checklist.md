@@ -38,6 +38,6 @@ make verify-local-v030
 
 ## 需要审查的边界
 
-签名指令要求上游授权；离线指令是显式的未签名 sandbox/testnet 输入，不能授权 live。当前 live 组合仍禁用。交易所密钥实际权限与宿主访问控制需要操作者核实，不能只依赖本地 scope 声明。
+签名指令要求上游授权；离线指令是显式的未签名 sandbox/testnet 输入，不能授权 live。live 默认关闭且须验证运行环境批准材料。交易所密钥实际权限与宿主访问控制需要操作者核实，不能只依赖本地 scope 声明。
 
 签名产物见[发布验证](/trust-model/signed-release-chain)，未关闭验收项见[发布状态](/release-governance/release-status)。

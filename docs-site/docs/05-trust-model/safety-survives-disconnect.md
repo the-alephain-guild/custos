@@ -14,7 +14,7 @@ Local safety evaluation runs independently of message delivery. Losing upstream 
 
 The signed deployment's own `risk_config` cannot override the runner aggregate cap. Policy acceptance verifies signature, exact bytes/subject, digest, scope, validity and revision fencing. Verified material and reservations are retained in the runner database.
 
-Each successor revision advances by one and binds the preceding id/revision/digest. Missing, conflicting, revoked or expired policy fails closed. Sandbox/testnet can use an explicit strict local fallback; live has no fallback. Current live execution is also disabled independently of policy availability.
+Each successor revision advances by one and binds the preceding id/revision/digest. Missing, conflicting, revoked or expired policy fails closed. Sandbox/testnet can use an explicit strict local fallback; live has no fallback. Live additionally requires verified runtime approval independently of policy availability.
 
 Risk-reducing orders remain distinct from new exposure. Check containment outcomes; requesting a close is not proof that the venue filled it.
 

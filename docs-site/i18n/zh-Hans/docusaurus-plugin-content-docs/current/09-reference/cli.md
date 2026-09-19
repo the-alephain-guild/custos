@@ -308,6 +308,11 @@ sidebar_position: 1
 | `--runner-fact-snapshot-interval-secs` | 可选 | `10.0` | — |
 | `--runner-fact-period-secs` | 可选 | `86400` | — |
 | `--runner-fact-period-retry-secs` | 可选 | `30.0` | — |
+| `--runtime-promotion-receipt` | 可选 | — | — |
+| `--runtime-promotion-bundle` | 可选 | — | — |
+| `--runtime-sigstore-trusted-root` | 可选 | — | — |
+| `--runtime-image-digest` | 可选 | — | — |
+| `--runtime-source-revision` | 可选 | — | — |
 | `--production-state-root` | 可选 | — | — |
 
 ### vault
@@ -319,6 +324,7 @@ sidebar_position: 1
 | `--key-id` | 必填 | — | — |
 | `--tenant-id` | 必填 | — | — |
 | `--api-key` | 必填 | — | — |
+| `--api-passphrase-env` | 可选 | — | — |
 | `--scope-digest` | 必填 | — | — |
 | `--api-secret-stdin` | 同组选一 | `False` | — |
 | `--api-secret-env` | 同组选一 | — | — |

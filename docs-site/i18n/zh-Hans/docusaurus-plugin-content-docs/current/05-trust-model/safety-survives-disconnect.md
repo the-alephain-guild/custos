@@ -14,7 +14,7 @@ sidebar_position: 4
 
 签名部署自身的 `risk_config` 不能覆盖 runner 总敞口上限。接受策略前验证签名、原始字节/subject、摘要、范围、有效期和版本约束。验证材料与订单预留保存在 runner 数据库中。
 
-后续 revision 递增一并绑定前一版本的 id/revision/digest。策略缺失、冲突、撤销或过期时拒绝增加风险。Sandbox/testnet 可使用显式的严格本地兜底配置；live 没有兜底。当前 live 执行也独立于策略可用性处于禁用状态。
+后续 revision 递增一并绑定前一版本的 id/revision/digest。策略缺失、冲突、撤销或过期时拒绝增加风险。Sandbox/testnet 可使用显式的严格本地兜底配置；live 没有兜底。live 还须独立验证运行环境批准材料，不能仅凭有效风险策略启用。
 
 降低风险的订单与新增敞口分开处理。应核对风险控制结果，发出平仓请求不代表交易所已成交。
 

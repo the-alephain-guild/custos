@@ -9,7 +9,7 @@ Custos is the non-custodial execution runner. It runs on your infrastructure, st
 
 | Lane | Input | Identity | Output | Modes |
 |---|---|---|---|---|
-| Signed | ARX-issued, signed desired state | Enrolled machine identity | Signed RunnerFacts and strategy signals | Sandbox and testnet execution; live admission remains disabled |
+| Signed | ARX-issued, signed desired state | Enrolled machine identity | Signed RunnerFacts and strategy signals | Sandbox/testnet; live requires verified runtime and deployment approval |
 | Offline | Operator-published `OfflineDeploymentSpec` | Standalone or enrolled local identity | Unsigned local deployment status | Sandbox and testnet only |
 
 The offline lane supports local strategy development without an ARX backend. It still uses NATS and may connect to market data or a testnet. It is opt-in, cannot run live, and produces no promotion evidence. It is never selected automatically after a signed-lane failure.
