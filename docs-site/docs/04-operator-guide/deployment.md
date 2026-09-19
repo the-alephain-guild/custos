@@ -3,165 +3,58 @@ title: "Deployment"
 sidebar_position: 1
 ---
 
-# Deployment
+Choose one operating path and keep its identity, broker and state files together.
 
-Custos runs on your infrastructure. ARX authorizes intent, owns deployment
-business state, signs commands and ingests execution facts; Custos verifies
-those commands, reconciles the local runtime, and signs the facts it reports
-back.
+| Path | Guide | Required upstream |
+|---|---|---|
+| Local lifecycle rehearsal | [Standalone sandbox](/getting-started/standalone-sandbox) | Operator-owned NATS only |
+| Strategy testnet execution | [Offline testnet](/operator-guide/offline-testnet) | Operator-owned NATS and supported venue testnet |
+| Signed deployment | [Signed sandbox](/getting-started/first-sandbox-run) | ARX identity, transport, desired state and release material |
 
-This page covers provisioning a runner from nothing to a running deployment.
+The signed lane consumes issued commands and does not create its own control topology. The offline lane provides `identity standalone`, `nats bootstrap` and `deployment validate/publish` for operator-owned work. Offline results cannot be promoted to production.
 
-## Runtime artifact
+## Signed release trust
 
-The current downstream-development artifact is the verified local image:
+Before executing immutable release material, obtain an accepted runner-local policy authority and the Sigstore root and workflow identity for the expected publisher. The policy is verified separately from the artifact; an artifact cannot choose its own trust root.
 
-```text
-custos-runner:v0.3.0
-```
-
-Build and gate it with `make verify-local-v030`. Remote release is still
-deferred. Consume this image directly — do not maintain a derived Dockerfile,
-because a derived image is not the artifact the gate verified.
-
-## What you need first
-
-- An ARX enrollment endpoint and a one-time enrollment token.
-- The exact ARX Ed25519 domain-event public key and its key ID.
-- Network reach to the signed command stream.
-- One sops+age encrypted file per venue credential, each scoped
-  `trade_no_withdraw`.
-
-Custos never creates streams and never publishes deployment commands. Its
-`deployment` CLI has one offline action, `validate`.
-
-## Enrollment and venue credentials
+The following command issues a policy using existing authority keys. Set every variable to approved inputs and choose output paths that do not already exist.
 
 ```bash
-mkdir -p "$HOME/.arx/vault" "$HOME/.arx/state"
-chmod 700 "$HOME/.arx" "$HOME/.arx/vault" "$HOME/.arx/state"
-age-keygen -o "$HOME/.arx/age.key"
-chmod 600 "$HOME/.arx/age.key"
-export SOPS_AGE_KEY_FILE="$HOME/.arx/age.key"
-export SOPS_AGE_RECIPIENT="$(age-keygen -y "$SOPS_AGE_KEY_FILE")"
-install -m 600 /dev/null "$HOME/.arx/enrollment-token"
-printf '%s' '<one-time-enrollment-token>' > "$HOME/.arx/enrollment-token"
-
-arx-runner enroll \
-  --token-file "$HOME/.arx/enrollment-token" \
-  --backend https://arx.internal \
-  --tenant-id acme \
-  --runner-id 22222222-2222-4222-8222-222222222222
-rm -f "$HOME/.arx/enrollment-token"
-
-printf '%s\n' '<venue-api-secret>' | arx-runner vault put \
-  --key-id binance-testnet \
-  --tenant-id acme \
-  --api-key '<venue-api-key>' \
-  --scope-digest '<credential_scope.scope_digest from the deployment>' \
-  --api-secret-stdin \
-  --age-recipient "$SOPS_AGE_RECIPIENT" \
-  --permission-scope trade_no_withdraw
+uv run arx-runner release-policy issue \
+  --authority-private-key "$POLICY_PRIVATE_KEY_FILE" \
+  --authority-public-key "$POLICY_PUBLIC_KEY_FILE" \
+  --sigstore-trusted-root "$SIGSTORE_ROOT_FILE" \
+  --policy-id "$POLICY_ID" --version 1 \
+  --not-before "$POLICY_NOT_BEFORE" --expires-at "$POLICY_EXPIRES_AT" \
+  --issuer "$SIGSTORE_ISSUER" --workflow-identity "$WORKFLOW_IDENTITY" \
+  --source-repository "$SOURCE_REPOSITORY" \
+  --envelope-output "$POLICY_ENVELOPE_FILE" \
+  --receipt-output "$POLICY_RECEIPT_FILE" \
+  --environment-output "$POLICY_ENV_FILE"
 ```
 
-`runner.toml` holds only public binding metadata. The opaque machine credential
-and the Ed25519 private key stay encrypted together in `runner-machine.enc`.
-Hand-written runner records are unsupported in every mode — a runner that
-cannot prove its own enrollment does not start.
+`release-policy generate-development-authority` can create keys for an isolated local exercise. Such an authority is explicitly development-only; it is not production approval.
 
-## Starting the runner
+Configure the runner with the resulting envelope, public key, derived key id and trusted root:
 
 ```bash
-arx-runner start \
-  --enabled-mode sandbox \
-  --nats-sim-url tls://arx-nats.internal:4222 \
-  --nats-sim-ca "$HOME/.arx/certs/arx-nats-ca.pem" \
-  --nats-sim-server-name arx-nats.internal \
-  --nats-sim-issuer-public-key "$ARX_NATS_SIM_ISSUER_PUBLIC_KEY" \
-  --crucible-domain-public-key "$HOME/.arx/crucible-domain-event.pub" \
-  --crucible-domain-key-id arx-domain-v1 \
-  --engine nautilus
-```
-
-Readiness is fail-closed. `arx-runner health` succeeds only after machine
-authority verification and after the exact runner subscription is established.
-
-`deployment_instance_id` is the runtime primary key for reconciler state,
-engine handles, watchdogs, breakers and facts. `spec_id` identifies immutable
-configuration provenance and is not a runtime handle.
-
-### Workstation demonstration
-
-For a non-promotable local demonstration there is one plaintext exception, an
-explicit loopback sandbox session:
-
-```bash
-arx-runner start --enabled-mode sandbox --reconcile \
-  --development-local-nats-url nats://127.0.0.1:24222 \
-  --crucible-domain-public-key /tmp/demo/crucible-domain-event.pub \
-  --crucible-domain-key-id arx-domain-v1 \
-  --engine sandbox-sim
-```
-
-The development flag rejects non-loopback hosts, `testnet`, `live`,
-credentials embedded in the URL, and any simultaneous production endpoint. It
-is never a fallback when TLS or key authority fails — a failed authority check
-stays failed.
-
-## Deployment lifecycle
-
-Deployments and every desired-state change originate upstream. Custos has no
-local creation path. It verifies the signed event, canonical digest, tenant,
-runner, deployment instance and generation, then resolves strategy release
-material through the authenticated owner boundary.
-
-Production strategy execution additionally requires this trust configuration,
-complete or not at all:
-
-```bash
-export CUSTOS_ARTIFACT_CACHE_DIR=/var/lib/custos/artifacts
-export CUSTOS_ARTIFACT_RELEASE_POLICY_ENVELOPE=/etc/custos/artifact-release-policy.json
-export CUSTOS_ARTIFACT_RELEASE_POLICY_PUBLIC_KEY=/etc/custos/artifact-release-policy.pub
-export CUSTOS_ARTIFACT_SIGSTORE_TRUSTED_ROOT=/etc/custos/sigstore-trusted-root.json
-export CUSTOS_ARTIFACT_RELEASE_POLICY_KEY_ID=custos-artifact-release-policy-v1
+export CUSTOS_ARTIFACT_RELEASE_POLICY_ENVELOPE="$POLICY_ENVELOPE_FILE"
+export CUSTOS_ARTIFACT_RELEASE_POLICY_PUBLIC_KEY="$POLICY_PUBLIC_KEY_FILE"
+export CUSTOS_ARTIFACT_RELEASE_POLICY_KEY_ID="$POLICY_KEY_ID"
+export CUSTOS_ARTIFACT_SIGSTORE_TRUSTED_ROOT="$SIGSTORE_ROOT_FILE"
 export CUSTOS_ARTIFACT_REGISTRY=ghcr.io
 ```
 
-For a private registry, also set `CUSTOS_ARTIFACT_REGISTRY_USERNAME` and
-`CUSTOS_ARTIFACT_REGISTRY_TOKEN` together. The token deliberately has no CLI
-flag, so it cannot end up in process arguments.
+Use the key id recorded in the generated policy output. For a private registry, set `CUSTOS_ARTIFACT_REGISTRY_USERNAME` and `CUSTOS_ARTIFACT_REGISTRY_TOKEN` together. Keep the token out of command arguments. Missing trust inputs or unavailable authenticated release material must be corrected before deployment; they do not select a development fallback.
 
-Custos accepts only signed detached material coordinates on the configured
-HTTPS registry, verifies the complete snapshot and evidence chain, and stores
-immutable blobs under `$CUSTOS_ARTIFACT_CACHE_DIR/sha256/<digest>`. Missing or
-partial trust configuration fails startup; an unavailable resolver never falls
-back to development material.
+## Persistent state
 
-Live execution requires an issued `promotion_id` and
-`promotion_evidence_digest`. Custos validates that they are present and
-correctly bound — it does not count approvers or implement the
-separation-of-duties policy itself.
+Persist identity metadata, machine/venue vaults, age identity, capability, transport authority and the fact database. Keep artifact cache, quarantine and activation paths on suitable local storage. `--production-state-root` can bind mutable signed-lane paths beneath one persistent root; it rejects offline selection and unsafe roots.
 
-Applied lifecycle generations are reported as
-`RunnerDeploymentLifecycleFact.v1` through the signed fact outbox, which owns
-sequence allocation. If a fact cannot be durably enqueued, the command is not
-acknowledged. Redelivery resumes the same instance and activation identity
-without repeating a committed engine action.
+Do not share a state root between runner processes. The offline lane uses its own SQLite database through `--offline-state`; it does not use that database as signed business authority.
 
-## Container example
+## Containers and verification
 
-The runnable `examples/supertrend-testnet` Compose file starts the runner
-only; the signed command stream is an external dependency.
+`make verify-local-v030` builds and checks the local image contract. Mount the runner state at `/home/custos/.arx` and provide the age identity at runtime. A full signed deployment still requires issued identity, transport and release inputs. Confirm the image revision before attributing results to current source.
 
-```bash
-make verify-local-v030
-cd examples/supertrend-testnet
-test -f .env || cp .env.example .env
-docker compose up
-```
-
-Persist `/home/custos/.arx`. An ephemeral mount loses machine authority and
-venue credentials, and the runner will not start without them.
-
-When something goes wrong, see [troubleshooting](./troubleshooting); for
-outages and recovery, see the [emergency playbook](./emergency-playbook).
+Check health, subscription and applied instance separately using [readiness](/operator-guide/readiness-health). Consult [release status](/release-governance/release-status) for the distinction between candidate publication and production acceptance.

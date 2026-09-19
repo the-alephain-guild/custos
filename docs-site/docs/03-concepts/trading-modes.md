@@ -1,99 +1,38 @@
 ---
-title: "Trading Modes"
+title: "Trading modes"
 sidebar_position: 2
 ---
 
-# Trading Modes
+Custos accepts three trading modes.
 
-There are exactly three modes, and the set is closed:
+| Mode | Market data | Execution | Funds |
+|---|---|---|---|
+| `sandbox` | Live feed with Nautilus, none with `sandbox-sim` | Local simulation | Simulated |
+| `testnet` | Venue testnet | Venue testnet orders | Test funds |
+| `live` | Production venue | Production orders | Real funds; currently blocked by daemon admission |
 
-```text
-sandbox    testnet    live
+## Lane and process selection
+
+The signed lane requires one or more `--enabled-mode` arguments. Repeating the flag creates mode-scoped transport sessions; the mode in each signed command must belong to that configured set.
+
+```bash
+arx-runner start --enabled-mode sandbox --enabled-mode testnet --reconcile
 ```
 
-No fourth value exists — not "paper", not "production", not an empty default.
-A mode that could be omitted would be a mode nobody chose, and the choice here
-decides whether real money is at risk.
+This fragment shows mode selection only. Identity, transport, signing-key and artifact prerequisites are in [deployment](/operator-guide/deployment).
 
-## What each one means
+The offline lane is selected by `--reconcile-strategy-id`. It reads the mode from each `OfflineDeploymentSpec`, accepts only sandbox/testnet, and does not require `--enabled-mode`. `deployment validate/publish --mode` can additionally assert the expected spec mode; it cannot override it.
 
-| Mode | Market data | Fills | Money |
-|---|---|---|---|
-| `sandbox` | live or none, depending on engine | locally simulated | none |
-| `testnet` | real venue testnet | real venue testnet | test funds |
-| `live` | real venue | real venue | **real** |
+The Nautilus 2 host admits one active node per event loop. Multiple enabled modes are not a promise of concurrent deployments in one process.
 
-`sandbox` covers two useful arrangements. With `--engine sandbox-sim` nothing
-connects to a venue at all; with `--engine nautilus` you get real market data
-with locally simulated matching. Both are safe; they differ in whether the
-prices are real.
+## Admission
 
-## One mode per process
+Signed commands are checked for exact mode binding, host/connector support, artifact capability and credential scope. Live additionally requires enabled execution capability and signed promotion evidence. The current daemon sets live execution to disabled.
 
-`--enabled-mode` is required on `arx-runner start` and takes exactly one value.
-A runner does not switch modes at runtime and does not serve two modes at once.
+Offline input uses a separate contract and admission path. It does not require signed deployment approval, but still rejects live and keeps local credentials and safety checks. Neither offline results nor sandbox development artifacts can be promoted locally to production.
 
-That is why mode belongs to the process rather than to a deployment: a single
-runner handling both testnet and live would have exactly one bug between test
-funds and real ones.
+## Transport
 
-## Mode is signed, and checked twice
+Signed sandbox and testnet sessions use `--nats-sim-*`; signed live transport uses `--nats-live-*`. Transport connectivity does not enable live execution. Offline traffic uses the operator-owned broker selected by `--nats-url`.
 
-Mode appears in the subject, the envelope and the payload, and all three must
-agree. Admission then compares the mode in the signed command against the mode
-the local runtime is about to act on.
-
-Comparing them catches the case where a runner is about to execute against a
-different mode than the one that was authorized — which no single-sided check
-can detect. See [the live execution gate](/concepts/live-execution-gate).
-
-## What each mode requires
-
-Requirements accumulate; nothing is relaxed as you move down the table.
-
-| | sandbox | testnet | live |
-|---|---|---|---|
-| Signed command | ✅ | ✅ | ✅ |
-| Engine declares the mode | ✅ | ✅ | ✅ |
-| Engine declares the connector | ✅ | ✅ | ✅ |
-| Credential scoped `trade_no_withdraw` | | ✅ | ✅ |
-| Live execution enabled in the build | | | ✅ |
-| Signed promotion evidence | | | ✅ |
-
-The last two are what make `live` different in kind rather than in degree.
-Live execution is off unless the build was produced through the release chain,
-and it is not an environment variable or a configuration setting — so it is not
-something an operator can switch on under pressure, including pressure applied
-by someone else.
-
-## Transport follows mode
-
-Only `live` uses the live transport. Both `sandbox` and `testnet` use the
-simulation transport, so a testnet runner is configured with the `--nats-sim-*`
-flags, not the `--nats-live-*` ones.
-
-This surprises people, so it is worth stating plainly: **testnet is not on the
-live transport.** Test funds are still not real funds, and the transport
-separation follows the money, not the venue.
-
-## The boundary that cannot be crossed silently
-
-A DeploymentSpec cannot move between simulated and real-money execution without
-that being visible: the mode is part of the signed material, so changing it
-changes what was signed.
-
-There is no promotion path inside the runner. A deployment does not "graduate"
-from testnet to live locally — a live deployment is a different signed command
-carrying evidence that a decision was made upstream.
-
-## Choosing one
-
-| You want to | Use |
-|---|---|
-| Prove enrollment, credentials and reconciliation work | `sandbox` with `--engine sandbox-sim` |
-| Exercise a strategy against real market data, risk-free | `sandbox` with `--engine nautilus` |
-| Exercise the full venue round trip with test funds | `testnet` |
-| Trade | `live` |
-
-Start at the top. Each row exercises everything the rows above it do, which
-means a failure at any level has already been ruled out by the level below.
+See [connector support](/engines/nautilus-trader) before choosing a venue and mode.

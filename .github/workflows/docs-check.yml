@@ -1,0 +1,60 @@
+name: Check documentation against source
+
+on:
+  pull_request:
+    paths:
+      - 'docs-site/**'
+      - 'src/custos/**'
+      - 'packages/**'
+      - 'docs/gateway-contract/**'
+      - 'docs/authority/**'
+      - 'authority-manifest.json'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'scripts/check-docs-site.py'
+      - 'tests/**'
+      - '.github/workflows/docs-*.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'docs-site/**'
+      - 'src/custos/**'
+      - 'packages/**'
+      - 'docs/gateway-contract/**'
+      - 'docs/authority/**'
+      - 'authority-manifest.json'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'scripts/check-docs-site.py'
+      - 'tests/**'
+      - '.github/workflows/docs-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+      - name: Install runner reference dependencies
+        run: uv sync --locked --extra dev
+      - name: Test reference drift detection
+        run: uv run --no-sync pytest tests/test_docs_site_reference.py tests/test_examples_cli_commands_are_real.py tests/test_lts_commitment_doc.py -q
+      - name: Install site dependencies
+        working-directory: docs-site
+        run: npm ci
+      - name: Verify both locales and source references
+        working-directory: docs-site
+        run: npm run verify

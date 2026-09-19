@@ -1,166 +1,43 @@
 ---
-title: "Audit Checklist"
+title: "Audit checklist"
 sidebar_position: 7
 ---
 
-# Audit Checklist
+Record the source revision, dependency profile and dirty state before reviewing the runner. Keep source checks, image checks and deployed acceptance as separate results.
 
-Custos is open so that the people trusting it with exchange credentials can
-check that trust themselves. This page is the concrete version of that offer:
-what to run, what to read, and what a passing result actually proves.
-
-Nothing here requires our cooperation. Clone the repository and work through
-it.
-
-```bash
-git clone https://github.com/the-alephain-guild/custos.git
-cd custos
-uv sync --extra dev
-```
-
-## Step 1 — Reproduce the baseline
+## Source checks
 
 ```bash
 make verify
+make toolkit-typecheck
+uv run python scripts/check-docs-site.py
 ```
 
-This runs formatting, lint and the standalone test baseline. It has to pass on
-a clean clone with no credentials and no network access to our infrastructure.
-If it does not, stop — everything below assumes a green baseline.
+Install dependencies first. The base suite may skip Nautilus-dependent tests; inspect skips and run the NT profile when evaluating engine behavior. A green baseline is evidence for the tested scope, not proof of every security claim.
 
-`make test-baseline` alone runs the suite without the style gates.
+| Area | Source/test entry points |
+|---|---|
+| Credentials | `src/custos/core/per_key_vault.py`, `tests/test_credential_lifecycle.py` |
+| Signed admission | `src/custos/core/engine_lifecycle.py`, `tests/test_engine_lifecycle.py` |
+| Offline boundary | `src/custos/offline/mode_guard.py`, `tests/test_offline_mode_guard.py` |
+| Venue declarations | `tests/test_nt_venue_wiring.py`, `tests/test_nt_sodex_venue.py` |
+| Breaker and containment | `src/custos/offline/safety.py`, `tests/core/test_fallback_breaker.py` |
+| Fact durability and arithmetic | `tests/test_runner_fact_store.py`, `tests/test_strategy_signal_fact_contract_v1.py` |
 
-## Step 2 — Keys never leave the host
+Inspect failure tests as well as passing paths. Check that keys do not enter logs or outbound telemetry, modes cannot bypass admission, and rejected operations do not reach a venue. Text searches help locate code but do not prove absence of a leak or bypass.
 
-The claim: credentials are decrypted in-process and never written to a log,
-published upstream, or passed anywhere they could be observed.
+## Operational checks
 
-```bash
-# no credential material in log calls
-grep -rnE 'log\.(info|debug|warning).*api[_-]?key' src/ tests/
-
-# no credential material in outbound calls
-grep -rnE 'publish.*password|send.*secret' src/
-```
-
-Both should return nothing.
-
-Then read the vault itself — `src/custos/core/per_key_vault.py` and
-`machine_credential_vault.py`. What to check: the secret reaches `sops` on
-stdin rather than argv; the decrypt result is used to build a client and not
-retained; every decrypt emits an audit event carrying only an identifier.
-
-The relevant tests are `tests/test_per_key_vault.py` and
-`tests/test_credential_lifecycle.py`. The second one is the interesting one: it
-walks the constructed engine object graph and asserts no credential is
-reachable from it.
-
-## Step 3 — Live execution is always gated
-
-The claim: reaching a live venue requires four independent checks, and the gate
-fails closed.
-
-```bash
-# no venue client constructed outside the engine host
-grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ --exclude=host.py --exclude=venue_binance.py
-```
-
-Should return nothing — a venue client built anywhere else would be a path
-around the gate.
-
-Read the gate itself in `src/custos/core/engine_lifecycle.py` —
-`_require_authorized_runtime` is the whole of it, and no caller reaches engine
-construction without passing through it. The capability surface it queries is
-`supports_trading_mode` and `supports_venue` in
-`src/custos/engines/nautilus/host.py`.
-
-Then check that each condition has a test proving it is live rather than dead
-code. The distinction matters: a check that can never fire looks identical to a
-check that always passes. See
-[live execution gate](/concepts/live-execution-gate) for all seven conditions.
-
-`tests/test_nautilus_host_capability.py` covers the capability declarations,
-`tests/test_main_host_selection.py` covers which host a given selection binds,
-and `tests/test_engine_lifecycle.py` asserts that a blocked capability and a
-live-mode refusal both happen before any engine action.
-
-## Step 4 — Safety survives a disconnect
-
-The claim: local enforcement keeps working when the platform is unreachable,
-and the runner neither stops nor runs unguarded.
-
-```bash
-# no blanket shutdown anywhere in the runtime
-grep -rn 'stop_all_strategies\|force_shutdown' src/custos/
-```
-
-Should return nothing.
-
-The three guards each have their own module and their own tests:
-
-| Guard | Module | Test |
-|---|---|---|
-| Aggregate cap | `src/custos/core/local_cap.py` | `tests/core/test_local_cap.py` |
-| Fallback breaker | `src/custos/core/fallback_breaker.py` | `tests/core/test_fallback_breaker.py` |
-| Zombie watchdog | `src/custos/core/zombie_watchdog.py` | `tests/core/test_zombie_watchdog.py` |
-
-Confirm each is evaluated on a local tick rather than in response to an
-upstream message — a guard that needs the platform to tell it to run is not a
-guard against the platform being gone.
-
-## Step 5 — Money arithmetic is exact
-
-The claim: decimal end to end, strings on the wire, no float in a money path.
-
-```bash
-grep -rnE 'float\(.*price|float\(.*amount|float\(.*notional' src/
-```
-
-Should return nothing.
-
-`tests/test_nt_risk_engine.py` and `tests/test_runner_fact_store.py` exercise
-the decimal paths and their wire representation. The thing to check while
-reading is that values are constructed as `Decimal(str(x))` rather than
-`Decimal(x)` — the latter silently inherits binary float error, and the two
-look identical at a glance.
-
-## Step 6 — Verify the artifact you will actually run
-
-A clean source tree proves nothing about the binary you deploy.
+Run the [standalone sandbox exercise](/getting-started/standalone-sandbox) for actual local identity, encryption, broker, apply and stop behavior. It uses the simulation host and does not test a real venue or signed end-to-end deployment.
 
 ```bash
 make verify-local-v030
 ```
 
-This builds the image, records the revision label, and runs the full Docker
-runtime contract plus a standalone acceptance against a real broker.
+This checks the built image contract and its revision label. It does not include full standalone or signed deployment acceptance. Test the exact deployed artifact separately and retain the result with its image digest and revision.
 
-For release artifacts, see [signed release chain](./signed-release-chain) —
-the wheel is signed, the image digest is recorded, and the runtime gate runs
-against that exact digest before any stable tag points at it.
+## Boundaries to review
 
-## Step 7 — Check the boundary claims
+Signed commands require upstream authority; offline commands are explicit unsigned sandbox/testnet input. Offline material cannot authorize live execution. Current live composition remains disabled. A venue key's actual permissions and host access controls need operator verification beyond a local scope declaration.
 
-Read [what is custos](/introduction/what-is-custos) and
-[the trust model](/introduction/trust-model), then verify against the code that
-the runner:
-
-- exposes no inbound network surface other than its outbound subscriptions;
-- has no local path to create or approve a deployment;
-- refuses a live deployment lacking promotion evidence, rather than proceeding;
-- cannot be instructed to decrypt a credential and return it.
-
-The last one is worth checking directly. `decrypt` is called only by the local
-reconciler. If you find any path from a network message to a decrypt result
-leaving the process, that is a critical finding —
-[report it](https://github.com/the-alephain-guild/custos/blob/main/SECURITY.md).
-
-## What a pass means
-
-Passing every step means the code in the tree you cloned honours the four
-guarantees, and that the artifact built from it behaves the same way.
-
-It does not mean your deployment is safe. Custos cannot protect you from a
-credential with withdraw permission, an exchange account without IP
-restrictions, a host other people can read, or a strategy that loses money
-correctly. Those remain yours.
+Follow [release verification](/trust-model/signed-release-chain) for signed artifacts and [release status](/release-governance/release-status) for open acceptance boundaries.

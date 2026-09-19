@@ -1,62 +1,47 @@
 ---
-title: "NATS Subject 参考"
+title: "NATS subject"
 sidebar_position: 4
 ---
 
-# NATS Subject 参考
+签名与离线流量使用不同契约和初始化路径，必须显式选择通道。
 
-Custos 只有两条传输关系：消费签名的期望状态，发布签名的事实。没有第三条通道，除下述之外也没有任何入站控制路径。
+## 签名控制输入
 
-## 入站 —— 期望状态
+ARX 配置 runner-control durable，并提供精确的指令和安全策略 filter。Custos 验证并绑定已有 durable，不创建签名通道拓扑。
 
-两种事件类型承载期望状态，一种用于创建，一种用于后续变更。它们的 subject 精确限定到具体 runner 与部署实例：
+指令 subject 结构为：
 
 ```text
-<domain-prefix>.<tenant>.<mode>.deployment.
-  DeploymentSpecReadyForRunner.<runner_id>.<deployment_instance_id>
-
-<domain-prefix>.<tenant>.<mode>.deployment.
-  DeploymentInstanceDesiredStateChanged.<runner_id>.<deployment_instance_id>
+<provisioned-command-prefix>.{tenant_id}.{runner_id}.{mode}
 ```
 
-前缀随 ARX enrollment 一并下发；runner 启动时绑定它，并且不接受来自任何其他 subject
-的事件。
+部署实例和事件类型位于签名事件材料中，不追加到此 subject。`DeploymentSpecReadyForRunner` 与 `DeploymentInstanceDesiredStateChanged` 都携带完整目标状态、显式 generation 和生命周期状态。安全策略 filter 同样由传输授权提供。
 
-**这不是一个集成点**。ARX 是期望状态的唯一发布方；来自其他地方的事件无论投到哪个
-subject 都过不了签名校验。这里写出来，是为了让你能推理 runner 订阅了什么，而不是为了让你往里写。
+解释载荷前先验证精确 subject 和事件字节。传输会话模式必须匹配签名指令或策略。持久化处理结果决定确认方式：成功为 ACK，可恢复失败为 NAK，终止拒绝为 TERM。
 
-Custos 用 durable、runner-scoped 的 JetStream consumer 订阅，手动 ACK/NAK。
+ARX 是签发目标意图并消费签名观测的上游产品。身份注册是独立接口；指令/事实通过已配置传输投递，需要单独检查可用性。
 
-校验把**精确的 subject 与精确的事件字节**绑定到已下发的 Ed25519 密钥。tenant、mode、
-runner、实例、canonical spec id 与 canonical digest 必须在 subject、事件与载荷之间逐项一致 —— 任何一项不匹配都是拒绝，而不是告警。
+## 签名观测输出
 
-两种事件都携带完整的 canonical 部署载荷，外加显式的 `generation` 与 `lifecycle_state`。缺值即非法：Custos 从不为签名指令补默认值，因为补出来的字段没有任何人签过名。
+RunnerFact 批次：
 
-## Canonical digest
+```text
+crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
+```
 
-摘要算法是 `sha256-canonical-json-v1`。它**只**哈希 canonical 部署载荷 —— 指令信封与
-digest 字段本身被排除，因为摘要无法覆盖它自己。
+策略信号使用独立 envelope 和 subject：
 
-规则：
+`crucible.runner.strategy-signal.v1.{tenant_id}.{runner_id}.{trading_mode}` <!-- disclosure-ok: exact public strategy-signal subject required by consumers -->
 
-- 字段集合精确；
-- 对象键递归排序；
-- 数组保持顺序；
-- 哈希紧凑 UTF-8 JSON 字节。
+两者都使用本地持久化发布和 PubAck 处理。信号序号与批次序号独立，详见[消费者验证](/integration/consuming-runner-fact)。
 
-对该算法的任何改动都必须附带跨语言 golden fixture。两个实现只要差一个字节就会产出不同摘要，而故障表现为一次莫名其妙的签名拒绝。
+## 离线流量
 
-## 出站 —— 签名事实
+| 方向 | Subject |
+|---|---|
+| 操作者目标状态 | `arx.<tenant>.deployment_spec.<strategy-id>` |
+| Runner 观测状态 | `arx.<tenant>.deployment_status.<runner-label>.<spec-id>` |
 
-指令客户端**没有**出站业务发布 API。这是刻意的不对称：接收指令的那条路径不能被用来发送任何东西。
+`nats bootstrap --profile standalone` 创建自有 deployment/observed stream。目标状态为每个 subject 保留最新消息。observed stream 还预留 heartbeat/telemetry subject，但预留不代表离线 daemon 一定发出这些消息。
 
-Custos 把类型化事实写入本地持久 outbox，由独立的发布者签名并批量发布给上游接收。序号由
-outbox 分配，因此无法持久入队的事实会阻塞指令 ack，而不是被静默丢弃。
-
-事实的 schema 与 subject 见[消费 RunnerFact](/integration/consuming-runner-fact)。
-
-## 什么不是通道
-
-ARX 授权只在 enrollment 时下发一次。此后它不在投递路径上：既不发布也不中转部署指令，也不是事实的目的地。它是否可用，不影响指令投递与事实发布。
-
-这一点在运维上很重要 —— 它意味着授权侧的中断既不能停掉正在运行的部署，也不能被用来注入一个部署。
+离线输入和状态未签名，应限制在操作者自有基础设施中。仅绑定 loopback 的演示 broker 不适合共享部署。离线状态尽力发布，不经过签名事实 outbox。

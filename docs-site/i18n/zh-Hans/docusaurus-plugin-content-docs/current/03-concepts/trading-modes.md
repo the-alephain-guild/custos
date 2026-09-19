@@ -3,75 +3,36 @@ title: "交易模式"
 sidebar_position: 2
 ---
 
-# 交易模式
+Custos 接受三种交易模式。
 
-恰好三个模式，且集合封闭：
+| 模式 | 行情 | 执行 | 资金 |
+|---|---|---|---|
+| `sandbox` | Nautilus 读取实时行情；`sandbox-sim` 不连接行情 | 本地模拟 | 模拟资金 |
+| `testnet` | 交易所测试网 | 测试网订单 | 测试资金 |
+| `live` | 正式交易所 | 正式订单 | 真实资金；当前 daemon 准入仍阻止执行 |
 
-```text
-sandbox    testnet    live
+## 选择通道和进程模式
+
+签名通道要求至少一个 `--enabled-mode`。重复该参数可建立按模式隔离的传输会话；每条签名指令的模式必须属于已配置集合。
+
+```bash
+arx-runner start --enabled-mode sandbox --enabled-mode testnet --reconcile
 ```
 
-不存在第四个值 —— 没有 "paper"，没有 "production"，也没有空的默认值。一个可以省略的模式等于一个没有任何人选择过的模式，而这里的选择决定的是**真金白银是否处于风险中**。
+这段命令只展示模式选择。身份、传输、签名公钥和产物前提见[部署指南](/operator-guide/deployment)。
 
-## 各自意味着什么
+离线通道通过 `--reconcile-strategy-id` 选择，从每份 `OfflineDeploymentSpec` 读取模式，仅接受 sandbox/testnet，不要求 `--enabled-mode`。`deployment validate/publish --mode` 可额外断言 spec 应使用的模式，不能覆盖 spec 中的值。
 
-| 模式 | 行情 | 成交 | 资金 |
-|---|---|---|---|
-| `sandbox` | 真实或无，取决于引擎 | 本地模拟 | 无 |
-| `testnet` | 交易所 testnet | 交易所 testnet | 测试资金 |
-| `live` | 真实交易所 | 真实交易所 | **真实** |
+Nautilus 2 宿主在同一 event loop 上只允许一个活动 node。启用多个模式不代表同一进程能并发运行多个部署。
 
-`sandbox` 覆盖两种有用的组合。`--engine sandbox-sim` 完全不连接交易所；
-`--engine nautilus` 则是真实行情 + 本地模拟撮合。两者都安全，区别只在于价格是否真实。
+## 执行准入
 
-## 一个进程一个模式
+签名指令需要通过模式绑定、宿主与 connector 支持、产物能力及凭据范围检查。live 还要求启用执行能力并携带签名晋升证据。当前 daemon 将 live 执行设为禁用。
 
-`arx-runner start` 的 `--enabled-mode` 是必填的，且恰取一个值。runner 不在运行期切换模式，也不同时服务两个模式。
+离线输入使用独立契约和准入路径，不要求签名部署审批，但仍拒绝 live，并保留本地凭据和安全检查。离线结果及 sandbox 开发产物都不能在本地晋升为生产。
 
-这正是模式属于**进程**而非某个部署的原因：一台同时处理 testnet 与 live 的 runner，在测试资金与真实资金之间就只隔着一个 bug。
+## 传输
 
-## 模式被签名，且被校验两次
+签名 sandbox/testnet 会话使用 `--nats-sim-*`，签名 live 传输使用 `--nats-live-*`。传输连接成功不会启用 live 执行。离线通道使用 `--nats-url` 指定的自有 broker。
 
-模式出现在 subject、envelope 与 payload 三处，且三者必须一致。随后准入再把签名指令里的模式与本地运行时即将据以行动的模式作比对。
-
-这次比对能抓住「runner 即将执行的模式与被授权的模式不同」——任何单边检查都发现不了它。见[实盘执行门](/zh-Hans/concepts/live-execution-gate)。
-
-## 各模式的要求
-
-要求是**累加**的，往下走没有任何一项被放宽。
-
-| | sandbox | testnet | live |
-|---|---|---|---|
-| 签名指令 | ✅ | ✅ | ✅ |
-| 引擎声明该模式 | ✅ | ✅ | ✅ |
-| 引擎声明该连接器 | ✅ | ✅ | ✅ |
-| 凭据范围为 `trade_no_withdraw` | | ✅ | ✅ |
-| 该构建启用了实盘执行 | | | ✅ |
-| 携带签名的放行证据 | | | ✅ |
-
-最后两项让 `live` 在**性质**上而非程度上不同。实盘执行默认关闭，除非构建来自完整的发布链；它不是环境变量也不是配置项 —— 因此不是运维在压力下能打开的东西，**包括来自他人的压力**。
-
-## 传输随模式而定
-
-只有 `live` 使用 live 传输。`sandbox` 与 `testnet` **都**走模拟传输，所以一台 testnet
-runner 是用 `--nats-sim-*` 系列配置的，不是 `--nats-live-*`。
-
-这一点常让人意外，值得直说：**testnet 不在 live 传输上。**测试资金依然不是真实资金，传输的切分跟着**钱**走，不跟着交易所走。
-
-## 不能被静默跨越的边界
-
-DeploymentSpec 无法在「模拟」与「真实资金」执行之间移动而不被察觉：模式是签名材料的一部分，改动它就改变了被签名的内容。
-
-runner 内部**不存在**提升路径。一个部署不会在本地从 testnet「毕业」到 live —— 一个 live
-部署是另一条签名指令，携带着「上游做过决策」的证据。
-
-## 怎么选
-
-| 你想要 | 用 |
-|---|---|
-| 验证注册、凭据与 reconcile 跑得通 | `sandbox` + `--engine sandbox-sim` |
-| 用真实行情演练策略且零风险 | `sandbox` + `--engine nautilus` |
-| 用测试资金跑通完整的交易所往返 | `testnet` |
-| 交易 | `live` |
-
-从上往下走。每一行都覆盖了它上面各行所做的一切，所以任何一层出问题，下面那层其实已经替你排除过了。
+选择交易所和模式前，请查看[connector 支持情况](/engines/nautilus-trader)。

@@ -1,58 +1,51 @@
 ---
-title: "NautilusTrader Engine"
+title: "NautilusTrader engine"
 sidebar_position: 1
 ---
 
-# NautilusTrader Engine
+Custos uses a pinned NautilusTrader fork through the optional `nautilus` extra. Install it with `make install-nt` on Python 3.12.
 
-[NautilusTrader](https://github.com/nautechsystems/nautilus_trader) is an
-event-driven, Python-native algorithmic trading platform with a Rust core. It is
-the execution engine Custos ships with, and the one the runner's own contracts
-were designed against.
+<!-- generated:nautilus-version -->
 
-Everything below lives under `src/custos/engines/nautilus/`. It is the only part
-of the runner that knows NautilusTrader exists — the reconciler, the breaker and
-the fact producer speak to it exclusively through
-`ExecutionEngineProtocol`.
-<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+Current dependency: `nautilus-trader==2.0.0rc5+sodex.1`.
 
-## The two hosts
+<!-- /generated:nautilus-version -->
 
-`host.py` provides both implementations of the engine protocol:
-<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+The lock sources provide CPython 3.12 wheels for macOS arm64 and Linux arm64/x86_64. Linux wheels require `manylinux_2_39` compatibility. Use the checked-in lock rather than substituting an upstream package with a similar version.
 
-**`NtTradingNodeHost`** supervises a real NautilusTrader `TradingNode`. It
-declares `sandbox`, `testnet` and `live`, and it is the only host that can reach
-a venue.
+## Host selection
 
-**`SandboxSimulationHost`** runs the entire local lifecycle — artifact
-activation, credential resolution, durability, readiness, fact publication —
-without connecting to anything. It declares `sandbox` and nothing else, so a
-testnet or live deployment is refused at admission rather than quietly
-simulated.
+| CLI value | Host | Behavior |
+|---|---|---|
+| `--engine nautilus` | `NtTradingNodeHost` | Real data clients; locally simulated fills in sandbox, venue orders in testnet |
+| `--engine sandbox-sim` | `SandboxSimulationHost` | Local lifecycle simulation without importing a trading strategy or connecting to a venue |
 
-Select one for the lifetime of the process:
+The signed simulation composition adds fact publication around the simulator. The offline composition reports unsigned local status. Neither simulator output proves a real venue round trip.
 
-```bash
-arx-runner start --enabled-mode sandbox --engine nautilus     # real execution
-arx-runner start --enabled-mode sandbox --engine sandbox-sim  # simulation only
-```
+## Connector declarations
 
-If the NautilusTrader runtime is not installed, `--engine nautilus` fails at
-startup. It does not fall back to simulation — a runner that silently
-substituted a non-trading host would report healthy while placing no orders.
+<!-- generated:venues -->
 
-## What the host owns, and what it does not
+| Connector | sandbox | testnet | live |
+|---|---|---|---|
+| `binance` | declared | declared | declared |
+| `binance_perpetual` | declared | declared | declared |
+| `sodex` | declared | declared | unsupported |
+| `sodex_perpetual` | declared | declared | unsupported |
 
-The host owns engine process construction, venue client configuration, readiness
-observation, stop and reconfigure behaviour, and engine telemetry.
+<!-- /generated:venues -->
 
-It does **not** own deployment authorization, strategy release state, artifact
-verification, credential scope policy, or command acknowledgement. Those belong
-to layers above it, which is why swapping the engine does not move any trust
-boundary.
+These are host declarations, not production acceptance. Live execution is disabled by the current daemon. SoDEX testnet also has an input-contract limitation; read [SoDEX](/engines/sodex) before configuring it.
 
-The engine entry point reflects that split:
+## Concurrency and readiness
+
+Nautilus 2 uses a thread-local runner/message bus. Custos rejects a second active node on the same event loop. Run concurrent nodes in separate processes with separate identity and state roots.
+
+Engine readiness checks the node task, data/execution connectivity, portfolio initialization and reliable valuation, reconciliation, strategy lifecycle acceptance and mandatory capabilities. A successful node construction or daemon health probe does not establish all of these conditions.
+
+## Engine interface
+
+`ExecutionEngineProtocol` defines deployment, reconfiguration, stop, capability queries, typed ready/terminal events, connectivity, order/position snapshots, valuation and containment. Signed deployment passes an already-activated artifact:
 
 ```python
 async def deploy(
@@ -62,68 +55,10 @@ async def deploy(
 ) -> str: ...
 ```
 
-The `artifact` argument is an already-verified, already-activated strategy
-object. The host adds it to the node; it never imports strategy code itself.
-That is what keeps "which code ran" answerable from outside the engine.
+Offline deployment supplies an operator-mounted artifact with a directory-derived identity. It has no signed-release assurance.
 
-## The protocol it satisfies
+## Configuration and stop behavior
 
-`ExecutionEngineProtocol` has two tiers, and both hosts implement the full
-surface.
+The host reads `nautilus_config` startup timeouts and reconciliation lookback. Connector-specific code determines instrument identifiers, account type, leverage and client configs. Do not reuse one venue's symbols or account fields for another.
 
-**Tier-1 — lifecycle and capability.** `deploy`, `reconfigure`, `stop`,
-`supports_trading_mode`, `supports_venue`. These drive the command coordinator
-and the lifecycle supervisor; the last two are what the
-[live execution gate](/concepts/live-execution-gate) reads.
-
-**Tier-2 — risk and connectivity state.** `get_open_notional`,
-`check_engine_connected`, `flatten_positions`, `get_positions`, `get_orders`,
-`get_engine_status`. These exist so the engine-agnostic guards — the notional
-cap, the fallback breaker, the zombie watchdog — can enforce the
-disconnect-resilient guarantee without knowing which engine is underneath.
-
-Tier-2 is the more interesting half. It is why
-[safety survives a disconnect](/trust-model/safety-survives-disconnect) is a
-property of the runner rather than a property of NautilusTrader.
-
-## Supporting modules
-
-| File | Role |
-|---|---|
-| `venue_binance.py` | Binance data and execution client configuration |
-| `binance_ledger.py` | Independent venue-ledger evidence for reconciliation |
-| `portfolio_snapshot.py` | The single valuation boundary for equity and marked positions |
-| `runner_safety.py` | Keeps the venue client behind the order reservation gate |
-| `risk.py` | Pre-trade rule configuration |
-| `runtime_loader.py` | Proves a strategy module came from the immutable activation root |
-| `sandbox_runner_fact_host.py` | Fact publication for the simulation host |
-<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
-
-Two of these are load-bearing for guarantees stated elsewhere on this site.
-
-`portfolio_snapshot.py` is the reason open notional and actual equity come from
-one valuation boundary rather than two that could disagree. The breaker reads
-exactly one engine status per instance per tick, derived from it.
-
-`runner_safety.py` wraps the venue execution client so that orders pass the
-reservation boundary before reaching the venue. The guard is a facade the engine
-cannot route around, rather than a check the strategy is asked to call.
-
-## Venues
-
-`binance` and `binance_perpetual`, compared case-insensitively. A signed
-connector the host does not declare is refused at admission.
-
-Spot and perpetual differ in more than a name — instrument identifiers, account
-type and leverage configuration are all derived per connector, which is why the
-connector is part of the signed command rather than a local setting.
-
-## Installing the runtime
-
-NautilusTrader is an optional dependency, declared under
-`[project.optional-dependencies].nautilus` in `pyproject.toml`. An audit install
-does not pull it: you can read and test the entire trust boundary without
-installing a trading engine.
-
-The published container image includes it. See
-[installation](/getting-started/installation).
+Stop behavior follows the deployment's shutdown policy. The default preserves positions; stopping the runner is not proof that positions are flat. See [emergency recovery](/operator-guide/emergency-playbook).

@@ -3,136 +3,58 @@ title: "部署"
 sidebar_position: 1
 ---
 
-# 部署
+选择一条操作路径，并配套管理身份、broker 和状态文件。
 
-Custos 跑在你自己的基础设施上。ARX 负责授权意图、持有部署业务状态、签发指令并接收执行事实；Custos 负责校验这些指令、协调本地运行时，并对上报的事实签名。
+| 路径 | 指南 | 所需上游 |
+|---|---|---|
+| 本地生命周期演练 | [独立 sandbox](/getting-started/standalone-sandbox) | 仅自有 NATS |
+| 策略测试网执行 | [离线 testnet](/operator-guide/offline-testnet) | 自有 NATS 与支持的交易所测试网 |
+| 签名部署 | [签名 sandbox](/getting-started/first-sandbox-run) | ARX 身份、传输、目标状态和发布材料 |
 
-本章覆盖从零到跑起一个部署的完整过程。
+签名通道消费已签发指令，不创建自己的控制拓扑。离线通道提供 `identity standalone`、`nats bootstrap` 和 `deployment validate/publish`，用于操作者自有环境。离线结果不能晋升为生产。
 
-## 运行时产物
+## 签名发布信任
 
-当前下游开发使用的产物是经过验证的本地镜像：
+执行不可变发布材料前，取得被接受的 runner 本地策略 authority，以及预期发布方的 Sigstore root 和 workflow identity。策略与产物分开验证，产物不能选择自己的信任根。
 
-```text
-custos-runner:v0.3.0
-```
-
-用 `make verify-local-v030` 构建并过门。远程发布仍在推迟中。请直接消费该镜像，**不要**自行维护派生 Dockerfile —— 派生镜像不是门验证过的那一份产物。
-
-## 前置条件
-
-- 一个 ARX enrollment 端点和一次性 enrollment token。
-- ARX 的 Ed25519 domain-event 公钥及其 key ID（必须精确匹配）。
-- 能连到签名指令流的网络。
-- 每个交易所凭据一个 sops+age 加密文件，scope 均为 `trade_no_withdraw`。
-
-Custos 从不创建流，也从不发布部署指令。它的 `deployment` CLI 只有一个离线动作
-`validate`。
-
-## Enrollment 与交易所凭据
+下列命令使用已有 authority key 签发策略。所有变量需设为批准的输入，输出路径应尚不存在。
 
 ```bash
-mkdir -p "$HOME/.arx/vault" "$HOME/.arx/state"
-chmod 700 "$HOME/.arx" "$HOME/.arx/vault" "$HOME/.arx/state"
-age-keygen -o "$HOME/.arx/age.key"
-chmod 600 "$HOME/.arx/age.key"
-export SOPS_AGE_KEY_FILE="$HOME/.arx/age.key"
-export SOPS_AGE_RECIPIENT="$(age-keygen -y "$SOPS_AGE_KEY_FILE")"
-install -m 600 /dev/null "$HOME/.arx/enrollment-token"
-printf '%s' '<一次性 enrollment token>' > "$HOME/.arx/enrollment-token"
-
-arx-runner enroll \
-  --token-file "$HOME/.arx/enrollment-token" \
-  --backend https://arx.internal \
-  --tenant-id acme \
-  --runner-id 22222222-2222-4222-8222-222222222222
-rm -f "$HOME/.arx/enrollment-token"
-
-printf '%s\n' '<交易所 api secret>' | arx-runner vault put \
-  --key-id binance-testnet \
-  --tenant-id acme \
-  --api-key '<交易所 api key>' \
-  --scope-digest '<部署中的 credential_scope.scope_digest>' \
-  --api-secret-stdin \
-  --age-recipient "$SOPS_AGE_RECIPIENT" \
-  --permission-scope trade_no_withdraw
+uv run arx-runner release-policy issue \
+  --authority-private-key "$POLICY_PRIVATE_KEY_FILE" \
+  --authority-public-key "$POLICY_PUBLIC_KEY_FILE" \
+  --sigstore-trusted-root "$SIGSTORE_ROOT_FILE" \
+  --policy-id "$POLICY_ID" --version 1 \
+  --not-before "$POLICY_NOT_BEFORE" --expires-at "$POLICY_EXPIRES_AT" \
+  --issuer "$SIGSTORE_ISSUER" --workflow-identity "$WORKFLOW_IDENTITY" \
+  --source-repository "$SOURCE_REPOSITORY" \
+  --envelope-output "$POLICY_ENVELOPE_FILE" \
+  --receipt-output "$POLICY_RECEIPT_FILE" \
+  --environment-output "$POLICY_ENV_FILE"
 ```
 
-`runner.toml` 只保存公开的绑定元数据。不透明的机器凭据与 Ed25519 私钥一起加密存放在
-`runner-machine.enc` 中。任何模式下都不支持手工编造 runner 记录 —— 无法自证 enrollment
-的 runner 不会启动。
+`release-policy generate-development-authority` 可为隔离的本地练习创建密钥。该 authority 明确仅供开发，不构成生产批准。
 
-## 启动 runner
+使用生成的 envelope、公钥、派生 key id 和可信根配置 runner：
 
 ```bash
-arx-runner start \
-  --enabled-mode sandbox \
-  --nats-sim-url tls://arx-nats.internal:4222 \
-  --nats-sim-ca "$HOME/.arx/certs/arx-nats-ca.pem" \
-  --nats-sim-server-name arx-nats.internal \
-  --nats-sim-issuer-public-key "$ARX_NATS_SIM_ISSUER_PUBLIC_KEY" \
-  --crucible-domain-public-key "$HOME/.arx/crucible-domain-event.pub" \
-  --crucible-domain-key-id arx-domain-v1 \
-  --engine nautilus
-```
-
-就绪判定是 fail-closed 的。只有在机器身份校验通过、且精确的 runner 订阅建立之后，
-`arx-runner health` 才会成功。
-
-`deployment_instance_id` 是运行时主键 —— reconciler 状态、引擎句柄、watchdog、熔断器和事实都以它为键。`spec_id` 标识不可变的配置来源，不是运行时句柄。
-
-### 工作站演示
-
-本地做不可提升的演示时，有唯一一个明文例外，即显式的 loopback sandbox 会话：
-
-```bash
-arx-runner start --enabled-mode sandbox --reconcile \
-  --development-local-nats-url nats://127.0.0.1:24222 \
-  --crucible-domain-public-key /tmp/demo/crucible-domain-event.pub \
-  --crucible-domain-key-id arx-domain-v1 \
-  --engine sandbox-sim
-```
-
-该开发标志会拒绝非 loopback 主机、`testnet`、`live`、URL 内嵌凭据，以及任何同时存在的生产端点。它**绝不是** TLS 或密钥权威校验失败后的降级通路 —— 校验失败就是失败。
-
-## 部署生命周期
-
-部署及其每一次期望状态变更都源自上游。Custos 没有本地创建路径。它会校验签名事件、
-canonical digest、tenant、runner、部署实例与 generation，然后通过带认证的所有权边界解析策略发布物料。
-
-生产策略执行还需要下面这组信任配置，要么完整、要么不启动：
-
-```bash
-export CUSTOS_ARTIFACT_CACHE_DIR=/var/lib/custos/artifacts
-export CUSTOS_ARTIFACT_RELEASE_POLICY_ENVELOPE=/etc/custos/artifact-release-policy.json
-export CUSTOS_ARTIFACT_RELEASE_POLICY_PUBLIC_KEY=/etc/custos/artifact-release-policy.pub
-export CUSTOS_ARTIFACT_SIGSTORE_TRUSTED_ROOT=/etc/custos/sigstore-trusted-root.json
-export CUSTOS_ARTIFACT_RELEASE_POLICY_KEY_ID=custos-artifact-release-policy-v1
+export CUSTOS_ARTIFACT_RELEASE_POLICY_ENVELOPE="$POLICY_ENVELOPE_FILE"
+export CUSTOS_ARTIFACT_RELEASE_POLICY_PUBLIC_KEY="$POLICY_PUBLIC_KEY_FILE"
+export CUSTOS_ARTIFACT_RELEASE_POLICY_KEY_ID="$POLICY_KEY_ID"
+export CUSTOS_ARTIFACT_SIGSTORE_TRUSTED_ROOT="$SIGSTORE_ROOT_FILE"
 export CUSTOS_ARTIFACT_REGISTRY=ghcr.io
 ```
 
-如果用私有 registry，还需同时设置 `CUSTOS_ARTIFACT_REGISTRY_USERNAME` 与
-`CUSTOS_ARTIFACT_REGISTRY_TOKEN`。token 刻意不提供 CLI flag，因此不会进入进程参数。
+key id 应采用生成的策略输出中的值。私有 registry 需同时设置 `CUSTOS_ARTIFACT_REGISTRY_USERNAME` 与 `CUSTOS_ARTIFACT_REGISTRY_TOKEN`，不要把 token 放入命令参数。信任输入缺失或认证发布材料不可用时，应先修复条件，不会自动使用开发材料兜底。
 
-Custos 只接受配置的 HTTPS registry 上带签名的 detached 物料坐标，校验完整的快照与证据链，并把不可变 blob 存到 `$CUSTOS_ARTIFACT_CACHE_DIR/sha256/<digest>`。信任配置缺失或不完整会导致启动失败；解析器不可用时也绝不回落到开发物料。
+## 持久化状态
 
-live 执行需要已签发的 `promotion_id` 与 `promotion_evidence_digest`。Custos 校验它们存在且绑定正确 —— 它不清点审批人，也不自行实现职责分离策略。
+持久化身份元数据、机器/交易所金库、age identity、能力、传输授权和事实数据库。为产物缓存、隔离与激活目录配置合适的本地存储。`--production-state-root` 可将可变的签名通道路径绑定在同一持久化根下，会拒绝离线选择和不安全目录。
 
-已应用的生命周期 generation 通过签名事实 outbox 以
-`RunnerDeploymentLifecycleFact.v1` 上报，序号由 outbox 分配。若事实无法持久入队，指令就不会被 ack。重投时会沿用同一实例与激活身份，不会重复执行已提交的引擎动作。
+不要让不同 runner 进程共享状态根。离线通道通过 `--offline-state` 使用独立 SQLite 数据库，不把它作为签名业务权威。
 
-## 容器示例
+## 容器与验证
 
-可直接运行的 `examples/supertrend-testnet` Compose 文件只启动 runner；签名指令流是外部依赖。
+`make verify-local-v030` 构建并检查本地镜像契约。将 runner 状态挂载到 `/home/custos/.arx`，并在运行时提供 age identity。完整签名部署仍需要签发的身份、传输和发布输入。将结果归于当前源码前，先确认镜像 revision。
 
-```bash
-make verify-local-v030
-cd examples/supertrend-testnet
-test -f .env || cp .env.example .env
-docker compose up
-```
-
-务必持久化 `/home/custos/.arx`。临时挂载会丢失机器身份与交易所凭据，缺了它们 runner
-不会启动。
-
-出问题时见[排障](./troubleshooting)；中断与恢复见[应急手册](./emergency-playbook)。
+按[就绪检查](/operator-guide/readiness-health)分别核对健康、订阅和已应用实例。候选发布与生产验收的区别见[发布状态](/release-governance/release-status)。

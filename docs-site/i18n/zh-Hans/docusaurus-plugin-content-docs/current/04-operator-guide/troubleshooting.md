@@ -1,76 +1,39 @@
 ---
-title: "排障"
+title: "排错"
 sidebar_position: 6
 ---
 
-# 排障
+先记录所选通道、源码/镜像 revision、CLI 参数和本地 JSON 日志。诊断输出中不得包含凭据材料。
 
-面向"起不来、收不了部署、连不上交易所"的症状式诊断。连接中断与恢复见[应急手册](./emergency-playbook)。
+| 症状 | 检查 | 处理 |
+|---|---|---|
+| Health 通过却没有签名部署 | `deployment_subscription` 与 `--reconcile` | 启用协调，并配置签发方提供的指令信任输入 |
+| `Runner startup authority check failed` | `runner.toml`、金库路径、age key、有效期及身份绑定 | 修正路径，或通过支持的生命周期更新身份 |
+| 签名命令拒绝独立身份 | `backend_url` 为 `.invalid` | 使用离线通道，或另向 ARX 注册身份 |
+| 本地目标状态未送达 | Broker URL、bootstrap、租户及 strategy id | 使 bootstrap、publish 和 start 参数匹配 |
+| `stream ... is not owned` | 已有 broker 拓扑 | 使用独立 broker/租户，不覆盖其他应用的 stream |
+| 发布前拒绝 spec | 模式、精确 schema 字段、源码摘要 | 执行 `deployment validate`；离线通道不能使用 live |
+| 凭据解密/范围失败 | Key id、租户、金库路径、age identity | 执行 `vault verify`；签名范围需匹配部署 |
+| `credential scope already has an active ...` | 使用同一范围的活动 testnet 部署 | 先停止并检查已有实例，再复用凭据范围 |
+| `already holds this runner's event loop` | 已有 Nautilus node | 停止该 node 或使用独立进程和状态目录 |
+| `strategy discovery is already pointed at ...` | 挂载策略目录 | 每个离线进程只使用一个策略目录 |
+| `portfolio_prices_missing:<instrument>` | 缺失标的及其标记/计价资产 | 检查名称、网络和行情可用性，不以零代替 |
+| `portfolio_equity_missing:<currency>` | 账户与结算币种 | 检查账户余额和估值所需价格 |
+| 熔断后拒绝离线 generation | 熔断锁存与近期风险控制日志 | 核对持仓/订单，处理原因后再主动重启 |
+| SoDEX testnet 无法提供账户字段 | 离线 spec 契约 | 使用支持的 sandbox 路径，详见[SoDEX](/engines/sodex) |
 
-## 读日志
+## 签名指令失败
 
-日志是结构化 JSON。运行时事件以 `deployment_instance_id` 为键；`spec_id` 只作为来源出现，不是运行时句柄。
+检查签名/key id、subject 身份、精确摘要、generation、产物绑定、能力和凭据范围。无效输入终止处理，可恢复的本地依赖失败会重试。应在 ARX 修正目标状态，不向签名订阅注入未签名输入。
 
-Custos 从不记录 API secret、不透明机器凭据、私钥、enrollment token 或解密后的金库值。若你在日志里看到其中任何一项，请按安全问题处理，见
-[SECURITY.md](https://github.com/the-alephain-guild/custos/blob/main/SECURITY.md)。
-
-## 启动身份校验失败
-
-**症状**：`Runner startup authority check failed`，且不产生 ready 文件。
-
-依次检查：
-
-1. `runner.toml` 存在、模式为 `0600`、且只含公开元数据。
-2. 其 `machine_vault_path` 指向 enroll 出来的机器金库。
-3. `SOPS_AGE_KEY_FILE` 存在、模式为 `0600`，且确实能解开那个金库。
-4. 凭据 ID、版本、有效期、tenant、runner 与机器密钥与元数据**逐项**一致。
-
-不要手工编辑身份文件。请在上游吊销或轮换，或用新的一次性 token 重新 enroll 一个机器主体。被手工改过的 runner 无法自证任何东西 —— 而自证正是这道校验的全部意义。
-
-## 交易所凭据失败
-
-**症状**：引擎部署前出现凭据解密失败或 permission-scope 失败。
+## 金库检查
 
 ```bash
-arx-runner vault verify --key-id binance-testnet --tenant-id acme
+uv run arx-runner vault verify --key-id "$KEY_ID" --tenant-id "$TENANT_ID"
 ```
 
-每个交易所凭据必须是独立的 sops+age 文档，scope 为 `trade_no_withdraw`。用
-`arx-runner vault put` 替换有问题的条目。**绝不要**把密钥放进 argv、`runner.toml`
-或部署本身。
+自定义路径时添加 `--vault-dir`。该命令使用与 runner 相同的显式 sops JSON 解密路径。手工 sops 解密成功不能证明租户与范围检查通过。
 
-## 部署指令被拒
+## 保留证据
 
-常见原因：
-
-- 签名或 key ID 无效；
-- subject 中的 tenant / runner / 实例与签名载荷不一致；
-- canonical digest 不匹配；
-- generation 过期，或既有实例的策略身份发生变化；
-- 策略发布的快照 / 产物 / manifest 绑定不匹配；
-- 类型化的 `execution_config` 非法，或所选引擎不支持；
-- live 指令缺少 promotion 证据；
-- live 指令被投给不支持 live 的引擎。
-
-修复路径永远在上游：改正 canonical 状态，让上游发出新的签名 generation。**绝不要**往传输层直接注入指令 —— Custos 本来就会拒绝，而一条被接受的注入指令是不可验证的。
-
-## 引擎或交易所失败
-
-认证类失败：检查交易所密钥状态、IP 白名单、时钟同步，以及该凭据确实是
-`trade_no_withdraw`。
-
-code-hash 类失败：部署与签名部署相匹配的、经过评审的策略字节。不要试图绕过
-[live 执行门](/concepts/live-execution-gate) —— 它拒绝，正是因为它校验的东西对不上。
-
-熔断器、本地名义敞口上限与 zombie watchdog 都以 `deployment_instance_id` 为键。一个实例触发不得平掉或停掉另一个实例；若观察到这种现象，值得作为 bug 上报。
-
-## 事件对照
-
-| 事件 | 含义 |
-|---|---|
-| `runner_command_runtime_intake_failed` | 指令订阅不可用 |
-| `deployment_spec_decode_failed` | 签名事件或 subject 校验/解析失败 |
-| `deployment_reconcile_failed` | 某实例的本地引擎 apply 失败 |
-| `deployment_lifecycle_fact_enqueue_failed` | 已应用的 generation 未能持久上报 |
-| `engine_admission_live_capability_denied` | 该 host 无法安全执行 live |
-| `nt_stop_noop_unknown_instance` | 对不存在实例的幂等 stop |
+记录实例/spec id、generation、revision、时间、类型化错误原因及非秘密健康字段。恢复前保留 SQLite 状态及其 WAL/SHM 文件。离线状态通道尽力发布，发布失败时检查本地日志。详见[应急恢复](/operator-guide/emergency-playbook)。

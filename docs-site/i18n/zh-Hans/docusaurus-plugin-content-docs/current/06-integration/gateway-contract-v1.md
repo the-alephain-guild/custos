@@ -1,65 +1,30 @@
 ---
-title: "网关契约 v1"
+title: "Gateway 契约 V1"
 sidebar_position: 1
 ---
 
-# 网关契约 v1
+Custos 为自身观测和执行边界发布 schema，当前清单见[JSON Schema 参考](/reference/json-schema)。
 
-机器可读的契约位于仓库的 `docs/gateway-contract/v1/` 下。本页说明里面有什么 ——
-以及同样有用的：**刻意没有什么**。
+## 签名部署输入
 
-## Custos 为哪些东西发布 schema
+ARX 拥有正式 DeploymentSpec 和指令签发权。Custos 的严格消费者先验证原始字节/subject、字段集、身份、generation 和摘要，再派生本地执行视图。Custos 不发布另一份正式 DeploymentSpec schema，也没有签发该指令的 CLI。
 
-| Schema | 覆盖 |
-|---|---|
-| `enrollment.schema.json` | 本地 provision 的机器注册材料 |
-| `runner_fact_batch_v1.schema.json` | Custos 发出的签名事实批次 |
-| `strategy_artifact_ref_v1.schema.json` | 签名前的产物引用 |
-| `strategy_manifest_v1.schema.json` | 产物本地的兼容性元数据 |
-| `strategy_artifact_pre_import_verification_receipt_v1.schema.json` | 本地验证回执 |
-| `strategy_execution_context_v1.schema.json` | 交给适配器的冻结上下文 |
-| `development_source_ref_v1.schema.json` | 仅 sandbox 的开发源引用 |
+签名指令客户端绑定已有授权 durable，详见[NATS subject](/reference/nats-subjects)和[验证参考](/integration/reference-implementations)。
 
-规律是：Custos 只为**它自己拥有**的东西发布 schema —— 自己的注册材料、自己的事实，以及它所定义的执行边界。
+## 离线输入
 
-## 这里没有 DeploymentSpec schema
+`offline_deployment_spec.schema.json` 描述独立的操作者契约。`deployment validate/publish` 仅在 sandbox/testnet 校验和发布该输入，不能产生正式签名指令或晋升证据。
 
-Custos 不发布它，而且它的缺席由**测试断言**，不是靠人记。
+## 观测输出
 
-规范的 DeploymentSpec 归上游所有。Custos 手里的是一个狭窄的本地执行视图，且只在签名与
-digest 验证通过**之后**才派生出来。为它发布 schema 等于邀请生产方把 runner 的本地投影当作契约，而真正的权威是那份签名的规范 payload。
+RunnerFact 批次包含封闭的 13 种 kind，以及签名身份、摘要和序号字段。策略信号使用独立签名 envelope。离线状态未签名，签名事实消费者不得接受它。
 
-部署发布同样不是 Custos 的操作。**不存在**创建、签名或发布 DeploymentSpec 的 CLI 命令 ——
-见 [CLI 参考](/zh-Hans/reference/cli)。
+## 校验与兼容性
 
-## 指令契约实际在哪里
-
-签名指令在代码中被定义为一个**严格的消费者**，而不是一份你可以宽松地据以生产的已发布
-schema：
-
-- 在解析任何字段**之前**先验证精确 subject 与精确事件字节；
-- 字段集是精确的 —— 未知键被**拒绝**，不是被忽略；
-- tenant、mode、runner、instance、generation 与 digest 必须在 subject、envelope 与 payload
-  三处一致。
-
-subject 形状、两种事件类型与一致性矩阵，见[参考实现](/zh-Hans/integration/reference-implementations)。
-
-## 版本化
-
-`v1` 是唯一有内容的版本。同级目录是占位，里面什么都没有。
-
-新增**可选**字段属 MINOR，但仍需两侧都部署 —— 因为 schema 是 `additionalProperties: false`，未更新的消费方会拒绝这个新字段。新增**必填**字段属 MAJOR：不发送它的旧生产方会直接校验失败。见 [SemVer 与 LTS](/zh-Hans/release-governance/semver-lts)。
-
-切出 `v2` 属 MAJOR 变更，且**不是**同时维持两份契约的办法 —— 首个生产契约的规则是 V1
-就地演进，不留前代 parser、不留兼容别名。
-
-## 对照它做验证
-
-schema 既被代码消费，也被权威门消费：
+JSON Schema 校验结构。签名、授权、跨字段绑定和序号约束需要契约验证器及测试。两侧应使用匹配的 revision，并运行：
 
 ```bash
 make check-authority
 ```
 
-该门同时断言上文所列「刻意缺席」的那些东西确实不存在 —— 因此未来某次悄悄重新引入
-DeploymentSpec schema 的改动会**失败**，而不是无声通过。
+严格 V1 字段集的修改方式与历史证据处理见[契约版本](/integration/contract-versioning)。

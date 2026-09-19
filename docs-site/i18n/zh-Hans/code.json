@@ -354,10 +354,10 @@
     "message": "说明"
   },
   "home.notice.title": {
-    "message": "站点仍在建设中"
+    "message": "文档与运行状态"
   },
   "home.notice.body": {
-    "message": "本文档站仍在编写中。概览、快速上手、核心概念、运维指南与非托管信任模型各章已完成，参考手册与集成指南的部分章节还只是提纲，中文翻译也尚未覆盖全部章节。"
+    "message": "中英文指南覆盖签名部署和独立 sandbox/testnet 流程。候选发布和本地检查不代表生产就绪。"
   },
   "home.notice.links": {
     "message": "可以从{introduction}开始阅读，源码在 {repository}。"

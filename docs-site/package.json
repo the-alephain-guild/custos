@@ -21,7 +21,8 @@
     "test:cjk": "node scripts/test-check-cjk-wrapping.mjs",
     "check:terms": "node scripts/check-zh-terminology.mjs",
     "test:terms": "node scripts/test-check-zh-terminology.mjs",
-    "verify": "npm run test:disclosure && npm run check:disclosure && npm run test:cjk && npm run check:cjk && npm run test:terms && npm run check:terms && npm run build && npm run typecheck"
+    "verify": "npm run test:disclosure && npm run check:disclosure && npm run test:cjk && npm run check:cjk && npm run test:terms && npm run check:terms && npm run check:source && npm run build && npm run typecheck",
+    "check:source": "uv run --project .. --package custos-runner --no-sync python ../scripts/check-docs-site.py"
   },
   "dependencies": {
     "@docusaurus/core": "^3.6.0",
@@ -39,8 +40,16 @@
     "typescript": "~5.5.0"
   },
   "browserslist": {
-    "production": [">0.5%", "not dead", "not op_mini all"],
-    "development": ["last 3 chrome version", "last 3 firefox version", "last 5 safari version"]
+    "production": [
+      ">0.5%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 3 chrome version",
+      "last 3 firefox version",
+      "last 5 safari version"
+    ]
   },
   "engines": {
     "node": ">=20.0"

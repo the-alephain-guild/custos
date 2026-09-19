@@ -1,78 +1,38 @@
 ---
-title: "custos 是什么？"
+title: "什么是 Custos？"
 sidebar_position: 1
 ---
 
-# custos 是什么？
+Custos 是非托管执行 runner，运行在你自己的基础设施上，在本地保存交易所凭据，并通过 NautilusTrader 执行和监督策略。
 
-Custos 是一个跑在你自己机器上的守护进程。它接收关于「什么应该在运行」的签名指令，用**从不离开这台机器**的凭据对接交易所执行，并对实际发生了什么签名作证。
+## 选择部署通道
 
-它刻意做得很小。它做的一切都是本地执行机制；每一个关于**是否该运行**的决定都在别处做出。
+| 通道 | 输入 | 身份 | 输出 | 模式 |
+|---|---|---|---|---|
+| 签名通道 | ARX 签发的目标状态 | 注册后的机器身份 | 签名 RunnerFact 和策略信号 | 可执行 sandbox/testnet；当前未启用 live 执行准入 |
+| 离线通道 | 操作者发布的 `OfflineDeploymentSpec` | 本地独立身份或已注册身份 | 未签名的本地部署状态 | 仅 sandbox/testnet |
 
-## 它拥有什么
+离线通道用于不依赖 ARX 后端的本地策略开发，仍然使用 NATS，也可能连接行情或测试网。它需要显式选择，不能运行 live，不产生晋升证据，也不会在签名通道失败后自动接管。
 
-- runner 注册材料与本地机器凭据；
-- 签名指令的验证；
-- 把期望部署状态收敛到本地引擎；
-- 进程监督、看门狗与本地安全熔断；
-- 对观测到的 runner 事实签名并发布。
+验证本地部署流程可从[独立 sandbox](/getting-started/standalone-sandbox)开始；连接 ARX 时先完成[注册](/getting-started/enrollment)。
 
-## 它不拥有什么
+## 职责
 
-操作者授权、审批流程、策略与风险配置、放行决策、组合真相、结算真相，以及规范的部署生命周期。这些全部属于 ARX。
+Custos 保存机器和交易所凭据、验证签名输入、应用目标状态、监督引擎并执行本地安全检查。签名通道中的授权、部署审批、产物选择和业务记录由 ARX 管理。runner 的签名观测用于上游处理，本身不构成审批。
 
-这个划分不是分层偏好。它正是「把密钥交给这个 runner 是安全的」这件事成立的原因：一个能批准自己部署的 Custos，等于一个攻破一台机器就够了的系统。
+## 术语
 
-## 词汇
+| 术语 | 含义 |
+|---|---|
+| `DeploymentSpec` | 签名通道的不可变配置；标识和摘要用于记录配置来源 |
+| `DeploymentInstance` | 以 `deployment_instance_id` 寻址的运行实例；多个实例可以引用同一 spec |
+| Generation | 单调递增的目标状态版本；同一版本的重投递不会创建新实例 |
+| Engine handle | 与部署实例关联的本地引擎资源 |
+| `RunnerFact` | 已注册 runner 发出的签名观测 |
+| `OfflineDeploymentSpec` | 操作者在 sandbox/testnet 使用的独立未签名契约 |
 
-以下五个术语贯穿全部文档，也出现在 runner 发出的每一条事实里。
+签名运行时先验证指令原始字节和 subject，再解释载荷。租户、模式、runner 和实例身份必须一致。详见[协调循环](/concepts/reconcile-loop)。
 
-### DeploymentSpec
+## 当前支持情况
 
-一份由上游拥有的不可变配置。它携带策略产物来源、模式、目标 runner、凭据范围、参数，以及 —— 对 live 模式 —— 放行证据。
-
-它的标识与 digest 是**来源记录**：记录的是配置了什么，不是什么正在运行。
-
-### DeploymentInstance
-
-在某台 runner 上运行某份 DeploymentSpec 的一次尝试。`deployment_instance_id` 是运行时主键。
-
-同一份 spec 的重试、重新部署与并行实例各自拥有不同的实例标识。这正是重试不会作用到错误进程上的原因：这个标识命名的是**这次尝试**，不是配置。
-
-### generation 与水位
-
-generation 是附在签名期望状态指令上的单调整数。
-
-Custos 把「已应用 generation」与「已上报 generation」分开跟踪。正是这个分离，让一次事实上报失败只重试**上报**，而不重复一次已经成功的引擎动作 —— 工作本身与工作的记录可以各自独立恢复。
-
-### 引擎句柄
-
-对应一个部署实例的本地引擎资源。每个引擎协议操作都接收 `deployment_instance_id`；
-spec 标识只作为来源记录保留在事实与诊断里。
-
-### RunnerFact
-
-由 Custos 发出的签名观测，陈述这台 runner 观测到或执行了什么。
-
-事实**不是**规范的业务记录。上游先验证并持久化它，之后才改变规范状态。runner 负责报告，不负责决定它的报告意味着什么。
-
-## 不变量
-
-无论怎么配置，以下七条恒成立：
-
-1. 指令只在通过精确字节与精确 subject 的签名验证之后才被处理。
-2. subject、envelope 与 payload 中的 tenant、mode、runner 与 instance 必须一致。
-3. 运行时状态只按 `deployment_instance_id` 键入。
-4. DeploymentSpec 不能静默跨越「模拟」与「真实资金」执行之间的边界。
-5. 缺少签名放行证据时，实盘执行 fail closed。
-6. 非法的签名指令被终态确认并留审计；瞬时的本地应用失败则被重试。
-7. Custos 从不伪造批准、放行或业务事实。
-
-第 6 条最常让人意外。畸形指令**不**重试 —— 永远重试等于对你自己的 runner 发起拒绝服务 ——
-但它也绝不被静默丢弃，而是被记录并以终态确认。
-
-## 接下来读什么
-
-- 各项保证及其如何被撑住：[信任模型](/zh-Hans/introduction/trust-model)
-- 各部分如何拼合：[架构一览](/zh-Hans/introduction/architecture-at-a-glance)
-- 跑起来：[安装](/zh-Hans/getting-started/installation)
+引擎能力声明、软件包发布和生产验收是不同状态。选择产物前请查看[发布状态](/release-governance/release-status)。当前 daemon 组合未启用 live 执行。

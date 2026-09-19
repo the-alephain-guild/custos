@@ -27,8 +27,6 @@ you have to do anything before upgrading.
 | **MINOR** | Additive only: a new entry point, a new **optional** gateway-contract field, a new optional-dependency extra, a new subcommand, a new CI job that does not replace an old one; a dependency **major** upgrade | Making an existing field required, removing a field, renaming an entry point, tightening `requires-python` |
 | **PATCH** | Fixes, security patches, documentation corrections, internal refactors with no externally observable change; dependency **patch/minor** upgrades with `uv.lock` updated in the same commit | Any change to a field, entry point, schema or documented semantic; a dependency major upgrade |
 
-Two rows deserve a note because integrators get them wrong.
-
 **Adding an optional field is MINOR, adding a required one is MAJOR.** The
 schemas are strict (`additionalProperties: false`), so a new field is rejected by
 a consumer that has not been updated — an optional addition still needs both
@@ -38,7 +36,7 @@ problem.
 
 **A dependency major upgrade is MINOR, not PATCH.** It can pull a transitive
 breaking change into your environment even when none of our own surfaces moved,
-so it does not belong in a bump you are meant to be able to take blindly.
+so the upgrade requires an explicit compatibility check.
 
 ## EOL Window
 
@@ -46,18 +44,10 @@ Each minor release line (`0.Y.x`) is supported for **at least 12 months**
 from the first `0.Y.0` tag. During that window the line receives security
 patches (see next section) and — best-effort — bug-fix patches. EOL is
 announced at least 30 days in advance in the GitHub release notes and copied
-into the changelog's `### Deprecated` section — in two places, so that an
-operator who reads only one of them still finds out.
+into the changelog's `### Deprecated` section.
 
-:::warning No line has started its window yet
-The table below is empty on purpose. Nothing has been released — there is no
-tag, no wheel and no published image — so no support window has begun. The
-changelog carries dated `0.2.0` and `0.3.0` entries, but a changelog entry is a
-record of changes, not a release.
-
-A row appears here when a line is actually cut, and the window is measured from
-that date. Publishing a window for an unreleased version would be a commitment
-with no start date and nobody to hold it.
+:::note No line has started its window yet
+No stable support window is registered in the table below. Toolkit and historical runtime candidates have publication records; see [release status](/release-governance/release-status). Candidate publication does not automatically begin a stable LTS window. Add a support row with its formal release evidence and start date when that line is cut.
 :::
 
 | Minor line | First release | EOL |

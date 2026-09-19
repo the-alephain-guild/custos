@@ -1,103 +1,66 @@
 ---
-title: "First Sandbox Run"
+title: "First signed sandbox run"
 sidebar_position: 3
 ---
 
-# First Sandbox Run
+This guide connects an enrolled runner to ARX and enables deployment reconciliation. For a local exercise without ARX, use [standalone sandbox](/getting-started/standalone-sandbox).
 
-The goal here is a runner that starts, proves its identity, reports ready, and
-touches no venue. Nothing in this chapter can place an order.
+## Before starting
 
-You should already have completed [enrollment](/getting-started/enrollment) —
-`~/.arx/runner.toml` and the encrypted machine vault must exist.
+Complete [enrollment](/getting-started/enrollment). Obtain these additional inputs from your deployment administrator:
 
-## 1. Provision a credential
+- A sandbox NATS transport authority, TLS CA, server name and pinned issuer key.
+- The domain-event public key and key id used to verify deployment commands.
+- A valid runner capability receipt at `~/.arx/runner-capability.json`.
+- A venue credential and the exact scope digest bound by the signed deployment.
+- Accessible strategy release material and runner-local release trust configuration, or an explicit sandbox development artifact supplied through the supported signed path.
 
-Even a sandbox run resolves a credential, because the resolution path is the
-same one a real deployment uses. Rehearsing it here means the first time it
-matters is not the first time it runs.
+Obtain the transport authority URL and approved authorization intent UUID as `TRANSPORT_AUTHORITY_URL` and `TRANSPORT_INTENT_ID`. Set `NATS_SIM_URL`, `NATS_SIM_SERVER_NAME`, `NATS_SIM_ISSUER_PUBLIC_KEY`, `NATS_CA_FILE`, `DOMAIN_PUBLIC_KEY_FILE` and `DOMAIN_KEY_ID` to those issued values. `SOPS_AGE_KEY_FILE` must point to the age identity used at enrollment.
+
+## Provision transport and the venue key
 
 ```bash
-export SOPS_AGE_KEY_FILE="$HOME/.arx/age.key"
-export SOPS_AGE_RECIPIENT="$(age-keygen -y "$SOPS_AGE_KEY_FILE")"
-
-printf '%s\n' '<sandbox-api-secret>' | arx-runner vault put \
-  --key-id binance-sandbox \
-  --tenant-id acme \
-  --api-key '<sandbox-api-key>' \
-  --api-secret-stdin \
-  --scope-digest '<64-hex-scope-digest>' \
-  --age-recipient "$SOPS_AGE_RECIPIENT" \
-  --permission-scope trade_no_withdraw
+uv run arx-runner nats-transport enroll \
+  --trading-mode sandbox \
+  --authorization-intent-id "$TRANSPORT_INTENT_ID" \
+  --nats-url "$NATS_SIM_URL" \
+  --nats-server-name "$NATS_SIM_SERVER_NAME" \
+  --nats-ca "$NATS_CA_FILE" \
+  --crucible-url "$TRANSPORT_AUTHORITY_URL" # disclosure-ok: exact CLI flag accepted by the parser
 ```
 
-`--api-secret-stdin` is the form to use. The alternatives exist for
-non-interactive contexts, but a secret passed as `--api-secret` is visible in
-`ps` output and in your shell history.
+Provision the key using [credential vault operations](/operator-guide/credential-vault). Even `sandbox-sim` exercises local vault resolution. Use demo key material only when the approved sandbox deployment is explicitly configured for it; do not invent a signed scope digest.
 
-Confirm the runner can actually read it back:
+For immutable releases, configure the release policy and trust root as described in [deployment](/operator-guide/deployment) before starting.
 
-```bash
-arx-runner vault verify --key-id binance-sandbox --tenant-id acme
-```
-
-This runs the real decrypt path rather than a simulation of it. Calling `sops`
-by hand proves something different — see
-[credential vault](/operator-guide/credential-vault).
-
-## 2. Start the daemon
+## Start reconciliation
 
 ```bash
-arx-runner start \
+uv run arx-runner start \
   --enabled-mode sandbox \
-  --engine sandbox-sim
+  --engine sandbox-sim \
+  --reconcile \
+  --nats-sim-url "$NATS_SIM_URL" \
+  --nats-sim-ca "$NATS_CA_FILE" \
+  --nats-sim-server-name "$NATS_SIM_SERVER_NAME" \
+  --nats-sim-issuer-public-key "$NATS_SIM_ISSUER_PUBLIC_KEY" \
+  --crucible-domain-public-key "$DOMAIN_PUBLIC_KEY_FILE" \
+  --crucible-domain-key-id "$DOMAIN_KEY_ID"
 ```
+<!-- disclosure-ok: exact CLI flags accepted by the runner -->
 
-`--enabled-mode` is required and takes exactly one of `sandbox`, `testnet`,
-`live`. There is no default, because a default would be a mode nobody chose.
+`--reconcile` is required to construct the engine and subscribe to deployment commands. Without it, the process can pass its health check while no deployment consumer is running.
 
-`--engine sandbox-sim` selects the simulation host: it exercises artifact
-activation, credential resolution, durability, readiness and fact publication
-for real, and never connects to a venue. It declares `sandbox` and nothing else,
-so it cannot be pointed at a real-money mode even by mistake — see
-[the live execution gate](/concepts/live-execution-gate).
+`sandbox-sim` makes no venue connection. To run a compatible strategy against live data with local fills, install the Nautilus extra and select `--engine nautilus`.
 
-Use `--engine nautilus` instead when you want a real sandbox session against
-live market data with locally simulated fills. Both are safe; they differ in
-whether real market data is involved.
+## Verify the result
 
-## 3. Check readiness
+In another terminal:
 
 ```bash
-arx-runner health
-arx-runner health --json
+uv run arx-runner health --json
 ```
 
-Readiness is not "the process is up". It means the machine vault and age
-identity were found, the credential is unexpired, tenant, runner, credential id,
-version, expiry and key id all agree, the authority confirmed the credential is
-still active, and a capability receipt bound to the same public key validated.
+Check `ready: true` and `deployment_subscription: true`. Then create/approve the sandbox deployment in ARX and confirm the lifecycle fact for its exact instance and generation. Engine readiness also requires reliable portfolio valuation; a healthy daemon alone does not prove strategy readiness.
 
-A non-zero exit means one of those failed. That is the intended behaviour: a
-runner that cannot prove its own authority does not start.
-
-## What happens next is not yours to do
-
-The runner is now waiting for a signed desired-state command. It cannot create
-one. Deployments are authored and approved in ARX, and arrive over the
-subscription — see
-[your first DeploymentSpec](/getting-started/first-deployment-spec).
-
-If nothing arrives, the runner keeps waiting. That is correct: an idle runner
-with no instructions is a healthy runner, not a stuck one.
-
-## When it does not start
-
-| Symptom | Cause |
-|---|---|
-| Exits complaining about the machine vault | Enrollment did not complete, or `SOPS_AGE_KEY_FILE` is not set |
-| Exits on credential binding | `runner.toml` and the vault disagree — do not hand-edit either |
-| `vault verify` fails but `sops` works | You are testing a different path; the CLI is the acceptance surface |
-| Starts, never becomes ready | Capability receipt missing or not bound to this key |
-
-More in [troubleshooting](/operator-guide/troubleshooting).
+If startup fails, follow the named authority, transport or artifact check in [troubleshooting](/operator-guide/troubleshooting). Do not switch to the offline lane as a recovery step for a failed signed deployment.

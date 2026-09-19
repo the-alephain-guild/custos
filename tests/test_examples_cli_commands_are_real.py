@@ -41,10 +41,8 @@ def _documentation_pages() -> list[Path]:
 # published image whose entrypoint is that same script. The subcommand must
 # start with a letter so that `arx-runner --help` is not read as a subcommand
 # named `--help`.
-_INVOCATION = re.compile(
-    r"(?:arx-runner|custos-runner:v[\d.]+)\s+"
-    r"(vault\s+\w+|credential\s+\w+|nats-transport\s+\w+|[a-z][a-z-]*)"
-)
+_INVOCATION = re.compile(r"(?:arx-runner|custos-runner:v[\d.]+)\s+([a-z][a-z-]*)")
+
 _FLAG = re.compile(r"--[a-z][a-z-]*")
 _INLINE_CODE = re.compile(r"`([^`]+)`")
 _FENCE = re.compile(r"^\s*```")
@@ -79,6 +77,21 @@ def _subparser(name: str) -> argparse.ArgumentParser | None:
     return parser
 
 
+def _invocation_name(match: re.Match[str], line: str) -> tuple[str, int]:
+    """Follow nested commands in the real parser, including unknown child names."""
+    name, end = match.group(1), match.end()
+    while (parser := _subparser(name)) is not None:
+        children = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+        if not children:
+            break
+        child = re.match(r"[ \t]+([a-z][a-z-]*)", line[end:])
+        if child is None:
+            break
+        name += " " + child.group(1)
+        end += child.end()
+    return name, end
+
+
 def _accepted(parser: argparse.ArgumentParser) -> set[str]:
     return {opt for action in parser._actions for opt in action.option_strings}
 
@@ -102,10 +115,10 @@ def _commands(text: str) -> list[tuple[str, set[str]]]:
         # invocation, and has no obligation to carry the required flags.
         if match.start() > 0 and line[match.start() - 1] == "`":
             continue
-        name = " ".join(match.group(1).split())
+        name, end = _invocation_name(match, line)
         if _subparser(name) is None:
             continue
-        body = _invocation_body(lines, index)[match.end() :]
+        body = _invocation_body(lines, index)[end:]
         found.append((name, set(_FLAG.findall(body))))
     return found
 
@@ -141,7 +154,7 @@ def _named_subcommands(text: str) -> list[str]:
         for candidate in candidates:
             match = _INVOCATION.search(candidate)
             if match:
-                named.append(" ".join(match.group(1).split()))
+                named.append(_invocation_name(match, candidate)[0])
     return named
 
 
@@ -231,3 +244,21 @@ def test_probe_detects_a_flag_that_does_not_exist() -> None:
     assert "--nats-sim-url" in _accepted(parser)
     assert "--nats-url" in _accepted(parser), "the offline lane takes its NATS address here"
     assert "--nats-telepathy" not in _accepted(parser)
+
+
+@pytest.mark.parametrize(
+    "name", ["identity standalone", "deployment publish", "nats bootstrap", "release-policy issue"]
+)
+def test_probe_follows_nested_commands_without_a_name_allowlist(name: str) -> None:
+    parser = _subparser(name)
+    assert parser is not None
+    flag = sorted(_required(parser))[0]
+    commands = _commands(f"arx-runner {name} {flag} example\n")
+    assert commands == [(name, {flag})]
+    assert flag in _accepted(parser)
+
+
+def test_probe_rejects_an_unknown_nested_command() -> None:
+    names = _named_subcommands("Run `arx-runner deployment teleport` next.\n")
+    assert names == ["deployment teleport"]
+    assert _subparser(names[0]) is None

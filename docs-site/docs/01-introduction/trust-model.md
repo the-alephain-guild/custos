@@ -1,103 +1,26 @@
 ---
-title: "The Trust Model"
+title: "Trust model"
 sidebar_position: 2
 ---
 
-# The Trust Model
+Custos runs on operator-owned infrastructure. Exchange credentials are encrypted locally and used by local venue clients. ARX does not receive exchange secrets or private signing keys through runner telemetry.
 
-Custos (Latin: *guardian*) is a non-custodial, self-hosted execution runner. You
-run the daemon on your own infrastructure, it holds your exchange credentials
-locally, and it executes strategies against a venue on your behalf.
+## Signed operation
 
-That arrangement asks a lot. This page is about why the arrangement is
-defensible, and what specifically you are trusting.
+ARX authenticates users, authorizes intent and owns canonical deployment decisions. Custos verifies the issued desired state, resolves local credentials, applies it and signs observations. The runner does not approve its own canonical deployment or promotion.
 
-## Why it is open source
+Command verification covers exact bytes and subject. Fact verification covers the enrolled runner key, scope and sequence. Custos exposes no HTTP administration endpoint; broker-delivered input still requires authentication and validation.
 
-The runner holds your exchange credentials and places real orders. There is
-exactly one condition under which trusting it is rational: you can read the code
-and check what it does with those credentials.
+## Offline operation
 
-Open source is therefore not a licensing preference here. It is the mechanism
-that turns "credentials stay on your machine" from a claim in a document into a
-property an external auditor can verify line by line. A closed runner asking for
-the same trust would be asking you to take its word.
+The operator may explicitly select an independent sandbox/testnet lane, generate an unattested identity and publish local desired state. This path trusts operator-controlled infrastructure and mounted strategy code. Its status is unsigned, it cannot run live, and it produces no promotion evidence. It is not a fallback for failed signed verification.
 
-Apache-2.0, public from the first release. See [`LICENSE`](https://github.com/the-alephain-guild/custos/blob/main/LICENSE).
+## Local safety and availability
 
-## What crosses the boundary
+Temporary upstream loss does not itself stop an already applied deployment. Local safety continues independently. Credential expiry, revocation, engine failure and invalid authority are separate conditions that can stop execution. Offline and signed policies have different scopes; see [safety during disconnects](/trust-model/safety-survives-disconnect).
 
-Three properties define the boundary Custos defends.
+## Auditing the boundary
 
-**Credentials and strategy code stay local.** The only things that leave the
-runner are signed observations — statements about what the engine did. No
-credential, no key material, and no plaintext of either is ever published,
-logged, or sent upstream.
+The Apache-2.0 source, contract assets and tests support independent inspection. A source review does not establish deployed behavior; verify the exact artifact and configuration you use. Host access control, exchange permissions and strategy risk remain operator responsibilities.
 
-**Control is declarative, not imperative.** Custos receives a signed statement of
-what *should* be running and reconciles local reality toward it. Nothing reaches
-into your machine to start a process. This is the difference between a runner you
-host and an agent someone else drives, and it is why a lost message degrades into
-"converge on restart" rather than "instruction lost".
-
-**A disconnect degrades gracefully.** If the upstream authority becomes
-unreachable, running deployments keep running from durable local state, and local
-protection keeps enforcing — the aggregate notional cap, the drawdown breaker and
-the zombie watchdog all evaluate locally. An outage never stops local trading and
-never removes local protection.
-
-The four guarantees these produce are stated, with the code and tests that hold
-each one, in the [trust model chapters](/trust-model/red-lines).
-
-## Who decides, who executes
-
-ARX decides. Custos executes. Neither can do the other's job.
-
-| | ARX | Custos |
-|---|---|---|
-| Authenticates the actor | ✅ | ✗ |
-| Owns the deployment record | ✅ | ✗ |
-| Approves live promotion | ✅ | ✗ |
-| Holds venue credentials | ✗ | ✅ |
-| Places orders | ✗ | ✅ |
-| Signs execution facts | ✗ | ✅ |
-
-Two signature checks, opposite directions, no shared secret. Compromising the
-runner does not let you manufacture an approval; compromising the approval path
-does not reach a venue without a runner willing to execute.
-
-Custos exposes no API to end users, dashboards or API clients. It subscribes and
-it publishes; there is no inbound control surface to attack.
-
-## The six modules
-
-| Module | Responsibility | Guarantee it anchors |
-|---|---|---|
-| **enrollment** | Nonce-bound proof of possession; encrypted machine credential; rotation and revocation | Private key never transmitted |
-| **reconcile** | Verify signed desired state, converge local runtime, record outcomes durably | A disconnect is not a stop |
-| **engine host** | Supervise the trading engine, configure venue clients, enforce admission | Live execution is always gated |
-| **runner_fact** | Typed signed statements through a durable local queue | No unsigned fallback path |
-| **credential_vault** | `sops`+`age` local vault; `trade_no_withdraw` scope enforcement | Credentials never leave the process |
-| **transport** | Signed desired-state subscription; signed fact publication | Versioned wire contract |
-
-Each has its own chapter — start from
-[architecture at a glance](/introduction/architecture-at-a-glance) for the map.
-
-## Independence
-
-The repository is self-sufficient on purpose. An external auditor clones one
-repository and can read everything: the code, the rules it is held to, the
-contract assets, and the tests that prove the claims.
-
-Nothing in that audit requires access to anything closed. If it did, the
-verifiability argument above would collapse — an auditor who has to take one part
-on faith has to take all of it on faith.
-
-Releases follow SemVer, and each minor line is supported for at least 12 months.
-See [SemVer and LTS](/release-governance/semver-lts).
-
-## Next
-
-- The four guarantees in depth: [red lines](/trust-model/red-lines)
-- How the pieces fit: [architecture at a glance](/introduction/architecture-at-a-glance)
-- Check the claims yourself: [audit checklist](/trust-model/audit-checklist)
+Read the [four guarantees](/trust-model/red-lines), [architecture](/introduction/architecture-at-a-glance) and [audit checklist](/trust-model/audit-checklist) for implementation and verification scope.

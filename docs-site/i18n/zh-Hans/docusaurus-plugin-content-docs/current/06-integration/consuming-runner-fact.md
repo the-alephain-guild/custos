@@ -1,26 +1,21 @@
 ---
-title: "消费 RunnerFact"
+title: "消费签名观测"
 sidebar_position: 3
 ---
 
-# 消费 RunnerFact
+签名通道发布 RunnerFact 批次和独立策略信号 envelope。每种接口都应使用已注册 runner 公钥及精确契约验证。离线部署状态不是这两类验证器可接受的输入。
 
-本页面向"要写一个消费方"的人：subject、精确签名前像，以及校验器必须检查什么。概念模型
-—— 事实是什么、联合为何封闭 —— 见 [RunnerFact](/concepts/runner-fact)。
-
-## Subject
+## RunnerFact subject
 
 ```text
 crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
 ```
 
-subject 跨 spec 与 generation 变更保持稳定。配置变更不会搬走一条流，因此订阅了某个部署实例的消费方会持续收到该实例的事实。
+流身份为租户 + 模式 + runner + 部署实例。spec 或 generation 改变不会重置序号。
 
-## 签名前像
+## 批次签名
 
-签名域是 `CRUCIBLE-RUNNER-FACT-BATCH-V1\0` —— 注意结尾的 NUL，它是签名域的一部分。
-
-被签名的 header 是一个**封闭的 18 字段对象**，顺序如下：
+签名域为 `CRUCIBLE-RUNNER-FACT-BATCH-V1\0`，包含末尾 NUL。封闭 header 包含：
 
 ```text
 schema_version, batch_id, tenant_id, trading_mode, runner_id,
@@ -30,65 +25,55 @@ capability_manifest_digest, key_id, emitted_at, source_seq_start,
 source_seq_end, payload_digest
 ```
 
-`facts` 与 `signature` **不在** header 内。取而代之：
-
 ```text
 payload_digest = sha256(canonical_json(facts))
-被签名字节      = DOMAIN || canonical_json(header)
+signed bytes = DOMAIN || canonical_json(header)
 ```
 
-因此签名是通过摘要覆盖载荷，而不是逐值覆盖 —— 这让校验方无需缓冲任意大的批次即可校验
-header。
+`facts` 和 `signature` 不在 header 中。规范 JSON 使用紧凑 UTF-8、排序对象键、原序数组、不作 ASCII 转义的 Unicode，且末尾无换行。拒绝二进制浮点数和非有限数字，十进制字符串需精确解析。
 
-### Canonical JSON
+## 应用前验证
 
-这一步做错，是"签名明明正确却验不过"最常见的原因，所以请按规则实现，而不是照搬现成的序列化器：
+1. 匹配 subject、租户、模式、runner 和部署实例。
+2. 重算 facts 摘要。
+3. 用 `key_id` 对应的已注册公钥验签，并验证授权/能力绑定。
+4. 对该实例流检查预期序号，按稳定事件/批次身份去重。
+5. 拒绝未知事实 kind 和无效契约字段。
 
-- UTF-8、紧凑（无无意义空白）；
-- 对象成员按 Unicode 码点升序排序；
-- 数组顺序保持不变；
-- 普通 Unicode **不**做 ASCII 转义；
-- 拒绝 NaN 与二进制浮点；
-- 结尾无换行。
+契约 golden 使用合成测试密钥，不能将其视为可信运行身份。
 
-V1 签名前像 golden 固定了精确字节、摘要、合成密钥与签名。请对照 golden 实现，而不是对照你的语言默认 JSON 编码器 —— 多数默认编码器至少违反上面一条。
+## 批次 kind
 
-该 golden 里的合成密钥只是契约证据。它永远不是运行时身份证据，用它签名的批次绝不能被当作真实批次接受。
-
-## 校验器必须检查什么
-
-1. subject 与批次的 tenant、mode、runner、部署实例一致。
-2. `payload_digest` 等于收到的 `sha256(canonical_json(facts))`。
-3. 签名可用该 `key_id` 对应的 runner enrolled 公钥，在
-   `DOMAIN || canonical_json(header)` 上验证通过。
-4. `source_seq_start` 与 `source_seq_end` 与你已接受的该流内容连续。
-5. 每个 `facts[].kind` 都在封闭联合内。未知 kind 是终态契约违反，不是可以跳过的值。
-
-**先查序号，再消费载荷内容**。一个密码学上验证通过、但序号跳跃的批次，意味着有事实丢失；继续消费后面的内容等于静默接受了一段残缺历史。
-
-## 接受的 kind
-
-| 消费方 | `facts[].kind` |
+| 用途 | `facts[].kind` |
 |---|---|
-| settlement | `fill`、`position_closed`、`fee`、`period_closed` |
-| risk | `equity_snapshot`、`position_snapshot` |
-| health | `heartbeat`、`RunnerRuntimeLogFact.v1` |
-| reconciliation | `execution_fill`、`venue_ledger_snapshot_manifest`、`venue_ledger_snapshot_chunk`、`reconciliation_period_closed` |
-| deployment lifecycle | `RunnerDeploymentLifecycleFact.v1` |
+| 结算 | `fill`、`position_closed`、`fee`、`period_closed` |
+| 风险 | `equity_snapshot`、`position_snapshot` |
+| 健康 | `heartbeat`、`RunnerRuntimeLogFact.v1` |
+| 对账 | `execution_fill`、`venue_ledger_snapshot_manifest`、`venue_ledger_snapshot_chunk`、`reconciliation_period_closed` |
+| 部署生命周期 | `RunnerDeploymentLifecycleFact.v1` |
 
-## 幂等
+生命周期事件 id 包含稳定指令/应用身份，不包含观测时间。同一应用的重投递因此保持幂等。
 
-生命周期事件 id 排除 `observed_at`；它的 UUIDv5 前像由流身份、spec id 与 digest、
-generation、生命周期状态、稳定指令指纹与结果构成。
+## 策略信号
 
-因此同一次 apply 的重试或重启会产出**相同**的事件 id。请基于它去重 —— 它就是为此存在的。
+Subject：`crucible.runner.strategy-signal.v1.{tenant_id}.{runner_id}.{trading_mode}`。 <!-- disclosure-ok: exact public strategy-signal subject -->
 
-## 数值
+签名域：`CRUCIBLE-RUNNER-STRATEGY-SIGNAL-V1\0`。 <!-- disclosure-ok: exact strategy-signal signing domain -->
 
-载荷数值以 JSON 整数或 canonical decimal 字符串到达，绝不是浮点。请把 decimal 字符串解析成精确 decimal 类型。解析成 double 会把这套字符串表示本来要避免的误差重新引进来。
+签名覆盖签名域字节与以下封闭载荷的规范 JSON，仅排除 `signature`：
 
-## 可用性
+```text
+schema_version, fact_id, subject, tenant_id, trading_mode, runner_id,
+deployment_instance_id, deployment_spec_id, deployment_spec_digest,
+generation, strategy_id, capability_version_id, capability_version,
+capability_manifest_digest, strategy_version, instrument, client_order_id,
+timeframe, direction, occurred_at, source_sequence, input_digest, trace_id, key_id
+```
 
-消费方不可达时，事实在 runner 的持久 outbox 中累积，恢复后发布，身份与序号不变。不存在有损模式，也不存在未签名的降级 topic。
+`schema_version` 为 1；`direction` 为 `long`、`short` 或 `flat`；`client_order_id` 可为 null。校验精确 subject 及完整实例/能力范围，验证注册签名，按 `fact_id` 去重，并按租户/模式/runner/实例检查 `source_sequence`。多个实例共享信号 subject，但序号流独立。
 
-宕过一段时间的消费方不需要回补机制；它只需要从上次接受的序号继续。
+信号具有独立持久化序号分配与 PubAck 跟踪，不是 RunnerFactBatch 的第十四种 kind，也不能与批次序号比较。策略信号不能证明订单已成交。
+
+## 投递
+
+outbox 在发布前持久化，记录 PubAck 后才完成本地投递。重试保持身份。消费者需保存自己的持久化游标和去重状态；历史重放可用性取决于 broker 保留策略及消费者配置。本地 outbox 持久化不等于下游拥有无限历史保留。

@@ -1,160 +1,100 @@
-# custos-docs-site
+# Custos documentation site
 
-Documentation site for **custos.alephain.com** — the non-custodial execution
-runner.
+Docusaurus serves English and Simplified Chinese documentation at
+`custos.alephain.com`. GitHub Pages reads the `gh-pages` branch root.
 
+## Local setup and verification
 
-## Prerequisites
-
-- Node.js **20+**
-- npm (or yarn)
-
-## Local development
+Use Node.js 20+, npm, uv and Python 3.12. Install the base runner dependencies
+from the repository root so reference checks can load the actual CLI parser.
 
 ```bash
+uv sync --locked --extra dev
 cd docs-site
 npm ci
-npm start                    # opens http://localhost:3000 in English
-npm run start:zh             # opens http://localhost:3000 in 简体中文
+npm start
+npm run start:zh
+npm run verify
 ```
 
-## Build
+`verify` runs disclosure, Chinese wrapping and terminology tests/checks,
+source-reference comparison, both locale builds and TypeScript. The source
+check uses the existing Python environment and does not install or remove
+engine extras. Output is in `build/` and `build/zh-Hans/`.
+
+Run from the repository root to regenerate checked-in reference tables:
 
 ```bash
-npm run build                # output → docs-site/build/
-npm run serve                # preview the production build locally
+uv run python scripts/check-docs-site.py --write
+uv run pytest tests/test_docs_site_reference.py -q
 ```
 
-## i18n
+The generator reads argparse, package metadata, venue declarations and schema
+files. Translated table labels live in `data/reference-labels.json`. Edit
+explanatory prose around generated blocks, not the generated tables themselves.
 
-- Default locale: `en`
-- Alternate: `zh-Hans`
-- Regenerate translation JSON (adds new/removed keys):
+## Publishing
 
-  ```bash
-  npm run write-translations -- --locale zh-Hans
-  ```
+`.github/workflows/docs-check.yml` verifies pull requests and relevant main
+changes, including source changes that can invalidate documentation. It has
+read-only permissions and never publishes.
 
-Translation source: `i18n/zh-Hans/`.
+`.github/workflows/docs-deploy.yml` builds on documentation/workflow changes
+pushed to main, or manual dispatch. It checks the public content boundary and
+source references, then publishes `build/` to `gh-pages` with
+`peaceiris/actions-gh-pages`. `static/CNAME` preserves the custom domain.
 
-## Versioning (deferred)
+After publishing, check the workflow revision, the `gh-pages` commit and the
+actual public pages in both locales. A successful upload alone does not prove
+that the CDN is serving the new content. This workflow does not publish runner
+packages, containers or release tags.
 
-After content is stable and the site is deployed once, freeze v0.3.0:
+## Writing for operators
 
-```bash
-npm run docusaurus docs:version 0.3.0
-```
+Public names are Custos and ARX. Present ARX as one product; do not expose the
+services, storage topology or internal coordination behind it. Internal authority
+records may be used to verify facts, but do not copy their narrative or link to
+internal receipt paths from the site.
 
-This snapshots `docs/` into `versioned_docs/version-0.3.0/` and adds
-`docsVersionDropdown` to the navbar (uncomment in `docusaurus.config.js`).
+Custos's own public source paths and tests may be cited when they help an auditor.
+Keep exact CLI flags, wire subjects and signing domains. If a literal product
+identifier needs a disclosure exemption, use a same-line `disclosure-ok` comment
+with a specific reason. Do not exempt ordinary prose about private systems.
 
-## Deploy
+Use concise technical prose:
 
-CI (`.github/workflows/docs-deploy.yml`) builds on push to `main`
-under `docs-site/**` and deploys to the `gh-pages` branch. Custom domain is
-`custos.alephain.com`, set via `static/CNAME`.
+- Tutorials: prerequisites, commands, expected results, troubleshooting and stop.
+- Reference pages: exact fields, defaults, choices, supported combinations and scope.
+- Concepts: definition and boundary first, then a short reason where useful.
+- Status pages: evidence revision/date and what remains unverified.
 
-## This site is customer-facing — read before writing
+Avoid repeated warnings, rhetorical contrasts, slogans and claims such as
+“always” or “the only path” without specifying the lane and scope. Separate daemon
+health, instance application, engine readiness and production acceptance. Preserve
+historical receipts instead of refreshing them to match current source.
 
-Everything under `docs/`, `i18n/` and `src/` is published to the public web.
-Two rules follow from that, and both are enforced mechanically.
+## Translation
 
-**1. Do not use internal documents as your narrative source.**
+Maintain the same page paths in `docs/` and
+`i18n/zh-Hans/docusaurus-plugin-content-docs/current/`. Add new page ids to
+`sidebars.js`; category translations are in `current.json`. Home-page strings are
+in `i18n/zh-Hans/code.json`.
 
-`docs/**.md` at the repo root, `CLAUDE.md`, `.claude/rules/` and `.forge/`
-exist to divide responsibility between internal systems. Every sentence in
-them may be true and still be exactly what must not be published. Use them to
-*check facts*; do not use them as the *skeleton* of a chapter.
+Chinese paragraphs occupy one source line; Han-to-Han soft wraps render unwanted
+spaces. Translate prose naturally while preserving commands, paths and identifiers.
 
-Write from the product surface instead: what an operator installs, runs,
-configures and observes. If a capability has no operator-visible surface, do
-not claim it.
+| English | Chinese |
+|---|---|
+| venue / exchange | 交易所 |
+| artifact | 产物 |
+| credential | 凭据 |
+| provenance | 来源记录 |
+| vault | 金库 |
+| circuit breaker | 熔断器 |
 
-**2. Never name what is not public.**
+## Examples and verification scope
 
-Custos and ARX are the only public names. ARX is presented as one product —
-whatever implements it behind the scenes is not something a reader needs to
-model, so do not introduce a separate "control plane" actor alongside it.
-
-Do not name other systems in the ecosystem, internal storage or migration
-identifiers, cross-service mechanism vocabulary, private repository paths,
-internal plan / gate / deviation / lesson numbers (`G6`, `DEV-…`, `Plan 20 T5`),
-who decided something internally, or where a file lives in our source tree.
-
-Also drop the framing that says which internal document a chapter was distilled
-from. It reads as an editing note and tells a customer nothing.
-
-Do NOT surface `docs/authority/*` receipts on the site — those are internal
-artifacts. They may be referenced by digest.
-
-### The gate
-
-```bash
-npm run check:disclosure     # scan the site
-npm run test:disclosure      # regression-test the gate itself
-npm run verify               # disclosure → CJK wrapping → build → typecheck
-```
-
-The gate scans the **full file including code blocks and HTML comments** — an
-internal identifier pasted into a sample payload discloses just as much as one
-written in prose. It runs first in CI, before the build, because a leak that
-reaches `gh-pages` is irreversible while a failed build is not.
-
-If a banned term genuinely belongs on the page — a published container
-coordinate, a wire subject an integrator must subscribe to — append
-`disclosure-ok: <reason>` on that line. The reason is reviewed; the escape
-hatch is not a way to silence the gate.
-
-## Writing Chinese: one paragraph, one line
-
-Do not hard-wrap Chinese paragraphs. A newline inside a Markdown paragraph is a
-soft break and renders as a space, which is right for English and wrong here: a
-wrap between two Han characters publishes a gap inside a word — `只 会由` rather
-than `只会由`.
-
-It is invisible in the source and in review, and obvious to every reader of the
-page. The site shipped 470 of them before anyone looked at the rendered output.
-
-```bash
-npm run check:cjk            # scan the Chinese locale
-npm run test:cjk             # regression-test that check
-```
-
-Wrapping between a Latin word and Han text is fine and stays — there the space
-belongs. Only Han-to-Han wraps are the defect.
-
-## One English term, one Chinese rendering
-
-| English | 中文 | Not |
-|---|---|---|
-| venue, exchange | 交易所 | 场所、交易场所 |
-| artifact | 产物 | 制品 |
-| credential | 凭据 | 凭证 |
-| provenance | 来源记录 | 来源凭证 |
-| vault | 金库 | vault（正文中） |
-| circuit breaker | 熔断器 | 断路器 |
-
-Two words for one thing reads as two things. `凭证` was the worst of these: it
-carried both *credential* and *provenance*, so one page could say 机器凭据 and
-交易所凭证 four lines apart meaning the same kind of thing, while 来源凭证 five
-lines later meant something unrelated.
-
-**Identifiers stay English.** A `vault` in backticks is the CLI subcommand, the
-flag or the path — translating it documents a command that does not exist. The
-check exempts backticked spans and link targets, so putting an identifier in
-backticks is all that is needed.
-
-```bash
-npm run check:terms          # scan the Chinese locale
-npm run test:terms           # regression-test that check
-```
-
-## Naming discipline
-
-Follow
-[`the-alephain-guild.github.io/data/naming-authority.md`](https://github.com/the-alephain-guild/the-alephain-guild.github.io/blob/main/data/naming-authority.md):
-
-- ARX canonical positioning: **"the neutral quant operating system"** (do not use aliases)
-- custos canonical positioning: **"the non-custodial execution runner"**
-- ARX phased integrations (Speculum, Athanor, Argus, Synedrion, etc.) MUST NOT
-  be presented as current capabilities — obey Phase 3 / Phase 4 discipline
+`examples/standalone/` contains non-trading fixtures and a status reader used by
+the standalone sandbox tutorial. That exercise uses a real broker and encrypted
+vault with `sandbox-sim`; it does not validate strategy behavior or venue execution.
+Keep testnet and signed end-to-end acceptance separate in any report.

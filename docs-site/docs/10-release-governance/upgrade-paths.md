@@ -1,134 +1,38 @@
 ---
-title: "Upgrade Paths"
+title: "Upgrade paths"
 sidebar_position: 2
 ---
 
-# Upgrade Paths
+Record the current Git revision or image digest, dependency lock and state locations before upgrading. Preserve identity, encrypted credentials and consistent database backups. Read [release status](/release-governance/release-status) to distinguish a source version from a published candidate or supported stable line.
 
-What changes between version lines, and what you have to do about it. Sections
-are in reverse-chronological order, so the top of the page is always the most
-recent move.
+## Nautilus 2 checkout
 
-:::note No published artifact to upgrade from yet
-No version has been published as a wheel or an image. Every runner in existence
-was installed from source or built locally, so there is no `pip install
---upgrade` to run and no image tag to pull — see
-[installation](/getting-started/installation).
+The current adapter uses `nautilus-trader==2.0.0rc5+sodex.1` on Python 3.12. Use the repository lock and supported wheel platform; do not independently upgrade the engine package.
 
-That does not make this page hypothetical. The changes below are real, and if
-you move a runner from one source revision to the next you still have to make
-them. What is deferred is the packaging, not the work.
-:::
+1. Stop the affected deployment through its normal desired-state path and inspect venue positions/orders.
+2. Install the intended checkout with `make install-nt`.
+3. Run the relevant source/typing and engine checks.
+4. Rehearse startup, readiness and stop in sandbox before a testnet run.
+5. Rebuild any local image and confirm its revision label.
 
-## 0.2.x → 0.3.0
+The host now admits only one active node per event loop. An initialized portfolio must also have reliable valuation before engine readiness passes. SoDEX support has mode and input limits described [here](/engines/sodex).
 
-0.3.0 makes NautilusTrader the default engine, validates every desired-state
-message through a strict contract before any vault, gate or host code runs, and
-delivers the complete runtime as an image you build and verify locally.
+## Signed and offline input
 
-1. **Build and gate the image.** From your checkout, `make verify-local-v030`
-   builds `custos-runner:v0.3.0` and runs the full runtime contract against it.
-   Delete any Dockerfile of your own that existed only to add NautilusTrader,
-   PyYAML, `sops` or `age` — the image now carries them.
-2. **Replace the removed boolean engine switch.** Engine selection is a closed
-   enum: `--engine nautilus` (the default) or `--engine sandbox-sim`. The
-   simulation host declares `sandbox` only, so it will refuse a testnet or live
-   deployment rather than quietly running one without a venue.
-3. **Update every spec.** `generation` must be `>= 1`, `lifecycle_state` is now
-   separate from `trading_mode`, and `strategy_config` is passed through
-   untouched. Unknown fields are rejected rather than ignored.
-4. **Install the domain-event public key on each runner** and provision the
-   stream topology upstream. Custos verifies signed commands; it does not create
-   streams, and it will not accept an unsigned one. The flags are in
-   [the CLI reference](/reference/cli).
-5. **Gate rollout on readiness**, not on the process starting —
-   `arx-runner health` exits non-zero until the runner is genuinely in service.
-   See [readiness and health](/operator-guide/readiness-health).
+Signed deployments continue to come from ARX. The local `deployment validate/publish` commands handle a distinct `OfflineDeploymentSpec`, only for sandbox/testnet. They do not validate or publish canonical signed deployment commands.
 
-There is no offline spec-validation command. A spec is validated when it
-arrives, after its signature is verified, because validating unsigned material
-locally would tell you a message is well-formed without telling you whether it
-is authentic — and the second question is the one that matters.
+`identity standalone` is available for offline operation. Do not convert an enrolled identity by editing `runner.toml`; use a separate state root. Offline code-directory hashes and signed immutable release digests serve different contracts and are not interchangeable.
 
-Strategy repositories consume the verified image directly. Deriving your own
-image from it puts you back in the position the image exists to remove: an
-artifact nobody verified.
+## Older state layouts
 
-## 0.1.x → 0.2.0
+Older single-file venue vaults require deliberate per-key reprovisioning with `vault put`. Keep decrypted migration material in a protected local location, feed secrets through stdin, and remove temporary plaintext after verification. Do not overwrite a machine vault while migrating venue keys.
 
-0.2.0 was the first clean break. Two things move, and neither is automatic.
+State uses `~/.arx`. Preserve each runner's metadata/vault binding and re-enroll if its old identity format is no longer accepted. Copying an old enrollment record alone does not create a valid current `runner.toml` and encrypted machine identity.
 
-**State moves to `~/.arx`.**
+## Rollback
 
-```bash
-mkdir -p ~/.arx
-mv ~/.custos/enrollment.json ~/.arx/enrollment.json  # if present
-mv ~/.custos/state           ~/.arx/state            # if present
-```
+Restore a tested source/image revision with its matching dependencies. Check state-format and contract compatibility before reusing state written by a newer version. A previous binary does not necessarily understand a newer database or signed payload. Retain the backup and recorded evidence until recovery has been verified.
 
-**Each venue key is re-provisioned individually.** The single sops JSON file is
-replaced by one encrypted file per key. There is deliberately no automatic
-migration: the old file is a single blob holding every secret you have, and a
-migration would have to decrypt all of them at once to rewrite them.
+## Production and 1.0
 
-```bash
-sops --decrypt ~/.old-vault/vault.json > /tmp/legacy.json
-# then, for each key in that file:
-arx-runner vault put --key-id <id> --tenant-id <tenant> \
-  --api-key <api-key> --api-secret-stdin --scope-digest <lowercase-sha256>
-shred -u /tmp/legacy.json
-```
-
-Then drop the retired `--sops-file` and `--age-key-file` flags from any systemd
-unit, launchd plist or Compose service, and prove the runner still works before
-going anywhere near real money:
-
-```bash
-arx-runner start --enabled-mode sandbox --engine sandbox-sim
-```
-
-Container operators must mount `~/.arx`. The Dockerfile declares
-`VOLUME ["/home/custos/.arx"]`; an ephemeral mount loses machine authority and
-venue credentials, and the runner will refuse to start without them. See the
-[container example](/operator-guide/deployment).
-
-## Promoting 0.x to 1.0
-
-1.0 is a promise about compatibility, so it is gated on evidence that the
-promise can be kept rather than on a date:
-
-- [ ] The command and fact wires are production ready: signed commands reach
-      exact runner subjects, and signed facts are durably ingested.
-- [ ] Three consecutive minor releases with no breaking change to the published
-      schemas or the console entry point.
-- [ ] The published schemas cover the command decode seam and the signed fact
-      output contract.
-- [ ] The [EOL table](/release-governance/semver-lts) has at least one line
-      already inside its window — that is, the support promise has been kept
-      once in practice before it is made permanently.
-
-The last one is the point of the exercise. A 1.0 declared before any line has
-been carried through its own support window is a promise with no evidence
-behind it.
-
-Once the boxes are checked the promote itself is mechanical: bump the version,
-add the changelog section, tag it, and add the new line to the EOL table.
-
-## Template for a minor bump
-
-```
-## `0.<prev>.x` → `0.<next>.0`
-
-### What changed
-
-- {feature | fix | breaking? summary}
-
-### Migration steps
-
-- {commands the operator must run}
-
-### Rollback
-
-- Reinstall the previous minor line. Configuration stays backward-compatible
-  within a minor line, so a rollback is a version change and nothing else.
-```
+Production requires independent deployed acceptance, not a local image check. A future 1.0 also requires the documented compatibility and support commitments, including an exercised support window. Local sandbox/testnet success cannot authorize production promotion.

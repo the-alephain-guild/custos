@@ -1,92 +1,39 @@
 ---
-title: "就绪与健康探针"
+title: "就绪与健康检查"
 sidebar_position: 3
 ---
 
-# 就绪与健康探针
-
 ```bash
-arx-runner health          # 就绪时退出码 0
-arx-runner health --json   # 完整状态文档
+uv run arx-runner health --json
 ```
 
-就绪**不等于**「进程起来了」。守护进程可以正在运行、已连接，却仍然不就绪 —— 而在那个状态下，编排器把它移出服务是**正确的**。
+探针在本地读取 `~/.arx/state/runner-ready.json`，退出码为 0 或 1，不发起网络请求。daemon 使用其他路径时，探针也需指定 `--ready-file`。
 
-## 探针
+## 三种检查
 
-`arx-runner health` 读取一个状态文件、求值就绪判据，然后以 `0` 或 `1` 退出。它不发起任何网络调用，因此足够便宜到可以高频运行，也不会因为上游慢而自己失败。
-
-| 情况 | 退出码 | `--json` 输出 |
+| 检查 | 能证明什么 | 查看内容 |
 |---|---|---|
-| 就绪 | `0` | 完整状态文档 |
-| 未就绪 | `1` | 完整状态文档 |
-| 状态文件不存在 | `1` | `{"ready": false, "path": "…"}` |
+| Daemon 健康 | 已落盘的就绪文档满足判定条件 | `ready`、凭据有效期/绑定、传输模式、SQLite 检查 |
+| 部署应用 | 目标 generation 到达本地应用边界 | 签名生命周期事实或离线 `observed_generation` |
+| 引擎就绪 | node、连接、对账和投资组合条件成立 | 类型化引擎就绪收据或本地引擎诊断 |
 
-文件默认在 `~/.arx/state/runner-ready.json`，可用 `--ready-file` 覆盖。它的权限是 `0600`、位于 `0700` 目录下，且**原子写入** —— 先写唯一命名的临时文件、fsync、再 rename ——
-所以探针永远读不到写了一半的文档。
+签名 daemon 未带 `--reconcile` 时，可能健康但 `deployment_subscription: false`。需要接收部署时应检查此字段。离线 readiness 在订阅建立时写入，不是持续刷新的投资组合或传输监控；还需检查进程、近期状态和本地日志。
 
-## 「就绪」到底断言了什么
+## 就绪判定
 
-八项条件必须同时成立：
+文档必须声明 ready、传输已连接、凭据有效且绑定正确、所有已启用传输模式连接、`sqlite_quick_check: ok`、无无效传输授权。文档缺失或格式错误时失败，凭据过期也会使探针失败。
 
-1. runner 自己标记了就绪；
-2. 传输已连接；
-3. 凭据状态为 `active`；
-4. 凭据绑定有效；
-5. 凭据未过期；
-6. 每个已启用的传输模式都在线；
-7. 本地数据库通过 SQLite `quick_check`；
-8. 无效传输授权数为零。
+文件包含公开身份/有效期、订阅状态和 `runtime_metrics`，不包含密钥或策略参数，以原子方式写入 `0700` 目录，文件权限为 `0600`。离线组合使用同一指标结构，但没有签名 outbox 或策略授权；相应计数为零不能证明签名投递成功。
 
-其中两项值得多说。条件 7 意味着**本地存储损坏会让 runner 变为未就绪**，而不是让它继续接受它可能记录不下来的工作。条件 8 意味着一个验证失败的传输授权会把 runner 移出服务，而不是被跳过。
+## 引擎就绪
 
-机器凭据过期时就绪会被直接拒绝 —— 且此时状态文件被**删除**，而不是改写为未就绪。文件缺失与文件未就绪都过不了探针，所以删掉它不丢任何信息，而且不会留下一份声称着已失效身份的陈旧文档。
+当前引擎检查八项条件：node 任务存活、行情连接、执行连接、投资组合初始化、可靠估值、对账初始化、策略可接收生命周期操作、必要能力已启用。
 
-## 状态文档
+缺少标记价格或权益值时估值不可靠。检查 `portfolio_prices_missing:<instrument>` 等错误及其中的标的。投资组合已初始化，仍可能缺少计算权益所需的价格。
 
-```json
-{
-  "ready": true,
-  "tenant_id": "acme",
-  "runner_id": "018f8b5f-…",
-  "credential_id": "b0e4a8f2-…",
-  "credential_version": 2,
-  "credential_valid_until": "2026-12-31T23:59:59Z",
-  "machine_key_id": "ed25519-7f3a1c",
-  "credential_state": "active",
-  "credential_binding_valid": true,
-  "strategy_id": null,
-  "nats_connected": true,
-  "deployment_subscription": true,
-  "transport_modes": {"sandbox": true},
-  "runtime_metrics": { … }
-}
-```
+## 告警与监督
 
-这里全部是公开元数据。没有凭据、没有密钥材料、没有策略参数 —— 这个文件可以放心挂载、抓取与记录。
-
-## 运行时指标
-
-`runtime_metrics` 携带三十个字段，覆盖四个方面。它们是运维判断 runner 是否跟得上的视角，无需访问任何上游。
-
-| 方面 | 字段示例 |
-|---|---|
-| 本地存储 | `database_bytes`、`wal_bytes`、`disk_free_bytes`、`sqlite_quick_check` |
-| 事实投递 | `pending_fact_batches`、`oldest_pending_fact_age_seconds`、`fact_publish_attempts`、`published_fact_batches`、`last_fact_puback_age_seconds` |
-| 部署收敛 | `desired_deployments`、`desired_applied_drift`、`oldest_desired_applied_drift_age_seconds`、`quarantined_deployments`、`restart_count_total`、`in_progress_commands`、`overdue_in_progress_commands`、`command_outcomes`、`terminal_command_outcomes` |
-| 授权过期 | `policy_heads`、`expired_policy_heads`、`next_policy_expiry_seconds`、`transport_authorities`、`invalid_transport_authorities`、`next_transport_expiry_seconds` |
-
-最值得优先告警的三个：
-
-- **`oldest_pending_fact_age_seconds` 持续上升** —— 事实正在本地堆积，因为投递不出去。执行不受影响，但你对执行的**视图**正在变陈旧。
-- **`desired_applied_drift` 非零且不下降** —— runner 接受了一个它尚未收敛到的期望状态。
-- **`next_transport_expiry_seconds` 变小** —— 某个授权临近过期，而过期会让 runner 变为未就绪。
-
-注意第一项**刻意不是**就绪失败。一台暂时投递不出事实的 runner 仍在正确交易、仍受本地保护；因为上报积压就把它移出服务，等于把一个可观测性问题变成一个执行问题。见[失联不等于停止](/zh-Hans/trust-model/safety-survives-disconnect)。
-
-## 接入方式
-
-**Docker Compose**
+签名通道应监控 `oldest_pending_fact_age_seconds`、目标/已应用状态差异、隔离状态、策略/传输有效期及磁盘空间。报告积压本身不构成重启引擎的理由。
 
 ```yaml
 healthcheck:
@@ -97,25 +44,4 @@ healthcheck:
   start_period: 60s
 ```
 
-务必给 `start_period`。启动时要做完整的授权验证，所以最初几秒未就绪是合理的。
-
-**systemd**
-
-用 timer 或监管单元来跑探针，而不是 `ExecStartPost` —— 就绪是一个**持续条件**，不是一次性的启动结果。
-
-**Kubernetes**
-
-把 `arx-runner health` 用作 readiness probe，liveness probe 则建议只检查进程本身。因为「变为未就绪」就重启 runner，会丢掉正是那份未就绪在提示你去看的本地状态。
-
-## 报告未就绪时
-
-| 先看 | 含义 |
-|---|---|
-| 文件完全不存在 | 守护进程从未到达就绪；去读它的启动输出 |
-| `credential_state` 非 `active` | 已在上游轮换或吊销 —— 跑 `arx-runner credential verify` |
-| `credential_valid_until` 已过 | 已过期；轮换它 |
-| `nats_connected` 为 false | 传输不可达，或授权验证失败 |
-| `sqlite_quick_check` 非 `ok` | 本地存储受损；**先读**[排障](/zh-Hans/operator-guide/troubleshooting)再删任何东西 |
-| `invalid_transport_authorities` 非零 | 有授权未通过验证 |
-
-状态文档会指明是哪一项没过 —— 所以退出码是信号，JSON 是诊断。
+容器探针需使用匹配的 ready-file 路径。将进程存活与就绪检查分开，在配置自动重启前先调查未就绪原因。详见[排错指南](/operator-guide/troubleshooting)。

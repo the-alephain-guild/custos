@@ -3,76 +3,36 @@ title: "产物物化"
 sidebar_position: 3
 ---
 
-# 产物物化
+签名发布路径下载精确产物字节，完成验证后激活本地不可变目录，再导入代码。
 
-策略产物如何从 registry 落到 runner 上，以及在**任何东西被导入之前**必须成立的条件。
+## Registry 访问
 
-:::note 本章取代了「registry 模式加载」
-按 registry 名称加载策略的模式已经不存在了。那是一种由 runner 通过**可变坐标**解析策略的模式 —— 也就意味着「究竟跑了哪份代码」无法仅凭产物本身回答。现在的做法是按 **digest**
-拉取，因此坐标不可能在之后指向不同的字节。
-:::
-
-## 按 digest 拉取，绝不按 tag
-
-blob 按精确的 `sha256` digest 获取：
+OCI blob 按摘要拉取：
 
 ```text
 https://{registry}/v2/{repository}/blobs/sha256:{digest}
 ```
 
-tag 是一个可以被重新指向的**名字**，digest 是**内容**本身。物化路径不接受任何 tag，因此不存在「你批准的产物」与「你运行的产物」可以不同的时间窗。
+Registry 必须在本地允许范围内，凭据按允许的 registry 绑定。客户端仅拉取，使用限定范围的 bearer 认证，限制响应大小，并按请求摘要验证收到的字节。
 
-## registry 必须在白名单上
-
-runner 持有一组明确许可的 registry 主机名，统一转小写并按主机名模式校验。来自其他任何地方的拉取在发出请求**之前**就被拒绝。
-
-凭据按 registry 键入，且必须是该白名单的**子集** —— 你不能持有一个你无权拉取的 registry
-的凭据。这个次序很重要：它让「这台 runner 能触达哪些 registry」可以从**配置**回答，而不是取决于手头碰巧有哪些凭据。
-
-配置方式：
-
-| Flag | 默认 |
+| 输入 | 用途 |
 |---|---|
-| `--artifact-registry` | `ghcr.io` |
-| `--artifact-registry-username` | — |
-| `CUSTOS_ARTIFACT_REGISTRY_TOKEN`（环境变量） | — |
+| `--artifact-registry` | 允许的 registry，默认 `ghcr.io` |
+| `--artifact-registry-username` | 私有 registry 用户名 |
+| `CUSTOS_ARTIFACT_REGISTRY_TOKEN` | Registry token，不放入命令参数 |
 
-token 从环境变量读取而非作为 flag 传入，因此不会出现在 `ps` 输出里。
-
-## 只拉不推的传输
-
-OCI 客户端刻意做得最小化，且**只拉不推**，使用限定作用域的 bearer 认证。不存在推送路径，因此一台被攻破的 runner **无法发布**产物 —— 它至多只能运行失败。
-
-每个响应都有大小上限，且收到的字节会与请求的 digest 作校验。哈希对不上的 blob 会被丢弃，而不是被缓存下来重试。
-
-## 字节流向哪里
+## 本地阶段
 
 ```text
-拉取 → 隔离区 → 验证 → 激活（不可变根）→ 导入
+pull -> quarantine -> verify and extract -> activate -> import
 ```
 
-隔离区在前，激活是**原子**的。产物绝不会从它被下载到的位置直接导入，而一个物化到一半的产物也无法被激活 —— 因为激活是最后一步，不是第一步的副作用。
+缓存、隔离和激活目录分别通过 CLI 参数配置。验证使用独立配置的发布策略和 Sigstore 根。安全解包与原子激活均在导入前完成；加载器检查模块来源，拒绝来自其他 activation 的缓存模块。
 
-目录可配置：
+持久化重启恢复所需的激活与运行状态。缓存不能替代授权或已接受的目标状态记录。
 
-| Flag | 用途 |
-|---|---|
-| `--artifact-cache-dir` | 已下载的 blob |
-| `--artifact-quarantine-dir` | 验证前的暂存 |
-| `--artifact-activation-dir` | 不可变激活根 |
+## 开发输入
 
-## 验证先于导入
+签名通道的 `DevelopmentSourceRefV1` 是显式、按内容寻址的 sandbox 专用输入，使用 `--development-artifact-root`。它不能用于 testnet/live，也不能晋升为生产发布。
 
-签名与证明的验证在**任何** Python 模块被导入之前完成。随后 loader 会证明它导入的模块源自激活根，并拒绝一个从**另一次**激活缓存下来的模块。
-
-第二项检查是最常被跳过的。如果 import 系统端出一个它此前从别处缓存的模块，那么验证磁盘上的字节什么也证明不了。
-
-验证内容与它如何 fail closed，见[策略工具包](/zh-Hans/toolkit/overview)与[产物签名](/zh-Hans/toolkit/artifact-signing)。
-
-## 开发源
-
-存在一条仅限 sandbox 的路径，用于在没有已发布产物的情况下迭代策略，由
-`--development-artifact-root` 选择。它是一个**显式且不可提升**的联合成员 ——
-不能用于 `testnet` 或 `live`，也不能被提升进去。
-
-它存在的意义是：让「我需要快速测一个改动」永远不会变成削弱真实路径的理由。
+离线通道另行在 sandbox/testnet 加载操作者挂载的目录。目录 hash 记录本地内容，不提供签名发布保障。详见[离线 testnet](/operator-guide/offline-testnet)和[产物签名](/toolkit/artifact-signing)。

@@ -1,6 +1,5 @@
 // @ts-check
-// custos docs sidebar — 46 chapters across 10 Parts
-// Content: Plan 20 T5 migrates from docs/**.md; T6 translates to zh-Hans.
+// Public documentation navigation; both locales use the same page ids.
 
 /** @type {import('@docusaurus/plugin-content-docs').SidebarsConfig} */
 const sidebars = {
@@ -21,6 +20,7 @@ const sidebars = {
       label: 'II · Getting Started',
       items: [
         'getting-started/installation',
+        'getting-started/standalone-sandbox',
         'getting-started/enrollment',
         'getting-started/first-sandbox-run',
         'getting-started/first-deployment-spec',
@@ -42,6 +42,7 @@ const sidebars = {
       label: 'IV · Operator Guide',
       items: [
         'operator-guide/deployment',
+        'operator-guide/offline-testnet',
         'operator-guide/credential-vault',
         'operator-guide/readiness-health',
         'operator-guide/runtime-log-observability',
@@ -77,6 +78,7 @@ const sidebars = {
       label: 'VII · Engines',
       items: [
         'engines/nautilus-trader',
+        'engines/sodex',
         'engines/sandbox-simulation-host',
         'engines/engine-roadmap',
       ],
@@ -104,6 +106,7 @@ const sidebars = {
       type: 'category',
       label: 'X · Release & Governance',
       items: [
+        'release-governance/release-status',
         'release-governance/semver-lts',
         'release-governance/upgrade-paths',
         'release-governance/security-policy',

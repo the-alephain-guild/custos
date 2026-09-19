@@ -1,86 +1,26 @@
 ---
-title: "密钥不出本机"
+title: "密钥保留在宿主机"
 sidebar_position: 2
 ---
 
-# 密钥不出本机
+交易所秘密、机器签名密钥和 age identity 保存在 runner 宿主机上，不通过遥测发送给 ARX，也不写入日志。本地交易客户端按交易所认证协议使用凭据。
 
-你的交易所凭据在你的机器上加密，在 runner 进程内解密，用于给交易所请求签名。解密它们的那把密钥同样在你的机器上，从不被传输。
+## 存储与解密
 
-这就是 Custos 开源的原因。我们要求你把 API key 放到一个守护进程上；对"我凭什么信任它"
-这个问题，唯一诚实的回答是：你可以自己读它拿这些 key 干了什么。
+机器材料位于 `runner-machine.enc`，交易所凭据各使用一份 `<key-id>.enc` 文件。`runner.toml` 只含公开绑定元数据。文件权限为 `0600`，私有目录为 `0700`。
 
-## 边界在哪
+Custos 调用本地 sops 加解密，秘密输入通过 stdin 传递，并为 `.enc` 文件显式指定 JSON 格式。解密材料由本地 runner/交易客户端使用。这里约束的是宿主边界；正常客户端在认证期间必须在内存中持有秘密材料。
 
-这条保证约束的是 **I/O**，不是内存。
+`enroll`、凭据轮换和 `identity standalone` 都可写入机器材料。独立身份没有远端认证，不能授权签名通道操作。
 
-真实的交易所客户端必须在进程内存里持有 key 才能给请求签名 —— 任何与交易所通信的客户端都绕不开这一点，假装能绕开只是表演。这条保证覆盖的是 key 可能离开的每一条路：日志、发布出去的消息、HTTP body、进程参数、被子进程继承的环境变量，以及任何明文落盘。
+## 权限范围
 
-## 靠什么守住
+金库在写入/解密边界只接受 `trade_no_withdraw` 声明。操作者还需在交易所实际禁用该密钥的提现权限。本地校验不会查询交易所来证明权限设置。
 
-### 存储
+使用 `vault verify` 验证 runner 的真实解密与本地校验路径，详见[金库操作](/operator-guide/credential-vault)。
 
-```
-~/.arx/vault/
-├── runner-machine.enc       # Ed25519 签名密钥 + 不透明机器凭据
-└── <key-id>.enc             # 每个交易所凭据一个文件
-```
+## 核查
 
-一个凭据一个文件，各自是独立的 sops+age 文档。解密用的 age 身份通过
-`SOPS_AGE_KEY_FILE` 定位，从不离开本机。目录模式 `0700`，文件 `0600`；更宽松的权限
-runner 会告警。
+`tests/test_credential_lifecycle.py` 检查日志/对象路径中的凭据暴露，`tests/test_per_key_vault.py` 覆盖本地金库行为。源码搜索可帮助定位外发和日志代码，但不是完整安全证明。
 
-同目录的 `runner.toml` 只保存公开绑定元数据 —— 凭据 id、版本、有效期、key id 与金库引用。没有明文。
-
-### 写入
-
-`arx-runner vault put` 通过 **stdin** 把 secret 递给 `sops`，绝不作为参数。放进 argv
-的 secret 会出现在 shell 历史里，也会出现在这台机器上任何人的进程列表里。
-
-实现见 `src/custos/cli/subcommands/vault.py`。 <!-- disclosure-ok: auditable source location -->
-
-### 读取
-
-`src/custos/core/per_key_vault.py` 里的 `PerKeyVault` shell out 调 sops，显式传
-`--input-type json --output-type json`。解密 argv 在
-`sops_json_decrypt_command()` 单点构造，因此 CLI 与运行时不会漂移成两种调用方式。
-<!-- disclosure-ok: auditable source location -->
-
-两个金库类都继承 `_BaseVault`，它在每次读取时强制两条 invariant：
-
-- `_verify_permission_scope` 拒绝任何 scope 不是 `trade_no_withdraw` 的凭据；
-- `_emit_decrypt_audit` 发出 `CredentialDecrypted` 事件，只携带凭据 id。
-
-机器身份存放在 `MachineCredentialVault`
-（`src/custos/core/machine_credential_vault.py`），它把 Ed25519 私钥与不透明机器凭据一起加密在同一个文件里。enroll 与 rotate 是仅有的写路径。
-<!-- disclosure-ok: auditable source location -->
-
-## 一个身份，一处存放
-
-enrollment 证明、传输认证与事实签名，用的都是同一个加密文件里的同一把签名密钥。
-
-刻意不存在第二份明文密钥文件。多一份拷贝就是多一处可能泄漏、也多一处轮换时会被忘记的地方。
-
-## 如何验证
-
-```bash
-# 日志调用里没有凭据材料
-grep -rnE 'log\.(info|debug|warning).*api[_-]?key' src/ tests/
-
-# 出站调用里没有凭据材料
-grep -rnE 'publish.*password|send.*secret' src/
-```
-
-在干净的树上两条都没有输出。
-
-值得一读的测试是 `tests/test_credential_lifecycle.py`。它按真实部署的方式构造引擎对象图，然后遍历它并断言从中触达不到任何凭据 —— 这能抓住"没有被记录、但被悄悄留存在某处、日后可能被序列化出去"的情形。
-<!-- disclosure-ok: auditable source location -->
-
-`tests/test_per_key_vault.py` 覆盖解密路径与 scope invariant。
-<!-- disclosure-ok: auditable source location -->
-
-完整流程见[审计清单](./audit-checklist)。
-
-## 这条保证不覆盖什么
-
-Custos 无法阻止一份**本身就带提币权限**的凭据 —— 它会拒绝存储，但如果你在别处授予了该权限，那超出 runner 的范围。同样，如果主机本身能被你不信任的人读取，它也帮不上忙：加密文件与 age 身份都在那台机器上，而 `0600` 只有在账户是你的时候才有意义。
+保护宿主访问与备份：同时取得加密金库和 age identity 即可解密。文件权限不能防止拥有该账户权限的攻击者访问。

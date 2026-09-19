@@ -3,42 +3,49 @@ title: "NautilusTrader 引擎"
 sidebar_position: 1
 ---
 
-# NautilusTrader 引擎
+Custos 通过可选的 `nautilus` extra 使用固定版本的 NautilusTrader fork。在 Python 3.12 环境执行 `make install-nt` 安装。
 
-[NautilusTrader](https://github.com/nautechsystems/nautilus_trader) 是一个事件驱动、以 Python 为主、内核用 Rust 实现的算法交易平台。它是 Custos 随发布提供的执行引擎，也是 runner 自身各项契约在设计时对照的那一个。
+<!-- generated:nautilus-version -->
 
-下文涉及的一切都位于 `src/custos/engines/nautilus/`。这是 runner 中唯一知道
-NautilusTrader 存在的部分 —— reconciler、熔断器与事实生产者一律只通过
-`ExecutionEngineProtocol` 与它对话。
-<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+当前依赖：`nautilus-trader==2.0.0rc5+sodex.1`.
 
-## 两个执行宿主
+<!-- /generated:nautilus-version -->
 
-`host.py` 提供了引擎协议的两个实现：
-<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+lock sources 提供 macOS arm64 和 Linux arm64/x86_64 的 CPython 3.12 wheel。Linux wheel 要求兼容 `manylinux_2_39`。请使用仓库 lock，不要以版本号相近的上游包替代。
 
-**`NtTradingNodeHost`** 监督一个真实的 NautilusTrader `TradingNode`。它声明
-`sandbox`、`testnet` 与 `live`，是唯一能抵达交易所的宿主。
+## 选择宿主
 
-**`SandboxSimulationHost`** 跑完整的本地生命周期 —— artifact 激活、凭据解析、持久化、就绪判定、事实发布 —— 但不连接任何外部系统。它只声明 `sandbox`，因此
-testnet 或 live 部署会在准入处被拒绝，而不是被悄悄模拟掉。
+| CLI 值 | 宿主 | 行为 |
+|---|---|---|
+| `--engine nautilus` | `NtTradingNodeHost` | 使用真实行情客户端；sandbox 本地模拟成交，testnet 向测试网下单 |
+| `--engine sandbox-sim` | `SandboxSimulationHost` | 本地模拟生命周期，不导入交易策略或连接交易所 |
 
-宿主在进程生命周期内二选一：
+签名模拟组合会在模拟宿主外添加事实发布功能；离线组合报告未签名的本地状态。两者输出都不能证明真实交易所往返成功。
 
-```bash
-arx-runner start --enabled-mode sandbox --engine nautilus     # 真实执行
-arx-runner start --enabled-mode sandbox --engine sandbox-sim  # 仅模拟
-```
+## Connector 能力声明
 
-若 NautilusTrader 运行时未安装，`--engine nautilus` 会在启动时失败。它**不会**回落到模拟 —— 一台悄悄换成非交易宿主的 runner 会一边报告健康、一边一单不发。
+<!-- generated:venues -->
 
-## 宿主拥有什么，不拥有什么
+| Connector | sandbox | testnet | live |
+|---|---|---|---|
+| `binance` | 声明支持 | 声明支持 | 声明支持 |
+| `binance_perpetual` | 声明支持 | 声明支持 | 声明支持 |
+| `sodex` | 声明支持 | 声明支持 | 不支持 |
+| `sodex_perpetual` | 声明支持 | 声明支持 | 不支持 |
 
-宿主拥有引擎进程构造、交易所客户端配置、就绪观测、停止与重配置行为，以及引擎遥测。
+<!-- /generated:venues -->
 
-它**不**拥有部署授权、策略发布状态、artifact 验证、凭据范围策略与指令确认。这些属于它上面的层次 —— 这正是为什么更换引擎不会移动任何一条信任边界。
+表中为宿主能力声明，不是生产验收结果。当前 daemon 未启用 live 执行。SoDEX testnet 还有输入契约限制，配置前请阅读[SoDEX](/engines/sodex)。
 
-引擎入口点体现了这个切分：
+## 并发与就绪
+
+Nautilus 2 使用线程本地 runner/message bus。Custos 拒绝同一 event loop 上的第二个活动 node。并发 node 应使用不同进程，并隔离身份和状态目录。
+
+引擎就绪检查 node 任务、行情/执行连接、投资组合初始化与可靠估值、对账、策略生命周期接收状态及必要能力。创建 node 成功或 daemon 健康检查通过，不能证明这些条件全部满足。
+
+## 引擎接口
+
+`ExecutionEngineProtocol` 定义部署、重新配置、停止、能力查询、类型化就绪/终止事件、连接状态、订单/持仓快照、估值和风险控制。签名部署传入已激活的产物：
 
 ```python
 async def deploy(
@@ -48,49 +55,10 @@ async def deploy(
 ) -> str: ...
 ```
 
-`artifact` 参数是一个已验证、已激活的策略对象。宿主把它加进 node；它自己从不导入策略代码。这正是「究竟跑了哪份代码」能在引擎之外被回答的原因。
+离线部署使用操作者挂载的产物，其身份从目录派生，不具有签名发布保障。
 
-## 它满足的协议
+## 配置与停止行为
 
-`ExecutionEngineProtocol` 分两层，两个宿主都实现完整表面。
+宿主读取 `nautilus_config` 中的启动超时与对账回溯配置。交易标识、账户类型、杠杆和客户端配置由各 connector 的实现决定，不要跨交易所复用标的名称或账户字段。
 
-**Tier-1 —— 生命周期与能力。** `deploy`、`reconfigure`、`stop`、
-`supports_trading_mode`、`supports_venue`。它们驱动指令协调器与生命周期监督者；后两个正是[实盘执行门](/zh-Hans/concepts/live-execution-gate)所读取的。
-
-**Tier-2 —— 风险与连通性状态。** `get_open_notional`、`check_engine_connected`、
-`flatten_positions`、`get_positions`、`get_orders`、`get_engine_status`。它们的存在是为了让与引擎无关的守卫 —— 名义本金上限、兜底熔断器、僵尸看门狗 —— 能在不知道底层是哪个引擎的前提下，兑现失联依然生效的保证。
-
-Tier-2 是更有意思的那一半。它正是[失联不等于停止](/zh-Hans/trust-model/safety-survives-disconnect)
-成为 runner 的属性、而非 NautilusTrader 的属性的原因。
-
-## 配套模块
-
-| 文件 | 职责 |
-|---|---|
-| `venue_binance.py` | Binance 行情与执行客户端配置 |
-| `binance_ledger.py` | 供对账使用的独立交易所账本证据 |
-| `portfolio_snapshot.py` | 权益与持仓估值的单一估值边界 |
-| `runner_safety.py` | 把交易所客户端挡在下单预留闸门之后 |
-| `risk.py` | 交易前规则配置 |
-| `runtime_loader.py` | 证明策略模块来自不可变的激活根 |
-| `sandbox_runner_fact_host.py` | 模拟宿主的事实发布 |
-<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
-
-其中两个是本站别处所述保证的承重件。
-
-`portfolio_snapshot.py` 是「未平名义本金与实际权益来自同一个估值边界、而非两个可能互相矛盾的来源」的原因。熔断器每实例每 tick 只读取一份由它派生的引擎状态。
-
-`runner_safety.py` 包住交易所执行客户端，使订单在抵达交易所之前必须通过预留边界。这个守卫是引擎绕不开的一层门面，而不是一项「请策略记得调用」的检查。
-
-## 交易所
-
-`binance` 与 `binance_perpetual`，比对不区分大小写。宿主未声明的签名连接器会在准入处被拒。
-
-现货与永续的差别不止于名字 —— 合约标识、账户类型与杠杆配置都按连接器分别推导，这正是连接器属于签名指令、而非本地配置项的原因。
-
-## 安装运行时
-
-NautilusTrader 是可选依赖，声明在 `pyproject.toml` 的
-`[project.optional-dependencies].nautilus` 下。审计用的安装不会拉取它：你无需安装任何交易引擎，就能读完并测完整条信任边界。
-
-发布的容器镜像已包含它。见[安装](/zh-Hans/getting-started/installation)。
+停止行为遵循部署的 shutdown policy，默认保留持仓。runner 停止不代表持仓已经平掉，详见[应急恢复](/operator-guide/emergency-playbook)。

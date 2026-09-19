@@ -4,10 +4,6 @@ import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 import Translate, {translate} from '@docusaurus/Translate';
 
-// Placeholder landing page. The editorial homepage — hero, the ARX/Custos
-// layering section, the guarantees callout and getting-started cards — replaces
-// this once the chapter content it links into is complete.
-
 export default function Home(): ReactNode {
   return (
     <Layout
@@ -107,13 +103,13 @@ export default function Home(): ReactNode {
           <Translate id="home.notice.eyebrow">Notice</Translate>
         </div>
         <h2 style={{marginTop: 0}}>
-          <Translate id="home.notice.title">Site under construction</Translate>
+          <Translate id="home.notice.title">Documentation and runtime status</Translate>
         </h2>
         <p style={{color: 'var(--ifm-color-content-secondary)'}}>
           <Translate id="home.notice.body">
-            This documentation site is still being written. Some chapters are
-            complete, others are outlines, and the Chinese translation covers
-            only the first chapters so far.
+            English and Chinese guides cover signed deployments and standalone
+            sandbox/testnet workflows. Candidate publication and local checks
+            do not establish production readiness.
           </Translate>{' '}
           <Translate
             id="home.notice.links"

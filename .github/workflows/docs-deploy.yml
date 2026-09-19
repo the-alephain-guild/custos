@@ -36,6 +36,14 @@ jobs:
           cache: 'npm'
           cache-dependency-path: docs-site/package-lock.json
 
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install runner reference dependencies
+        run: uv sync --locked --extra dev
+
       - name: Install dependencies
         working-directory: docs-site
         run: npm ci
@@ -69,6 +77,10 @@ jobs:
         working-directory: docs-site
         run: npm run check:terms
 
+      - name: Source reference check
+        working-directory: docs-site
+        run: npm run check:source
+
       - name: Build (all locales)
         working-directory: docs-site
         run: npm run build
@@ -78,7 +90,7 @@ jobs:
         run: npm run typecheck
 
       - name: Deploy to gh-pages branch
-        # Only deploy on main; PR builds compile-verify but do not publish.
+        # PR verification is handled by docs-check.yml; publishing is main-only.
         if: github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v4
         with:

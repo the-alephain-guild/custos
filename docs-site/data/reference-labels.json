@@ -1,0 +1,14 @@
+{
+  "zh-Hans": {
+    "options": "| 参数 | 要求 | 默认值 | 可选值 / 重复 |",
+    "required": "必填",
+    "one_in_group": "同组选一",
+    "optional": "可选",
+    "repeatable": "可重复",
+    "declared": "声明支持",
+    "unsupported": "不支持",
+    "packages": "| 包 | 源码版本 | Python |",
+    "dependency": "当前依赖：",
+    "schema": "Schema 文件"
+  }
+}

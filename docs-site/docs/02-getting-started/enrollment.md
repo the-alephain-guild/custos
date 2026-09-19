@@ -3,48 +3,40 @@ title: "Enrollment"
 sidebar_position: 2
 ---
 
-# Enrollment
+The signed lane requires an identity enrolled with ARX. For local sandbox/testnet work without ARX, use [standalone identity](/getting-started/standalone-sandbox); that identity cannot start the signed lane.
 
-Enrollment is how a runner acquires an identity it can prove. `arx-runner
-enroll` is the only supported path. There is no NATS enrollment, no local
-unsigned bootstrap token, no hand-written `runner.toml`, no default tenant and
-no plaintext signing-key fallback.
+## Prerequisites
 
-That list is deliberately closed. Every entry on it would be a way to obtain a
-runner identity without the authority having issued one.
+Obtain a one-time enrollment token, tenant id, runner UUID and backend URL from ARX. Install `sops` and `age`. Use a separate state directory for each runner.
 
-## Who does what
+```bash
+umask 077
+mkdir -p "$HOME/.arx/vault" "$HOME/.arx/state"
+chmod 700 "$HOME/.arx" "$HOME/.arx/vault" "$HOME/.arx/state"
+# Generate only if this runner has no age identity yet.
+age-keygen -o "$HOME/.arx/age.key"
+export SOPS_AGE_KEY_FILE="$HOME/.arx/age.key"
+export SOPS_AGE_RECIPIENT="$(age-keygen -y "$SOPS_AGE_KEY_FILE")"
+```
 
-**ARX** issues and owns the enrollment token, consumes it exactly once, and
-owns the resulting machine credential — its expiry, version, rotation,
-revocation and the immutable public-key evidence. It also applies identity,
-tenant and access policy at the endpoint.
+Save the token in a mode-`0600` file and set `ENROLLMENT_TOKEN_FILE`, `ARX_BACKEND_URL`, `TENANT_ID` and `RUNNER_ID` to the issued values. Do not put the token in a command argument.
 
-**Custos** generates the Ed25519 keypair, proves possession of the private key,
-stores the returned opaque credential encrypted, and fails closed when that
-authority is unusable.
+```bash
+uv run arx-runner enroll \
+  --token-file "$ENROLLMENT_TOKEN_FILE" \
+  --backend "$ARX_BACKEND_URL" \
+  --tenant-id "$TENANT_ID" \
+  --runner-id "$RUNNER_ID"
+uv run arx-runner credential verify
+```
 
-The private key is generated locally and never sent. ARX never sees it, which
-is what makes the proof meaningful.
+Remove the consumed token file after enrollment succeeds. Plain HTTP is accepted only for loopback development; redirects are not followed.
 
-## The exchange
+## Proof and local files
 
-1. You obtain a one-time enrollment token from ARX.
-2. Custos generates an Ed25519 keypair in memory and a fresh challenge nonce.
-3. Custos signs a canonical proof binding the token digest, claimed tenant,
-   runner UUID, nonce, machine key id and public-key digest.
-4. Custos sends the token, public key, nonce, key id and signature to
-   `POST /api/v1/runner-enrollments`. The private key stays on your machine.
-5. ARX verifies the token and the proof, consumes the token once, persists the
-   public evidence, and issues a tenant-bearing opaque credential with an id,
-   version and expiry.
-6. Custos encrypts that credential together with the private key using
-   sops+age. Only non-secret binding metadata reaches `runner.toml`.
+Custos generates an Ed25519 keypair locally. It signs a proof binding the token digest, tenant, runner UUID, nonce, key id and public-key digest, then sends only public material and the proof to `POST /api/v1/runner-enrollments`.
 
-The proof is newline-delimited UTF-8 in exactly this order — field order is
-part of the contract, because a canonical form that both sides do not compute
-identically produces a signature neither can verify.
-<!-- disclosure-ok: exact signing preimage; an auditor cannot verify a signature without the literal domain string -->
+The signing preimage is newline-delimited UTF-8 in this order:
 
 ```text
 crucible.runner.enrollment.pop.v1
@@ -55,84 +47,23 @@ machine_key_id=<ed25519-key-id>
 public_key_sha256=<lowercase-sha256>
 enrollment_token_sha256=<lowercase-sha256>
 ```
+<!-- disclosure-ok: exact enrollment signing domain required for verification -->
 
-## What lands on disk
+| File | Content |
+|---|---|
+| `~/.arx/runner.toml` | Public identity, backend, credential expiry/version and vault path |
+| `~/.arx/vault/runner-machine.enc` | Encrypted machine credential and private signing key |
+| `~/.arx/age.key` | Local age identity needed to decrypt the vault |
 
-`~/.arx/vault/runner-machine.enc` is a sops+age document holding the opaque
-machine credential and the Ed25519 private key together. Mode `0600`; the
-parent and the age identity directory `0700`. Decryption at runtime needs
-`SOPS_AGE_KEY_FILE`.
+Files use mode `0600` and private directories `0700`. Startup compares metadata and decrypted identity, checks expiry, and on the signed lane verifies authority with ARX. It also requires a capability receipt bound to the same public key. See [configuration](/reference/configuration).
 
-`~/.arx/runner.toml` contains no credential and no key. It records only
-`tenant_id`, `runner_id`, `backend_url`, `credential_id`,
-`credential_version`, `credential_valid_until`, `machine_key_id`,
-`machine_vault_path` and `enrolled_at`.
-
-Any mismatch between those fields and the decrypted vault is a startup error,
-not a warning. See [configuration](/reference/configuration) for the field
-reference.
-
-## Running it
+## Rotate or revoke
 
 ```bash
-mkdir -p "$HOME/.arx/vault" "$HOME/.arx/state"
-chmod 700 "$HOME/.arx" "$HOME/.arx/vault" "$HOME/.arx/state"
-age-keygen -o "$HOME/.arx/age.key"
-chmod 600 "$HOME/.arx/age.key"
-
-export SOPS_AGE_KEY_FILE="$HOME/.arx/age.key"
-export SOPS_AGE_RECIPIENT='age1...'
-install -m 600 /dev/null "$HOME/.arx/enrollment-token"
-printf '%s' '<one-time-token>' > "$HOME/.arx/enrollment-token"
-
-arx-runner enroll \
-  --token-file "$HOME/.arx/enrollment-token" \
-  --backend https://arx.internal:8000 \
-  --tenant-id acme \
-  --runner-id 018f8b5f-6f7d-7e23-8c31-bd34ab9d0d41
-rm -f "$HOME/.arx/enrollment-token"
-
-arx-runner credential verify
+uv run arx-runner credential rotate --reason "scheduled rotation"
+uv run arx-runner credential revoke --reason "host decommissioned"
 ```
 
-Plain HTTP is accepted only for loopback development. Redirects are never
-followed — redirecting an enrollment token or a machine credential would move
-it across the trust boundary the token exists to establish.
+Rotation proves continuity with the old key and writes the replacement only after the authority accepts it. Revocation removes the local machine vault and metadata after confirmation. These operations require an enrolled identity; a standalone identity has no remote credential lifecycle.
 
-## Rotation and revocation
-
-```bash
-arx-runner credential rotate --reason "<why>"
-arx-runner credential revoke
-```
-
-**Rotate** generates a new keypair and sends the new public key with a
-nonce-bound proof signed by the *old* key — continuity of identity is proven
-rather than asserted. Custos replaces the encrypted vault and public metadata
-atomically, and only after an accepted response. A failed rotation leaves the
-previous credential intact and usable.
-
-**Revoke** sends a nonce-bound proof signed by the current key. Once the
-authority confirms the revoked state, Custos immediately deletes the encrypted
-vault and `runner.toml`. The execution loop cannot start from a revoked
-principal, and there is no path to resurrect one locally.
-
-## Startup and readiness
-
-Before connecting transport or constructing an execution host, startup
-requires:
-
-- the encrypted machine vault and the age identity;
-- an unexpired credential;
-- exact tenant, runner, credential id, version, expiry and key-id binding;
-- server verification that the credential is still active;
-- a validated capability receipt bound to the same public key.
-
-Readiness output repeats only public credential metadata and its expiry.
-`arx-runner health` returns non-zero for missing, expired, revoked or
-mismatched authority.
-
-One asymmetry is worth stating plainly: an outage does not stop an
-already-running engine, but a new process will not start from authority it
-cannot verify. Continuity is preserved for what is already trusted; it is never
-extended to something unproven.
+Enrollment alone does not provision transport or authorize a deployment. Continue with [signed sandbox](/getting-started/first-sandbox-run).

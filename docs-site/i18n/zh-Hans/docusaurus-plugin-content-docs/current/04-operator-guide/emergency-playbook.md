@@ -1,79 +1,43 @@
 ---
-title: "应急手册"
+title: "应急恢复"
 sidebar_position: 5
 ---
 
-# 应急手册
-
-平台不可达、runner 不健康、或需要恢复进程时的处置。针对具体故障的诊断见[排障](./troubleshooting)。
+先确认部署通道、受影响实例和交易所敞口。重启或替换 runner 前保留本地状态。
 
 ## 连接中断
 
-runner 的订阅不可用时，就绪状态会被清除。**不会**发生的事和会发生的事一样重要：
+本地敞口和回撤检查独立于消息传输继续运行。签名 runner 在 outbox 中保留待发布事实，传输恢复后继续投递。离线状态尽力发布，无法发布时应检查本地日志。
 
-- 本地安全防护继续工作。敞口上限、fallback 熔断器与 zombie watchdog 都不依赖平台可达。
-- runner 以有界退避重试订阅。
-- 它绝不会静默切到未签名的 topic 或另一个权威源。
+连接中断本身不会请求平仓。应分别检查引擎连接、估值与 broker 可用性。
 
-已应用的观测结果留在签名事实 outbox 里。连接恢复后，发布者继续推进，事实身份与序号归属都不变 —— 不丢，也不重排。
-
-连接中断既不是停止交易的理由，也不是无防护交易的许可。见[失联时安全防护依然生效](/trust-model/safety-survives-disconnect)。
-
-## 健康检查
+## 检查
 
 ```bash
-arx-runner health
-arx-runner health --json | jq .
-du -h ~/.arx/state/runner-fact-outbox.db
+uv run arx-runner health --json
+du -h "$HOME/.arx/state/runner-fact-outbox.db"
 ```
 
-JSON 形式是唯一的运行时健康投影。它从事实数据库原子刷新，报告每个已启用的传输模式、
-SQLite quick-check 状态、数据库/WAL/磁盘字节数、指令结果与在途租约、期望与已应用之间的漂移、重启与隔离计数、待发事实与 ack 的年龄、签名策略到期时间、产物缓存与激活字节数，以及传输权威的到期或吊销状态。
+使用自定义路径时同步替换。离线操作应检查 `offline.db` 和最新的 `arx.<tenant>.deployment_status.<runner-label>.<spec-id>`，不应期待签名事实指标。
 
-它是投影，不是第二本账 —— 从不持有业务状态。
-
-## 告警阈值
-
-**立即 page**，当满足任一条件：
-
-- `sqlite_quick_check != "ok"`
-- `overdue_in_progress_commands > 0`
-- `quarantined_deployments > 0`
-- `invalid_transport_authorities > 0` —— 本地过期、被吊销，或 broker 拒绝授权
-- `quarantined_artifacts > 0`
-
-**告警**，持续则升级：
-
-| 信号 | 告警阈值 | page 阈值 |
-|---|---|---|
-| `oldest_desired_applied_drift_age_seconds` | 30 | 120 |
-| `oldest_pending_fact_age_seconds` | 30 | 120 |
-| `disk_free_bytes` | 低于 2 GiB | 低于 1 GiB 时停止新增风险敞口的动作 |
-| `next_policy_expiry_seconds` | 低于 900 | 已过期的 testnet/live 策略保持 fail closed |
-| `next_transport_expiry_seconds` | 低于 900 | — |
-
-`transport_modes` 缺任何一项都会使整份文档失效。某项为 false 时诊断信息仍保留，但
-`ready=false` —— 一个失败的模式不会躲在健康的模式后面。
-
-## 恢复前先保全
-
-先保全事实数据库及其 `-wal` / `-shm` 兄弟文件。
-
-SQLite quick check 失败、磁盘耗尽或 WAL 陈旧，都属于需要人工介入的恢复事件。**不要为了让健康检查变绿而删库** —— 那会丢掉 runner 实际做过什么的记录，而这恰恰是唯一无法从上游重建的东西。
-
-## 进程恢复
-
-1. 查看 `journalctl -u custos -n 200` 或容器日志。
-2. 保全 `.arx/runner.toml`、机器金库、交易所金库、domain-event 公钥与事实 outbox。
-3. 重启服务。
-4. 确认 `arx-runner health` 成功。
-5. 检查 `arx-runner health --json` 的漂移、隔离、策略到期与待 ack 年龄。
-6. 确认上游收到了预期的生命周期事实 generation。
-
-runner 从 enroll 得到的机器身份与上游期望状态恢复。`runner.toml` 里没有长期凭据，也没有任何本地文件是部署生命周期的 canonical 记录 —— 所以干净重启是收敛，而不是猜测。
+签名通道出现 SQLite 错误、逾期未完成指令、隔离状态或无效传输授权时应立即调查。建议初始告警阈值：目标/已应用差异或待发布事实年龄超过 30 秒警告、120 秒升级；剩余磁盘少于 2 GiB；策略/传输距过期少于 900 秒。应按工作负载调整告警阈值。授权过期后的运行时拒绝不受告警设置影响。
 
 ## 停止执行
 
-要停止交易，请在上游改期望状态。那条路径有签名、可审计、可回退。
+签名通道在 ARX 请求 stopped 目标状态，并等待对应生命周期观测。离线通道沿用 spec id，增加 generation、设置 `lifecycle_state: stopped` 后发布，再检查观测状态。
 
-如果必须**立刻**停、等不了平台，就停掉 runner 进程。进程退出不影响本地持仓 —— 交易所不知道也不关心某个进程结束了。你失去的是原本盯着这些持仓的本地安全防护，所以进程级停止是最后手段，不是第一选择。
+引擎停止遵循传入的 shutdown policy。默认 `preserve` 策略保留持仓，不能认为进程已停止就完成了平仓。请求平仓时需核对交易所实际成交和剩余持仓。撤单请求也必须确认后才能视为订单已撤销。
+
+正常停止路径不可用时，终止进程会移除本地监督。采用此方法前应明确如何处理未完成订单和持仓；runner 退出后不能保证继续控制敞口。
+
+## 离线熔断
+
+触发后保护状态锁存，尝试平仓并停止部署；锁存期间拒绝后续 generation。检查故障原因、平仓结果、未完成订单和残余敞口。
+
+锁存位于进程内。重启会清除该内存状态，broker 保留的目标状态可能再次启动策略。重启前应处理原因并设置合适目标状态，不要仅为使 health 通过而重启。
+
+## 恢复持久化状态
+
+保留数据库及其 `-wal`、`-shm` 文件、身份元数据、加密金库、age key 和信任配置。一致备份需要考虑 SQLite 写入，不要将持续变化的数据库当作静态文件复制。
+
+不要通过删除 outbox 或 applied-state 数据库消除报错。按操作者审阅的恢复流程还原，重启后分别核对 daemon 健康、订阅、已应用 generation 和交易所状态。

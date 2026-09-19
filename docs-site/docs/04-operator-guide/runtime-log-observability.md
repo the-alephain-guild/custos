@@ -1,38 +1,11 @@
 ---
-title: "Runtime Log & Observability"
+title: "Runtime logs and observability"
 sidebar_position: 4
 ---
 
-# Runtime Log & Observability
+Local structured JSON logs go to stdout. On the signed lane, explicitly constructed runtime events can also enter the RunnerFact stream as `RunnerRuntimeLogFact.v1`. The runner does not tail stdout or forward raw exception text to that stream. Offline operation reports local logs and unsigned status instead.
 
-You get observability in two separate channels, and the separation is the whole
-design.
-
-**Locally**, the runner writes structured JSON events to stdout. That is yours:
-it stays on your machine, you decide what collects it, and it is as detailed as
-the code makes it.
-
-**Upstream**, the runner emits `RunnerRuntimeLogFact.v1` — a signed fact in the
-same stream as every other fact it produces. That channel is verifiable, and
-deliberately narrow.
-
-Nothing bridges the two. The runner never tails its own stdout and ships it, and
-never falls back to sending raw exception text.
-
-## Why stdout is not shipped
-
-A log line is unstructured by nature. Anything can end up in one — a credential
-in an exception repr, a signed payload in a debug dump, an API response echoed
-during a failure.
-
-Shipping stdout would mean the credential guarantee depends on nobody ever
-logging the wrong thing, anywhere, forever. That is not a guarantee; it is a
-hope with a good track record until the day it isn't.
-
-So the upstream channel accepts only explicitly constructed events, and every
-one of them passes redaction before it is written anywhere durable.
-
-## What a runtime-log fact contains
+## Runtime-log fact
 
 ```json
 {
@@ -41,100 +14,27 @@ one of them passes redaction before it is written anywhere durable.
   "occurred_at": "<RFC3339 UTC>",
   "level": "INFO",
   "component": "local_cap",
-  "message": "…",
+  "message": "...",
   "structured_fields": {},
   "correlation_id": "<uuid>",
   "causation_id": null
 }
 ```
 
-`level` is one of `DEBUG`, `INFO`, `WARN`, `ERROR` — a closed set. `component`
-is supplied by the emitting code and must match
-`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`.
+Levels are `DEBUG`, `INFO`, `WARN`, `ERROR`. Component names match `^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`. The surrounding signed batch provides tenant, mode, runner, instance, spec/generation, capability, sequence and signature binding.
 
-The batch around it carries the full stream identity: tenant, mode, runner,
-deployment instance, spec id and digest, generation, strategy, capability, key
-id, a contiguous sequence range, payload digest and signature. Spec, digest and
-generation are signed fences — they never change the subject and never reset the
-sequence.
+## Redaction and limits
 
-It travels on the ordinary fact subject and is verified exactly like a fill or a
-settlement fact. See
-[consuming RunnerFact](/integration/consuming-runner-fact).
+The redactor recursively anonymizes sensitive field names and recognizable secret values, including tokens, machine credentials, age/PEM keys and assignment-like fragments. If secret material remains recognizable, the entire fact is rejected before SQLite persistence. Unsupported objects, binary floats and non-finite values are also rejected.
 
-## Redaction rejects, it does not scrub
+Messages are limited to 4 KiB and structured fields to 32 KiB, with bounded nesting, keys and key lengths. Oversized events are rejected rather than truncated. Numeric values use integers or canonical decimal strings.
 
-Before a fact reaches the local queue, the redactor walks the message and every
-structured field recursively:
+## Identity and delivery
 
-- keys that look sensitive — API keys and secrets, passwords, tokens,
-  credentials, authorization, private keys, age keys, KEKs — are anonymized;
-- recognizable secret **shapes** are replaced wherever they appear: `Bearer`
-  tokens, `rkc1` credentials, `AGE-SECRET-KEY-…`, PEM private keys,
-  assignment-looking fragments, and high-entropy strings;
-- anything still recognizable as secret material after that **rejects the entire
-  fact**, before it touches SQLite.
+Runtime-log event UUIDv5 identities include stream authority, correlation id and sanitized-content digest. Matching sanitized events in one stream remain idempotent; different tenant/mode/runner/instance scopes do not share identity.
 
-That last point is the one worth internalizing. The redactor does not do its
-best and pass the remainder through. A fact it cannot make safe does not become
-a partially-redacted fact — it does not exist. Losing an observability event is
-recoverable; publishing a credential is not.
+The durable outbox publishes before recording PubAck completion. Retries retain batch identity and block later batches in a failed stream for that drain pass. Publisher failures use structured identity and exception type; they do not republish the event as raw diagnostic text.
 
-The same applies to shapes it cannot represent: unsupported objects, non-finite
-floats and binary floats are rejected recursively. Numeric fields travel as JSON
-integers or canonical decimal strings, for the same reason money does.
+Order lifecycle logs can include initialization, submission, refusal, cancellation and expiry. A strategy signal or submission is not a fill. Correlate by instance and client order id, and inspect execution outcomes separately.
 
-## Limits
-
-Rejection is also how size is enforced, so these are hard boundaries rather than
-truncation points:
-
-| Limit | Value |
-|---|---|
-| Message length | 4 KiB |
-| `structured_fields` total | 32 KiB |
-| Nesting depth | bounded |
-| Key count | bounded |
-| Key length | short strings only |
-
-An event that exceeds any of them is refused whole. Truncating instead would
-risk cutting a value mid-secret and defeating the shape matchers.
-
-## Correlation and idempotency
-
-`event_id` is a deterministic UUIDv5. Its preimage contains tenant, mode,
-runner, deployment instance, correlation id, and the digest of the **sanitized**
-content — computed after redaction, so the identity of an event never depends on
-material that was removed.
-
-Two consequences follow. Identical content within one stream is idempotent, so a
-retry does not duplicate. And identical content in a different tenant, mode,
-runner or instance stream cannot collide in the global dedup table, so one
-tenant's events can never be mistaken for another's.
-
-## Delivery
-
-Runtime-log facts share the delivery path with every other fact: the local queue
-commits before publish, a PubAck is required before the batch is deleted, and a
-crash between the two replays the same `batch_id` — which consumer dedup makes
-safe.
-
-A stream that fails to publish blocks later batches from that same stream for
-that drain pass. Sequence contiguity is preserved rather than sacrificed for
-throughput, because a consumer that sees a gap cannot tell "lost" from "not
-yet".
-
-When publishing itself fails, the failure log contains only the structured event
-identity and the exception type. The event's own content is never used as
-fallback diagnostic output — that would reintroduce exactly the unstructured
-path this design exists to avoid.
-
-## What this does not give you
-
-It is not a log aggregation product. There is no query API, no retention policy
-you configure here, and no way to request historical events from the runner.
-
-For debugging on the host, read the local JSON on stdout with whatever you
-already use. The signed channel answers a different question — not "what
-happened" for your eyes, but "what happened, provably" for a consumer that was
-not there.
+There is no runner log-query API or configurable historical log service. Collect local stdout with your host tooling and retain consumer evidence according to your own operational requirements.

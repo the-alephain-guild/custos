@@ -3,225 +3,343 @@ title: "CLI 参考"
 sidebar_position: 1
 ---
 
-# CLI 参考
+`arx-runner` 是 runner 的控制台接口。在源码仓库使用 `uv run arx-runner`，或在已激活环境中直接使用 `arx-runner`。`python -m custos` 已停用。runner 不提供 HTTP 管理 API。
 
-`arx-runner` 是这个 runner 的**唯一**接口。没有 HTTP 管理 API，没有配置文件驱动模式，也没有第二个入口 —— `python -m custos` 会以非零码退出并指回这里。
+## 命令索引
 
-```text
-arx-runner {enroll,credential,vault,nats-transport,publish-capability,start,health}
-```
-
-每个子命令都支持 `--help`。本页是地图，`--help` 才是权威 —— 它由你实际运行的那个
-parser 生成。
-
-标注**必填**的 flag 没有默认值。凡是选择交易模式或指定权威来源的参数都刻意如此：默认值等于一个没有任何人做过的选择。
-
-## enroll
-
-取得一个 runner 能够证明的机器身份。
-
-```bash
-install -m 600 /dev/null "$HOME/.arx/enrollment-token"
-printf '%s' '<一次性 token>' > "$HOME/.arx/enrollment-token"
-arx-runner enroll \
-  --token-file "$HOME/.arx/enrollment-token" \
-  --backend https://arx.example.com \
-  --tenant-id acme \
-  --runner-id 018f8b5f-6f7d-7e23-8c31-bd34ab9d0d41
-rm -f "$HOME/.arx/enrollment-token"
-```
-
-| Flag | 必填 | 含义 |
-|---|---|---|
-| `--token-file` | ✅ | 包含 ARX 一次性注册令牌的 `0600` 普通文件 |
-| `--backend` | ✅ | 注册目标端点 |
-| `--tenant-id` | ✅ | 所属租户 |
-| `--runner-id` | ✅ | 本 runner 的 UUID |
-| `--agent-version` | | 上报的 agent 版本 |
-| `--runner-toml` | | 覆盖元数据路径 |
-| `--machine-vault` | | 覆盖加密金库路径 |
-| `--age-recipient` | | age 公钥接收者；默认取 `SOPS_AGE_RECIPIENT` |
-
-它把公开绑定元数据写入 `runner.toml`，并把凭据与 Ed25519 私钥留在加密的机器金库里。私钥在本地生成，**从不被传输**。见[注册](/zh-Hans/getting-started/enrollment)。
-
-## credential
-
-管理注册产出的机器凭据。
-
-```bash
-arx-runner credential verify
-arx-runner credential rotate --reason "scheduled rotation"
-arx-runner credential revoke --reason "host decommissioned"
-```
-
-| 子命令 | 必填 | 另接受 |
-|---|---|---|
-| `verify` | — | `--runner-toml` |
-| `rotate` | `--reason` | `--runner-toml`、`--age-recipient` |
-| `revoke` | `--reason` | `--runner-toml`、`--authority-path`、`--ready-file` |
-
-两个破坏性操作都**必填** `--reason`，且会被记录。一次没有说明的轮换，与攻击者轮换他刚偷到的密钥无法区分。
-
-轮换用**旧密钥**签名的证明发送新公钥，且只在权威方接受之后才写本地。吊销在确认已吊销状态后擦除本地金库与元数据。
-
-## vault
-
-管理交易所凭据。一把密钥一个加密文件。
-
-```bash
-printf '%s\n' '<api-secret>' | arx-runner vault put \
-  --key-id binance-testnet \
-  --tenant-id acme \
-  --api-key '<api-key>' \
-  --api-secret-stdin \
-  --scope-digest '<lowercase-sha256>' \
-  --age-recipient "$SOPS_AGE_RECIPIENT" \
-  --permission-scope trade_no_withdraw
-
-arx-runner vault verify --key-id binance-testnet --tenant-id acme
-arx-runner vault list
-```
-
-### `vault put`
-
-| Flag | 必填 | 含义 |
-|---|---|---|
-| `--key-id` | ✅ | 金库条目名；同时是文件名，故须匹配 `^[a-zA-Z0-9_-]{1,64}$` |
-| `--tenant-id` | ✅ | 所属租户 |
-| `--api-key` | ✅ | 交易所 API key（非密文） |
-| `--scope-digest` | ✅ | DeploymentSpec 绑定为该凭据 scope 的小写 SHA-256 |
-| `--api-secret-stdin` / `--api-secret-env` / `--api-secret` | ✅（三选一） | 密文的提供方式 |
-| `--age-recipient` | | age 公钥接收者 |
-| `--permission-scope` | | 仅 `trade_no_withdraw`，同时是默认值 |
-| `--vault-dir` | | 覆盖金库目录 |
-
-优先用 `--api-secret-stdin`。通过 `--api-secret` 传入的密文会出现在 `ps` 输出与 shell
-历史里。
-
-### `vault verify`
-
-必填 `--key-id` 与 `--tenant-id`；另接受 `--vault-dir` 与 `--age-key-file`。它跑真实解密路径 —— sops 解密、payload 解析、文件权限、权限范围。**这是验收面**；手工调 `sops` 测的是另一回事。
-
-### `vault list`
-
-列出现有 key id，并对 group / world 可读的文件在 stderr 告警。接受 `--vault-dir`。
-
-## nats-transport
-
-签发与管理 runner 的传输授权。五个子命令接受同一组 flag。
-
-```bash
-arx-runner nats-transport verify \
-  --trading-mode sandbox \
-  --nats-url tls://nats.example.com:4222 \
-  --nats-server-name nats.example.com
-```
-
-| Flag | 必填 |
+| 命令 | 用途 |
 |---|---|
-| `--trading-mode` `{sandbox,testnet,live}` | ✅ |
-| `--nats-url` | ✅ |
-| `--nats-server-name` | ✅ |
-| `--nats-ca`、`--runner-toml`、`--machine-vault`、`--transport-vault-dir`、`--verification-timeout-secs` | |
+| `enroll` | 获取 ARX 认证的机器身份 |
+| `credential verify/rotate/revoke` | 管理注册后的凭据 |
+| `identity standalone` | 创建离线使用的本地未认证身份 |
+| `vault put/verify/list` | 存储和检查本地交易所凭据 |
+| `nats bootstrap` | 通过 `--profile standalone` 初始化自有离线 stream |
+| `deployment validate/publish` | 校验或发布 `OfflineDeploymentSpec`，仅限 sandbox/testnet |
+| `nats-transport enroll/rotate/revoke/resume/verify` | 管理签名通道传输授权 |
+| `publish-capability` | 使用已注册身份发布签名能力版本 |
+| `release-policy generate-development-authority/issue` | 创建本地发布信任策略材料；开发 authority 不构成生产批准 |
+| `start` | 启动所选通道 |
+| `health` | 读取本地就绪文档 |
 
-子命令：`enroll`、`rotate`、`revoke`、`resume`、`verify`。
+## 启动 runner
 
-## publish-capability
+签名部署消费要求 `--reconcile`、已注册身份、能力与信任输入，以及至少一个 `--enabled-mode`。重复该参数可增加签名传输会话。Nautilus 宿主仍在同一 event loop 上只允许一个活动 node。
 
-用已注册的机器密钥签名并发布下一个能力修订。
+离线操作要求 `--reconcile-strategy-id`、已有本地身份和 `--nats-url`。它从 spec 读取模式，用 `--offline-state` 保存独立数据库，并以 `--runner-label` 报告状态，默认 label 为 runner UUID。离线通道拒绝 live。`--production-state-root` 用于签名通道，不能选择离线组合。
 
-| Flag | 必填 |
-|---|---|
-| `--manifest` | ✅ |
-| `--runner-toml`、`--authority-path`、`--idempotency-key`、`--capability-version-id`、`--capability-version` | |
+详见[签名 sandbox](/getting-started/first-sandbox-run)、[独立 sandbox](/getting-started/standalone-sandbox)和[配置参考](/reference/configuration)。
 
-## start
+## 配置要点
 
-运行守护进程。它只在机器授权通过 fail-closed 验证之后才启动。
-
-```bash
-arx-runner start \
-  --enabled-mode sandbox \
-  --engine sandbox-sim
-```
-
-**`--enabled-mode {sandbox,testnet,live}` 必填。**一个进程一个模式。
-
-### 选择引擎
-
-| Flag | 默认 | 效果 |
-|---|---|---|
-| `--engine nautilus` | 默认 | 三种模式下的真实执行 |
-| `--engine sandbox-sim` | | 完整本地生命周期、不连交易所；只声明 `sandbox` |
-
-### 传输
-
-sandbox 与 testnet 走**模拟**传输，只有 `live` 走 live 传输。所以一台 sandbox runner 用
-`--nats-sim-*` 系列配置。
-
-| 分组 | Flag |
-|---|---|
-| 模拟 | `--nats-sim-url`、`--nats-sim-ca`、`--nats-sim-server-name`、`--nats-sim-issuer-public-key` |
-| Live | `--nats-live-url`、`--nats-live-ca`、`--nats-live-server-name`、`--nats-live-issuer-public-key` |
-| 本地回环开发 | `--development-local-nats-url` —— 仅 sandbox、不可提升 |
-
-### 指令验证
-
-| Flag | 含义 |
-|---|---|
-| `--crucible-domain-public-key` | 用于验证签名期望状态指令的公钥 |
-| `--crucible-domain-key-id` | 期望的签名 key id |
-| `--reconcile` | 启用 reconcile 循环 |
-
-这两个 flag 名保留了历史拼写。它们是 parser 实际接受的字符串，因此**原样照录而不做美化**
-—— 文档里被改名的 flag，等于一条跑不起来的命令。
-<!-- disclosure-ok: exact CLI flag an operator types; renaming it here would document a command argparse rejects -->
-
-### 路径
-
-| Flag | 默认 |
-|---|---|
-| `--runner-toml` | `~/.arx/runner.toml` |
-| `--machine-vault` | 覆盖值；必须等于 `runner.toml` 中的值 |
-| `--vault-dir` | `~/.arx/vault` |
-| `--ready-file` | `~/.arx/state/runner-ready.json` |
-| `--runner-capability` | `~/.arx/runner-capability.json` |
-| `--runner-fact-outbox` | `~/.arx/state/runner-fact-outbox.db` |
-| `--nats-transport-vault-dir` | `~/.arx/vault/runner-nats-transport` |
-
-### Artifact 处理
-
-`--artifact-quarantine-dir`、`--artifact-activation-dir`、`--artifact-cache-dir`、
-`--artifact-registry`、`--artifact-registry-username`、
-`--artifact-release-policy-envelope`、`--artifact-release-policy-key-id`、
-`--artifact-release-policy-public-key`、`--artifact-sigstore-trusted-root`、
-`--development-artifact-root`。
-
-验证是 fail closed 的 —— 见[策略工具包](/zh-Hans/toolkit/overview)。
-
-### 事实节奏
-
-`--runner-fact-snapshot-interval-secs`（默认 `10.0`）、
-`--runner-fact-period-secs`（默认 `86400`）、
-`--runner-fact-period-retry-secs`（默认 `30.0`）。
-
-## health
-
-```bash
-arx-runner health
-arx-runner health --json
-```
-
-接受 `--ready-file`。授权缺失、过期、已吊销或不匹配时以非零码退出。就绪**不等于**「进程起来了」—— 见[就绪与健康](/zh-Hans/operator-guide/readiness-health)。
+- `vault put` 要求选择一种秘密输入方式。优先使用 `--api-secret-stdin`，命令行秘密可能出现在进程列表和历史记录中。
+- `--scope-digest` 绑定签名通道的凭据范围。离线 spec 引用本地 key id，并单独派生宿主范围。
+- `deployment --mode` 断言 spec 模式，不转换模式。`--strategy-dir` 在内存中绑定或校验目录摘要，不改写 spec 文件。
+- `credential rotate/revoke` 要求 `--reason`。独立身份不能使用这些远端生命周期操作。
+- 发布信任策略签发需要匹配的 authority key 和 Sigstore 身份/根，详见[部署指南](/operator-guide/deployment)。
 
 ## 退出码
 
-| 码 | 含义 |
+| 退出码 | 含义 |
 |---|---|
-| `0` | 成功 |
-| `1` | 操作失败 —— 消息会指明是哪一项检查没过 |
-| `2` | 用法错误，或使用了已退休的 `python -m custos` 入口 |
+| `0` | 命令成功；`health` 判定通过 |
+| `1` | 操作失败或健康状态未就绪 |
+| `2` | Parser 用法错误或使用了已停用入口 |
 
-## 没有哪些命令
+## Parser 参考
 
-**不存在**创建、批准或发布 DeploymentSpec 的命令，也不存在让 runner 给自己授权的命令。这些按设计属于 ARX —— 见[信任模型](/zh-Hans/introduction/trust-model)。
+下表从实际 parser 生成，显示清除可选环境覆盖后的默认值。路径中的 `~` 表示当前用户主目录。运行时可能增加条件，例如签名通道要求 `--enabled-mode`；请结合具体命令的帮助和上方指南使用。
+
+<!-- generated:cli -->
+
+### credential
+
+### credential verify
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+
+### credential rotate
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+| `--reason` | 必填 | — | — |
+| `--age-recipient` | 可选 | — | — |
+
+### credential revoke
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+| `--reason` | 必填 | — | — |
+| `--authority-path` | 可选 | `~/.arx/runner-capability.json` | — |
+| `--ready-file` | 可选 | `~/.arx/state/runner-ready.json` | — |
+
+### deployment
+
+### deployment validate
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--spec-file` | 必填 | — | — |
+| `--strategy-dir` | 可选 | — | — |
+| `--mode` | 可选 | — | — |
+
+### deployment publish
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--spec-file` | 必填 | — | — |
+| `--tenant-id` | 必填 | — | — |
+| `--strategy-id` | 必填 | — | — |
+| `--nats-url` | 可选 | `nats://localhost:4222` | — |
+| `--strategy-dir` | 可选 | — | — |
+| `--mode` | 可选 | — | — |
+
+### enroll
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--token-file` | 必填 | — | — |
+| `--backend` | 必填 | — | — |
+| `--tenant-id` | 必填 | — | — |
+| `--runner-id` | 必填 | — | — |
+| `--agent-version` | 可选 | — | — |
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+| `--machine-vault` | 可选 | `~/.arx/vault/runner-machine.enc` | — |
+| `--age-recipient` | 可选 | — | — |
+
+### publish-capability
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--manifest` | 必填 | — | — |
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+| `--authority-path` | 可选 | `~/.arx/runner-capability.json` | — |
+| `--idempotency-key` | 可选 | — | — |
+| `--capability-version-id` | 可选 | — | — |
+| `--capability-version` | 可选 | — | — |
+
+### release-policy
+
+### release-policy generate-development-authority
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--private-key-output` | 必填 | — | — |
+| `--public-key-output` | 必填 | — | — |
+| `--receipt-output` | 必填 | — | — |
+
+### release-policy issue
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--authority-private-key` | 必填 | — | — |
+| `--authority-public-key` | 必填 | — | — |
+| `--sigstore-trusted-root` | 必填 | — | — |
+| `--policy-id` | 必填 | — | — |
+| `--version` | 必填 | — | — |
+| `--not-before` | 必填 | — | — |
+| `--expires-at` | 必填 | — | — |
+| `--issuer` | 必填 | — | — |
+| `--workflow-identity` | 必填 | — | — |
+| `--source-repository` | 必填 | — | — |
+| `--envelope-output` | 必填 | — | — |
+| `--receipt-output` | 必填 | — | — |
+| `--environment-output` | 必填 | — | — |
+
+### health
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--ready-file` | 可选 | `~/.arx/state/runner-ready.json` | — |
+| `--json` | 可选 | `False` | — |
+
+### identity
+
+### identity standalone
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--tenant-id` | 必填 | — | — |
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+| `--machine-vault` | 可选 | `~/.arx/vault/runner-machine.enc` | — |
+| `--age-recipient` | 可选 | — | — |
+| `--valid-days` | 可选 | `365` | — |
+
+### nats
+
+### nats bootstrap
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--profile` | 必填 | — | `standalone` |
+| `--nats-url` | 可选 | `nats://localhost:4222` | — |
+| `--tenant-id` | 必填 | — | — |
+| `--timeout-secs` | 可选 | `30.0` | — |
+
+### nats-transport
+
+### nats-transport enroll
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+| `--machine-vault` | 可选 | — | — |
+| `--transport-vault-dir` | 可选 | `~/.arx/vault/runner-nats-transport` | — |
+| `--trading-mode` | 必填 | — | `sandbox`, `testnet`, `live` |
+| `--nats-url` | 必填 | — | — |
+| `--nats-ca` | 可选 | `~/.arx/certs/crucible-nats-ca.pem` | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--nats-server-name` | 必填 | — | — |
+| `--verification-timeout-secs` | 可选 | `30.0` | — |
+| `--issuer-public-key` | 可选 | — | — |
+| `--crucible-url` | 必填 | — | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--authorization-intent-id` | 必填 | — | — |
+| `--operation-timeout-secs` | 可选 | `300.0` | — |
+| `--age-recipient` | 可选 | — | — |
+
+### nats-transport rotate
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+| `--machine-vault` | 可选 | — | — |
+| `--transport-vault-dir` | 可选 | `~/.arx/vault/runner-nats-transport` | — |
+| `--trading-mode` | 必填 | — | `sandbox`, `testnet`, `live` |
+| `--nats-url` | 必填 | — | — |
+| `--nats-ca` | 可选 | `~/.arx/certs/crucible-nats-ca.pem` | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--nats-server-name` | 必填 | — | — |
+| `--verification-timeout-secs` | 可选 | `30.0` | — |
+| `--issuer-public-key` | 可选 | — | — |
+| `--crucible-url` | 必填 | — | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--authorization-intent-id` | 必填 | — | — |
+| `--operation-timeout-secs` | 可选 | `300.0` | — |
+| `--age-recipient` | 可选 | — | — |
+
+### nats-transport revoke
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+| `--machine-vault` | 可选 | — | — |
+| `--transport-vault-dir` | 可选 | `~/.arx/vault/runner-nats-transport` | — |
+| `--trading-mode` | 必填 | — | `sandbox`, `testnet`, `live` |
+| `--nats-url` | 必填 | — | — |
+| `--nats-ca` | 可选 | `~/.arx/certs/crucible-nats-ca.pem` | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--nats-server-name` | 必填 | — | — |
+| `--verification-timeout-secs` | 可选 | `30.0` | — |
+| `--issuer-public-key` | 可选 | — | — |
+| `--crucible-url` | 必填 | — | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--authorization-intent-id` | 必填 | — | — |
+| `--operation-timeout-secs` | 可选 | `300.0` | — |
+| `--age-recipient` | 可选 | — | — |
+
+### nats-transport resume
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+| `--machine-vault` | 可选 | — | — |
+| `--transport-vault-dir` | 可选 | `~/.arx/vault/runner-nats-transport` | — |
+| `--trading-mode` | 必填 | — | `sandbox`, `testnet`, `live` |
+| `--nats-url` | 必填 | — | — |
+| `--nats-ca` | 可选 | `~/.arx/certs/crucible-nats-ca.pem` | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--nats-server-name` | 必填 | — | — |
+| `--verification-timeout-secs` | 可选 | `30.0` | — |
+| `--issuer-public-key` | 可选 | — | — |
+| `--crucible-url` | 必填 | — | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--operation-timeout-secs` | 可选 | `300.0` | — |
+| `--age-recipient` | 可选 | — | — |
+
+### nats-transport verify
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+| `--machine-vault` | 可选 | — | — |
+| `--transport-vault-dir` | 可选 | `~/.arx/vault/runner-nats-transport` | — |
+| `--trading-mode` | 必填 | — | `sandbox`, `testnet`, `live` |
+| `--nats-url` | 必填 | — | — |
+| `--nats-ca` | 可选 | `~/.arx/certs/crucible-nats-ca.pem` | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--nats-server-name` | 必填 | — | — |
+| `--verification-timeout-secs` | 可选 | `30.0` | — |
+| `--issuer-public-key` | 可选 | — | — |
+
+### start
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--runner-toml` | 可选 | `~/.arx/runner.toml` | — |
+| `--machine-vault` | 可选 | — | — |
+| `--nats-transport-vault-dir` | 可选 | `~/.arx/vault/runner-nats-transport` | — |
+| `--enabled-mode` | 可选 | — | `sandbox`, `testnet`, `live`; 可重复 |
+| `--development-local-nats-url` | 可选 | — | — |
+| `--nats-sim-url` | 可选 | — | — |
+| `--nats-sim-ca` | 可选 | `~/.arx/certs/crucible-nats-ca.pem` | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--nats-sim-server-name` | 可选 | — | — |
+| `--nats-sim-issuer-public-key` | 可选 | — | — |
+| `--nats-live-url` | 可选 | — | — |
+| `--nats-live-ca` | 可选 | `~/.arx/certs/crucible-nats-ca.pem` | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--nats-live-server-name` | 可选 | — | — |
+| `--nats-live-issuer-public-key` | 可选 | — | — |
+| `--vault-dir` | 可选 | `~/.arx/vault` | — |
+| `--reconcile` | 可选 | `False` | — |
+| `--reconcile-strategy-id` | 可选 | — | — |
+| `--runner-label` | 可选 | — | — |
+| `--nats-url` | 可选 | `nats://localhost:4222` | — |
+| `--offline-state` | 可选 | `~/.arx/state/offline-lane.db` | — |
+| `--crucible-domain-public-key` | 可选 | `~/.arx/crucible-domain-event.pub` | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--crucible-domain-key-id` | 可选 | — | — | <!-- disclosure-ok: exact public CLI flag or default path from argparse -->
+| `--engine` | 可选 | `nautilus` | `nautilus`, `sandbox-sim` |
+| `--ready-file` | 可选 | `~/.arx/state/runner-ready.json` | — |
+| `--runner-capability` | 可选 | `~/.arx/runner-capability.json` | — |
+| `--runner-fact-outbox` | 可选 | `~/.arx/state/runner-fact-outbox.db` | — |
+| `--development-artifact-root` | 可选 | `~/.alephain/v1-team/strategy-artifacts` | — |
+| `--artifact-quarantine-dir` | 可选 | `~/.arx/state/artifact-quarantine` | — |
+| `--artifact-activation-dir` | 可选 | `~/.arx/state/artifact-activations` | — |
+| `--artifact-cache-dir` | 可选 | `~/.arx/state/artifact-cache` | — |
+| `--artifact-registry` | 可选 | `ghcr.io` | — |
+| `--artifact-registry-username` | 可选 | — | — |
+| `--artifact-release-policy-envelope` | 可选 | — | — |
+| `--artifact-release-policy-key-id` | 可选 | — | — |
+| `--artifact-release-policy-public-key` | 可选 | — | — |
+| `--artifact-sigstore-trusted-root` | 可选 | — | — |
+| `--runner-fact-snapshot-interval-secs` | 可选 | `10.0` | — |
+| `--runner-fact-period-secs` | 可选 | `86400` | — |
+| `--runner-fact-period-retry-secs` | 可选 | `30.0` | — |
+| `--production-state-root` | 可选 | — | — |
+
+### vault
+
+### vault put
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--key-id` | 必填 | — | — |
+| `--tenant-id` | 必填 | — | — |
+| `--api-key` | 必填 | — | — |
+| `--scope-digest` | 必填 | — | — |
+| `--api-secret-stdin` | 同组选一 | `False` | — |
+| `--api-secret-env` | 同组选一 | — | — |
+| `--api-secret` | 同组选一 | — | — |
+| `--age-recipient` | 可选 | — | — |
+| `--permission-scope` | 可选 | `trade_no_withdraw` | `trade_no_withdraw` |
+| `--vault-dir` | 可选 | `~/.arx/vault` | — |
+
+### vault verify
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--key-id` | 必填 | — | — |
+| `--tenant-id` | 必填 | — | — |
+| `--vault-dir` | 可选 | `~/.arx/vault` | — |
+| `--age-key-file` | 可选 | — | — |
+
+### vault list
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--vault-dir` | 可选 | `~/.arx/vault` | — |
+
+<!-- /generated:cli -->

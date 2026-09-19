@@ -3,78 +3,34 @@ title: "产物签名与验证"
 sidebar_position: 2
 ---
 
-# 产物签名与验证
+签名产物路径在导入策略代码前验证精确发布字节，检查独立 Sigstore bundle 中针对产物成员签名的 in-toto statement。
 
-在**任何一行**策略代码被导入之前，runner 必须先被说服：这个产物就是当初被发布的那一个。本页讲它检查什么、拒绝什么。
+## 验证条件
 
-## 被检查的主张是什么
-
-已发布的产物携带一份分离的 Sigstore bundle：一份签名的 in-toto 声明，其 subject 是产物各成员的**精确 digest**。
-
-验证回答的是一个问题 —— *这些确切的字节，是否由我们预期的那个 workflow 签名，且该签名是否在透明性日志中？*而**不是**「有没有签名」—— 后者任何攻击者也能满足。
-
-## 哪些必须成立
-
-验证针对 bundle **离线**进行，且每一步都 fail closed：
-
-| 步骤 | 何时拒绝 |
+| 边界 | 必要检查 |
 |---|---|
-| 读取 bundle | 不是一个稳定的常规文件 |
-| 解析 bundle | 格式错误，或注入的信任根无效 |
-| Subject | 所需 digest 未全部出现，或某个 subject 重复 |
-| 身份 | 证书不匹配任何一个被接受的 workflow 身份与 issuer |
-| 仓库 | 该身份的源仓库坐标不匹配 |
-| DSSE | payload 签名验证不通过 |
-| 透明性 | bundle 内的日志证明验证不通过 |
+| 输入 | 稳定普通文件、有效 bundle、无重复 JSON 键 |
+| Subject | 包含所需成员摘要，无重复 subject |
+| 身份 | 被接受的 issuer、workflow identity 和源码仓库 |
+| 签名 | 证书链/有效期、SCT、DSSE PAE 与签名 |
+| 透明度 | Rekor entry/body/SET、包含证明与 checkpoint |
+| 激活 | 安全解包、原子激活、模块来源位于激活目录内 |
 
-**重复的 JSON 键被拒绝**，而不是「后者覆盖前者」。一份在两个实现里解析结果不同的 payload，是一份两方可以各执一词、却都相信自己验证过了的 payload。
+信任来自独立签名的本地发布策略与可信根。产物元数据不能选择二者，策略在使用前先验证。
 
-## 是身份，不只是签名
-
-一个被接受的身份**同时**指明 workflow、它的 issuer 与它的源仓库。三者必须全部匹配。
-
-正是这个组合让检查有意义。来自**另一个** workflow、或来自预期 workflow 的一个 fork 的有效签名，仍然是签名 —— 它只是不是授权这个产物的那一个。
-
-## 信任根不能由产物挑选
-
-信任根与被接受的身份来自**签名且不可变**的本地发布配置：
-
-| Flag | 提供 |
+| CLI 参数 | 输入 |
 |---|---|
-| `--artifact-sigstore-trusted-root` | 验证所用的信任根 |
-| `--artifact-release-policy-envelope` | 指明被接受身份的签名策略 |
-| `--artifact-release-policy-key-id` | 预期的策略签名 key id |
-| `--artifact-release-policy-public-key` | 用于验证该策略的公钥 |
+| `--artifact-release-policy-envelope` | 声明可接受身份与限额的签名策略 |
+| `--artifact-release-policy-key-id` | 预期 authority key id |
+| `--artifact-release-policy-public-key` | Authority 验证公钥 |
+| `--artifact-sigstore-trusted-root` | Sigstore 信任根 |
 
-产物元数据可以**引用**信任根，但永远不能**选择**信任根。一个能挑选「验证它自己的权威」的产物等于在自证，整条链也就什么都证明不了。
+`release-policy issue` 配置步骤见[部署指南](/operator-guide/deployment)。本地生成的开发 authority 不构成生产批准。
 
-策略本身在被使用之前先被签名并验证，因此「哪些身份可接受」不是改一个本地文件就能变的。
+## 失败处理
 
-## 哪些**不是**验证路径
+验证和解包均在导入前完成。加载器还会拒绝从其他 activation 缓存的模块。生产路径没有跳过参数、外部 shell 验证器，也不会仅凭 bundle 结构合理而接受。
 
-以下在生产中一律不被接受，且每一条都是**刻意排除**，而非仅仅尚未实现：
+产物运行时已接入组合，并有本地执行记录。候选发布和消费者交接与已部署生产验收不同，后者仍开放，详见[发布状态](/release-governance/release-status)。
 
-- 跳过或覆盖开关；
-- 外壳调用 `cosign`，或调用 Python 子进程；
-- sidecar 或 HTTP 验证器；
-- 一个仅仅「结构上看起来合理」的 bundle。
-
-最后一条最微妙。一个能解析、形状正确、且含有签名的 bundle **不是**一个已验证的 bundle ——
-它是一个看起来令人安心的**未验证** bundle。
-
-## 次序
-
-```text
-验证 → 安全解包 → 激活 → 导入
-```
-
-验证与安全解包都在**任何导入之前**完成。随后 loader 会证明它导入的模块来自激活根，并拒绝一个从**另一次**激活缓存下来的模块。
-
-第二项检查比看起来更要紧：如果 import 系统端出一个它此前从别处缓存的模块，那么验证磁盘上的字节什么也证明不了。见[产物物化](/zh-Hans/toolkit/artifact-materialization)。
-
-## 当前状态
-
-验证器已实现、契约资产已固定，但端到端的产物能力**尚未启用**：在没有已验证的产物能力之前，消费它的守护进程保持禁用，实盘就绪为 false。
-
-读本页时值得把这个区分记清楚 —— 这里描述的检查**存在且有测试**；尚不成立的是「生产 runner
-正在通过它们执行产物」。回执状态见[策略工具包](/zh-Hans/toolkit/overview)。
+离线挂载策略是独立的 sandbox/testnet 流程，不具有上述签名发布保障，也不能产生晋升证据。

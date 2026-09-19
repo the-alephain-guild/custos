@@ -1,40 +1,18 @@
 ---
-title: "DeploymentSpec vs DeploymentInstance"
+title: "Deployment spec and instance"
 sidebar_position: 1
 ---
 
+A signed `DeploymentSpec` records immutable configuration. A `DeploymentInstance` identifies one runtime execution of that configuration.
 
-# DeploymentSpec vs DeploymentInstance
+| Identifier | Purpose |
+|---|---|
+| `deployment_spec_id` / `deployment_spec_digest` | Configuration provenance |
+| `deployment_instance_id` | Address engine, lifecycle, watchdog, breaker and fact stream |
+| `generation` | Order desired-state changes for an instance |
 
-## Core terms
+Multiple instances can refer to one spec. Transport retries and replay of the same accepted command preserve its instance identity; a newly issued deployment instance has its own id. This identity model does not imply unlimited host concurrency. Nautilus currently admits one active node per event loop.
 
-### DeploymentSpec
+Applied and reported progress are tracked separately so reporting can retry without repeating an already committed engine operation. RunnerFacts carry both runtime identity and configuration provenance; ARX validates them before updating canonical business state.
 
-An immutable business-owned configuration. deployment_spec_id and
-deployment_spec_digest are provenance. The spec includes strategy artifact
-provenance, mode, target runner, credential scope, parameters and, for live
-mode, promotion evidence.
-
-### DeploymentInstance
-
-One attempt to run a DeploymentSpec on a runner. deployment_instance_id is
-the runtime primary key. Retries, redeployments and parallel instances of the
-same spec have distinct instance identifiers.
-
-### Desired generation and local watermarks
-
-A monotonic integer attached to a signed desired-state command. Custos tracks
-applied_generation separately from reported_generation. A fact enqueue failure
-therefore retries reporting without repeating a successful engine action.
-
-### Engine handle
-
-The local engine resource for one deployment instance. All engine protocol
-operations receive deployment_instance_id; the spec identifier is retained
-only as provenance in facts and diagnostics.
-
-### RunnerFact
-
-A signed observation emitted by Custos. A fact states what this runner
-observed or executed. It is not itself the canonical business lifecycle;
-ARX validates and persists it before changing canonical state.
+Offline specs use their own `spec_id` and generation. Their bridge derives deterministic local runtime UUIDs from that spec id, allowing restart recognition. Those UUIDs and unsigned local status do not substitute for signed ARX instance authority.

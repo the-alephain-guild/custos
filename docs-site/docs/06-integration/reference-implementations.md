@@ -1,111 +1,30 @@
 ---
-title: "Reference Implementations"
+title: "Verification reference"
 sidebar_position: 5
 ---
 
-# Reference Implementations
+This page describes signed command checks an auditor or integrator can verify against the source. Only ARX issues canonical deployment commands. Operator-owned offline input uses a different contract.
 
-What a producer has to get exactly right for a Custos runner to accept a
-command, and what it can expect back.
+## Command binding
 
-## Inbound: the command subject
+The signed command subject is `<provisioned-prefix>.{tenant_id}.{runner_id}.{mode}`. Event type and deployment instance belong in the signed event material. Do not append them to the broker subject.
 
-The subject is a fixed prefix followed by tenant, runner and mode, in that
-order:
+The two desired-state event types are `DeploymentSpecReadyForRunner` and `DeploymentInstanceDesiredStateChanged`. Each includes a complete canonical payload, explicit generation and lifecycle state. Custos verifies exact event bytes and subject before interpreting that payload, then checks consistency with transport mode, tenant, runner, instance and digest.
 
-```text
-<fixed prefix>.{tenant_id}.{runner_id}.{mode}
-```
+The canonical spec digest uses `sha256-canonical-json-v1` over its defined payload fields. It excludes the command envelope and digest field itself. Use matching producer/consumer golden vectors; generic JSON serialization is not a substitute for the contract.
 
-Note what is **not** in it: the deployment instance and the event type. Both
-live in the payload, and a command that encodes them into the subject instead
-fails verification.
+## Durable handling
 
-:::note This is not a third-party integration surface
-Only ARX publishes commands to a runner, and the subject prefix is part of that
-closed contract. If a third party could publish one, the trust model would
-already be broken.
-
-What is documented here is the **verification** a runner performs before acting,
-which is what an auditor needs. If you are building against Custos, the surface
-you consume is the fact stream — see
-[consuming RunnerFact](/integration/consuming-runner-fact).
-:::
-
-Custos subscribes with a durable, runner-scoped JetStream consumer and manual
-ACK/NAK.
-
-## The two event types
-
-```text
-DeploymentSpecReadyForRunner
-DeploymentInstanceDesiredStateChanged
-```
-
-The event type is a payload field, formed as
-`{type}.{runner_id}.{deployment_instance_id}`. Both carry a complete canonical
-DeploymentSpec plus an explicit `generation` and `lifecycle_state`.
-
-Missing values are invalid. Custos never defaults any field of a signed
-desired-state command — a default would mean acting on a value nobody signed.
-
-## What must agree
-
-Verification binds the exact subject and the exact event bytes to the
-provisioned Ed25519 key, and then requires agreement across three places:
-
-| Field | Subject | Envelope | Payload |
-|---|---|---|---|
-| tenant | ✅ | ✅ | ✅ |
-| runner | ✅ | ✅ | ✅ |
-| mode | ✅ | | ✅ |
-| deployment instance | | ✅ | ✅ |
-| generation | | ✅ | ✅ |
-
-Any disagreement is a terminal rejection, not a retry. The signature is checked
-**before** any payload field is parsed — nothing inside an unverified message is
-trusted, including the fields that would tell you whether to trust it.
-
-## Canonical digest
-
-`sha256-canonical-json-v1` hashes only the canonical spec payload. The command
-envelope and the digest field itself are excluded.
-
-The field set is exact, object keys are recursively sorted, arrays keep their
-order, and compact UTF-8 JSON bytes are hashed. Any change to the algorithm must
-ship with cross-language golden fixtures — two implementations that agree on the
-description but not on the bytes will each be certain the other is correct.
-
-## Outbound: facts
-
-Custos writes typed facts to a durable local outbox; a separate publisher signs
-and publishes batches. See
-[consuming RunnerFact](/integration/consuming-runner-fact) for the subject, the
-signing preimage and the verifier checklist.
-
-The command client has **no** outbound business publication API. A runner cannot
-publish a command, including to itself.
-
-## What a producer cannot rely on
-
-- **No unsigned path.** There is no compatibility topic and no fallback schema.
-- **No defaulting.** Omitted required fields are rejected, not filled in.
-- **No local publication.** Custos will not relay, re-emit or synthesise a
-  command.
-- **No ordering assumption beyond generation.** Generation is the ordering
-  input; delivery order is not.
-
-## Rejection versus retry
-
-| Producer error | Runner behaviour |
+| Outcome | Delivery action |
 |---|---|
-| Bad signature, wrong subject, invalid contract | Durable rejection, then TERM |
-| Same generation, byte-identical | Prior disposition replayed |
-| Same generation, different bytes | Terminal outcome, then TERM |
-| Stale generation | Terminal outcome, then TERM |
-| Transient local failure | NAK for redelivery |
+| Invalid signature/subject/contract | Persist rejection, then TERM |
+| Exact redelivery | Replay the durable outcome |
+| Conflicting or stale generation | Persist terminal outcome, then TERM |
+| Successful engine application | Commit applied state and lifecycle fact, then ACK |
+| Recoverable engine/dependency failure | NAK for retry |
 
-A producer that re-sends byte-identical material is safe: the runner replays its
-earlier decision rather than acting twice. A producer that re-sends *different*
-bytes under the same generation is making a contradictory claim, and that is
-terminal.
+The signature verifier, command consumer and lifecycle supervisor have distinct responsibilities. Tests must cover rejection before parsing and engine action, plus replay after the durable commit boundary.
+
+## Observation consumers
+
+Use [consumer reference](/integration/consuming-runner-fact) for RunnerFact batches and strategy signals. Consumers validate signature, authority, scope and sequence before changing their own state. Local offline status is useful for operator diagnostics but has no signed authority.

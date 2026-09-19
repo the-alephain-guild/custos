@@ -1,120 +1,31 @@
 ---
-title: "实盘执行门"
+title: "执行准入"
 sidebar_position: 3
 ---
 
-# 实盘执行门
+签名部署在创建引擎前执行准入检查。被拒绝的部署产生类型化终止结果；可恢复运行故障使用独立的有界重试路径。
 
-实盘执行门是横在「已验证的部署」与「运行中的引擎」之间的准入检查。它对每个部署只跑一次，在任何引擎进程被构造**之前**，并且 fail closed：凡是无法满足全部适用条件的部署，一律拒绝，而不是降级后放行。
+## 签名通道检查
 
-准入不是风控。它不判断某笔交易划不划算，它判断的是：这台 runner 究竟有没有资格在这个模式、这个交易所、用这份凭据执行这个部署。
-
-## 为什么在引擎存在之前跑
-
-代价高的失败不是「部署被拒绝」，而是「部署起来了、报告健康、干的却不是被批准的那件事」。
-
-因此下面每一项检查都在引擎构造之前完成，而不是之后。跑在之后的门必须去停掉一个已经连上交易所的东西，而「尽快停掉」是比「根本不启动」弱得多的保证。
-
-## 七项条件
-
-准入是一个函数。每项失败都抛出同一种带类型的拒绝，附带各自的原因：
-
-| # | 条件 | 适用范围 |
-|---|---|---|
-| 1 | artifact 运行时能力为 `READY` | 全部模式 |
-| 2 | 运行时模式与签名指令中的模式一致 | 全部模式 |
-| 3 | 引擎声明支持该模式 | 全部模式 |
-| 4 | 引擎声明支持签名指定的连接器 | 全部模式 |
-| 5 | 凭据的权限范围为 `trade_no_withdraw` | `testnet` · `live` |
-| 6 | 该构建启用了实盘执行 | `live` |
-| 7 | 指令携带签名的放行证据 | `live` |
-
-条件 1–4 对所有模式生效，`sandbox` 也不例外。不存在「跳过准入」的模式 ——
-sandbox 只是需要满足的条件更少，而不是走了另一条代码路径。
-
-### 关于条件 2
-
-模式被刻意检查了两次：一次是被授权的签名值，一次是本地运行时即将据以行动的值。两者比对能抓住「runner 即将执行的模式与被批准的模式不同」这种情况 ——
-任何单边检查都发现不了它。
-
-### 关于条件 6
-
-实盘执行默认关闭。这个开关只在消费最终镜像回执的组装根处被置为 true ——
-它不是运维开关，不是环境变量，也不是配置文件里的一项。
-
-所以「打开实盘」不是你能对一个运行中的部署做的操作。这项能力是你所运行的**构建**本身的属性，而没有走完发布链产出的构建不具备它。
-
-### 关于条件 7
-
-放行证据由 ARX 签发，随签名指令一同下发。Custos 只验证它存在、且绑定到本部署；它不评判是谁批准的，也不评判这次批准是否合理。
-
-这个分工是刻意的：Custos 拒绝在「没有决策发生过的证据」时行动，同时对决策本身不持立场。
-
-## 执行宿主
-
-随发布提供两个执行宿主，条件 3 与条件 4 读的正是它们各自声明的能力：
-
-| 宿主 | 模式 | 用途 |
-|---|---|---|
-| `NtTradingNodeHost` | `sandbox` · `testnet` · `live` | 对接真实交易所执行 |
-| `SandboxSimulationHost` | 仅 `sandbox` | 跑通完整生命周期，但不连接交易所 |
-
-模拟宿主之所以有价值，是因为 artifact 激活、凭据解析、生命周期持久化、就绪判定与事实发布都是**真跑**的，缺的只有交易所连接。它等于把除了交易之外的一切都演练一遍。
-
-它只声明 `sandbox`，别的都不声明。因此 `testnet` 或 `live` 部署根本到不了它面前：条件 3 会在其他任何动作之前拒绝。拒绝来自宿主自己的声明，而不是来自别处维护的一份「禁止组合」清单。
-
-宿主选择在进程生命周期内固定：
-
-```bash
-arx-runner start --engine nautilus     # 默认
-arx-runner start --engine sandbox-sim
-```
-
-若 NautilusTrader 运行时未安装，`--engine nautilus` 会在启动时失败，而不是悄悄回落到模拟。一台悄悄降级为模拟的 runner 会一边报告健康、一边一单不发。
-
-## 交易所
-
-连接器支持由各宿主自行声明，当前为 `binance` 与 `binance_perpetual`。比对不区分大小写；宿主未声明的签名连接器会在条件 4 处被拒。
-
-## 被拒绝是什么样
-
-被拦下的部署产出一个带类型的终态结果与一条生命周期事实。它**不重试** ——
-因为七项条件没有一项会因为等待而变为真：不支持的交易所在第二次尝试时依然不支持。
-
-这与瞬时路径正好相反：引擎因可恢复原因启动失败时，会在持久化的重启预算下重试。准入失败与运行期失败被刻意归为两类事件。完整处置表见
-[reconcile 循环](/zh-Hans/concepts/reconcile-loop)。
-
-## 自己验证
-
-有意思的问题不是「检查是否存在」，而是「它是否**可能**触发」。一项永远不会失败的检查，在一份全绿的测试套件里，和一项永远通过的检查长得一模一样。
-
-去读 `src/custos/core/engine_lifecycle.py` 里的 `_require_authorized_runtime` ——
-这一个函数就是整个门。不存在第二条准入路径，也没有任何调用方能绕过它抵达引擎构造。
-<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
-
-然后确认引擎宿主之外没有任何地方构造交易所客户端：
-
-```bash
-grep -rn 'CEXOMS\|BinanceClient\|OKXClient' src/ \
-  --exclude=host.py --exclude=venue_binance.py
-```
-
-干净的代码树上应无输出。在别处构造的交易所客户端等于完全绕开这道门，此时门内部再正确也无济于事。
-
-覆盖情况：
-
-| 内容 | 测试 |
+| 检查 | 适用范围 |
 |---|---|
-| 各宿主的模式与连接器声明 | `tests/test_nautilus_host_capability.py` |
-| 给定选择绑定哪个宿主 | `tests/test_main_host_selection.py` |
-| 能力受阻与实盘模式在任何引擎动作前被拒 | `tests/test_engine_lifecycle.py` |
-| 交易所适配器与凭据接线 | `tests/test_nt_binance_venue.py` |
-<!-- disclosure-ok: auditable source location, custos is open for exactly this -->
+| 已验证的产物运行能力 | 所有模式 |
+| 运行模式与签名指令匹配 | 所有模式 |
+| 宿主支持模式与 connector | 所有模式 |
+| 凭据声明 `trade_no_withdraw` | Testnet/live |
+| 运行组合已启用 live 执行 | Live |
+| 存在正确绑定的签名晋升证据 | Live |
 
-## 这道门不做什么
+当前 daemon 明确禁用 live 执行。宿主声明支持 live、候选版本已发布或策略有效，都不会启用它，也没有可供操作者覆盖这一决定的参数。
 
-它管准入，不管行为。敞口上限、回撤熔断与名义本金上限是在部署运行期间持续执行的，由不关心底层是哪个引擎的模块负责 —— 见[失联不等于停止](/zh-Hans/trust-model/safety-survives-disconnect)。
+`sandbox-sim` 仅支持 sandbox。Nautilus 的 connector 声明按模式区分，详见自动生成的[支持表](/engines/nautilus-trader)。SoDEX 不支持 live。
 
-交给宿主的凭据只用于构造交易所客户端，从不留存在宿主状态里、不写日志、不上报。Runner
-需要在内存中持有密钥以对交易所请求签名，这不可避免且在范围之内；保证针对的是 I/O
-边界，不是内存。见[凭据金库](/zh-Hans/operator-guide/credential-vault)。
+## 离线准入
+
+离线操作通过 `--reconcile-strategy-id` 显式选择。独立模式门在解析/发布 spec 或读取凭据前拒绝 live。它使用本地策略材料，不依赖签名发布能力，也不产生晋升证据。本地安全检查仍然运行。
+
+## 核对实现
+
+签名 supervisor 的准入检查位于 `src/custos/core/engine_lifecycle.py`，离线边界位于 `src/custos/offline/mode_guard.py`。相关测试包括 `tests/test_engine_lifecycle.py`、`tests/test_nautilus_host_capability.py`、`tests/test_nt_venue_wiring.py` 和 `tests/test_offline_mode_guard.py`。
+
+准入确认执行资格；持续敞口和回撤控制见[断线时的安全控制](/trust-model/safety-survives-disconnect)。

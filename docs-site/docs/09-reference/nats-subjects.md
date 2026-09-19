@@ -1,85 +1,47 @@
 ---
-title: "NATS Subject Reference"
+title: "NATS subjects"
 sidebar_position: 4
 ---
 
-# NATS Subject Reference
+Signed and offline traffic use separate contracts and provisioning paths. Select the lane explicitly.
 
-Custos has exactly two transport relationships: it consumes signed desired
-state, and it publishes signed facts. There is no third channel, and no
-inbound control path other than the one below.
+## Signed inbound control
 
-## Inbound — desired state
+ARX provisions a runner-control durable with exact command and safety-policy filters. Custos binds that existing durable and checks its configuration; it does not create signed-lane topology.
 
-Two event types carry desired state, one for creation and one for later
-changes. Their subjects are scoped to the exact runner and deployment instance:
+The command subject uses this shape:
 
 ```text
-<domain-prefix>.<tenant>.<mode>.deployment.
-  DeploymentSpecReadyForRunner.<runner_id>.<deployment_instance_id>
-
-<domain-prefix>.<tenant>.<mode>.deployment.
-  DeploymentInstanceDesiredStateChanged.<runner_id>.<deployment_instance_id>
+<provisioned-command-prefix>.{tenant_id}.{runner_id}.{mode}
 ```
 
-The prefix is provisioned with your ARX enrollment; the runner binds it at
-startup and will not accept an event arriving on any other subject.
+The deployment instance and event type are in signed event material, not appended to this subject. Both `DeploymentSpecReadyForRunner` and `DeploymentInstanceDesiredStateChanged` carry complete desired state with an explicit generation and lifecycle state. The safety-policy filter is also supplied by transport authority.
 
-This is not an integration point. ARX is the only publisher of desired state,
-and an event from anywhere else fails signature verification regardless of the
-subject it arrives on. It is documented here so you can reason about what the
-runner subscribes to, not so you can write to it.
+Signature verification binds exact subject and event bytes before payload interpretation. The transport session's mode must match the signed command or policy. Custos acknowledges through durable handling outcomes: ACK for completed work, NAK for recoverable failure, TERM for terminal rejection.
 
-Custos subscribes with a durable, runner-scoped JetStream consumer and manual
-ACK/NAK.
+ARX is the upstream product that issues signed intent and consumes signed observations. Identity enrollment is a separate interface; command/fact delivery uses the provisioned transport, whose availability must be checked independently.
 
-Verification binds **the exact subject and the exact event bytes** to the
-provisioned Ed25519 key. Tenant, mode, runner, instance, canonical spec id and
-canonical digest must agree across subject, event and payload — a mismatch in
-any one of them is a rejection, not a warning.
+## Signed outbound observations
 
-Both event types carry a complete canonical deployment payload plus explicit
-`generation` and `lifecycle_state`. Missing values are invalid: Custos never
-supplies a default for a signed command, because a defaulted field is a field
-nobody signed.
+RunnerFact batches:
 
-## Canonical digest
+```text
+crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
+```
 
-The digest algorithm is `sha256-canonical-json-v1`. It hashes **only** the
-canonical deployment payload — the command envelope and the digest field itself
-are excluded, since a digest cannot cover itself.
+Strategy signals use a separate envelope and subject:
 
-Rules:
+`crucible.runner.strategy-signal.v1.{tenant_id}.{runner_id}.{trading_mode}` <!-- disclosure-ok: exact public strategy-signal subject required by consumers -->
 
-- the field set is exact;
-- object keys are recursively sorted;
-- arrays retain their order;
-- compact UTF-8 JSON bytes are hashed.
+Both use durable local publication and PubAck handling. The signal sequence is independent of the batch sequence. See [consumer verification](/integration/consuming-runner-fact).
 
-Any change to this algorithm must ship with cross-language golden fixtures.
-Two implementations that disagree by one byte produce two different digests,
-and the failure surfaces as an unexplained signature rejection.
+## Offline traffic
 
-## Outbound — signed facts
+| Direction | Subject |
+|---|---|
+| Operator desired state | `arx.<tenant>.deployment_spec.<strategy-id>` |
+| Runner observed status | `arx.<tenant>.deployment_status.<runner-label>.<spec-id>` |
 
-The command client has **no** outbound business publication API. That is a
-deliberate asymmetry: the path that receives instructions cannot be used to
-send anything.
+`nats bootstrap --profile standalone` creates owned deployment/observed streams. Desired state retains the latest message per subject. The observed stream also reserves heartbeat/telemetry subjects; reservation is not a guarantee that the offline daemon emits those messages.
 
-Custos writes typed facts to its durable local outbox. A separate publisher
-signs and publishes batches for upstream ingestion. The outbox owns sequence
-allocation, so a fact that cannot be durably enqueued blocks the command
-acknowledgement rather than being silently dropped.
-
-See [consuming RunnerFact](/integration/consuming-runner-fact) for the fact
-schema and subject.
-
-## What is not a channel
-
-ARX authorization is provisioned once, at enrollment. After that it is not in
-the delivery path: it neither publishes nor relays deployment commands, and it
-is not a destination for facts. Its availability does not affect command
-delivery or fact publication.
-
-This matters operationally — it means an authorization outage cannot stop a
-running deployment, and cannot be used to inject one either.
+Offline input and status are unsigned. Restrict the broker to operator-owned infrastructure; the loopback-only demo broker is not suitable for shared deployment. Offline status publication is best effort and does not share the signed fact outbox.
