@@ -1,4 +1,4 @@
-# 离线通道的 testnet 走不通的两处：给不出凭据范围，就绪检查读错属性名
+# 离线通道的 testnet 走不通的三处：给不出凭据范围，就绪检查读错属性名，就绪判据不含估值
 
 - **Status**: ✅ Completed
 - **日期**: 2026-09-19
@@ -65,12 +65,12 @@ PS 那边填不进来 —— **离线通道的 testnet 因此完全不可用，�
 | 测试文件 | 条数 |
 |---|---|
 | `tests/test_offline_reconciler.py` | 39 |
-| `tests/engines/nautilus/test_readiness_checks_what_it_claims.py` | 15 |
+| `tests/engines/nautilus/test_readiness_checks_what_it_claims.py` | 18 |
 | `tests/test_plan_closeout_counts.py` | 22 |
 
 各行都是该文件今天的总数，不是本次增量。本次在第一个文件加了 2 条（testnet 规格带上
-范围、两套凭据分区互不相同而同一套凭据跨代次稳定），在第二个加了 1 条（替身的属性名
-必须是真实 Portfolio 上的那个）。
+范围、两套凭据分区互不相同而同一套凭据跨代次稳定），在第二个加了 4 条（替身的属性名
+必须是真实 Portfolio 上的那个，以及估值判据的三条）。
 
 第三行是计数门自己：它有两条按「带计数表的记录」参数化的用例，本文件加进来就让它
 各多一个，20 变 22。谁加记录谁重新计数，这条规则对这个文件同样成立。
@@ -129,9 +129,49 @@ portfolio=SimpleNamespace(initialized=portfolio_initialized),
 
 第一处是关键：它复现的正是让这个 bug 活下来的形态，现在会红。
 
+## 第四处：就绪判据里没有守卫紧接着要用的那个答案
+
+属性名改对之后节点起来了、跑起来了、连上了场所，然后熔断：
+
+```
+fallback_breaker_fail_closed  reason=portfolio_prices_missing
+positions_flattened
+```
+
+时序是决定性的 —— 订阅 mark price 发出后 **1.97 秒**守卫就评估了，而整份日志里
+`MarkPriceUpdate` 一次都没出现：第一笔行情根本没回来。
+
+这不是「有仓位就不让起」。守卫要算敞口就得知道每个持仓标的的现价：账户为空时它不需要
+任何价格，直接通过；有仓位时它需要那个标的的价格，而价格还在路上。八月三日那次从空账户
+起步并成功，留下的正是现在这个仓位 —— 空账户能过、有仓位过不了，两边都有实证。
+
+后果比现象严重：带着仓位重启在运维里是常态（进程崩、机器重启、版本升级），而按这个行为
+**任何持仓中的策略重启后都起不来**，报的还是「组合价格缺失」，看起来像行情故障。
+
+根因在判据而不在机制。`_may_evaluate` 的注释记着 2026-08-01 那次：熔断在账户余额到达前
+116ms 触发，于是加了「等 `deployment_ready` 再评估」。机制是对的，但那七项判据里没有一项
+是「守卫问得出敞口」—— 守卫问的是 `get_open_notional`，它在快照不可靠时直接抛。于是同一个
+失败换了个原因回来了：那次是 equity missing，这次是 marks missing。
+
+所以把它加进判据，让那个等待真的等到它在等的东西：
+
+```python
+portfolio_valuation_ready=valuation.reliable,
+```
+
+超时兜底不变（90 秒后照常评估并 fail-closed），所以这不会变成一扇永不开的门。
+
+`all_ready()` 顺带从七个位置参数改成具名 —— 加一项字段时位置参数不会报错，只会把每个值
+向左挪一格，八条用例因此红了；具名之后新增字段会在构造处直接失败。
+
+三处变异，全红：ready 不再看这一项、估值恒为就绪、估值恒不就绪。
+
 ## 遗留
 
-- 离线通道的 testnet 端到端仍未在真实场所验证完。本 plan 交付到「宿主接受这份规格」
-  为止，它之后的连接、下单与收线行为不在范围内。
+- 离线通道的 testnet 端到端仍未在真实场所验证完。本 plan 交付到「守卫不再在数据到齐前
+  评估」为止；它之后的下单、收线与持续运行行为不在范围内。
+- 账户里那个 2026-08-03 留下的空头（BTCUSDT -0.0055）仍在。它现在不再阻止启动，但平仓
+  单被交易所以 `-2022 ReduceOnly Order is rejected` 拒绝，而 positionRisk 与 account
+  两个端点都确认它存在、账户可交易、无挂单。原因未查实。
 - 三类 spec 模板（sandbox / testnet / live）在 PS 侧只差一个 `trading_mode` 字段，而
   live 在 custos 侧是被 `refuse_live` 直接拒的。那份 live 模板目前没有任何通路能用它。

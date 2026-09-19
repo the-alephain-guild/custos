@@ -1296,11 +1296,23 @@ class NtTradingNodeHost:
         reconciliation_required = authority.trading_mode != "sandbox"
         reconciliation_enabled = runtime.reconciliation_enabled
 
+        # The exposure guard asks ``get_open_notional`` the moment this says ready, and
+        # that raises unless the snapshot is reliable. Leaving valuation out of the
+        # boundary is what let the guard trip on data still in flight: the wait added on
+        # 2026-08-01 waits for exactly this answer, so the answer has to include the
+        # thing it was waiting for. Otherwise the same failure returns under a different
+        # reason -- equity missing then, marks missing now, and any position at all is
+        # enough to need a price that a fresh subscription has not delivered yet.
+        valuation = self._portfolio_snapshot_provider.snapshot(
+            runtime, currency=self._declared_currency(str(authority.deployment_instance_id))
+        )
+
         return EngineReadinessChecks(
             node_task_alive=not runtime.task.done(),
             data_connectivity_ready=connectivity.data_connected,
             execution_connectivity_ready=connectivity.exec_connected,
             portfolio_initialized=bool(portfolio is not None and portfolio.is_initialized),
+            portfolio_valuation_ready=valuation.reliable,
             reconciliation_initialized=(
                 node_running and (reconciliation_enabled or not reconciliation_required)
             ),

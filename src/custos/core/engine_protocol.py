@@ -229,6 +229,7 @@ class EngineReadinessChecks:
     data_connectivity_ready: bool
     execution_connectivity_ready: bool
     portfolio_initialized: bool
+    portfolio_valuation_ready: bool
     reconciliation_initialized: bool
     strategy_accepting_lifecycle: bool
     mandatory_capabilities_active: bool
@@ -241,6 +242,7 @@ class EngineReadinessChecks:
                 self.data_connectivity_ready,
                 self.execution_connectivity_ready,
                 self.portfolio_initialized,
+                self.portfolio_valuation_ready,
                 self.reconciliation_initialized,
                 self.strategy_accepting_lifecycle,
                 self.mandatory_capabilities_active,
@@ -249,7 +251,18 @@ class EngineReadinessChecks:
 
     @classmethod
     def all_ready(cls) -> EngineReadinessChecks:
-        return cls(True, True, True, True, True, True, True)
+        # Named, not positional: a new boundary should fail to construct here
+        # rather than silently shift every value one field to the left.
+        return cls(
+            node_task_alive=True,
+            data_connectivity_ready=True,
+            execution_connectivity_ready=True,
+            portfolio_initialized=True,
+            portfolio_valuation_ready=True,
+            reconciliation_initialized=True,
+            strategy_accepting_lifecycle=True,
+            mandatory_capabilities_active=True,
+        )
 
 
 @dataclass(frozen=True, slots=True)

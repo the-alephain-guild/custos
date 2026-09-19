@@ -41,6 +41,7 @@ because a reader would otherwise take these fields for the evidence they used to
 
 from __future__ import annotations
 
+from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -52,6 +53,7 @@ from nautilus_trader.live import NodeState
 
 from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.engines.nautilus.host import NtTradingNodeHost, _NodeRuntime
+from custos.engines.nautilus.portfolio_snapshot import NautilusPortfolioSnapshot
 
 
 class _Task:
@@ -99,17 +101,45 @@ def _authority(trading_mode: str) -> EngineLifecycleAuthority:
     )
 
 
-def _host_with(authority: EngineLifecycleAuthority, runtime) -> NtTradingNodeHost:
+class _SnapshotProvider:
+    """Stands in for the real one, which needs a live cache and a venue.
+
+    Readiness reads only ``reliable`` from it — whether the guard could ask this
+    deployment what it is exposed to right now.
+    """
+
+    def __init__(self, reliable: bool) -> None:
+        self._reliable = reliable
+
+    def snapshot(self, runtime, currency=None):
+        if self._reliable:
+            return NautilusPortfolioSnapshot(
+                venue="BINANCE",
+                currency="USDT",
+                equity=Decimal("1000"),
+                positions=(),
+                reliable=True,
+            )
+        return NautilusPortfolioSnapshot.unreliable("portfolio_prices_missing")
+
+
+def _host_with(
+    authority: EngineLifecycleAuthority,
+    runtime,
+    *,
+    valuation_reliable: bool = True,
+) -> NtTradingNodeHost:
     host = NtTradingNodeHost(tenant_id="tenant", runner_id="runner")
     instance = str(authority.deployment_instance_id)
     host._lifecycle_authorities[instance] = authority
     host._active_nodes[instance] = runtime
+    host._portfolio_snapshot_provider = _SnapshotProvider(valuation_reliable)
     return host
 
 
-async def _ready(authority, runtime) -> bool:
+async def _ready(authority, runtime, *, valuation_reliable: bool = True) -> bool:
     """True when readiness is reached inside a deliberately tiny window."""
-    host = _host_with(authority, runtime)
+    host = _host_with(authority, runtime, valuation_reliable=valuation_reliable)
     try:
         await host.wait_ready(authority, timeout_secs=0.05)
     except TimeoutError:
@@ -197,6 +227,54 @@ def test_the_stand_in_portfolio_names_the_attribute_the_real_one_has() -> None:
         "the stand-in portfolio must carry the attribute the real one has, or "
         "this suite cannot tell a working check from a misspelled one"
     )
+
+
+# ---------------------------------------------------------------------------
+# portfolio_valuation_ready
+# ---------------------------------------------------------------------------
+
+
+async def test_a_deployment_that_cannot_be_valued_is_not_ready() -> None:
+    """Readiness is what the exposure guard waits on before asking about exposure.
+
+    It asks ``get_open_notional``, which raises unless the snapshot is reliable. A
+    boundary that says ready while valuation is still unreliable sends the guard
+    straight into the failure the wait exists to avoid.
+    """
+    authority = _authority("testnet")
+
+    assert not await _ready(authority, _runtime(), valuation_reliable=False)
+
+
+async def test_the_same_deployment_is_ready_once_it_can_be_valued() -> None:
+    """The other half: this must not become a gate that never opens.
+
+    Nothing else changes between the two — only whether the snapshot is reliable —
+    so a deployment held by this check is held by this check alone.
+    """
+    authority = _authority("testnet")
+
+    assert await _ready(authority, _runtime(), valuation_reliable=True)
+
+
+async def test_a_position_that_has_no_price_yet_holds_the_deployment() -> None:
+    """The failure this was written for, named the way the engine names it.
+
+    A fresh subscription has not delivered a mark price when the guard first looks,
+    and any open position is enough to need one. The account being empty is what
+    made this invisible: with nothing to value, nothing is missing.
+    """
+    authority = _authority("testnet")
+    host = _host_with(authority, _runtime(), valuation_reliable=False)
+
+    checks = await host._readiness_checks(authority, _runtime())
+
+    assert not checks.portfolio_valuation_ready
+    assert not checks.ready
+    # Everything else passed: this is the one boundary not crossed.
+    assert checks.node_task_alive
+    assert checks.portfolio_initialized
+    assert checks.strategy_accepting_lifecycle
 
 
 # ---------------------------------------------------------------------------
