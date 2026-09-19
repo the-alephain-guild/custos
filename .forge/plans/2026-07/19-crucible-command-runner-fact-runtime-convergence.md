@@ -1622,3 +1622,32 @@ Promotion workflow commit `f25c1e9` now rejects the retired single-platform
 digest and receipt pin. T10 remains fail-closed on the real Crucible deployed
 Phase-B and PS Plan 56 owner receipts, the unchanged-digest promotion receipt
 and deployed testnet/live evidence.
+
+
+## 2026-09-19 approved production-preparation continuation
+
+User scope: SuperTrend through ARX signed deployment; Binance, SoDEX and OKX,
+spot and perpetuals on each; Ubuntu host not yet provisioned. The user explicitly
+authorized the repair sequence recorded in the production preflight report.
+This continuation retains the existing plan's ownership and production gates.
+
+| Task | Status | Deliverable and verification |
+|---|---|---|
+| T10a | In progress | Restore real NATS revocation and preserve a separate full service-issued daemon/command/fact acceptance using the current producer rendezvous; test both boundaries honestly. |
+| T10b | Pending | Consume the existing cryptographically verified runtime promotion receipt, bind it to deployed image/revision, and retain per-deployment signed promotion/policy checks; absent or invalid evidence remains blocked. |
+| T10c | Pending | Complete SoDEX spot/perpetual live configuration, account input and independent ledger evidence without weakening offline/live isolation. |
+| T10d | Pending | Add OKX spot/perpetual venue configuration, credential handling and ledger support using the installed adapter/API contract. |
+| T10e | Pending | Six-combination engine/strategy regression, isolated transport and Linux image verification; preserve negative tests for every admission boundary. |
+| T10f | External input required | Ubuntu deployment, operator-provisioned venue accounts, signed full-chain acceptance, bounded live canary authorization and deployed evidence. No real order is authorized by this implementation step. |
+
+Source anchors: `tests/integration/test_nats_revocation.py`,
+`tests/integration/runner_daemon_lifecycle_process.py`,
+`src/custos/cli/_daemon.py:880`, `src/custos/core/engine_lifecycle.py:407`,
+`src/custos/engines/nautilus/venues.py`, `venue_sodex.py:267`,
+`docs/gateway-contract/v1/runtime_candidate_promotion_receipt_v1.schema.json`.
+The candidate promotion receipt establishes artifact-runtime acceptance only;
+signed deployment intent and risk policy remain independently mandatory.
+
+Changing evolving source does not refresh historical receipts. A new candidate
+and new evidence must identify the selected release revision. Cross-repository
+changes stage individual files and preserve unrelated dirty work.
