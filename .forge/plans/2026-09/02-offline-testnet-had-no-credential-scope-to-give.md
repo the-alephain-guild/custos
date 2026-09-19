@@ -66,11 +66,13 @@ PS 那边填不进来 —— **离线通道的 testnet 因此完全不可用，�
 |---|---|
 | `tests/test_offline_reconciler.py` | 39 |
 | `tests/engines/nautilus/test_readiness_checks_what_it_claims.py` | 18 |
+| `tests/test_portfolio_snapshot.py` | 15 |
 | `tests/test_plan_closeout_counts.py` | 22 |
 
 各行都是该文件今天的总数，不是本次增量。本次在第一个文件加了 2 条（testnet 规格带上
 范围、两套凭据分区互不相同而同一套凭据跨代次稳定），在第二个加了 4 条（替身的属性名
-必须是真实 Portfolio 上的那个，以及估值判据的三条）。
+必须是真实 Portfolio 上的那个，以及估值判据的三条），在第三个加了 2 条（缺价格时报出
+是哪个标的，多个标的顺序稳定）。
 
 第三行是计数门自己：它有两条按「带计数表的记录」参数化的用例，本文件加进来就让它
 各多一个，20 变 22。谁加记录谁重新计数，这条规则对这个文件同样成立。
@@ -80,6 +82,7 @@ PS 那边填不进来 —— **离线通道的 testnet 因此完全不可用，�
 ```
 uv run --package custos-runner pytest tests/test_offline_reconciler.py -q
 uv run --package custos-runner --extra nautilus pytest tests/engines/nautilus/test_readiness_checks_what_it_claims.py -q
+uv run --package custos-runner --extra nautilus pytest tests/test_portfolio_snapshot.py -q
 uv run --package custos-runner pytest tests/test_plan_closeout_counts.py -q
 ```
 
@@ -165,6 +168,21 @@ portfolio_valuation_ready=valuation.reliable,
 向左挪一格，八条用例因此红了；具名之后新增字段会在构造处直接失败。
 
 三处变异，全红：ready 不再看这一项、估值恒为就绪、估值恒不就绪。
+
+实测结果：守卫从 1.97 秒变成整整等了 **120 秒**（`awaiting_readiness` 出现，
+`guard_evaluating` 从未出现），超时兜底后仍以同一原因 fail-closed。**等待是对的，
+但价格在两分钟内确实没到**，所以这条修复解决了竞态，没有解决数据为什么不来。
+
+## 第五处：缺价格的报错不说缺谁的
+
+诊断上一条时发现，`portfolio_prices_missing` 不带任何标的名。三种完全不同的问题都长这样：
+行情源断了、订阅没落地、持仓的标的根本没人订阅。不写出是哪个标的，读到这条错误的人只能
+拿一句空投诉去对一个正在跑的节点。
+
+现在带上：`portfolio_prices_missing:BTCUSDT-PERP.BINANCE`，多个标的按名排序。
+
+两处变异，全红：退回不带名字的原因、名字不排序。第二处第一次跑是绿的 —— 测试数据只有
+两个元素，而两个元素反转后恰好等于排序结果。改成三个元素才真正区分得开。
 
 ## 遗留
 

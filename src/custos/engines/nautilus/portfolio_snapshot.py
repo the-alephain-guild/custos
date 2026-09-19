@@ -133,7 +133,12 @@ class NautilusPortfolioSnapshotProvider:
 
             missing_prices = portfolio.missing_price_instruments(venue)
             if missing_prices:
-                return NautilusPortfolioSnapshot.unreliable("portfolio_prices_missing")
+                # Name them. "prices missing" alone cannot be acted on: whether the
+                # feed is down, the subscription never landed, or a position is held
+                # in an instrument nothing subscribed to are three different
+                # problems, and the instrument that is missing says which.
+                named = ",".join(sorted(str(instrument) for instrument in missing_prices))
+                return NautilusPortfolioSnapshot.unreliable(f"portfolio_prices_missing:{named}")
 
             equity_by_currency = portfolio.equity(venue)
             resolved_currency, equity = self._resolve_equity(equity_by_currency, currency)

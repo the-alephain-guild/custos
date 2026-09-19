@@ -205,6 +205,51 @@ def test_missing_mark_or_equity_returns_typed_unreliable_snapshot() -> None:
     assert missing_equity.unreliable_reason == "portfolio_equity_missing:USDT"
 
 
+def test_a_missing_price_names_the_instrument_it_is_missing_for() -> None:
+    """Three different problems arrive under one reason, and the name separates them.
+
+    A feed that is down, a subscription that never landed, and a position held in
+    an instrument nothing subscribed to all read as "prices missing". Which one it
+    is, is the instrument — and without it the operator is left comparing an empty
+    complaint against a running node.
+    """
+    snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
+        _Runtime(
+            mark_price=_DecimalValue("100"),
+            portfolio=_Portfolio(missing=("BTCUSDT-PERP.BINANCE",)),
+        ),
+        currency="USDT",
+    )
+
+    assert snapshot.reliable is False
+    assert snapshot.unreliable_reason == "portfolio_prices_missing:BTCUSDT-PERP.BINANCE"
+
+
+def test_several_missing_prices_are_all_named_in_a_stable_order() -> None:
+    """Several positions can go unpriced at once; all of them have to show.
+
+    Three, not two: with two entries a reversal reads the same as a sort, so a
+    pair cannot tell a stable order from an accidental one.
+    """
+    snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
+        _Runtime(
+            mark_price=_DecimalValue("100"),
+            portfolio=_Portfolio(
+                missing=(
+                    "ETHUSDT-PERP.BINANCE",
+                    "BTCUSDT-PERP.BINANCE",
+                    "SOLUSDT-PERP.BINANCE",
+                )
+            ),
+        ),
+        currency="USDT",
+    )
+
+    assert snapshot.unreliable_reason == (
+        "portfolio_prices_missing:BTCUSDT-PERP.BINANCE,ETHUSDT-PERP.BINANCE,SOLUSDT-PERP.BINANCE"
+    )
+
+
 @dataclass
 class _RecordingProvider:
     value: NautilusPortfolioSnapshot
