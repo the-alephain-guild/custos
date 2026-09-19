@@ -1,6 +1,6 @@
 # Docs-site authority and operator-flow synchronization
 
-Status: Implemented and locally verified; publication in progress.
+Status: Completed; documentation published and public content verified.
 
 Baseline: `c1d27024312210590bc0716fe1ddff592e5f8012` (2026-09-19).
 
@@ -114,4 +114,19 @@ Do not add current-byte source hashes to historical receipt gates.
 - Main was already six commits ahead of origin/main at task start; those commits
   are the local offline scope and Nautilus readiness fixes documented by this change.
 
-Publication results will be reported after GitHub Actions and public-page checks.
+## Publication close-out
+
+- Content commit: `35c304c81b467fc00c379a43e736e040ba9e622d`, pushed to main.
+- Read-only documentation CI passed: https://github.com/the-alephain-guild/custos/actions/runs/35444139923
+- Documentation deploy passed: https://github.com/the-alephain-guild/custos/actions/runs/35444139993
+- Pages source commit: `0a77d80d2d2b0c821aaa37cc83a93ae264b8b4d8`; GitHub Pages build status `built`.
+- HTTPS content checks passed for 10 public routes across English and Chinese:
+  both home pages, both standalone sandbox pages, both CLI pages, English Nautilus,
+  Chinese SoDEX, English release status and Chinese offline testnet.
+- Public site: https://custos.alephain.com/ and https://custos.alephain.com/zh-Hans/
+- These checks verified HTTP delivery and rendered HTML text. Browser automation
+  timed out, so no interactive/visual browser acceptance is claimed.
+- No runtime source, historical receipt, runner package release or container
+  publication was changed by the documentation commit. The six pre-existing local
+  source commits were pushed with the existing main history as announced.
+- This close-out changes only the execution record; it does not republish site content.
