@@ -1300,7 +1300,7 @@ class NtTradingNodeHost:
             node_task_alive=not runtime.task.done(),
             data_connectivity_ready=connectivity.data_connected,
             execution_connectivity_ready=connectivity.exec_connected,
-            portfolio_initialized=bool(portfolio is not None and portfolio.initialized),
+            portfolio_initialized=bool(portfolio is not None and portfolio.is_initialized),
             reconciliation_initialized=(
                 node_running and (reconciliation_enabled or not reconciliation_required)
             ),

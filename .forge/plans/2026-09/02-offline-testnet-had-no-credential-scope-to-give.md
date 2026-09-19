@@ -1,4 +1,4 @@
-# 离线通道的 testnet 从来给不出宿主要的凭据范围
+# 离线通道的 testnet 走不通的两处：给不出凭据范围，就绪检查读错属性名
 
 - **Status**: ✅ Completed
 - **日期**: 2026-09-19
@@ -65,18 +65,21 @@ PS 那边填不进来 —— **离线通道的 testnet 因此完全不可用，�
 | 测试文件 | 条数 |
 |---|---|
 | `tests/test_offline_reconciler.py` | 39 |
+| `tests/engines/nautilus/test_readiness_checks_what_it_claims.py` | 15 |
 | `tests/test_plan_closeout_counts.py` | 22 |
 
-第一行是该文件今天的总数，不是本次增量 —— 本次加了 2 条（testnet 规格带上范围、
-两套凭据分区互不相同而同一套凭据跨代次稳定）。
+各行都是该文件今天的总数，不是本次增量。本次在第一个文件加了 2 条（testnet 规格带上
+范围、两套凭据分区互不相同而同一套凭据跨代次稳定），在第二个加了 1 条（替身的属性名
+必须是真实 Portfolio 上的那个）。
 
-第二行是计数门自己：它有两条按「带计数表的记录」参数化的用例，本文件加进来就让它
+第三行是计数门自己：它有两条按「带计数表的记录」参数化的用例，本文件加进来就让它
 各多一个，20 变 22。谁加记录谁重新计数，这条规则对这个文件同样成立。
 
 复跑命令：
 
 ```
 uv run --package custos-runner pytest tests/test_offline_reconciler.py -q
+uv run --package custos-runner --extra nautilus pytest tests/engines/nautilus/test_readiness_checks_what_it_claims.py -q
 uv run --package custos-runner pytest tests/test_plan_closeout_counts.py -q
 ```
 
@@ -94,6 +97,37 @@ uv run --package custos-runner pytest tests/test_plan_closeout_counts.py -q
 第四处是补写的：首版的稳定性断言用同一个规格调两次，掺入代次也不会让两次结果不同，
 所以那次变异是绿的。改成跨代次比较后才真正钉住 —— 代次每次发布都递增，范围若随它走，
 分区在每次重新发布后都会指向一个新账户，这条拒绝就形同虚设。
+
+## 第三处：就绪检查读的属性名 Nautilus 2 已经改了
+
+范围补上之后节点真的起来了，然后崩在就绪探针：
+
+```
+AttributeError: 'nautilus_trader.portfolio.Portfolio' object has no attribute
+'initialized'. Did you mean: 'is_initialized'?
+```
+
+`_readiness_checks` 读 `portfolio.initialized`，而 Nautilus 2 上只有 `is_initialized`
+（`dir(Portfolio)` 实测，全仓仅此一处用旧名）。Nautilus 2 升级漏了它，原因在测试自己：
+
+```python
+portfolio=SimpleNamespace(initialized=portfolio_initialized),
+```
+
+**替身是照着被测代码的写法造的**，所以代码把名字写错时替身跟着错，两边一致，14 条用例
+全绿。这个错误只能在真实 Portfolio 出现的地方显形 —— 也就是第一次真实 testnet 部署，
+在节点已经起来并连上场所之后，是最不该发现打字错误的位置。
+
+修法是两件事：代码改用 `is_initialized`，并加一条把替身钉在真实类上的测试。三处变异
+逐个跑：
+
+| 变异 | 结果 |
+|---|---|
+| 代码与替身一起退回旧名（原本那个共谋） | 红 2 项 |
+| 只有替身退回旧名 | 红 26 项 |
+| 就绪检查不再看 portfolio（恒真） | 红 3 项 |
+
+第一处是关键：它复现的正是让这个 bug 活下来的形态，现在会红。
 
 ## 遗留
 

@@ -81,7 +81,7 @@ def _runtime(
         task=task or _Task(),
         handle=SimpleNamespace(state=NodeState.RUNNING if node_running else NodeState.STARTING),
         cache=None,
-        portfolio=SimpleNamespace(initialized=portfolio_initialized),
+        portfolio=SimpleNamespace(is_initialized=portfolio_initialized),
         strategies=tuple(SimpleNamespace(is_running=running) for running in strategies_running),
         reconciliation_enabled=reconciliation,
     )
@@ -172,6 +172,31 @@ async def test_an_uninitialised_portfolio_is_not_ready() -> None:
     authority = _authority("testnet")
 
     assert not await _ready(authority, _runtime(portfolio_initialized=False))
+
+
+def test_the_stand_in_portfolio_names_the_attribute_the_real_one_has() -> None:
+    """A stand-in built to match the code cannot catch the code naming it wrong.
+
+    The check read ``portfolio.initialized`` while Nautilus 2 renamed it to
+    ``is_initialized``. The stand-in above was spelled the same way, so every
+    test here passed and the first real testnet deployment raised
+    AttributeError inside the readiness probe — after the node was up and
+    connected, which is the worst place to find a typo.
+
+    Pinning the stand-in to the real class is what makes this suite able to
+    see a rename instead of mirroring it.
+    """
+    from nautilus_trader.portfolio import Portfolio
+
+    attribute = "is_initialized"
+    assert hasattr(Portfolio, attribute), (
+        f"Nautilus no longer exposes Portfolio.{attribute}; the readiness check "
+        "and the stand-in in this file both read it"
+    )
+    assert hasattr(_runtime().portfolio, attribute), (
+        "the stand-in portfolio must carry the attribute the real one has, or "
+        "this suite cannot tell a working check from a misspelled one"
+    )
 
 
 # ---------------------------------------------------------------------------
