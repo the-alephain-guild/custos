@@ -141,7 +141,7 @@ docker-sign:  ## Sign the built docker image with cosign keyless (requires OIDC;
 	@echo "Run cosign manually only for out-of-band re-signing." >&2
 
 test-docker-existing:  ## Run runtime contracts against CUSTOS_TEST_IMAGE (default custos-runner:test)
-	uv run pytest -m docker tests/test_docker_non_root.py tests/test_docker_entrypoint_help.py tests/test_docker_image_size.py tests/test_docker_runtime_contract.py -v
+	uv run --extra dev pytest -m docker tests/test_docker_non_root.py tests/test_docker_entrypoint_help.py tests/test_docker_image_size.py tests/test_docker_runtime_contract.py -v
 
 test-docker: docker-build test-docker-existing  ## Build local image, then run complete runtime contracts
 

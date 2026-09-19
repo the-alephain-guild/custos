@@ -295,6 +295,8 @@ def _capability(
             binding["deployment_spec_id"] = str(deployment_authority["deployment_spec_id"])
             binding["deployment_spec_digest"] = deployment_authority["deployment_spec_digest"]
             binding["strategy_id"] = str(deployment_authority["strategy_id"])
+            if key == "risk_scope_bindings":
+                binding["resource_id"] = str(deployment_authority["deployment_instance_id"])
             if key == "reconciliation_scope_bindings":
                 binding["source_policy_digest"] = deployment_authority["source_policy_digest"]
     bindings = normalize_capability_scope_bindings(manifest)
@@ -379,6 +381,7 @@ def _write_runtime_authority_receipt(
         payload = json.dumps(
             {
                 "capability_manifest_digest": capability.manifest_digest,
+                "capability_manifest": capability.capability_manifest,
                 "capability_version": capability.capability_version,
                 "capability_version_id": str(capability.capability_version_id),
             },
@@ -721,6 +724,7 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
             or not args.crucible_url
             or args.authorization_intent_id is None
             or args.runtime_authority_ready_file is None
+            or args.capability_input_file is None
             or args.rotation_intent_file is None
             or not args.age_recipient
         ):
@@ -858,6 +862,13 @@ async def _run(args: argparse.Namespace) -> dict[str, object]:
     rotated_vault_reloaded_by_daemon = False
     active_transport_credential = transport_credential
     if service_authority:
+        assert args.capability_input_file is not None
+        assert args.rotation_intent_file is not None
+        _write_runtime_authority_receipt(args.capability_input_file, capability)
+        # The producer writes the rotation intent only after it has activated
+        # the initial risk policy and installed the fact consumer. Startup must
+        # not race a policy authority which correctly refuses an absent policy.
+        await _wait_for_rotation_intent(args.rotation_intent_file)
         first_daemon_task = asyncio.create_task(
             daemon_module.run_daemon(
                 _runtime_args(args, command_public_key_path=command_public_key_path)
@@ -1063,6 +1074,7 @@ def main() -> int:
     parser.add_argument("--artifact-material-dir", type=Path, required=True)
     parser.add_argument("--deployment-authority-file", type=Path, required=True)
     parser.add_argument("--runtime-authority-ready-file", type=Path)
+    parser.add_argument("--capability-input-file", type=Path)
     parser.add_argument("--rotation-intent-file", type=Path)
     parser.add_argument("--age-recipient")
     parser.add_argument("--operation-timeout-secs", type=float, default=30.0)

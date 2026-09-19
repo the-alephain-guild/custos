@@ -1633,11 +1633,11 @@ This continuation retains the existing plan's ownership and production gates.
 
 | Task | Status | Deliverable and verification |
 |---|---|---|
-| T10a | In progress | Restore real NATS revocation and preserve a separate full service-issued daemon/command/fact acceptance using the current producer rendezvous; test both boundaries honestly. |
+| T10a | Local acceptance passed | Restore real NATS revocation and preserve a separate full service-issued daemon/command/fact acceptance using the current producer rendezvous; test both boundaries honestly. |
 | T10b | Implemented; local verification passed | Consume the existing cryptographically verified runtime promotion receipt, bind it to deployed image/revision, and retain per-deployment signed promotion/policy checks; absent or invalid evidence remains blocked. |
 | T10c | Implemented; account acceptance pending | Complete SoDEX spot/perpetual live configuration, account input and independent ledger evidence without weakening offline/live isolation. |
 | T10d | Implemented; account acceptance pending | Add OKX spot/perpetual venue configuration, credential handling and ledger support using the installed adapter/API contract. |
-| T10e | In progress | Six-combination engine/strategy regression, isolated transport and Linux image verification; preserve negative tests for every admission boundary. |
+| T10e | Local checks passed; deployed acceptance open | Six-combination engine/strategy regression, isolated transport and Linux image verification; preserve negative tests for every admission boundary. |
 | T10f | External input required | Ubuntu deployment, operator-provisioned venue accounts, signed full-chain acceptance, bounded live canary authorization and deployed evidence. No real order is authorized by this implementation step. |
 
 Source anchors: `tests/integration/test_nats_revocation.py`,
@@ -1668,3 +1668,17 @@ the standalone authority gate passed. Signature and malformed-evidence negative
 tests remain active. Full service-process acceptance and Linux image verification
 are still in progress. No venue credential, production account, or live order was
 used. Do not interpret these source tests as an approved production release.
+
+### Final local acceptance checkpoint (2026-09-19)
+
+T10a and the locally executable parts of T10b–T10e are verified. Source regression
+passed 2566 tests; isolated NATS, the full service-issued daemon acceptance, exact
+release resolution, monetary migration checks, strict toolkit typing and Linux
+arm64 runtime/configuration checks passed. Public documentation passes source,
+disclosure, bilingual build and TypeScript checks.
+
+The complete evidence and its limits are recorded in
+[production preparation results](../../reviews/2026-09/19-production-preparation-results.md).
+T10f and the overall Task 10 production gate remain open: no Ubuntu deployment,
+real venue account acceptance, new external promotion receipts or bounded live
+canary has been performed. The source changes do not mark production ready.
