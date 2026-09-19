@@ -106,6 +106,22 @@ def runtime_spec(spec: OfflineDeploymentSpec, identity: OfflineRuntimeIdentity) 
             "deployment_instance_id": str(identity.deployment_instance_id),
             "deployment_spec_id": str(identity.deployment_spec_id),
             "deployment_spec_digest": identity.deployment_spec_digest,
+            # Outside sandbox the host partitions live venue accounts by credential
+            # scope, so that two deployments cannot trade one exchange account into
+            # each other's positions. A signed command carries that scope; an
+            # offline spec carries the credential itself, and the partition asks
+            # exactly which credential this is. Deriving it here keeps the host's
+            # refusal intact on this lane instead of leaving it unreachable — which
+            # is what it was, because the spec schema forbids unknown keys and has
+            # no scope field to fill in.
+            "credential_scope": {
+                "scope_id": str(
+                    uuid5(
+                        _IDENTITY_NAMESPACE,
+                        f"credential:{spec.provenance_ref.credential_id}",
+                    )
+                ),
+            },
         }
     )
     return document

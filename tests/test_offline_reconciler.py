@@ -215,6 +215,60 @@ def test_runtime_spec_carries_the_keys_the_engine_host_reads() -> None:
         assert key in translated, f"engine host reads {key}"
 
 
+def test_a_testnet_spec_carries_the_scope_the_host_partitions_by() -> None:
+    """Outside sandbox the host refuses a deployment with no credential scope.
+
+    The spec schema forbids unknown keys and has no scope field, so PS cannot
+    supply one: if this translation does not derive it, every testnet
+    deployment on this lane fails at the host with "real-venue deployment
+    requires instance and credential-scope identity" and no spec can fix it.
+    """
+    spec = _spec(trading_mode="testnet", sandbox=None)
+    translated = runtime_spec(spec, runtime_identity(spec))
+
+    scope = translated.get("credential_scope")
+    assert isinstance(scope, dict), "the host reads credential_scope as an object"
+    scope_id = str(scope.get("scope_id") or "").strip()
+    assert scope_id, "an empty scope id is what the host refuses"
+
+    # Republishing bumps the generation. A scope that moved with it would read
+    # as a different exchange account on every publish, and the partition would
+    # stop refusing the thing it exists to refuse.
+    republished = _spec(trading_mode="testnet", sandbox=None, generation=spec.generation + 1)
+    assert (
+        str(
+            runtime_spec(republished, runtime_identity(republished))["credential_scope"]["scope_id"]
+        )
+        == scope_id
+    )
+
+
+def test_two_credentials_partition_apart_and_one_credential_does_not() -> None:
+    """The partition exists to keep two deployments off one exchange account.
+
+    Deriving the scope from anything that is not the credential would either
+    let two deployments share an account (same scope for different
+    credentials) or let one account carry two deployments (different scopes
+    for the same credential). Both defeat the refusal this feeds.
+    """
+
+    def scope_of(credential_id: str, spec_id: str) -> str:
+        spec = _spec(
+            spec_id=spec_id,
+            trading_mode="testnet",
+            sandbox=None,
+            provenance_ref={"credential_id": credential_id},
+        )
+        return str(runtime_spec(spec, runtime_identity(spec))["credential_scope"]["scope_id"])
+
+    # Same credential, different deployments — one account, one partition.
+    assert scope_of("binance-supertrend", "a-testnet") == scope_of(
+        "binance-supertrend", "b-testnet"
+    )
+    # Different credentials — different accounts, different partitions.
+    assert scope_of("binance-supertrend", "a-testnet") != scope_of("binance-other", "a-testnet")
+
+
 async def test_a_running_spec_deploys_and_reports_its_generation() -> None:
     engine, publisher = _FakeEngine(), _RecordingPublisher()
 
