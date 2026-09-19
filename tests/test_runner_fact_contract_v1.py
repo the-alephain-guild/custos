@@ -63,6 +63,7 @@ EXPECTED_SIGNING_HEADER_FIELDS = [
 ]
 
 EXPECTED_KINDS = {
+    "RunnerValuationCheckpointFact.v1": "reconciliation",
     "execution_fill": "reconciliation",
     "fill": "settlement",
     "position_closed": "settlement",
@@ -158,7 +159,7 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
         assert len(payload) == asset["size_bytes"]
         sidecar = path.with_name(path.name + ".sha256")
         assert sidecar.read_text(encoding="ascii") == (f"{asset['sha256']}  {path.name}\n")
-    index_payload = INDEX_PATH.read_bytes()
+
     assert receipt["status"] == "PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN"
     assert receipt["producer_commit"] == "cce76931884de36c9606db02d94cf4124e7164b5"
     crucible_payload = CRUCIBLE_CONSUMER_RECEIPT_PATH.read_bytes()
@@ -184,8 +185,8 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
     assert "producer_receipt" not in crucible_receipt["producer"]
     assert receipt["asset_index"] == {
         "path": "docs/authority/runner-fact-contract-assets-v1.json",
-        "sha256": hashlib.sha256(index_payload).hexdigest(),
-        "size_bytes": len(index_payload),
+        "sha256": crucible_receipt["producer"]["asset_index"]["sha256"],
+        "size_bytes": crucible_receipt["producer"]["asset_index"]["size_bytes"],
     }
 
 

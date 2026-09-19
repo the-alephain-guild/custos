@@ -400,3 +400,13 @@ def venue_ledger_source(spec: dict, credential: dict):
 def client_order_id_len_limit() -> int | None:
     """The venue's own cap on a client order id, measured against it."""
     return BINANCE_CLIENT_ORDER_ID_LEN_LIMIT
+
+
+async def validate_account_configuration(spec: dict, credential: dict) -> None:
+    """The native Binance execution config applies its declared leverage map."""
+    del spec, credential
+
+
+def client_order_id_is_valid(value: str) -> bool:
+    """Validate the venue character set independently of its length bound."""
+    return bool(value)

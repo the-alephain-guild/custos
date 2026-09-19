@@ -13,6 +13,7 @@ from custos_toolkit.signals.types import Signal, SignalDirection
 from nautilus_trader.model import Bar, InstrumentId, OrderSide, Price, TimeInForce
 
 from .runtime_types import Cache, Logger, Order, OrderFactory
+from .sizing import quantity_from_notional
 
 
 def align_to_tick_size(price: Decimal, tick_size: Decimal, side: OrderSide) -> Decimal:
@@ -120,7 +121,7 @@ class ExecutionManager:
         # Convert quote currency (USDT) notional to base currency (BTC) quantity
         # size is in USDT, we need to convert to BTC: qty = notional / price
         price = Decimal(str(bar.close))
-        contract_qty = size / price
+        contract_qty = quantity_from_notional(instrument, size, price)
 
         # Round down to instrument precision to avoid exceeding limits
         rounded_qty = contract_qty.quantize(

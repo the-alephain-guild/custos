@@ -4,7 +4,7 @@
   "runner_id": "10000000-0000-4000-8000-000000000001",
   "capability_version_id": "50000000-0000-4000-8000-000000000005",
   "capability_version": 1,
-  "manifest_digest": "a1feebeb052f478831f49562cf6343a47c15a5f6d0c1b3028bfe8e56f1821a68",
+  "manifest_digest": "671711c29e55000461580db0bca62855bcfc3bd286fc59a79ce86258d39cfc8f",
   "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
   "key_version": 1,
   "algorithm": "ed25519",
@@ -30,6 +30,7 @@
       "venue_ledger_snapshot_manifest": "reconciliation",
       "venue_ledger_snapshot_chunk": "reconciliation",
       "reconciliation_period_closed": "reconciliation",
+      "RunnerValuationCheckpointFact.v1": "reconciliation",
       "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle"
     },
     "runner_fact_contracts": {
@@ -51,7 +52,8 @@
         "execution_fill": "v1",
         "venue_ledger_snapshot_manifest": "v1",
         "venue_ledger_snapshot_chunk": "v1",
-        "reconciliation_period_closed": "v1"
+        "reconciliation_period_closed": "v1",
+        "valuation_checkpoint": "v1"
       },
       "health": {
         "schema_version": 1,

@@ -188,6 +188,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--runner-fact-snapshot-interval-secs", type=float, default=10.0)
     parser.add_argument("--runner-fact-period-secs", type=int, default=86_400)
     parser.add_argument("--runner-fact-period-retry-secs", type=float, default=30.0)
+    parser.add_argument("--runtime-promotion-receipt", type=Path)
+    parser.add_argument("--runtime-promotion-bundle", type=Path)
+    parser.add_argument("--runtime-sigstore-trusted-root", type=Path)
+    parser.add_argument("--runtime-image-digest")
+    parser.add_argument("--runtime-source-revision")
     parser.add_argument(
         "--production-state-root",
         type=Path,
@@ -302,6 +307,17 @@ def _require_production_state_root(args: argparse.Namespace) -> Path | None:
 
 def run(args: argparse.Namespace) -> int:
     try:
+        if args.reconcile_strategy_id and any(
+            getattr(args, field, None)
+            for field in (
+                "runtime_promotion_receipt",
+                "runtime_promotion_bundle",
+                "runtime_sigstore_trusted_root",
+                "runtime_image_digest",
+                "runtime_source_revision",
+            )
+        ):
+            raise ValueError("runtime promotion evidence applies only to the signed lane")
         production_state_root = _require_production_state_root(args)
         args.ready_file.expanduser().resolve().unlink(missing_ok=True)
         metadata = RunnerToml.read(args.runner_toml_path)
@@ -383,6 +399,11 @@ def run(args: argparse.Namespace) -> int:
         runner_fact_period_secs=args.runner_fact_period_secs,
         runner_fact_period_retry_secs=args.runner_fact_period_retry_secs,
         production_state_root=production_state_root,
+        runtime_promotion_receipt=args.runtime_promotion_receipt,
+        runtime_promotion_bundle=args.runtime_promotion_bundle,
+        runtime_sigstore_trusted_root=args.runtime_sigstore_trusted_root,
+        runtime_image_digest=args.runtime_image_digest,
+        runtime_source_revision=args.runtime_source_revision,
     )
     from custos.cli._daemon import run_daemon
 

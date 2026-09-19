@@ -11,12 +11,12 @@
   "strategy_id": "40000000-0000-4000-8000-000000000004",
   "capability_version_id": "50000000-0000-4000-8000-000000000005",
   "capability_version": 1,
-  "capability_manifest_digest": "a1feebeb052f478831f49562cf6343a47c15a5f6d0c1b3028bfe8e56f1821a68",
+  "capability_manifest_digest": "671711c29e55000461580db0bca62855bcfc3bd286fc59a79ce86258d39cfc8f",
   "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
   "emitted_at": "2026-07-15T08:00:00Z",
   "source_seq_start": 1,
-  "source_seq_end": 13,
-  "payload_digest": "8a50790b56ddb4bc7fa52c3a578588fe1bf95cb023639557c817e0275773c509",
+  "source_seq_end": 14,
+  "payload_digest": "ff59dc85309d900e58705c7cfacfa3802119416d1fff99c78db683832aa031de",
   "facts": [
     {
       "kind": "execution_fill",
@@ -189,7 +189,23 @@
       "outcome": "applied",
       "observed_at": "2026-07-15T07:59:00Z",
       "seq": 13
+    },
+    {
+      "kind": "RunnerValuationCheckpointFact.v1",
+      "event_id": "80000000-0000-4000-8000-000000000014",
+      "checkpoint_id": "80000000-0000-4000-8000-000000000015",
+      "venue_snapshot_id": "71000000-0000-4000-8000-000000000007",
+      "venue": "BINANCE",
+      "currency": "USDT",
+      "venue_watermark": "ledger-1",
+      "collection_started_at": "2026-07-15T07:59:00Z",
+      "observed_at": "2026-07-15T07:59:00Z",
+      "internal_equity": "10012.5",
+      "venue_wallet_balance": "10012.5",
+      "positions": [],
+      "checkpoint_digest": "a6d069ea2d4b0e427ab6b08cab75a583ee95160408f7ac974f14e097feb870cb",
+      "seq": 14
     }
   ],
-  "signature": "bgS2L0e0EkXzgXMWKdL2vsjsroT96faMehNPR0wm3zCotHwk3OwUpJsDk50cDfLiYhJJD6Xs_xH6k7WAWUQBDg"
+  "signature": "UZmjv0cC0W2QGVwByXQs8NwF2XiAxySc-tvTLh_w1ChEhe7JcfkV9z3zo_1WH_7lo4iBHrl9kNfdPpmMOuVcAQ"
 }

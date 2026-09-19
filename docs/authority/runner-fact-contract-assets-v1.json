@@ -61,6 +61,7 @@
     "venue_ledger_snapshot_manifest": "reconciliation",
     "venue_ledger_snapshot_chunk": "reconciliation",
     "reconciliation_period_closed": "reconciliation",
+    "RunnerValuationCheckpointFact.v1": "reconciliation",
     "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle"
   },
   "synthetic_signature": {
@@ -73,37 +74,37 @@
     {
       "role": "runner_fact_batch_schema",
       "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-      "sha256": "e835034a5aa30f6d03899e1294eb91ad379e89d2757b98dd0f95e1a3dc913e2e",
-      "size_bytes": 31214
+      "sha256": "62845dd87d43eb0f0f07b2ec8f787a53de4607c319fd052f7d7a23c4b29a8da5",
+      "size_bytes": 36591
     },
     {
       "role": "runner_fact_batch_golden",
       "path": "docs/authority/runner-fact-golden-v1.json",
-      "sha256": "eef9594d7b068efc5056cdf360661639764460a0d32e9dff9d91a9a787c7a2cf",
-      "size_bytes": 6435
+      "sha256": "b8460bbfecc750d0112cfd2561e666b844f1e1af20ea618a9971421e6961a3ba",
+      "size_bytes": 7086
     },
     {
       "role": "runner_fact_capability_manifest",
       "path": "docs/authority/runner-fact-capability-manifest-v1.json",
-      "sha256": "97d67a9a9bcc1eb4192022d33ae4fde27bd9d33222d69dbfa029caf2b061d0b4",
-      "size_bytes": 3776
+      "sha256": "04affc9024e9494c45211410b5b55ffa4a004d258d1a1bebc0d932abb9a920cc",
+      "size_bytes": 3870
     },
     {
       "role": "runner_fact_capability_receipt_golden",
       "path": "docs/authority/runner-fact-capability-receipt-golden-v1.json",
-      "sha256": "9a1c07bd6aa8daf5056c04e883b5baefd0a1e372c5a39bfeaba430c9ad0b3770",
-      "size_bytes": 7034
+      "sha256": "c8be46588724358dd3a828ebc2e2d4a4733448f02109c68d1e49fcaa67162d45",
+      "size_bytes": 7132
     },
     {
       "role": "runtime_event_fact_parity_matrix",
       "path": "docs/authority/runner-fact-parity-matrix-v1.json",
-      "sha256": "db18533d76d05c87214b71438e41b78e6abbf0e4fcd673ccc3870361b5f9dd65",
-      "size_bytes": 3784
+      "sha256": "714e8a3424ff34210e51b5abf9d788dff2f485f6dcdb9e9a0a4458068897409b",
+      "size_bytes": 4065
     },
     {
       "role": "runner_fact_signing_preimage_golden",
       "path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
-      "sha256": "f5938b01e70923a236ba9d8e150eefa0ab4e8f3ee84471d3453fdc156b8424d2",
+      "sha256": "20fb7543c252371057addf451ba604988fe9a94d98e414ee9881f48a1fe79f2e",
       "size_bytes": 5434
     }
   ]

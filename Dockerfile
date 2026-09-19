@@ -47,6 +47,11 @@ RUN set -eux; \
 
 FROM ${PYTHON_BASE_IMAGE} AS runtime
 
+ARG SOURCE_REVISION=unversioned
+RUN mkdir -p /usr/local/share/custos \
+    && printf '%s\n' "$SOURCE_REVISION" > /usr/local/share/custos/source-revision \
+    && chmod 0444 /usr/local/share/custos/source-revision
+
 # The vault runtime shells out to age and sops. Keep curl and CA roots in the
 # final image for operator diagnostics and explicit standalone bootstrap use.
 RUN apt-get update \

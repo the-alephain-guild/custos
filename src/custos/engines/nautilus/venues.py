@@ -26,6 +26,8 @@ __all__ = [
 VENUE_BY_CONNECTOR: dict[str, str] = {
     "binance": "BINANCE",
     "binance_perpetual": "BINANCE",
+    "okx": "OKX",
+    "okx_perpetual": "OKX",
     # Spot and perps are separate venues on SoDEX rather than one venue with a
     # product type: they differ in signing domain, API key set, balances and
     # reference price, and the adapter models them apart for that reason.
@@ -37,6 +39,8 @@ VENUE_BY_CONNECTOR: dict[str, str] = {
 VENUE_MODULE_BY_CONNECTOR: dict[str, str] = {
     "binance": "venue_binance",
     "binance_perpetual": "venue_binance",
+    "okx": "venue_okx",
+    "okx_perpetual": "venue_okx",
     "sodex": "venue_sodex",
     "sodex_perpetual": "venue_sodex",
 }

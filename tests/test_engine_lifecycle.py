@@ -470,19 +470,8 @@ async def test_non_running_generation_stops_without_artifact_deploy() -> None:
 
 
 @pytest.mark.asyncio
-async def test_a_live_sodex_request_is_refused_for_the_venue_not_the_credential() -> None:
-    """Red line 0.2: the venue allow-list is per mode, and the message says which gate.
-
-    The distinction matters because the two refusals mean opposite things to whoever
-    reads the log. "Credential is not scoped for trade" invites someone to go fix the
-    credential; this venue has no live delivery at all, and no credential will change
-    that. The credential here is deliberately well-formed so the only thing left to
-    refuse is the venue.
-
-    The second half is what makes the first half mean something: the same request on
-    a venue that does have a live delivery gets past the venue gate and is stopped by
-    the next one. Without it, a gate that refused everything would pass just as well.
-    """
+async def test_an_unknown_live_venue_is_refused_before_credential_admission() -> None:
+    """Unknown venues fail before credentials; supported venues enforce scope."""
     pytest.importorskip("nautilus_trader")
     from custos.engines.nautilus.host import NtTradingNodeHost
 
@@ -501,7 +490,7 @@ async def test_a_live_sodex_request_is_refused_for_the_venue_not_the_credential(
         await _supervisor(_Store(), engine).apply(
             delivery_id="sodex-live",
             verified=_verified(mode="live"),
-            runtime_spec={"trading_mode": "live", "connector": "sodex_perpetual"},
+            runtime_spec={"trading_mode": "live", "connector": "unsupported_perpetual"},
             credential={"permission_scope": "trade_no_withdraw"},
             artifact=_Artifact(),
         )

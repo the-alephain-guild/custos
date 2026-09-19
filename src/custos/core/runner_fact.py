@@ -99,7 +99,9 @@ RUNNER_FACT_SIGNING_HEADER_FIELDS: Final[tuple[str, ...]] = (
 REGISTRATION_SIGNING_DOMAIN: Final = "arx.runner_verification_key.register.v1"
 PUBLICATION_SIGNING_DOMAIN: Final = "crucible.runner_capability.publish.v1"
 RUNNER_FACT_EVENT_NAMESPACE: Final = UUID("834c6f30-4d2c-5f91-a2c4-5e8358fe6be4")
-SUPPORTED_CURRENCIES: Final = frozenset({"USD", "USDT", "USDC", "BTC", "ETH"})
+SUPPORTED_CURRENCIES: Final = frozenset(
+    {"USD", "USDT", "USDC", "BTC", "ETH", "VUSDC", "VBTC", "VETH"}
+)
 MAX_FACTS_PER_BATCH: Final = 512
 MAX_BATCH_BYTES: Final = 768 * 1024
 MAX_VENUE_LEDGER_CHUNKS: Final = 4096
@@ -399,7 +401,7 @@ def _currency(value: str) -> str:
     """Return the exact v1 Currency wire; object compatibility is forbidden."""
     currency = _non_empty(value, "currency")
     if currency != currency.upper() or currency not in SUPPORTED_CURRENCIES:
-        raise RunnerFactContractError("currency must be one of USD, USDT, USDC, BTC, or ETH")
+        raise RunnerFactContractError("currency is outside the supported asset codes")
     return currency
 
 
@@ -632,8 +634,9 @@ def execution_fill(
     occurred_at: datetime | str,
     client_order_id: str | None = None,
     event_id: UUID | str,
+    fee_currency: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    result = {
         "kind": "execution_fill",
         "event_id": _uuid(event_id, "event_id"),
         "venue": _non_empty(venue, "venue"),
@@ -646,10 +649,14 @@ def execution_fill(
         "side": _side(side),
         "quantity": _decimal(quantity, "quantity", positive=True),
         "price": _decimal(price, "price"),
-        "fee": _decimal(fee, "fee"),
+        "fee": _signed_decimal(fee, "fee"),
         "currency": _currency(currency),
         "occurred_at": _timestamp(occurred_at, "occurred_at"),
     }
+
+    if fee_currency is not None and fee_currency != currency:
+        result["fee_currency"] = _currency(fee_currency)
+    return result
 
 
 def runner_fact_event_id(*parts: object) -> UUID:
@@ -801,7 +808,7 @@ def settlement_fee(
         "kind": "fee",
         "event_id": _uuid(event_id, "event_id"),
         "fill_id": _uuid(fill_id, "fill_id"),
-        "amount": _decimal(amount, "amount"),
+        "amount": _signed_decimal(amount, "amount"),
         "currency": _currency(currency),
         "assessed_at": _timestamp(assessed_at, "assessed_at"),
     }
@@ -1014,7 +1021,12 @@ def venue_ledger_snapshot_facts(
             "side": _side(row.get("side", "")),
             "quantity": _decimal(row.get("quantity"), "fills.quantity", positive=True),
             "price": _decimal(row.get("price"), "fills.price"),
-            "fee": _decimal(row.get("fee"), "fills.fee"),
+            "fee": _signed_decimal(row.get("fee"), "fills.fee"),
+            **(
+                {"fee_currency": _currency(row["fee_currency"])}
+                if row.get("fee_currency") is not None
+                else {}
+            ),
             "currency": _currency(row.get("currency")),
             "occurred_at": _timestamp(row.get("occurred_at"), "fills.occurred_at"),
         }
@@ -1025,7 +1037,7 @@ def venue_ledger_snapshot_facts(
             "fee_id": _non_empty(row.get("fee_id"), "fees.fee_id"),
             "kind": _non_empty(row.get("kind"), "fees.kind"),
             "currency": _currency(row.get("currency")),
-            "amount": _decimal(row.get("amount"), "fees.amount"),
+            "amount": _signed_decimal(row.get("amount"), "fees.amount"),
             "occurred_at": _timestamp(row.get("occurred_at"), "fees.occurred_at"),
         }
         for row in fees

@@ -37,6 +37,13 @@ def _spec(connector: str = "sodex_perpetual", **overrides) -> dict:
         "sodex_account_id": 4242,
     }
     spec.update(overrides)
+    spec["nautilus_config"] = {
+        "venue": {
+            "wallet_address": spec.pop("wallet_address"),
+            "sodex_account_id": spec.pop("sodex_account_id"),
+            "settlement_currency": "VUSDC",
+        }
+    }
     return spec
 
 
@@ -91,16 +98,9 @@ def test_sandbox_reads_production_prices_and_testnet_reads_the_testnet_gateway()
     )
 
 
-def test_live_has_no_gateway_and_no_execution_config() -> None:
-    """Two refusals, because one of them is the only thing between here and a live order.
-
-    The host's per-mode allow-list refuses SoDEX live a step earlier. This is the
-    second layer: if that set is ever widened without the rest of a live delivery
-    arriving with it, the venue module still says no.
-    """
-    with pytest.raises(NotImplementedError, match="live"):
-        venue_sodex.network_for_mode("live")
-    with pytest.raises(NotImplementedError, match="not delivered"):
+def test_live_requires_owner_evidence_before_native_execution_config() -> None:
+    assert venue_sodex.network_for_mode("live") == Network.MAINNET
+    with pytest.raises(RuntimeError, match="live_owner_evidence_missing"):
         venue_sodex.build_exec_client_config_live(_spec(), _credential())
 
 
@@ -144,7 +144,7 @@ def test_a_missing_account_identifier_fails_before_any_nt_object_exists(field: s
     200 with an empty account — which reconciliation would read as flat.
     """
     spec = _spec()
-    spec.pop(field)
+    spec["nautilus_config"]["venue"].pop(field)
     with pytest.raises(RuntimeError, match=field):
         venue_sodex.build_exec_client_config_testnet(spec, _credential())
 

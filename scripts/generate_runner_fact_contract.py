@@ -38,6 +38,7 @@ from custos.core.runner_fact import (
     settlement_fee,
     settlement_fill,
     settlement_period_closed,
+    valuation_checkpoint,
     venue_ledger_snapshot_facts,
 )
 
@@ -125,7 +126,7 @@ def _schema() -> dict[str, Any]:
         "type": "string",
         "pattern": r"^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$",
     }
-    currency = {"enum": ["USD", "USDT", "USDC", "BTC", "ETH"]}
+    currency = {"enum": ["USD", "USDT", "USDC", "BTC", "ETH", "VUSDC", "VBTC", "VETH"]}
     timestamp = {
         "type": "string",
         "pattern": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{3,9})?Z$",
@@ -410,6 +411,47 @@ def _schema() -> dict[str, Any]:
         },
         **{f"fact_{name}": value for name, value in facts.items()},
     }
+    valuation_position = {
+        "instrument": non_empty,
+        "currency": currency,
+        "internal_quantity": decimal,
+        "internal_avg_entry_price": unsigned_decimal,
+        "internal_mark_price": unsigned_decimal,
+        "venue_quantity": decimal,
+        "venue_avg_entry_price": unsigned_decimal,
+        "common_mark_price": unsigned_decimal,
+    }
+    facts["RunnerValuationCheckpointFact.v1"] = _object_schema(
+        "RunnerValuationCheckpointFact.v1",
+        {
+            "checkpoint_id": uuid,
+            "venue_snapshot_id": uuid,
+            "venue": non_empty,
+            "currency": currency,
+            "venue_watermark": non_empty,
+            "collection_started_at": timestamp,
+            "observed_at": timestamp,
+            "internal_equity": decimal,
+            "venue_wallet_balance": decimal,
+            "checkpoint_digest": digest,
+            "positions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "required": list(valuation_position),
+                    "properties": valuation_position,
+                },
+            },
+        },
+    )
+    definitions["fact_RunnerValuationCheckpointFact.v1"] = facts["RunnerValuationCheckpointFact.v1"]
+    facts["execution_fill"]["properties"]["fee_currency"] = currency
+    facts["execution_fill"]["properties"]["fee"] = decimal
+    facts["fee"]["properties"]["amount"] = decimal
+    ledger_fill["properties"]["fee_currency"] = currency
+    ledger_fill["properties"]["fee"] = decimal
+    ledger_fee["properties"]["amount"] = decimal
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "custos://gateway-contract/v1/runner_fact_batch_v1.schema.json",
@@ -738,6 +780,21 @@ def _facts() -> list[dict[str, Any]]:
             "observed_at": timestamp,
         }
     )
+    facts.append(
+        valuation_checkpoint(
+            event_id=UUID("80000000-0000-4000-8000-000000000014"),
+            checkpoint_id=UUID("80000000-0000-4000-8000-000000000015"),
+            venue_snapshot_id=snapshot_id,
+            venue="BINANCE",
+            currency="USDT",
+            venue_watermark="ledger-1",
+            collection_started_at=timestamp,
+            observed_at=timestamp,
+            internal_equity="10012.5",
+            venue_wallet_balance="10012.5",
+            positions=[],
+        )
+    )
     if set(RUNNER_FACT_KIND_PROJECTORS) != {fact["kind"] for fact in facts}:
         raise RuntimeError("golden does not contain the closed RunnerFact kind union")
     return facts
@@ -789,6 +846,7 @@ def _batch(
 
 def _parity() -> dict[str, Any]:
     sources = {
+        "RunnerValuationCheckpointFact.v1": "common-mark independent ledger valuation",
         "execution_fill": "Nautilus OrderFilled execution identity",
         "fill": "Nautilus OrderFilled settlement projection",
         "position_closed": "Nautilus PositionClosed realized PnL",
@@ -965,30 +1023,9 @@ def build_assets() -> dict[Path, bytes]:
     }
     index_payload = _pretty(index)
     assets[INDEX_PATH] = index_payload
-    assets[RECEIPT_PATH] = _pretty(
-        {
-            "receipt_schema_version": 1,
-            "canonical_name": "Custos RunnerFact V1 producer receipt",
-            "status": "PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN",
-            "authority_coordinate": AUTHORITY_COORDINATE,
-            "producer_commit": PRODUCER_ASSET_COMMIT,
-            "asset_index": {
-                "path": str(INDEX_PATH),
-                "sha256": _sha256(index_payload),
-                "size_bytes": len(index_payload),
-            },
-            "consumer_receipts": {"crucible_rust": CRUCIBLE_CONSUMER_RECEIPT},
-            "runtime_rc": False,
-            "real_runtime_round_trip_ready": False,
-            "live_ready": False,
-            "runtime_ready": False,
-            "production_ready": False,
-            "open_blockers": [
-                "real runtime round-trip receipt",
-                "immutable runtime RC receipt",
-            ],
-        }
-    )
+    # Recorded producer acceptance belongs to its original Git revision.
+    # Regenerating current schemas must not rewrite that historical receipt.
+    assets[RECEIPT_PATH] = (ROOT / RECEIPT_PATH).read_bytes()
     for path, payload in tuple(assets.items()):
         assets[path.with_name(path.name + ".sha256")] = _sidecar(path, payload)
     return assets

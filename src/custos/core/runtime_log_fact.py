@@ -47,6 +47,7 @@ _SENSITIVE_KEY_PARTS = (
     "api_secret",
     "secret",
     "password",
+    "passphrase",
     "passwd",
     "authorization",
     "bearer",
@@ -86,7 +87,7 @@ _SECRET_PATTERNS = (
         re.DOTALL,
     ),
     re.compile(
-        r"(?i)\b(api[-_ ]?key|api[-_ ]?secret|secret|token|password|passwd|"
+        r"(?i)\b(api[-_ ]?key|api[-_ ]?secret|(?:api[-_ ]?)?passphrase|secret|token|password|passwd|"
         r"authorization|credential|private[-_ ]?key|age[-_ ]?key|kek)"
         r"(\s*[:=]\s*)([^\s,;]+)"
     ),

@@ -269,6 +269,7 @@ class RunnerSafetyOrderGate:
         boundary: RunnerReservationBoundary,
         client_order_id_len_limit: int | None,
         on_refusal: Callable[[OrderRefusal], None] | None = None,
+        client_order_id_validator: Callable[[str], bool] | None = None,
     ) -> None:
         self._boundary = boundary
         # Required rather than defaulted: the cap belongs to the venue this deployment
@@ -276,6 +277,7 @@ class RunnerSafetyOrderGate:
         # measured number applied to another, or no cap at all.
         self._client_order_id_len_limit = client_order_id_len_limit
         self._on_refusal = on_refusal
+        self._client_order_id_validator = client_order_id_validator
 
     def submit_order(self, submit: Callable[..., None], order: Any, *args: Any, **kwargs: Any):
         refusal = self._pre_trade_refusal(order)
@@ -369,6 +371,10 @@ class RunnerSafetyOrderGate:
 
     def _pre_trade_refusal(self, order: Any) -> str | None:
         """The reasons that can be read off the order alone, before any reservation."""
+        if self._client_order_id_validator is not None and not self._client_order_id_validator(
+            str(order.client_order_id)
+        ):
+            return "custos_runner_client_order_id_invalid_for_venue"
         if self._client_order_id_too_long(order):
             return _CLIENT_ORDER_ID_REJECTION_REASON
         if self._would_be_routed_away(order):

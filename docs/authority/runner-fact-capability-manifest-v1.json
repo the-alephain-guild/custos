@@ -17,6 +17,7 @@
     "venue_ledger_snapshot_manifest": "reconciliation",
     "venue_ledger_snapshot_chunk": "reconciliation",
     "reconciliation_period_closed": "reconciliation",
+    "RunnerValuationCheckpointFact.v1": "reconciliation",
     "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle"
   },
   "runner_fact_contracts": {
@@ -38,7 +39,8 @@
       "execution_fill": "v1",
       "venue_ledger_snapshot_manifest": "v1",
       "venue_ledger_snapshot_chunk": "v1",
-      "reconciliation_period_closed": "v1"
+      "reconciliation_period_closed": "v1",
+      "valuation_checkpoint": "v1"
     },
     "health": {
       "schema_version": 1,

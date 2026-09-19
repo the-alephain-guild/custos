@@ -2409,20 +2409,17 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
                 errors.append(f"RunnerFact V1 asset digest drift: {asset_path}")
             if asset.get("size_bytes") != len(payload):
                 errors.append(f"RunnerFact V1 asset size drift: {asset_path}")
-    index_payload = index_path.read_bytes()
     if receipt.get("receipt_schema_version") != 1:
         errors.append("RunnerFact V1 producer receipt schema differs")
     if receipt.get("status") != "PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN":
         errors.append("RunnerFact V1 producer receipt status differs")
     if receipt.get("producer_commit") != "cce76931884de36c9606db02d94cf4124e7164b5":
         errors.append("RunnerFact V1 producer receipt does not pin the immutable asset commit")
-    expected_index_binding = {
-        "path": RUNNER_FACT_CONTRACT_INDEX_PATH,
-        "sha256": hashlib.sha256(index_payload).hexdigest(),
-        "size_bytes": len(index_payload),
-    }
-    if receipt.get("asset_index") != expected_index_binding:
-        errors.append("RunnerFact V1 producer receipt index binding differs")
+    validate_historical_asset_record(
+        receipt.get("asset_index"), errors, label="RunnerFact V1 historical producer index"
+    )
+    if receipt.get("asset_index", {}).get("path") != RUNNER_FACT_CONTRACT_INDEX_PATH:
+        errors.append("RunnerFact V1 historical producer index path differs")
     consumer_payload = consumer_receipt_path.read_bytes()
     expected_consumer_binding = {
         "crucible_rust": {

@@ -29,7 +29,7 @@ def test_sandbox_simulation_host_accepts_canonical_connectors_without_pseudo_ven
     assert host.supports_venue("SIM", "sandbox") is False
     assert host.supports_venue("binance", "sandbox") is True
     assert host.supports_venue("binance_perpetual", "sandbox") is True
-    assert host.supports_venue("okx", "sandbox") is False
+    assert host.supports_venue("unsupported", "sandbox") is False
 
 
 def test_ntlivehost_declares_live() -> None:
@@ -50,8 +50,8 @@ def test_ntlivehost_venue_case_insensitive() -> None:
 
 def test_ntlivehost_venue_unknown_rejected() -> None:
     host = NtTradingNodeHost()
-    assert host.supports_venue("okx", "live") is False
-    assert host.supports_venue("okx_perpetual", "live") is False
+    assert host.supports_venue("unsupported", "live") is False
+    assert host.supports_venue("unsupported_perpetual", "live") is False
 
 
 def test_sodex_runs_in_sandbox_and_testnet() -> None:
@@ -61,16 +61,17 @@ def test_sodex_runs_in_sandbox_and_testnet() -> None:
         assert host.supports_venue("sodex_perpetual", mode) is True
 
 
-def test_sodex_is_refused_for_live_because_it_is_not_in_the_live_set() -> None:
-    """Not for want of a credential — the venue simply cannot be taken live yet.
-
-    "Can run live" is everything venue_binance.py spells out: a minimum approver
-    count, owner evidence, three exec configs. SoDEX has none of that, so listing it
-    for live would be a claim this runner cannot honour.
-    """
+def test_all_six_venue_products_have_explicit_live_host_capability() -> None:
     host = NtTradingNodeHost()
-    assert host.supports_venue("sodex", "live") is False
-    assert host.supports_venue("sodex_perpetual", "live") is False
+    for connector in (
+        "binance",
+        "binance_perpetual",
+        "sodex",
+        "sodex_perpetual",
+        "okx",
+        "okx_perpetual",
+    ):
+        assert host.supports_venue(connector, "live") is True
 
 
 def test_the_simulation_host_refuses_every_real_venue_mode_at_the_mode_gate() -> None:
@@ -92,4 +93,4 @@ def test_the_live_set_did_not_shrink() -> None:
     """Adding SoDEX must not cost Binance anything."""
     from custos.engines.nautilus.host import _LIVE_VENUES
 
-    assert _LIVE_VENUES == frozenset({"binance", "binance_perpetual"})
+    assert {"binance", "binance_perpetual"} <= _LIVE_VENUES

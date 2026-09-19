@@ -52,3 +52,13 @@ def compute_fixed_risk_qty(
         risk=risk,
         unit_batch_size=instrument.size_increment.as_decimal(),
     )
+
+
+def quantity_from_notional(instrument: Instrument, notional: Decimal, price: Decimal) -> Decimal:
+    """Convert quote notional to native linear contract units without oversizing."""
+    multiplier = Decimal(str(getattr(instrument, "multiplier", 1)))
+    if bool(getattr(instrument, "is_inverse", False)):
+        raise ValueError("inverse contract sizing is not supported")
+    if not multiplier.is_finite() or multiplier <= 0 or price <= 0 or not price.is_finite():
+        raise ValueError("instrument multiplier and price must be finite and positive")
+    return notional / (price * multiplier)

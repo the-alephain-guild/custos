@@ -148,6 +148,7 @@ def _leaf_certificate(
     now: datetime,
     identity: str,
     issuer: str,
+    repository_coordinate: str = _GITHUB_REPOSITORY_COORDINATE,
 ) -> x509.Certificate:
     leaf_public_key = leaf_key.public_key()
     base_builder = (
@@ -185,7 +186,7 @@ def _leaf_certificate(
         .add_extension(
             x509.UnrecognizedExtension(
                 _GITHUB_REPOSITORY_OID,
-                _GITHUB_REPOSITORY_COORDINATE.encode(),
+                repository_coordinate.encode(),
             ),
             False,
         )
@@ -387,6 +388,7 @@ def _bundle_bytes(
     certificate: x509.Certificate,
     rekor_key: ec.EllipticCurvePrivateKey,
     integrated_time: int,
+    raw_blob: bool = False,
 ) -> bytes:
     envelope = intoto.Envelope(
         payload=payload,
@@ -399,6 +401,29 @@ def _bundle_bytes(
         certificate=certificate,
         envelope_json=envelope.to_json().encode(),
     )
+    if raw_blob:
+        body = rfc8785.dumps(
+            {
+                "apiVersion": "0.0.1",
+                "kind": "hashedrekord",
+                "spec": {
+                    "data": {
+                        "hash": {
+                            "algorithm": "sha256",
+                            "value": hashlib.sha256(payload).hexdigest(),
+                        }
+                    },
+                    "signature": {
+                        "content": base64.b64encode(signature).decode(),
+                        "publicKey": {
+                            "content": base64.b64encode(
+                                certificate.public_bytes(serialization.Encoding.PEM)
+                            ).decode()
+                        },
+                    },
+                },
+            }
+        )
     body_b64 = base64.b64encode(body).decode()
     log_id = _key_id(rekor_key.public_key())
     log_index = 0
@@ -418,7 +443,9 @@ def _bundle_bytes(
     entry = rekor_v1.TransparencyLogEntry(
         log_index=log_index,
         log_id=common_v1.LogId(key_id=log_id),
-        kind_version=rekor_v1.KindVersion(kind="dsse", version="0.0.1"),
+        kind_version=rekor_v1.KindVersion(
+            kind="hashedrekord" if raw_blob else "dsse", version="0.0.1"
+        ),
         integrated_time=integrated_time,
         inclusion_promise=rekor_v1.InclusionPromise(signed_entry_timestamp=signed_entry_timestamp),
         inclusion_proof=rekor_v1.InclusionProof(
@@ -440,7 +467,19 @@ def _bundle_bytes(
             ),
             tlog_entries=[entry],
         ),
-        dsse_envelope=envelope,
+        **(
+            {
+                "message_signature": common_v1.MessageSignature(
+                    message_digest=common_v1.HashOutput(
+                        algorithm=common_v1.HashAlgorithm.SHA2_256,
+                        digest=hashlib.sha256(payload).digest(),
+                    ),
+                    signature=signature,
+                )
+            }
+            if raw_blob
+            else {"dsse_envelope": envelope}
+        ),
     )
     return bundle.to_json().encode()
 
@@ -529,3 +568,42 @@ def tamper_bundle(
         inclusion = bundle["verificationMaterial"]["tlogEntries"][0]["inclusionPromise"]
         inclusion["signedEntryTimestamp"] = _flip_base64(inclusion["signedEntryTimestamp"])
     path.write_text(json.dumps(bundle, separators=(",", ":")))
+
+
+def build_offline_blob_fixture(
+    root: Path, payload: bytes, identity: SigstoreIdentityV1
+) -> tuple[Path, bytes]:
+    root.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(UTC).replace(microsecond=0)
+    root_key, leaf_key, ct_key, rekor_key = [
+        ec.generate_private_key(ec.SECP256R1()) for _ in range(4)
+    ]
+    root_certificate = _root_certificate(root_key, now=now)
+    certificate = _leaf_certificate(
+        root_key=root_key,
+        root_certificate=root_certificate,
+        leaf_key=leaf_key,
+        ct_key=ct_key,
+        now=now,
+        identity=identity.workflow_identity,
+        issuer=identity.issuer,
+        repository_coordinate=identity.source_repository.removeprefix("https://github.com/"),
+    )
+    bundle = root / "blob.sigstore.json"
+    bundle.write_bytes(
+        _bundle_bytes(
+            payload=payload,
+            signature=leaf_key.sign(payload, ec.ECDSA(hashes.SHA256())),
+            certificate=certificate,
+            rekor_key=rekor_key,
+            integrated_time=int(now.timestamp()),
+            raw_blob=True,
+        )
+    )
+    trusted_root = _trusted_root_bytes(
+        root_certificate=root_certificate,
+        rekor_key=rekor_key.public_key(),
+        ct_key=ct_key.public_key(),
+        now=now,
+    )
+    return bundle, trusted_root

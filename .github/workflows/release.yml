@@ -161,6 +161,8 @@ jobs:
           tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           provenance: mode=max
           sbom: true
+          build-args: |
+            SOURCE_REVISION=${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}

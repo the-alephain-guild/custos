@@ -49,9 +49,9 @@ test:  ## Run full pytest (base profile; NT tests importorskip; includes known-f
 verify-nats-revocation:  ## Run opt-in real NATS User-JWT resolver revocation gate
 	CUSTOS_RUN_REAL_NATS_REVOCATION=1 uv run pytest tests/integration/test_nats_revocation.py -v
 
-verify-authenticated-runtime-projection:  ## Run signed command through Custos and Crucible PostgreSQL projection
+verify-authenticated-runtime-projection:  ## Full service-issued authority, artifact, daemon and projection acceptance
 	@test -n "$(CRUCIBLE_REPO)" || { echo "CRUCIBLE_REPO is required" >&2; exit 2; }
-	CUSTOS_RUN_REAL_NATS_REVOCATION=1 CRUCIBLE_REPO="$(CRUCIBLE_REPO)" uv run pytest tests/integration/test_nats_revocation.py -v
+	CUSTOS_DAEMON_REPO="$(CURDIR)" $(MAKE) -C "$(CRUCIBLE_REPO)" verify-runner-transport-service-process
 
 verify-runner-fact-publication:  ## Run opt-in real JetStream RunnerFact outbox/PubAck gate
 	CUSTOS_RUN_REAL_RUNNER_FACT_PUBLICATION=1 uv run pytest tests/integration/test_runner_fact_publication.py -v
@@ -118,6 +118,7 @@ sign:  ## Sign every wheel under dist/ with sigstore keyless (requires OIDC; run
 
 docker-build: dist  ## Build custos-runner:test image from the local dist/*.whl wheel
 	docker build \
+		--build-arg SOURCE_REVISION=$(SOURCE_REVISION) \
 		--label org.opencontainers.image.revision=$(SOURCE_REVISION) \
 		--tag custos-runner:test \
 		.
@@ -130,6 +131,7 @@ docker-build-local-v030: dist  ## Build the local v0.3.0 consumer image with sou
 			exit 1; \
 		fi
 	docker build \
+		--build-arg SOURCE_REVISION=$(SOURCE_REVISION) \
 		--label org.opencontainers.image.revision=$(SOURCE_REVISION) \
 		--tag $(LOCAL_IMAGE) \
 		.

@@ -114,7 +114,9 @@ class SizingCoordinator:
         qty = compute_fixed_risk_qty(instrument, entry_price, sl_price, equity, risk_pct)
 
         # Express the base qty as notional (quote) for the existing entry pipeline.
-        notional = Decimal(str(qty)) * entry_price
+        notional = (
+            Decimal(str(qty)) * entry_price * Decimal(str(getattr(instrument, "multiplier", 1)))
+        )
 
         # Apply the same position-limit safety caps as the notional paradigm
         # (max_position_pct / max_trade_size / min_order_size) so a tight stop-loss

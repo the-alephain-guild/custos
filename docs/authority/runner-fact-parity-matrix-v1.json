@@ -93,6 +93,13 @@
       "canonical_owner_after_ingest": "crucible-rust"
     },
     {
+      "runtime_source": "common-mark independent ledger valuation",
+      "fact_kind": "RunnerValuationCheckpointFact.v1",
+      "capability_projector": "reconciliation",
+      "signed_batch": "RunnerFactBatchV1",
+      "canonical_owner_after_ingest": "crucible-rust"
+    },
+    {
       "runtime_source": "local engine lifecycle observation",
       "fact_kind": "RunnerDeploymentLifecycleFact.v1",
       "capability_projector": "deployment_lifecycle",

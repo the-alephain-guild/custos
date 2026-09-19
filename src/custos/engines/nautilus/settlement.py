@@ -33,7 +33,10 @@ def settlement_currency_for_pairs(pairs: Iterable[object]) -> str:
             settlement currency -- in which case a deployment-wide equity figure
             does not exist and inventing one would be worse than refusing.
     """
-    currencies = {str(pair).upper().replace("/", "-").split("-")[-1] for pair in pairs}
+    currencies = {
+        str(pair).upper().replace("/", "-").replace("_", "-").removesuffix("-SWAP").split("-")[-1]
+        for pair in pairs
+    }
     currencies.discard("")
     if len(currencies) != 1:
         raise SettlementCurrencyError(

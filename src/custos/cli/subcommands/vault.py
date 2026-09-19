@@ -65,6 +65,9 @@ def _register_put(actions: argparse._SubParsersAction) -> None:
     )
     p.add_argument("--api-key", required=True)
     p.add_argument(
+        "--api-passphrase-env", help="Environment variable supplying an optional venue passphrase."
+    )
+    p.add_argument(
         "--scope-digest",
         required=True,
         type=lambda value: _scope_digest(value),
@@ -182,6 +185,13 @@ def _put(args: argparse.Namespace) -> int:
             "scope_digest": args.scope_digest,
         }
     }
+    passphrase_env = getattr(args, "api_passphrase_env", None)
+    if passphrase_env is not None:
+        passphrase = os.environ.get(passphrase_env)
+        if not passphrase or not passphrase.strip():
+            print("venue passphrase environment variable is missing or empty", file=sys.stderr)
+            return 1
+        payload[args.key_id]["api_passphrase"] = passphrase
     payload_bytes = json.dumps(payload).encode("utf-8")
 
     try:

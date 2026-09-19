@@ -89,9 +89,15 @@ _STOP_TIMEOUT_SECS = 30.0
 # venue_binance.py spells out — a minimum approver count, owner evidence, three exec
 # configs, credential handling. SoDEX has the sandbox and testnet halves and not the
 # live one, so it appears in two sets and not the third.
-_SANDBOX_VENUES = frozenset({"binance", "binance_perpetual", "sodex", "sodex_perpetual"})
-_TESTNET_VENUES = frozenset({"binance", "binance_perpetual", "sodex", "sodex_perpetual"})
-_LIVE_VENUES = frozenset({"binance", "binance_perpetual"})
+_SANDBOX_VENUES = frozenset(
+    {"binance", "binance_perpetual", "sodex", "sodex_perpetual", "okx", "okx_perpetual"}
+)
+_TESTNET_VENUES = frozenset(
+    {"binance", "binance_perpetual", "sodex", "sodex_perpetual", "okx", "okx_perpetual"}
+)
+_LIVE_VENUES = frozenset(
+    {"binance", "binance_perpetual", "sodex", "sodex_perpetual", "okx", "okx_perpetual"}
+)
 _VENUES_BY_MODE: dict[str, frozenset[str]] = {
     "sandbox": _SANDBOX_VENUES,
     "testnet": _TESTNET_VENUES,
@@ -134,6 +140,20 @@ class _DeploymentIdentity:
     settlement_currency: str
 
 
+def _sodex_settlement_currency(spec: dict) -> str:
+    from custos.engines.nautilus.venue_config import venue_options
+
+    options = venue_options(
+        spec, {"wallet_address", "sodex_account_id", "margin_mode", "settlement_currency"}
+    )
+    currency = options.get("settlement_currency")
+    if not isinstance(currency, str) or currency.upper() not in SUPPORTED_CURRENCIES:
+        raise ValueError(
+            "SoDEX requires an explicit supported nautilus_config.venue.settlement_currency"
+        )
+    return currency.upper()
+
+
 def _deployment_identity(spec: dict, authority: EngineLifecycleAuthority) -> _DeploymentIdentity:
     connector = str(spec["connector"])
     pairs = tuple(str(pair) for pair in (spec.get("pairs") or []))
@@ -147,14 +167,25 @@ def _deployment_identity(spec: dict, authority: EngineLifecycleAuthority) -> _De
         # Derived here rather than at each use: the guards read it at startup and the
         # facts carry it, and a deployment that settles in no single currency has no
         # equity figure for either of them.
-        settlement_currency=settlement_currency_for_pairs(pairs),
+        settlement_currency=(
+            _sodex_settlement_currency(spec)
+            if connector.startswith("sodex")
+            else settlement_currency_for_pairs(pairs)
+        ),
     )
 
 
 # Substrings that flag an exception message as potentially carrying credential
 # material (NT config repr, adapter auth errors) — such messages are redacted
 # before logging so a raw key can never reach the log (non-custodial red line 0.1).
-_CREDENTIAL_HINTS = ("api_key", "api_secret", "secret", "authorization")
+_CREDENTIAL_HINTS = (
+    "api_key",
+    "api_secret",
+    "api_passphrase",
+    "passphrase",
+    "secret",
+    "authorization",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -285,6 +316,18 @@ def _sanitize_exception(exc: Exception) -> dict:
             "error": "<redacted: contained credential material>",
         }
     return {"error_type": type(exc).__name__, "error": msg}
+
+
+def _base_fill_quantity(cache, instrument_id: str, quantity: str) -> str:
+    from nautilus_trader.model import InstrumentId
+
+    instrument = cache.instrument(InstrumentId.from_str(instrument_id))
+    if instrument is None or bool(instrument.is_inverse):
+        raise RuntimeError("fill requires a known linear instrument")
+    multiplier = Decimal(str(instrument.multiplier))
+    if not multiplier.is_finite() or multiplier <= 0:
+        raise RuntimeError("fill instrument multiplier is invalid")
+    return str(Decimal(quantity) * multiplier)
 
 
 class SandboxSimulationHost:
@@ -570,6 +613,7 @@ class NtTradingNodeHost:
         strategy = create_strategy() if callable(create_strategy) else artifact.strategy
 
         venue = _venue_module_for(identity.connector)
+        await venue.validate_account_configuration(spec, credential)
 
         trading_mode = identity.trading_mode
         data_cfg = venue.build_data_client_config_for_mode(spec, credential, trading_mode)
@@ -645,6 +689,7 @@ class NtTradingNodeHost:
                 fact_context,
                 runner_safety_boundary,
                 client_order_id_len_limit=venue.client_order_id_len_limit(),
+                client_order_id_validator=venue.client_order_id_is_valid,
             )
         except Exception:
             self._release_execution_account_partition(deployment_instance_id)
@@ -758,6 +803,7 @@ class NtTradingNodeHost:
         runner_safety_boundary=None,
         *,
         client_order_id_len_limit: int | None = None,
+        client_order_id_validator=None,
     ) -> None:
         """Wire the runner onto the strategy, or refuse the deploy.
 
@@ -786,6 +832,9 @@ class NtTradingNodeHost:
             fact_bridge = RunnerFactEventBridge(
                 emitter=self._runner_fact_emitter,
                 deployment=fact_context[0],
+                quantity_to_base=lambda instrument, quantity: _base_fill_quantity(
+                    cache, instrument, quantity
+                ),
                 runtime_log_emitter=RunnerRuntimeLogEmitter(
                     emitter=self._runner_fact_emitter,
                     capability=self._capability_receipt,
@@ -801,10 +850,17 @@ class NtTradingNodeHost:
                 runner_safety_boundary,
                 fact_bridge,
                 client_order_id_len_limit,
+                client_order_id_validator,
             )
 
     def _install_order_gate(
-        self, strategy, cache, boundary, fact_bridge, client_order_id_len_limit: int | None
+        self,
+        strategy,
+        cache,
+        boundary,
+        fact_bridge,
+        client_order_id_len_limit: int | None,
+        client_order_id_validator=None,
     ) -> None:
         """Put the reservation gate in front of the strategy's outbound orders.
 
@@ -831,6 +887,7 @@ class NtTradingNodeHost:
             RunnerSafetyOrderGate(
                 boundary=boundary,
                 client_order_id_len_limit=client_order_id_len_limit,
+                client_order_id_validator=client_order_id_validator,
                 on_refusal=lambda refusal: fact_bridge.record_local_refusal(
                     client_order_id=refusal.client_order_id,
                     instrument_id=refusal.instrument_id,
@@ -1318,7 +1375,14 @@ class NtTradingNodeHost:
             ),
             strategy_accepting_lifecycle=bool(strategies)
             and all(strategy.is_running for strategy in strategies),
-            mandatory_capabilities_active=authority.trading_mode in {"sandbox", "testnet"},
+            mandatory_capabilities_active=(
+                authority.trading_mode in {"sandbox", "testnet"}
+                or (
+                    str(authority.deployment_instance_id) in self._runner_safety_boundaries
+                    and str(authority.deployment_instance_id) in self._runner_fact_contexts
+                    and str(authority.deployment_instance_id) not in self._event_forwarding_failures
+                )
+            ),
         )
 
     async def wait_terminal(

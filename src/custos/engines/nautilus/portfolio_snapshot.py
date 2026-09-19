@@ -185,13 +185,17 @@ class NautilusPortfolioSnapshotProvider:
                         f"mark_price_unavailable:{instrument_id}"
                     )
 
-                quantity = _decimal(position.quantity)
+                quantity = _decimal(position.quantity) * _decimal(
+                    getattr(position, "multiplier", 1)
+                )
+                if bool(getattr(position, "is_inverse", False)):
+                    return NautilusPortfolioSnapshot.unreliable("inverse_position_not_supported")
                 if bool(getattr(position, "is_short", False)) and quantity > 0:
                     quantity = -quantity
                 average_price = _position_average_price(position)
                 settlement_currency = str(
                     getattr(position, "settlement_currency", resolved_currency)
-                )
+                ).upper()
                 unrealized_pnl = _decimal(position.unrealized_pnl(mark))
 
                 converted.append(
@@ -244,7 +248,7 @@ class NautilusPortfolioSnapshotProvider:
 
         if requested_currency is not None:
             for raw_currency, raw_equity in entries:
-                if str(raw_currency) == requested_currency:
+                if str(raw_currency).upper() == requested_currency.upper():
                     return requested_currency, _decimal(raw_equity)
             return None, None
 
@@ -253,7 +257,7 @@ class NautilusPortfolioSnapshotProvider:
         raw_currency, raw_equity = entries[0]
         if raw_currency is None:
             return None, None
-        return str(raw_currency), _decimal(raw_equity)
+        return str(raw_currency).upper(), _decimal(raw_equity)
 
 
 def _position_average_price(position: object) -> Decimal:

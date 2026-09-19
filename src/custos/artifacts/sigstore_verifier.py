@@ -60,6 +60,34 @@ def _load_sigstore_bindings() -> _SigstoreBindings:
     )
 
 
+def verify_sigstore_blob(
+    *, payload: bytes, bundle_path: Path, trusted_root_bytes: bytes, identity: Any
+) -> None:
+    """Verify exact blob bytes against a provisioned root and fixed workflow identity."""
+    bindings = _load_sigstore_bindings()
+    try:
+        bundle_bytes = _read_stable_regular_file(bundle_path, "runtime promotion bundle")
+        bundle = bindings.Bundle.from_json(bundle_bytes)
+        verifier = bindings.Verifier(
+            rekor=bindings.RekorClient("https://offline.invalid"),
+            trusted_root=_trusted_root_from_bytes(bindings, trusted_root_bytes),
+        )
+        policy = bindings.AllOf(
+            [
+                bindings.Identity(identity=identity.workflow_identity, issuer=identity.issuer),
+                bindings.GitHubWorkflowRepository(
+                    _github_repository_coordinate(identity.source_repository)
+                ),
+            ]
+        )
+        verifier.verify_artifact(payload, bundle, policy)
+    except Exception as error:
+        raise ArtifactVerificationError(
+            ArtifactVerificationCode.SIGSTORE_VERIFICATION_FAILED,
+            "runtime promotion signature verification failed",
+        ) from error
+
+
 def _read_stable_regular_file(path: Path, label: str) -> bytes:
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):

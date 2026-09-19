@@ -96,42 +96,45 @@ def test_every_allowed_connector_can_actually_build_that_modes_exec_config(mode:
         assert config is not None
 
 
-def test_a_venue_outside_a_modes_allow_list_refuses_to_build_that_mode() -> None:
-    """The second layer: SoDEX has no live delivery and says so itself.
+def test_real_venue_builders_refuse_unapproved_live_deployments() -> None:
+    from custos.engines.nautilus.host import _venue_module_for
 
-    Without this the allow-list would be the only thing standing between a widened
-    set and a live order path with no promotion gate behind it.
-    """
-    from custos.engines.nautilus.host import _VENUES_BY_MODE, _venue_module_for
-
-    sodex = _venue_module_for("sodex_perpetual")
-    assert "sodex_perpetual" not in _VENUES_BY_MODE["live"]
-    with pytest.raises(NotImplementedError):
-        sodex.build_exec_client_config_live(_spec_for("sodex_perpetual"), _credential_for("sodex"))
+    for connector in ("sodex", "sodex_perpetual", "okx", "okx_perpetual"):
+        spec = _spec_for(connector)
+        del spec["promotion_id"]
+        with pytest.raises(RuntimeError, match="live_owner_evidence_missing"):
+            _venue_module_for(connector).build_exec_client_config_live(
+                spec, _credential_for(connector)
+            )
 
 
-def test_the_live_allow_list_is_unchanged_by_adding_a_sandbox_only_venue() -> None:
-    """Binance's live capability must cost nothing when a new venue arrives."""
+def test_binance_remains_available_in_the_live_allow_list() -> None:
     from custos.engines.nautilus.host import _VENUES_BY_MODE
 
-    assert _VENUES_BY_MODE["live"] == frozenset(_BINANCE_CONNECTORS)
+    assert frozenset(_BINANCE_CONNECTORS) <= _VENUES_BY_MODE["live"]
 
 
 def _spec_for(connector: str) -> dict:
+    spec = _approved_spec(connector)
     if connector.startswith("sodex"):
-        pair = "vBTC_vUSDC" if connector == "sodex" else "BTC-USD"
-        return {
-            "connector": connector,
-            "pairs": [pair],
-            "wallet_address": "0x" + "a" * 40,
-            "sodex_account_id": 4242,
+        spec["pairs"] = ["vBTC_vUSDC" if connector == "sodex" else "BTC-USD"]
+        spec["nautilus_config"] = {
+            "venue": {
+                "wallet_address": "0x" + "a" * 40,
+                "sodex_account_id": 4242,
+                "settlement_currency": "VUSDC",
+            }
         }
-    return _approved_spec(connector)
+    if not connector.endswith("perpetual"):
+        spec["leverage"] = 1
+    return spec
 
 
 def _credential_for(connector: str) -> dict:
-    del connector
-    return _credential()
+    credential = _credential()
+    if connector.startswith("okx"):
+        credential["api_passphrase"] = "test-passphrase"
+    return credential
 
 
 def _spec(connector: str = "binance_perpetual") -> dict:
@@ -457,6 +460,8 @@ def test_the_nt_free_venue_names_match_the_adapters_own_constants() -> None:
         "binance_perpetual": BINANCE_VENUE,
         "sodex": SODEX_SPOT,
         "sodex_perpetual": SODEX_PERPS,
+        "okx": "OKX",
+        "okx_perpetual": "OKX",
     }
 
 

@@ -82,7 +82,7 @@ def test_independent_drift_is_rejected(
         path = root / "src/custos/engines/nautilus/host.py"
         path.write_text(
             path.read_text().replace(
-                "_LIVE_VENUES = frozenset({", '_LIVE_VENUES = frozenset({"new_venue", '
+                "_LIVE_VENUES = frozenset(", '_LIVE_VENUES = frozenset({"new_venue"}) | frozenset('
             )
         )
     elif change == "translation":

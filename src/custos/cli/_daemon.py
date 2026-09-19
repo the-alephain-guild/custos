@@ -687,6 +687,9 @@ async def run_daemon(args: argparse.Namespace) -> int:
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     args.ready_file.expanduser().resolve().unlink(missing_ok=True)
+    from custos.core.runtime_admission import load_runtime_admission
+
+    runtime_admission = await asyncio.to_thread(load_runtime_admission, args)
     metadata = RunnerToml.read(args.runner_toml_path)
     machine_credential = MachineCredentialVault(args.machine_vault).load()
     machine_credential.assert_binding(metadata)
@@ -877,7 +880,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 engine=host,
                 state_store=state_store,
                 artifact_capability=artifact_capability,
-                config=EngineLifecycleConfig(live_execution_enabled=False),
+                config=EngineLifecycleConfig(live_execution_enabled=runtime_admission is not None),
             )
             material_authority = RunnerMaterialAuthorityClient(
                 metadata.backend_url,

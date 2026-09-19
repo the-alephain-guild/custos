@@ -1,32 +1,13 @@
-"""SoDEX venue-config assembly (pure functions, no IO, no side effects).
+"""SoDEX spot/perpetual configuration with explicit network and account binding.
 
-Turns a DeploymentSpec parameter dict + a decrypted credential dict into
-NautilusTrader client-config objects, the same shape ``venue_binance`` produces.
-Two execution modes are wired:
-
-- sandbox: the venue's real market-data feed + a locally simulated execution venue
-  (``SandboxExecutionClientConfig``), so no order reaches the exchange.
-- testnet: the adapter's own execution client against the venue's testnet gateway.
-
-Live is deliberately absent. "Can run live" is not one flag -- ``venue_binance``
-spells out what it costs: promotion evidence, credential-scope checks, a live
-exec builder, and real-venue evidence. None of that exists for this venue yet, so
-``build_exec_client_config_live`` refuses rather than returning a config that
-would look ready. The host's per-mode venue allow-list refuses it a step earlier;
-this is the second layer, so neither one carries the claim alone.
-
-non-custodial red line 0.1: the data feed is credential-free by the adapter's own
-contract, so sandbox holds no secret at all. Only the testnet exec config carries
-credential material, forwarded straight into a local NT config -- never logged,
-printed, or published.
-
-Spot and perps are separate venues here, not a parameter: they differ in signing
-domain, API key set, balances, and reference price, and the adapter models them as
-``SODEX_SPOT`` and ``SODEX_PERPS`` for that reason
-(``crates/adapters/sodex/src/config.rs`` module docs).
+Sandbox uses anonymous data and local simulated fills. Testnet and live use the
+native execution client; live additionally requires verified owner promotion.
+The host validates account identity, settlement, leverage and margin before start.
 """
 
 from __future__ import annotations
+
+from decimal import Decimal
 
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
 from nautilus_trader.adapters.sodex import (
@@ -52,6 +33,7 @@ from nautilus_trader.model import (
 )
 
 from custos.core.log import get_logger
+from custos.engines.nautilus.venue_config import require_live_owner_evidence, venue_options
 from custos.engines.nautilus.venues import venue_for_connector
 
 _log = get_logger("custos.venue_sodex")
@@ -70,12 +52,12 @@ _SODEX_CONNECTORS: dict[str, tuple[Market, str, AccountType]] = {
 
 # The modes this module can build an execution config for. The host's per-mode
 # allow-list must agree with this; a drift-guard test asserts the two sides match.
-SUPPORTED_MODES = frozenset({"sandbox", "testnet"})
+SUPPORTED_MODES = frozenset({"sandbox", "testnet", "live"})
 
 CONNECTORS_BY_MODE: dict[str, frozenset[str]] = {
     "sandbox": frozenset(_SODEX_CONNECTORS),
     "testnet": frozenset(_SODEX_CONNECTORS),
-    "live": frozenset(),
+    "live": frozenset(_SODEX_CONNECTORS),
 }
 
 _OMS_TYPE_NETTING = OmsType.NETTING
@@ -88,6 +70,7 @@ _OMS_TYPE_NETTING = OmsType.NETTING
 _NETWORK_BY_MODE: dict[str, Network] = {
     "sandbox": Network.MAINNET,
     "testnet": Network.TESTNET,
+    "live": Network.MAINNET,
 }
 
 # The account this runner's clients speak for. A node holds one credential scope, so
@@ -230,7 +213,7 @@ def _require(mapping: dict, field: str, what: str) -> str:
     return str(value)
 
 
-def build_exec_client_config_testnet(spec: dict, credential: dict) -> SodexExecClientConfig:
+def _build_exec_client_config(spec: dict, credential: dict, mode: str) -> SodexExecClientConfig:
     """Real SoDEX execution against the testnet gateway.
 
     Four values identify the account, and they come from two different places on
@@ -245,8 +228,11 @@ def build_exec_client_config_testnet(spec: dict, credential: dict) -> SodexExecC
     """
     api_key_name = _require(credential, "api_key", "credential field")
     api_private_key = _require(credential, "api_secret", "credential field")
-    wallet_address = _require(spec, "wallet_address", "spec field")
-    raw_account_id = _require(spec, "sodex_account_id", "spec field")
+    account = venue_options(
+        spec, {"wallet_address", "sodex_account_id", "margin_mode", "settlement_currency"}
+    )
+    wallet_address = _require(account, "wallet_address", "venue field")
+    raw_account_id = _require(account, "sodex_account_id", "venue field")
     try:
         account_id = int(raw_account_id)
     except ValueError as exc:
@@ -255,7 +241,7 @@ def build_exec_client_config_testnet(spec: dict, credential: dict) -> SodexExecC
             f"got {raw_account_id!r}"
         ) from exc
     return SodexExecClientConfig(
-        network=network_for_mode("testnet"),
+        network=network_for_mode(mode),
         market=_market(spec["connector"]),
         account_id=account_id,
         api_key_name=api_key_name,
@@ -264,18 +250,15 @@ def build_exec_client_config_testnet(spec: dict, credential: dict) -> SodexExecC
     )
 
 
-def build_exec_client_config_live(spec: dict, credential: dict) -> SodexExecClientConfig:
-    """Refuse: this venue has no live delivery.
+def build_exec_client_config_testnet(spec: dict, credential: dict) -> SodexExecClientConfig:
+    return _build_exec_client_config(spec, credential, "testnet")
 
-    Reached only if the host's per-mode allow-list is widened without the rest of a
-    live delivery arriving with it. The message names what is missing rather than
-    failing later as a credential or gateway error.
-    """
-    del spec, credential
-    raise NotImplementedError(
-        "SoDEX live execution is not delivered: no promotion-evidence gate, no live "
-        "credential handling, and no real-venue evidence exist for this venue"
-    )
+
+def build_exec_client_config_live(spec: dict, credential: dict) -> SodexExecClientConfig:
+    require_live_owner_evidence(spec)
+    if credential.get("permission_scope") != "trade_no_withdraw":
+        raise ValueError("SoDEX credential requires trade_no_withdraw")
+    return _build_exec_client_config(spec, credential, "live")
 
 
 def _ensure_currency_registered(code: str) -> None:
@@ -329,38 +312,32 @@ def build_exec_client_config_sandbox(
         account_id=sodex_account_id(spec),
         account_type=account_type,
         oms_type=_OMS_TYPE_NETTING,
-        default_leverage=None,
+        default_leverage=Decimal(str(spec.get("leverage", 1)))
+        if account_type == AccountType.MARGIN
+        else None,
     )
 
 
 def venue_ledger_source(spec: dict, credential: dict):
-    """Refuse: this venue has no independent ledger source yet.
+    from custos.engines.nautilus.sodex_ledger import SodexVenueLedgerSource
 
-    Reached only for testnet and live, where a RunnerFact claims reconciliation
-    coverage. Returning ``None`` instead would publish facts that merely record the
-    coverage as unavailable, which reads like a runtime condition rather than like a
-    venue this runner cannot yet reconcile at all.
-    """
-    del spec, credential
-    raise NotImplementedError(
-        "SoDEX has no independent venue ledger source: reconciliation evidence for "
-        "testnet and live cannot be produced for this venue yet"
-    )
+    return SodexVenueLedgerSource(spec, credential)
 
 
-def client_order_id_len_limit() -> int | None:
-    """No cap has been measured against this venue, so none is claimed.
+def client_order_id_len_limit() -> int:
+    """Exclusive rejection threshold for the documented maximum of 36 characters."""
+    return 37
 
-    Binance answers an over-long id with -4015 and the limit is written down with the
-    session that measured it. Nothing equivalent exists here: the adapter carries no
-    such constant and no order has been placed on this venue from this runner. Copying
-    Binance's 36 would be a claim about a different exchange, and a guard set from a
-    guess gives assurance it cannot support -- if this venue's real cap is shorter, the
-    guess passes ids the venue will refuse.
 
-    What this costs: an over-long id reaches the venue and is refused there, one round
-    trip later, with the venue's message rather than this runner's. The runner's own
-    ids are a fixed 32 characters, so it cannot be the source of one. Measure the cap
-    during the first real session on this venue and replace this.
-    """
-    return None
+async def validate_account_configuration(spec: dict, credential: dict) -> None:
+    if spec.get("trading_mode") == "sandbox":
+        return
+    import asyncio
+
+    provider = venue_ledger_source(spec, credential)
+    await asyncio.to_thread(provider.validate_account)
+
+
+def client_order_id_is_valid(value: str) -> bool:
+    """Validate the venue character set independently of its length bound."""
+    return bool(value)

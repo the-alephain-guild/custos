@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -284,9 +284,11 @@ class RunnerFactEventBridge:
         emitter: RunnerFactEmitter,
         deployment: RunnerFactDeployment,
         runtime_log_emitter: RunnerRuntimeLogPort | None = None,
+        quantity_to_base: Callable[[str, str], str] | None = None,
     ) -> None:
         self._emitter = emitter
         self._deployment = deployment
+        self._quantity_to_base = quantity_to_base
         self._runtime_log_emitter = runtime_log_emitter
         self._order_directions: dict[str, str] = {}
         self._order_roles: dict[str, str] = {}
@@ -353,13 +355,13 @@ class RunnerFactEventBridge:
                     raise RunnerFactContractError("OrderFilled has no venue or client order id")
                 venue_order_id = f"sandbox:{client_order_id}"
             fee_amount, fee_currency = _money(data.get("commission", "0"), "commission")
-            currency = fee_currency or self._deployment.currency
-            if currency != self._deployment.currency:
-                raise RunnerFactContractError(
-                    "fill commission currency differs from the deployment settlement currency"
-                )
+            currency = self._deployment.currency
+            fee_currency = (fee_currency or currency).upper()
             occurred_at = _nt_timestamp(data.get("ts_event"))
             instrument = str(data.get("instrument_id") or "")
+            quantity = str(data.get("last_qty") or "")
+            if self._quantity_to_base is not None:
+                quantity = self._quantity_to_base(instrument, quantity)
             fill_id = _scoped_event_id(
                 authority, "fill_identity", venue, instrument, stable_trade_id
             )
@@ -374,9 +376,10 @@ class RunnerFactEventBridge:
                     venue_order_id=venue_order_id,
                     instrument=instrument,
                     side=str(data.get("order_side") or ""),
-                    quantity=str(data.get("last_qty") or ""),
+                    quantity=quantity,
                     price=str(data.get("last_px") or ""),
                     fee=fee_amount,
+                    fee_currency=fee_currency,
                     currency=currency,
                     occurred_at=occurred_at,
                 ),
@@ -398,7 +401,7 @@ class RunnerFactEventBridge:
                     ),
                     fill_id=fill_id,
                     amount=fee_amount,
-                    currency=currency,
+                    currency=fee_currency,
                     assessed_at=occurred_at,
                 ),
             )

@@ -795,9 +795,14 @@ def _sodex_spec(label: str, **overrides) -> dict:
         label,
         connector="sodex_perpetual",
         pairs=["BTC-USD"],
-        wallet_address="0x" + "a" * 40,
-        sodex_account_id=4242,
-        sandbox={"starting_balances": ["10_000 USD"]},
+        nautilus_config={
+            "venue": {
+                "wallet_address": "0x" + "a" * 40,
+                "sodex_account_id": 4242,
+                "settlement_currency": "VUSDC",
+            }
+        },
+        sandbox={"starting_balances": ["10_000 vUSDC"]},
     )
     spec.update(overrides)
     return spec
@@ -825,7 +830,13 @@ async def test_deploy_sodex_sandbox_simulates_execution_against_the_venues_own_f
 
 @pytest.mark.asyncio
 async def test_deploy_sodex_testnet_uses_the_adapters_own_execution_client(monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+
     from nautilus_trader.adapters.sodex import SodexExecutionClientFactory
+
+    from custos.engines.nautilus import venue_sodex
+
+    monkeypatch.setattr(venue_sodex, "validate_account_configuration", AsyncMock())
 
     monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
@@ -853,8 +864,10 @@ async def test_a_connector_with_no_venue_wiring_is_refused_before_a_node_exists(
     monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     before = len(FakeLiveNode.instances)
-    with pytest.raises(NotImplementedError, match="okx_perpetual"):
-        await host.deploy(_spec("okx-1", connector="okx_perpetual"), _credential(), _Artifact())
+    with pytest.raises(NotImplementedError, match="unsupported_perpetual"):
+        await host.deploy(
+            _spec("unsupported-1", connector="unsupported_perpetual"), _credential(), _Artifact()
+        )
     assert len(FakeLiveNode.instances) == before
 
 
