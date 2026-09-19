@@ -613,7 +613,9 @@ class RunnerFactEventBridge:
             if not event_identity or not position_identity:
                 raise RunnerFactContractError("PositionClosed lacks stable event/position identity")
             pnl, pnl_currency = _money(data.get("realized_pnl", "0"), "realized_pnl")
-            currency = pnl_currency or str(data.get("currency") or self._deployment.currency)
+            currency = (
+                pnl_currency or str(data.get("currency") or self._deployment.currency)
+            ).upper()
             if currency != self._deployment.currency:
                 raise RunnerFactContractError(
                     "position PnL currency differs from the deployment settlement currency"

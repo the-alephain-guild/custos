@@ -49,3 +49,31 @@ def test_contract_notional_is_converted_using_the_instrument_multiplier() -> Non
 
     instrument = SimpleNamespace(multiplier=Decimal("0.01"), is_inverse=False)
     assert quantity_from_notional(instrument, Decimal("1000"), Decimal("50000")) == Decimal("2")
+
+
+def test_sodex_closed_position_retains_the_distinct_asset_code():
+    from unittest.mock import Mock
+
+    from custos.core.runner_fact_producer import RunnerFactEventBridge
+
+    class PositionClosed:
+        @staticmethod
+        def to_dict(_event):
+            return {
+                "event_id": str(uuid4()),
+                "position_id": "position-1",
+                "realized_pnl": "2.50 vUSDC",
+                "ts_opened": 1_000_000_000,
+                "ts_closed": 2_000_000_000,
+            }
+
+    emitter = Mock()
+    bridge = RunnerFactEventBridge(
+        emitter=emitter,
+        deployment=SimpleNamespace(authority=SimpleNamespace(stream_key="scope"), currency="VUSDC"),
+    )
+    bridge._on_position_event(PositionClosed())
+    emitter.emit_sync.assert_called_once()
+    fact = emitter.emit_sync.call_args.args[1][0]
+    assert fact["currency"] == "VUSDC"
+    assert fact["realized_pnl"] == "2.5"
