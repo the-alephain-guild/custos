@@ -131,6 +131,24 @@ class NautilusPortfolioSnapshotProvider:
             if venue is None:
                 return NautilusPortfolioSnapshot.unreliable("venue_unavailable")
 
+            # Ask before asking whether it can answer. The portfolio marks an
+            # instrument pending when a valuation fails and does not retry on its
+            # own, so a position that existed before the first price arrived stays
+            # pending for the life of the node — reconciliation hands the position
+            # over at startup, and the first mark price lands a fraction of a second
+            # later. Measured here: unpriced at 05:21:01.680, priced at 05:21:02.132,
+            # and still reported missing two minutes and 347 mark prices later.
+            #
+            # Requesting the PnL is what clears it: the computation is lazy, not
+            # broken. The value is discarded because the caller below reads prices
+            # from the cache; this call exists for its effect on the portfolio's own
+            # view, which is what the check on the next line reads.
+            for position in positions:
+                try:
+                    portfolio.unrealized_pnl(position.instrument_id)
+                except Exception:  # noqa: BLE001 — a refusal here is the check's answer
+                    pass
+
             missing_prices = portfolio.missing_price_instruments(venue)
             if missing_prices:
                 # Name them. "prices missing" alone cannot be acted on: whether the

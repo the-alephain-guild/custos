@@ -74,10 +74,18 @@ class _Cache:
 
 
 class _Portfolio:
-    def __init__(self, equities: dict | None = None, missing: tuple = ()) -> None:
+    def __init__(
+        self,
+        equities: dict | None = None,
+        missing: tuple = (),
+        *,
+        clears_when_asked: bool = False,
+    ) -> None:
         self._equities = equities if equities is not None else {"USDT": _DecimalValue("1000")}
         self._missing = missing
+        self._clears_when_asked = clears_when_asked
         self.venues: list[object] = []
+        self.pnl_requests: list[object] = []
 
     def equity(self, venue):
         self.venues.append(venue)
@@ -85,6 +93,13 @@ class _Portfolio:
 
     def missing_price_instruments(self, venue):
         return self._missing
+
+    def unrealized_pnl(self, instrument_id):
+        """Lazy like the real one: the valuation happens when it is asked for."""
+        self.pnl_requests.append(instrument_id)
+        if self._clears_when_asked:
+            self._missing = ()
+        return _DecimalValue("-3.7")
 
 
 def _register(host, instance: str, *, cache=None, portfolio=None, strategies=()) -> None:
@@ -203,6 +218,40 @@ def test_missing_mark_or_equity_returns_typed_unreliable_snapshot() -> None:
     assert missing_mark.unreliable_reason == "mark_price_unavailable:BTC-USDT.BINANCE"
     assert missing_equity.reliable is False
     assert missing_equity.unreliable_reason == "portfolio_equity_missing:USDT"
+
+
+def test_a_pending_valuation_is_asked_for_before_it_is_judged_missing() -> None:
+    """The portfolio does not retry a failed valuation; being asked is the retry.
+
+    Reconciliation hands over an open position at startup, a fraction of a second
+    before the first mark price lands. That first valuation fails and the
+    instrument stays pending — measured against the real engine as still missing
+    two minutes and 347 mark prices later. Asking for the PnL clears it, so the
+    snapshot asks before it reads the verdict.
+    """
+    portfolio = _Portfolio(missing=("BTCUSDT-PERP.BINANCE",), clears_when_asked=True)
+
+    snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
+        _Runtime(mark_price=_DecimalValue("100"), portfolio=portfolio),
+        currency="USDT",
+    )
+
+    assert portfolio.pnl_requests, "the pending valuation was never requested"
+    assert snapshot.reliable is True, snapshot.unreliable_reason
+
+
+def test_a_valuation_that_stays_missing_after_being_asked_still_fails_closed() -> None:
+    """Asking is not assuming: an instrument with no price anywhere stays refused."""
+    portfolio = _Portfolio(missing=("BTCUSDT-PERP.BINANCE",), clears_when_asked=False)
+
+    snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
+        _Runtime(mark_price=_DecimalValue("100"), portfolio=portfolio),
+        currency="USDT",
+    )
+
+    assert portfolio.pnl_requests
+    assert snapshot.reliable is False
+    assert snapshot.unreliable_reason == "portfolio_prices_missing:BTCUSDT-PERP.BINANCE"
 
 
 def test_a_missing_price_names_the_instrument_it_is_missing_for() -> None:

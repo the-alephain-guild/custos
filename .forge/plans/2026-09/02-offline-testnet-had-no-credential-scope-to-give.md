@@ -1,4 +1,4 @@
-# 离线通道的 testnet 走不通的三处：给不出凭据范围，就绪检查读错属性名，就绪判据不含估值
+# 离线通道的 testnet 走不通的六处，最后一处是组合不会自己重算
 
 - **Status**: ✅ Completed
 - **日期**: 2026-09-19
@@ -66,13 +66,13 @@ PS 那边填不进来 —— **离线通道的 testnet 因此完全不可用，�
 |---|---|
 | `tests/test_offline_reconciler.py` | 39 |
 | `tests/engines/nautilus/test_readiness_checks_what_it_claims.py` | 18 |
-| `tests/test_portfolio_snapshot.py` | 15 |
+| `tests/test_portfolio_snapshot.py` | 17 |
 | `tests/test_plan_closeout_counts.py` | 22 |
 
 各行都是该文件今天的总数，不是本次增量。本次在第一个文件加了 2 条（testnet 规格带上
 范围、两套凭据分区互不相同而同一套凭据跨代次稳定），在第二个加了 4 条（替身的属性名
-必须是真实 Portfolio 上的那个，以及估值判据的三条），在第三个加了 2 条（缺价格时报出
-是哪个标的，多个标的顺序稳定）。
+必须是真实 Portfolio 上的那个，以及估值判据的三条），在第三个加了 4 条（缺价格时报出
+是哪个标的、多个标的顺序稳定、待算的估值先问再判、问过仍缺的照样拒）。
 
 第三行是计数门自己：它有两条按「带计数表的记录」参数化的用例，本文件加进来就让它
 各多一个，20 变 22。谁加记录谁重新计数，这条规则对这个文件同样成立。
@@ -184,10 +184,51 @@ portfolio_valuation_ready=valuation.reliable,
 两处变异，全红：退回不带名字的原因、名字不排序。第二处第一次跑是绿的 —— 测试数据只有
 两个元素，而两个元素反转后恰好等于排序结果。改成三个元素才真正区分得开。
 
+## 第六处：组合不会自己重算，而它的判词被当成了事实
+
+带上名字之后答案是 `BTCUSDT-PERP.BINANCE` —— 正是持仓那个标的，也正是订阅成功的那个。
+两个公开探针把责任一刀切开：REST 有标记价（80963.58），WebSocket 60 秒推 5 条。场所侧
+完全正常。
+
+调到 DEBUG 重跑，数据也确实进来了：`MarkPriceUpdate` 347 条、`TradeTick` 357 条，并且
+`Adding MarkPriceUpdate for BTCUSDT-PERP.BINANCE` 明确写着它进了缓存。但组合仍说缺。
+
+组合自己的日志给出了下一步：
+
+```
+portfolio: Failed to calculate unrealized PnL for BTCUSDT-PERP.BINANCE, marking as pending
+portfolio: Cannot calculate unrealized PnL: no prices for BTCUSDT-PERP.BINANCE
+```
+
+时序是关键 —— 抱怨全部发生在 05:21:01.680~.687，而第一条标记价在 05:21:02.132 进缓存，
+**晚了 0.45 秒**。对账在启动时把既有持仓交给组合，那一刻还没有任何价格，估值失败，
+标记 pending。此后 347 条标记价到达，组合再没抱怨过，也再没重算过。
+
+用一次性探针问清了它的真实行为：
+
+| 探测项 | 值 |
+|---|---|
+| 检查前的缺失列表 | `['BTCUSDT-PERP.BINANCE']` |
+| 调用 `unrealized_pnl()` | `Money(-3.69655000, USDT)` |
+| 调用之后的缺失列表 | `[]` |
+
+**那个 pending 是惰性的，不是坏的**：组合不主动重算，一被问到就算得出来，算完自己就清了。
+
+所以修法是在读这个判词之前先问一次：遍历持仓各调一次 `unrealized_pnl`，丢弃返回值 ——
+这一步要的是它对组合内部视图的作用，而下一行读的正是那个视图。返回值不用是因为取价另有
+来源（缓存）。
+
+没有放松任何拒绝：问过之后仍缺的照样 fail-closed，两条测试分别钉这两半。两处变异全红：
+不触发重算、重算后不再检查。
+
+为什么没有更早发现：这一层的替身一直只实现 `missing_price_instruments`，而真实组合的这个
+方法与 `unrealized_pnl` 之间有状态耦合 —— 替身没有那个耦合，就表达不出「问过之后答案会
+变」这件事。
+
 ## 遗留
 
-- 离线通道的 testnet 端到端仍未在真实场所验证完。本 plan 交付到「守卫不再在数据到齐前
-  评估」为止；它之后的下单、收线与持续运行行为不在范围内。
+- 离线通道的 testnet 端到端仍未在真实场所验证完。本 plan 交付到「组合估得出值、守卫据此
+  放行」为止；它之后的下单、收线与持续运行行为不在范围内。
 - 账户里那个 2026-08-03 留下的空头（BTCUSDT -0.0055）仍在。它现在不再阻止启动，但平仓
   单被交易所以 `-2022 ReduceOnly Order is rejected` 拒绝，而 positionRisk 与 account
   两个端点都确认它存在、账户可交易、无挂单。原因未查实。
