@@ -29,8 +29,10 @@ uv run python scripts/check-docs-site.py --write
 uv run pytest tests/test_docs_site_reference.py -q
 ```
 
-The generator reads argparse, package metadata, venue declarations and schema
-files. Translated table labels live in `data/reference-labels.json`. Edit
+The generator reads argparse, public package metadata, venue declarations and
+explicitly classified public schemas. Engine documentation exposes its API series,
+not the private dependency version or build origin. Unknown schemas require a
+visibility decision before the reference check can pass. Translated table labels live in `data/reference-labels.json`. Edit
 explanatory prose around generated blocks, not the generated tables themselves.
 
 ## Publishing
@@ -61,12 +63,20 @@ Keep exact CLI flags, wire subjects and signing domains. If a literal product
 identifier needs a disclosure exemption, use a same-line `disclosure-ok` comment
 with a specific reason. Do not exempt ordinary prose about private systems.
 
+Do not publish dependency fork/origin information, custom build suffixes, internal
+candidate identifiers, consumer handoff records, historical image coordinates,
+source snapshot hashes or internal receipt/schema inventories. Keep those in the
+repository's development records. The disclosure gate checks translations as well
+as Markdown/TSX and does not allow an exemption to reintroduce these details.
+Preserve operator-required platform constraints, command spellings, public wire
+fields and actual support limits.
+
 Use concise technical prose:
 
 - Tutorials: prerequisites, commands, expected results, troubleshooting and stop.
 - Reference pages: exact fields, defaults, choices, supported combinations and scope.
 - Concepts: definition and boundary first, then a short reason where useful.
-- Status pages: evidence revision/date and what remains unverified.
+- Status pages: supported workflows, user-visible restrictions and release guidance.
 
 Avoid repeated warnings, rhetorical contrasts, slogans and claims such as
 “always” or “the only path” without specifying the lane and scope. Separate daemon

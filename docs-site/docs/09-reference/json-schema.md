@@ -3,7 +3,7 @@ title: "JSON Schema reference"
 sidebar_position: 3
 ---
 
-The schema files under `docs/gateway-contract/v1/` are listed below from the current checkout.
+The following schemas describe supported operator and integration inputs and outputs. They are available under `docs/gateway-contract/v1/`.
 
 <!-- generated:schemas -->
 
@@ -13,16 +13,10 @@ The schema files under `docs/gateway-contract/v1/` are listed below from the cur
 | `enrollment.schema.json` |
 | `offline_deployment_spec.schema.json` |
 | `runner_fact_batch_v1.schema.json` |
-| `runtime_candidate_acceptance_v1.schema.json` |
-| `runtime_candidate_promotion_receipt_v1.schema.json` |
 | `strategy_artifact_pre_import_verification_receipt_v1.schema.json` |
 | `strategy_artifact_ref_v1.schema.json` |
 | `strategy_execution_context_v1.schema.json` |
 | `strategy_manifest_v1.schema.json` |
-| `toolkit_rc_authority_receipt_v1.schema.json` |
-| `toolkit_rc_pending_receipt_v1.schema.json` |
-| `toolkit_rc_receipt_manifest_v1.schema.json` |
-| `toolkit_rc_t6d_pending_receipt_v1.schema.json` |
 
 <!-- /generated:schemas -->
 
@@ -35,7 +29,6 @@ The schema files under `docs/gateway-contract/v1/` are listed below from the cur
 | Strategy artifact, manifest, context and pre-import receipt | Execution ABI and local verification boundary |
 | Development source | Explicit sandbox-only signed-lane development material |
 | Offline deployment spec | Operator-owned unsigned sandbox/testnet input |
-| Toolkit/runtime candidate receipts | Candidate publication, acceptance and promotion evidence; not deployment commands |
 
 The offline schema does not replace the canonical signed DeploymentSpec. Its validate/publish CLI cannot create signed ARX commands.
 

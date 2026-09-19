@@ -141,3 +141,27 @@ def test_standalone_fixture_uses_the_actual_offline_contract(tmp_path: Path) -> 
     assert stopped.spec_id == running.spec_id
     assert stopped.generation > running.generation
     assert stopped.lifecycle_state.value == "stopped"
+
+
+def test_private_build_suffix_is_not_generated(isolated_checker: ModuleType) -> None:
+    checker = isolated_checker
+    path = checker.ROOT / "packages/custos-strategy-toolkit-nautilus/pyproject.toml"
+    before = checker.version_text(False)
+    path.write_text(path.read_text().replace("+sodex.1", "+private.engine.99"))
+    assert checker.version_text(False) == before
+    assert "private" not in checker.version_text(False)
+    assert "rc5" not in before
+
+
+def test_internal_candidate_schemas_stay_out_of_public_inventory(
+    isolated_checker: ModuleType,
+) -> None:
+    checker = isolated_checker
+    (
+        checker.ROOT / "docs/gateway-contract/v1/runtime_candidate_internal_only.schema.json"
+    ).write_text("{}\n")
+    table = checker.schema_table(False)
+    assert "runtime_candidate" not in table
+    assert "toolkit_rc" not in table
+    assert "offline_deployment_spec.schema.json" in table
+    assert checker.main() == 0

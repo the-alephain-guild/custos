@@ -108,8 +108,8 @@ export default function Home(): ReactNode {
         <p style={{color: 'var(--ifm-color-content-secondary)'}}>
           <Translate id="home.notice.body">
             English and Chinese guides cover signed deployments and standalone
-            sandbox/testnet workflows. Candidate publication and local checks
-            do not establish production readiness.
+            sandbox/testnet workflows. Check supported connectors and operating
+            limits before deployment. Live trading is not enabled.
           </Translate>{' '}
           <Translate
             id="home.notice.links"

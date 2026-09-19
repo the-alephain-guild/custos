@@ -31,6 +31,6 @@ Provisioning with `release-policy issue` is described in [deployment](/operator-
 
 Verification and extraction finish before any import. The loader also rejects a module cached from another activation. There is no production skip flag, external shell verifier or acceptance based only on a plausible bundle shape.
 
-The artifact runtime is composed and has recorded local execution evidence. Candidate publication and consumer handoff are separate from deployed production acceptance, which remains open. See [release status](/release-governance/release-status).
+Artifact verification is part of the signed deployment path. Production use is not yet enabled; see [release status](/release-governance/release-status) for current support.
 
 The offline mounted-strategy path is a separate sandbox/testnet workflow without these signed-release claims. It cannot produce promotion evidence.

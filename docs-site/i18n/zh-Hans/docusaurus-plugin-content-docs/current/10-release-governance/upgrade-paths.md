@@ -7,7 +7,7 @@ sidebar_position: 2
 
 ## Nautilus 2 checkout
 
-当前适配器在 Python 3.12 上使用 `nautilus-trader==2.0.0rc5+sodex.1`。使用仓库 lock 和支持的 wheel 平台，不要单独升级引擎包。
+当前适配器在 Python 3.12 上使用 NautilusTrader 2 API。通过 `make install-nt` 安装兼容依赖，不要单独升级引擎包。
 
 1. 通过正常目标状态路径停止受影响部署，检查交易所持仓和订单。
 2. 在目标 checkout 执行 `make install-nt`。

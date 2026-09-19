@@ -17,8 +17,8 @@ Use Git commits/tags, review and CI for evolving source, schemas, golden files a
 
 Immutable published artifacts remain content-addressed and require verification of the exact published bytes. This is separate from treating every source edit as a reissue of historical evidence.
 
-## Consumer status and a future V2
+## A future V2
 
-Consumer handoff records now exist for the active Nautilus 2 contract. A completed contract handoff does not prove external production use. A V2 requires a real production consumer pinned to V1 and an explicitly coordinated migration window. See [release status](/release-governance/release-status).
+A new wire version requires a published migration window and coordination with affected production consumers. See [release status](/release-governance/release-status) for current support.
 
 Package SemVer and wire version are separate: a package version bump does not imply a new wire version. The published compatibility policy is in [SemVer and LTS](/release-governance/semver-lts).

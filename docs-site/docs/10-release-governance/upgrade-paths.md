@@ -7,7 +7,7 @@ Record the current Git revision or image digest, dependency lock and state locat
 
 ## Nautilus 2 checkout
 
-The current adapter uses `nautilus-trader==2.0.0rc5+sodex.1` on Python 3.12. Use the repository lock and supported wheel platform; do not independently upgrade the engine package.
+The current adapter uses the NautilusTrader 2 API on Python 3.12. Use `make install-nt` to install compatible dependencies; do not independently upgrade the engine package.
 
 1. Stop the affected deployment through its normal desired-state path and inspect venue positions/orders.
 2. Install the intended checkout with `make install-nt`.

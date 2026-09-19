@@ -42,16 +42,36 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 
 const DEFAULT_ROOTS = ['docs', 'i18n', 'src'];
-const SCANNED_EXTENSIONS = new Set(['.md', '.mdx', '.tsx', '.ts', '.jsx', '.js']);
+const SCANNED_EXTENSIONS = new Set(['.md', '.mdx', '.tsx', '.ts', '.jsx', '.js', '.json']);
 
 /**
  * Banned patterns grouped by what they would reveal. Each entry carries the
  * guidance an author needs to rewrite the line, not just a refusal.
  *
- * Deliberately absent: anything belonging to Custos itself. Its source paths,
- * module names, tests and internal mechanisms are what an auditor came to read.
+ * Public Custos APIs and useful source references may be documented. Dependency
+ * provenance and internal release coordination are not public product guidance.
  */
 const BANNED = [
+  {
+    group: 'dependency provenance and internal release records',
+    strict: true,
+    patterns: [
+      /\bfork(?:ed|s)?\b/i,
+      /(?:内部|私有|定制|分叉).{0,16}(?:Nautilus|引擎|依赖)/i,
+      /\b\d+\.\d+\.\d+(?:[a-z]+\d+)?\+[a-z0-9][a-z0-9.-]*/i,
+      /\bguild-v[\d.]+/i,
+      /github\.com\/the-alephain-guild\/nautilus[_-]trader/i,
+      /\b(?:toolkit[_-]rc[_-]|runtime_candidate_)\w*/i,
+      /\btoolkit\s+RC\d+\b/i,
+      /\bCANONICAL_V\d+_[A-Z_]+\b/,
+      /\bREADY_TOOLKIT_RC\b/,
+      /\bdocs\/authority\//,
+      /\b[a-f0-9]{40}\b/i,
+      /\bghcr\.io\/the-alephain-guild\/custos@sha256:[a-f0-9]{64}\b/i,
+    ],
+    guidance:
+      'Describe supported installation, compatibility and operating limits. Keep dependency origins, custom build identifiers and internal release records out of public content.',
+  },
   {
     group: 'systems behind ARX',
     patterns: [
@@ -184,12 +204,13 @@ export function scanDisclosure(text) {
   const findings = [];
   const lines = text.split('\n');
   lines.forEach((line, index) => {
-    if (ALLOW_MARKER.test(line)) return;
+    const reviewed = ALLOW_MARKER.test(line);
     const exempt = CONTEXT_EXEMPTIONS.filter((rule) => rule.test(line));
-    for (const { group, patterns, guidance } of BANNED) {
+    for (const { group, patterns, guidance, strict } of BANNED) {
+      if (reviewed && !strict) continue;
       for (const pattern of patterns) {
         const match = line.match(pattern);
-        if (match && exempt.some((rule) => rule.source.includes(match[0]))) continue;
+        if (!strict && match && exempt.some((rule) => rule.source.includes(match[0]))) continue;
         if (match) {
           findings.push({
             line: index + 1,
@@ -218,7 +239,12 @@ async function main() {
 
   for (const file of files) {
     const rel = path.relative(ROOT, file);
-    const findings = scanDisclosure(await fs.readFile(file, 'utf8'));
+    const source = await fs.readFile(file, 'utf8');
+    // Decode translations before scanning, including escaped Unicode strings.
+    const content = path.extname(file) === '.json'
+      ? JSON.stringify(JSON.parse(source), null, 2)
+      : source;
+    const findings = scanDisclosure(content);
     for (const finding of findings) {
       process.stderr.write(
         `❌ ${rel}:${finding.line} [${finding.group}] "${finding.term}"\n` +

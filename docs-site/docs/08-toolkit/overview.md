@@ -16,7 +16,7 @@ The toolkit defines the strategy execution ABI and the artifact metadata consume
 
 <!-- /generated:packages -->
 
-The Nautilus package requires an exactly matching base toolkit version. Use [installation](/getting-started/installation) for the locked fork wheels and platform requirements.
+The Nautilus package requires an exactly matching base toolkit version. Use [installation](/getting-started/installation) for supported platforms and dependency installation.
 
 ## Execution ABI
 
@@ -32,20 +32,8 @@ Effective configuration is parsed with finite `Decimal` numbers, duplicate keys 
 
 The runner resolves the complete release BOM through the authenticated release resolver. It verifies all members and detached evidence, quarantines downloads, activates an immutable root and imports only after verification. Artifact metadata cannot choose its own trust root. See [signing](/toolkit/artifact-signing) and [materialization](/toolkit/artifact-materialization).
 
-## Typing and extraction evidence
+## Development checks
 
-The historical extraction inventory records 241 files: 36 platform-neutral, 55 Nautilus-specific and 150 private vendor files. It describes that extraction revision, not the current source-file count.
+`make toolkit-typecheck` checks the base and Nautilus packages. Run the relevant contract tests when changing strategy integration, and use matching toolkit package versions.
 
-The historical 75/289 type-error baseline was closed. The current `make toolkit-typecheck` target runs whole-package strict checks for the base and Nautilus packages and verifies the typing-closure evidence. Private third-party vendor code is outside the mypy scope and has separate parity/extraction checks.
-
-```bash
-make check-toolkit-extraction
-make toolkit-typecheck
-make check-authority
-```
-
-## Handoff and runtime status
-
-The registered Nautilus 2 contract handoff is complete and toolkit RC7 is recorded. These establish contract/candidate evidence, not production readiness. Live execution remains disabled and deployed runtime acceptance is open. See the revision-scoped [release status](/release-governance/release-status).
-
-V1 is the active first-production contract. Evolving source and internal contracts use Git review and CI. Historical receipts remain evidence for their recorded revision; update schemas and fixtures for intentional changes without rewriting old acceptance evidence.
+Production use is not yet enabled. See [release status](/release-governance/release-status) for supported workflows and limitations.

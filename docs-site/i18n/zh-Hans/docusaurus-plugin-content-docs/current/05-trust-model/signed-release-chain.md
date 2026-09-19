@@ -5,11 +5,11 @@ sidebar_position: 6
 
 验证你实际准备运行的精确产物。源码审查、wheel 可复现构建、镜像签名和已部署验收分别证明不同属性。
 
-候选发布记录见[发布状态](/release-governance/release-status)。旧候选镜像不能证明当前 checkout 已通过验收。
+按正式发布说明选择产物，并检查[支持范围](/release-governance/release-status)。不要将本地构建镜像视为已获准用于生产。
 
 ## Wheel 复现
 
-使用发布时的精确源码 revision、构建工具和 epoch。runner 发布流程从源码 commit 时间戳取得 `SOURCE_DATE_EPOCH`，其他候选发布流程可能使用另行记录的值。
+使用发布时的精确源码 revision、构建工具和 epoch。runner 发布流程从源码 commit 时间戳取得 `SOURCE_DATE_EPOCH`；以待验证产物记录的 epoch 为准。
 
 ```bash
 git checkout "$RELEASE_REF"

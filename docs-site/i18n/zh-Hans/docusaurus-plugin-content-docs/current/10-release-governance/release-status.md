@@ -3,28 +3,20 @@ title: "发布状态"
 sidebar_position: 1
 ---
 
-本页区分源码支持、候选版本发布和生产验收。以下快照于 2026-09-19 对照仓库记录核查，源码 revision 为 `c1d27024312210590bc0716fe1ddff592e5f8012`。
+Custos 当前支持开发和 sandbox/testnet 流程。runner 未启用 live 执行，也没有可供操作者开启实盘的参数。
 
-| 范围 | 登记状态 | 能证明什么 |
-|---|---|---|
-| Runner 源码包 | `0.3.0` | checkout 的包版本，不是稳定版发布公告 |
-| Nautilus 2 契约交接 | 消费者交接完成 | 登记的消费者接受了协调后的契约 |
-| Toolkit 候选版本 | `0.1.0rc7`，源码 `8bf45ac6b0f42018aae2a74ac9e743e41f9ca789` | 已登记候选版本，不代表生产执行 |
-| Runtime 候选镜像 | 已发布并 attested，源码 `4afffb96b1a768fb34f66692d4bb7f96652aeccf` | 该 revision 的发布及精确镜像验证记录 |
-| 本地 runtime 组合 | 已实现，并记录本地激活证据 | 本地组合及测试证据 |
-| 已部署 runtime / 生产 | 验收仍开放 | `runtime_ready=false`、`production_ready=false` |
-| Live 执行 | 当前 daemon 组合禁用 | 没有可供操作者开启实盘的参数 |
+| 流程 | 当前支持 |
+|---|---|
+| 独立 sandbox | 使用 `sandbox-sim` 验证本地生命周期 |
+| Nautilus sandbox | 兼容策略、行情与本地模拟成交 |
+| 离线 testnet | 支持的交易所 connector 与测试网凭据；需查看各交易所限制 |
+| 签名部署 | 要求注册、签发的授权和验证后的发布输入 |
+| Live 交易 | 未启用 |
 
-登记的 runtime 候选镜像为：
+## 安装与更新
 
-```text
-ghcr.io/the-alephain-guild/custos@sha256:2e9081c14df31cac15112ba0a38100da94cb271a6bbaf7f9ad3c1096548c6753
-```
+源码和本地容器配置见[安装指南](/getting-started/installation)。更换运行时前阅读[升级指南](/release-governance/upgrade-paths)。使用分发产物时，以正式发布提供的版本及验证说明为准。
 
-这是历史候选坐标，不是当前部署推荐。本次文档更新未重新检查 registry 可用性。该镜像早于当前 Nautilus 2 checkout，发布记录不能证明当前 HEAD 已通过验收。
+构建、健康探针或 sandbox 运行成功不能证明生产就绪。使用测试网账户前，确认所选 connector 的支持范围和限制。[SoDEX 指南](/engines/sodex)说明其当前 testnet 输入限制。
 
-## 选择产物
-
-开发当前源码时，按[安装指南](/getting-started/installation)执行，并记录 Git revision 和本地 image id。使用远端候选版本前，核对摘要、签名、源码 revision 和验收范围。候选版本发布不会启动稳定版本支持窗口，也不会关闭生产验收门。
-
-历史验收记录应保留在原 revision 上。新 revision 需要新证据，不应为匹配当前源码而刷新旧收据。
+支持窗口见[SemVer 与 LTS](/release-governance/semver-lts)。本页说明产品可用范围，不代表新的稳定版本发布公告。

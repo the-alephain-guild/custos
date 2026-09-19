@@ -17,8 +17,8 @@ V1 是当前首个生产契约。协调后的变更在该契约内更新，不�
 
 不可变发布产物仍按内容寻址，需要验证精确发布字节。这不等于每次源码编辑都要重新签发历史证据。
 
-## 消费者状态与未来 V2
+## 未来 V2
 
-当前 Nautilus 2 契约已有消费者交接记录。交接完成不能证明外部生产使用。引入 V2 需要真实生产消费者固定 V1，并明确协调迁移窗口。详见[发布状态](/release-governance/release-status)。
+新的 wire 版本需要公开迁移窗口，并与受影响的生产消费者协调。当前支持范围见[发布状态](/release-governance/release-status)。
 
 包 SemVer 与 wire 版本独立，包版本变化不意味着新的 wire 版本。公开兼容性政策见[SemVer 与 LTS](/release-governance/semver-lts)。

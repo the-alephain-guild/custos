@@ -3,7 +3,7 @@ title: "SoDEX connector"
 sidebar_position: 4
 ---
 
-The Nautilus fork includes separate SoDEX spot and perpetual adapters. Custos wires `sodex` to `SODEX_SPOT` and `sodex_perpetual` to `SODEX_PERPS`.
+Custos provides separate SoDEX spot and perpetual connectors. Custos wires `sodex` to `SODEX_SPOT` and `sodex_perpetual` to `SODEX_PERPS`.
 
 ## Support boundaries
 
@@ -14,7 +14,7 @@ The Nautilus fork includes separate SoDEX spot and perpetual adapters. Custos wi
 | Offline CLI testnet | Incomplete: its spec does not carry the required SoDEX account fields |
 | Live | Refused by both the host declaration and execution config builder |
 
-The offline spec rejects unknown fields and currently has no `wallet_address` or `sodex_account_id`. Adding these keys to a JSON example will fail validation. Adapter tests with a complete internal dictionary do not establish a working end-to-end CLI path. This page therefore does not provide a SoDEX testnet launch recipe.
+The offline spec rejects unknown fields and currently has no `wallet_address` or `sodex_account_id`. Adding these keys to a JSON example will fail validation. The offline CLI cannot currently supply the complete input required for SoDEX testnet, so no launch recipe is provided for that path.
 
 ## Sandbox configuration
 

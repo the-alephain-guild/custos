@@ -3,7 +3,7 @@ title: "SoDEX connector"
 sidebar_position: 4
 ---
 
-Nautilus fork 包含独立的 SoDEX 现货和永续适配器。Custos 将 `sodex` 映射到 `SODEX_SPOT`，将 `sodex_perpetual` 映射到 `SODEX_PERPS`。
+Custos 提供独立的 SoDEX 现货和永续 connector。Custos 将 `sodex` 映射到 `SODEX_SPOT`，将 `sodex_perpetual` 映射到 `SODEX_PERPS`。
 
 ## 支持边界
 
@@ -14,7 +14,7 @@ Nautilus fork 包含独立的 SoDEX 现货和永续适配器。Custos 将 `sodex
 | 离线 CLI testnet | 尚不完整：spec 无法携带 SoDEX 要求的账户字段 |
 | Live | 宿主声明和执行配置构建器均拒绝 |
 
-离线 spec 拒绝未知字段，目前没有 `wallet_address` 或 `sodex_account_id`。把这两个字段直接加入 JSON 会导致校验失败。使用完整内部字典的适配器测试不能证明 CLI 端到端路径可用，因此本页不提供 SoDEX testnet 启动命令。
+离线 spec 拒绝未知字段，目前没有 `wallet_address` 或 `sodex_account_id`。把这两个字段直接加入 JSON 会导致校验失败。离线 CLI 当前无法提供 SoDEX testnet 要求的完整输入，因此本页不提供该路径的启动命令。
 
 ## Sandbox 配置
 

@@ -130,3 +130,20 @@ Do not add current-byte source hashes to historical receipt gates.
   publication was changed by the documentation commit. The six pre-existing local
   source commits were pushed with the existing main history as announced.
 - This close-out changes only the execution record; it does not republish site content.
+
+
+## Public-content boundary correction (2026-09-19)
+
+The user clarified that dependency origins and custom build information must not
+appear in public documentation. Updated both locales and the home page to describe
+installation, API compatibility and operating limits only. Removed internal release
+coordination, candidate inventories and historical publication coordinates from the
+public status/reference pages. Source dependency pins and historical receipts remain
+unchanged.
+
+The reference generator now publishes the engine API series and an explicitly
+classified public schema set. The disclosure gate also checks decoded translation
+JSON and rejects internal build/record details even when a generic exemption is
+present. Validation: 30 related pytest tests, 46 disclosure regression tests, both
+locale builds/typecheck, source-reference/CJK/terminology checks passed; targeted
+scan of 224 generated HTML/JS/JSON assets found no removed details.

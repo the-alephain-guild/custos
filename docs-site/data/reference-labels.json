@@ -8,7 +8,7 @@
     "declared": "声明支持",
     "unsupported": "不支持",
     "packages": "| 包 | 源码版本 | Python |",
-    "dependency": "当前依赖：",
+    "dependency": "引擎 API：",
     "schema": "Schema 文件"
   }
 }

@@ -15,7 +15,7 @@ sidebar_position: 1
 | 凭据加密 | `sops` 与 `age` |
 | 容器流程 | Docker 与 Compose v2 |
 
-锁定的 Nautilus fork 为 macOS arm64、Linux arm64 和 Linux x86_64 提供 CPython 3.12 wheel。Linux wheel 使用 `manylinux_2_39` 标签，宿主环境需满足相应兼容性要求。当前 lock sources 未配置其他平台和解释器组合。
+Nautilus 运行时支持 macOS arm64、Linux arm64 和 Linux x86_64 上的 Python 3.12。Linux 环境需兼容 `manylinux_2_39`。通过 `make install-nt` 安装运行时，使依赖与 runner 匹配。
 
 ## 源码安装
 
@@ -44,7 +44,7 @@ make verify-local-v030
 
 该命令构建 `custos-runner:v0.3.0`，写入源码 revision 标签，检查镜像运行契约并输出 image id/revision。它不覆盖完整签名部署往返，也不证明生产就绪。修改后的派生镜像需要单独验证。
 
-候选镜像和工具包候选版本各自记录发布情况，详见[发布状态](/release-governance/release-status)。旧候选镜像不能证明稳定版本已发布或当前源码已通过验收。
+支持范围与当前限制见[发布状态](/release-governance/release-status)。本地构建成功不代表生产就绪。
 
 ## 下一步
 

@@ -57,4 +57,4 @@ key id 应采用生成的策略输出中的值。私有 registry 需同时设置
 
 `make verify-local-v030` 构建并检查本地镜像契约。将 runner 状态挂载到 `/home/custos/.arx`，并在运行时提供 age identity。完整签名部署仍需要签发的身份、传输和发布输入。将结果归于当前源码前，先确认镜像 revision。
 
-按[就绪检查](/operator-guide/readiness-health)分别核对健康、订阅和已应用实例。候选发布与生产验收的区别见[发布状态](/release-governance/release-status)。
+按[就绪检查](/operator-guide/readiness-health)分别核对健康、订阅和已应用实例。当前支持范围与生产限制见[发布状态](/release-governance/release-status)。

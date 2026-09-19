@@ -5,11 +5,11 @@ sidebar_position: 6
 
 Verify the exact artifact you intend to run. Source review, wheel reproducibility, image signatures and deployed acceptance establish different properties.
 
-Candidate publications are recorded in [release status](/release-governance/release-status). An older candidate image is not acceptance of the current checkout.
+Choose an artifact using the official release instructions and check [supported use](/release-governance/release-status). Do not assume a locally built image is approved for production.
 
 ## Wheel reproduction
 
-Use the release's exact source revision, build tools and recorded epoch. The runner release workflow derives `SOURCE_DATE_EPOCH` from the source commit timestamp; a different candidate workflow can use a separately recorded value.
+Use the release's exact source revision, build tools and recorded epoch. The runner release workflow derives `SOURCE_DATE_EPOCH` from the source commit timestamp; use the epoch specified for the artifact being verified.
 
 ```bash
 git checkout "$RELEASE_REF"

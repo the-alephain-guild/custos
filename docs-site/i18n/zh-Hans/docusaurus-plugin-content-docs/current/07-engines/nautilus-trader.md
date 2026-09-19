@@ -3,15 +3,15 @@ title: "NautilusTrader 引擎"
 sidebar_position: 1
 ---
 
-Custos 通过可选的 `nautilus` extra 使用固定版本的 NautilusTrader fork。在 Python 3.12 环境执行 `make install-nt` 安装。
+Custos 通过可选的 `nautilus` extra 集成 NautilusTrader。在 Python 3.12 环境执行 `make install-nt` 安装。
 
 <!-- generated:nautilus-version -->
 
-当前依赖：`nautilus-trader==2.0.0rc5+sodex.1`.
+引擎 API：`NautilusTrader 2`.
 
 <!-- /generated:nautilus-version -->
 
-lock sources 提供 macOS arm64 和 Linux arm64/x86_64 的 CPython 3.12 wheel。Linux wheel 要求兼容 `manylinux_2_39`。请使用仓库 lock，不要以版本号相近的上游包替代。
+使用本指南中的安装命令，使引擎与 runner 保持兼容。支持的平台与 Python 要求见[安装指南](/getting-started/installation)。
 
 ## 选择宿主
 
@@ -39,7 +39,7 @@ lock sources 提供 macOS arm64 和 Linux arm64/x86_64 的 CPython 3.12 wheel。
 
 ## 并发与就绪
 
-Nautilus 2 使用线程本地 runner/message bus。Custos 拒绝同一 event loop 上的第二个活动 node。并发 node 应使用不同进程，并隔离身份和状态目录。
+Custos 拒绝同一 event loop 上的第二个活动 Nautilus node。并发 node 应使用不同进程，并隔离身份和状态目录。
 
 引擎就绪检查 node 任务、行情/执行连接、投资组合初始化与可靠估值、对账、策略生命周期接收状态及必要能力。创建 node 成功或 daemon 健康检查通过，不能证明这些条件全部满足。
 

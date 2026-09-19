@@ -3,7 +3,7 @@ title: "JSON Schema 参考"
 sidebar_position: 3
 ---
 
-下表从当前 checkout 的 `docs/gateway-contract/v1/` 目录生成。
+下表列出操作者与集成方使用的输入输出 schema，文件位于 `docs/gateway-contract/v1/`。
 
 <!-- generated:schemas -->
 
@@ -13,16 +13,10 @@ sidebar_position: 3
 | `enrollment.schema.json` |
 | `offline_deployment_spec.schema.json` |
 | `runner_fact_batch_v1.schema.json` |
-| `runtime_candidate_acceptance_v1.schema.json` |
-| `runtime_candidate_promotion_receipt_v1.schema.json` |
 | `strategy_artifact_pre_import_verification_receipt_v1.schema.json` |
 | `strategy_artifact_ref_v1.schema.json` |
 | `strategy_execution_context_v1.schema.json` |
 | `strategy_manifest_v1.schema.json` |
-| `toolkit_rc_authority_receipt_v1.schema.json` |
-| `toolkit_rc_pending_receipt_v1.schema.json` |
-| `toolkit_rc_receipt_manifest_v1.schema.json` |
-| `toolkit_rc_t6d_pending_receipt_v1.schema.json` |
 
 <!-- /generated:schemas -->
 
@@ -35,7 +29,6 @@ sidebar_position: 3
 | 策略产物、manifest、context 和导入前收据 | 执行 ABI 与本地验证边界 |
 | Development source | 签名通道中显式的 sandbox 开发材料 |
 | Offline deployment spec | 操作者持有的未签名 sandbox/testnet 输入 |
-| Toolkit/runtime 候选收据 | 候选发布、验收和晋升证据，不是部署指令 |
 
 离线 schema 不替代正式签名 DeploymentSpec，其 validate/publish CLI 不能创建 ARX 签名指令。
 

@@ -57,4 +57,4 @@ Do not share a state root between runner processes. The offline lane uses its ow
 
 `make verify-local-v030` builds and checks the local image contract. Mount the runner state at `/home/custos/.arx` and provide the age identity at runtime. A full signed deployment still requires issued identity, transport and release inputs. Confirm the image revision before attributing results to current source.
 
-Check health, subscription and applied instance separately using [readiness](/operator-guide/readiness-health). Consult [release status](/release-governance/release-status) for the distinction between candidate publication and production acceptance.
+Check health, subscription and applied instance separately using [readiness](/operator-guide/readiness-health). Consult [release status](/release-governance/release-status) for supported use and production limitations.

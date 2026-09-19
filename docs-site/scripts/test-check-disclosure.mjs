@@ -22,7 +22,8 @@ const FRONTMATTER = '---\ntitle: fixture\n---\n\n';
 async function runGate(body, filename = 'fixture.md') {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'custos-disclosure-'));
   try {
-    await fs.writeFile(path.join(dir, filename), FRONTMATTER + body, 'utf8');
+    const prefix = path.extname(filename) === '.json' ? '' : FRONTMATTER;
+    await fs.writeFile(path.join(dir, filename), prefix + body, 'utf8');
     try {
       const { stdout, stderr } = await execFileAsync('node', [GATE, dir]);
       return { code: 0, out: stdout + stderr };
@@ -35,6 +36,64 @@ async function runGate(body, filename = 'fixture.md') {
 }
 
 const CASES = [
+  {
+    name: 'dependency fork description is rejected',
+    body: 'Install the locked Nautilus fork.\n',
+    expect: (r) => r.code === 1 && /dependency provenance/.test(r.out),
+  },
+  {
+    name: 'Chinese custom dependency provenance is rejected',
+    body: '使用内部定制引擎安装包。\n',
+    expect: (r) => r.code === 1 && /dependency provenance/.test(r.out),
+  },
+  {
+    name: 'custom version suffix is rejected in a code block',
+    body: '```text\nnautilus-trader==2.0.0rc5+sodex.1\n```\n',
+    expect: (r) => r.code === 1 && /dependency provenance/.test(r.out),
+  },
+  {
+    name: 'internal schema name is rejected',
+    body: '`toolkit_rc_authority_receipt_v1.schema.json`\n',
+    expect: (r) => r.code === 1 && /internal release records/.test(r.out),
+  },
+  {
+    name: 'internal receipt path is rejected',
+    body: 'See docs/authority/receipts/runner.json.\n',
+    expect: (r) => r.code === 1 && /internal release records/.test(r.out),
+  },
+  {
+    name: 'source snapshot hash is rejected',
+    body: 'Built from `c1d27024312210590bc0716fe1ddff592e5f8012`.\n',
+    expect: (r) => r.code === 1 && /internal release records/.test(r.out),
+  },
+  {
+    name: 'historical image is not exempted by its public repository coordinate',
+    body: 'ghcr.io/the-alephain-guild/custos@sha256:' + 'a'.repeat(64) + '\n',
+    expect: (r) => r.code === 1 && /internal release records/.test(r.out),
+  },
+  {
+    name: 'reviewed marker cannot allow dependency provenance',
+    body: 'Nautilus fork <!-- disclosure-ok: source matches -->\n',
+    expect: (r) => r.code === 1 && /dependency provenance/.test(r.out),
+  },
+  {
+    name: 'translation JSON is scanned',
+    body: '{"message":"Install the private fork"}\n',
+    filename: 'code.json',
+    expect: (r) => r.code === 1 && /dependency provenance/.test(r.out),
+  },
+  {
+    name: 'escaped translation text is decoded before scanning',
+    body: '{"message":"Nautilus \\u0066ork"}\n',
+    filename: 'code.json',
+    expect: (r) => r.code === 1 && /dependency provenance/.test(r.out),
+  },
+  {
+    name: 'public compatibility and literal API identifiers remain allowed',
+    body: 'NautilusTrader 2 on Python 3.12; use `--receipt-output` and `StrategyExecutionContext`.\n',
+    expect: (r) => r.code === 0,
+  },
+
   {
     name: 'system behind ARX is rejected',
     body: 'Signed desired state is produced by Crucible Rust before delivery.\n',
@@ -192,8 +251,8 @@ const CASES = [
     expect: (r) => r.code === 1 && /assistant and workflow configuration/.test(r.out),
   },
   {
-    name: 'surviving machine-asset directories are still allowed',
-    body: 'Schemas live under docs/gateway-contract/v1/ and receipts under docs/authority/.\n',
+    name: 'public schema directory is allowed',
+    body: 'Schemas live under docs/gateway-contract/v1/.\n',
     expect: (r) => r.code === 0,
   },
   {

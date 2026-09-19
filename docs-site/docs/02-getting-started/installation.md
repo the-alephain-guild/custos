@@ -15,7 +15,7 @@ Install from a checkout for development, or build a local container. The CLI is 
 | Credential encryption | `sops` and `age` |
 | Container workflow | Docker with Compose v2 |
 
-The locked Nautilus fork provides CPython 3.12 wheels for macOS arm64, Linux arm64 and Linux x86_64. Its Linux wheel tags are `manylinux_2_39`; the host must meet that compatibility requirement. Other platform/interpreter combinations are not configured in the current lock sources.
+The Nautilus runtime supports Python 3.12 on macOS arm64, Linux arm64 and Linux x86_64. Linux requires a `manylinux_2_39`-compatible environment. Install the runtime through `make install-nt` so its dependencies match the runner.
 
 ## Source installation
 
@@ -44,7 +44,7 @@ make verify-local-v030
 
 This builds `custos-runner:v0.3.0`, labels it with the source revision, checks the image runtime contract and prints the image id/revision. It does not exercise a full signed deployment round trip or prove production readiness. A modified derivative image needs its own verification.
 
-Candidate images and toolkit release candidates have separate publication records. See [release status](/release-governance/release-status); do not infer a stable release or current-source acceptance from an older candidate image.
+See [release status](/release-governance/release-status) for supported use and current limitations. A successful local build does not establish production readiness.
 
 ## Next step
 

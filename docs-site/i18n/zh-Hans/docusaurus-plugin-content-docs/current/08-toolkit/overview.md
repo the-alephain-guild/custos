@@ -16,7 +16,7 @@ sidebar_position: 1
 
 <!-- /generated:packages -->
 
-Nautilus 包要求 base toolkit 版本精确匹配。固定 fork wheel 和平台要求见[安装指南](/getting-started/installation)。
+Nautilus 包要求 base toolkit 版本精确匹配。支持平台与依赖安装方式见[安装指南](/getting-started/installation)。
 
 ## 执行 ABI
 
@@ -32,20 +32,8 @@ entry-point group 为 `alephain.strategy_runtime.v1`。适配器接收验证后�
 
 runner 通过认证后的发布解析接口取得完整 release BOM，验证所有成员和独立证据，将下载内容隔离，原子激活不可变目录，完成验证后再导入。产物元数据不能选择自己的信任根。详见[签名验证](/toolkit/artifact-signing)与[物化](/toolkit/artifact-materialization)。
 
-## 类型检查与提取证据
+## 开发检查
 
-历史提取清单记录 241 个文件：36 个平台无关文件、55 个 Nautilus 文件和 150 个私有 vendor 文件。它描述提取时的 revision，不是当前源码文件总数。
+`make toolkit-typecheck` 检查 base 和 Nautilus 包。修改策略集成时运行相关契约测试，并使用匹配版本的工具包。
 
-历史 75/289 个类型错误已完成收敛。当前 `make toolkit-typecheck` 对 base 和 Nautilus 包运行全包 strict 检查，并校验 typing closure 证据。私有第三方 vendor 代码不在 mypy 范围内，另有行为一致性和提取检查。
-
-```bash
-make check-toolkit-extraction
-make toolkit-typecheck
-make check-authority
-```
-
-## 交接与运行状态
-
-当前登记的 Nautilus 2 契约交接已完成，并记录 toolkit RC7。这些属于契约和候选版本证据，不代表生产就绪。live 执行仍未启用，已部署运行时验收仍开放。详见按 revision 记录的[发布状态](/release-governance/release-status)。
-
-V1 是当前首个生产契约。持续演进的源码和内部契约由 Git review 与 CI 管理。历史收据证明其记录的 revision；有意修改契约时同步 schema 和 fixture，不重写旧验收证据。
+当前尚未开放生产使用。支持流程与限制见[发布状态](/release-governance/release-status)。

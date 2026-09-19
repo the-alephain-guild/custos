@@ -31,6 +31,6 @@ sidebar_position: 2
 
 验证和解包均在导入前完成。加载器还会拒绝从其他 activation 缓存的模块。生产路径没有跳过参数、外部 shell 验证器，也不会仅凭 bundle 结构合理而接受。
 
-产物运行时已接入组合，并有本地执行记录。候选发布和消费者交接与已部署生产验收不同，后者仍开放，详见[发布状态](/release-governance/release-status)。
+产物验证属于签名部署路径。当前尚未开放生产使用，支持范围见[发布状态](/release-governance/release-status)。
 
 离线挂载策略是独立的 sandbox/testnet 流程，不具有上述签名发布保障，也不能产生晋升证据。

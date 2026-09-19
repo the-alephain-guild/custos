@@ -19,6 +19,19 @@ LOCALES = (
     (SITE / "docs", False),
     (SITE / "i18n/zh-Hans/docusaurus-plugin-content-docs/current", True),
 )
+PUBLIC_SCHEMAS = frozenset(
+    {
+        "enrollment.schema.json",
+        "runner_fact_batch_v1.schema.json",
+        "strategy_artifact_ref_v1.schema.json",
+        "strategy_manifest_v1.schema.json",
+        "strategy_artifact_pre_import_verification_receipt_v1.schema.json",
+        "strategy_execution_context_v1.schema.json",
+        "development_source_ref_v1.schema.json",
+        "offline_deployment_spec.schema.json",
+    }
+)
+INTERNAL_SCHEMA_PREFIXES = ("toolkit_rc_", "runtime_candidate_")
 
 
 def parser_inventory() -> argparse.ArgumentParser:
@@ -144,11 +157,25 @@ def version_text(zh: bool) -> str:
     dependency = next(
         d for d in metadata["project"]["dependencies"] if d.startswith("nautilus-trader==")
     )
-    return (ZH["dependency"] if zh else "Current dependency: ") + code(dependency) + "."
+    match = re.fullmatch(r"nautilus-trader==(\d+)\..+", dependency)
+    if match is None:
+        raise ValueError("Cannot determine the supported engine API series")
+    # The public compatibility surface excludes dependency origin and build metadata.
+    return (ZH["dependency"] if zh else "Engine API: ") + code(f"NautilusTrader {match[1]}") + "."
 
 
 def schema_table(zh: bool) -> str:
-    names = sorted(p.name for p in (ROOT / "docs/gateway-contract/v1").glob("*.schema.json"))
+    available = {p.name for p in (ROOT / "docs/gateway-contract/v1").glob("*.schema.json")}
+    unclassified = {
+        name for name in available - PUBLIC_SCHEMAS if not name.startswith(INTERNAL_SCHEMA_PREFIXES)
+    }
+    missing = PUBLIC_SCHEMAS - available
+    if unclassified or missing:
+        raise ValueError(
+            f"Schema visibility needs review: unclassified={sorted(unclassified)}, "
+            f"missing_public={sorted(missing)}"
+        )
+    names = sorted(PUBLIC_SCHEMAS)
     label = ZH["schema"] if zh else "Schema file"
     return "\n".join([f"| {label} |", "|---|", *[f"| {code(n)} |" for n in names]])
 
@@ -181,7 +208,10 @@ def main() -> int:
             before = path.read_text()
             after = before
             for name, generate in generators.items():
-                after = replace_block(after, name, generate(zh))
+                try:
+                    after = replace_block(after, name, generate(zh))
+                except ValueError as exc:
+                    failures.append(f"{path.relative_to(ROOT)}: {exc}")
             if before != after:
                 if args.write:
                     path.write_text(after)
