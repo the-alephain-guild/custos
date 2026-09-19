@@ -102,3 +102,24 @@ def test_sodex_sandbox_perpetual_leverage_matches_the_signed_spec():
     document["leverage"] = 3
     config = venue_sodex.build_exec_client_config_sandbox(document, {}, ["10000 vUSDC"])
     assert config.default_leverage == Decimal("3")
+
+
+@pytest.mark.parametrize(
+    "connector,pair",
+    [
+        ("binance", "BTC-USDT"),
+        ("binance_perpetual", "BTC-USDT"),
+        ("okx", "BTC-USDT"),
+        ("okx_perpetual", "BTC-USDT"),
+        ("sodex", "vBTC_vUSDC"),
+        ("sodex_perpetual", "BTC-USD"),
+    ],
+)
+def test_strategy_and_host_subscribe_to_the_same_native_instrument(connector, pair):
+    from custos_toolkit_nautilus.adapter.utils import instrument_id_str
+
+    from custos.engines.nautilus.host import _venue_module_for
+
+    document = {"connector": connector, "pairs": [pair], "leverage": 1}
+    host_ids = _venue_module_for(connector).build_instrument_id_strings(document)
+    assert tuple(host_ids) == (instrument_id_str(pair, connector),)

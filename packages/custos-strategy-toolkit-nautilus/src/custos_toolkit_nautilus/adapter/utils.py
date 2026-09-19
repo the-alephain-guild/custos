@@ -63,8 +63,6 @@ def derive_instrument_id(trading_config: "TradingConfig") -> InstrumentId:
         InstrumentId for use with Nautilus
     """
     pairs = trading_config.pairs
-    connector = trading_config.connector
-
     pair = pairs[0] if pairs else "BTC-USDT"
     return InstrumentId.from_str(instrument_id_str(pair, trading_config.connector))
 
@@ -78,6 +76,16 @@ def instrument_id_str(pair: str, connector: str) -> str:
     venue = get_venue_from_connector(connector)
     if connector in PAIRS_ARE_VENUE_SYMBOLS:
         return f"{pair}.{venue}"
+    if connector in {"okx", "okx_perpetual"}:
+        symbol = pair.upper().replace("/", "-").removesuffix("-SWAP")
+        parts = symbol.split("-")
+        if len(parts) != 2 or not all(part.isalnum() for part in parts):
+            raise ValueError("OKX pairs must use BASE-QUOTE")
+        if connector == "okx_perpetual":
+            if parts[1] not in {"USDT", "USDC"}:
+                raise ValueError("OKX perpetual execution requires a linear settlement pair")
+            symbol += "-SWAP"
+        return f"{symbol}.{venue}"
     symbol = pair.replace("-", "")
     if is_futures_connector(connector):
         symbol += "-PERP"
