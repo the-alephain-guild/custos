@@ -31,6 +31,9 @@ Select `--enabled-mode live` only in the prepared signed configuration. This sel
 
 [SoDEX](/engines/sodex) requires an explicit wallet, account and settlement currency. [OKX](/engines/okx) requires its API passphrase, region and account settings. Perpetual configurations currently cover linear contracts. Keep unrelated manual trading and other strategies out of an acceptance account so account-level evidence can be reconciled to the intended deployment.
 
+
+Spot base assets must be representable by the signed money contract. The current codes are `USD`, `USDT`, `USDC`, `BTC`, `ETH`, `VUSDC`, `VBTC` and `VETH`; the v-prefixed assets remain distinct. Unsupported spot assets are refused before node construction. Linear perpetual base symbols do not themselves represent collateral balances.
+
 ## First live acceptance
 
 Record the approved account, symbols, strategy parameters, maximum order/total notional, loss threshold and stop procedure. Use these exact limits for a bounded first run, and verify venue orders, signed fills, fees, balances and positions through ARX. Include cancellation, disconnect and process restart. A health probe or a successful config build does not replace these checks.

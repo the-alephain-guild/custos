@@ -123,3 +123,23 @@ def test_strategy_and_host_subscribe_to_the_same_native_instrument(connector, pa
     document = {"connector": connector, "pairs": [pair], "leverage": 1}
     host_ids = _venue_module_for(connector).build_instrument_id_strings(document)
     assert tuple(host_ids) == (instrument_id_str(pair, connector),)
+
+
+@pytest.mark.parametrize(
+    "connector,pair", [("binance", "SOL-USDT"), ("okx", "SOL-USDT"), ("sodex", "vSOL_vUSDC")]
+)
+def test_spot_admission_refuses_assets_the_signed_ledger_cannot_represent(connector, pair):
+    from types import SimpleNamespace
+
+    from custos.engines.nautilus.host import _deployment_identity
+
+    document = spec(connector, "testnet")
+    document["pairs"] = [pair]
+    document.setdefault("nautilus_config", {}).setdefault("venue", {})["settlement_currency"] = (
+        "VUSDC"
+    )
+    authority = SimpleNamespace(
+        deployment_instance_id="instance", deployment_spec_id="spec", trading_mode="testnet"
+    )
+    with pytest.raises(ValueError, match="spot base asset is not supported by the signed ledger"):
+        _deployment_identity(document, authority)

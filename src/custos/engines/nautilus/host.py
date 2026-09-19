@@ -84,11 +84,9 @@ _STOP_TIMEOUT_SECS = 30.0
 # query capability on a base install, and kept in sync with the venue-config modules'
 # wired connectors by a drift-guard test (test_nt_venue_wiring.py).
 #
-# The split by mode is the point: listing a venue here is a claim that this runner can
-# take it all the way to that mode, and "can run live" is not one flag but everything
-# venue_binance.py spells out — a minimum approver count, owner evidence, three exec
-# configs, credential handling. SoDEX has the sandbox and testnet halves and not the
-# live one, so it appears in two sets and not the third.
+# Capability declarations mirror the native venue modules. Runtime approval,
+# signed deployment promotion, credentials and risk policy are checked separately
+# before any live node is constructed.
 _SANDBOX_VENUES = frozenset(
     {"binance", "binance_perpetual", "sodex", "sodex_perpetual", "okx", "okx_perpetual"}
 )
@@ -157,6 +155,12 @@ def _sodex_settlement_currency(spec: dict) -> str:
 def _deployment_identity(spec: dict, authority: EngineLifecycleAuthority) -> _DeploymentIdentity:
     connector = str(spec["connector"])
     pairs = tuple(str(pair) for pair in (spec.get("pairs") or []))
+    if connector in {"binance", "okx", "sodex"}:
+        for pair in pairs:
+            normalized = pair.replace("/", "-").replace("_", "-")
+            parts = normalized.split("-")
+            if len(parts) == 2 and parts[0].upper() not in SUPPORTED_CURRENCIES:
+                raise ValueError("spot base asset is not supported by the signed ledger")
     return _DeploymentIdentity(
         instance_id=str(authority.deployment_instance_id),
         spec_id=str(authority.deployment_spec_id),
