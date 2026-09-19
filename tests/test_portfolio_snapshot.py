@@ -85,21 +85,24 @@ class _Portfolio:
         self._missing = missing
         self._clears_when_asked = clears_when_asked
         self.venues: list[object] = []
-        self.pnl_requests: list[object] = []
+        # How many valuations had run at each read of the record.
+        self.missing_reads: list[int] = []
 
     def equity(self, venue):
+        """The valuation, and the thing that updates the missing-price record.
+
+        Mirrors the engine: entries go in for positions it cannot price and come
+        out once it can, which is why the record means nothing until this has run.
+        """
         self.venues.append(venue)
+        if self._clears_when_asked:
+            self._missing = ()
         return self._equities
 
     def missing_price_instruments(self, venue):
+        """What the last valuation found. It does not perform one."""
+        self.missing_reads.append(len(self.venues))
         return self._missing
-
-    def unrealized_pnl(self, instrument_id):
-        """Lazy like the real one: the valuation happens when it is asked for."""
-        self.pnl_requests.append(instrument_id)
-        if self._clears_when_asked:
-            self._missing = ()
-        return _DecimalValue("-3.7")
 
 
 def _register(host, instance: str, *, cache=None, portfolio=None, strategies=()) -> None:
@@ -220,14 +223,13 @@ def test_missing_mark_or_equity_returns_typed_unreliable_snapshot() -> None:
     assert missing_equity.unreliable_reason == "portfolio_equity_missing:USDT"
 
 
-def test_a_pending_valuation_is_asked_for_before_it_is_judged_missing() -> None:
-    """The portfolio does not retry a failed valuation; being asked is the retry.
+def test_the_valuation_runs_before_its_verdict_is_read() -> None:
+    """`missing_price_instruments` reports the last valuation; `equity` performs one.
 
-    Reconciliation hands over an open position at startup, a fraction of a second
-    before the first mark price lands. That first valuation fails and the
-    instrument stays pending — measured against the real engine as still missing
-    two minutes and 347 mark prices later. Asking for the PnL clears it, so the
-    snapshot asks before it reads the verdict.
+    Reading the record first answers with the previous round's finding — and the
+    first round happens at startup, when reconciliation has handed over an open
+    position and no price has arrived yet. Against the real engine that finding
+    survived two minutes and 347 mark prices.
     """
     portfolio = _Portfolio(missing=("BTCUSDT-PERP.BINANCE",), clears_when_asked=True)
 
@@ -236,12 +238,16 @@ def test_a_pending_valuation_is_asked_for_before_it_is_judged_missing() -> None:
         currency="USDT",
     )
 
-    assert portfolio.pnl_requests, "the pending valuation was never requested"
+    assert portfolio.missing_reads, "the record was never read"
+    assert portfolio.missing_reads[0] >= 1, (
+        "the record was read before any valuation ran, so it answered with the "
+        "finding from the round before this one"
+    )
     assert snapshot.reliable is True, snapshot.unreliable_reason
 
 
-def test_a_valuation_that_stays_missing_after_being_asked_still_fails_closed() -> None:
-    """Asking is not assuming: an instrument with no price anywhere stays refused."""
+def test_a_position_still_unpriced_after_valuation_fails_closed() -> None:
+    """Running the valuation is not assuming it succeeded."""
     portfolio = _Portfolio(missing=("BTCUSDT-PERP.BINANCE",), clears_when_asked=False)
 
     snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
@@ -249,7 +255,7 @@ def test_a_valuation_that_stays_missing_after_being_asked_still_fails_closed() -
         currency="USDT",
     )
 
-    assert portfolio.pnl_requests
+    assert portfolio.missing_reads[0] >= 1
     assert snapshot.reliable is False
     assert snapshot.unreliable_reason == "portfolio_prices_missing:BTCUSDT-PERP.BINANCE"
 

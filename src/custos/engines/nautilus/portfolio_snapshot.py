@@ -131,23 +131,20 @@ class NautilusPortfolioSnapshotProvider:
             if venue is None:
                 return NautilusPortfolioSnapshot.unreliable("venue_unavailable")
 
-            # Ask before asking whether it can answer. The portfolio marks an
-            # instrument pending when a valuation fails and does not retry on its
-            # own, so a position that existed before the first price arrived stays
-            # pending for the life of the node — reconciliation hands the position
-            # over at startup, and the first mark price lands a fraction of a second
-            # later. Measured here: unpriced at 05:21:01.680, priced at 05:21:02.132,
-            # and still reported missing two minutes and 347 mark prices later.
+            # Equity first, then the verdict on whether it could be computed.
             #
-            # Requesting the PnL is what clears it: the computation is lazy, not
-            # broken. The value is discarded because the caller below reads prices
-            # from the cache; this call exists for its effect on the portfolio's own
-            # view, which is what the check on the next line reads.
-            for position in positions:
-                try:
-                    portfolio.unrealized_pnl(position.instrument_id)
-                except Exception:  # noqa: BLE001 — a refusal here is the check's answer
-                    pass
+            # `missing_price_instruments` reports what the last valuation found; it
+            # does not perform one. `equity` is the valuation, and it updates that
+            # record as it goes — entries go in for positions it cannot price and
+            # come out once it can. Reading the record before running the valuation
+            # therefore answers with the previous round's finding.
+            #
+            # That is not a subtle staleness. Reconciliation hands an open position
+            # to the portfolio at startup, before any price has arrived, and that
+            # first failed valuation is the finding every later read returns:
+            # measured here as unpriced at 05:21:01.680, priced at 05:21:02.132, and
+            # still reported missing two minutes and 347 mark prices later.
+            equity_by_currency = portfolio.equity(venue)
 
             missing_prices = portfolio.missing_price_instruments(venue)
             if missing_prices:
@@ -158,7 +155,6 @@ class NautilusPortfolioSnapshotProvider:
                 named = ",".join(sorted(str(instrument) for instrument in missing_prices))
                 return NautilusPortfolioSnapshot.unreliable(f"portfolio_prices_missing:{named}")
 
-            equity_by_currency = portfolio.equity(venue)
             resolved_currency, equity = self._resolve_equity(equity_by_currency, currency)
             if resolved_currency is None or equity is None:
                 reason = (
