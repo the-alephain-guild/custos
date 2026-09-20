@@ -297,3 +297,4 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 | [2026-09/09 — regressions from fix 06](fixes/2026-09/09-regressions-from-fix-06.md) | ✅ Completed (2026-09-20) | EE-2/EE-5：fix 06 自身引入的两处回归；分配拒绝不再撤掉旧仓止损，止盈基数随分批入场追加 |
 | [2026-09/10 — contract units and protection registration](fixes/2026-09/10-contract-units-and-protection-registration.md) | ✅ Completed (2026-09-20) | RS-1/RS-2：反向 sizing 按合约乘数换算（0.01 乘数下曾放大百倍），本地拒绝的保护单不再虚增覆盖 |
 | [2026-09/11 — close cleanup respects what survives](fixes/2026-09/11-close-cleanup-respects-what-survives.md) | ✅ Completed (2026-09-20) | RS-7：平仓清理不再抹掉反向新仓的保护，也不再丢掉仍会成交的入场单归属 |
+| [2026-09/12 — supertrend continuity](fixes/2026-09/12-supertrend-continuity.md) | ✅ Completed (2026-09-20) | RS-9：SuperTrend 改为递推，不再对滑动窗口重算；横盘不再凭空翻向，快照升 v2 携带递推状态 |
