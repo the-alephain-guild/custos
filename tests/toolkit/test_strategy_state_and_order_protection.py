@@ -853,3 +853,137 @@ class TestScaledExitsAgreeAcrossAllThreePaths:
             Decimal("0.330"),
             Decimal("0.340"),
         ]
+
+
+class TestARefusedEntryLeavesOldProtectionAlone:
+    """EE-2: a refusal must not cost the position its stop.
+
+    Introduced by the ST-5 fix: the reversal branch cancels every open order for
+    the instrument before the capital reservation is asked for, so a refusal that
+    correctly sends no entry still leaves the old position bare.
+    """
+
+    @staticmethod
+    def _long_with_a_stop(capital: str = "100") -> tuple[Harness, object]:
+        """An open long of 1 at 100, its only stop at 95, and `capital` total.
+
+        Reversing costs 100 (new short) + 100 (closing the long) = 200, so the
+        default capital of 100 -- already held by the open long -- cannot cover it.
+        """
+        from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
+        from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
+
+        h = Harness(mode=SLTPMode.HYBRID)
+        stop = h.order(
+            OrderType.STOP_MARKET,
+            quantity=h.instrument.make_qty(Decimal("1")),
+            order_side=OrderSide.SELL,
+            reduce_only=True,
+            trigger_price=Price.from_str("95.00"),
+        )
+        h.ctx.order_tracker.add_exchange_sl_order(stop.client_order_id, Decimal("1"))
+        allocator = CapitalAllocator(
+            AllocationConfig(tiers={"BTC-USDT": 1.0}), Decimal(capital), h.cache
+        )
+        allocator.register_pair(h.ctx.pair, h.instrument.id)
+        allocator.allocate(h.ctx.pair, Decimal("100"))  # the open long already holds it
+        h._capital_allocator = allocator
+        h.ctx.allocated_capital = Decimal("100")
+        return h, stop
+
+    def _reverse(self, h: Harness) -> None:
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        SignalExecutionCoordinator(h).execute_entry_for_pair(
+            h.ctx,
+            Signal.enter_short(price=100.0),
+            size=Decimal("100"),
+            bar=NS(close=Decimal("100")),
+        )
+
+    def test_a_refused_reversal_sends_no_entry(self):
+        h, _ = self._long_with_a_stop()
+
+        self._reverse(h)
+
+        assert h.sent == [], "precondition: the reservation is refused"
+
+    def test_a_refused_reversal_keeps_the_stop(self):
+        h, stop = self._long_with_a_stop()
+
+        self._reverse(h)
+
+        assert stop.client_order_id not in h.cancelled, (
+            "the old long is still open; cancelling its only stop leaves it bare"
+        )
+        assert h.ctx.order_tracker.exchange_sl_order_ids == [stop.client_order_id]
+        assert h.ctx.order_tracker.protected_quantity(exchange_managed=True) == Decimal("1")
+
+    def test_a_refused_reversal_leaves_no_reversal_flag_behind(self):
+        h, _ = self._long_with_a_stop()
+
+        self._reverse(h)
+
+        assert not h.ctx.pending_entry_is_reversal, (
+            "a reversal that never happened must not arm the reversal handling"
+        )
+
+    def test_an_affordable_reversal_still_clears_the_way(self):
+        """The cancel must still happen when the entry actually proceeds."""
+        h, stop = self._long_with_a_stop(capital="1000")  # 900 spare covers the 200
+
+        self._reverse(h)
+
+        assert len(h.sent) == 1
+        assert stop.client_order_id in h.cancelled
+
+
+class TestAnEntryRefusedLocallyIsRolledBack:
+    """EE-2, adjacent exit: the gate can refuse before anything reaches the venue.
+
+    The exit path already reads that refusal (`dispatched is False`); the entry
+    path did not, so a locally refused entry left its capital reserved and an
+    entry recorded for an order that was never sent.
+    """
+
+    @staticmethod
+    def _refusing_harness() -> Harness:
+        from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
+        from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
+
+        h = Harness()
+        h.flat()
+        allocator = CapitalAllocator(
+            AllocationConfig(tiers={"BTC-USDT": 1.0}), Decimal("1000"), h.cache
+        )
+        allocator.register_pair(h.ctx.pair, h.instrument.id)
+        h._capital_allocator = allocator
+        h.submit_order = lambda order: False  # the local gate refuses it
+        return h
+
+    def _enter(self, h: Harness) -> None:
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        SignalExecutionCoordinator(h).execute_entry_for_pair(
+            h.ctx,
+            Signal.enter_long(price=100.0),
+            size=Decimal("400"),
+            bar=NS(close=Decimal("100")),
+        )
+
+    def test_a_locally_refused_entry_returns_its_capital(self):
+        h = self._refusing_harness()
+
+        self._enter(h)
+
+        assert h._capital_allocator.available_cash == Decimal("1000")
+        assert h.ctx.allocated_capital == Decimal("0")
+
+    def test_a_locally_refused_entry_records_no_position(self):
+        h = self._refusing_harness()
+
+        self._enter(h)
+
+        assert h.ctx.position_tracker.entry_count == 0
+        assert h.ctx.position_tracker.pending_signal is None
+        assert h.ctx.order_tracker.entry_order_id is None

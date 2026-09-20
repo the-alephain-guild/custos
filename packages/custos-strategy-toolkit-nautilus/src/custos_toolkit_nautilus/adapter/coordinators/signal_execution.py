@@ -122,9 +122,13 @@ class SignalExecutionCoordinator:
         # Signal Override: amount > calculated size
         final_size = signal.amount if signal.amount is not None else size
 
-        # Reversal sizing: add current position size for close+open in netting accounts
-        # Default False; only the reversal branch below sets it True.
+        # Reversal sizing: add current position size for close+open in netting accounts.
+        # This part only reads the position. Clearing the way for a reversal cancels
+        # the old position's protection, and that must not happen until every check
+        # that can still refuse this entry has passed -- a refusal afterwards would
+        # leave the old position open with no stop and no replacement on the way.
         ctx.pending_entry_is_reversal = False
+        is_reversal = False
         reversal_close_quantity = Decimal("0")
         positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
         if positions:
@@ -136,7 +140,7 @@ class SignalExecutionCoordinator:
                 signal.direction == SignalDirection.ENTER_SHORT and position.is_long
             )
             if is_reversal_to_long or is_reversal_to_short:
-                ctx.pending_entry_is_reversal = True
+                is_reversal = True
                 # Convert current position quantity (base currency, e.g., BTC) to notional value
                 # (quote currency, e.g., USDT) to ensure we're adding USDT + USDT, not USDT + BTC
                 current_qty = Decimal(str(position.quantity))
@@ -148,18 +152,6 @@ class SignalExecutionCoordinator:
                     f"[{ctx.pair}] Reversal sizing: base={size:.3f} USDT, "
                     f"close_qty={current_qty} ({current_value_usdt:.3f} USDT), "
                     f"total={final_size:.3f} USDT"
-                )
-                # Cancel ALL open orders for this instrument before reversal.
-                # Using cancel_all_orders instead of tracker-based cancellation to also cover
-                # untracked orders (e.g., TP orders not recovered after strategy restart).
-                # NOTE: this is an async fire-and-forget command — a venue failure leaves
-                # orphans behind; OrderReconciler.sweep_stale_orders_for_pair() reconciles
-                # them per bar.
-                s.cancel_all_orders(ctx.instrument_id)
-                ctx.order_tracker.clear()
-                s.log.info(
-                    f"[{ctx.pair}] Requested cancel of all open orders before reversal",
-                    color=LogColor.YELLOW,
                 )
 
         # A computed size <= 0 (e.g. fixed_risk with no valid stop-loss, or check_limits
@@ -212,6 +204,23 @@ class SignalExecutionCoordinator:
             )
             return
 
+        # Past every refusal. Only now is it safe to take down the old position's
+        # protection, because this entry is going out.
+        if is_reversal:
+            ctx.pending_entry_is_reversal = True
+            # Cancel ALL open orders for this instrument before reversal.
+            # Using cancel_all_orders instead of tracker-based cancellation to also cover
+            # untracked orders (e.g., TP orders not recovered after strategy restart).
+            # NOTE: this is an async fire-and-forget command — a venue failure leaves
+            # orphans behind; OrderReconciler.sweep_stale_orders_for_pair() reconciles
+            # them per bar.
+            s.cancel_all_orders(ctx.instrument_id)
+            ctx.order_tracker.clear()
+            s.log.info(
+                f"[{ctx.pair}] Requested cancel of all open orders before reversal",
+                color=LogColor.YELLOW,
+            )
+
         # Use context's position_tracker
         ctx.position_tracker.record_entry(Decimal(str(bar.close)), final_size)
 
@@ -223,7 +232,25 @@ class SignalExecutionCoordinator:
         entry_atr = Decimal(str(atr.value)) if atr and atr.initialized else None
         ctx.position_tracker.set_pending_signal(signal, entry_atr)
 
-        s.submit_order(order)
+        dispatched = cast(bool | None, s.submit_order(order))
+        if dispatched is False:
+            # The local gate refused it: nothing reached the venue, so nothing was
+            # entered and nothing was spent. The exit path already reads this
+            # refusal; leaving the entry path to record a position for an order
+            # that does not exist would strand the reservation until restart.
+            if s._capital_allocator:
+                s._capital_allocator.release(ctx.pair, final_size)
+            ctx.allocated_capital = max(ctx.allocated_capital - final_size, Decimal("0"))
+            ctx.position_tracker.clear_pending_signal()
+            if not s.cache.positions_open(instrument_id=ctx.instrument_id):
+                ctx.position_tracker.reset()
+            ctx.pending_entry_is_reversal = False
+            s.log.warning(
+                f"[{ctx.pair}] ENTRY was refused locally before dispatch; "
+                f"returned the {final_size:.4f} it had reserved",
+                color=LogColor.YELLOW,
+            )
+            return
 
         # Persist order→signal mapping (MARKET orders lose tags after fill in cache)
         if _sig_id:
