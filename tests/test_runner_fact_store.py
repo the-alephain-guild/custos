@@ -25,6 +25,7 @@ from custos.core.runner_fact import (
     RunnerFactIdentity,
     RunnerFactOutbox,
     RunnerStateAuthorityError,
+    RunnerStateDurabilityError,
     RunnerStateMigrationError,
 )
 
@@ -536,6 +537,46 @@ async def test_same_generation_different_exact_bytes_is_terminal_and_quarantined
         assert desired_status == "quarantined"
         assert connection.execute("SELECT count(*) FROM command_outcomes").fetchone()[0] == 1
         assert connection.execute("SELECT count(*) FROM runner_fact_outbox").fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_terminal_outcome_cannot_overwrite_same_command_applied_success(
+    tmp_path: Path,
+) -> None:
+    import time
+
+    database = tmp_path / "runner-state.sqlite3"
+    _, store = _runner_fact_store(database)
+    _, _, verified = _verified_command()
+    await store.record_desired_command(
+        command=verified.command,
+        command_fingerprint=verified.command_fingerprint,
+        verification_receipt=verified.verification_receipt,
+    )
+    await store.record_in_progress_lease(
+        delivery_id="delivery-applied",
+        verified=verified,
+        lease_until_ns=time.time_ns() + 60_000_000_000,
+    )
+    await store.commit_applied_and_enqueue_lifecycle(
+        delivery_id="delivery-applied",
+        verified=verified,
+        engine_handle="running-node",
+        observed_status="ready",
+    )
+
+    with pytest.raises(RunnerStateDurabilityError, match="already applied"):
+        await store.commit_verified_terminal_outcome(
+            delivery_id="delivery-late-failure",
+            verified=verified,
+            outcome="retry_exhausted",
+            reason_code="late_transport_failure",
+        )
+
+    state = await store.load_engine_lifecycle_state(verified)
+    assert state.observed_status == "ready"
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT count(*) FROM command_outcomes").fetchone()[0] == 1
 
 
 class _RunnerFactDelivery:

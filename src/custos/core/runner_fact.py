@@ -3165,6 +3165,28 @@ class RunnerStateStore:
         connection = self._outbox._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            if outcome == "retry_exhausted":
+                applied = connection.execute(
+                    """
+                    SELECT 1 FROM command_outcomes
+                    WHERE tenant_id = ? AND trading_mode = ? AND runner_id = ?
+                      AND deployment_instance_id = ? AND generation = ?
+                      AND command_fingerprint = ? AND outcome = 'applied'
+                    LIMIT 1
+                    """,
+                    (
+                        command.tenant_id,
+                        command.trading_mode,
+                        str(command.runner_id),
+                        str(command.deployment_instance_id),
+                        command.generation,
+                        verified.command_fingerprint,
+                    ),
+                ).fetchone()
+                if applied is not None:
+                    raise RunnerStateDurabilityError(
+                        "retry-exhausted outcome cannot overwrite an already applied command"
+                    )
             existing = connection.execute(
                 "SELECT * FROM command_outcomes WHERE outcome_id = ?",
                 (outcome_id,),

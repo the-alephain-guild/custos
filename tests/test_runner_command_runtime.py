@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from types import SimpleNamespace
 from uuid import UUID
@@ -203,6 +204,35 @@ async def test_applied_command_is_acked_only_after_lifecycle_commit() -> None:
     assert events == ["apply"]
     assert delivery.events == ["ack"]
     assert result.activation_id == "activation-1"
+
+
+@pytest.mark.asyncio
+async def test_failed_ack_heartbeat_cannot_override_a_successful_apply() -> None:
+    heartbeat_failed = asyncio.Event()
+
+    class Delivery(_Delivery):
+        async def in_progress(self) -> None:
+            self.events.append("in_progress_failed")
+            heartbeat_failed.set()
+            raise ConnectionError("fixture lease transport unavailable")
+
+    class Lifecycle(_Lifecycle):
+        async def apply(self, **kwargs):
+            await asyncio.wait_for(heartbeat_failed.wait(), timeout=1)
+            return await super().apply(**kwargs)
+
+    events: list[str] = []
+    delivery = Delivery(delivered_count=5)
+
+    result = await _coordinator(
+        events,
+        _Resolver(),
+        lifecycle=Lifecycle(events),
+    ).process(delivery)
+
+    assert result.status is RunnerCommandRuntimeStatus.APPLIED_ACKED
+    assert events == ["apply"]
+    assert delivery.events == ["in_progress_failed", "ack"]
 
 
 @pytest.mark.asyncio

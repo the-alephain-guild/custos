@@ -301,7 +301,34 @@ class RunnerCommandRuntimeCoordinator:
             return await operation
         finally:
             stop.set()
-            await heartbeat_task
+            if not heartbeat_task.done():
+                heartbeat_task.cancel()
+            done, pending = await asyncio.wait(
+                {heartbeat_task},
+                timeout=self._policy.in_progress_interval_seconds,
+            )
+            if heartbeat_task in done:
+                try:
+                    heartbeat_task.result()
+                except asyncio.CancelledError:
+                    pass
+                except Exception as error:  # noqa: BLE001 - auxiliary lease failure is observed
+                    logger.warning(
+                        "runner command heartbeat ended after the main operation: %s",
+                        type(error).__name__,
+                    )
+            elif pending:
+                logger.warning("runner command heartbeat did not stop within its interval")
+                heartbeat_task.add_done_callback(self._consume_heartbeat_result)
+
+    @staticmethod
+    def _consume_heartbeat_result(task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        try:
+            task.exception()
+        except asyncio.CancelledError:
+            return
 
     async def _terminal_rejection(
         self,
