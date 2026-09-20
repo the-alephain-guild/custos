@@ -33,10 +33,9 @@ class CapitalAllocator:
     ) -> None:
         self._config = config
         # A configured share belongs to its pair and is never redistributed. Pairs
-        # without one share what is left, recomputed over the whole set each time one
-        # registers -- otherwise the answer depends on registration order.
+        # without one share what is left, divided over the whole set rather than in
+        # registration order.
         self._explicit_tiers: dict[str, float] = dict(config.tiers) if config.tiers else {}
-        self._tiers: dict[str, float] = dict(self._explicit_tiers)
         self._implicit_pairs: list[str] = []
         self._initial_capital: Decimal = initial_capital
         self._max_total_exposure: float = config.max_total_exposure
@@ -59,27 +58,14 @@ class CapitalAllocator:
         self._allocated[pair] = Decimal(0)
 
         # No configured tier: this pair shares the unclaimed remainder with the other
-        # unconfigured pairs, which means re-dividing across all of them, including
-        # those already registered.
-        if pair not in self._explicit_tiers:
-            if pair not in self._implicit_pairs:
-                self._implicit_pairs.append(pair)
-            self._redivide_implicit_tiers()
+        # unconfigured pairs. The share is not stored -- get_tier_limit divides it in
+        # Decimal at the point of use, so there is no float copy to drift from it.
+        if pair not in self._explicit_tiers and pair not in self._implicit_pairs:
+            self._implicit_pairs.append(pair)
 
-    def _redivide_implicit_tiers(self) -> None:
-        """Split whatever the explicit tiers left over evenly across the rest.
-
-        These float ratios exist so the pair is present in ``_tiers`` for weight
-        reporting, which reads the keys. The authoritative limit is computed in
-        Decimal by ``get_tier_limit``; do not read a limit back from these values.
-        """
-        if not self._implicit_pairs:
-            return
-        claimed = sum(self._explicit_tiers.values())
-        remainder = max(1.0 - claimed, 0.0)
-        share = remainder / len(self._implicit_pairs)
-        for pair in self._implicit_pairs:
-            self._tiers[pair] = share
+    def _shared_pairs(self) -> list[str]:
+        """Every pair holding a share, configured first then the implicit ones."""
+        return list(self._explicit_tiers) + self._implicit_pairs
 
     # Capital Allocation
 
@@ -216,10 +202,10 @@ class CapitalAllocator:
         portfolio_value = self.get_portfolio_value(current_prices)
 
         if portfolio_value == 0:
-            return dict.fromkeys(self._tiers.keys(), 0.0)
+            return dict.fromkeys(self._shared_pairs(), 0.0)
 
         weights = {}
-        for pair in self._tiers.keys():
+        for pair in self._shared_pairs():
             price = current_prices.get(pair, Decimal(0))
             pair_value = self.get_pair_total_value(pair, price)
             weights[pair] = float(pair_value / portfolio_value)
