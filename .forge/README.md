@@ -292,3 +292,4 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 | [2026-09/04 — recovery and post-execution consistency](fixes/2026-09/04-recovery-and-post-execution-consistency-fixes.md) | ✅ Completed (2026-09-20) | 五项 P1；post-trade latch、plain close、ACK、terminal recovery、跨 generation 对账闭合 |
 | [2026-09/05 — recovery supervision review fixes](fixes/2026-09/05-recovery-supervision-review-fixes.md) | ✅ Completed (2026-09-20) | chain review C1/H1/M1/M2；durable authority fence、fail-loud supervision、heartbeat/gap 时序闭合 |
 | [2026-09/06 — strategy state and order protection](fixes/2026-09/06-strategy-state-and-order-protection-fixes.md) | ✅ Completed (2026-09-20) | 八项 finding（4 P1 / 4 P2）；止盈层级依回报推进、撤单归属、ATR 修复、额度拒绝、预留回滚、退出基数、保本止损归属、均分分配 |
+| [2026-09/07 — strategy state fixes follow-up](fixes/2026-09/07-strategy-state-fixes-followup.md) | ✅ Completed (2026-09-20) | fix 06 审计 C1/H1/M1/M2 + 品味 🟡×1；重启后 trailing 保持激活、清死值、补登记共享模块；三项上界移交 backlog |
