@@ -302,3 +302,73 @@ class TestAScaledLevelIsSpentOnlyByAFill:
         h.tick("103")
 
         assert len(h.sent) == 1, "a confirmed level must not fire again"
+
+
+class TestARefusedAllocationBlocksTheOrder:
+    """ST-5: a reservation that was refused is not capital you may spend."""
+
+    @staticmethod
+    def _allocated_harness(tier: float, capital: str = "1000") -> Harness:
+        from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
+        from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
+
+        h = Harness()
+        h.flat()
+        h._capital_allocator = CapitalAllocator(
+            AllocationConfig(tiers={"BTC-USDT": tier}), Decimal(capital), h.cache
+        )
+        h._capital_allocator.register_pair(h.ctx.pair, h.instrument.id)
+        return h
+
+    def _enter(self, h: Harness, size: str) -> None:
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        SignalExecutionCoordinator(h).execute_entry_for_pair(
+            h.ctx,
+            Signal.enter_long(price=100.0),
+            size=Decimal(size),
+            bar=NS(close=Decimal("100")),
+        )
+
+    def test_a_pair_tier_refusal_submits_nothing(self):
+        h = self._allocated_harness(tier=0.1)  # tier limit 100
+        assert h._capital_allocator.get_tier_limit(h.ctx.pair) == Decimal("100")
+
+        self._enter(h, "200")
+
+        assert h.sent == []
+
+    def test_a_pair_tier_refusal_leaves_no_state_behind(self):
+        h = self._allocated_harness(tier=0.1)
+
+        self._enter(h, "200")
+
+        assert h.ctx.allocated_capital == Decimal("0")
+        assert h._capital_allocator.available_cash == Decimal("1000")
+        assert h.ctx.position_tracker.entry_count == 0
+        assert h.ctx.order_tracker.entry_order_id is None
+
+    def test_exhausted_total_cash_also_blocks(self):
+        """The second refusal reason must take the same path as the first."""
+        h = self._allocated_harness(tier=1.0)
+        self._enter(h, "900")
+        assert len(h.sent) == 1, "precondition: the first entry fits"
+        # Settle the first entry. Without this the second call is stopped by the
+        # replacement guard instead of the allocator, and this would assert nothing
+        # about capital.
+        h.sent[0].is_open = False
+        h.sent[0].is_closed = True
+
+        self._enter(h, "200")
+
+        assert len(h.sent) == 1
+        assert h._capital_allocator.available_cash == Decimal("100")
+
+    def test_an_accepted_allocation_still_enters(self):
+        h = self._allocated_harness(tier=1.0)
+
+        self._enter(h, "400")
+
+        assert len(h.sent) == 1
+        assert h.ctx.allocated_capital == Decimal("400")
+        assert h._capital_allocator.available_cash == Decimal("600")

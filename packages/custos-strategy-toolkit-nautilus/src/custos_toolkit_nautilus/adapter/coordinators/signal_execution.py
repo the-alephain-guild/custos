@@ -205,15 +205,24 @@ class SignalExecutionCoordinator:
         if order is None:
             return
 
+        # Reserve the capital before recording anything. allocate() returning False is
+        # a refusal -- the pair tier or the total cash cannot cover this size -- and
+        # submitting anyway spends capital the allocator has not granted, while leaving
+        # the context claiming a reservation the allocator never made.
+        if s._capital_allocator and not s._capital_allocator.allocate(ctx.pair, final_size):
+            s.log.warning(
+                f"[{ctx.pair}] Capital allocation refused for size={final_size:.4f} "
+                f"(available={s._capital_allocator.get_available_capital(ctx.pair):.4f}); "
+                "skipping entry",
+                color=LogColor.YELLOW,
+            )
+            return
+
         # Use context's position_tracker
         ctx.position_tracker.record_entry(Decimal(str(bar.close)), final_size)
 
         # Track allocated capital for correct release on position close
         ctx.allocated_capital += final_size
-
-        # Allocate from capital allocator if available
-        if s._capital_allocator:
-            s._capital_allocator.allocate(ctx.pair, final_size)
 
         # Store entry ATR
         atr = cast(_Indicator | None, ctx.indicators.get("atr"))
