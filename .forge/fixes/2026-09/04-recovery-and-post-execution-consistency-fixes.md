@@ -110,7 +110,7 @@ RD-4 同时修改 Custos producer tests 与 Crucible consumer projector。Crucib
 | Task | Priority | Status | Completed | Commit | Notes |
 |---|---:|---|---|---|---|
 | 1 | P1 | ✅ | 2026-09-20 | pending close-out | executed fills + durable latch |
-| 2 | P1 | 🔲 | — | — | verified plain close + dispatch outcome |
+| 2 | P1 | ✅ | 2026-09-20 | pending close-out | verified plain close + dispatch outcome |
 | 3 | P1 | 🔲 | — | — | heartbeat/apply result precedence |
 | 4 | P1 | 🔲 | — | — | terminal supervision |
 | 5 | P1 | 🔲 | — | — | cross-generation reconciliation |

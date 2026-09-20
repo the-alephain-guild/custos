@@ -147,7 +147,27 @@ class NautilusCachedOrderSemantics:
         return _decimal(event.last_qty, field="fill quantity")
 
     def order_is_risk_reducing(self, order: Any) -> bool:
-        return bool(order.is_reduce_only)
+        if bool(order.is_reduce_only):
+            return True
+        if bool(order.is_quote_quantity):
+            return False
+        positions = tuple(self._cache.positions_open(instrument_id=order.instrument_id))
+        if len(positions) != 1:
+            return False
+        position = positions[0]
+        if bool(position.is_closed):
+            return False
+        if str(position.strategy_id) != str(order.strategy_id):
+            return False
+        side = _order_side(order)
+        closes_position = (side == "buy" and bool(position.is_short)) or (
+            side == "sell" and bool(position.is_long)
+        )
+        if not closes_position:
+            return False
+        quantity = _decimal(order.quantity, field="plain close quantity")
+        position_quantity = _decimal(position.quantity, field="open position quantity")
+        return quantity > 0 and quantity <= position_quantity
 
     def event_is_risk_reducing(self, event: Any) -> bool:
         order = self._cache.order(event.client_order_id)
@@ -295,19 +315,26 @@ class RunnerSafetyOrderGate:
         self._on_refusal = on_refusal
         self._client_order_id_validator = client_order_id_validator
 
-    def submit_order(self, submit: Callable[..., None], order: Any, *args: Any, **kwargs: Any):
+    def submit_order(
+        self,
+        submit: Callable[..., None],
+        order: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> bool:
         refusal = self._pre_trade_refusal(order)
         if refusal is not None:
             self._refuse((order,), refusal)
-            return None
+            return False
         intent = _SubmitIntent(order)
         try:
             reservations = self._boundary.before_submit_order(intent)
         except Exception as exc:  # noqa: BLE001 - every refusal reason is reported below
             self._refuse((order,), self._reservation_refusal_reason(exc), exc=exc)
-            return None
+            return False
         try:
-            return submit(order, *args, **kwargs)
+            submit(order, *args, **kwargs)
+            return True
         except Exception:
             self._boundary.rollback_submit(reservations, command_id=runner_command_id(intent))
             raise
@@ -318,7 +345,7 @@ class RunnerSafetyOrderGate:
         order_list: Any,
         *args: Any,
         **kwargs: Any,
-    ):
+    ) -> bool:
         orders = tuple(order_list.orders)
         # One unusable leg fails the list: the venue would refuse that leg and leave
         # the rest as an unintended partial structure.
@@ -326,15 +353,16 @@ class RunnerSafetyOrderGate:
             refusal = self._pre_trade_refusal(order)
             if refusal is not None:
                 self._refuse(orders, refusal)
-                return None
+                return False
         intent = _SubmitListIntent(order_list)
         try:
             reservations = self._boundary.before_submit_order_list(intent)
         except Exception as exc:  # noqa: BLE001 - every refusal reason is reported below
             self._refuse(orders, self._reservation_refusal_reason(exc), exc=exc)
-            return None
+            return False
         try:
-            return submit(order_list, *args, **kwargs)
+            submit(order_list, *args, **kwargs)
+            return True
         except Exception:
             self._boundary.rollback_submit(reservations, command_id=runner_command_id(intent))
             raise

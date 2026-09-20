@@ -20,9 +20,9 @@ from custos_toolkit.signals.types import SignalDirection
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import Bar
 
-from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
 from custos_toolkit_nautilus.adapter.execution import ExecutionManager
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
+from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
 from custos_toolkit_nautilus.adapter.strategy_core import CloseAttempt, plan_close_attempt
 
 if TYPE_CHECKING:
@@ -277,20 +277,26 @@ class SignalExecutionCoordinator:
             size=Decimal(str(position.quantity)),
             reduce_only=use_reduce_only,
         )
-        if not use_reduce_only:
-            ctx.order_tracker.mark_plain_close_submitted()
-            s.log.warning(
-                f"[{ctx.pair}] Closing without reduce_only: the venue refused the "
-                f"reduce-only form for this position; size={position.quantity} taken from "
-                f"the open position. This is the one plain attempt",
-            )
         if order:
             _sig_id = cast(
                 str | None, signal.metadata.get("_signal_id") if signal.metadata else None
             )
+            dispatched = cast(bool | None, s.submit_order(order))
+            if dispatched is False:
+                s.log.warning(
+                    f"[{ctx.pair}] EXIT was refused locally before dispatch; "
+                    "the close attempt remains available",
+                )
+                return
             if _sig_id:
                 s._order_signal_map[str(order.client_order_id)] = _sig_id
-            s.submit_order(order)
+            if not use_reduce_only:
+                ctx.order_tracker.mark_plain_close_submitted()
+                s.log.warning(
+                    f"[{ctx.pair}] Closing without reduce_only: the venue refused the "
+                    f"reduce-only form for this position; size={position.quantity} taken from "
+                    f"the open position. This is the one plain attempt",
+                )
             ctx.order_tracker.mark_closing(now_ns, _CLOSE_INFLIGHT_TIMEOUT_NS)
             s.log.info(
                 f"[{ctx.pair}] EXIT: {signal.direction.name}",

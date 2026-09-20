@@ -228,7 +228,10 @@ class RunnerReservationBoundary:
 
         if event_name == "OrderFilled":
             semantics = self._require_semantics()
-            risk_reducing = semantics.event_is_risk_reducing(event)
+            risk_reducing = (
+                client_order_id in self._risk_reducing_order_ids
+                or semantics.event_is_risk_reducing(event)
+            )
             source_order_id = (
                 semantics.event_exposure_source_order_id(event) if risk_reducing else None
             )

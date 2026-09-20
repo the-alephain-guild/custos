@@ -200,6 +200,24 @@ def test_the_plain_close_is_attempted_once_not_once_per_bar() -> None:
     )
 
 
+def test_a_locally_refused_plain_close_does_not_spend_the_only_attempt() -> None:
+    strat = _make_strategy(now_ns=1_000)
+    calls: list = []
+    ctx = _make_ctx(calls)
+    coord = SignalExecutionCoordinator(strat)
+    ctx.order_tracker.record_reduce_only_refusal()
+    strat.submit_order = lambda _order: False
+
+    coord.execute_exit_for_pair(ctx, _exit_signal(), bar=object())
+
+    assert ctx.order_tracker.plain_close_submitted is False
+    assert ctx.order_tracker.can_submit_close(strat.now_ns) is True
+
+    strat.now_ns += 6 * _ONE_SEC_NS
+    coord.execute_exit_for_pair(ctx, _exit_signal(), bar=object())
+    assert [call["reduce_only"] for call in calls] == [False, False]
+
+
 def test_a_refusal_without_evidence_keeps_using_reduce_only() -> None:
     """The counter that only says 'something was refused' must not drop the protection."""
     strat = _make_strategy(now_ns=1_000)

@@ -249,6 +249,77 @@ def test_market_order_uses_the_subscribed_mark_when_mid_price_is_unavailable() -
     assert semantics.order_notional(order) == Decimal("445.945500")
 
 
+def test_plain_opposite_order_matching_one_open_position_is_risk_reducing() -> None:
+    position = SimpleNamespace(
+        is_closed=False,
+        is_long=False,
+        is_short=True,
+        quantity=Decimal("1"),
+        strategy_id="STRATEGY-001",
+    )
+
+    class Cache:
+        @staticmethod
+        def positions_open(*, instrument_id):
+            assert instrument_id == "BTCUSDT-PERP.BINANCE"
+            return [position]
+
+    semantics = NautilusCachedOrderSemantics(Cache())
+    close = SimpleNamespace(
+        is_reduce_only=False,
+        is_quote_quantity=False,
+        instrument_id="BTCUSDT-PERP.BINANCE",
+        strategy_id="STRATEGY-001",
+        side="OrderSide.BUY",
+        quantity=Decimal("1"),
+    )
+
+    assert semantics.order_is_risk_reducing(close) is True
+    close.quantity = Decimal("1.001")
+    assert semantics.order_is_risk_reducing(close) is False
+    close.quantity = Decimal("1")
+    close.side = "OrderSide.SELL"
+    assert semantics.order_is_risk_reducing(close) is False
+
+
+def test_verified_plain_close_skips_new_risk_reservation_and_reports_dispatch() -> None:
+    log: list[tuple] = []
+    store = _Store(log)
+    store.reject_reservation = True
+    position = SimpleNamespace(
+        is_closed=False,
+        is_long=False,
+        is_short=True,
+        quantity=Decimal("1"),
+        strategy_id="STRATEGY-001",
+    )
+    cache = SimpleNamespace(positions_open=lambda **_kwargs: [position])
+    boundary = RunnerReservationBoundary(
+        store=store,
+        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        policy_id=POLICY_ID,
+        fallback_breaker=_breaker(),
+        semantics=NautilusCachedOrderSemantics(cache),
+    )
+    gate = _gate(boundary)
+    order = SimpleNamespace(
+        client_order_id="plain-close",
+        strategy_id="STRATEGY-001",
+        instrument_id="BTCUSDT-PERP.BINANCE",
+        side="OrderSide.BUY",
+        quantity=Decimal("1"),
+        is_quote_quantity=False,
+        is_reduce_only=False,
+        emulation_trigger=None,
+        exec_algorithm_id=None,
+    )
+
+    dispatched = gate.submit_order(_Downstream(log).submit_order, order)
+
+    assert dispatched is True
+    assert [entry[0] for entry in log] == ["submit"]
+
+
 def _boundary(
     store: _Store,
     *,
@@ -284,8 +355,9 @@ def test_a_capped_order_is_not_submitted_and_the_refusal_is_reported() -> None:
     refusals: list[OrderRefusal] = []
     gate = _gate(_boundary(store), refusals)
 
-    gate.submit_order(_Downstream(log).submit_order, _order("order-denied"))
+    dispatched = gate.submit_order(_Downstream(log).submit_order, _order("order-denied"))
 
+    assert dispatched is False
     assert [entry[0] for entry in log] == ["reserve"], "the order reached the venue"
     assert refusals == [
         OrderRefusal(
