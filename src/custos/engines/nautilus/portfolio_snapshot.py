@@ -155,7 +155,9 @@ class NautilusPortfolioSnapshotProvider:
                 named = ",".join(sorted(str(instrument) for instrument in missing_prices))
                 return NautilusPortfolioSnapshot.unreliable(f"portfolio_prices_missing:{named}")
 
-            resolved_currency, equity = self._resolve_equity(equity_by_currency, currency)
+            resolved_currency, equity = self._equity_in_currency(
+                cache, venue, equity_by_currency, currency
+            )
             if resolved_currency is None or equity is None:
                 reason = (
                     f"portfolio_equity_missing:{currency}"
@@ -233,6 +235,57 @@ class NautilusPortfolioSnapshotProvider:
             return None
         first = min(instrument_ids, key=str)
         return getattr(first, "venue", None)
+
+    def _equity_in_currency(self, cache, venue, values, requested_currency):
+        if requested_currency is None or not hasattr(values, "items") or not values:
+            return self._resolve_equity(values, requested_currency)
+        target = requested_currency.upper()
+        if any(str(key).upper() != target and _decimal(value) for key, value in values.items()):
+            account = cache.account_for_venue(venue)
+            if account is None:
+                raise ValueError("account type unavailable for multi-currency equity")
+            if str(account.account_type) == "MARGIN":
+                return self._resolve_equity(values, requested_currency)
+            if str(account.account_type) != "CASH":
+                raise ValueError("unsupported account type")
+        total = Decimal("0")
+        for raw_currency, raw_amount in values.items():
+            amount = _decimal(raw_amount)
+            if not amount.is_finite():
+                raise ValueError("nonfinite portfolio equity")
+            source = str(raw_currency).upper()
+            if source == target:
+                total += amount
+                continue
+            if not amount:
+                continue
+            rates = []
+            for instrument_id in cache.instrument_ids():
+                if str(instrument_id.venue) != str(venue):
+                    continue
+                instrument = cache.instrument(instrument_id)
+                if instrument is None or str(instrument.instrument_class) != "SPOT":
+                    continue
+                base, quote = (
+                    str(instrument.base_currency).upper(),
+                    str(instrument.quote_currency).upper(),
+                )
+                if (base, quote) not in {(source, target), (target, source)}:
+                    continue
+                mark = cache.mark_price(instrument_id)
+                mark = getattr(mark, "value", mark)
+                if mark is None and self._price_type_mid is not None:
+                    mark = cache.price(instrument_id, self._price_type_mid)
+                if mark is None:
+                    continue
+                rate = _decimal(mark)
+                if not rate.is_finite() or rate <= 0:
+                    raise ValueError("invalid asset conversion price")
+                rates.append(rate if base == source else Decimal("1") / rate)
+            if len(rates) != 1:
+                raise ValueError(f"asset conversion unavailable or ambiguous: {source}/{target}")
+            total += amount * rates[0]
+        return target, total
 
     @staticmethod
     def _resolve_equity(

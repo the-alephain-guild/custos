@@ -69,6 +69,9 @@ class _Cache:
     def price(self, instrument_id, price_type):
         return None
 
+    def account_for_venue(self, venue):
+        return SimpleNamespace(account_type="MARGIN")
+
     def orders_open(self):
         return []
 
@@ -595,3 +598,118 @@ def test_a_deployment_spanning_settlement_currencies_is_refused_by_name() -> Non
 
     with pytest.raises(SettlementCurrencyError):
         settlement_currency_for_pairs([])
+
+
+def _cash_runtime(balances, *, mark="9000", positions=True):
+    runtime = _Runtime(
+        mark_price=_DecimalValue(mark) if mark is not None else None,
+        portfolio=_Portfolio(equities=balances),
+    )
+    runtime.cache.account_for_venue = lambda venue: SimpleNamespace(account_type="CASH")
+    runtime.cache.instrument = lambda iid: SimpleNamespace(
+        base_currency="BTC", quote_currency="USDT", instrument_class="SPOT"
+    )
+    if not positions:
+        runtime.cache.positions_open = lambda: []
+    return runtime
+
+
+def test_cash_nav_counts_all_balances_once_without_adding_position_notional():
+    runtime = _cash_runtime({"USDT": "1000", "BTC": "1"})
+    snapshot = NautilusPortfolioSnapshotProvider().snapshot(runtime, "USDT")
+    assert snapshot.reliable, snapshot.unreliable_reason
+    assert snapshot.equity == Decimal("10000")
+    breaker = FallbackBreaker(
+        FallbackBreakerConfig(max_notional=Decimal("100000"), max_drawdown_pct=Decimal("10"))
+    )
+    breaker.evaluate(current_equity=Decimal("10000"), open_notional=Decimal("0"))
+    assert not breaker.evaluate(
+        current_equity=snapshot.equity, open_notional=snapshot.open_notional
+    ).tripped
+
+
+def test_cash_nav_values_inventory_even_without_strategy_positions():
+    snapshot = NautilusPortfolioSnapshotProvider().snapshot(
+        _cash_runtime({"BTC": "1"}, positions=False), "USDT"
+    )
+    assert snapshot.reliable, snapshot.unreliable_reason
+    assert snapshot.equity == Decimal("9000")
+
+
+def test_cash_nav_refuses_unpriced_nonzero_balance():
+    snapshot = NautilusPortfolioSnapshotProvider().snapshot(
+        _cash_runtime({"USDT": "1000", "BTC": "1"}, mark=None, positions=False), "USDT"
+    )
+    assert not snapshot.reliable
+
+
+def test_cash_nav_ignores_zero_unpriced_balances():
+    snapshot = NautilusPortfolioSnapshotProvider().snapshot(
+        _cash_runtime({"USDT": "1000", "BTC": "0"}, mark=None, positions=False), "USDT"
+    )
+    assert snapshot.reliable, snapshot.unreliable_reason
+    assert snapshot.equity == Decimal("1000")
+
+
+def test_native_cash_portfolio_balances_are_converted_to_nav():
+    import pytest
+
+    pytest.importorskip("nautilus_trader")
+    from nautilus_trader.backtest import BacktestEngine, BacktestEngineConfig
+    from nautilus_trader.model import (
+        AccountType,
+        Currency,
+        CurrencyPair,
+        InstrumentId,
+        Money,
+        OmsType,
+        Price,
+        PriceType,
+        QuoteTick,
+        Quantity,
+        Symbol,
+        Venue,
+    )
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = CurrencyPair(
+        InstrumentId.from_str("BTC-USDT.OKX"),
+        Symbol("BTC-USDT"),
+        Currency.from_str("BTC"),
+        Currency.from_str("USDT"),
+        2,
+        6,
+        Price.from_str("0.01"),
+        Quantity.from_str("0.000001"),
+        0,
+        0,
+    )
+    try:
+        engine.add_venue(
+            Venue("OKX"),
+            OmsType.NETTING,
+            AccountType.CASH,
+            [Money.from_str("1000 USDT"), Money.from_str("1 BTC")],
+        )
+        engine.add_instrument(instrument)
+        engine.add_data(
+            [
+                QuoteTick(
+                    instrument.id,
+                    Price.from_str("9000.00"),
+                    Price.from_str("9000.00"),
+                    Quantity.from_str("1.000000"),
+                    Quantity.from_str("1.000000"),
+                    1,
+                    1,
+                )
+            ]
+        )
+        engine.run()
+        snapshot = NautilusPortfolioSnapshotProvider(price_type_mid=PriceType.MID).snapshot(
+            engine, "USDT"
+        )
+        assert snapshot.reliable, snapshot.unreliable_reason
+        assert snapshot.equity == Decimal("10000")
+    finally:
+        engine.dispose()
