@@ -16,7 +16,7 @@ import re
 import shutil
 import sqlite3
 import time
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
@@ -2100,19 +2100,36 @@ class RunnerFactOutbox:
         finally:
             connection.close()
 
-    async def pending(self, limit: int = 64) -> list[PendingRunnerFactBatch]:
-        return await asyncio.to_thread(self._pending, limit)
+    async def pending(
+        self,
+        limit: int = 64,
+        exclude_streams: Collection[str] | None = None,
+    ) -> list[PendingRunnerFactBatch]:
+        """Batches waiting to go out, oldest first within each stream.
 
-    def _pending(self, limit: int) -> list[PendingRunnerFactBatch]:
+        ``exclude_streams`` leaves out streams the caller has already found
+        blocked this round. Without it a single stream with more than one page of
+        backlog fills the window every time and no other stream is ever reached.
+        Excluding whole streams, never individual rows, keeps each stream's order
+        intact.
+        """
+        return await asyncio.to_thread(self._pending, limit, tuple(exclude_streams or ()))
+
+    def _pending(
+        self, limit: int, exclude_streams: tuple[str, ...] = ()
+    ) -> list[PendingRunnerFactBatch]:
+        placeholders = ",".join("?" for _ in exclude_streams)
+        condition = f"WHERE stream_key NOT IN ({placeholders})" if exclude_streams else ""
         with self._connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT batch_id, stream_key, subject, payload, attempts
                 FROM runner_fact_outbox
+                {condition}
                 ORDER BY stream_key, source_seq_start
                 LIMIT ?
                 """,
-                (limit,),
+                (*exclude_streams, limit),
             ).fetchall()
         return [
             PendingRunnerFactBatch(
@@ -2125,19 +2142,31 @@ class RunnerFactOutbox:
             for row in rows
         ]
 
-    async def pending_strategy_signals(self, limit: int = 64) -> list[PendingStrategySignal]:
-        return await asyncio.to_thread(self._pending_strategy_signals, limit)
+    async def pending_strategy_signals(
+        self,
+        limit: int = 64,
+        exclude_streams: Collection[str] | None = None,
+    ) -> list[PendingStrategySignal]:
+        """Signals waiting to go out. ``exclude_streams`` as in :meth:`pending`."""
+        return await asyncio.to_thread(
+            self._pending_strategy_signals, limit, tuple(exclude_streams or ())
+        )
 
-    def _pending_strategy_signals(self, limit: int) -> list[PendingStrategySignal]:
+    def _pending_strategy_signals(
+        self, limit: int, exclude_streams: tuple[str, ...] = ()
+    ) -> list[PendingStrategySignal]:
+        placeholders = ",".join("?" for _ in exclude_streams)
+        condition = f"WHERE stream_key NOT IN ({placeholders})" if exclude_streams else ""
         with self._connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT fact_id, stream_key, subject, payload, attempts
                 FROM strategy_signal_outbox
+                {condition}
                 ORDER BY stream_key, source_sequence
                 LIMIT ?
                 """,
-                (limit,),
+                (*exclude_streams, limit),
             ).fetchall()
         return [
             PendingStrategySignal(
@@ -5862,104 +5891,148 @@ class RunnerFactJetStreamPublisher:
         )
 
     async def drain_once(self) -> int:
+        """Send every stream that the broker will take, once each per blocked peer.
+
+        A stream that fails is set aside for the rest of the round and the next page
+        is read without it, so a backlog larger than one page cannot hold the window
+        against healthy streams. Order inside a stream is untouched: streams are set
+        aside whole, never individual batches. The round ends because each page
+        either retires a batch or adds a stream to the set aside, and both are finite.
+        """
         self._authority_guard()
         delivered = 0
         blocked_streams: set[str] = set()
-        for batch in await self._outbox.pending():
-            if batch.stream_key in blocked_streams:
-                continue
-            try:
-                document = json.loads(batch.payload)
-                trading_mode = document.get("trading_mode") if isinstance(document, dict) else None
-                if trading_mode not in {"sandbox", "testnet", "live"}:
-                    raise RunnerFactError("RunnerFact batch has no valid signed trading_mode")
-                profile = self._connection_profiles.get(trading_mode)
-                if profile is None:
-                    raise RunnerFactError(
-                        f"RunnerFact mode {trading_mode!r} has no authenticated transport session"
+        while True:
+            batches = await self._outbox.pending(exclude_streams=blocked_streams)
+            if not batches:
+                break
+            progressed = False
+            for batch in batches:
+                if batch.stream_key in blocked_streams:
+                    continue
+                try:
+                    document = json.loads(batch.payload)
+                    trading_mode = (
+                        document.get("trading_mode") if isinstance(document, dict) else None
                     )
-                profile.assert_publish_subject(batch.subject)
-                jetstream = await self.connect(trading_mode)
-                ack = await jetstream.publish(
-                    batch.subject,
-                    batch.payload,
-                    headers={"Nats-Msg-Id": str(batch.batch_id)},
-                    timeout=self._publish_timeout,
+                    if trading_mode not in {"sandbox", "testnet", "live"}:
+                        raise RunnerFactError("RunnerFact batch has no valid signed trading_mode")
+                    profile = self._connection_profiles.get(trading_mode)
+                    if profile is None:
+                        raise RunnerFactError(
+                            f"RunnerFact mode {trading_mode!r} has no authenticated transport session"
+                        )
+                    profile.assert_publish_subject(batch.subject)
+                    jetstream = await self.connect(trading_mode)
+                    ack = await jetstream.publish(
+                        batch.subject,
+                        batch.payload,
+                        headers={"Nats-Msg-Id": str(batch.batch_id)},
+                        timeout=self._publish_timeout,
+                    )
+                    broker_stream = getattr(ack, "stream", None)
+                    broker_sequence = getattr(ack, "seq", None)
+                    broker_domain = getattr(ack, "domain", None)
+                    duplicate_value = getattr(ack, "duplicate", None)
+                    if not isinstance(broker_stream, str) or not broker_stream:
+                        raise RunnerFactError(
+                            "JetStream publish returned no stream acknowledgement"
+                        )
+                    if type(broker_sequence) is not int or broker_sequence < 1:
+                        raise RunnerFactError(
+                            "JetStream publish returned no sequence acknowledgement"
+                        )
+                    if broker_domain is not None and not isinstance(broker_domain, str):
+                        raise RunnerFactError("JetStream publish returned an invalid domain")
+                    if duplicate_value is not None and not isinstance(duplicate_value, bool):
+                        raise RunnerFactError(
+                            "JetStream publish returned an invalid duplicate flag"
+                        )
+                    broker_domain = broker_domain or None
+                    duplicate = bool(duplicate_value)
+                except Exception as exc:
+                    await self._outbox.record_failure(batch.batch_id, exc)
+                    blocked_streams.add(batch.stream_key)
+                    progressed = True
+                    continue
+                await self._outbox.commit_puback(
+                    batch.batch_id,
+                    broker_stream=broker_stream,
+                    broker_sequence=broker_sequence,
+                    broker_domain=broker_domain,
+                    duplicate=duplicate,
                 )
-                broker_stream = getattr(ack, "stream", None)
-                broker_sequence = getattr(ack, "seq", None)
-                broker_domain = getattr(ack, "domain", None)
-                duplicate_value = getattr(ack, "duplicate", None)
-                if not isinstance(broker_stream, str) or not broker_stream:
-                    raise RunnerFactError("JetStream publish returned no stream acknowledgement")
-                if type(broker_sequence) is not int or broker_sequence < 1:
-                    raise RunnerFactError("JetStream publish returned no sequence acknowledgement")
-                if broker_domain is not None and not isinstance(broker_domain, str):
-                    raise RunnerFactError("JetStream publish returned an invalid domain")
-                if duplicate_value is not None and not isinstance(duplicate_value, bool):
-                    raise RunnerFactError("JetStream publish returned an invalid duplicate flag")
-                broker_domain = broker_domain or None
-                duplicate = bool(duplicate_value)
-            except Exception as exc:
-                await self._outbox.record_failure(batch.batch_id, exc)
-                blocked_streams.add(batch.stream_key)
-                continue
-            await self._outbox.commit_puback(
-                batch.batch_id,
-                broker_stream=broker_stream,
-                broker_sequence=broker_sequence,
-                broker_domain=broker_domain,
-                duplicate=duplicate,
-            )
-            delivered += 1
+                delivered += 1
+                progressed = True
+            if not progressed:
+                break
         blocked_signal_streams: set[str] = set()
-        for signal in await self._outbox.pending_strategy_signals():
-            if signal.stream_key in blocked_signal_streams:
-                continue
-            try:
-                document = json.loads(signal.payload)
-                trading_mode = document.get("trading_mode") if isinstance(document, dict) else None
-                if trading_mode not in {"sandbox", "testnet", "live"}:
-                    raise RunnerFactError("StrategySignal has no valid signed trading_mode")
-                profile = self._connection_profiles.get(trading_mode)
-                if profile is None:
-                    raise RunnerFactError(
-                        f"StrategySignal mode {trading_mode!r} has no authenticated transport session"
-                    )
-                profile.assert_publish_subject(signal.subject)
-                jetstream = await self.connect(trading_mode)
-                ack = await jetstream.publish(
-                    signal.subject,
-                    signal.payload,
-                    headers={"Nats-Msg-Id": str(signal.fact_id)},
-                    timeout=self._publish_timeout,
-                )
-                broker_stream = getattr(ack, "stream", None)
-                broker_sequence = getattr(ack, "seq", None)
-                broker_domain = getattr(ack, "domain", None)
-                duplicate_value = getattr(ack, "duplicate", None)
-                if not isinstance(broker_stream, str) or not broker_stream:
-                    raise RunnerFactError("JetStream publish returned no stream acknowledgement")
-                if type(broker_sequence) is not int or broker_sequence < 1:
-                    raise RunnerFactError("JetStream publish returned no sequence acknowledgement")
-                if broker_domain is not None and not isinstance(broker_domain, str):
-                    raise RunnerFactError("JetStream publish returned an invalid domain")
-                if duplicate_value is not None and not isinstance(duplicate_value, bool):
-                    raise RunnerFactError("JetStream publish returned an invalid duplicate flag")
-                broker_domain = broker_domain or None
-                duplicate = bool(duplicate_value)
-            except Exception as exc:
-                await self._outbox.record_strategy_signal_failure(signal.fact_id, exc)
-                blocked_signal_streams.add(signal.stream_key)
-                continue
-            await self._outbox.commit_strategy_signal_puback(
-                signal.fact_id,
-                broker_stream=broker_stream,
-                broker_sequence=broker_sequence,
-                broker_domain=broker_domain,
-                duplicate=duplicate,
+        while True:
+            signals = await self._outbox.pending_strategy_signals(
+                exclude_streams=blocked_signal_streams
             )
-            delivered += 1
+            if not signals:
+                break
+            signal_progressed = False
+            for signal in signals:
+                if signal.stream_key in blocked_signal_streams:
+                    continue
+                try:
+                    document = json.loads(signal.payload)
+                    trading_mode = (
+                        document.get("trading_mode") if isinstance(document, dict) else None
+                    )
+                    if trading_mode not in {"sandbox", "testnet", "live"}:
+                        raise RunnerFactError("StrategySignal has no valid signed trading_mode")
+                    profile = self._connection_profiles.get(trading_mode)
+                    if profile is None:
+                        raise RunnerFactError(
+                            f"StrategySignal mode {trading_mode!r} has no authenticated transport session"
+                        )
+                    profile.assert_publish_subject(signal.subject)
+                    jetstream = await self.connect(trading_mode)
+                    ack = await jetstream.publish(
+                        signal.subject,
+                        signal.payload,
+                        headers={"Nats-Msg-Id": str(signal.fact_id)},
+                        timeout=self._publish_timeout,
+                    )
+                    broker_stream = getattr(ack, "stream", None)
+                    broker_sequence = getattr(ack, "seq", None)
+                    broker_domain = getattr(ack, "domain", None)
+                    duplicate_value = getattr(ack, "duplicate", None)
+                    if not isinstance(broker_stream, str) or not broker_stream:
+                        raise RunnerFactError(
+                            "JetStream publish returned no stream acknowledgement"
+                        )
+                    if type(broker_sequence) is not int or broker_sequence < 1:
+                        raise RunnerFactError(
+                            "JetStream publish returned no sequence acknowledgement"
+                        )
+                    if broker_domain is not None and not isinstance(broker_domain, str):
+                        raise RunnerFactError("JetStream publish returned an invalid domain")
+                    if duplicate_value is not None and not isinstance(duplicate_value, bool):
+                        raise RunnerFactError(
+                            "JetStream publish returned an invalid duplicate flag"
+                        )
+                    broker_domain = broker_domain or None
+                    duplicate = bool(duplicate_value)
+                except Exception as exc:
+                    await self._outbox.record_strategy_signal_failure(signal.fact_id, exc)
+                    blocked_signal_streams.add(signal.stream_key)
+                    signal_progressed = True
+                    continue
+                await self._outbox.commit_strategy_signal_puback(
+                    signal.fact_id,
+                    broker_stream=broker_stream,
+                    broker_sequence=broker_sequence,
+                    broker_domain=broker_domain,
+                    duplicate=duplicate,
+                )
+                delivered += 1
+                signal_progressed = True
+            if not signal_progressed:
+                break
         return delivered
 
     async def run(self, stop: asyncio.Event, idle_seconds: float = 0.5) -> None:
