@@ -51,7 +51,9 @@ class TradeEventHandler:
         # triggered it. This is settled before the entry-ownership gate below, which
         # returns early for any fill that is not the tracked entry.
         if ctx.tick_monitor is not None:
-            ctx.tick_monitor.confirm_level_order(event.client_order_id)
+            ctx.tick_monitor.confirm_level_order(
+                event.client_order_id, Decimal(str(event.last_qty))
+            )
 
         # Binance's user stream is account-wide. When two nodes share an account,
         # a sibling order fill can arrive while this strategy still has its own entry

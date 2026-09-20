@@ -67,7 +67,12 @@ class CapitalAllocator:
             self._redivide_implicit_tiers()
 
     def _redivide_implicit_tiers(self) -> None:
-        """Split whatever the explicit tiers left over evenly across the rest."""
+        """Split whatever the explicit tiers left over evenly across the rest.
+
+        These float ratios exist so the pair is present in ``_tiers`` for weight
+        reporting, which reads the keys. The authoritative limit is computed in
+        Decimal by ``get_tier_limit``; do not read a limit back from these values.
+        """
         if not self._implicit_pairs:
             return
         claimed = sum(self._explicit_tiers.values())

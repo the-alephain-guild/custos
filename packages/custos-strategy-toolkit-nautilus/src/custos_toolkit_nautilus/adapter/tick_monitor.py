@@ -322,6 +322,8 @@ class TickMonitorManager:
         self._initial_quantity: Decimal | None = None
         # zero-based level index -> quantity actually dispatched for it.
         self._level_dispatched: dict[int, Decimal] = {}
+        # zero-based level index -> quantity a venue has confirmed filled for it.
+        self._level_filled: dict[int, Decimal] = {}
 
         # Trailing stop manager (only created for trailing method)
         self._trailing_manager: TrailingStopManager | None = None
@@ -456,21 +458,34 @@ class TickMonitorManager:
         if 0 <= index < len(self._tp_level_states):
             self._level_orders[str(order_id)] = index
 
-    def confirm_level_order(self, order_id: object) -> bool:
-        """A fill took the quantity: the level is spent. Returns True if one matched."""
-        index = self._level_orders.pop(str(order_id), None)
+    def confirm_level_order(self, order_id: object, filled_quantity: Decimal | float) -> bool:
+        """Credit a fill to the level its order carries. Returns True if one matched.
+
+        An IOC lot can come back part filled, and the part that did not fill was not
+        sold: the level closes only once nothing is outstanding on it.
+        """
+        key = str(order_id)
+        index = self._level_orders.get(key)
         if index is None:
             return False
-        self._tp_level_states[index] = TakeProfitLevelState.COMPLETED
+        self._level_filled[index] = self._level_filled.get(index, Decimal("0")) + self._to_decimal(
+            filled_quantity
+        )
+        if self._level_outstanding(index) <= 0:
+            self._tp_level_states[index] = TakeProfitLevelState.COMPLETED
+            self._level_orders.pop(key, None)
         return True
 
     def release_level_order(self, order_id: object) -> bool:
-        """The order will never fill: return its level to the market."""
+        """The order is done at the venue: settle its level by what it still owes."""
         index = self._level_orders.pop(str(order_id), None)
         if index is None:
             return False
         if self._tp_level_states[index] is TakeProfitLevelState.PENDING:
-            self._tp_level_states[index] = TakeProfitLevelState.ARMED
+            if self._level_outstanding(index) > 0:
+                self._tp_level_states[index] = TakeProfitLevelState.ARMED
+            else:
+                self._tp_level_states[index] = TakeProfitLevelState.COMPLETED
             self._level_dispatched.pop(index, None)
         return True
 
@@ -492,28 +507,43 @@ class TickMonitorManager:
         return level == len(self._tp_levels)
 
     def planned_exit_quantity(self, level: int, remaining: Decimal) -> Decimal:
-        """The quantity this 1-based level should take.
+        """The quantity this 1-based level should take now.
 
         Levels are shares of the base recorded at init_position, so the total taken
-        does not depend on how much earlier levels already sold. The final level is
-        whatever is left of the planned total, which absorbs the rounding the earlier
-        levels lost. With no base recorded the old remaining-based share is used.
+        does not depend on how much earlier levels already sold, and a retry after a
+        part fill asks only for the part still owed.
         """
         index = level - 1
         if not 0 <= index < len(self._tp_levels):
             return Decimal("0")
-        exit_pct = self._tp_levels[index].get("exit_pct", Decimal("0"))
+        if self._initial_quantity is None or self._initial_quantity <= 0:
+            outstanding = self._level_outstanding(index)
+            if outstanding > 0:
+                return outstanding
+            return remaining * self._tp_levels[index].get("exit_pct", Decimal("0"))
+        return self._level_outstanding(index)
+
+    def _level_outstanding(self, index: int) -> Decimal:
+        """How much of this level's target has still not been sold.
+
+        The final level is owed whatever is left of the planned total, so rounding
+        the earlier levels lost is recovered there rather than stranded.
+        """
+        filled = self._level_filled.get(index, Decimal("0"))
         base = self._initial_quantity
         if base is None or base <= 0:
-            return remaining * exit_pct
-        if not self.is_final_level(level):
-            return base * exit_pct
-        planned_total = base * sum(
-            (level_config.get("exit_pct", Decimal("0")) for level_config in self._tp_levels),
-            Decimal("0"),
-        )
-        dispatched = sum(self._level_dispatched.values(), Decimal("0"))
-        return max(planned_total - dispatched, Decimal("0"))
+            # No base: the only target on record is what was actually dispatched.
+            return max(self._level_dispatched.get(index, Decimal("0")) - filled, Decimal("0"))
+        if index == len(self._tp_levels) - 1:
+            planned_total = base * sum(
+                (level_config.get("exit_pct", Decimal("0")) for level_config in self._tp_levels),
+                Decimal("0"),
+            )
+            return max(
+                planned_total - sum(self._level_filled.values(), Decimal("0")), Decimal("0")
+            )
+        exit_pct = self._tp_levels[index].get("exit_pct", Decimal("0"))
+        return max(base * exit_pct - filled, Decimal("0"))
 
     def record_dispatch(self, level: int, quantity: Decimal) -> None:
         """Record the quantity actually sent for a 1-based level."""
@@ -525,6 +555,7 @@ class TickMonitorManager:
         self._tp_level_states = [TakeProfitLevelState.ARMED] * len(self._tp_levels)
         self._level_orders = {}
         self._level_dispatched = {}
+        self._level_filled = {}
 
     def _check_fixed_tp(self, current_price: Decimal, pnl_pct: Decimal) -> ExitAction | None:
         """Check fixed take profit trigger."""

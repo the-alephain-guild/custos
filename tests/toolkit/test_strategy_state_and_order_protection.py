@@ -611,3 +611,60 @@ class TestEqualAllocationIgnoresRegistrationOrder:
         assert allocator.get_tier_limit("BTC-USDT") == Decimal("50")
         assert allocator.get_tier_limit("ETH-USDT") == Decimal("25")
         assert allocator.get_tier_limit("SOL-USDT") == Decimal("25")
+
+
+class TestAPartiallyFilledLevelKeepsItsRemainder:
+    """ST-2, partial-fill arm: an IOC lot that only half filled took only half.
+
+    The remainder of that level's target was never sold, so the level is not done.
+    """
+
+    @staticmethod
+    def _dispatched() -> tuple[Harness, object]:
+        monitor = scaled_monitor(2)
+        monitor.init_position(Decimal("100"), True, quantity=Decimal("1"))
+        h = Harness(monitor=monitor)
+        h.tick("103")  # level 1 targets 0.5
+        return h, h.sent[-1]
+
+    def test_a_partial_fill_then_cancel_leaves_the_level_available(self):
+        h, partial = self._dispatched()
+        h.position.quantity = Decimal("0.7")
+        TradeEventHandler(h).handle_order_filled(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=partial.client_order_id,
+                order_side=OrderSide.SELL,
+                last_qty=Quantity.from_str("0.300"),
+                last_px=Price.from_str("103.00"),
+            )
+        )
+        TradeEventHandler(h).handle_order_canceled(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=partial.client_order_id,
+                reason="IOC remainder cancelled",
+            )
+        )
+
+        h.tick("103")
+
+        assert len(h.sent) == 2, "0.2 of this level's target is still owed"
+        assert Decimal(str(h.sent[1].quantity)) == Decimal("0.2")
+
+    def test_a_full_fill_closes_the_level(self):
+        h, partial = self._dispatched()
+        h.position.quantity = Decimal("0.5")
+        TradeEventHandler(h).handle_order_filled(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=partial.client_order_id,
+                order_side=OrderSide.SELL,
+                last_qty=Quantity.from_str("0.500"),
+                last_px=Price.from_str("103.00"),
+            )
+        )
+
+        h.tick("103")
+
+        assert len(h.sent) == 1, "the level's whole target was taken"
