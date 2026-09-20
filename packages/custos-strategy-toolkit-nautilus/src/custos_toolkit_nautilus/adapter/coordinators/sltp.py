@@ -179,36 +179,47 @@ class SLTPCoordinator:
         signal: Signal,
         *,
         quantity: Quantity | Decimal | None = None,
-    ) -> None:
-        """Submit stop loss order for a specific pair."""
+        atr: Decimal | None = None,
+    ) -> Order | None:
+        """Submit stop loss order for a specific pair.
+
+        ``atr`` lets a caller that is not the entry path -- protection repair, which
+        owns no entry of its own -- supply the sizing input directly. Passing it
+        through the pending-entry state instead would overwrite an in-flight entry's
+        context. Omitted, the pending entry's ATR is used, which is the entry path's
+        own behaviour. Returns the submitted order, or None when none could be priced.
+        """
         s = self._strategy
         entry_price = ctx.position_tracker.first_entry_price
         if entry_price <= 0:
-            return
+            return None
 
         positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
         position = positions[0] if positions else None
         if position is None:
-            return
+            return None
 
         order = cast(StopLossSubmitter, ctx.sl_submitter).create_order(
             instrument_id=ctx.instrument_id,
             signal=signal,
             entry_price=entry_price,
-            atr=ctx.position_tracker.pending_entry_atr,
+            atr=atr if atr is not None else ctx.position_tracker.pending_entry_atr,
             position=position,
             tags=self._signal_tags(ctx),  # SL order carries signal_id tag
             quantity=quantity,
         )
-        if order:
-            protected_quantity = position.quantity if quantity is None else quantity
-            ctx.order_tracker.add_sl_order(order.client_order_id, protected_quantity)
-            s.submit_order(order)
-            self._link_order_to_signal(order, ctx)
-            s.log.info(
-                f"[{ctx.pair}] STOP_LOSS: submitted (id={order.client_order_id})",
-                color=LogColor.RED,
-            )
+        if order is None:
+            return None
+
+        protected_quantity = position.quantity if quantity is None else quantity
+        ctx.order_tracker.add_sl_order(order.client_order_id, protected_quantity)
+        s.submit_order(order)
+        self._link_order_to_signal(order, ctx)
+        s.log.info(
+            f"[{ctx.pair}] STOP_LOSS: submitted (id={order.client_order_id})",
+            color=LogColor.RED,
+        )
+        return order
 
     def submit_take_profit(
         self,

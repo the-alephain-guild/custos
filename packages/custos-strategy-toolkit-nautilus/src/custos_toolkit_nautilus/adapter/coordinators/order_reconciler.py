@@ -171,10 +171,38 @@ class OrderReconciler:
 
         if s._mode is SLTPMode.HYBRID:
             s._sltp_coordinator.submit_safety_stop_loss(ctx, signal, quantity=missing_quantity)
-        else:  # exchange mode
-            # Set entry price and ATR for SL calculation
-            ctx.position_tracker.set_pending_signal(signal, entry_atr=None)
-            s._sltp_coordinator.submit_stop_loss(ctx, signal, quantity=missing_quantity)
+            return
+
+        # Exchange mode. The repair owns no entry of its own, so it hands the sizing
+        # ATR to the submitter directly. Writing a synthetic signal into the pending
+        # entry state instead would overwrite the context of an entry that is still
+        # filling -- and, with a blank ATR, leave an ATR-based stop unpriceable.
+        placed = s._sltp_coordinator.submit_stop_loss(
+            ctx, signal, quantity=missing_quantity, atr=self._repair_atr(ctx)
+        )
+        if placed is None:
+            s.log.error(
+                f"[{ctx.pair}] Stop-loss repair produced no order; {missing_quantity} of "
+                "the position remains unprotected",
+                color=LogColor.RED,
+            )
+
+    @staticmethod
+    def _repair_atr(ctx: PairContext) -> Decimal | None:
+        """The ATR a repair may size a stop with.
+
+        An entry still in flight already carries the ATR its protection was planned
+        against; prefer it. Otherwise the live reading is the best available input.
+        None means the data genuinely is not there, which the caller reports rather
+        than passing off as a completed repair.
+        """
+        pending_atr = ctx.position_tracker.pending_entry_atr
+        if pending_atr is not None:
+            return pending_atr
+        indicator = ctx.indicators.get("atr")
+        if indicator and indicator.initialized:
+            return Decimal(str(indicator.value))
+        return None
 
     def ensure_exchange_sl_protection(self, ctx: PairContext) -> None:
         """Per-bar repair of missing standard/hybrid stop coverage."""
