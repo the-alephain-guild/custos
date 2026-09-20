@@ -95,3 +95,16 @@
 ## 偏离与改进日志
 
 先执行独立的 Fix 6，再完成涉及跨仓契约的 Fix 5。替换期间串行化风控观察，保留 breaker 高水位。
+
+全量回归发现计数门禁只扫描 plans。新增回归后扩展为同时扫描 fixes，按月份与文件名排序。当前计数写在本文件，历史报告不改。
+
+## 当前测试文件计数
+
+2026-09-20 的 pytest collection。记录当前修复扩展后的数量，旧计划保留历史数字。
+
+| File | Count |
+| --- | --- |
+| `tests/test_offline_reconciler.py` | 41 |
+| `tests/test_strategy_signal_bridge.py` | 12 |
+| `tests/test_portfolio_snapshot.py` | 22 |
+| `tests/test_plan_closeout_counts.py` | 25 |

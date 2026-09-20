@@ -28,6 +28,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 PLANS = ROOT / ".forge/plans"
+FIXES = ROOT / ".forge/fixes"
 
 _ROW = re.compile(r"^\|\s*`(tests/[\w/]+\.py)`\s*\|\s*(\d+)\s*\|", re.MULTILINE)
 # Close-outs are written in Chinese, so a total shows up in one of two phrases:
@@ -45,7 +46,13 @@ _BARE_TOTAL = re.compile(
 
 def _plans_with_test_tables() -> list[Path]:
     return sorted(
-        path for path in PLANS.rglob("*.md") if _ROW.search(path.read_text(encoding="utf-8"))
+        (
+            path
+            for root in (PLANS, FIXES)
+            for path in root.rglob("*.md")
+            if _ROW.search(path.read_text(encoding="utf-8"))
+        ),
+        key=lambda path: (path.parent.name, path.name),
     )
 
 
@@ -214,3 +221,17 @@ def test_the_probe_notices_a_count_that_drifted(tmp_path: Path) -> None:
         collected["tests/test_plan_closeout_counts.py"]
         != claimed["tests/test_plan_closeout_counts.py"]
     )
+
+
+def test_fix_plans_participate_in_current_count_claims(tmp_path, monkeypatch):
+    plans = tmp_path / "plans"
+    fixes = tmp_path / "fixes"
+    original = plans / "2026-09" / "01-feature.md"
+    fix = fixes / "2026-09" / "02-correction.md"
+    original.parent.mkdir(parents=True)
+    fix.parent.mkdir(parents=True)
+    original.write_text("| `tests/example.py` | 1 |\n")
+    fix.write_text("| `tests/example.py` | 2 |\n")
+    monkeypatch.setattr(__import__(__name__, fromlist=["PLANS"]), "PLANS", plans)
+    monkeypatch.setattr(__import__(__name__, fromlist=["FIXES"]), "FIXES", fixes, raising=False)
+    assert _newest_claim()["tests/example.py"] == ("02-correction.md", 2)
