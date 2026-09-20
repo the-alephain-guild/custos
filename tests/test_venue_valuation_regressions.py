@@ -199,3 +199,30 @@ def test_cash_inventory_refuses_unpriced_external_assets():
 
     with pytest.raises(VenueLedgerError, match="independent conversion price"):
         cash_inventory([{"currency": "ETH", "total": "1"}], "USDT", {"BTC": 100})
+
+
+@pytest.mark.parametrize("venue", ["OKX", "SODEX"])
+def test_perpetual_balances_share_the_deployment_settlement_scope(venue):
+    ledger = source(venue, True)
+    original = ledger._get
+
+    def get(path, *args, **kwargs):
+        data = original(path, *args, **kwargs)
+        if venue == "OKX" and path.endswith("/balance"):
+            data[0]["details"].append({"ccy": "BTC", "cashBal": "1", "availBal": "1"})
+        if venue == "SODEX" and path == "balances":
+            data["balances"].append({"coin": "BTC", "total": "1", "locked": "0"})
+        return data
+
+    ledger._get = get
+    if venue == "SODEX":
+        ledger._state = lambda: {
+            "B": [
+                {"a": "vUSDC", "wb": "100", "aw": "90"},
+                {"a": "BTC", "wb": "1", "aw": "1"},
+            ]
+        }
+    evidence = ledger._collect(START, END)
+    currency = "USDT" if venue == "OKX" else "VUSDC"
+    assert {row["currency"] for row in evidence.balances} == {currency}
+    assert evidence.venue_wallet_balances == {currency: "100"}

@@ -211,6 +211,10 @@ class OkxVenueLedgerSource:
         balances = []
         for row in rows(account[0].get("details")):
             currency = str(row.get("ccy", ""))
+            if self._perpetual and currency not in {
+                symbol.split("-")[1] for symbol in self._symbols
+            }:
+                continue
             total = decimal(row.get("cashBal"), "cashBal")
             if currency not in SUPPORTED_CURRENCIES:
                 if total:

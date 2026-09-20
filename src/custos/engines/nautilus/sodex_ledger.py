@@ -173,6 +173,8 @@ class SodexVenueLedgerSource:
         available = {str(row["a"]).upper(): row for row in rows(state.get("B") or [])}
         for row in rows(snapshot.get("balances")):
             currency = str(row["coin"]).upper()
+            if self._perpetual and currency != self._settlement:
+                continue
             total = decimal(row["total"], "total")
             if currency not in SUPPORTED_CURRENCIES:
                 if total:

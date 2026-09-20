@@ -108,3 +108,7 @@
 | `tests/test_strategy_signal_bridge.py` | 12 |
 | `tests/test_portfolio_snapshot.py` | 22 |
 | `tests/test_plan_closeout_counts.py` | 25 |
+
+## 自省
+
+Round 1：发现永续账本包括非部署结算币余额，而内部保证金权益只读取部署结算币。两项新增测试复现。OKX、SoDEX 改为与 Binance 一致的结算币范围；现金库存不受此过滤影响。
