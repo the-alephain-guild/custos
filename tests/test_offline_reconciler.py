@@ -299,15 +299,16 @@ async def test_a_stopped_spec_stops_the_engine_and_says_so() -> None:
     }
 
 
-async def test_a_second_generation_reconfigures_rather_than_redeploying() -> None:
+async def test_a_second_generation_stops_before_redeploying() -> None:
     engine, publisher = _FakeEngine(), _RecordingPublisher()
     reconciler = _reconciler(engine, publisher)
     await reconciler.handle(_message(_spec()))
 
     await reconciler.handle(_message(_spec(generation=2, leverage=5)))
 
-    assert len(engine.deployed) == 1
-    assert len(engine.reconfigured) == 1
+    assert len(engine.deployed) == 2
+    assert len(engine.stopped) == 1
+    assert engine.reconfigured == []
 
 
 async def test_an_older_generation_is_ignored_without_touching_the_engine() -> None:
@@ -465,10 +466,10 @@ async def test_losing_the_status_channel_does_not_stop_a_running_engine() -> Non
     await reconciler.handle(_message(_spec()))
     publisher.error = ConnectionError("status transport down")
 
-    await reconciler.handle(_message(_spec(generation=2, leverage=5)))
+    await reconciler.handle(_message(_spec()))
 
     assert engine.stopped == []
-    assert len(engine.reconfigured) == 1
+    assert engine.reconfigured == []
 
 
 async def test_the_guard_still_refuses_live_at_the_engine_boundary() -> None:
@@ -747,3 +748,32 @@ async def test_the_loop_survives_a_message_it_cannot_read() -> None:
     await asyncio.wait_for(_reconciler(engine, publisher).run(_Subscription(), stop), timeout=1)
 
     assert len(engine.deployed) == 1
+
+
+async def test_replacement_material_failure_preserves_old_node():
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    reconciler = _reconciler(engine, publisher)
+    assert await reconciler.apply(_spec()) is Settlement.APPLIED
+
+    def unavailable(spec):
+        raise ValueError("artifact unavailable")
+
+    reconciler._artifact_for = unavailable
+    assert await reconciler.apply(_spec(generation=2)) is Settlement.RETRYABLE
+    assert engine.stopped == []
+    assert len(engine.deployed) == 1
+
+
+async def test_failed_replacement_retries_deploy_without_repeated_stop():
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    reconciler = _reconciler(engine, publisher)
+    assert await reconciler.apply(_spec()) is Settlement.APPLIED
+    engine.deploy_error = RuntimeError("fixture start failure")
+    assert await reconciler.apply(_spec(generation=2)) is Settlement.RETRYABLE
+    assert reconciler._applied[_spec().spec_id].generation == 1
+    engine.deploy_error = None
+    assert await reconciler.apply(_spec(generation=2)) is Settlement.APPLIED
+    assert len(engine.stopped) == 1
+    assert len(engine.deployed) == 2
+    assert await reconciler.apply(_spec(generation=2)) is Settlement.APPLIED
+    assert len(engine.deployed) == 2

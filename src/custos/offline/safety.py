@@ -165,6 +165,7 @@ class OfflineExposureGuard:
         self._deadline = deadline
         self._readiness_timeout = readiness_timeout
         self._watched: dict[str, _Watched] = {}
+        self._lifecycle_lock = asyncio.Lock()
 
     def allows_new_generations(self) -> bool:
         """False once anything has tripped, whatever else is still within limits."""
@@ -215,9 +216,27 @@ class OfflineExposureGuard:
         if self._watched.pop(spec_id, None) is not None:
             _log.info("offline_exposure_guard_released", spec_id=spec_id)
 
+    @contextlib.asynccontextmanager
+    async def lifecycle_transition(self):
+        """Keep a risk observation from straddling two runtime generations."""
+        async with self._lifecycle_lock:
+            if not self.allows_new_generations():
+                raise RuntimeError("offline breaker tripped before runtime replacement")
+            yield
+
+    def runtime_stopped(self, spec_id: str) -> None:
+        """Reset startup readiness while retaining the breaker and its high-water mark."""
+        watched = self._watched.get(spec_id)
+        if watched is not None:
+            self._watched[spec_id] = replace(watched, startup=_Startup(time.monotonic()))
+
     async def evaluate_once(self) -> list[EngineSafetyTick]:
         """Evaluate every deployment still worth evaluating, and end the latched ones."""
 
+        async with self._lifecycle_lock:
+            return await self._evaluate_watched()
+
+    async def _evaluate_watched(self) -> list[EngineSafetyTick]:
         ticks = []
         for spec_id, watched in tuple(self._watched.items()):
             if not watched.latched:

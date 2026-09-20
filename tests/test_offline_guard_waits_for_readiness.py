@@ -214,3 +214,23 @@ async def test_the_run_loop_does_not_exit_while_waiting_to_become_ready() -> Non
 
     assert engine.status_calls == 0
     assert guard.allows_new_generations()
+
+
+async def test_runtime_replacement_preserves_breaker_and_restarts_readiness():
+    engine = _Engine(ready=True)
+    guard = _guard(engine)
+    guard.watch(_SPEC, _INSTANCE, _limits())
+    await guard.evaluate_once()
+    breaker = guard._watched[_SPEC].supervisor.breaker
+    assert guard._watched[_SPEC].startup.evaluating
+    async with guard.lifecycle_transition():
+        engine.ready = False
+        guard.runtime_stopped(_SPEC)
+        tick = asyncio.create_task(guard.evaluate_once())
+        await asyncio.sleep(0)
+        assert not tick.done()
+    assert await tick == []
+    assert guard._watched[_SPEC].supervisor.breaker is breaker
+    assert breaker._peak_equity == Decimal("1000")
+    engine.ready = True
+    assert len(await guard.evaluate_once()) == 1

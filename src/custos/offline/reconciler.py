@@ -13,6 +13,7 @@ own harness waits on, not a business fact, and it is never promotion evidence.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 from collections.abc import Awaitable, Callable
@@ -285,7 +286,11 @@ class OfflineReconciler:
             return Settlement.REJECTED
 
         try:
-            applied.container_id = await self._engage(spec, applied, identity)
+            transition = (
+                self._guard.lifecycle_transition() if self._guard else contextlib.nullcontext()
+            )
+            async with transition:
+                applied.container_id = await self._engage(spec, applied, identity)
         except Exception as exc:  # noqa: BLE001 - a failed apply is reported, then retried
             _log.error(
                 "offline_reconcile_failed",
@@ -359,18 +364,15 @@ class OfflineReconciler:
         if spec.lifecycle_state in _TERMINAL_STATES:
             await self._engine.stop(deployment_instance_id)
             return ""
-        if not self._engine.attached(deployment_instance_id):
-            # Only an engine already holding this instance can be reconfigured.
-            # Asking the engine rather than reading the recorded container id is
-            # what keeps a restart, and a node that died under us, on the deploy
-            # path instead of a structural reconfigure the host would refuse.
-            return await self._engine.deploy(
-                document,
-                self._credential_for(spec),
-                self._artifact_for(spec),
-            )
-        await self._engine.reconfigure(document)
-        return applied.container_id
+        credential = self._credential_for(spec)
+        artifact = self._artifact_for(spec)
+        if self._engine.attached(deployment_instance_id):
+            await self._engine.stop(deployment_instance_id)
+            if self._engine.attached(deployment_instance_id):
+                raise RuntimeError("previous offline runtime did not stop")
+            if self._guard is not None:
+                self._guard.runtime_stopped(spec.spec_id)
+        return await self._engine.deploy(document, credential, artifact)
 
     async def _report(self, spec: OfflineDeploymentSpec, *, healthy: bool) -> None:
         """Publish observed state, and keep running if the channel is gone.
