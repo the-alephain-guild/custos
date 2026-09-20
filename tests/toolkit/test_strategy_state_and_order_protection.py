@@ -797,3 +797,59 @@ class TestAPersistentlyRefusedCancelKeepsHoldingTheEntry:
         )
 
         assert h.ctx.order_tracker.protected_quantity(exchange_managed=False) == Decimal("1")
+
+
+class TestScaledExitsAgreeAcrossAllThreePaths:
+    """ST-1 acceptance, in full: the same config exits the same total whether the
+    levels are reached one at a time, jumped over in a single tick, or filled in
+    parts.
+
+    The gap-through path is the one that bites. A price that spikes through two
+    levels and falls straight back is exactly what scaled take-profit is for, and
+    a level left behind there is never revisited.
+    """
+
+    @staticmethod
+    def _exits(pcts: tuple[str, ...], prices: tuple[str, ...]) -> list[Decimal]:
+        monitor = scaled_monitor(len(pcts), pcts)
+        monitor.init_position(Decimal("100"), True, quantity=Decimal("1"))
+        h = Harness(monitor=monitor)
+
+        def fill(order):
+            h.sent.append(order)
+            h.position.quantity -= Decimal(str(order.quantity))
+
+        h.submit_order = fill
+        for price in prices:
+            h.tick(price)
+        return [Decimal(str(o.quantity)) for o in h.sent]
+
+    @pytest.mark.parametrize(
+        "pcts,stepped",
+        [
+            ((".5", ".5"), ("103", "105")),
+            ((".33", ".33", ".34"), ("103", "105", "107")),
+        ],
+    )
+    def test_a_single_tick_through_every_level_exits_the_same_total(self, pcts, stepped):
+        step_by_step = self._exits(pcts, stepped)
+        assert sum(step_by_step) == Decimal("1"), "precondition: stepping exits the whole position"
+
+        # One tick at +10% clears every target at once.
+        in_one_gap = self._exits(pcts, ("110",))
+
+        assert sum(in_one_gap) == sum(step_by_step)
+
+    def test_a_gap_that_falls_straight_back_still_took_everything(self):
+        """No second chance: the price never returns above the targets."""
+        exits = self._exits((".5", ".5"), ("110", "101"))
+
+        assert sum(exits) == Decimal("1")
+
+    def test_a_gap_exits_each_level_its_own_share(self):
+        """The totals agreeing must not come from one oversized lot."""
+        assert self._exits((".33", ".33", ".34"), ("110",)) == [
+            Decimal("0.330"),
+            Decimal("0.330"),
+            Decimal("0.340"),
+        ]

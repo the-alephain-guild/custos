@@ -54,15 +54,7 @@ class ExecutionCoordinator:
         if not ctx.tick_monitor or not ctx.tick_monitor.is_active:
             return
 
-        positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
-        if not positions:
-            return
-
-        current_price = Decimal(str(tick.price))
-        action = ctx.tick_monitor.check(current_price)
-
-        if action:
-            self._execute_exit_action_for_pair(ctx, action, positions[0])
+        self._drain_exit_actions(ctx, Decimal(str(tick.price)))
 
     def handle_quote_tick(self, tick: QuoteTick) -> None:
         """Handle quote tick - route to correct pair context."""
@@ -78,15 +70,50 @@ class ExecutionCoordinator:
         if not ctx.tick_monitor or not ctx.tick_monitor.is_active:
             return
 
-        positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
-        if not positions:
-            return
-
         mid_price = (Decimal(str(tick.bid_price)) + Decimal(str(tick.ask_price))) / 2
-        action = ctx.tick_monitor.check(mid_price)
+        self._drain_exit_actions(ctx, mid_price)
 
-        if action:
+    def _drain_exit_actions(self, ctx: PairContext, price: Decimal) -> None:
+        """Execute every exit the monitor has at this price, not just the first.
+
+        One tick can clear several scaled levels at once. A price that spikes
+        through two targets and falls straight back is exactly what a scaled exit
+        is for, and a level left behind there is only revisited if price stays
+        above its target -- which, after that kind of move, it does not.
+
+        Only partial exits loop. A full close ends the position, and the fixed and
+        trailing checks carry no per-level state, so asking them again at the same
+        price would never stop.
+
+        Termination does not rest on the level state advancing. A level whose lot
+        could not be sent is handed back to ARMED on purpose -- that is how a
+        refused dispatch stays retryable -- and it would be offered again on the
+        very next turn of this loop. Each level therefore gets one turn per tick,
+        counted here; the retry belongs to the next tick, not to this one.
+        """
+        s = self._strategy
+        monitor = ctx.tick_monitor
+        if monitor is None:
+            return
+        offered: set[int] = set()
+        while True:
+            positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
+            if not positions:
+                return
+            action = monitor.check(price)
+            if action is None:
+                return
+            if action.level is not None:
+                if action.level in offered:
+                    # Asking cost something: check() marks the level pending. This
+                    # turn is not going to execute it, so hand it back before
+                    # leaving, or it sits pending and no later tick offers it again.
+                    monitor.release_level(action.level)
+                    return
+                offered.add(action.level)
             self._execute_exit_action_for_pair(ctx, action, positions[0])
+            if not action.partial_pct:
+                return
 
     def _execute_exit_action_for_pair(
         self, ctx: PairContext, action: ExitAction, position: Position
