@@ -25,7 +25,7 @@
 ├── plans/YYYY-MM/         — Plan 文件, 按月份归档
 │   └── NN[a-z]?-<slug>.md
 ├── reviews/YYYY-MM/       — Peer review 报告 (未来)
-├── fixes/YYYY-MM/         — Fix plan (未来)
+├── fixes/YYYY-MM/         — Fix plan
 ├── incidents/YYYY-MM/     — 紧急偏离记录 (未来)
 ├── scratch/               — 临时 scratchpad (gitignore)
 └── handoff/               — Agent handoff packet (gitignore)
@@ -281,3 +281,10 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 - 运行时 NT per-order intercept hook (`DEV-04a-CAP-ENFORCEMENT-HOOK-DEFER`) — 独立 plan
 - `pre-commit` framework 迁移评估 — v1 后诉求变化再起 follow-up
 - pyright 集成 (Plan 02+ 候选) — 独立
+
+
+## Runtime review 修复索引
+
+| Fix | Status | Evidence |
+| --- | --- | --- |
+| [2026-09/02 — runtime and ledger](fixes/2026-09/02-runtime-ledger-fixes.md) | ✅ Completed (2026-09-20) | 六项 finding；Custos 2597 passed；Crucible 69 passed；生产验收独立开放 |
