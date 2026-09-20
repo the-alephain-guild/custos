@@ -1056,3 +1056,72 @@ class TestTheExitBaseFollowsTheWholeEntry:
         assert first, "precondition: a level fired before the entry finished"
 
         assert h.ctx.tick_monitor._tp_level_states[0].value == "pending"
+
+
+class TestReversalSizingRespectsTheContractMultiplier:
+    """RS-1: contract units are not quote amounts.
+
+    A linear contract's notional is quantity * price * multiplier. Reversal sizing
+    wrote quantity * price, so the closing half of the reversal was inflated by
+    1 / multiplier before quantity_from_notional divided the multiplier back out.
+    """
+
+    @staticmethod
+    def _reverse_with_multiplier(multiplier: str, open_contracts: str, target_notional: str):
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+        from custos_toolkit_nautilus.adapter.execution import ExecutionManager
+        from nautilus_trader.model import Currency, CryptoPerpetual, InstrumentId, Symbol
+
+        h = Harness()
+        h.instrument = CryptoPerpetual(
+            InstrumentId.from_str("BTC-USDT-SWAP.OKX"),
+            Symbol("BTC-USDT-SWAP"),
+            Currency.from_str("BTC"),
+            Currency.from_str("USDT"),
+            Currency.from_str("USDT"),
+            False,
+            2,
+            0,
+            Price.from_str("0.01"),
+            Quantity.from_str("1"),
+            0,
+            0,
+            multiplier=Quantity.from_str(multiplier),
+        )
+        h.ctx.instrument_id = h.instrument.id
+        h.ctx.execution_manager = ExecutionManager(h.order_factory, h.cache, h.log)
+        h.position.quantity = Decimal(open_contracts)
+        h.position.is_long, h.position.is_short = False, True  # an open short
+        SignalExecutionCoordinator(h).execute_entry_for_pair(
+            h.ctx,
+            Signal.enter_long(price=100.0),
+            size=Decimal(target_notional),
+            bar=NS(close=Decimal("100")),
+        )
+        return h, Decimal(str(h.sent[0].quantity))
+
+    @pytest.mark.parametrize(
+        "multiplier,open_contracts,target_notional,expected_net",
+        [
+            # multiplier .01: the short's 10 contracts are $10, not $1000.
+            (".01", "10", "10", "10"),
+            ("1", "10", "1000", "10"),
+            ("10", "10", "10000", "10"),
+        ],
+    )
+    def test_the_reversal_reaches_the_target_net_position(
+        self, multiplier, open_contracts, target_notional, expected_net
+    ):
+        """Accept on the net position left open, not on the order size."""
+        _, submitted = self._reverse_with_multiplier(
+            multiplier, open_contracts, target_notional
+        )
+
+        net_after = submitted - Decimal(open_contracts)
+        assert net_after == Decimal(expected_net)
+
+    def test_a_multiplier_contract_is_not_inflated_a_hundredfold(self):
+        """The headline case from the review, stated as the order actually sent."""
+        _, submitted = self._reverse_with_multiplier(".01", "10", "10")
+
+        assert submitted == Decimal("20"), "ten to close plus ten to open"

@@ -24,6 +24,7 @@ from custos_toolkit_nautilus.adapter.execution import ExecutionManager
 from custos_toolkit_nautilus.adapter.runtime_types import Indicator
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
 from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
+from custos_toolkit_nautilus.adapter.sizing import notional_from_quantity
 from custos_toolkit_nautilus.adapter.strategy_core import CloseAttempt, plan_close_attempt
 
 if TYPE_CHECKING:
@@ -146,7 +147,16 @@ class SignalExecutionCoordinator:
                 current_qty = Decimal(str(position.quantity))
                 reversal_close_quantity = current_qty
                 current_price = Decimal(str(bar.close))
-                current_value_usdt = current_qty * current_price
+                instrument = s.cache.instrument(ctx.instrument_id)
+                if instrument is None:
+                    s.log.error(
+                        f"[{ctx.pair}] Instrument not found; cannot size the reversal",
+                        color=LogColor.RED,
+                    )
+                    return
+                current_value_usdt = notional_from_quantity(
+                    instrument, current_qty, current_price
+                )
                 final_size = final_size + current_value_usdt
                 s.log.info(
                     f"[{ctx.pair}] Reversal sizing: base={size:.3f} USDT, "
