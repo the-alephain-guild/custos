@@ -79,7 +79,7 @@
 
 **Root Cause**: 入场在发送前即记录 position entry 并占用资金；完全未成交就 canceled/rejected 时只清订单 ID 和 pending signal。资金释放与 `PositionTracker.reset` 都挂在 `PositionClosed` 上，而这类订单从未形成持仓，该事件永不到来。
 
-**Files**: `orders.py`、`coordinators/signal_execution.py`、`coordinators/trade_event_handler.py`、`coordinators/order_reconciler.py`
+**Files**: `orders.py`、`coordinators/entry_reservation.py`（新建）、`coordinators/signal_execution.py`、`coordinators/trade_event_handler.py`、`coordinators/order_reconciler.py`
 
 1. 写失败测试：资本 1000、请求 400，完全未成交的 cancel 与 reject 两条路径都必须回到可用 1000、entry_count=0。
 2. `OrderTracker.set_entry_order` 记录本笔预留资金与下单总量；新增未成交比例查询。
@@ -137,6 +137,13 @@
 - **影响**: `tick_monitor.py`、`coordinators/trade_event_handler.py`
 - **决定**: 层级以「还欠多少」结算——成交按数量入账，重试只要余量，取消时仍有欠量即退回 ARMED。
 - **发现方式**: Step 3.5 自省 Round 1，非外部审查。
+
+### DEVIATION: 结算逻辑落在新建的共享模块
+- **等级**: 低
+- **原因**: 取消与拒单是两个不同协调器上的两个回调（`TradeEventHandler.handle_order_canceled` 与 `OrderReconciler.handle_order_rejected`），而它们终结一笔入场的方式完全相同。把结算塞进任一方，另一方就得跨协调器 import；各写一份则是两个会各自漂移的副本。
+- **影响**: 新建 `coordinators/entry_reservation.py`（53 行，单函数）
+- **决定**: 独立模块承载 `release_unfilled_entry()`，两处共用一个地址。
+- **登记时点**: 实施时漏登，由 fix 06 的代码审计 C1 抓出，随 fix 07 Fix 1 补记。
 
 ### DEVIATION: strict mypy 要求改写保护量的传递方式
 - **等级**: 低
