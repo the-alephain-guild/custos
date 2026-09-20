@@ -712,3 +712,88 @@ class TestRecoveryArmsATrailingStop:
         h.tick("101.5")
 
         assert h.closed, "a stop armed before the restart must not need re-arming"
+
+
+class TestAPersistentlyRefusedCancelKeepsHoldingTheEntry:
+    """Audit M2: the entry keeps yielding while the old order is still live.
+
+    This is the deliberate trade-off behind ST-4, written down so it is not read
+    as a defect and 'fixed'. The old order is still at the venue and can still
+    fill; the tracker holds one entry identity, so opening a second live order
+    would leave one of the two unowned. Withholding new risk is the safe side,
+    and the signal is re-evaluated every bar, so nothing is forfeited.
+    """
+
+    def test_repeated_refusals_never_open_a_second_live_entry(self):
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        h = Harness(mode=SLTPMode.EXCHANGE)
+        h.flat()
+        coordinator = SignalExecutionCoordinator(h)
+        reconciler = OrderReconciler(h)
+        coordinator.execute_entry_for_pair(
+            h.ctx, Signal.enter_long(price=100.0), size=Decimal("100"), bar=NS(close=Decimal("100"))
+        )
+        entry = h.sent[0]
+
+        for _ in range(3):
+            coordinator.execute_entry_for_pair(
+                h.ctx,
+                Signal.enter_long(price=100.0),
+                size=Decimal("100"),
+                bar=NS(close=Decimal("100")),
+            )
+            reconciler.handle_order_cancel_rejected(
+                NS(
+                    instrument_id=h.instrument.id,
+                    client_order_id=entry.client_order_id,
+                    reason="venue will not cancel it",
+                )
+            )
+
+        assert entry.is_open, "precondition: the venue still holds the order"
+        assert len(h.sent) == 1
+        assert h.ctx.order_tracker.entry_order_id == entry.client_order_id, (
+            "ownership must survive every refusal, or a late fill arrives unowned"
+        )
+
+    def test_the_held_entry_still_gets_protection_when_it_finally_fills(self):
+        """Yielding must not cost protection on the order that is still live."""
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        h = Harness(mode=SLTPMode.EXCHANGE)
+        h.flat()
+        coordinator = SignalExecutionCoordinator(h)
+        coordinator.execute_entry_for_pair(
+            h.ctx, Signal.enter_long(price=100.0), size=Decimal("100"), bar=NS(close=Decimal("100"))
+        )
+        entry = h.sent[0]
+        for _ in range(3):
+            coordinator.execute_entry_for_pair(
+                h.ctx,
+                Signal.enter_long(price=100.0),
+                size=Decimal("100"),
+                bar=NS(close=Decimal("100")),
+            )
+            OrderReconciler(h).handle_order_cancel_rejected(
+                NS(
+                    instrument_id=h.instrument.id,
+                    client_order_id=entry.client_order_id,
+                    reason="venue will not cancel it",
+                )
+            )
+
+        h.positions = [h.position]
+        entry.is_open = False
+        entry.is_closed = True
+        TradeEventHandler(h).handle_order_filled(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=entry.client_order_id,
+                order_side=OrderSide.BUY,
+                last_qty=Quantity.from_str("1.000"),
+                last_px=Price.from_str("100.00"),
+            )
+        )
+
+        assert h.ctx.order_tracker.protected_quantity(exchange_managed=False) == Decimal("1")
