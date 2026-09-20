@@ -48,7 +48,7 @@ class SignalExecutionCoordinator:
     def __init__(self, strategy: NautilusTradingStrategy) -> None:
         self._strategy = strategy
 
-    def _cancel_pending_entry_order(self, ctx: PairContext) -> None:
+    def _cancel_pending_entry_order(self, ctx: PairContext) -> bool:
         """
         Cancel any pending entry order for this pair.
 
@@ -60,11 +60,16 @@ class SignalExecutionCoordinator:
         or on_order_cancel_rejected events to clean up. This handles the
         race condition where the order fills on the exchange before our
         cancel request arrives.
+
+        Returns True while the previous entry is still live at the venue, i.e. the
+        cancel has been requested but not confirmed. The tracker holds one entry
+        identity, so submitting a replacement in that window would overwrite the
+        old order's identity while it can still fill.
         """
         s = self._strategy
         entry_order_id = ctx.order_tracker.entry_order_id
         if entry_order_id is None:
-            return
+            return False
 
         order = s.cache.order(entry_order_id)
 
@@ -76,11 +81,12 @@ class SignalExecutionCoordinator:
                 color=LogColor.YELLOW,
             )
             # Don't clear tracker here - wait for on_order_canceled or on_order_cancel_rejected
-            return
+            return True
 
         # Order is not open (already filled/cancelled) - clear tracker immediately
         # This handles the case where fill event arrived before we tried to cancel
         ctx.order_tracker.clear_entry_order()
+        return False
 
     def execute_entry_for_pair(
         self, ctx: PairContext, signal: Signal, size: Decimal, bar: Bar
@@ -100,7 +106,17 @@ class SignalExecutionCoordinator:
         """
         s = self._strategy
         # Cancel any previous pending entry order before submitting new one
-        self._cancel_pending_entry_order(ctx)
+        if self._cancel_pending_entry_order(ctx):
+            # The cancel is out but unconfirmed. Entering now would point the single
+            # tracked identity at the new order while the old one can still fill --
+            # that fill would then look external and receive no protection. The signal
+            # is re-evaluated every bar, so this waits rather than forfeits.
+            s.log.warning(
+                f"[{ctx.pair}] Holding this entry until the previous order's "
+                "cancellation is confirmed",
+                color=LogColor.YELLOW,
+            )
+            return
 
         # Check position limits
         pos_config = s.config.position

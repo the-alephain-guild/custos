@@ -16,7 +16,11 @@ from unittest.mock import MagicMock
 from custos_toolkit.position.tracker import PositionTracker
 from custos_toolkit.risk.orders import OrderPriceCalculator
 from custos_toolkit_nautilus.adapter.coordinators import ExecutionCoordinator
-from custos_toolkit_nautilus.adapter.orders import OrderTracker, StopLossSubmitter
+from custos_toolkit_nautilus.adapter.orders import (
+    OrderTracker,
+    StopLossSubmitter,
+    TakeProfitSubmitter,
+)
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
 from custos_toolkit_nautilus.adapter.tick_monitor import TickMonitorManager
 from nautilus_trader.model import (
@@ -131,6 +135,9 @@ class Harness:
             {"stop_loss": {"method": "atr", "atr": {"multiplier": 2}}}
         )
         self.ctx.sl_submitter = StopLossSubmitter(
+            self.order_factory, self.cache, self.log, self._order_calculator
+        )
+        self.ctx.tp_submitter = TakeProfitSubmitter(
             self.order_factory, self.cache, self.log, self._order_calculator
         )
         from custos_toolkit_nautilus.adapter.coordinators import SLTPCoordinator

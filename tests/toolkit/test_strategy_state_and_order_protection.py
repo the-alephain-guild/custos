@@ -18,10 +18,16 @@ import pytest
 
 pytest.importorskip("nautilus_trader")
 
+from types import SimpleNamespace as NS  # noqa: E402
+
 from _strategy_harness import Harness  # noqa: E402
 from custos_toolkit.signals.types import Signal  # noqa: E402
-from custos_toolkit_nautilus.adapter.coordinators import OrderReconciler  # noqa: E402
+from custos_toolkit_nautilus.adapter.coordinators import (  # noqa: E402
+    OrderReconciler,
+    TradeEventHandler,
+)
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode  # noqa: E402
+from nautilus_trader.model import OrderSide, Price, Quantity  # noqa: E402
 
 
 class TestAtrRepairKeepsItsAtr:
@@ -88,3 +94,113 @@ class TestAtrRepairKeepsItsAtr:
             h.now_ns += 61_000_000_000
 
         assert h.ctx.order_tracker.protected_quantity(exchange_managed=False) >= Decimal("1")
+
+
+class TestACancelRequestIsNotADisappearance:
+    """ST-4: entry ownership may only be released on a confirmed terminal state."""
+
+    @staticmethod
+    def _open_an_entry(h: Harness):
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        h.flat()
+        SignalExecutionCoordinator(h).execute_entry_for_pair(
+            h.ctx, Signal.enter_long(price=100.0), size=Decimal("100"), bar=NS(close=Decimal("100"))
+        )
+        return h.sent[0]
+
+    def test_a_refused_cancel_keeps_a_still_open_entry(self):
+        h = Harness(mode=SLTPMode.EXCHANGE)
+        entry = self._open_an_entry(h)
+
+        OrderReconciler(h).handle_order_cancel_rejected(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=entry.client_order_id,
+                reason="temporary cancellation failure",
+            )
+        )
+
+        assert entry.is_open, "precondition: the venue still has this order"
+        assert h.ctx.order_tracker.entry_order_id == entry.client_order_id
+
+    def test_an_entry_that_fills_after_a_refused_cancel_still_gets_protection(self):
+        h = Harness(mode=SLTPMode.EXCHANGE)
+        entry = self._open_an_entry(h)
+        OrderReconciler(h).handle_order_cancel_rejected(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=entry.client_order_id,
+                reason="temporary cancellation failure",
+            )
+        )
+
+        # The order the venue would not cancel now fills.
+        h.positions = [h.position]
+        entry.is_open = False
+        entry.is_closed = True
+        TradeEventHandler(h).handle_order_filled(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=entry.client_order_id,
+                order_side=OrderSide.BUY,
+                last_qty=Quantity.from_str("1.000"),
+                last_px=Price.from_str("100.00"),
+            )
+        )
+
+        assert h.ctx.order_tracker.protected_quantity(exchange_managed=False) == Decimal("1"), (
+            "our own fill must not be mistaken for an external one"
+        )
+
+    def test_a_confirmed_disappearance_still_releases_ownership(self):
+        """The original intent stays intact when the order really is gone."""
+        h = Harness(mode=SLTPMode.EXCHANGE)
+        entry = self._open_an_entry(h)
+        entry.is_open = False
+        entry.is_closed = True
+
+        OrderReconciler(h).handle_order_cancel_rejected(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=entry.client_order_id,
+                reason="order already gone",
+            )
+        )
+
+        assert h.ctx.order_tracker.entry_order_id is None
+
+    def test_a_replacement_waits_for_the_old_entry_to_be_confirmed_gone(self):
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        h = Harness(mode=SLTPMode.EXCHANGE)
+        old = self._open_an_entry(h)
+
+        SignalExecutionCoordinator(h).execute_entry_for_pair(
+            h.ctx, Signal.enter_long(price=100.0), size=Decimal("100"), bar=NS(close=Decimal("100"))
+        )
+
+        assert old.is_open, "precondition: the cancel is still unconfirmed"
+        assert old.client_order_id in h.cancelled, "the cancel request was sent"
+        assert len(h.sent) == 1, "a second entry would leave one of the two untracked"
+        assert h.ctx.order_tracker.entry_order_id == old.client_order_id
+
+    def test_the_next_bar_enters_once_the_old_entry_is_gone(self):
+        """Waiting must not mean never: the entry resumes on confirmation."""
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        h = Harness(mode=SLTPMode.EXCHANGE)
+        coordinator = SignalExecutionCoordinator(h)
+        old = self._open_an_entry(h)
+        coordinator.execute_entry_for_pair(
+            h.ctx, Signal.enter_long(price=100.0), size=Decimal("100"), bar=NS(close=Decimal("100"))
+        )
+
+        old.is_open = False
+        old.is_closed = True
+        coordinator.execute_entry_for_pair(
+            h.ctx, Signal.enter_long(price=100.0), size=Decimal("100"), bar=NS(close=Decimal("100"))
+        )
+
+        assert len(h.sent) == 2
+        assert h.ctx.order_tracker.entry_order_id == h.sent[1].client_order_id

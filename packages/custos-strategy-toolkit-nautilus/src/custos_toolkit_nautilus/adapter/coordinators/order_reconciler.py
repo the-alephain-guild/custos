@@ -594,16 +594,32 @@ class OrderReconciler:
         if ctx is None:
             return
 
-        # A rejected cancel means the order was already gone (see the tracker cleanup
-        # just below, which reads it the same way), so its signal link goes too.
-        s._order_signal_map.pop(str(event.client_order_id), None)
-
-        # Clean up entry order tracker - the order is no longer on exchange
-        # (either filled, expired, or already cancelled)
-        if (
+        # A refused cancel is not evidence that the order is gone. It commonly means
+        # exactly the opposite -- the venue would not cancel it because it is filling.
+        # Ask the cache for the order's actual state instead of reading the refusal as
+        # a disappearance: releasing ownership of an order that can still fill makes
+        # our own fill arrive as an untracked one, and an untracked fill gets no
+        # protection.
+        order = s.cache.order(event.client_order_id)
+        still_live = order is not None and not order.is_closed
+        is_tracked_entry = (
             ctx.order_tracker.entry_order_id is not None
             and ctx.order_tracker.entry_order_id == event.client_order_id
-        ):
+        )
+
+        if still_live:
+            if is_tracked_entry:
+                s.log.warning(
+                    f"[{ctx.pair}] Entry order cancel refused while the order is still "
+                    f"live: {event.client_order_id}, reason={event.reason}. Keeping "
+                    "ownership so a later fill is recognised as ours",
+                )
+            return
+
+        # Confirmed terminal: the order really is gone, so its signal link goes too.
+        s._order_signal_map.pop(str(event.client_order_id), None)
+
+        if is_tracked_entry:
             ctx.order_tracker.clear_entry_order()
             s.log.warning(
                 f"[{ctx.pair}] Entry order cancel rejected (order no longer exists): "
