@@ -174,6 +174,9 @@ C17–C22 的防护已绑定现有测试。修改对应路径时，至少运行�
 | C20 | `tests/test_venue_valuation_regressions.py`、`tests/test_independent_venue_ledgers.py`、`tests/test_runner_fact_production_loop.py` | 钱包与权益口径对齐；必需检查点缺失不关闭；现货库存无伪造成本；永续结算范围一致 |
 | C21 | `tests/test_offline_reconciler.py`、`tests/test_offline_guard_waits_for_readiness.py` | 更新失败可重试；不重复启动；保留 breaker 与高水位；等待新节点就绪 |
 | C22 | `tests/test_plan_closeout_counts.py` | plans 与 fixes 均纳入当前计数；旧报告数字不改 |
+| C23 | `tests/test_order_reservation.py`、`tests/engines/nautilus/test_runner_safety_execution_boundary.py` | 超限成交原子落盘；重开后 latch 仍拒绝风险；重复 fill 不重复累计 |
+| C24 | `tests/test_runner_command_runtime.py`、`tests/test_runner_fact_store.py` | heartbeat 抛错/挂起不覆盖 applied；合法 post-apply terminal 仍可 quarantine |
+| C25 | `tests/test_engine_lifecycle.py`、`tests/test_runner_command_runtime.py` | watcher 动作前重验 authority；旧 generation 正常退休；缺 capability fail loud |
 
 Runner exposure and signed-runtime changes additionally require
 `tests/test_order_reservation.py`, `tests/test_runner_policy_runtime.py`,

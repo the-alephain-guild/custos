@@ -112,3 +112,57 @@
 <!-- hash: fb0397bc18f8 -->
 
 ---
+
+
+### #C23: 已执行事实不能被准入规则回滚
+
+> **Status**: 🟡 active
+> **Programmable**: yes
+> **Skill binding**: N/A — 绑定仓库 mandatory rule 与 pytest 回归入口。
+
+- **日期**: 2026-09-20
+- **来源**: `.forge/reviews/2026-09-20-custos-recovery-deep-review.md` RD-3；Fix 04 Task 1 `da562e1`。
+- **场景**: 订单预留 90，市场实际成交 120。成交已发生，但单笔上限检查抛错并回滚 SQLite，重启后账面仍像没有成交。
+- **根因**: Pre-trade admission limits were reused as post-trade validators, so an already executed fill raised inside the transaction and rolled back the authoritative accounting fact.
+- **教训**: Executed venue facts are append-only evidence: persist the fill and durable breach latch atomically, then block future risk instead of rejecting history.
+- **预防**: `tests/test_order_reservation.py` 覆盖超限成交、重开、幂等与可信重建；边界测试断言 breaker 冻结但成交事实保留。新增 post-trade 路径不得用 pre-trade cap 拒绝历史。
+
+<!-- hash: 2b05a5c68d18 -->
+
+---
+
+
+### #C24: 辅助任务不能覆盖主操作终态
+
+> **Status**: 🟡 active
+> **Programmable**: yes
+> **Skill binding**: N/A — 绑定仓库 mandatory rule 与 pytest 回归入口。
+
+- **日期**: 2026-09-20
+- **来源**: `.forge/reviews/2026-09-20-custos-recovery-deep-review.md` RD-2；Fix 04 Task 3 `799140d`；Fix 05 M1 `6a2d0ba`。
+- **场景**: ACK 续租失败后主 apply 成功并持久化，finally 再 await heartbeat 却覆盖成功返回，外层随后写 retry_exhausted。
+- **根因**: An auxiliary ACK heartbeat task was awaited in finally without result precedence, so its transport error replaced a successfully committed apply result.
+- **教训**: Auxiliary supervision tasks may degrade delivery health but must never overwrite a committed main-operation outcome; cancellation and error observation must be bounded.
+- **预防**: `tests/test_runner_command_runtime.py` 分别覆盖续租抛错和挂起；`tests/test_runner_fact_store.py` 防止 intake terminal 覆盖 applied，同时保留合法 lifecycle quarantine。
+
+<!-- hash: 2a738f842253 -->
+
+---
+
+
+### #C25: watcher 动作前必须重验 durable authority
+
+> **Status**: 🟡 active
+> **Programmable**: yes
+> **Skill binding**: N/A — 绑定仓库 mandatory rule 与 pytest 回归入口。
+
+- **日期**: 2026-09-20
+- **来源**: `.forge/reviews/2026-09/04-recovery-and-post-execution-consistency-review.md` C1；Fix 05 `6a2d0ba`。
+- **场景**: 旧 generation watcher 收到 terminal 时，新 desired generation 可能已经写入；只依赖 cancellation 时序仍可能让旧 watcher 先 stop 新节点。
+- **根因**: Generation replacement relied on task cancellation timing, while the old watcher performed stop before re-reading durable desired authority.
+- **教训**: Every destructive watcher action must revalidate the current durable identity immediately before acting and retire normally when authority changed.
+- **预防**: `tests/test_engine_lifecycle.py` 在 `wait_terminal` 返回时切换 desired authority，并断言旧 watcher 不 stop、不 deploy、不 quarantine。关键 supervision capability 缺失时构造阶段 fail loud。
+
+<!-- hash: 0b2c169dd9a3 -->
+
+---

@@ -85,6 +85,15 @@ neither routed through the guard nor declared mode-agnostic fails the gate.
   and flattened inside one period. Internal net PnL is compared with venue gross
   realized PnL less separately observed commission; incomplete and cross-period
   cycles do not create a falsely comparable scope.
+- An executed venue fact is authoritative history. Persist the fill, exposure and
+  any durable risk latch atomically; pre-trade limits may block future intent but
+  must not roll back an execution that already happened. See C23.
+- Auxiliary heartbeat and supervision tasks never replace the main operation's
+  committed outcome. Their cancellation and exception observation are bounded;
+  late transport failure cannot rewrite applied as retry-exhausted. See C24.
+- A watcher revalidates durable desired generation and fingerprint immediately
+  before stop, restart or quarantine. Authority drift retires the watcher without
+  touching the engine. Critical supervision capability is fail-loud. See C25.
 - Current test-count checks must include plans and fixes. Record fresh evidence
   in the current report; preserve historical close-outs and acceptance receipts.
   Local test success does not establish venue or production readiness. See C22.

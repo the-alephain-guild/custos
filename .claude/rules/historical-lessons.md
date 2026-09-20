@@ -46,6 +46,24 @@
 
 <!-- hash: fb0397bc18f8 -->
 
+
+### #C23: 已执行事实不能被准入规则回滚
+> Full: `.forge/lessons-archive/active-detail.md` #C23
+
+<!-- hash: 2b05a5c68d18 -->
+
+
+### #C24: 辅助任务不能覆盖主操作终态
+> Full: `.forge/lessons-archive/active-detail.md` #C24
+
+<!-- hash: 2a738f842253 -->
+
+
+### #C25: watcher 动作前必须重验 durable authority
+> Full: `.forge/lessons-archive/active-detail.md` #C25
+
+<!-- hash: 0b2c169dd9a3 -->
+
 ---
 
 ## C16 并行 agent 的 `git add` 会带走你正在写的文件，且表现为「文件变回旧内容」(2026-09)
