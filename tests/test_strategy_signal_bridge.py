@@ -34,6 +34,20 @@ class _Emitter:
     def __init__(self) -> None:
         self.signals: list[dict[str, object]] = []
         self.fact_batches: list[tuple[object, ...]] = []
+        self.remembered: dict[tuple[str, str], tuple[str, str]] = {}
+
+    def remember_order(self, *, deployment_instance_id, client_order_id, direction, order_role):
+        self.remembered[(deployment_instance_id, client_order_id)] = (direction, order_role)
+
+    def recall_orders(self, deployment_instance_id):
+        return {
+            order_id: value
+            for (instance, order_id), value in self.remembered.items()
+            if instance == deployment_instance_id
+        }
+
+    def forget_order(self, *, deployment_instance_id, client_order_id):
+        self.remembered.pop((deployment_instance_id, client_order_id), None)
 
     def emit_strategy_signal_sync(self, authority, **signal):
         assert authority == _authority()
@@ -88,6 +102,11 @@ class OrderInitialized(_OrderEvent):
 
 class OrderSubmitted(_OrderEvent):
     pass
+
+
+class OrderCanceled(_OrderEvent):
+    def __init__(self) -> None:
+        super().__init__(event_id="90000000-0000-4000-8000-000000000001")
 
 
 class OrderRejected(_OrderEvent):

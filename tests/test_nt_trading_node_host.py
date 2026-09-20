@@ -900,11 +900,24 @@ def _fact_spec(label: str, connector: str, **overrides) -> dict:
     return spec
 
 
+class _FactEmitterStub:
+    """Enough of the emitter for the bridge to attach; order attribution starts empty."""
+
+    def remember_order(self, **_attribution) -> None:
+        return None
+
+    def recall_orders(self, _deployment_instance_id) -> dict[str, tuple[str, str]]:
+        return {}
+
+    def forget_order(self, **_identity) -> None:
+        return None
+
+
 def _fact_host() -> tuple[NtTradingNodeHost, _FactCapabilityReceipt]:
     receipt = _FactCapabilityReceipt()
     host = NtTradingNodeHost(
         tenant_id="tenant-a",
-        runner_fact_emitter=object(),
+        runner_fact_emitter=_FactEmitterStub(),
         capability_receipt=receipt,
     )
     return host, receipt

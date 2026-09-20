@@ -1494,6 +1494,14 @@ class RunnerFactOutbox:
                     recorded_at TEXT NOT NULL,
                     UNIQUE(stream_key, source_sequence)
                 );
+                CREATE TABLE IF NOT EXISTS runner_order_identity (
+                    deployment_instance_id TEXT NOT NULL,
+                    client_order_id TEXT NOT NULL,
+                    direction TEXT NOT NULL,
+                    order_role TEXT NOT NULL,
+                    remembered_at_ns INTEGER NOT NULL,
+                    PRIMARY KEY (deployment_instance_id, client_order_id)
+                );
                 CREATE TABLE IF NOT EXISTS strategy_signal_outbox (
                     fact_id TEXT PRIMARY KEY,
                     stream_key TEXT NOT NULL,
@@ -2099,6 +2107,71 @@ class RunnerFactOutbox:
             raise
         finally:
             connection.close()
+
+    def remember_order_sync(
+        self,
+        *,
+        deployment_instance_id: str,
+        client_order_id: str,
+        direction: str,
+        order_role: str,
+    ) -> None:
+        """Record that this deployment instance is the one that placed this order.
+
+        The bridge signs facts only for orders it placed, because a live venue
+        stream is account-wide. That answer has to outlive the bridge object: an
+        order can still be working when the bridge is rebuilt, and its later
+        reports carry no hint of who placed it.
+        """
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO runner_order_identity (
+                    deployment_instance_id, client_order_id, direction,
+                    order_role, remembered_at_ns
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(deployment_instance_id, client_order_id) DO UPDATE SET
+                    direction = excluded.direction,
+                    order_role = excluded.order_role,
+                    remembered_at_ns = excluded.remembered_at_ns
+                """,
+                (
+                    _non_empty(deployment_instance_id, "deployment_instance_id"),
+                    _non_empty(client_order_id, "client_order_id"),
+                    _non_empty(direction, "direction"),
+                    _non_empty(order_role, "order_role"),
+                    time.time_ns(),
+                ),
+            )
+
+    def recall_orders_sync(self, deployment_instance_id: str) -> dict[str, tuple[str, str]]:
+        """Every order this instance placed and has not finished with, by order id."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT client_order_id, direction, order_role
+                FROM runner_order_identity
+                WHERE deployment_instance_id = ?
+                """,
+                (_non_empty(deployment_instance_id, "deployment_instance_id"),),
+            ).fetchall()
+        return {
+            str(row["client_order_id"]): (str(row["direction"]), str(row["order_role"]))
+            for row in rows
+        }
+
+    def forget_order_sync(self, *, deployment_instance_id: str, client_order_id: str) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                DELETE FROM runner_order_identity
+                WHERE deployment_instance_id = ? AND client_order_id = ?
+                """,
+                (
+                    _non_empty(deployment_instance_id, "deployment_instance_id"),
+                    _non_empty(client_order_id, "client_order_id"),
+                ),
+            )
 
     async def pending(
         self,
@@ -6128,6 +6201,30 @@ class RunnerFactEmitter:
         self._outbox = outbox
         self._identity = identity
         self._authority_guard = authority_guard
+
+    def remember_order(
+        self,
+        *,
+        deployment_instance_id: str,
+        client_order_id: str,
+        direction: str,
+        order_role: str,
+    ) -> None:
+        self._outbox.remember_order_sync(
+            deployment_instance_id=deployment_instance_id,
+            client_order_id=client_order_id,
+            direction=direction,
+            order_role=order_role,
+        )
+
+    def recall_orders(self, deployment_instance_id: str) -> dict[str, tuple[str, str]]:
+        return self._outbox.recall_orders_sync(deployment_instance_id)
+
+    def forget_order(self, *, deployment_instance_id: str, client_order_id: str) -> None:
+        self._outbox.forget_order_sync(
+            deployment_instance_id=deployment_instance_id,
+            client_order_id=client_order_id,
+        )
 
     async def emit(
         self,

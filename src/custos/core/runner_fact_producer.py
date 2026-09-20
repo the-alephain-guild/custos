@@ -308,6 +308,7 @@ class RunnerFactEventBridge:
         """
         if forwarder is None:
             raise RuntimeError("execution event forwarder unavailable for RunnerFact bridge")
+        self._recall_orders()
         forwarder.add_order_sink("runner_facts", self._on_order_event)
         forwarder.add_position_sink("runner_facts", self._on_position_event)
         _log.info(
@@ -453,9 +454,7 @@ class RunnerFactEventBridge:
             )
             lifecycle_side = side if reduce_only else direction
             if client_order_id:
-                self._owned_order_ids.add(client_order_id)
-                self._order_directions[client_order_id] = lifecycle_side
-                self._order_roles[client_order_id] = order_role
+                self._remember_order(client_order_id, lifecycle_side, order_role)
             occurred_at = _nt_timestamp(data.get("ts_event") or data.get("ts_init"))
             if self._runtime_log_emitter is not None:
                 self._runtime_log_emitter.emit_sync(
@@ -550,6 +549,44 @@ class RunnerFactEventBridge:
         self._order_directions.pop(client_order_id, None)
         self._order_roles.pop(client_order_id, None)
 
+    def _remember_order(self, client_order_id: str, direction: str, order_role: str) -> None:
+        self._owned_order_ids.add(client_order_id)
+        self._order_directions[client_order_id] = direction
+        self._order_roles[client_order_id] = order_role
+        self._emitter.remember_order(
+            deployment_instance_id=self._deployment.deployment_instance_id,
+            client_order_id=client_order_id,
+            direction=direction,
+            order_role=order_role,
+        )
+
+    def _forget_order(self, client_order_id: str) -> None:
+        self._order_directions.pop(client_order_id, None)
+        self._order_roles.pop(client_order_id, None)
+        self._owned_order_ids.discard(client_order_id)
+        self._emitter.forget_order(
+            deployment_instance_id=self._deployment.deployment_instance_id,
+            client_order_id=client_order_id,
+        )
+
+    def _recall_orders(self) -> None:
+        """Load this instance's orders before the first report can reach the filter.
+
+        Scoped to the deployment instance, so a sibling instance sharing the venue
+        account -- or anything placed by hand -- is still refused.
+        """
+        remembered = self._emitter.recall_orders(self._deployment.deployment_instance_id)
+        for client_order_id, (direction, order_role) in remembered.items():
+            self._owned_order_ids.add(client_order_id)
+            self._order_directions[client_order_id] = direction
+            self._order_roles[client_order_id] = order_role
+        if remembered:
+            _log.info(
+                "runner_fact_bridge_order_attribution_restored",
+                deployment_instance_id=self._deployment.deployment_instance_id,
+                order_count=len(remembered),
+            )
+
     def _on_order_lifecycle(
         self,
         event: Any,
@@ -558,48 +595,67 @@ class RunnerFactEventBridge:
         level: str,
         include_reason: bool = False,
     ) -> None:
-        if self._runtime_log_emitter is None:
-            return
         try:
             data = type(event).to_dict(event)
             client_order_id = str(data.get("client_order_id") or "").strip()
             if not client_order_id:
                 raise RunnerFactContractError("order lifecycle event has no client order id")
-            instrument = str(data.get("instrument_id") or "").strip()
-            if not instrument:
-                raise RunnerFactContractError("order lifecycle event has no instrument identity")
-            side = self._order_directions.get(client_order_id)
-            if side is None:
-                raw_side = str(data.get("order_side") or "").strip().lower().split(".")[-1]
-                side = {"buy": "long", "sell": "short"}.get(raw_side)
-            if side is None:
-                raise RunnerFactContractError("order lifecycle event has no known side")
-            fields: dict[str, Any] = {
-                "client_order_id": client_order_id,
-                "instrument": instrument,
-                "side": side,
-                "lifecycle": lifecycle,
-                "order_role": self._order_roles.get(client_order_id, "strategy_order"),
-            }
-            if include_reason:
-                reason = str(data.get("reason") or "unknown_rejection").strip()
-                fields["reason_code"] = reason or "unknown_rejection"
-            authority = self._deployment.authority
-            self._runtime_log_emitter.emit_sync(
-                authority,
-                level=level,
-                component="custos.execution.order",
-                message=f"order_{lifecycle}",
-                structured_fields=fields,
-                correlation_id=_scoped_event_id(authority, "order_trace", client_order_id),
-            )
+            if self._runtime_log_emitter is not None:
+                self._log_order_lifecycle(
+                    data,
+                    client_order_id,
+                    lifecycle=lifecycle,
+                    level=level,
+                    include_reason=include_reason,
+                )
+            # Letting go of an order the venue has finished with is not a logging
+            # concern: an instance with no runtime log sink must still stop owning it,
+            # or the durable attribution grows without bound.
             if lifecycle in {"rejected", "canceled", "expired"}:
-                self._order_directions.pop(client_order_id, None)
-                self._order_roles.pop(client_order_id, None)
-                self._owned_order_ids.discard(client_order_id)
+                self._forget_order(client_order_id)
         except Exception as exc:  # the forwarder isolates and records audit failures
             _log.error("runner_order_lifecycle_event_failed", error=str(exc))
             raise
+
+    def _log_order_lifecycle(
+        self,
+        data: Mapping[str, Any],
+        client_order_id: str,
+        *,
+        lifecycle: str,
+        level: str,
+        include_reason: bool,
+    ) -> None:
+        if self._runtime_log_emitter is None:
+            return
+        instrument = str(data.get("instrument_id") or "").strip()
+        if not instrument:
+            raise RunnerFactContractError("order lifecycle event has no instrument identity")
+        side = self._order_directions.get(client_order_id)
+        if side is None:
+            raw_side = str(data.get("order_side") or "").strip().lower().split(".")[-1]
+            side = {"buy": "long", "sell": "short"}.get(raw_side)
+        if side is None:
+            raise RunnerFactContractError("order lifecycle event has no known side")
+        fields: dict[str, Any] = {
+            "client_order_id": client_order_id,
+            "instrument": instrument,
+            "side": side,
+            "lifecycle": lifecycle,
+            "order_role": self._order_roles.get(client_order_id, "strategy_order"),
+        }
+        if include_reason:
+            reason = str(data.get("reason") or "unknown_rejection").strip()
+            fields["reason_code"] = reason or "unknown_rejection"
+        authority = self._deployment.authority
+        self._runtime_log_emitter.emit_sync(
+            authority,
+            level=level,
+            component="custos.execution.order",
+            message=f"order_{lifecycle}",
+            structured_fields=fields,
+            correlation_id=_scoped_event_id(authority, "order_trace", client_order_id),
+        )
 
     @staticmethod
     def _event_client_order_id(event: Any) -> str:
