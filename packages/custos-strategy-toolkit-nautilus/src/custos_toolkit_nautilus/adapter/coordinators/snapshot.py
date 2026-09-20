@@ -19,6 +19,7 @@ are hooks subclasses override; ``_loaded_snapshot`` / ``_snapshot_restored`` are
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, cast
 
 from nautilus_trader.common import LogColor
@@ -56,12 +57,14 @@ class SnapshotCoordinator:
         """
         s = self._strategy
         ts = s.clock.timestamp_ns() if s.clock else 0
+        controller = s._risk_controller
         snapshot = build_snapshot(
             s._contexts,
             s.get_snapshot_state(),
             f"{s.__class__.__name__}-multi",
             ts,
             logger=s.log,
+            risk_state=controller.export_state() if controller is not None else None,
         )
         return encode_snapshot(snapshot)
 
@@ -80,6 +83,22 @@ class SnapshotCoordinator:
         s.log.info(
             "Framework state loaded; will apply after contexts are built",
             color=LogColor.GREEN,
+        )
+
+    def _restore_risk_state(self, snapshot: dict[str, object]) -> None:
+        """Put the daily budget back from the snapshot's own risk section."""
+        s = self._strategy
+        controller = s._risk_controller
+        if controller is None:
+            return
+        risk_state = snapshot.get("risk")
+        if not risk_state:
+            return
+        controller.restore_state(cast(Mapping[str, str], risk_state))
+        s.log.info(
+            f"Risk state restored from snapshot: session_pnl="
+            f"{cast(Mapping[str, str], risk_state).get('session_pnl', '0')}",
+            color=LogColor.YELLOW,
         )
 
     def apply_loaded_snapshot(self) -> int | None:
@@ -108,6 +127,12 @@ class SnapshotCoordinator:
         # restored (0 restored must NOT skip warmup).
         snapshot = s._loaded_snapshot
         if snapshot is not None:
+            # Risk state is normally restored when the controller is built, which
+            # is where it belongs: that happens on every start, warmup mode or not.
+            # Restore it here too, because a controller that already existed when
+            # the snapshot arrived would have missed that moment. Restoring twice
+            # is a plain assignment of the same values.
+            self._restore_risk_state(snapshot)
             restored = restore_indicators(s._contexts, snapshot, logger=s.log)
             global_state = cast(dict[str, object], snapshot.get("global_state", {}))
             if global_state:

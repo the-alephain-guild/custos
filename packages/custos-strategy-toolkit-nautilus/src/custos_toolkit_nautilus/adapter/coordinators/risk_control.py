@@ -13,9 +13,12 @@ strategy (subclass-facing public contract).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+
+from typing import TYPE_CHECKING, cast
 
 import msgspec
+from nautilus_trader.common import LogColor
 from custos_toolkit.risk import RiskController
 
 if TYPE_CHECKING:
@@ -47,6 +50,24 @@ class RiskControlCoordinator:
         )
         # Peak tracks mark-to-market risk equity, not free balance.
         s._risk_controller.update_peak_equity(s._get_risk_equity())
+
+        # Restore what the last run spent. This happens here, at construction,
+        # rather than in the snapshot application path: that path only runs when
+        # warmup mode is "snapshot", so risk state would otherwise depend on
+        # whether indicator warmup acceleration happens to be configured. It also
+        # has to be in place before the first admission decision -- a restart that
+        # resumed with a fresh daily budget would hand back a loss limit the
+        # previous run had already spent.
+        snapshot = s._loaded_snapshot
+        if snapshot:
+            risk_state = cast(Mapping[str, str], snapshot.get("risk") or {})
+            if risk_state:
+                s._risk_controller.restore_state(risk_state)
+                s.log.info(
+                    f"Risk state restored from snapshot: "
+                    f"session_pnl={risk_state.get('session_pnl', '0')}",
+                    color=LogColor.YELLOW,
+                )
 
     def check_risk_limits(self, current_ts: int = 0) -> bool:
         """Check all risk limits. Returns True if trading allowed."""

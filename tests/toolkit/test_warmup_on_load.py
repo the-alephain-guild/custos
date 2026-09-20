@@ -61,6 +61,9 @@ class _FakeStrategy:
         self._warmup_config = warmup_config
         self._loaded_snapshot = loaded_snapshot
         self._contexts = contexts
+        # The real strategy declares this in __init__ (trading_strategy.py:194);
+        # the snapshot path reads it to restore the daily risk budget.
+        self._risk_controller = None
         self._snapshot_indicators = snapshot_indicators or {}
         self._snapshot_restored = False
         # apply_loaded_snapshot loads checkpoints on the warmup manager (if any)

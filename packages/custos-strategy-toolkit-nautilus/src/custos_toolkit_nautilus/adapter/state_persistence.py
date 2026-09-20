@@ -49,6 +49,7 @@ def build_snapshot(
     strategy_id: str,
     timestamp: int,
     logger: _Logger | None = None,
+    risk_state: Mapping[str, str] | None = None,
 ) -> dict[str, object]:
     """Build a v2 snapshot dict from per-pair contexts + global strategy state.
 
@@ -85,6 +86,12 @@ def build_snapshot(
         "strategy_id": strategy_id,
         "version": SNAPSHOT_VERSION,
         "global_state": global_state,
+        # Risk state gets its own section rather than riding in global_state.
+        # That section comes from get_snapshot_state(), a hook strategy authors
+        # override; risk limits are not theirs to drop by overriding it, and the
+        # daily budget must survive a restart whether or not indicator warmup is
+        # being persisted at all.
+        "risk": dict(risk_state) if risk_state else {},
         "pairs": pairs_data,
     }
 

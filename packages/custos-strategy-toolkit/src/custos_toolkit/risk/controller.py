@@ -7,6 +7,7 @@ Enforces trading limits: drawdown, daily loss, trade counts, consecutive losses.
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from collections.abc import Mapping
 from decimal import Decimal
 
 from ..config._values import config_value
@@ -209,6 +210,42 @@ class RiskController:
             # PnL == 0: break-even trade, reset consecutive losses but don't count as win
             self._state.consecutive_losses = 0
             self._state.loss_streak = 0
+
+    def export_state(self) -> dict[str, str]:
+        """The state a restart has to carry to keep today's budget honest.
+
+        Without this the daily loss tally, the consecutive-loss count, the pause
+        deadline and the equity peak all reset on restart -- a strategy stopped by
+        its own daily limit would resume with the whole budget back. Decimals are
+        exported as strings so the money values survive the round trip exactly.
+        """
+        return {
+            "session_pnl": str(self._state.session_pnl),
+            "session_trade_count": str(self._state.session_trade_count),
+            "consecutive_losses": str(self._state.consecutive_losses),
+            "win_streak": str(self._state.win_streak),
+            "loss_streak": str(self._state.loss_streak),
+            "paused_until": str(self._state.paused_until),
+            "peak_equity": str(self._state.peak_equity),
+            "next_reset_ns": str(self._state.next_reset_ns),
+        }
+
+    def restore_state(self, state: Mapping[str, str]) -> None:
+        """Restore what ``export_state`` carried. Missing keys keep their default.
+
+        This must run before the first admission decision, or that decision is
+        made against a budget that has not been restored yet.
+        """
+        if not state:
+            return
+        self._state.session_pnl = Decimal(state.get("session_pnl", "0"))
+        self._state.session_trade_count = int(state.get("session_trade_count", "0"))
+        self._state.consecutive_losses = int(state.get("consecutive_losses", "0"))
+        self._state.win_streak = int(state.get("win_streak", "0"))
+        self._state.loss_streak = int(state.get("loss_streak", "0"))
+        self._state.paused_until = int(state.get("paused_until", "0"))
+        self._state.peak_equity = Decimal(state.get("peak_equity", str(self.initial_capital)))
+        self._state.next_reset_ns = int(state.get("next_reset_ns", "0"))
 
     def update_peak_equity(self, current_equity: Decimal) -> None:
         """
