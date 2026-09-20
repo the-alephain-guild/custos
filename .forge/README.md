@@ -295,3 +295,4 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 | [2026-09/07 — strategy state fixes follow-up](fixes/2026-09/07-strategy-state-fixes-followup.md) | ✅ Completed (2026-09-20) | fix 06 审计 C1/H1/M1/M2 + 品味 🟡×1；重启后 trailing 保持激活、清死值、补登记共享模块；三项上界移交 backlog |
 | [2026-09/08 — scaled exit gap-through](fixes/2026-09/08-scaled-exit-gap-through.md) | ✅ Completed (2026-09-20) | ST-1 验收「跳空触发」一支补完；单 tick 跨多档现按计划总量退出，循环有两道终止保证 |
 | [2026-09/09 — regressions from fix 06](fixes/2026-09/09-regressions-from-fix-06.md) | ✅ Completed (2026-09-20) | EE-2/EE-5：fix 06 自身引入的两处回归；分配拒绝不再撤掉旧仓止损，止盈基数随分批入场追加 |
+| [2026-09/10 — contract units and protection registration](fixes/2026-09/10-contract-units-and-protection-registration.md) | ✅ Completed (2026-09-20) | RS-1/RS-2：反向 sizing 按合约乘数换算（0.01 乘数下曾放大百倍），本地拒绝的保护单不再虚增覆盖 |
