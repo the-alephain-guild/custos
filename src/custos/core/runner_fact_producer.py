@@ -406,8 +406,9 @@ class RunnerFactEventBridge:
                 ),
             )
             self._emitter.emit_sync(authority, facts)
-        except Exception as exc:  # audit loss is loud but never kills the engine thread
+        except Exception as exc:  # the forwarder isolates and records audit failures
             _log.error("runner_fact_execution_event_failed", error=str(exc))
+            raise
 
     def _on_order_initialized(self, event: Any) -> None:
         try:
@@ -502,8 +503,9 @@ class RunnerFactEventBridge:
                 strategy_version=self._deployment.strategy_version,
                 trace_id=_scoped_event_id(authority, "strategy_trace", stable_identity),
             )
-        except Exception as exc:  # audit loss is loud but never kills the engine thread
+        except Exception as exc:  # the forwarder isolates and records audit failures
             _log.error("runner_strategy_signal_event_failed", error=str(exc))
+            raise
 
     def record_local_refusal(
         self,
@@ -590,8 +592,9 @@ class RunnerFactEventBridge:
                 self._order_directions.pop(client_order_id, None)
                 self._order_roles.pop(client_order_id, None)
                 self._owned_order_ids.discard(client_order_id)
-        except Exception as exc:  # signed lifecycle loss is visible but never kills execution
+        except Exception as exc:  # the forwarder isolates and records audit failures
             _log.error("runner_order_lifecycle_event_failed", error=str(exc))
+            raise
 
     @staticmethod
     def _event_client_order_id(event: Any) -> str:
@@ -629,8 +632,9 @@ class RunnerFactEventBridge:
                 closed_at=_nt_timestamp(data.get("ts_closed") or data.get("ts_event")),
             )
             self._emitter.emit_sync(authority, (fact,))
-        except Exception as exc:  # audit loss is loud but never kills the engine thread
+        except Exception as exc:  # the forwarder isolates and records audit failures
             _log.error("runner_fact_position_event_failed", error=str(exc))
+            raise
 
 
 class RunnerFactProductionLoop:

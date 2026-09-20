@@ -317,3 +317,63 @@ def test_owned_partial_fills_remain_separate_execution_and_settlement_facts() ->
     assert second_execution["venue_trade_id"] == "trade-part-2"
     assert second_execution["quantity"] == "0.0039"
     assert first_settlement["fill_id"] != second_settlement["fill_id"]
+
+
+@pytest.mark.parametrize("kind", ["fill", "position", "initialized", "submitted"])
+def test_audit_failure_reaches_host_without_interrupting_strategy(kind) -> None:
+    from custos.engines.nautilus.strategy_event_forwarding import StrategyEventForwarder
+
+    class BrokenEmitter(_Emitter):
+        def emit_sync(self, *args, **kwargs):
+            raise OSError("fixture disk full")
+
+        def emit_strategy_signal_sync(self, *args, **kwargs):
+            raise OSError("fixture disk full")
+
+    class Strategy:
+        def __init__(self):
+            self.events = []
+
+        def on_order_event(self, event):
+            self.events.append(event)
+
+        def on_position_event(self, event):
+            self.events.append(event)
+
+    class PositionClosed:
+        @staticmethod
+        def to_dict(event):
+            return {
+                "event_id": "80000000-0000-4000-8000-000000000001",
+                "position_id": "position-1",
+                "realized_pnl": "10 USDT",
+                "ts_opened": 1_000_000_000,
+                "ts_closed": 2_000_000_000,
+            }
+
+    broken = BrokenEmitter()
+    bridge = RunnerFactEventBridge(
+        emitter=broken, deployment=_deployment(), runtime_log_emitter=broken
+    )
+    bridge._owned_order_ids.add("supertrend-entry-1")
+    failures = []
+    forwarder = StrategyEventForwarder(
+        deployment_instance_id=_deployment().deployment_instance_id,
+        on_sink_failure=lambda *args: failures.append(args),
+    )
+    bridge.bootstrap(forwarder)
+    strategy = Strategy()
+    forwarder.install(strategy)
+    event = {
+        "fill": OrderFilled("supertrend-entry-1"),
+        "position": PositionClosed(),
+        "initialized": OrderInitialized(),
+        "submitted": OrderSubmitted(),
+    }[kind]
+    if kind == "position":
+        strategy.on_position_event(event)
+    else:
+        strategy.on_order_event(event)
+    assert strategy.events == [event]
+    assert len(failures) == 1
+    assert failures[0][1].endswith(":OSError")
