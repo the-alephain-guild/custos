@@ -211,6 +211,10 @@ class RunnerStateAuthorityError(RunnerFactError):
     """A durable instance is being addressed through a different authority."""
 
 
+class RunnerPostTradeRiskBreach(RunnerStateAuthorityError):
+    """An authoritative fill was persisted and latched after breaching policy."""
+
+
 class RunnerStateDurabilityError(RunnerFactError):
     """A command state transition cannot satisfy the single-store invariant."""
 
@@ -1593,6 +1597,18 @@ class RunnerFactOutbox:
                     policy_revision INTEGER NOT NULL CHECK (policy_revision > 0),
                     policy_digest TEXT NOT NULL,
                     updated_at_ns INTEGER NOT NULL,
+                    PRIMARY KEY (tenant_scope, trading_mode, runner_id),
+                    FOREIGN KEY (policy_id) REFERENCES runner_cap_policy(policy_id)
+                );
+                CREATE TABLE IF NOT EXISTS runner_risk_latch (
+                    tenant_scope TEXT NOT NULL,
+                    trading_mode TEXT NOT NULL,
+                    runner_id TEXT NOT NULL,
+                    policy_id TEXT NOT NULL,
+                    reason_code TEXT NOT NULL,
+                    source_event_id TEXT NOT NULL,
+                    latched_at_ns INTEGER NOT NULL,
+                    cleared_at_ns INTEGER,
                     PRIMARY KEY (tenant_scope, trading_mode, runner_id),
                     FOREIGN KEY (policy_id) REFERENCES runner_cap_policy(policy_id)
                 );
@@ -3897,6 +3913,7 @@ class RunnerStateStore:
                 policy,
                 deployment_instance_id=instance,
             )
+            self._require_runner_risk_unlatched(connection, policy_row)
             if requested > Decimal(str(policy_row["max_order_notional"])):
                 raise RunnerStateAuthorityError("runner policy per-order cap exceeded")
             existing = connection.execute(
@@ -4007,6 +4024,8 @@ class RunnerStateStore:
                 raise RunnerStateAuthorityError("runner policy per-order cap exceeded")
             exposure = self._runner_exposure(connection, policy_row)
             old_reserved = Decimal(str(row["reserved_notional"]))
+            if new_reserved > old_reserved:
+                self._require_runner_risk_unlatched(connection, policy_row)
             if exposure.total_exposure - old_reserved + new_reserved > exposure.max_total_notional:
                 raise RunnerStateAuthorityError("runner aggregate cap exceeded")
             if new_reserved > 0:
@@ -4292,13 +4311,11 @@ class RunnerStateStore:
                 )
             filled = Decimal(str(row["filled_exposure"])) + opening_notional
             filled_quantity = Decimal(str(row["filled_quantity"])) + opening_quantity
-            if filled > Decimal(str(policy_row["max_order_notional"])):
-                raise RunnerStateAuthorityError("fill exceeds the runner policy per-order cap")
+            per_order_breach = filled > Decimal(str(policy_row["max_order_notional"]))
             exposure = self._runner_exposure(connection, policy_row)
             remaining = max(reserved - fill, Decimal("0"))
             settled_total = exposure.total_exposure + opening_notional - (reserved - remaining)
-            if settled_total > exposure.max_total_notional:
-                raise RunnerStateAuthorityError("fill exceeds the runner aggregate cap")
+            aggregate_breach = settled_total > exposure.max_total_notional
             state = (
                 "partially_filled"
                 if remaining > 0
@@ -4356,6 +4373,21 @@ class RunnerStateStore:
                 snapshot,
                 recorded_at_ns,
             )
+            if per_order_breach or aggregate_breach:
+                reason = (
+                    "per-order fill cap exceeded"
+                    if per_order_breach
+                    else "aggregate fill cap exceeded"
+                )
+                self._latch_runner_risk(
+                    connection,
+                    policy_row,
+                    reason_code=reason.replace(" ", "_"),
+                    source_event_id=event_id,
+                    recorded_at_ns=recorded_at_ns,
+                )
+                connection.commit()
+                raise RunnerPostTradeRiskBreach(reason)
             return snapshot
 
     def record_position_reduction_fifo_sync(
@@ -4746,6 +4778,20 @@ class RunnerStateStore:
                     source_digest,
                 ),
             )
+            connection.execute(
+                """
+                UPDATE runner_risk_latch
+                SET cleared_at_ns = ?
+                WHERE tenant_scope = ? AND trading_mode = ? AND runner_id = ?
+                  AND cleared_at_ns IS NULL
+                """,
+                (
+                    recorded_at_ns,
+                    policy_row["tenant_scope"],
+                    policy_row["trading_mode"],
+                    policy_row["runner_id"],
+                ),
+            )
             exposure = self._runner_exposure(connection, policy_row)
             self._record_reservation_event(
                 connection,
@@ -4900,6 +4946,59 @@ class RunnerStateStore:
                 "reservation requires the current effective runner policy"
             )
         return row
+
+    @staticmethod
+    def _require_runner_risk_unlatched(
+        connection: sqlite3.Connection,
+        policy_row: Mapping[str, Any],
+    ) -> None:
+        latch = connection.execute(
+            """
+            SELECT reason_code FROM runner_risk_latch
+            WHERE tenant_scope = ? AND trading_mode = ? AND runner_id = ?
+              AND cleared_at_ns IS NULL
+            """,
+            (
+                policy_row["tenant_scope"],
+                policy_row["trading_mode"],
+                policy_row["runner_id"],
+            ),
+        ).fetchone()
+        if latch is not None:
+            raise RunnerStateAuthorityError(f"runner risk latch is active: {latch['reason_code']}")
+
+    @staticmethod
+    def _latch_runner_risk(
+        connection: sqlite3.Connection,
+        policy_row: Mapping[str, Any],
+        *,
+        reason_code: str,
+        source_event_id: str,
+        recorded_at_ns: int,
+    ) -> None:
+        connection.execute(
+            """
+            INSERT INTO runner_risk_latch (
+                tenant_scope, trading_mode, runner_id, policy_id,
+                reason_code, source_event_id, latched_at_ns, cleared_at_ns
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+            ON CONFLICT(tenant_scope, trading_mode, runner_id) DO UPDATE SET
+                policy_id = excluded.policy_id,
+                reason_code = excluded.reason_code,
+                source_event_id = excluded.source_event_id,
+                latched_at_ns = excluded.latched_at_ns,
+                cleared_at_ns = NULL
+            """,
+            (
+                policy_row["tenant_scope"],
+                policy_row["trading_mode"],
+                policy_row["runner_id"],
+                policy_row["policy_id"],
+                reason_code,
+                _non_empty(source_event_id, "source_event_id"),
+                recorded_at_ns,
+            ),
+        )
 
     @staticmethod
     def _reservation_row(

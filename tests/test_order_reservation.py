@@ -9,10 +9,13 @@ from uuid import UUID
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig
+from custos.core.order_reservation_boundary import RunnerReservationBoundary
 from custos.core.runner_fact import (
     OrderReservationRebuildEntry,
     RunnerFactIdentity,
     RunnerFactOutbox,
+    RunnerPostTradeRiskBreach,
     RunnerStateAuthorityError,
     RunnerStateStore,
 )
@@ -234,6 +237,139 @@ def test_market_fill_can_settle_above_quote_reservation_within_signed_caps(
         Decimal("95"),
         "filled",
     )
+
+
+@pytest.mark.asyncio
+async def test_executed_overlimit_fill_is_durable_and_latches_future_risk(
+    tmp_path: Path,
+) -> None:
+    database = tmp_path / "runner-overlimit-fill.sqlite3"
+    store = _store(database)
+    store.reserve_order_notional_sync(
+        event_id="reserve-overlimit",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="overlimit-entry",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("90"),
+    )
+
+    with pytest.raises(RunnerPostTradeRiskBreach, match="per-order"):
+        store.record_order_fill_sync(
+            event_id="fill-overlimit",
+            deployment_instance_id=INSTANCE_A,
+            client_order_id="overlimit-entry",
+            fill_notional=Decimal("120"),
+            fill_quantity=Decimal("1"),
+        )
+
+    reopened = _store(database)
+    recorded = reopened.load_order_reservation_sync(INSTANCE_A, "overlimit-entry")
+    exposure = await reopened.load_runner_exposure(POLICY_ID)
+    assert (recorded.reserved_notional, recorded.filled_exposure, recorded.filled_quantity) == (
+        Decimal("0"),
+        Decimal("120"),
+        Decimal("1"),
+    )
+    assert exposure.total_exposure == Decimal("120")
+    with pytest.raises(RunnerStateAuthorityError, match="risk latch"):
+        reopened.reserve_order_notional_sync(
+            event_id="reserve-after-breach",
+            deployment_instance_id=INSTANCE_A,
+            client_order_id="blocked-entry",
+            policy_id=POLICY_ID,
+            requested_notional=Decimal("1"),
+        )
+
+    replay = reopened.record_order_fill_sync(
+        event_id="fill-overlimit",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="overlimit-entry",
+        fill_notional=Decimal("120"),
+        fill_quantity=Decimal("1"),
+    )
+    assert replay.filled_exposure == Decimal("120")
+    assert (await reopened.load_runner_exposure(POLICY_ID)).total_exposure == Decimal("120")
+
+    await reopened.rebuild_runner_exposure(
+        event_id="trusted-overlimit-rebuild",
+        policy_id=POLICY_ID,
+        open_exposure=Decimal("120"),
+        active_reservations=(),
+        source_digest="9" * 64,
+    )
+    allowed = reopened.reserve_order_notional_sync(
+        event_id="reserve-after-rebuild",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="allowed-entry",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("20"),
+    )
+    assert allowed.reserved_notional == Decimal("20")
+
+
+def test_boundary_freezes_after_persisting_an_executed_overlimit_fill(tmp_path: Path) -> None:
+    store = _store(tmp_path / "runner-overlimit-boundary.sqlite3")
+    store.reserve_order_notional_sync(
+        event_id="reserve-boundary-overlimit",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="boundary-overlimit",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("90"),
+    )
+    breaker = FallbackBreaker(
+        FallbackBreakerConfig(
+            max_notional=Decimal("150"),
+            max_drawdown_pct=Decimal("10"),
+        )
+    )
+
+    class Semantics:
+        @staticmethod
+        def event_is_risk_reducing(_event) -> bool:
+            return False
+
+        @staticmethod
+        def event_exposure_source_order_id(_event):
+            return None
+
+        @staticmethod
+        def event_position_id(_event):
+            return None
+
+        @staticmethod
+        def event_instrument_id(_event):
+            return None
+
+        @staticmethod
+        def event_side(_event):
+            return None
+
+        @staticmethod
+        def fill_notional(_event) -> Decimal:
+            return Decimal("120")
+
+        @staticmethod
+        def fill_quantity(_event) -> Decimal:
+            return Decimal("1")
+
+    class OrderFilled:
+        client_order_id = "boundary-overlimit"
+        event_id = "boundary-fill-overlimit"
+
+    boundary = RunnerReservationBoundary(
+        store=store,
+        deployment_instance_id=INSTANCE_A,
+        policy_id=POLICY_ID,
+        fallback_breaker=breaker,
+        semantics=Semantics(),
+    )
+
+    boundary.on_order_event(OrderFilled())
+
+    assert breaker.frozen is True
+    recorded = store.load_order_reservation_sync(INSTANCE_A, "boundary-overlimit")
+    assert recorded.filled_exposure == Decimal("120")
+    assert recorded.filled_quantity == Decimal("1")
 
 
 @pytest.mark.asyncio
