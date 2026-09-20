@@ -86,7 +86,7 @@
 | Fix | Priority | Status | Completed | Notes |
 | --- | --- | --- | --- | --- |
 | 1 | P1 | ✅ | 2026-09-20 | 四条失败路径 RED；相关 52 项 GREEN |
-| 2 | P1 | 🔲 | — | CR-4 |
+| 2 | P1 | ✅ | 2026-09-20 | RED: 提前写入与缺少原子接口；13 项 GREEN，authority gate 通过 |
 | 3 | P1 | 🔲 | — | CR-6 |
 | 4 | P1 | 🔲 | — | CR-2 |
 | 5 | P1 | 🔲 | — | CR-3 |

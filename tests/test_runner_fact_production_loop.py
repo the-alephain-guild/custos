@@ -51,6 +51,10 @@ class _CapturingEmitter:
         json.dumps(facts, allow_nan=False, separators=(",", ":"), sort_keys=True)
         self.emissions.append((authority, tuple(facts)))
 
+    async def emit_group(self, authority, batches):
+        for facts in batches:
+            await self.emit(authority, facts)
+
 
 class _CoverageHost:
     def __init__(self) -> None:
@@ -285,3 +289,30 @@ async def test_observability_emits_signed_capital_basis_without_log_inference() 
         "max_total_notional": "1000",
         "within_policy": True,
     }
+
+
+async def test_valuation_failure_publishes_no_partial_period() -> None:
+    class UnpricedHost(_ValuationHost):
+        async def runner_fact_valuation_snapshot(self, *args):
+            raise ValueError("mark unavailable")
+
+    emitter = _CapturingEmitter()
+    loop = RunnerFactProductionLoop(
+        host=UnpricedHost(),
+        emitter=emitter,
+        snapshot_interval_secs=1,
+        period_secs=60,
+        period_retry_secs=1,
+    )
+    deployment = SimpleNamespace(
+        authority=SimpleNamespace(stream_key="test", deployment_spec_id=uuid4()),
+        deployment_instance_id=str(uuid4()),
+        currency="USDT",
+        reconciliation_available=True,
+        valuation_checkpoint_available=True,
+    )
+    start = datetime(2026, 9, 20, tzinfo=UTC)
+    assert not await loop._close_reconciliation_period(
+        deployment, start, start + timedelta(seconds=60)
+    )
+    assert emitter.emissions == []

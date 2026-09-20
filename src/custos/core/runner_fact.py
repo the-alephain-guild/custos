@@ -1385,6 +1385,11 @@ class RunnerFactOutbox:
                     next_sequence INTEGER NOT NULL CHECK (next_sequence > 0),
                     updated_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS runner_fact_atomic_group (
+                    group_id TEXT PRIMARY KEY,
+                    stream_key TEXT NOT NULL,
+                    payload_digest TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS runner_fact_seen_event (
                     event_id TEXT PRIMARY KEY,
                     stream_key TEXT NOT NULL,
@@ -1684,6 +1689,60 @@ class RunnerFactOutbox:
         facts: Sequence[Mapping[str, Any]],
     ) -> UUID | None:
         return await asyncio.to_thread(self._enqueue, authority, identity, facts)
+
+    async def enqueue_group(
+        self,
+        authority: RunnerFactAuthority,
+        identity: RunnerFactIdentity,
+        batches: Sequence[Sequence[Mapping[str, Any]]],
+    ) -> tuple[UUID, ...]:
+        """Persist a complete observation atomically, including its retry identity."""
+        return await asyncio.to_thread(self._enqueue_group, authority, identity, batches)
+
+    def _enqueue_group(self, authority, identity, batches) -> tuple[UUID, ...]:
+        if not batches or any(not batch for batch in batches):
+            raise RunnerFactContractError("atomic group requires nonempty batches")
+        group_id = _uuid(batches[-1][-1].get("event_id"), "group_id")
+        digest = _sha256_hex(_canonical_json_bytes(batches))
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                "SELECT stream_key, payload_digest FROM runner_fact_atomic_group WHERE group_id = ?",
+                (group_id,),
+            ).fetchone()
+            if existing is not None:
+                if tuple(existing) != (authority.stream_key, digest):
+                    raise RunnerFactContractError(
+                        "atomic group replay conflicts with stored capture"
+                    )
+                connection.rollback()
+                return ()
+            event_ids = [str(fact.get("event_id")) for batch in batches for fact in batch]
+            if len(set(event_ids)) != len(event_ids):
+                raise RunnerFactContractError("atomic group contains duplicate event_id")
+            for event_id in event_ids:
+                if connection.execute(
+                    "SELECT 1 FROM runner_fact_seen_event WHERE event_id = ?", (event_id,)
+                ).fetchone():
+                    raise RunnerFactContractError("atomic group overlaps previously stored events")
+            ids = []
+            for batch in batches:
+                batch_id = self._enqueue_in_transaction(connection, authority, identity, batch)
+                if batch_id is None:
+                    raise RunnerFactContractError("atomic group overlaps previously stored events")
+                ids.append(batch_id)
+            connection.execute(
+                "INSERT INTO runner_fact_atomic_group VALUES (?, ?, ?)",
+                (group_id, authority.stream_key, digest),
+            )
+            connection.commit()
+            return tuple(ids)
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def enqueue_sync(
         self,
@@ -5419,6 +5478,14 @@ class RunnerFactEmitter:
     ) -> UUID | None:
         self._authority_guard()
         return await self._outbox.enqueue(authority, self._identity, tuple(facts))
+
+    async def emit_group(
+        self,
+        authority: RunnerFactAuthority,
+        batches: Sequence[Sequence[Mapping[str, Any]]],
+    ) -> tuple[UUID, ...]:
+        self._authority_guard()
+        return await self._outbox.enqueue_group(authority, self._identity, batches)
 
     def emit_sync(
         self,

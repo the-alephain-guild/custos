@@ -294,3 +294,43 @@ async def test_puback_without_broker_sequence_keeps_the_batch_pending(
     assert len(pending) == 1
     assert pending[0].attempts == 1
     assert await outbox.publication_receipt(batch_id) is None
+
+
+async def test_atomic_group_rolls_back_all_batches_and_sequences(tmp_path, monkeypatch):
+    outbox = RunnerFactOutbox(tmp_path / "atomic.db")
+    authority, identity = _authority(), _identity()
+    first = _fact(authority, generation=1, lifecycle_state="running")
+    second = _fact(authority, generation=2, lifecycle_state="stopped")
+    enqueue = outbox._enqueue_in_transaction
+    calls = 0
+
+    def fail_second(*args):
+        nonlocal calls
+        calls += 1
+        result = enqueue(*args)
+        if calls == 2:
+            raise OSError("fixture disk full")
+        return result
+
+    monkeypatch.setattr(outbox, "_enqueue_in_transaction", fail_second)
+    with pytest.raises(OSError):
+        await outbox.enqueue_group(authority, identity, ((first,), (second,)))
+    assert not await outbox.pending()
+    monkeypatch.setattr(outbox, "_enqueue_in_transaction", enqueue)
+    await outbox.enqueue_group(authority, identity, ((first,), (second,)))
+    pending = await RunnerFactOutbox(outbox.path).pending()
+    assert [_document(row)["source_seq_start"] for row in pending] == [1, 2]
+
+
+async def test_atomic_group_replay_is_bound_to_capture_bytes(tmp_path):
+    from custos.core.runner_fact import RunnerFactContractError
+
+    outbox = RunnerFactOutbox(tmp_path / "replay.db")
+    authority, identity = _authority(), _identity()
+    fact = _fact(authority, generation=1, lifecycle_state="running")
+    assert await outbox.enqueue_group(authority, identity, ((fact,),))
+    assert not await RunnerFactOutbox(outbox.path).enqueue_group(authority, identity, ((fact,),))
+    changed = {**fact, "lifecycle_state": "stopped"}
+    with pytest.raises(RunnerFactContractError, match="replay conflicts"):
+        await outbox.enqueue_group(authority, identity, ((changed,),))
+    assert len(await outbox.pending()) == 1

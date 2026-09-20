@@ -810,8 +810,7 @@ class RunnerFactProductionLoop:
                 fills=evidence.fills,
                 fees=evidence.fees,
             )
-            for fact in snapshot_facts:
-                await self._emitter.emit(authority, (fact,))
+            batches = [(fact,) for fact in snapshot_facts]
             if (
                 getattr(deployment, "valuation_checkpoint_available", False)
                 and evidence.valuation_collection_started_at is not None
@@ -864,8 +863,7 @@ class RunnerFactProductionLoop:
                 checkpoint_id = _scoped_event_id(
                     authority, "valuation_checkpoint", evidence.venue, period
                 )
-                await self._emitter.emit(
-                    authority,
+                batches.append(
                     (
                         valuation_checkpoint(
                             event_id=checkpoint_id,
@@ -884,8 +882,7 @@ class RunnerFactProductionLoop:
                         ),
                     ),
                 )
-            await self._emitter.emit(
-                authority,
+            batches.append(
                 (
                     reconciliation_period_closed(
                         event_id=_scoped_event_id(authority, "reconciliation_period", period),
@@ -896,6 +893,7 @@ class RunnerFactProductionLoop:
                     ),
                 ),
             )
+            await self._emitter.emit_group(authority, tuple(batches))
             return True
         except Exception as exc:
             _log.error(
