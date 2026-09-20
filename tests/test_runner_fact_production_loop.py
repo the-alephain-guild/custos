@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -213,6 +215,110 @@ async def test_period_close_emits_one_owner_signed_common_valuation_fact() -> No
     assert checkpoint["positions"][0]["internal_mark_price"] == "100"
     assert checkpoint["positions"][0]["common_mark_price"] == "101"
     assert checkpoint["venue_snapshot_id"] == emitter.emissions[0][1][0]["snapshot_id"]
+
+
+async def test_generation_change_keeps_one_instance_period_coverage(monkeypatch) -> None:
+    from custos.core import runner_fact_producer as producer
+    from custos.core.runner_fact import execution_fill
+
+    started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
+    clock = [started_at + timedelta(seconds=20)]
+    instance_id = uuid4()
+    stream_key = f"default:testnet:runner:{instance_id}"
+    first = SimpleNamespace(
+        stream_key=stream_key,
+        deployment_spec_id=uuid4(),
+        trading_mode="testnet",
+        generation=1,
+    )
+    second = SimpleNamespace(
+        stream_key=stream_key,
+        deployment_spec_id=uuid4(),
+        trading_mode="testnet",
+        generation=2,
+    )
+    old_fill = execution_fill(
+        event_id=uuid4(),
+        venue="BINANCE",
+        venue_trade_id="generation-1-trade",
+        venue_order_id="generation-1-order",
+        instrument="BTCUSDT-PERP.BINANCE",
+        side="buy",
+        quantity="1",
+        price="100",
+        fee="0",
+        currency="USDT",
+        occurred_at=started_at + timedelta(seconds=10),
+    )
+    external_fill = {
+        key: old_fill[key]
+        for key in (
+            "venue_trade_id",
+            "venue_order_id",
+            "instrument",
+            "side",
+            "quantity",
+            "price",
+            "fee",
+            "currency",
+            "occurred_at",
+        )
+    }
+
+    def deployment(authority, coverage_started_at):
+        return SimpleNamespace(
+            authority=authority,
+            deployment_instance_id=str(instance_id),
+            reconciliation_available=True,
+            valuation_checkpoint_available=True,
+            currency="USDT",
+            reconciliation_coverage_started_at=coverage_started_at,
+        )
+
+    class Host(_ValuationHost):
+        current = deployment(first, started_at)
+
+        def runner_fact_deployments(self):
+            return (self.current,)
+
+        async def runner_fact_venue_ledger(self, *args):
+            evidence = await super().runner_fact_venue_ledger(*args)
+            return replace(evidence, fills=(external_fill,))
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock[0]
+
+    host = Host()
+    emitter = _CapturingEmitter()
+    stop = asyncio.Event()
+    loop = RunnerFactProductionLoop(
+        host=host,
+        emitter=emitter,
+        snapshot_interval_secs=1,
+        period_secs=60,
+        period_retry_secs=1,
+    )
+    waits = 0
+
+    async def step(stop_event, _seconds):
+        nonlocal waits
+        waits += 1
+        if waits == 1:
+            host.current = deployment(second, started_at + timedelta(seconds=30))
+            clock[0] = started_at + timedelta(seconds=61)
+        else:
+            stop_event.set()
+
+    loop._wait = step
+    monkeypatch.setattr(producer, "datetime", Clock)
+
+    await loop.run_periods(stop)
+
+    assert host.requests[0][1] == started_at
+    assert all(authority.generation == 2 for authority, _ in emitter.emissions)
+    assert any(fact.get("fills") for _, facts in emitter.emissions for fact in facts)
 
 
 class _CapitalBasisHost:

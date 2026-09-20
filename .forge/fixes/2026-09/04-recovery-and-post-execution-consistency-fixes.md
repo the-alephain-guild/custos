@@ -114,8 +114,9 @@ RD-4 同时修改 Custos producer tests 与 Crucible consumer projector。Crucib
 | `tests/engines/nautilus/test_runner_safety_execution_boundary.py` | 36 |
 | `tests/test_order_reservation.py` | 13 |
 | `tests/test_plan_closeout_counts.py` | 29 |
-| `tests/test_runner_command_runtime.py` | 10 |
+| `tests/test_runner_command_runtime.py` | 11 |
 | `tests/test_runner_fact_store.py` | 12 |
+| `tests/test_runner_fact_production_loop.py` | 10 |
 | `tests/toolkit/test_close_reduce_only_fallback.py` | 10 |
 
 ## 进度追踪
@@ -126,4 +127,4 @@ RD-4 同时修改 Custos producer tests 与 Crucible consumer projector。Crucib
 | 2 | P1 | ✅ | 2026-09-20 | pending close-out | verified plain close + dispatch outcome |
 | 3 | P1 | ✅ | 2026-09-20 | pending close-out | heartbeat/apply result precedence |
 | 4 | P1 | ✅ | 2026-09-20 | pending close-out | terminal supervision |
-| 5 | P1 | 🔲 | — | — | cross-generation reconciliation |
+| 5 | P1 | ✅ | 2026-09-20 | Custos pending / Crucible `13babad` | cross-generation reconciliation |
