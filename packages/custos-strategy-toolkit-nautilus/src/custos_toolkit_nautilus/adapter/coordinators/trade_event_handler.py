@@ -156,15 +156,27 @@ class TradeEventHandler:
         # Bind the signal itself rather than a bare flag: the invariant "a reversal
         # entry continues only when a pending signal exists" is then stated once and
         # carries through to the re-arm below.
+        # What outlives this close? Two things can. The entry order may still be at
+        # the venue with more to fill -- reversal is only one way that happens, a
+        # half-filled entry whose half got stopped out is another, and both need the
+        # ownership kept or the later fill arrives unowned and unprotected. And on a
+        # netting reversal the replacement position is already in the cache, its
+        # protection seeded by the fill that opened it.
+        entry_order_id = ctx.order_tracker.entry_order_id
+        entry_order = s.cache.order(entry_order_id) if entry_order_id is not None else None
+        entry_may_still_fill = entry_order is not None and entry_order.is_open
         reversal_entry_signal = (
             pending_entry_signal
-            if ctx.order_tracker.entry_order_id is not None
+            if entry_order_id is not None
             and (
-                ctx.sl_tp_submitted_for_reversal or getattr(ctx, "pending_entry_is_reversal", False)
+                ctx.sl_tp_submitted_for_reversal
+                or getattr(ctx, "pending_entry_is_reversal", False)
+                or entry_may_still_fill
             )
             else None
         )
         reversal_entry_continues = reversal_entry_signal is not None
+        surviving_positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
 
         if ctx.sl_tp_submitted_for_reversal:
             s.log.info(
@@ -197,7 +209,13 @@ class TradeEventHandler:
                     color=LogColor.YELLOW,
                 )
 
-        ctx.position_tracker.reset()
+        # Only reset the position view when nothing is left holding it, and nothing
+        # is about to. A netting reversal has already opened the replacement. An
+        # entry still working at the venue has not opened its position yet, but the
+        # entry price recorded here is what its protection will be sized against --
+        # resetting it to zero makes the later fill unpriceable.
+        if not surviving_positions and not entry_may_still_fill:
+            ctx.position_tracker.reset()
         if reversal_entry_signal is not None:
             ctx.position_tracker.set_pending_signal(reversal_entry_signal, pending_entry_atr)
         # Position confirmed flat -> reset the consecutive close-reject halt count. Both the
@@ -206,7 +224,11 @@ class TradeEventHandler:
         ctx.order_tracker.reset_close_rejects()
         ctx.break_even_applied = False
         # Note: order_tracker.clear() is called inside cancel_sl_tp_orders
-        if ctx.tick_monitor:
+        # The monitor describes the position being held, not the one that just
+        # ended. On a reversal the fill that opened the replacement has already
+        # seeded it, and there is no generic PositionOpened callback that would
+        # build it again if it were cleared here.
+        if ctx.tick_monitor and not surviving_positions:
             ctx.tick_monitor.reset()
 
         # Business hook: trade-result feedback (realized PnL) for martingale / adaptive

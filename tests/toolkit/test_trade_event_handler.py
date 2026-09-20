@@ -108,6 +108,7 @@ def test_handle_position_closed_resets_close_reject_count():
 
     ctx = SimpleNamespace(
         pair="BTC-USDT",
+        instrument_id="BTCUSDT.BINANCE",
         order_tracker=tracker,
         sl_tp_submitted_for_reversal=False,
         allocated_capital=Decimal("0"),
@@ -118,7 +119,7 @@ def test_handle_position_closed_resets_close_reject_count():
     strategy = SimpleNamespace(
         _get_context_from_instrument=lambda _iid: ctx,
         log=MagicMock(),
-        cache=MagicMock(),
+        cache=SimpleNamespace(positions_open=lambda **_kw: [], order=lambda _oid: None),
         _risk_controller=MagicMock(),
         _capital_allocator=None,
         _sltp_coordinator=SimpleNamespace(cancel_sl_tp_orders=lambda _c: 0),
@@ -156,6 +157,7 @@ def test_position_close_preserves_partial_reversal_entry_before_new_exposure():
     tracker.add_exchange_sl_order("old-long-stop")
     ctx = SimpleNamespace(
         pair="BTC-USDT",
+        instrument_id="BTCUSDT.BINANCE",
         order_tracker=tracker,
         sl_tp_submitted_for_reversal=False,
         pending_entry_is_reversal=True,
@@ -174,7 +176,7 @@ def test_position_close_preserves_partial_reversal_entry_before_new_exposure():
     strategy = SimpleNamespace(
         _get_context_from_instrument=lambda _iid: ctx,
         log=MagicMock(),
-        cache=MagicMock(),
+        cache=SimpleNamespace(positions_open=lambda **_kw: [], order=lambda _oid: None),
         _risk_controller=MagicMock(),
         _capital_allocator=None,
         _sltp_coordinator=SimpleNamespace(cancel_sl_tp_orders=cancel_sl_tp_orders),
@@ -218,6 +220,7 @@ def test_position_close_keeps_new_protection_during_nonterminal_reversal_fill():
     tracker.add_exchange_sl_order("new-short-stop")
     ctx = SimpleNamespace(
         pair="BTC-USDT",
+        instrument_id="BTCUSDT.BINANCE",
         order_tracker=tracker,
         sl_tp_submitted_for_reversal=True,
         pending_entry_is_reversal=False,
@@ -230,7 +233,7 @@ def test_position_close_keeps_new_protection_during_nonterminal_reversal_fill():
     strategy = SimpleNamespace(
         _get_context_from_instrument=lambda _iid: ctx,
         log=MagicMock(),
-        cache=MagicMock(),
+        cache=SimpleNamespace(positions_open=lambda **_kw: [], order=lambda _oid: None),
         _risk_controller=MagicMock(),
         _capital_allocator=None,
         _sltp_coordinator=SimpleNamespace(cancel_sl_tp_orders=cancel),

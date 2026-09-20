@@ -1187,3 +1187,112 @@ class TestARefusedProtectionIsNotCoverage:
 
         assert attempts_after_first == 0
         assert len(sent_orders) == 1, "a position with no coverage must be repaired"
+
+
+class TestCloseCleanupRespectsWhatSurvives:
+    """RS-7: a close tidies up after one position, not after the pair.
+
+    Two things can outlive it. A netting reversal has already opened the new
+    position by the time the old PositionClosed arrives, and a partly filled
+    entry is still sitting at the venue when the half it did fill gets stopped
+    out.
+    """
+
+    @staticmethod
+    def _closed_event(h: Harness):
+        return NS(instrument_id=h.instrument.id, realized_pnl=None)
+
+    def test_a_reversal_keeps_the_new_position_s_tick_protection(self):
+        monitor = scaled_monitor(1)
+        h = Harness(monitor=monitor)
+        # The new short is already in the cache and its protection is seeded.
+        h.position.is_long, h.position.is_short = False, True
+        monitor.init_position(Decimal("100"), False, quantity=Decimal("1"))
+
+        TradeEventHandler(h).handle_position_closed(self._closed_event(h))
+
+        assert h.ctx.tick_monitor.is_active
+        assert h.ctx.tick_monitor._entry_price == Decimal("100"), (
+            "the old position closing must not erase the new one's monitor"
+        )
+
+    def test_the_reversed_position_can_still_take_profit(self):
+        """The consequence: the surviving short must still exit at its target."""
+        monitor = scaled_monitor(1)
+        h = Harness(monitor=monitor)
+        h.position.is_long, h.position.is_short = False, True
+        monitor.init_position(Decimal("100"), False, quantity=Decimal("1"))
+        TradeEventHandler(h).handle_position_closed(self._closed_event(h))
+
+        h.tick("97")  # 3% in favour of a short, past the 2% first tier
+
+        assert h.sent, "a surviving position with a live monitor must still exit"
+
+    def test_a_partly_filled_entry_keeps_its_ownership_through_a_stop_out(self):
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        h = Harness(mode=SLTPMode.EXCHANGE)
+        h.flat()
+        SignalExecutionCoordinator(h).execute_entry_for_pair(
+            h.ctx, Signal.enter_long(price=100.0), size=Decimal("100"), bar=NS(close=Decimal("100"))
+        )
+        entry = h.sent[0]
+        h.positions = [h.position]
+        h.position.quantity = Decimal("0.5")
+        TradeEventHandler(h).handle_order_filled(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=entry.client_order_id,
+                order_side=OrderSide.BUY,
+                last_qty=Quantity.from_str("0.500"),
+                last_px=Price.from_str("100.00"),
+            )
+        )
+        # That half is stopped out. The entry order is still open at the venue.
+        h.positions = []
+        assert entry.is_open, "precondition: the rest of the entry can still fill"
+
+        TradeEventHandler(h).handle_position_closed(self._closed_event(h))
+
+        assert h.ctx.order_tracker.entry_order_id == entry.client_order_id
+        assert h.ctx.position_tracker.pending_signal is not None
+
+    def test_the_rest_of_that_entry_still_gets_protection(self):
+        """The consequence: the later fill must not arrive as an untracked one."""
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        h = Harness(mode=SLTPMode.EXCHANGE)
+        h.flat()
+        SignalExecutionCoordinator(h).execute_entry_for_pair(
+            h.ctx, Signal.enter_long(price=100.0), size=Decimal("100"), bar=NS(close=Decimal("100"))
+        )
+        entry = h.sent[0]
+        h.positions = [h.position]
+        h.position.quantity = Decimal("0.5")
+        TradeEventHandler(h).handle_order_filled(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=entry.client_order_id,
+                order_side=OrderSide.BUY,
+                last_qty=Quantity.from_str("0.500"),
+                last_px=Price.from_str("100.00"),
+            )
+        )
+        h.positions = []
+        TradeEventHandler(h).handle_position_closed(self._closed_event(h))
+
+        # The rest of the entry fills.
+        h.positions = [h.position]
+        h.position.quantity = Decimal("0.5")
+        before = len(h.sent)
+        TradeEventHandler(h).handle_order_filled(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=entry.client_order_id,
+                order_side=OrderSide.BUY,
+                last_qty=Quantity.from_str("0.500"),
+                last_px=Price.from_str("100.00"),
+            )
+        )
+
+        assert len(h.sent) > before, "the remaining exposure must be protected"
