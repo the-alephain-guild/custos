@@ -46,6 +46,12 @@ class TradeEventHandler:
         if ctx is None:
             return
 
+        # A scaled take-profit level is spent by its fill, not by the price that
+        # triggered it. This is settled before the entry-ownership gate below, which
+        # returns early for any fill that is not the tracked entry.
+        if ctx.tick_monitor is not None:
+            ctx.tick_monitor.confirm_level_order(event.client_order_id)
+
         # Binance's user stream is account-wide. When two nodes share an account,
         # a sibling order fill can arrive while this strategy still has its own entry
         # signal pending. Only the exact tracked entry may consume that signal and arm
@@ -215,6 +221,10 @@ class TradeEventHandler:
 
         # A canceled order will never fill, so its signal link goes here.
         s._order_signal_map.pop(str(event.client_order_id), None)
+
+        # Likewise it took no quantity, so any scaled level it carried is still owed.
+        if ctx.tick_monitor is not None:
+            ctx.tick_monitor.release_level_order(event.client_order_id)
 
         # Clean up entry order tracker if this was our tracked entry order
         if (

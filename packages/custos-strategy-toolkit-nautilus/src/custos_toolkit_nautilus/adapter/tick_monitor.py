@@ -9,6 +9,7 @@ scaled take profit handling.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from decimal import Decimal
 from typing import TYPE_CHECKING, TypedDict
 
@@ -19,6 +20,19 @@ if TYPE_CHECKING:
 class _TakeProfitLevel(TypedDict):
     target_pct: Decimal
     exit_pct: Decimal
+
+
+class TakeProfitLevelState(str, Enum):  # noqa: UP042 - match the str(Enum) style of SLTPMode
+    """Where one scaled take-profit level stands.
+
+    Reaching the target price is an intent, not an outcome. A level is only spent
+    once the venue reports the fill that took the quantity, so a dispatch that was
+    refused, rejected or never sent returns the level to the market.
+    """
+
+    ARMED = "armed"
+    PENDING = "pending"
+    COMPLETED = "completed"
 
 
 @dataclass
@@ -297,7 +311,11 @@ class TickMonitorManager:
         self._tp_method = tp_method
         self._tp_fixed_pct = tp_fixed_pct
         self._tp_levels = tp_levels or []
-        self._tp_levels_hit: list[bool] = [False] * len(self._tp_levels)
+        self._tp_level_states: list[TakeProfitLevelState] = [
+            TakeProfitLevelState.ARMED
+        ] * len(self._tp_levels)
+        # order id -> zero-based level index, for the level a dispatched order owns.
+        self._level_orders: dict[str, int] = {}
 
         # Trailing stop manager (only created for trailing method)
         self._trailing_manager: TrailingStopManager | None = None
@@ -355,7 +373,7 @@ class TickMonitorManager:
         self._entry_atr = self._to_decimal(entry_atr) if entry_atr is not None else None
 
         # Reset scaled TP levels
-        self._tp_levels_hit = [False] * len(self._tp_levels)
+        self._reset_levels()
 
         # Initialize trailing manager if present
         if self._trailing_manager is not None:
@@ -371,7 +389,7 @@ class TickMonitorManager:
         self._entry_price = None
         self._is_long = None
         self._entry_atr = None
-        self._tp_levels_hit = [False] * len(self._tp_levels)
+        self._reset_levels()
 
         if self._trailing_manager is not None:
             self._trailing_manager.reset()
@@ -410,6 +428,52 @@ class TickMonitorManager:
 
         return None
 
+    def observe(self, current_price: Decimal | float) -> None:
+        """Take in the current price without producing or consuming an exit.
+
+        Recovery needs the monitor to see where the market is, but reading it must
+        not advance a scaled level: a level advanced here would be paid for with a
+        quantity nothing was ever sent for.
+        """
+        if not self.is_active or self._entry_price is None or self._is_long is None:
+            return
+        if self._trailing_manager is not None:
+            self._trailing_manager.update_peak(self._to_decimal(current_price), self._is_long)
+
+    def bind_level_order(self, level: int, order_id: object) -> None:
+        """Record which order carries a level's quantity (``level`` is 1-based)."""
+        index = level - 1
+        if 0 <= index < len(self._tp_level_states):
+            self._level_orders[str(order_id)] = index
+
+    def confirm_level_order(self, order_id: object) -> bool:
+        """A fill took the quantity: the level is spent. Returns True if one matched."""
+        index = self._level_orders.pop(str(order_id), None)
+        if index is None:
+            return False
+        self._tp_level_states[index] = TakeProfitLevelState.COMPLETED
+        return True
+
+    def release_level_order(self, order_id: object) -> bool:
+        """The order will never fill: return its level to the market."""
+        index = self._level_orders.pop(str(order_id), None)
+        if index is None:
+            return False
+        if self._tp_level_states[index] is TakeProfitLevelState.PENDING:
+            self._tp_level_states[index] = TakeProfitLevelState.ARMED
+        return True
+
+    def release_level(self, level: int) -> None:
+        """Return a level that was triggered but never dispatched (``level`` is 1-based)."""
+        index = level - 1
+        if 0 <= index < len(self._tp_level_states):
+            if self._tp_level_states[index] is TakeProfitLevelState.PENDING:
+                self._tp_level_states[index] = TakeProfitLevelState.ARMED
+
+    def _reset_levels(self) -> None:
+        self._tp_level_states = [TakeProfitLevelState.ARMED] * len(self._tp_levels)
+        self._level_orders = {}
+
     def _check_fixed_tp(self, current_price: Decimal, pnl_pct: Decimal) -> ExitAction | None:
         """Check fixed take profit trigger."""
         if self._tp_fixed_pct is None:
@@ -426,16 +490,16 @@ class TickMonitorManager:
     def _check_scaled_tp(self, current_price: Decimal, pnl_pct: Decimal) -> ExitAction | None:
         """Check scaled take profit levels."""
         for i, level in enumerate(self._tp_levels):
-            # Skip already-hit levels
-            if self._tp_levels_hit[i]:
+            # Skip levels already taken, and those awaiting an execution report.
+            if self._tp_level_states[i] is not TakeProfitLevelState.ARMED:
                 continue
 
             target_pct = level.get("target_pct", Decimal("0"))
             exit_pct = level.get("exit_pct", Decimal("0"))
 
             if pnl_pct >= target_pct:
-                # Mark level as hit
-                self._tp_levels_hit[i] = True
+                # Awaiting dispatch and its report -- not yet spent.
+                self._tp_level_states[i] = TakeProfitLevelState.PENDING
                 return ExitAction(
                     exit_type="partial_tp",
                     price=current_price,

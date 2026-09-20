@@ -20,14 +20,14 @@ pytest.importorskip("nautilus_trader")
 
 from types import SimpleNamespace as NS  # noqa: E402
 
-from _strategy_harness import Harness  # noqa: E402
+from _strategy_harness import Harness, scaled_monitor  # noqa: E402
 from custos_toolkit.signals.types import Signal  # noqa: E402
 from custos_toolkit_nautilus.adapter.coordinators import (  # noqa: E402
     OrderReconciler,
     TradeEventHandler,
 )
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode  # noqa: E402
-from nautilus_trader.model import OrderSide, Price, Quantity  # noqa: E402
+from nautilus_trader.model import OrderSide, OrderType, Price, Quantity  # noqa: E402
 
 
 class TestAtrRepairKeepsItsAtr:
@@ -204,3 +204,101 @@ class TestACancelRequestIsNotADisappearance:
 
         assert len(h.sent) == 2
         assert h.ctx.order_tracker.entry_order_id == h.sent[1].client_order_id
+
+
+class TestAScaledLevelIsSpentOnlyByAFill:
+    """ST-2: reaching a price is not taking profit at it."""
+
+    def test_a_locally_refused_partial_retries_at_the_same_price(self):
+        monitor = scaled_monitor(1)
+        monitor.init_position(Decimal("100"), True)
+        h = Harness(monitor=monitor)
+        attempts = []
+
+        def refuse(order):
+            attempts.append(order)
+            return False  # refused locally, before dispatch
+
+        h.submit_order = refuse
+
+        h.tick("103")
+        h.tick("103")
+
+        assert len(attempts) == 2, "a level nothing was sent for must remain available"
+
+    def test_recovery_reads_the_market_without_spending_a_level(self):
+        h = Harness(monitor=scaled_monitor(1))
+
+        OrderReconciler(h).recover_from_existing_positions()
+        h.tick("105")
+
+        assert len(h.sent) == 1, "the recovered position must still take its profit"
+
+    def test_a_rejected_partial_does_not_cancel_a_valid_stop(self):
+        monitor = scaled_monitor(1)
+        monitor.init_position(Decimal("100"), True)
+        h = Harness(mode=SLTPMode.HYBRID, monitor=monitor)
+        protection = h.order(
+            OrderType.STOP_MARKET,
+            quantity=h.instrument.make_qty(Decimal("1")),
+            order_side=OrderSide.SELL,
+            reduce_only=True,
+            trigger_price=Price.from_str("90.00"),
+        )
+        h.ctx.order_tracker.add_exchange_sl_order(protection.client_order_id, Decimal("1"))
+
+        h.tick("103")
+        partial = h.sent[-1]
+        assert partial.client_order_id in h.ctx.order_tracker.tp_order_ids, (
+            "a partial take-profit must be owned, or its rejection is read as a failed close"
+        )
+
+        OrderReconciler(h).handle_order_rejected(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=partial.client_order_id,
+                reason="-2022 ReduceOnly Order is rejected.",
+            )
+        )
+
+        assert protection.client_order_id not in h.cancelled
+        assert h.ctx.order_tracker.exchange_sl_order_ids == [protection.client_order_id]
+
+    def test_a_rejected_partial_leaves_its_level_available(self):
+        monitor = scaled_monitor(1)
+        monitor.init_position(Decimal("100"), True)
+        h = Harness(monitor=monitor)
+        h.tick("103")
+        partial = h.sent[-1]
+
+        OrderReconciler(h).handle_order_rejected(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=partial.client_order_id,
+                reason="-2022 ReduceOnly Order is rejected.",
+            )
+        )
+        h.tick("103")
+
+        assert len(h.sent) == 2, "the target quantity was never taken; the level stands"
+
+    def test_a_filled_partial_spends_its_level(self):
+        monitor = scaled_monitor(1)
+        monitor.init_position(Decimal("100"), True)
+        h = Harness(monitor=monitor)
+        h.tick("103")
+        partial = h.sent[-1]
+
+        h.position.quantity = Decimal("0.5")
+        TradeEventHandler(h).handle_order_filled(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=partial.client_order_id,
+                order_side=OrderSide.SELL,
+                last_qty=Quantity.from_str("0.500"),
+                last_px=Price.from_str("103.00"),
+            )
+        )
+        h.tick("103")
+
+        assert len(h.sent) == 1, "a confirmed level must not fire again"

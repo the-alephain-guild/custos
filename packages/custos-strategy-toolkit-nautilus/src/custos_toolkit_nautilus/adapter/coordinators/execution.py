@@ -15,7 +15,7 @@ shells delegate the body to this component's ``handle_*`` methods.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import OrderSide, QuoteTick, TimeInForce, TradeTick
@@ -98,26 +98,44 @@ class ExecutionCoordinator:
         )
 
         if action.partial_pct:
-            self._execute_partial_exit_for_pair(ctx, position, action.partial_pct, action.reason)
+            self._execute_partial_exit_for_pair(
+                ctx, position, action.partial_pct, action.reason, action.level
+            )
         else:
             self._execute_trailing_stop_exit_for_pair(ctx, action.price, action.reason)
 
     def _execute_partial_exit_for_pair(
-        self, ctx: PairContext, position: Position, exit_pct: Decimal, reason: str
+        self,
+        ctx: PairContext,
+        position: Position,
+        exit_pct: Decimal,
+        reason: str,
+        level: int | None = None,
     ) -> None:
-        """Execute partial position exit for a specific pair."""
+        """Execute partial position exit for a specific pair.
+
+        A scaled level arrives here already marked pending. Every path that ends
+        without a live order at the venue must hand the level back, or its quantity
+        is never taken and no further tick will retry it.
+        """
         s = self._strategy
+
+        def abandon_level() -> None:
+            if level is not None and ctx.tick_monitor is not None:
+                ctx.tick_monitor.release_level(level)
+
         raw_exit_qty = Decimal(str(position.quantity)) * exit_pct
 
         instrument = s.cache.instrument(ctx.instrument_id)
         if instrument is None:
             s.log.error(f"Instrument not found: {ctx.instrument_id}")
+            abandon_level()
             return
         exit_qty = instrument.make_qty(raw_exit_qty)
 
         if exit_qty <= 0:
+            abandon_level()
             return
-
 
         order = s.order_factory.market(
             instrument_id=ctx.instrument_id,
@@ -127,7 +145,22 @@ class ExecutionCoordinator:
             reduce_only=True,
         )
 
-        s.submit_order(order)
+        dispatched = cast(bool | None, s.submit_order(order))
+        if dispatched is False:
+            s.log.warning(
+                f"[{ctx.pair}] PARTIAL EXIT was refused locally before dispatch; "
+                "the level remains available",
+            )
+            abandon_level()
+            return
+
+        # Own the order. A partial take-profit that no tracker claims is read as a
+        # failed full close when the venue rejects it, and that path cancels every
+        # order for the instrument -- including a stop that is doing its job.
+        ctx.order_tracker.add_tp_order(order.client_order_id)
+        if level is not None and ctx.tick_monitor is not None:
+            ctx.tick_monitor.bind_level_order(level, order.client_order_id)
+
         s.log.info(
             f"[{ctx.pair}] PARTIAL EXIT: {reason} | qty={exit_qty} ({exit_pct * 100:.0f}%)",
             color=LogColor.MAGENTA,

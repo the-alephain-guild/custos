@@ -18,6 +18,7 @@ from custos_toolkit_nautilus.adapter.config.risk import (
 )
 from custos_toolkit_nautilus.adapter.tick_monitor import (
     ExitAction,
+    TakeProfitLevelState,
     TickMonitorManager,
     TrailingStopManager,
 )
@@ -606,7 +607,7 @@ class TestTickMonitorManagerInitPosition:
         assert manager._is_long is True
 
     def test_init_position_resets_scaled_levels(self):
-        """Test init_position resets scaled TP levels hit tracking."""
+        """Test init_position resets scaled TP level state and order ownership."""
         levels = [
             {"target_pct": Decimal("0.02"), "exit_pct": Decimal("0.33")},
             {"target_pct": Decimal("0.04"), "exit_pct": Decimal("0.33")},
@@ -616,11 +617,19 @@ class TestTickMonitorManagerInitPosition:
             tp_method="scaled",
             tp_levels=levels,
         )
-        # Simulate some levels being hit
-        manager._tp_levels_hit = [True, False]
+        # Simulate one level taken and another awaiting its execution report
+        manager._tp_level_states = [
+            TakeProfitLevelState.COMPLETED,
+            TakeProfitLevelState.PENDING,
+        ]
+        manager._level_orders = {"O-1": 1}
 
         manager.init_position(entry_price=Decimal("100.00"), is_long=True)
-        assert manager._tp_levels_hit == [False, False]
+        assert manager._tp_level_states == [
+            TakeProfitLevelState.ARMED,
+            TakeProfitLevelState.ARMED,
+        ]
+        assert manager._level_orders == {}
 
 
 class TestTickMonitorManagerReset:

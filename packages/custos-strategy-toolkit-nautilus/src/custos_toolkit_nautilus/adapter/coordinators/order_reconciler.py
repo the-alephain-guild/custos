@@ -98,7 +98,9 @@ class OrderReconciler:
                 bars = s.cache.bars(ctx.bar_type)
                 if bars:
                     current_price = Decimal(str(bars[-1].close))
-                    ctx.tick_monitor.check(current_price)
+                    # Observe, do not check: the return value is discarded here, and a
+                    # check would spend a scaled level on an exit nobody submits.
+                    ctx.tick_monitor.observe(current_price)
 
             # 3. Check and recreate exchange SL orders (exchange/hybrid mode)
             if s._mode.uses_exchange_sl:
@@ -505,6 +507,9 @@ class OrderReconciler:
             # A rejected profit-taking lot does not consume stop coverage and must not
             # enter the full-close -2022 escape path.
             ctx.order_tracker.remove_order(event.client_order_id)
+            if ctx.tick_monitor is not None:
+                # Nothing was taken, so the scaled level it carried is still owed.
+                ctx.tick_monitor.release_level_order(event.client_order_id)
             s.log.warning(
                 f"[{ctx.pair}] Take-profit lot rejected ({reason}); stop coverage retained",
                 color=LogColor.YELLOW,
