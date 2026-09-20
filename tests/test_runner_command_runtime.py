@@ -11,6 +11,7 @@ from custos.artifacts.release_resolver import (
     StrategyReleaseResolutionRejected,
     StrategyReleaseResolutionUnavailable,
 )
+from custos.core.engine_lifecycle import EngineLifecycleQuarantined
 from custos.core.runner_command_intake import (
     CommandDeliveryPolicy,
     CommandIntakeResult,
@@ -233,6 +234,29 @@ async def test_failed_ack_heartbeat_cannot_override_a_successful_apply() -> None
     assert result.status is RunnerCommandRuntimeStatus.APPLIED_ACKED
     assert events == ["apply"]
     assert delivery.events == ["in_progress_failed", "ack"]
+
+
+@pytest.mark.asyncio
+async def test_applied_running_command_enters_terminal_supervision() -> None:
+    supervised = asyncio.Event()
+
+    class Lifecycle(_Lifecycle):
+        async def supervise_once(self, **kwargs):
+            self.events.append(f"supervise:{kwargs['verified'].command.generation}")
+            supervised.set()
+            raise EngineLifecycleQuarantined("fixture terminal quarantine")
+
+    events: list[str] = []
+    coordinator = _coordinator(events, _Resolver(), lifecycle=Lifecycle(events))
+
+    result = await coordinator.process(_Delivery())
+    await asyncio.wait_for(supervised.wait(), timeout=1)
+    stop = asyncio.Event()
+    stop.set()
+    await asyncio.wait_for(coordinator.run_engine_supervision(stop), timeout=1)
+
+    assert result.status is RunnerCommandRuntimeStatus.APPLIED_ACKED
+    assert events == ["apply", "supervise:1"]
 
 
 @pytest.mark.asyncio

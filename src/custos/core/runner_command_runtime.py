@@ -110,6 +110,8 @@ class RunnerCommandRuntimeCoordinator:
         self._credential_resolver = credential_resolver
         self._engine_lifecycle = engine_lifecycle
         self._policy = delivery_policy
+        self._engine_supervisions: dict[object, asyncio.Task[None]] = {}
+        self._engine_supervision_failures: asyncio.Queue[BaseException] = asyncio.Queue()
 
     async def process(self, delivery: InboundCommandDelivery) -> RunnerCommandRuntimeResult:
         intake = await self._intake.process(delivery)
@@ -137,6 +139,7 @@ class RunnerCommandRuntimeCoordinator:
             else:
                 activated = None
                 ready = None
+                await self._cancel_engine_supervision(verified.command.deployment_instance_id)
                 await self._with_heartbeat(
                     delivery,
                     self._engine_lifecycle.apply_non_running(
@@ -272,6 +275,7 @@ class RunnerCommandRuntimeCoordinator:
         runtime_spec["reconciliation_coverage_started_at"] = (
             verified.command.issued_at if initial_reconciliation_backfill else None
         )
+        await self._cancel_engine_supervision(verified.command.deployment_instance_id)
         ready = await self._engine_lifecycle.apply(
             delivery_id=delivery_id,
             verified=verified,
@@ -280,7 +284,97 @@ class RunnerCommandRuntimeCoordinator:
             artifact=activated,
             artifact_policy_id=artifact_policy_id,
         )
+        self._start_engine_supervision(
+            delivery_id=delivery_id,
+            verified=verified,
+            runtime_spec=runtime_spec,
+            credential=credential,
+            artifact=activated,
+            artifact_policy_id=artifact_policy_id,
+        )
         return prepared, activated, ready
+
+    def _start_engine_supervision(
+        self,
+        *,
+        delivery_id: str,
+        verified: VerifiedRunnerCommand,
+        runtime_spec: dict[str, Any],
+        credential: dict[str, Any],
+        artifact: ActivatedStrategyArtifact | ActivatedDevelopmentStrategyArtifact,
+        artifact_policy_id: str | None,
+    ) -> None:
+        supervise_once = getattr(self._engine_lifecycle, "supervise_once", None)
+        if not callable(supervise_once):
+            return
+        instance_id = verified.command.deployment_instance_id
+        task = asyncio.create_task(
+            self._supervise_running_engine(
+                delivery_id=delivery_id,
+                verified=verified,
+                runtime_spec=runtime_spec,
+                credential=credential,
+                artifact=artifact,
+                artifact_policy_id=artifact_policy_id,
+            ),
+            name=(f"runner-engine-supervision:{instance_id}:{verified.command.generation}"),
+        )
+        self._engine_supervisions[instance_id] = task
+        task.add_done_callback(
+            lambda completed, instance=instance_id: self._on_engine_supervision_done(
+                instance,
+                completed,
+            )
+        )
+
+    async def _supervise_running_engine(self, **context: Any) -> None:
+        while True:
+            await self._engine_lifecycle.supervise_once(**context)
+
+    async def _cancel_engine_supervision(self, instance_id: object) -> None:
+        task = self._engine_supervisions.pop(instance_id, None)
+        if task is None:
+            return
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    def _on_engine_supervision_done(
+        self,
+        instance_id: object,
+        task: asyncio.Task[None],
+    ) -> None:
+        if self._engine_supervisions.get(instance_id) is task:
+            self._engine_supervisions.pop(instance_id, None)
+        if task.cancelled():
+            return
+        error = task.exception()
+        if isinstance(error, EngineLifecycleQuarantined):
+            logger.warning("runner engine supervision reached durable quarantine")
+            return
+        self._engine_supervision_failures.put_nowait(
+            error or RuntimeError("runner engine supervision exited unexpectedly")
+        )
+
+    async def run_engine_supervision(self, stop: asyncio.Event) -> None:
+        failure = asyncio.create_task(self._engine_supervision_failures.get())
+        stopped = asyncio.create_task(stop.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {failure, stopped},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if failure in done:
+                raise failure.result()
+        finally:
+            failure.cancel()
+            stopped.cancel()
+            await asyncio.gather(failure, stopped, return_exceptions=True)
+            tasks = tuple(self._engine_supervisions.values())
+            self._engine_supervisions.clear()
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _with_heartbeat(self, delivery: InboundCommandDelivery, operation: Any) -> Any:
         stop = asyncio.Event()

@@ -966,6 +966,10 @@ async def run_daemon(args: argparse.Namespace) -> int:
             tasks.extend(
                 (
                     asyncio.create_task(
+                        command_runtime.run_engine_supervision(stop),
+                        name="runner-engine-terminal-supervision",
+                    ),
+                    asyncio.create_task(
                         fact_production.run_observability(stop),
                         name="runner-fact-observability",
                     ),
