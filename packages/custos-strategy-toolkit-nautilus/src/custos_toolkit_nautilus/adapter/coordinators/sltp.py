@@ -100,10 +100,15 @@ class SLTPCoordinator:
         if new_sl is None:
             return
 
-        if s._mode is SLTPMode.EXCHANGE:
-            ctx.order_tracker.set_sl_order(new_sl.client_order_id, position.quantity)
-        elif s._mode is SLTPMode.HYBRID:
+        # Every mode that reaches this point has just put a real reduce-only stop on
+        # the exchange, so every mode must own it. Tick mode used to fall through
+        # here: the full tick exit then saw a resting reduce-only order, asked for it
+        # to be cancelled, and the cancel walked a tracker that had never heard of it
+        # -- an exit waiting on a request that was never sent.
+        if s._mode is SLTPMode.HYBRID:
             ctx.order_tracker.set_exchange_sl_order(new_sl.client_order_id, position.quantity)
+        else:
+            ctx.order_tracker.set_sl_order(new_sl.client_order_id, position.quantity)
 
         s.submit_order(new_sl)
         self._link_order_to_signal(new_sl, ctx)

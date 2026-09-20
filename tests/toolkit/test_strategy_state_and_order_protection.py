@@ -514,3 +514,46 @@ class TestScaledExitsUseOneBase:
         tick = self._tick_exits((".33", ".33", ".34"), ("103", "105", "107"))
         assert sum(tick) == Decimal("1")
         assert tick == self._exchange_exits((".33", ".33", ".34"))
+
+
+class TestABreakEvenStopIsOwned:
+    """ST-7: an order the exit path must cancel has to be findable."""
+
+    @staticmethod
+    def _broken_even() -> Harness:
+        from custos_toolkit_nautilus.adapter.tick_monitor import TickMonitorManager
+
+        monitor = TickMonitorManager(mode="tick", tp_method="fixed", tp_fixed_pct=Decimal(".04"))
+        monitor.init_position(Decimal("100"), True, quantity=Decimal("1"))
+        h = Harness(monitor=monitor)
+        assert h._mode.allows_break_even, "precondition: tick mode permits break-even"
+        h._sltp_coordinator.move_stop_to_break_even(h.ctx, h.position, Decimal("100"))
+        assert len(h.sent) == 1, "precondition: a stop was actually sent"
+        return h
+
+    def test_the_break_even_stop_is_tracked(self):
+        h = self._broken_even()
+
+        tracked = h.ctx.order_tracker.sl_order_ids + h.ctx.order_tracker.exchange_sl_order_ids
+        assert tracked == [h.sent[0].client_order_id]
+
+    def test_the_take_profit_can_cancel_it(self):
+        h = self._broken_even()
+        stop = h.sent[0]
+
+        h.tick("105")  # past the 4% target
+
+        assert stop.client_order_id in h.cancelled, (
+            "the exit waits for this cancel, so it must be requested"
+        )
+
+    def test_the_position_closes_once_the_stop_is_gone(self):
+        h = self._broken_even()
+        stop = h.sent[0]
+        h.tick("105")
+        stop.is_open = False
+        stop.is_closed = True
+
+        h.tick("106")
+
+        assert h.closed, "with nothing resting, the full exit must go through"
