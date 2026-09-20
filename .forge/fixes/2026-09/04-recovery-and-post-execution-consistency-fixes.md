@@ -1,6 +1,7 @@
 # 04 - recovery-and-post-execution-consistency-fixes
 
-> **Status**: ⏳ In Progress
+> **Status**: ✅ Completed
+> **Completed**: 2026-09-20
 > **Created**: 2026-09-20
 > **Project**: custos
 > **Source**: `.forge/reviews/2026-09-20-custos-recovery-deep-review.md` (`ca49055`)
@@ -88,15 +89,15 @@ RD-4 同时修改 Custos producer tests 与 Crucible consumer projector。Crucib
 
 ## 验证清单
 
-- [ ] 5 个缺陷均有正式失败回归，且失败原因与报告一致
-- [ ] 历史审查探针保留不改
-- [ ] 扩展定向测试通过
-- [ ] `make verify` 通过
-- [ ] `make check-authority` 通过
-- [ ] Crucible projector 单测、`cargo check -p store --lib` 与 `make check-authority` 通过
-- [ ] `git diff --check` 两仓通过
-- [ ] 无真实凭据、真实账户、下单、容器或生产节点操作
-- [ ] Docker、真实交易所、Ubuntu 与部署验收继续单独报告
+- [x] 5 个缺陷均有正式失败回归，且失败原因与报告一致
+- [x] 历史审查探针保留不改；旧缺陷断言在 RD-1 首项即失败
+- [x] 扩展定向测试通过
+- [x] `make verify` 通过
+- [x] `make check-authority` 通过
+- [x] Crucible projector 单测、`cargo check -p store --lib` 与 `make check-authority` 通过
+- [x] `git diff --check` 两仓通过
+- [x] 无真实凭据、真实账户、下单、容器或生产节点操作
+- [x] Docker、真实交易所、Ubuntu 与部署验收继续单独报告
 
 ## 偏离与改进日志
 
@@ -114,6 +115,7 @@ RD-4 同时修改 Custos producer tests 与 Crucible consumer projector。Crucib
 | Test file | Collected |
 |---|---:|
 | `tests/engines/nautilus/test_runner_safety_execution_boundary.py` | 36 |
+| `tests/test_engine_lifecycle.py` | 12 |
 | `tests/test_order_reservation.py` | 13 |
 | `tests/test_plan_closeout_counts.py` | 29 |
 | `tests/test_runner_command_runtime.py` | 11 |
@@ -125,8 +127,26 @@ RD-4 同时修改 Custos producer tests 与 Crucible consumer projector。Crucib
 
 | Task | Priority | Status | Completed | Commit | Notes |
 |---|---:|---|---|---|---|
-| 1 | P1 | ✅ | 2026-09-20 | pending close-out | executed fills + durable latch |
-| 2 | P1 | ✅ | 2026-09-20 | pending close-out | verified plain close + dispatch outcome |
-| 3 | P1 | ✅ | 2026-09-20 | pending close-out | heartbeat/apply result precedence |
-| 4 | P1 | ✅ | 2026-09-20 | pending close-out | terminal supervision |
-| 5 | P1 | ✅ | 2026-09-20 | Custos pending / Crucible `13babad` | cross-generation reconciliation |
+| 1 | P1 | ✅ | 2026-09-20 | `da562e1` | executed fills + durable latch |
+| 2 | P1 | ✅ | 2026-09-20 | `8ba4821` | verified plain close + dispatch outcome |
+| 3 | P1 | ✅ | 2026-09-20 | `799140d` | heartbeat/apply result precedence |
+| 4 | P1 | ✅ | 2026-09-20 | `0b0e8bd` | terminal supervision |
+| 5 | P1 | ✅ | 2026-09-20 | Custos `774ac38` / Crucible `13babad` | cross-generation reconciliation |
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-09-20
+- **总 Task 数**: 5
+- **偏离数**: 2 个流程偏离；另有 2 轮自省修复
+- **验证结果**: Custos `make verify` 全绿；Crucible 定向测试、store check 与 authority gate 全绿
+- **实施 commits**: plan `706c621`; Tasks `da562e1`, `8ba4821`, `799140d`, `0b0e8bd`, `774ac38`; self-reflect `54c22eb`, `9096927`; Crucible `13babad`
+- **契约影响**: wire schema 无变化；Crucible reconciliation 的内部比较范围改为稳定 instance stream，不再按当前 generation/spec 截断
+- **红线守护**: 签名 lane、live fail-closed、non-custodial key 边界与 Decimal money 均未放宽
+- **失败模式覆盖**: post-trade overfill、plain-close 本地拒绝、ACK 续租失败、node terminal/restart、同周期 generation 切换
+- **遗留项**: 未运行真实交易所、真实下单、Docker、Ubuntu 或已部署生产节点验收；并行 Strategy deep review 属独立后续输入
+
+### 功能验证（主路径）
+
+1. 在隔离的 sandbox runner 中发送一条有效签名 running command，并让策略产生持仓后触发本地平仓；普通反向 fallback 只有在 cache 证明它完整减仓时才会送出。
+2. 在同一隔离运行中终止节点 task；runner 应先把 durable 状态标为 degraded，再按预算恢复为 ready，或明确进入 quarantined，不能继续保留陈旧 ready。
+3. 在一个 reconciliation period 内切换 generation 并在切换前后各产生固定成交；关闭周期后应看到两代成交各比较一次，没有旧代漏项或重复项。
