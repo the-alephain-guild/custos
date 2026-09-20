@@ -316,6 +316,12 @@ class TickMonitorManager:
         ] * len(self._tp_levels)
         # order id -> zero-based level index, for the level a dispatched order owns.
         self._level_orders: dict[str, int] = {}
+        # The position size the exit percentages are shares of. Exchange mode prices
+        # every level off the size at submission; tick mode must use one base too, or
+        # the same config exits a different total depending on fill timing.
+        self._initial_quantity: Decimal | None = None
+        # zero-based level index -> quantity actually dispatched for it.
+        self._level_dispatched: dict[int, Decimal] = {}
 
         # Trailing stop manager (only created for trailing method)
         self._trailing_manager: TrailingStopManager | None = None
@@ -356,6 +362,7 @@ class TickMonitorManager:
         entry_price: Decimal | float,
         is_long: bool,
         entry_atr: Decimal | float | None = None,
+        quantity: Decimal | float | None = None,
     ) -> None:
         """
         Initialize for a new position.
@@ -367,10 +374,12 @@ class TickMonitorManager:
             entry_price: Entry price of the position
             is_long: True for long position, False for short
             entry_atr: ATR value at entry (for SL/TP calculations)
+            quantity: Position size the scaled exit percentages are shares of
         """
         self._entry_price = self._to_decimal(entry_price)
         self._is_long = is_long
         self._entry_atr = self._to_decimal(entry_atr) if entry_atr is not None else None
+        self._initial_quantity = self._to_decimal(quantity) if quantity is not None else None
 
         # Reset scaled TP levels
         self._reset_levels()
@@ -389,6 +398,7 @@ class TickMonitorManager:
         self._entry_price = None
         self._is_long = None
         self._entry_atr = None
+        self._initial_quantity = None
         self._reset_levels()
 
         if self._trailing_manager is not None:
@@ -461,6 +471,7 @@ class TickMonitorManager:
             return False
         if self._tp_level_states[index] is TakeProfitLevelState.PENDING:
             self._tp_level_states[index] = TakeProfitLevelState.ARMED
+            self._level_dispatched.pop(index, None)
         return True
 
     def release_level(self, level: int) -> None:
@@ -469,10 +480,51 @@ class TickMonitorManager:
         if 0 <= index < len(self._tp_level_states):
             if self._tp_level_states[index] is TakeProfitLevelState.PENDING:
                 self._tp_level_states[index] = TakeProfitLevelState.ARMED
+                self._level_dispatched.pop(index, None)
+
+    @property
+    def initial_quantity(self) -> Decimal | None:
+        """The position size the scaled exit percentages are shares of."""
+        return self._initial_quantity
+
+    def is_final_level(self, level: int) -> bool:
+        """Whether this 1-based level is the last one configured."""
+        return level == len(self._tp_levels)
+
+    def planned_exit_quantity(self, level: int, remaining: Decimal) -> Decimal:
+        """The quantity this 1-based level should take.
+
+        Levels are shares of the base recorded at init_position, so the total taken
+        does not depend on how much earlier levels already sold. The final level is
+        whatever is left of the planned total, which absorbs the rounding the earlier
+        levels lost. With no base recorded the old remaining-based share is used.
+        """
+        index = level - 1
+        if not 0 <= index < len(self._tp_levels):
+            return Decimal("0")
+        exit_pct = self._tp_levels[index].get("exit_pct", Decimal("0"))
+        base = self._initial_quantity
+        if base is None or base <= 0:
+            return remaining * exit_pct
+        if not self.is_final_level(level):
+            return base * exit_pct
+        planned_total = base * sum(
+            (level_config.get("exit_pct", Decimal("0")) for level_config in self._tp_levels),
+            Decimal("0"),
+        )
+        dispatched = sum(self._level_dispatched.values(), Decimal("0"))
+        return max(planned_total - dispatched, Decimal("0"))
+
+    def record_dispatch(self, level: int, quantity: Decimal) -> None:
+        """Record the quantity actually sent for a 1-based level."""
+        index = level - 1
+        if 0 <= index < len(self._tp_levels):
+            self._level_dispatched[index] = Decimal(str(quantity))
 
     def _reset_levels(self) -> None:
         self._tp_level_states = [TakeProfitLevelState.ARMED] * len(self._tp_levels)
         self._level_orders = {}
+        self._level_dispatched = {}
 
     def _check_fixed_tp(self, current_price: Decimal, pnl_pct: Decimal) -> ExitAction | None:
         """Check fixed take profit trigger."""

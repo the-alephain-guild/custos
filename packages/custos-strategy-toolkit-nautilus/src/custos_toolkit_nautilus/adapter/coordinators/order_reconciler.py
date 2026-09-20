@@ -97,6 +97,7 @@ class OrderReconciler:
                 ctx.tick_monitor.init_position(
                     entry_price=Decimal(str(position.avg_px_open)),
                     is_long=position.is_long,
+                    quantity=Decimal(str(position.quantity)),
                 )
                 bars = s.cache.bars(ctx.bar_type)
                 if bars:

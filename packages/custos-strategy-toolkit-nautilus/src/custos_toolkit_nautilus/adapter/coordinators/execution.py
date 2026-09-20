@@ -124,7 +124,13 @@ class ExecutionCoordinator:
             if level is not None and ctx.tick_monitor is not None:
                 ctx.tick_monitor.release_level(level)
 
-        raw_exit_qty = Decimal(str(position.quantity)) * exit_pct
+        remaining = Decimal(str(position.quantity))
+        if level is not None and ctx.tick_monitor is not None:
+            raw_exit_qty = ctx.tick_monitor.planned_exit_quantity(level, remaining)
+        else:
+            raw_exit_qty = remaining * exit_pct
+        # Never ask to reduce more than is held; the venue would refuse the lot.
+        raw_exit_qty = min(raw_exit_qty, remaining)
 
         instrument = s.cache.instrument(ctx.instrument_id)
         if instrument is None:
@@ -160,6 +166,7 @@ class ExecutionCoordinator:
         ctx.order_tracker.add_tp_order(order.client_order_id)
         if level is not None and ctx.tick_monitor is not None:
             ctx.tick_monitor.bind_level_order(level, order.client_order_id)
+            ctx.tick_monitor.record_dispatch(level, Decimal(str(exit_qty)))
 
         s.log.info(
             f"[{ctx.pair}] PARTIAL EXIT: {reason} | qty={exit_qty} ({exit_pct * 100:.0f}%)",

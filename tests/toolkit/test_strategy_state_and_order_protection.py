@@ -454,3 +454,63 @@ class TestAnUnfilledEntryReleasesWhatItReserved:
         assert h._capital_allocator.available_cash == Decimal("900"), "3 of 4 units unfilled"
         assert h.ctx.allocated_capital == Decimal("100")
         assert h.ctx.position_tracker.has_position, "the filled unit is a real position"
+
+
+class TestScaledExitsUseOneBase:
+    """ST-1: the same config must exit the same total in either mode."""
+
+    @staticmethod
+    def _tick_exits(exit_pcts: tuple[str, ...], prices: tuple[str, ...]) -> list[Decimal]:
+        monitor = scaled_monitor(len(exit_pcts), exit_pcts)
+        monitor.init_position(Decimal("100"), True, quantity=Decimal("1"))
+        h = Harness(monitor=monitor)
+
+        def fill(order):
+            h.sent.append(order)
+            h.position.quantity -= Decimal(str(order.quantity))
+
+        h.submit_order = fill
+        for price in prices:
+            h.tick(price)
+        return [Decimal(str(o.quantity)) for o in h.sent]
+
+    @staticmethod
+    def _exchange_exits(exit_pcts: tuple[str, ...]) -> list[Decimal]:
+        from custos_toolkit_nautilus.adapter.config.risk import (
+            ScaledTakeProfitConfig,
+            ScaledTakeProfitLevelConfig,
+        )
+        from custos_toolkit_nautilus.adapter.orders import TakeProfitSubmitter
+
+        h = Harness()
+        targets = [0.02, 0.04, 0.06]
+        kwargs = {
+            f"level_{i + 1}": ScaledTakeProfitLevelConfig(
+                target_pct=targets[i], exit_pct=float(exit_pcts[i])
+            )
+            for i in range(len(exit_pcts))
+        }
+        config = ScaledTakeProfitConfig(levels=len(exit_pcts), **kwargs)
+        submitter = TakeProfitSubmitter(h.order_factory, h.cache, h.log, h._order_calculator)
+        orders = submitter.create_scaled_orders(
+            h.instrument.id,
+            Signal.enter_long(price=100.0),
+            Decimal("100"),
+            h.position,
+            config,
+        )
+        return [Decimal(str(o.quantity)) for o in orders]
+
+    def test_halves_exit_the_whole_position_in_tick_mode(self):
+        assert sum(self._tick_exits((".5", ".5"), ("103", "105", "110"))) == Decimal("1")
+
+    def test_halves_agree_across_modes(self):
+        assert self._tick_exits((".5", ".5"), ("103", "105", "110")) == self._exchange_exits(
+            (".5", ".5")
+        )
+
+    def test_thirds_agree_across_modes(self):
+        """The last level carries the rounding remainder, in both modes."""
+        tick = self._tick_exits((".33", ".33", ".34"), ("103", "105", "107"))
+        assert sum(tick) == Decimal("1")
+        assert tick == self._exchange_exits((".33", ".33", ".34"))

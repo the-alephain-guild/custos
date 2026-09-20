@@ -156,27 +156,36 @@ def test_on_entry_filled_forwards_only_the_new_partial_fill_quantity():
     ctx.tick_monitor.init_position.assert_not_called()
 
 
+def _stub_position(quantity: str = "1") -> SimpleNamespace:
+    """The monitor records the position size as its scaled-exit base."""
+    return SimpleNamespace(quantity=Decimal(quantity))
+
+
 def test_on_entry_filled_tick_inits_tick_monitor_only():
     s, ctx = _stub_strategy(), _stub_ctx()
-    SLTPMode.TICK.on_entry_filled(s, ctx, _long_signal(), object(), Decimal("100"), Decimal("2"))
+    SLTPMode.TICK.on_entry_filled(
+        s, ctx, _long_signal(), _stub_position(), Decimal("100"), Decimal("2")
+    )
     s._sltp_coordinator.submit_stop_loss.assert_not_called()
     s._sltp_coordinator.submit_take_profit.assert_not_called()
     s._sltp_coordinator.submit_safety_stop_loss.assert_not_called()
     s._sltp_coordinator.submit_native_trailing.assert_not_called()
     ctx.tick_monitor.init_position.assert_called_once_with(
-        entry_price=Decimal("100"), is_long=True, entry_atr=Decimal("2")
+        entry_price=Decimal("100"), is_long=True, entry_atr=Decimal("2"), quantity=Decimal("1")
     )
 
 
 def test_on_entry_filled_hybrid_safety_sl_plus_tick():
     s, ctx = _stub_strategy(), _stub_ctx()
     signal = _long_signal()
-    SLTPMode.HYBRID.on_entry_filled(s, ctx, signal, object(), Decimal("100"), Decimal("2"))
+    SLTPMode.HYBRID.on_entry_filled(
+        s, ctx, signal, _stub_position(), Decimal("100"), Decimal("2")
+    )
     s._sltp_coordinator.submit_safety_stop_loss.assert_called_once_with(ctx, signal)
     s._sltp_coordinator.submit_stop_loss.assert_not_called()
     s._sltp_coordinator.submit_native_trailing.assert_not_called()
     ctx.tick_monitor.init_position.assert_called_once_with(
-        entry_price=Decimal("100"), is_long=True, entry_atr=Decimal("2")
+        entry_price=Decimal("100"), is_long=True, entry_atr=Decimal("2"), quantity=Decimal("1")
     )
 
 
@@ -226,7 +235,7 @@ def test_on_entry_filled_tick_no_monitor_skips_init():
 def test_on_entry_filled_short_signal_is_long_false():
     s, ctx = _stub_strategy(), _stub_ctx()
     short = SimpleNamespace(direction=SignalDirection.ENTER_SHORT)
-    SLTPMode.TICK.on_entry_filled(s, ctx, short, object(), Decimal("100"), None)
+    SLTPMode.TICK.on_entry_filled(s, ctx, short, _stub_position(), Decimal("100"), None)
     ctx.tick_monitor.init_position.assert_called_once_with(
-        entry_price=Decimal("100"), is_long=False, entry_atr=None
+        entry_price=Decimal("100"), is_long=False, entry_atr=None, quantity=Decimal("1")
     )

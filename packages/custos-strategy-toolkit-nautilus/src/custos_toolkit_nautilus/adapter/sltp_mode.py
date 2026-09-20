@@ -120,5 +120,10 @@ def _init_tick_position(
         return
     is_long = signal.direction == SignalDirection.ENTER_LONG
     ctx.tick_monitor.init_position(
-        entry_price=Decimal(str(entry_px)), is_long=is_long, entry_atr=entry_atr
+        entry_price=Decimal(str(entry_px)),
+        is_long=is_long,
+        entry_atr=entry_atr,
+        # Scaled exits are shares of the position the monitor starts on, matching what
+        # exchange mode prices its resting levels against.
+        quantity=Decimal(str(position.quantity)),
     )
