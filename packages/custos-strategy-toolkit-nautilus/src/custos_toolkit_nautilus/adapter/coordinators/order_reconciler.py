@@ -16,7 +16,7 @@ requires them); their bodies delegate to this component's ``handle_*`` methods.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from custos_toolkit.risk.exchange_errors import (
     classify_rejection_reason,
@@ -30,7 +30,7 @@ from custos_toolkit_nautilus.adapter.coordinators.entry_reservation import (
     release_unfilled_entry,
 )
 from custos_toolkit_nautilus.adapter.orders import STALE_SWEEP_RETRY_COOLDOWN_NS, is_stale_order
-from custos_toolkit_nautilus.adapter.runtime_types import Order, Position
+from custos_toolkit_nautilus.adapter.runtime_types import Indicator, Order, Position
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
 
 if TYPE_CHECKING:
@@ -205,7 +205,7 @@ class OrderReconciler:
         pending_atr = ctx.position_tracker.pending_entry_atr
         if pending_atr is not None:
             return pending_atr
-        indicator = ctx.indicators.get("atr")
+        indicator = cast(Indicator | None, ctx.indicators.get("atr"))
         if indicator and indicator.initialized:
             return Decimal(str(indicator.value))
         return None

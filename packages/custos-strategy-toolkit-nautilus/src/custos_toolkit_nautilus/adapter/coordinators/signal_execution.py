@@ -14,13 +14,14 @@ it delegates the signal-execution steps (entry/exit/manage) to this component.
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, cast
 
 from custos_toolkit.signals.types import SignalDirection
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import Bar
 
 from custos_toolkit_nautilus.adapter.execution import ExecutionManager
+from custos_toolkit_nautilus.adapter.runtime_types import Indicator
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
 from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
 from custos_toolkit_nautilus.adapter.strategy_core import CloseAttempt, plan_close_attempt
@@ -30,13 +31,6 @@ if TYPE_CHECKING:
 
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
-
-
-class _Indicator(Protocol):
-    @property
-    def initialized(self) -> bool: ...
-    @property
-    def value(self) -> object: ...
 
 
 class SignalExecutionCoordinator:
@@ -225,7 +219,7 @@ class SignalExecutionCoordinator:
         ctx.allocated_capital += final_size
 
         # Store entry ATR
-        atr = cast(_Indicator | None, ctx.indicators.get("atr"))
+        atr = cast(Indicator | None, ctx.indicators.get("atr"))
         entry_atr = Decimal(str(atr.value)) if atr and atr.initialized else None
         ctx.position_tracker.set_pending_signal(signal, entry_atr)
 

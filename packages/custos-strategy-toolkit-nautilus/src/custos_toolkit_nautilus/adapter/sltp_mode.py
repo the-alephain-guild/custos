@@ -94,18 +94,24 @@ class SLTPMode(str, Enum):  # noqa: UP042 - preserve pre-T4b str(Enum) runtime s
         the tick/hybrid path that seeds the tick monitor, matching the original
         lazy-conversion behavior (exchange/native_trailing never touch it).
         """
-        quantity_kwargs = {} if protection_quantity is None else {"quantity": protection_quantity}
+        # Passed straight through rather than spread from a dict: every submitter
+        # reads None as "use the position quantity", and a **kwargs spread widens to
+        # any keyword the submitter takes, including ones this quantity is not.
         if self is SLTPMode.EXCHANGE:
-            strategy._sltp_coordinator.submit_stop_loss(ctx, signal, **quantity_kwargs)
-            strategy._sltp_coordinator.submit_take_profit(ctx, signal, **quantity_kwargs)
+            strategy._sltp_coordinator.submit_stop_loss(ctx, signal, quantity=protection_quantity)
+            strategy._sltp_coordinator.submit_take_profit(ctx, signal, quantity=protection_quantity)
         elif self is SLTPMode.TICK and initialize_position:
             _init_tick_position(ctx, signal, position, entry_px, entry_atr)
         elif self is SLTPMode.HYBRID:
-            strategy._sltp_coordinator.submit_safety_stop_loss(ctx, signal, **quantity_kwargs)
+            strategy._sltp_coordinator.submit_safety_stop_loss(
+                ctx, signal, quantity=protection_quantity
+            )
             if initialize_position:
                 _init_tick_position(ctx, signal, position, entry_px, entry_atr)
         elif self is SLTPMode.NATIVE_TRAILING:
-            strategy._sltp_coordinator.submit_native_trailing(ctx, signal, **quantity_kwargs)
+            strategy._sltp_coordinator.submit_native_trailing(
+                ctx, signal, quantity=protection_quantity
+            )
 
 
 def _init_tick_position(
