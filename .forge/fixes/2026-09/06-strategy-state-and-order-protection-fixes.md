@@ -1,6 +1,7 @@
 # 06 - strategy-state-and-order-protection-fixes
 
-> **Status**: ⏳ In Progress
+> **Status**: ✅ Completed
+> **Completed**: 2026-09-20
 > **Created**: 2026-09-20
 > **Project**: custos
 > **Source**: `.forge/reviews/2026-09-20-custos-strategy-deep-review.md`（Codex deep review，8 findings）
@@ -116,12 +117,68 @@
 
 ## 验证清单
 
-- [ ] 8 项探针的缺陷断言全部翻转（改写为正式回归测试）
-- [ ] 既有 162 项定向测试仍通过
-- [ ] 每个 Fix 的失败测试先红后绿
-- [ ] `make verify` 通过
-- [ ] `git diff --check` 通过
-- [ ] 无真实账户、下单、容器或生产操作
+- [x] 8 项探针的缺陷断言全部翻转（改写为正式回归测试）
+- [x] 既有 162 项定向测试仍通过
+- [x] 每个 Fix 的失败测试先红后绿
+- [x] `make verify` 通过（exit 0）
+- [x] `make verify-nt` 通过（exit 0）
+- [x] 无真实账户、下单、容器或生产操作
 
 ## 偏离与改进日志
 
+
+无。八项修复均按审查方给出的位置与验收实施，未偏离计划范围。
+
+执行中登记两项计划外改动，均为修复的直接后果而非方向变更：
+
+### DEVIATION: 部分成交的止盈层级仍欠其余量（自省发现）
+- **等级**: 低（在 ST-2 既定验收范围内）
+- **原因**: 层级三态初版在任何成交上关闭层级，而 IOC 分批止盈可能只成交一部分。ST-2 验收原文点名「部分成交」，初版不满足。
+- **影响**: `tick_monitor.py`、`coordinators/trade_event_handler.py`
+- **决定**: 层级以「还欠多少」结算——成交按数量入账，重试只要余量，取消时仍有欠量即退回 ARMED。
+- **发现方式**: Step 3.5 自省 Round 1，非外部审查。
+
+### DEVIATION: strict mypy 要求改写保护量的传递方式
+- **等级**: 低
+- **原因**: `submit_stop_loss` 新增 `atr` 参数后，`on_entry_filled` 里的 `**quantity_kwargs` 展开会加宽到提交函数的任意关键字参数，strict mypy 拒绝。
+- **影响**: `sltp_mode.py`、`runtime_types.py`、`coordinators/signal_execution.py`、`coordinators/order_reconciler.py`
+- **决定**: 保护量显式传参（每个提交函数本就把 None 读作「用持仓量」，行为等价）；ATR 指标读取改走 `runtime_types.Indicator` 协议，顺带消除 `signal_execution` 里的私有副本。
+- **更新的文档**: 无（内部类型，不触及契约）
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-09-20
+- **总 Task 数**: 8（ST-1 至 ST-8）
+- **偏离数**: 2（均为低风险，见上）
+- **验证结果**: 全部通过
+- **实施 commit 范围**: `1151889`..`de47a3a`
+- **契约影响**: 无。改动全部在 toolkit 策略适配层，不触及 RunnerFact、gateway-contract 或 authority 资产。`make check-authority` 通过。
+- **红线守护**: 四条 non-custodial 红线全数守住。ST-8 的额度计算由 float 比率改为 Decimal 算术，是红线 0.4（money math 用 Decimal）的正向收紧；其余改动不触及凭据、引擎启动门或失联降级。
+- **失败模式覆盖**: 见下表；本轮新增的 37 项全部为失败模式或状态一致性用例（撤单被拒、本地拒绝、venue 拒单、部分成交、重启恢复、额度拒绝、零成交终结）。
+
+### 测试计数（取自 `pytest --collect-only`）
+
+| 测试文件 | 条数 |
+|---|---|
+| `tests/toolkit/test_strategy_state_and_order_protection.py` | 37 |
+| `tests/toolkit/test_tick_monitor.py` | 54 |
+| `tests/toolkit/test_sltp_mode.py` | 31 |
+| `tests/test_plan_closeout_counts.py` | 33 |
+
+上表合计 155 条。中间两个文件是既有文件，本轮修改了其中的用例（层级状态表示、保护量传参形式），按 `progress-management.md` 的规则重新计数认领。
+
+最后一行需要解释，否则下一个读者会以为是误列：本轮没有编辑 `test_plan_closeout_counts.py` 一个字节，但它**按带测试计数表的 plan 份数参数化**——本 plan 一落盘，它自己的收集数就从 31 变成 33。认领它的判据是「谁让这个数字变了」，不是「谁编辑了这个文件」，所以这一行归本 plan。
+
+### 扰动验证
+
+八项修复各自的测试都经过反向扰动确认会转红——把修复改回缺陷形态，对应用例失败；还原后全绿。共 11 个扰动点，11/11 转红。首次对 ST-8 的扰动点选错（改了修复后已不再被读取的 `_tiers` 值），换到真正承载均分的那一行后确认转红；这条本身值得记住：**扰动验证必须打在真正承载行为的那行代码上，否则「仍然绿」说明的是扰动无效，不是测试无效。**
+
+### 审查方原始探针的现状
+
+`.forge/reviews/2026-09-20-custos-strategy-deep-repro.py` 现在会在 ST-2 处中止退出。这是预期的：该脚本的每个断言描述的都是**缺陷现状**，缺陷修好后断言自然不成立。该脚本是审查方的产物，本轮未修改它。其覆盖的行为已逐条改写为上表第一个文件中的正式回归测试。
+
+### 功能验证（主路径）
+
+1. 在 sandbox 或 testnet 配置一个用 scaled 止盈的策略（例如两档各 50%），让行情走过第一档目标价。
+2. 预期：第一档发出的减仓单若被本地拒绝或被交易所拒单，同一价位下一个 tick 会重试，而不是这一档就此作废；被拒的止盈单不再导致既有止损被一并撤销。
+3. 配置 `allocation.tiers` 给某币对一个小于所需下单额的额度，触发一次入场。预期：日志出现 `Capital allocation refused`，该笔入场没有订单发出，allocator 可用资金与上下文占用均无变化。
