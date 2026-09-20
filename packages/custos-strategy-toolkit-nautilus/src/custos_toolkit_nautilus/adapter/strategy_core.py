@@ -358,9 +358,15 @@ class NautilusStrategyCore(Strategy, ABC):
         except Exception as exc:
             self._log_error(f"on_bar: {type(exc).__name__}: {exc}")
 
+    # The tick callbacks are gated on shutdown, not on the soft pause. A pause
+    # stops taking on new risk -- the bar path, above -- while the tick path only
+    # ever closes: trailing exits, tick stops, scaled take-profit. Holding it
+    # during a pause left a position that could no longer be exited by the very
+    # mechanism meant to protect it, and a repaired stop did not lift the pause.
+    # Shutdown is a different scope and still stops everything.
     def on_trade(self, tick: TradeTick) -> None:
         try:
-            if self._paused:
+            if self._shutdown_position_policy is not None:
                 return
             self.on_core_trade_tick(tick)
         except Exception as exc:
@@ -368,7 +374,7 @@ class NautilusStrategyCore(Strategy, ABC):
 
     def on_quote(self, tick: QuoteTick) -> None:
         try:
-            if self._paused:
+            if self._shutdown_position_policy is not None:
                 return
             self.on_core_quote_tick(tick)
         except Exception as exc:

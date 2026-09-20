@@ -143,7 +143,12 @@ class TradeEventHandler:
         pnl_color = LogColor.GREEN if realized_pnl > 0 else LogColor.RED
         s.log.info(f"[{ctx.pair}] Position CLOSED: realized_pnl={realized_pnl}", color=pnl_color)
 
-        cast(RiskController, s._risk_controller).record_trade(realized_pnl)
+        # Book the result against the day the position actually closed on. The
+        # event carries that time; the next entry check may be on the other side
+        # of midnight, and advancing the boundary there instead would clear this
+        # loss along with yesterday's.
+        closed_at = int(getattr(event, "ts_event", 0) or 0)
+        cast(RiskController, s._risk_controller).record_trade(realized_pnl, closed_at)
 
         if s._capital_allocator:
             s._capital_allocator.release(ctx.pair, ctx.allocated_capital)

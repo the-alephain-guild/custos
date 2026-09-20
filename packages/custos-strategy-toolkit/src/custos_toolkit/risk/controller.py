@@ -179,13 +179,21 @@ class RiskController:
                 return (self._state.peak_equity - current_equity) / self._state.peak_equity
         return Decimal("0")
 
-    def record_trade(self, pnl: Decimal) -> None:
+    def record_trade(self, pnl: Decimal, current_ts: int = 0) -> None:
         """
         Record completed trade result.
 
         Args:
             pnl: Realized P&L (Decimal)
+            current_ts: Execution time in nanoseconds. A fill belongs to the day it
+                happened on, so the day boundary advances here, before the result is
+                booked -- otherwise a fill just after midnight lands on yesterday's
+                tally and is cleared with it, handing back the whole daily budget.
+                ``0`` means the time is unknown and must not be guessed at with the
+                wall clock: the result is booked against the current session.
         """
+        if current_ts > 0:
+            self._maybe_daily_reset(current_ts)
         self._state.session_pnl += pnl
         self._state.session_trade_count += 1
 
