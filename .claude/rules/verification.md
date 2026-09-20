@@ -160,3 +160,32 @@ uv run pytest tests/test_runner_fact_contract_v1.py -v
 - `make typecheck`: `uv run pyright src/ tests/` (Plan 待定)
 - `make docs`: 生成 API 文档 (若需)
 - `make wire-check`: 独立跑 wire contract fixture diff (若 wire 迭代频繁)
+
+## Runtime and ledger regression gates
+
+C17–C22 的防护已绑定现有测试。修改对应路径时，至少运行下表中的测试文件；
+跨语言变更还须运行消费端测试。测试名与绑定须从源码复核，不能把缺少依赖导致的 skip 计为通过。
+
+| Lesson | Required tests | Required observation |
+| --- | --- | --- |
+| C17 | `tests/test_strategy_signal_bridge.py`、`tests/test_nt_trading_node_host.py` | 审计失败到达宿主；策略原回调仍执行；健康状态降级 |
+| C18 | `tests/test_runner_fact_outbox.py`、`tests/test_runner_fact_production_loop.py` | 估值或中间批次失败时无部分周期；序号回滚；数据库重开与冲突重放 |
+| C19 | `tests/test_portfolio_snapshot.py` | 原生 CASH 账户与行情验证 NAV；无持仓也计算库存；缺价拒绝；不重复计价 |
+| C20 | `tests/test_venue_valuation_regressions.py`、`tests/test_independent_venue_ledgers.py`、`tests/test_runner_fact_production_loop.py` | 钱包与权益口径对齐；必需检查点缺失不关闭；现货库存无伪造成本；永续结算范围一致 |
+| C21 | `tests/test_offline_reconciler.py`、`tests/test_offline_guard_waits_for_readiness.py` | 更新失败可重试；不重复启动；保留 breaker 与高水位；等待新节点就绪 |
+| C22 | `tests/test_plan_closeout_counts.py` | plans 与 fixes 均纳入当前计数；旧报告数字不改 |
+
+完整本地入口为 `make verify-nt`，其 preflight 要求实际加载 Nautilus，随后运行完整测试集。
+定向回归可使用 `uv run --extra dev --extra nautilus pytest <上表文件> -q`。
+
+RunnerFact 契约或现金库存消费逻辑变化时，在 Crucible 仓运行：
+
+```bash
+cargo test -p domain --test runner_fact_contract_v1
+cargo test -p store --lib runner_fact_reconciliation_projector::tests
+make check-authority
+```
+
+必须保留生产端与消费端对同一现金检查点 fixture 的 digest 验证，以及数量、价格和篡改的失败案例。
+共享工作区存在其他构建时，可为本任务设置独立 `CARGO_TARGET_DIR`。不要终止他人的 Cargo 进程。
+这些检查只证明本地契约与实现；真实账户、服务集成、镜像与 Ubuntu 生产发布分别验收。

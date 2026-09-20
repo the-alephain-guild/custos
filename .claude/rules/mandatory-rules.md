@@ -56,6 +56,30 @@ neither routed through the guard nor declared mode-agnostic fails the gate.
 - Transient engine or delivery failures remain retryable.
 - No safety or audit failure may be silently swallowed.
 
+### Runtime observations and replacement
+
+- Audit sink failures must reach the host degradation mechanism. Logging alone
+  does not satisfy failure handling. Callback isolation must preserve both the
+  failure signal and execution of the original strategy handler. See C17.
+- Prepare a complete reconciliation capture before publishing any of it. Persist
+  its manifest, chunks, checkpoint and close atomically; reject different capture
+  bytes under an already recorded identity. Test rollback and restart. See C18.
+- CASH NAV values account balances once using trusted conversion prices. Do not
+  add strategy notional to inventory already valued. Missing nonzero asset prices
+  are unreliable. MARGIN equity retains its declared settlement scope. See C19.
+- Independent reconciliation must align account scope, currency, quantity units
+  and valuation price. Required evidence cannot be silently omitted. Cash
+  inventory is separate from strategy ownership and cost basis; derivatives use
+  wallet balance and common-mark valuation. Consumer validation is required for
+  contract changes. See C20.
+- Structural generation changes must use supported engine lifecycle operations.
+  Resolve replacement materials before stopping; retain breaker state and equity
+  high-water marks across replacement. Apply the new generation only after a
+  successful engine operation; retries must not create duplicate nodes. See C21.
+- Current test-count checks must include plans and fixes. Record fresh evidence
+  in the current report; preserve historical close-outs and acceptance receipts.
+  Local test success does not establish venue or production readiness. See C22.
+
 ## Repository authority
 
 authority-manifest.json and scripts/check-authority-docs.py define the local

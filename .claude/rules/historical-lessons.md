@@ -6,6 +6,48 @@
 
 > **custos 内部 lesson 用 `C1` `C2` … 前缀区分生态数字编号** (见文末"记录新 lesson")。
 
+## 本轮已落地防护的教训索引
+
+完整叙事在 `.forge/lessons-archive/active-detail.md`；强制约束与验证入口分别在同目录的 `mandatory-rules.md` 和 `verification.md`。
+
+
+### #C17: 审计失败必须改变宿主状态
+> Full: `.forge/lessons-archive/active-detail.md` #C17
+
+<!-- hash: 78088e120ad7 -->
+
+
+### #C18: 完整对账采集必须原子落盘
+> Full: `.forge/lessons-archive/active-detail.md` #C18
+
+<!-- hash: f314c7119095 -->
+
+
+### #C19: 现金总资产必须由完整余额估值
+> Full: `.forge/lessons-archive/active-detail.md` #C19
+
+<!-- hash: 07bf8b8d66e6 -->
+
+
+### #C20: 独立账本必须对齐范围与估值口径
+> Full: `.forge/lessons-archive/active-detail.md` #C20
+
+<!-- hash: 38f38987f5f3 -->
+
+
+### #C21: 新 generation 必须符合真实引擎生命周期
+> Full: `.forge/lessons-archive/active-detail.md` #C21
+
+<!-- hash: 1337529e7be8 -->
+
+
+### #C22: 当前验收计数与历史证据分开维护
+> Full: `.forge/lessons-archive/active-detail.md` #C22
+
+<!-- hash: fb0397bc18f8 -->
+
+---
+
 ## C16 并行 agent 的 `git add` 会带走你正在写的文件，且表现为「文件变回旧内容」(2026-09)
 
 - **事件**: NT 2.0 升级 Slice C 期间，另一个 agent 并行在做 Task 10（测试面迁 2.0 import layout）。
@@ -658,19 +700,11 @@
 
 ## 记录新 lesson (custos 内)
 
-custos 自身开发中出现的 lesson 直接在本文件顶部按 workspace 模板追加:
+内部编号继续使用 `C1`、`C2` 等前缀，与生态编号区分。新增条目使用 `### #C<序号>: <标题>`。
+根因与教训各自折叠连续空白、去除首尾空白，用单个换行连接后计算 SHA-256，保留前 12 位作为 hash。
 
-```markdown
-### #<N> <标题> (<YYYY-MM>)
+防护已落地且可从规则或测试入口触发的条目，在本文件保留标题、Full 路径和 hash；完整记录写入
+`.forge/lessons-archive/active-detail.md`。尚依赖人工提醒的条目保留完整卡片。
+新条目默认 active。至少两次独立成功 dogfood 且防护落地后，才可升级为 dogfooded。
 
-**事件**: {发生了什么}
-
-**根因**: {为什么会发生}
-
-**预防**:
-- {措施}
-
-**Binding**: {落到 rule / hook / skill 哪里}
-```
-
-编号避免与 workspace 冲突: custos 内部编号用 `C1` `C2` ... 前缀区分.
+旧条目保留原编号和格式；本轮未对缺少完整字段的继承卡片推测根因或批量补 hash。
