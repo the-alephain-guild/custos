@@ -557,3 +557,57 @@ class TestABreakEvenStopIsOwned:
         h.tick("106")
 
         assert h.closed, "with nothing resting, the full exit must go through"
+
+
+class TestEqualAllocationIgnoresRegistrationOrder:
+    """ST-8: registration order is not configuration."""
+
+    @staticmethod
+    def _allocator(pairs: tuple[str, ...], capital: str = "200", tiers: dict | None = None):
+        from unittest.mock import MagicMock
+
+        from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
+        from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
+        from nautilus_trader.model import InstrumentId
+
+        allocator = CapitalAllocator(
+            AllocationConfig(mode="equal", tiers=tiers or {}), Decimal(capital), MagicMock()
+        )
+        for pair in pairs:
+            allocator.register_pair(pair, InstrumentId.from_str(f"{pair.replace('-', '')}.BINANCE"))
+        return allocator
+
+    def test_two_pairs_split_evenly(self):
+        allocator = self._allocator(("BTC-USDT", "ETH-USDT"))
+
+        assert allocator.get_tier_limit("BTC-USDT") == Decimal("100")
+        assert allocator.get_tier_limit("ETH-USDT") == Decimal("100")
+
+    def test_swapping_registration_order_changes_nothing(self):
+        forward = self._allocator(("BTC-USDT", "ETH-USDT"))
+        reverse = self._allocator(("ETH-USDT", "BTC-USDT"))
+
+        for pair in ("BTC-USDT", "ETH-USDT"):
+            assert forward.get_tier_limit(pair) == reverse.get_tier_limit(pair)
+
+    def test_the_first_pair_cannot_take_everything(self):
+        allocator = self._allocator(("BTC-USDT", "ETH-USDT"))
+
+        assert not allocator.allocate("BTC-USDT", Decimal("200"))
+        assert allocator.get_available_capital("ETH-USDT") == Decimal("100")
+
+    def test_a_third_pair_redivides_the_capital(self):
+        allocator = self._allocator(("BTC-USDT", "ETH-USDT", "SOL-USDT"), capital="300")
+
+        for pair in ("BTC-USDT", "ETH-USDT", "SOL-USDT"):
+            assert allocator.get_tier_limit(pair) == Decimal("100")
+
+    def test_an_explicit_tier_is_honoured_and_the_rest_is_shared(self):
+        """A configured share is not up for redistribution; the remainder is."""
+        allocator = self._allocator(
+            ("BTC-USDT", "ETH-USDT", "SOL-USDT"), capital="100", tiers={"BTC-USDT": 0.5}
+        )
+
+        assert allocator.get_tier_limit("BTC-USDT") == Decimal("50")
+        assert allocator.get_tier_limit("ETH-USDT") == Decimal("25")
+        assert allocator.get_tier_limit("SOL-USDT") == Decimal("25")

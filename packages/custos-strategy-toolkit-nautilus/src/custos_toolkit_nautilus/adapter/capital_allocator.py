@@ -32,7 +32,12 @@ class CapitalAllocator:
         cache: Cache,
     ) -> None:
         self._config = config
-        self._tiers: dict[str, float] = dict(config.tiers) if config.tiers else {}
+        # A configured share belongs to its pair and is never redistributed. Pairs
+        # without one share what is left, recomputed over the whole set each time one
+        # registers -- otherwise the answer depends on registration order.
+        self._explicit_tiers: dict[str, float] = dict(config.tiers) if config.tiers else {}
+        self._tiers: dict[str, float] = dict(self._explicit_tiers)
+        self._implicit_pairs: list[str] = []
         self._initial_capital: Decimal = initial_capital
         self._max_total_exposure: float = config.max_total_exposure
         self._cache = cache
@@ -53,16 +58,44 @@ class CapitalAllocator:
         self._pair_to_instrument[pair] = instrument_id
         self._allocated[pair] = Decimal(0)
 
-        # If no tier configured, use equal distribution
-        if pair not in self._tiers:
-            self._tiers[pair] = 1.0 / max(len(self._tiers) + 1, 1)
+        # No configured tier: this pair shares the unclaimed remainder with the other
+        # unconfigured pairs, which means re-dividing across all of them, including
+        # those already registered.
+        if pair not in self._explicit_tiers:
+            if pair not in self._implicit_pairs:
+                self._implicit_pairs.append(pair)
+            self._redivide_implicit_tiers()
+
+    def _redivide_implicit_tiers(self) -> None:
+        """Split whatever the explicit tiers left over evenly across the rest."""
+        if not self._implicit_pairs:
+            return
+        claimed = sum(self._explicit_tiers.values())
+        remainder = max(1.0 - claimed, 0.0)
+        share = remainder / len(self._implicit_pairs)
+        for pair in self._implicit_pairs:
+            self._tiers[pair] = share
 
     # Capital Allocation
 
     def get_tier_limit(self, pair: str) -> Decimal:
-        """Get allocation limit for a pair."""
-        ratio = Decimal(str(self._tiers.get(pair, 0.0)))
-        return self._initial_capital * ratio
+        """Get allocation limit for a pair.
+
+        An even share is divided in Decimal rather than read back from the float
+        ratio: a third of 300 has to be 100, not 99.99999999999999.
+        """
+        if pair in self._explicit_tiers:
+            return self._initial_capital * Decimal(str(self._explicit_tiers[pair]))
+        if pair in self._implicit_pairs:
+            return self._implicit_remainder() * self._initial_capital / len(self._implicit_pairs)
+        return Decimal(0)
+
+    def _implicit_remainder(self) -> Decimal:
+        """The share of capital the explicit tiers have not claimed."""
+        claimed = sum(
+            (Decimal(str(ratio)) for ratio in self._explicit_tiers.values()), Decimal(0)
+        )
+        return max(Decimal(1) - claimed, Decimal(0))
 
     def get_available_capital(self, pair: str) -> Decimal:
         """Get available capital for a pair."""
