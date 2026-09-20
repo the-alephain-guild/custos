@@ -148,6 +148,30 @@ Plan close-out 后 (Status: ✅ Completed):
 
 ## 后续 plan 规划
 
+### 2026-09-20 三份深审的残余项 (fix 06-19 收尾后仍未动的)
+
+三份报告（strategy 8 项 ST · risk-state 9 项 RS · execution-edge 6 项 EE）共 23 项 finding 全部
+有对应 fix plan 且已 close-out，见下方「修复 (Fixes)」表。以下两类是**有意留下**的，不是遗漏。
+
+#### 待定决策 — RS-6 A：熔断冻结跨重启
+
+`.forge/fixes/2026-09/15-risk-state-survives-restart.md` 只做了 RS-6 的 B 半（Toolkit 风控状态
+随快照跨重启）。A 半是 daemon 重启清除 `FallbackBreaker` 冻结，**不是机械修复**：要先定下冻结的
+**作用域**（per deployment instance 还是 per runner）与**解除条件**——审查方的验收明写要区分
+「崩溃恢复、正常重启、热更新、跨日恢复和显式解除」，那是策略决定。它落在 non-custodial 红线 0.3
+的区域，按 `deviation-protocol.md` 属高风险偏离，需要先有决定再动手。
+
+实现路径已探明：store 里已有 `runner_risk_latch`（C23 的持久化风险闩），
+`RunnerStateStore._latch_runner_risk` / `_require_runner_risk_unlatched` 可直接作模板。
+
+#### 品味 defer — 三项上界，须数据结构先行
+
+`.forge/fixes/2026-09/07-strategy-state-fixes-followup.md` 把三处超上界移交 backlog：
+`adapter/tick_monitor.py`（约 700 行）、`adapter/coordinators/order_reconciler.py`（637 行）、
+`signal_execution.py` 的 `execute_entry_for_pair`（165 行）。按 `coding-taste.md` 的判据，超限是
+「该复盘」的软信号而非红线；拆之前要先想清分解，硬切成浅函数会制造新的阅读负担。另有 6 处既有
+`getattr` 防御同批留下，收敛它们要先在边界把双形态归一化。
+
 ### 内部系统名对外收敛 — 两项 deferred (CEO 2026-07-28 决定先记录不做)
 
 **背景**: 仓库 public。docs-site 有 disclosure gate、README 已清理, 但 `src/` 与
