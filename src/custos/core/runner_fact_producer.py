@@ -811,12 +811,15 @@ class RunnerFactProductionLoop:
                 fees=evidence.fees,
             )
             batches = [(fact,) for fact in snapshot_facts]
-            if (
-                getattr(deployment, "valuation_checkpoint_available", False)
-                and evidence.valuation_collection_started_at is not None
-                and evidence.venue_wallet_balances is not None
-                and evidence.valuation_positions is not None
-            ):
+            if getattr(deployment, "valuation_checkpoint_available", False):
+                if (
+                    evidence.valuation_collection_started_at is None
+                    or evidence.venue_wallet_balances is None
+                    or evidence.valuation_positions is None
+                ):
+                    raise RunnerFactContractError(
+                        "required valuation checkpoint evidence is missing"
+                    )
                 (
                     internal_equity,
                     internal_positions,

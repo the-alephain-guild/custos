@@ -316,3 +316,26 @@ async def test_valuation_failure_publishes_no_partial_period() -> None:
         deployment, start, start + timedelta(seconds=60)
     )
     assert emitter.emissions == []
+
+
+async def test_required_checkpoint_missing_data_cannot_close_period():
+    emitter = _CapturingEmitter()
+    loop = RunnerFactProductionLoop(
+        host=_CoverageHost(),
+        emitter=emitter,
+        snapshot_interval_secs=1,
+        period_secs=60,
+        period_retry_secs=1,
+    )
+    deployment = SimpleNamespace(
+        authority=SimpleNamespace(stream_key="test", deployment_spec_id=uuid4()),
+        deployment_instance_id=str(uuid4()),
+        currency="USDT",
+        reconciliation_available=True,
+        valuation_checkpoint_available=True,
+    )
+    start = datetime(2026, 9, 20, tzinfo=UTC)
+    assert not await loop._close_reconciliation_period(
+        deployment, start, start + timedelta(seconds=60)
+    )
+    assert emitter.emissions == []

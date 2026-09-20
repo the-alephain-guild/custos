@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 from custos.core.runner_fact import SUPPORTED_CURRENCIES
 from custos.core.runner_fact_producer import VenueLedgerEvidence
@@ -160,6 +160,7 @@ class SodexVenueLedgerSource:
 
     def _collect(self, start: datetime, end: datetime) -> VenueLedgerEvidence:
         begin, finish = period_bounds(start, end)
+        collection_started = datetime.now(UTC)
         state = self._state()
         snapshot = self._get("balances")
         if not isinstance(snapshot, dict) or int(snapshot.get("blockHeight", 0)) <= 0:
@@ -192,6 +193,7 @@ class SodexVenueLedgerSource:
                 }
             )
         positions, fills, fees = [], [], []
+        valuation_positions = []
         if self._perpetual:
             current = self._get("positions")
             if current.get("blockHeight") != snapshot["blockHeight"]:
@@ -218,6 +220,22 @@ class SodexVenueLedgerSource:
                         "quantity": str(abs(qty)),
                         "avg_entry_price": str(decimal(row["avgEntryPrice"], "entry price")),
                         "currency": self._settlement,
+                    }
+                )
+                tickers = rows(self._http.get("/markets/tickers", {"symbol": symbol}))
+                if len(tickers) != 1 or tickers[0].get("symbol") != symbol:
+                    raise VenueLedgerError("SoDEX independent mark is missing or ambiguous")
+                mark = decimal(tickers[0].get("markPrice"), "markPrice")
+                if mark <= 0:
+                    raise VenueLedgerError("SoDEX position mark must be positive")
+                position = positions[-1]
+                valuation_positions.append(
+                    {
+                        "instrument": position["instrument"],
+                        "currency": self._settlement,
+                        "quantity": str(abs(qty) * (-1 if position["side"] == "sell" else 1)),
+                        "avg_entry_price": position["avg_entry_price"],
+                        "mark_price": str(mark),
                     }
                 )
         for symbol in self._symbols:
@@ -289,9 +307,20 @@ class SodexVenueLedgerSource:
                             "occurred_at": timestamp_ms(row["timestamp"]).isoformat(),
                         }
                     )
+        observed = max(observed, datetime.now(UTC))
         watermark = hashlib.sha256(
             json.dumps(
-                [snapshot["blockHeight"], balances, positions, fills, fees], sort_keys=True
+                [
+                    snapshot["blockHeight"],
+                    balances,
+                    positions,
+                    fills,
+                    fees,
+                    valuation_positions,
+                    collection_started.isoformat(),
+                    observed.isoformat(),
+                ],
+                sort_keys=True,
             ).encode()
         ).hexdigest()
         return VenueLedgerEvidence(
@@ -313,4 +342,7 @@ class SodexVenueLedgerSource:
             positions=positions,
             fills=fills,
             fees=fees,
+            valuation_collection_started_at=collection_started,
+            venue_wallet_balances={row["currency"]: row["total"] for row in balances},
+            valuation_positions=valuation_positions if self._perpetual else None,
         )

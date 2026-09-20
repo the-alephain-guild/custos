@@ -203,6 +203,7 @@ class OkxVenueLedgerSource:
         observed = timestamp_ms(rows(self._get("/api/v5/public/time", {}, private=False))[0]["ts"])
         if observed < end:
             raise VenueLedgerError("OKX time has not reached the requested close")
+        collection_started = observed
         account = rows(self._get("/api/v5/account/balance", {}))
         if len(account) != 1:
             raise VenueLedgerError("OKX account snapshot is ambiguous")
@@ -224,6 +225,7 @@ class OkxVenueLedgerSource:
                 }
             )
         positions, fills, fees = [], [], []
+        valuation_positions = []
         for symbol in self._symbols:
             multiplier = self._multiplier(symbol)
             quote = symbol.split("-")[1]
@@ -245,6 +247,21 @@ class OkxVenueLedgerSource:
                             "quantity": str(abs(qty) * multiplier),
                             "avg_entry_price": str(decimal(row.get("avgPx"), "avgPx")),
                             "currency": quote,
+                        }
+                    )
+                    mark = decimal(row.get("markPx"), "markPx")
+                    if mark <= 0:
+                        raise VenueLedgerError("OKX position mark must be positive")
+                    position = positions[-1]
+                    valuation_positions.append(
+                        {
+                            "instrument": position["instrument"],
+                            "currency": quote,
+                            "quantity": str(
+                                abs(qty) * multiplier * (-1 if position["side"] == "sell" else 1)
+                            ),
+                            "avg_entry_price": position["avg_entry_price"],
+                            "mark_price": str(mark),
                         }
                     )
             if self._perpetual:
@@ -304,8 +321,20 @@ class OkxVenueLedgerSource:
                         "occurred_at": timestamp_ms(row["ts"]).isoformat(),
                     }
                 )
+        observed = timestamp_ms(rows(self._get("/api/v5/public/time", {}, private=False))[0]["ts"])
         watermark = hashlib.sha256(
-            json.dumps([balances, positions, fills, fees], sort_keys=True).encode()
+            json.dumps(
+                [
+                    balances,
+                    positions,
+                    fills,
+                    fees,
+                    valuation_positions,
+                    collection_started.isoformat(),
+                    observed.isoformat(),
+                ],
+                sort_keys=True,
+            ).encode()
         ).hexdigest()
         return VenueLedgerEvidence(
             venue="OKX",
@@ -326,4 +355,7 @@ class OkxVenueLedgerSource:
             positions=positions,
             fills=fills,
             fees=fees,
+            valuation_collection_started_at=collection_started,
+            venue_wallet_balances={row["currency"]: row["total"] for row in balances},
+            valuation_positions=valuation_positions if self._perpetual else None,
         )

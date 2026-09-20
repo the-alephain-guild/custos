@@ -665,8 +665,8 @@ def test_native_cash_portfolio_balances_are_converted_to_nav():
         OmsType,
         Price,
         PriceType,
-        QuoteTick,
         Quantity,
+        QuoteTick,
         Symbol,
         Venue,
     )
