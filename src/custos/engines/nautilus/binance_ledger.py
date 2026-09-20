@@ -21,6 +21,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 from custos.core.runner_fact import SUPPORTED_CURRENCIES
 from custos.core.runner_fact_producer import VenueLedgerEvidence
+from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory
 
 _SPOT_LIVE = "https://api.binance.com"
 _SPOT_TESTNET = "https://testnet.binance.vision"
@@ -110,11 +111,27 @@ class BinanceVenueLedgerSource:
         )
         fills, fees = self._trade_rows(trades)
         fees.extend(self._income_fee_rows(incomes))
+        inventory = None
+        if not self._futures:
+            if len(self._settlement_currencies) != 1:
+                raise BinanceVenueLedgerError("cash inventory needs one valuation currency")
+            prices = {}
+            for base, quote in self._pairs:
+                ticker = self._public_get(f"/api/v3/ticker/bookTicker?symbol={base}{quote}")
+                if not isinstance(ticker, dict) or ticker.get("symbol") != base + quote:
+                    raise BinanceVenueLedgerError("Binance spot quote is missing or ambiguous")
+                prices[base] = book_mid(ticker.get("bidPrice"), ticker.get("askPrice"))
+            inventory = cash_inventory(balances, next(iter(self._settlement_currencies)), prices)
         observed_ms = self._server_time_ms()
         observed_through = datetime.fromtimestamp(observed_ms / 1000, UTC)
-        venue_wallet_balances = self._wallet_balances(account)
+        venue_wallet_balances = (
+            self._wallet_balances(account)
+            if self._futures
+            else {row["currency"]: row["total"] for row in balances}
+        )
         valuation_positions = self._valuation_positions(futures_positions or ())
         source_state = {
+            "cash_inventory": inventory,
             "collection_started_ms": collection_started_ms,
             "observed_ms": observed_ms,
             "symbols": list(self._symbols),
@@ -143,6 +160,7 @@ class BinanceVenueLedgerSource:
             ),
             venue_wallet_balances=venue_wallet_balances,
             valuation_positions=valuation_positions,
+            cash_inventory=inventory,
         )
 
     def _server_time_ms(self) -> int:
@@ -277,7 +295,11 @@ class BinanceVenueLedgerSource:
         else:
             for row in self._expect_list(account.get("balances")):
                 asset = str(row.get("asset") or "").upper()
-                if asset not in self._currencies:
+                if asset not in SUPPORTED_CURRENCIES:
+                    if Decimal(self._decimal(row.get("free"), "free")) or Decimal(
+                        self._decimal(row.get("locked"), "locked")
+                    ):
+                        raise BinanceVenueLedgerError("unsupported nonzero cash asset")
                     continue
                 free = Decimal(self._decimal(row.get("free"), "free"))
                 locked = Decimal(self._decimal(row.get("locked"), "locked"))

@@ -445,6 +445,23 @@ def _schema() -> dict[str, Any]:
             },
         },
     )
+    inventory_row = {
+        "asset": currency,
+        "internal_quantity": unsigned_decimal,
+        "venue_quantity": unsigned_decimal,
+        "internal_mark_price": unsigned_decimal,
+        "common_mark_price": unsigned_decimal,
+    }
+    facts["RunnerValuationCheckpointFact.v1"]["properties"]["cash_inventory"] = {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": list(inventory_row),
+            "properties": inventory_row,
+        },
+    }
     definitions["fact_RunnerValuationCheckpointFact.v1"] = facts["RunnerValuationCheckpointFact.v1"]
     facts["execution_fill"]["properties"]["fee_currency"] = currency
     facts["execution_fill"]["properties"]["fee"] = decimal

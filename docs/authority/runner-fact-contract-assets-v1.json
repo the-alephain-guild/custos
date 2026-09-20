@@ -74,8 +74,8 @@
     {
       "role": "runner_fact_batch_schema",
       "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-      "sha256": "62845dd87d43eb0f0f07b2ec8f787a53de4607c319fd052f7d7a23c4b29a8da5",
-      "size_bytes": 36591
+      "sha256": "21d75b4d9dfef658255a504bee91b1598956da50089429f5935e3febf9c75bda",
+      "size_bytes": 37945
     },
     {
       "role": "runner_fact_batch_golden",

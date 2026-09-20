@@ -1453,6 +1453,17 @@ class NtTradingNodeHost:
             raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
         return snapshot.equity, snapshot.valuation_rows()
 
+    async def runner_fact_cash_snapshot(
+        self, deployment_instance_id: str, currency: str
+    ) -> tuple[Decimal, tuple[dict[str, str], ...]]:
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None or deployment_instance_id not in self._runner_fact_contexts:
+            raise RuntimeError("cash inventory requires an active RunnerFact deployment")
+        snapshot = self._portfolio_snapshot_provider.snapshot(runtime, currency=currency)
+        if not snapshot.reliable or snapshot.cash_inventory is None:
+            raise RuntimeError("cash inventory is unavailable or unreliable")
+        return snapshot.equity, snapshot.cash_inventory
+
     async def runner_fact_capital_snapshot(
         self, deployment_instance_id: str, currency: str
     ) -> RunnerCapitalBasisSnapshot:

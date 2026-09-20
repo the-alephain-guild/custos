@@ -134,3 +134,68 @@ def test_perpetual_missing_independent_mark_refuses_evidence(venue):
         ledger._http.get = lambda *args: [{"symbol": "BTC-USD"}]
     with pytest.raises(VenueLedgerError):
         ledger._collect(START, END)
+
+
+@pytest.mark.parametrize("venue", ["OKX", "SODEX"])
+def test_spot_inventory_is_explicit_and_has_no_fabricated_cost_basis(venue):
+    ledger = source(venue, False)
+    if venue == "OKX":
+        original = ledger._get
+
+        def get(path, *args, **kwargs):
+            if path.endswith("/ticker"):
+                return [{"instId": "BTC-USDT", "bidPx": "99", "askPx": "101"}]
+            return original(path, *args, **kwargs)
+
+        ledger._get = get
+    else:
+        ledger._http.get = lambda *args: [{"symbol": "vBTC_vUSDC", "bidPx": "99", "askPx": "101"}]
+    evidence = ledger._collect(START, END)
+    base = "BTC" if venue == "OKX" else "VBTC"
+    assert evidence.cash_inventory is not None
+    inventory = {row["asset"]: row for row in evidence.cash_inventory}
+    assert inventory[base] == {"asset": base, "quantity": "1", "mark_price": "100"}
+    assert evidence.positions == []
+    assert evidence.valuation_positions == []
+
+
+def test_binance_spot_inventory_uses_total_free_and_locked_balances(monkeypatch):
+    from custos.engines.nautilus.binance_ledger import BinanceVenueLedgerSource
+
+    monkeypatch.setattr(BinanceVenueLedgerSource, "_server_time_ms", lambda self: STAMP)
+    monkeypatch.setattr(
+        BinanceVenueLedgerSource,
+        "_public_get",
+        lambda *args: {"symbol": "BTCUSDT", "bidPrice": "99", "askPrice": "101"},
+    )
+    monkeypatch.setattr(
+        BinanceVenueLedgerSource,
+        "_signed_get",
+        lambda self, path, params: (
+            {
+                "balances": [
+                    {"asset": "USDT", "free": "90", "locked": "10"},
+                    {"asset": "BTC", "free": "0.8", "locked": "0.2"},
+                ]
+            }
+            if path.endswith("/account")
+            else []
+        ),
+    )
+    ledger = BinanceVenueLedgerSource(
+        spec={"trading_mode": "testnet", "connector": "binance", "pairs": ["BTC-USDT"]},
+        credential={"api_key": "fixture", "api_secret": "fixture"},
+    )
+    evidence = ledger._collect(START, END)
+    assert evidence.venue_wallet_balances["USDT"] == "100"
+    inventory = {row["asset"]: row for row in evidence.cash_inventory}
+    assert inventory["BTC"]["quantity"] == "1"
+    assert inventory["BTC"]["mark_price"] == "100"
+
+
+def test_cash_inventory_refuses_unpriced_external_assets():
+    from custos.engines.nautilus.cash_inventory import cash_inventory
+    from custos.engines.nautilus.ledger_http import VenueLedgerError
+
+    with pytest.raises(VenueLedgerError, match="independent conversion price"):
+        cash_inventory([{"currency": "ETH", "total": "1"}], "USDT", {"BTC": 100})

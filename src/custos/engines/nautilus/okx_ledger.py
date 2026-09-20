@@ -13,6 +13,7 @@ from decimal import Decimal
 
 from custos.core.runner_fact import SUPPORTED_CURRENCIES
 from custos.core.runner_fact_producer import VenueLedgerEvidence
+from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory
 from custos.engines.nautilus.ledger_http import (
     ReadOnlyVenueHttp,
     VenueLedgerError,
@@ -321,6 +322,21 @@ class OkxVenueLedgerSource:
                         "occurred_at": timestamp_ms(row["ts"]).isoformat(),
                     }
                 )
+        inventory = None
+        if not self._perpetual:
+            quotes = {symbol.split("-")[1] for symbol in self._symbols}
+            if len(quotes) != 1:
+                raise VenueLedgerError("cash inventory needs one valuation currency")
+            quote = next(iter(quotes))
+            prices = {}
+            for symbol in self._symbols:
+                ticker = rows(self._get("/api/v5/market/ticker", {"instId": symbol}, private=False))
+                if len(ticker) != 1 or ticker[0].get("instId") != symbol:
+                    raise VenueLedgerError("OKX spot quote is missing or ambiguous")
+                prices[symbol.split("-")[0]] = book_mid(
+                    ticker[0].get("bidPx"), ticker[0].get("askPx")
+                )
+            inventory = cash_inventory(balances, quote, prices)
         observed = timestamp_ms(rows(self._get("/api/v5/public/time", {}, private=False))[0]["ts"])
         watermark = hashlib.sha256(
             json.dumps(
@@ -330,6 +346,7 @@ class OkxVenueLedgerSource:
                     fills,
                     fees,
                     valuation_positions,
+                    inventory,
                     collection_started.isoformat(),
                     observed.isoformat(),
                 ],
@@ -357,5 +374,6 @@ class OkxVenueLedgerSource:
             fees=fees,
             valuation_collection_started_at=collection_started,
             venue_wallet_balances={row["currency"]: row["total"] for row in balances},
-            valuation_positions=valuation_positions if self._perpetual else None,
+            valuation_positions=valuation_positions,
+            cash_inventory=inventory,
         )

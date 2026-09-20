@@ -89,7 +89,7 @@
 | 2 | P1 | ✅ | 2026-09-20 | RED: 提前写入与缺少原子接口；13 项 GREEN，authority gate 通过 |
 | 3 | P1 | ✅ | 2026-09-20 | 3 RED；22 GREEN，含真实 native CASH 与行情回放 |
 | 4 | P1 | ✅ | 2026-09-20 | 3 RED；26 GREEN，缺价拒绝与必需检查点校验 |
-| 5 | P1 | 🔲 | — | CR-3 |
+| 5 | P1 | ✅ | 2026-09-20 | 现货库存 RED→GREEN；三交易所、跨语言 digest、Crucible 2+67 GREEN；消费端 1eaca8d |
 | 6 | P2 | ✅ | 2026-09-20 | generation、材料失败、部署失败 RED；保留 breaker 的替换与回归 GREEN |
 
 ## 偏离与改进日志

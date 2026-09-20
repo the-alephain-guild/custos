@@ -83,6 +83,7 @@ class VenueLedgerEvidence:
     valuation_collection_started_at: datetime | None = None
     venue_wallet_balances: Mapping[str, str] | None = None
     valuation_positions: Sequence[Mapping[str, Any]] | None = None
+    cash_inventory: Sequence[Mapping[str, Any]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +110,10 @@ class RunnerFactHost(Protocol):
     ) -> tuple[Decimal, Sequence[Mapping[str, Any]]]: ...
 
     async def runner_fact_valuation_snapshot(
+        self, deployment_instance_id: str, currency: str
+    ) -> tuple[Decimal, Sequence[Mapping[str, Any]]]: ...
+
+    async def runner_fact_cash_snapshot(
         self, deployment_instance_id: str, currency: str
     ) -> tuple[Decimal, Sequence[Mapping[str, Any]]]: ...
 
@@ -811,6 +816,12 @@ class RunnerFactProductionLoop:
                 fees=evidence.fees,
             )
             batches = [(fact,) for fact in snapshot_facts]
+            if evidence.cash_inventory is not None and not getattr(
+                deployment, "valuation_checkpoint_available", False
+            ):
+                raise RunnerFactContractError(
+                    "cash inventory requires valuation checkpoint capability"
+                )
             if getattr(deployment, "valuation_checkpoint_available", False):
                 if (
                     evidence.valuation_collection_started_at is None
@@ -820,49 +831,89 @@ class RunnerFactProductionLoop:
                     raise RunnerFactContractError(
                         "required valuation checkpoint evidence is missing"
                     )
-                (
-                    internal_equity,
-                    internal_positions,
-                ) = await self._host.runner_fact_valuation_snapshot(
-                    deployment.deployment_instance_id, deployment.currency
-                )
-                internal_by_instrument = {str(row["instrument"]): row for row in internal_positions}
-                venue_by_instrument = {
-                    str(row["instrument"]): row for row in evidence.valuation_positions
-                }
-                if len(internal_by_instrument) != len(internal_positions) or len(
-                    venue_by_instrument
-                ) != len(evidence.valuation_positions):
-                    raise RunnerFactContractError(
-                        "valuation checkpoint positions must have unique instruments"
+                checkpoint_inventory = None
+                if evidence.cash_inventory is not None:
+                    internal_equity, inventory = await self._host.runner_fact_cash_snapshot(
+                        deployment.deployment_instance_id, deployment.currency
                     )
-                checkpoint_positions: list[dict[str, Any]] = []
-                for instrument in sorted(set(internal_by_instrument) | set(venue_by_instrument)):
-                    internal = internal_by_instrument.get(instrument)
-                    venue_position = venue_by_instrument.get(instrument)
-                    if venue_position is None:
-                        raise RunnerFactContractError(
-                            "internal position has no owner-observed venue mark"
+                    internal_assets = {row["asset"]: row for row in inventory}
+                    venue_assets = {row["asset"]: row for row in evidence.cash_inventory}
+                    if len(internal_assets) != len(inventory) or len(venue_assets) != len(
+                        evidence.cash_inventory
+                    ):
+                        raise RunnerFactContractError("cash checkpoint repeats an asset")
+                    checkpoint_inventory = []
+                    for asset in sorted(set(internal_assets) | set(venue_assets)):
+                        internal_asset = internal_assets.get(asset)
+                        venue_asset = venue_assets.get(asset)
+                        if venue_asset is None:
+                            raise RunnerFactContractError(
+                                "cash asset has no independent venue price"
+                            )
+                        checkpoint_inventory.append(
+                            {
+                                "asset": asset,
+                                "internal_quantity": internal_asset["quantity"]
+                                if internal_asset
+                                else "0",
+                                "venue_quantity": venue_asset["quantity"],
+                                "internal_mark_price": internal_asset["mark_price"]
+                                if internal_asset
+                                else venue_asset["mark_price"],
+                                "common_mark_price": venue_asset["mark_price"],
+                            }
                         )
-                    common_mark = venue_position["mark_price"]
-                    checkpoint_positions.append(
-                        {
-                            "instrument": instrument,
-                            "currency": deployment.currency,
-                            "internal_quantity": (
-                                internal["quantity"] if internal is not None else "0"
-                            ),
-                            "internal_avg_entry_price": (
-                                internal["avg_entry_price"] if internal is not None else common_mark
-                            ),
-                            "internal_mark_price": (
-                                internal["mark_price"] if internal is not None else common_mark
-                            ),
-                            "venue_quantity": venue_position["quantity"],
-                            "venue_avg_entry_price": venue_position["avg_entry_price"],
-                            "common_mark_price": common_mark,
-                        }
+                    checkpoint_positions = []
+                else:
+                    (
+                        internal_equity,
+                        internal_positions,
+                    ) = await self._host.runner_fact_valuation_snapshot(
+                        deployment.deployment_instance_id, deployment.currency
                     )
+                    internal_by_instrument = {
+                        str(row["instrument"]): row for row in internal_positions
+                    }
+                    venue_by_instrument = {
+                        str(row["instrument"]): row for row in evidence.valuation_positions
+                    }
+                    if len(internal_by_instrument) != len(internal_positions) or len(
+                        venue_by_instrument
+                    ) != len(evidence.valuation_positions):
+                        raise RunnerFactContractError(
+                            "valuation checkpoint positions must have unique instruments"
+                        )
+                    checkpoint_positions: list[dict[str, Any]] = []
+                    for instrument in sorted(
+                        set(internal_by_instrument) | set(venue_by_instrument)
+                    ):
+                        internal = internal_by_instrument.get(instrument)
+                        venue_position = venue_by_instrument.get(instrument)
+                        if venue_position is None:
+                            raise RunnerFactContractError(
+                                "internal position has no owner-observed venue mark"
+                            )
+                        common_mark = venue_position["mark_price"]
+                        checkpoint_positions.append(
+                            {
+                                "instrument": instrument,
+                                "currency": deployment.currency,
+                                "internal_quantity": (
+                                    internal["quantity"] if internal is not None else "0"
+                                ),
+                                "internal_avg_entry_price": (
+                                    internal["avg_entry_price"]
+                                    if internal is not None
+                                    else common_mark
+                                ),
+                                "internal_mark_price": (
+                                    internal["mark_price"] if internal is not None else common_mark
+                                ),
+                                "venue_quantity": venue_position["quantity"],
+                                "venue_avg_entry_price": venue_position["avg_entry_price"],
+                                "common_mark_price": common_mark,
+                            }
+                        )
                 checkpoint_id = _scoped_event_id(
                     authority, "valuation_checkpoint", evidence.venue, period
                 )
@@ -878,10 +929,13 @@ class RunnerFactProductionLoop:
                             collection_started_at=evidence.valuation_collection_started_at,
                             observed_at=evidence.observed_through,
                             internal_equity=internal_equity,
-                            venue_wallet_balance=evidence.venue_wallet_balances[
-                                deployment.currency
-                            ],
+                            venue_wallet_balance=evidence.venue_wallet_balances.get(
+                                deployment.currency, "0"
+                            )
+                            if evidence.cash_inventory is not None
+                            else evidence.venue_wallet_balances[deployment.currency],
                             positions=checkpoint_positions,
+                            cash_inventory=checkpoint_inventory,
                         ),
                     ),
                 )

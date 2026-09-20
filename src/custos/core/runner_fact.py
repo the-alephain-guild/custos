@@ -868,6 +868,7 @@ def valuation_checkpoint(
     internal_equity: Decimal | str | int,
     venue_wallet_balance: Decimal | str | int,
     positions: Sequence[Mapping[str, Any]],
+    cash_inventory: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Bind both ledgers to one owner-observed mark set in one signed fact."""
 
@@ -922,6 +923,48 @@ def valuation_checkpoint(
         "venue_wallet_balance": _signed_decimal(venue_wallet_balance, "venue_wallet_balance"),
         "positions": normalized_positions,
     }
+    if cash_inventory is not None:
+        if positions:
+            raise RunnerFactContractError("cash checkpoint cannot claim derivative positions")
+        inventory = [
+            {
+                "asset": _currency(row.get("asset")),
+                "internal_quantity": _decimal(
+                    row.get("internal_quantity"), "inventory.internal_quantity"
+                ),
+                "venue_quantity": _decimal(row.get("venue_quantity"), "inventory.venue_quantity"),
+                "internal_mark_price": _decimal(
+                    row.get("internal_mark_price"), "inventory.internal_mark_price", positive=True
+                ),
+                "common_mark_price": _decimal(
+                    row.get("common_mark_price"), "inventory.common_mark_price", positive=True
+                ),
+            }
+            for row in cash_inventory
+        ]
+        inventory.sort(key=lambda row: row["asset"])
+        _require_unique(inventory, "asset", "cash_inventory")
+        quote = next((row for row in inventory if row["asset"] == checkpoint_currency), None)
+        if (
+            quote is None
+            or Decimal(quote["internal_mark_price"]) != 1
+            or Decimal(quote["common_mark_price"]) != 1
+        ):
+            raise RunnerFactContractError(
+                "cash checkpoint requires unit-priced settlement inventory"
+            )
+        if Decimal(quote["venue_quantity"]) != Decimal(digest_payload["venue_wallet_balance"]):
+            raise RunnerFactContractError("cash wallet differs from settlement inventory")
+        valued = sum(
+            (
+                Decimal(row["internal_quantity"]) * Decimal(row["internal_mark_price"])
+                for row in inventory
+            ),
+            Decimal(0),
+        )
+        if valued != Decimal(digest_payload["internal_equity"]):
+            raise RunnerFactContractError("cash inventory does not reproduce internal equity")
+        digest_payload["cash_inventory"] = inventory
     return {
         "kind": "RunnerValuationCheckpointFact.v1",
         "event_id": _uuid(event_id, "event_id"),

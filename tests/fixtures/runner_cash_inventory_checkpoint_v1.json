@@ -1,0 +1,32 @@
+{
+  "cash_inventory": [
+    {
+      "asset": "BTC",
+      "common_mark_price": "100",
+      "internal_mark_price": "90",
+      "internal_quantity": "1",
+      "venue_quantity": "1"
+    },
+    {
+      "asset": "USDT",
+      "common_mark_price": "1",
+      "internal_mark_price": "1",
+      "internal_quantity": "100",
+      "venue_quantity": "100"
+    }
+  ],
+  "checkpoint_digest": "676de30b81b6f37e9f19d429b75606b4d22ae1c858fc926d99350f6814858193",
+  "checkpoint_id": "80000000-0000-4000-8000-000000000015",
+  "collection_started_at": "2026-09-20T00:00:00Z",
+  "currency": "USDT",
+  "event_id": "80000000-0000-4000-8000-000000000015",
+  "internal_equity": "190",
+  "kind": "RunnerValuationCheckpointFact.v1",
+  "observed_at": "2026-09-20T00:00:01Z",
+  "positions": [],
+  "seq": 1,
+  "venue": "OKX",
+  "venue_snapshot_id": "80000000-0000-4000-8000-000000000016",
+  "venue_wallet_balance": "100",
+  "venue_watermark": "cash-capture"
+}

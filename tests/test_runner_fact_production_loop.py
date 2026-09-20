@@ -339,3 +339,77 @@ async def test_required_checkpoint_missing_data_cannot_close_period():
         deployment, start, start + timedelta(seconds=60)
     )
     assert emitter.emissions == []
+
+
+async def test_cash_checkpoint_compares_account_inventory_without_strategy_cost():
+    from dataclasses import replace
+
+    class CashHost(_CoverageHost):
+        async def runner_fact_venue_ledger(self, *args):
+            evidence = await super().runner_fact_venue_ledger(*args)
+            return replace(
+                evidence,
+                valuation_collection_started_at=evidence.observed_through,
+                venue_wallet_balances={"USDT": "100"},
+                valuation_positions=(),
+                cash_inventory=(
+                    {"asset": "BTC", "quantity": "1", "mark_price": "100"},
+                    {"asset": "USDT", "quantity": "100", "mark_price": "1"},
+                ),
+            )
+
+        async def runner_fact_cash_snapshot(self, *args):
+            return "190", (
+                {"asset": "BTC", "quantity": "1", "mark_price": "90"},
+                {"asset": "USDT", "quantity": "100", "mark_price": "1"},
+            )
+
+        async def runner_fact_valuation_snapshot(self, *args):
+            raise AssertionError("cash inventory must not use derivative cost basis")
+
+    emitter = _CapturingEmitter()
+    loop = RunnerFactProductionLoop(
+        host=CashHost(),
+        emitter=emitter,
+        snapshot_interval_secs=1,
+        period_secs=60,
+        period_retry_secs=1,
+    )
+    deployment = SimpleNamespace(
+        authority=SimpleNamespace(stream_key="cash", deployment_spec_id=uuid4()),
+        deployment_instance_id=str(uuid4()),
+        currency="USDT",
+        reconciliation_available=True,
+        valuation_checkpoint_available=True,
+    )
+    start = datetime(2026, 9, 20, tzinfo=UTC)
+    assert await loop._close_reconciliation_period(deployment, start, start + timedelta(seconds=60))
+    fact = next(
+        facts[0]
+        for _, facts in emitter.emissions
+        if facts[0]["kind"] == "RunnerValuationCheckpointFact.v1"
+    )
+    assert fact["positions"] == []
+    assert fact["cash_inventory"][0] == {
+        "asset": "BTC",
+        "internal_quantity": "1",
+        "venue_quantity": "1",
+        "internal_mark_price": "90",
+        "common_mark_price": "100",
+    }
+
+
+def test_cash_checkpoint_fixture_is_reproducible():
+    from pathlib import Path
+
+    from custos.core.runner_fact import valuation_checkpoint
+
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures/runner_cash_inventory_checkpoint_v1.json").read_text()
+    )
+    arguments = {
+        key: value
+        for key, value in fixture.items()
+        if key not in {"kind", "seq", "checkpoint_digest"}
+    }
+    assert {**valuation_checkpoint(**arguments), "seq": 1} == fixture

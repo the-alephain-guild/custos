@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 
 from custos.core.runner_fact import SUPPORTED_CURRENCIES
 from custos.core.runner_fact_producer import VenueLedgerEvidence
+from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory
 from custos.engines.nautilus.ledger_http import (
     ReadOnlyVenueHttp,
     VenueLedgerError,
@@ -307,6 +308,18 @@ class SodexVenueLedgerSource:
                             "occurred_at": timestamp_ms(row["timestamp"]).isoformat(),
                         }
                     )
+        inventory = None
+        if not self._perpetual:
+            prices = {}
+            for symbol in self._symbols:
+                base, quote = symbol.split("_")
+                if quote.upper() != self._settlement:
+                    raise VenueLedgerError("cash inventory needs one valuation currency")
+                ticker = rows(self._http.get("/markets/tickers", {"symbol": symbol}))
+                if len(ticker) != 1 or ticker[0].get("symbol") != symbol:
+                    raise VenueLedgerError("SoDEX spot quote is missing or ambiguous")
+                prices[base.upper()] = book_mid(ticker[0].get("bidPx"), ticker[0].get("askPx"))
+            inventory = cash_inventory(balances, self._settlement, prices)
         observed = max(observed, datetime.now(UTC))
         watermark = hashlib.sha256(
             json.dumps(
@@ -317,6 +330,7 @@ class SodexVenueLedgerSource:
                     fills,
                     fees,
                     valuation_positions,
+                    inventory,
                     collection_started.isoformat(),
                     observed.isoformat(),
                 ],
@@ -344,5 +358,6 @@ class SodexVenueLedgerSource:
             fees=fees,
             valuation_collection_started_at=collection_started,
             venue_wallet_balances={row["currency"]: row["total"] for row in balances},
-            valuation_positions=valuation_positions if self._perpetual else None,
+            valuation_positions=valuation_positions,
+            cash_inventory=inventory,
         )

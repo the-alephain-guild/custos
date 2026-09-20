@@ -67,6 +67,7 @@ class NautilusPortfolioSnapshot:
     positions: tuple[NautilusPortfolioPosition, ...]
     reliable: bool
     unreliable_reason: str | None = None
+    cash_inventory: tuple[dict[str, str], ...] | None = None
 
     def __post_init__(self) -> None:
         if self.reliable:
@@ -155,7 +156,7 @@ class NautilusPortfolioSnapshotProvider:
                 named = ",".join(sorted(str(instrument) for instrument in missing_prices))
                 return NautilusPortfolioSnapshot.unreliable(f"portfolio_prices_missing:{named}")
 
-            resolved_currency, equity = self._equity_in_currency(
+            resolved_currency, equity, cash_inventory = self._equity_in_currency(
                 cache, venue, equity_by_currency, currency
             )
             if resolved_currency is None or equity is None:
@@ -218,6 +219,7 @@ class NautilusPortfolioSnapshotProvider:
                 equity=equity,
                 positions=tuple(converted),
                 reliable=True,
+                cash_inventory=cash_inventory,
             )
         except (ArithmeticError, AttributeError, InvalidOperation, TypeError, ValueError) as exc:
             return NautilusPortfolioSnapshot.unreliable(
@@ -238,24 +240,26 @@ class NautilusPortfolioSnapshotProvider:
 
     def _equity_in_currency(self, cache, venue, values, requested_currency):
         if requested_currency is None or not hasattr(values, "items") or not values:
-            return self._resolve_equity(values, requested_currency)
+            return (*self._resolve_equity(values, requested_currency), None)
         target = requested_currency.upper()
-        if any(str(key).upper() != target and _decimal(value) for key, value in values.items()):
-            account = cache.account_for_venue(venue)
-            if account is None:
+        account_reader = getattr(cache, "account_for_venue", None)
+        account = account_reader(venue) if callable(account_reader) else None
+        if account is None or str(account.account_type) != "CASH":
+            if account is None and any(
+                str(key).upper() != target and _decimal(value) for key, value in values.items()
+            ):
                 raise ValueError("account type unavailable for multi-currency equity")
-            if str(account.account_type) == "MARGIN":
-                return self._resolve_equity(values, requested_currency)
-            if str(account.account_type) != "CASH":
-                raise ValueError("unsupported account type")
+            return (*self._resolve_equity(values, requested_currency), None)
+        inventory = []
         total = Decimal("0")
         for raw_currency, raw_amount in values.items():
             amount = _decimal(raw_amount)
-            if not amount.is_finite():
+            if not amount.is_finite() or amount < 0:
                 raise ValueError("nonfinite portfolio equity")
             source = str(raw_currency).upper()
             if source == target:
                 total += amount
+                inventory.append({"asset": source, "quantity": str(amount), "mark_price": "1"})
                 continue
             if not amount:
                 continue
@@ -285,7 +289,12 @@ class NautilusPortfolioSnapshotProvider:
             if len(rates) != 1:
                 raise ValueError(f"asset conversion unavailable or ambiguous: {source}/{target}")
             total += amount * rates[0]
-        return target, total
+            inventory.append(
+                {"asset": source, "quantity": str(amount), "mark_price": str(rates[0])}
+            )
+        if not any(row["asset"] == target for row in inventory):
+            inventory.append({"asset": target, "quantity": "0", "mark_price": "1"})
+        return target, total, tuple(sorted(inventory, key=lambda row: row["asset"]))
 
     @staticmethod
     def _resolve_equity(
