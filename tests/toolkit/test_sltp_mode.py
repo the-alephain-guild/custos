@@ -178,9 +178,7 @@ def test_on_entry_filled_tick_inits_tick_monitor_only():
 def test_on_entry_filled_hybrid_safety_sl_plus_tick():
     s, ctx = _stub_strategy(), _stub_ctx()
     signal = _long_signal()
-    SLTPMode.HYBRID.on_entry_filled(
-        s, ctx, signal, _stub_position(), Decimal("100"), Decimal("2")
-    )
+    SLTPMode.HYBRID.on_entry_filled(s, ctx, signal, _stub_position(), Decimal("100"), Decimal("2"))
     s._sltp_coordinator.submit_safety_stop_loss.assert_called_once_with(ctx, signal)
     s._sltp_coordinator.submit_stop_loss.assert_not_called()
     s._sltp_coordinator.submit_native_trailing.assert_not_called()
