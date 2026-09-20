@@ -62,6 +62,17 @@
 - `--nostop` 继续解释为不等待批次确认，不跳过硬门。
 - Fix 1/2 共用 command runtime 时序测试，合并为一个原子 commit，避免人为拆 hunk。
 
+## 当前测试文件计数
+
+以下数字来自 `pytest --collect-only`。
+
+| Test file | Collected |
+|---|---:|
+| `tests/test_engine_lifecycle.py` | 13 |
+| `tests/test_plan_closeout_counts.py` | 31 |
+| `tests/test_runner_command_runtime.py` | 13 |
+| `tests/test_runner_fact_production_loop.py` | 11 |
+
 ## 进度追踪
 
 | Fix | Priority | Status | Completed | Commit |
