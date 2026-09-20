@@ -105,6 +105,19 @@ RD-4 同时修改 Custos producer tests 与 Crucible consumer projector。Crucib
 | DEV-04-REVIEW-AS-SOURCE | 流程 | 用户向 execute 传入 review 而非 plan；先把已提交 review 转为本 fix plan 并独立 commit，再执行 | ✅ |
 | DEV-04-NOSTOP | 流程 | skill 无 `--nostop` 正式参数；解释为跳过批次人工等待，不跳过 TDD、验证或安全硬门 | ✅ |
 
+## 当前测试文件计数
+
+以下数字来自 `pytest --collect-only`。本 fix 后续再扩展这些文件时必须重数。
+
+| Test file | Collected |
+|---|---:|
+| `tests/engines/nautilus/test_runner_safety_execution_boundary.py` | 36 |
+| `tests/test_order_reservation.py` | 13 |
+| `tests/test_plan_closeout_counts.py` | 29 |
+| `tests/test_runner_command_runtime.py` | 10 |
+| `tests/test_runner_fact_store.py` | 12 |
+| `tests/toolkit/test_close_reduce_only_fallback.py` | 10 |
+
 ## 进度追踪
 
 | Task | Priority | Status | Completed | Commit | Notes |
