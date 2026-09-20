@@ -1070,7 +1070,7 @@ class TestReversalSizingRespectsTheContractMultiplier:
     def _reverse_with_multiplier(multiplier: str, open_contracts: str, target_notional: str):
         from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
         from custos_toolkit_nautilus.adapter.execution import ExecutionManager
-        from nautilus_trader.model import Currency, CryptoPerpetual, InstrumentId, Symbol
+        from nautilus_trader.model import CryptoPerpetual, Currency, InstrumentId, Symbol
 
         h = Harness()
         h.instrument = CryptoPerpetual(
@@ -1113,9 +1113,7 @@ class TestReversalSizingRespectsTheContractMultiplier:
         self, multiplier, open_contracts, target_notional, expected_net
     ):
         """Accept on the net position left open, not on the order size."""
-        _, submitted = self._reverse_with_multiplier(
-            multiplier, open_contracts, target_notional
-        )
+        _, submitted = self._reverse_with_multiplier(multiplier, open_contracts, target_notional)
 
         net_after = submitted - Decimal(open_contracts)
         assert net_after == Decimal(expected_net)
