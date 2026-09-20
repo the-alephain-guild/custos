@@ -299,3 +299,4 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 | [2026-09/11 — close cleanup respects what survives](fixes/2026-09/11-close-cleanup-respects-what-survives.md) | ✅ Completed (2026-09-20) | RS-7：平仓清理不再抹掉反向新仓的保护，也不再丢掉仍会成交的入场单归属 |
 | [2026-09/12 — supertrend continuity](fixes/2026-09/12-supertrend-continuity.md) | ✅ Completed (2026-09-20) | RS-9：SuperTrend 改为递推，不再对滑动窗口重算；横盘不再凭空翻向，快照升 v2 携带递推状态 |
 | [2026-09/13 — risk gate semantics](fixes/2026-09/13-risk-gate-semantics.md) | ✅ Completed (2026-09-20) | RS-8/RS-4/RS-5：软暂停不再关闭保护退出、回撤基准每次评估采样、成交按事件时间归日 |
+| [2026-09/14 — protection priced off the fill](fixes/2026-09/14-protection-priced-off-the-fill.md) | ✅ Completed (2026-09-20) | RS-3：保护改按场所报告的持仓均价定价，不再锚在信号 K 线收盘价 |
