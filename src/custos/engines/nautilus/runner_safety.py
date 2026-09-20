@@ -149,6 +149,19 @@ class NautilusCachedOrderSemantics:
     def fill_quantity(self, event: Any) -> Decimal:
         return _decimal(event.last_qty, field="fill quantity")
 
+    def fill_leaves_quantity(self, event: Any) -> Decimal | None:
+        """The order's still-unfilled quantity once this fill has been applied.
+
+        The execution engine updates the cached order before it publishes the fill,
+        so the order read here already accounts for this event. ``None`` means the
+        order is not in the cache and the unfilled quantity is unknown; the caller
+        then falls back to releasing the reservation by notional.
+        """
+        order = self._cache.order(event.client_order_id)
+        if order is None:
+            return None
+        return _decimal(order.leaves_qty, field="order leaves quantity")
+
     def order_instrument_id(self, order: Any) -> str:
         return str(order.instrument_id)
 

@@ -352,6 +352,10 @@ def test_boundary_freezes_after_persisting_an_executed_overlimit_fill(tmp_path: 
         def fill_quantity(_event) -> Decimal:
             return Decimal("1")
 
+        @staticmethod
+        def fill_leaves_quantity(_event) -> Decimal:
+            return Decimal("0")
+
     class OrderFilled:
         client_order_id = "boundary-overlimit"
         event_id = "boundary-fill-overlimit"

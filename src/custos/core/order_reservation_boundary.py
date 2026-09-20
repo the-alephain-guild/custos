@@ -50,6 +50,8 @@ class OrderSemantics(Protocol):
 
     def fill_quantity(self, event: Any) -> Decimal: ...
 
+    def fill_leaves_quantity(self, event: Any) -> Decimal | None: ...
+
     def order_instrument_id(self, order: Any) -> str: ...
 
     def order_quantity(self, order: Any) -> Decimal: ...
@@ -314,6 +316,7 @@ class RunnerReservationBoundary:
                         position_id=position_id,
                         instrument_id=semantics.event_instrument_id(event),
                         side=semantics.event_side(event),
+                        leaves_quantity=semantics.fill_leaves_quantity(event),
                     )
             except Exception as exc:
                 # An exchange fill is already authoritative and cannot be rejected after

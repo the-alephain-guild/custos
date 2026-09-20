@@ -4238,6 +4238,42 @@ class RunnerStateStore:
             side,
         )
 
+    def _reservation_after_fill(
+        self,
+        reserved: Decimal,
+        fill: Decimal,
+        quantity: Decimal,
+        leaves: Decimal | None,
+        *,
+        client_order_id: str,
+    ) -> Decimal:
+        """What is still set aside once this fill is applied.
+
+        Before this fill the order had ``leaves + quantity`` units waiting and
+        ``reserved`` set aside for them, so the share belonging to the units that
+        just traded is released whatever price they got. That makes the leftover
+        zero exactly when the order has nothing left to fill -- which is the only
+        moment a price improvement can be told apart from a partial fill.
+
+        When the caller cannot report the unfilled quantity the reservation can
+        only be cut by notional. That over-reserves a price improvement until the
+        order is cancelled or rejected; it is the safe direction for a cap, but it
+        does not clear itself.
+        """
+        if leaves is None:
+            remaining = max(reserved - fill, Decimal("0"))
+            if remaining > 0:
+                _log.warning(
+                    "order_reservation_unfilled_quantity_unknown",
+                    client_order_id=client_order_id,
+                    retained_notional=str(remaining),
+                )
+            return remaining
+        if leaves <= 0:
+            return Decimal("0")
+        outstanding_before = leaves + quantity
+        return max(reserved * leaves / outstanding_before, Decimal("0"))
+
     def record_order_fill_sync(
         self,
         *,
@@ -4249,7 +4285,17 @@ class RunnerStateStore:
         position_id: str | None = None,
         instrument_id: str | None = None,
         side: str | None = None,
+        leaves_quantity: Decimal | None = None,
     ) -> OrderReservationSnapshot:
+        """Apply one venue fill to the durable reservation.
+
+        ``leaves_quantity`` is the order's still-unfilled quantity after this fill.
+        With it the reservation is given back in proportion to the quantity that
+        traded, so an order filled below its quoted price keeps nothing reserved
+        once its last unit trades. Without it the reservation can only be reduced
+        by notional, which over-reserves the price difference until the order is
+        cancelled or rejected -- safe for a cap, but it never clears on a full fill.
+        """
         return self._record_order_fill(
             event_id,
             deployment_instance_id,
@@ -4259,6 +4305,7 @@ class RunnerStateStore:
             position_id,
             instrument_id,
             side,
+            leaves_quantity,
         )
 
     def _record_order_fill(
@@ -4271,11 +4318,19 @@ class RunnerStateStore:
         position_id: str | None,
         instrument_id: str | None,
         side: str | None,
+        leaves_quantity: Decimal | None = None,
     ) -> OrderReservationSnapshot:
         instance = _uuid(deployment_instance_id, "deployment_instance_id")
         order = _non_empty(client_order_id, "client_order_id")
         fill = Decimal(_decimal(fill_notional, "fill_notional", positive=True))
         quantity = Decimal(_decimal(fill_quantity, "fill_quantity", positive=True))
+        leaves = (
+            None
+            if leaves_quantity is None
+            else Decimal(_decimal(leaves_quantity, "leaves_quantity"))
+        )
+        if leaves is not None and leaves < 0:
+            raise RunnerStateAuthorityError("leaves_quantity cannot be negative")
         payload = {
             "event_kind": "fill",
             "deployment_instance_id": instance,
@@ -4285,6 +4340,7 @@ class RunnerStateStore:
             "position_id": position_id,
             "instrument_id": instrument_id,
             "side": side,
+            "leaves_quantity": None if leaves is None else _decimal(leaves, "leaves_quantity"),
         }
         with self._outbox._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -4383,7 +4439,9 @@ class RunnerStateStore:
             filled_quantity = Decimal(str(row["filled_quantity"])) + opening_quantity
             per_order_breach = filled > Decimal(str(policy_row["max_order_notional"]))
             exposure = self._runner_exposure(connection, policy_row)
-            remaining = max(reserved - fill, Decimal("0"))
+            remaining = self._reservation_after_fill(
+                reserved, fill, quantity, leaves, client_order_id=order
+            )
             settled_total = exposure.total_exposure + opening_notional - (reserved - remaining)
             aggregate_breach = settled_total > exposure.max_total_notional
             state = (

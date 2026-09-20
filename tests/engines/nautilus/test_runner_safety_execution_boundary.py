@@ -101,6 +101,10 @@ class _Semantics:
     def fill_quantity(self, event) -> Decimal:
         return Decimal(str(event.quantity))
 
+    def fill_leaves_quantity(self, event) -> Decimal | None:
+        leaves = getattr(event, "leaves", None)
+        return None if leaves is None else Decimal(str(leaves))
+
     def order_instrument_id(self, order) -> str:
         return str(getattr(order, "instrument_id", "INSTRUMENT"))
 
@@ -942,3 +946,31 @@ def test_a_venue_with_no_measured_id_cap_refuses_nothing_on_length() -> None:
 
     assert [refusal.reason_code for refusal in refusals] == []
     assert ("submit", over_long) in log
+
+
+def test_fill_leaves_quantity_reads_the_order_the_engine_has_already_updated() -> None:
+    """The engine applies the fill to the cached order before it publishes the event."""
+
+    class Cache:
+        @staticmethod
+        def order(client_order_id):
+            assert client_order_id == "order-9"
+            return SimpleNamespace(leaves_qty="0.0030")
+
+    semantics = NautilusCachedOrderSemantics(Cache())
+    event = SimpleNamespace(client_order_id="order-9")
+
+    assert semantics.fill_leaves_quantity(event) == Decimal("0.0030")
+
+
+def test_an_order_missing_from_the_cache_reports_an_unknown_remainder() -> None:
+    """None is not zero: it means the store must fall back to releasing by notional."""
+
+    class Cache:
+        @staticmethod
+        def order(_client_order_id):
+            return None
+
+    semantics = NautilusCachedOrderSemantics(Cache())
+
+    assert semantics.fill_leaves_quantity(SimpleNamespace(client_order_id="gone")) is None
