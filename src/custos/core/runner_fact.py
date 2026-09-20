@@ -2920,6 +2920,7 @@ class RunnerStateStore:
             engine_handle=None,
             observed_status="quarantined" if outcome != "stale" else "stale_rejected",
             lifecycle_state="stopped",
+            reject_if_applied=True,
         )
         return DurableCommandOutcome(
             outcome_id=result.outcome_id,
@@ -3084,6 +3085,7 @@ class RunnerStateStore:
         lifecycle_state: str,
         artifact_activation_id: str | None = None,
         artifact_policy_id: str | None = None,
+        reject_if_applied: bool = False,
     ) -> CommandOutcomeCommitResult:
         authority = self._authority_for_verified(verified)
         lifecycle_fact = _command_lifecycle_fact(
@@ -3104,6 +3106,7 @@ class RunnerStateStore:
             lifecycle_fact,
             artifact_activation_id,
             artifact_policy_id,
+            reject_if_applied,
         )
 
     def _commit_verified_command_outcome_and_enqueue_fact(
@@ -3118,6 +3121,7 @@ class RunnerStateStore:
         lifecycle_fact: Mapping[str, Any],
         artifact_activation_id: str | None,
         artifact_policy_id: str | None,
+        reject_if_applied: bool,
     ) -> CommandOutcomeCommitResult:
         if outcome not in {"applied", "conflict", "stale", "retry_exhausted"}:
             raise RunnerStateDurabilityError("verified command outcome is invalid")
@@ -3165,7 +3169,7 @@ class RunnerStateStore:
         connection = self._outbox._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
-            if outcome == "retry_exhausted":
+            if reject_if_applied and outcome == "retry_exhausted":
                 applied = connection.execute(
                     """
                     SELECT 1 FROM command_outcomes

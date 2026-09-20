@@ -579,6 +579,48 @@ async def test_terminal_outcome_cannot_overwrite_same_command_applied_success(
         assert connection.execute("SELECT count(*) FROM command_outcomes").fetchone()[0] == 1
 
 
+@pytest.mark.asyncio
+async def test_lifecycle_terminal_can_quarantine_a_previously_applied_command(
+    tmp_path: Path,
+) -> None:
+    import time
+
+    database = tmp_path / "runner-post-apply-terminal.sqlite3"
+    _, store = _runner_fact_store(database)
+    _, _, verified = _verified_command()
+    await store.record_desired_command(
+        command=verified.command,
+        command_fingerprint=verified.command_fingerprint,
+        verification_receipt=verified.verification_receipt,
+    )
+    await store.record_in_progress_lease(
+        delivery_id="delivery-applied",
+        verified=verified,
+        lease_until_ns=time.time_ns() + 60_000_000_000,
+    )
+    await store.commit_applied_and_enqueue_lifecycle(
+        delivery_id="delivery-applied",
+        verified=verified,
+        engine_handle="running-node",
+        observed_status="ready",
+    )
+
+    result = await store.commit_verified_command_outcome_and_enqueue_fact(
+        delivery_id="engine-terminal",
+        verified=verified,
+        outcome="retry_exhausted",
+        reason_code="engine_task_failed",
+        engine_handle=None,
+        observed_status="quarantined",
+        lifecycle_state="running",
+    )
+
+    state = await store.load_engine_lifecycle_state(verified)
+    assert result.committed is True
+    assert state.observed_status == "quarantined"
+    assert state.quarantine_reason == "engine_task_failed"
+
+
 class _RunnerFactDelivery:
     def __init__(self, *, data: bytes, subject: str, database: Path) -> None:
         self.data = data
