@@ -446,11 +446,17 @@ class TickMonitorManager:
         Recovery needs the monitor to see where the market is, but reading it must
         not advance a scaled level: a level advanced here would be paid for with a
         quantity nothing was ever sent for.
+
+        Trailing state is a different matter and is updated in full. Its peak and
+        its activation flag are not consumables -- neither carries an exit quota,
+        so recording them costs nothing, while skipping activation would leave a
+        restarted runner holding a stop that no longer fires once price slips back
+        under the activation threshold. The action is dropped, not the state.
         """
         if not self.is_active or self._entry_price is None or self._is_long is None:
             return
         if self._trailing_manager is not None:
-            self._trailing_manager.update_peak(self._to_decimal(current_price), self._is_long)
+            self._check_trailing_tp(self._to_decimal(current_price))
 
     def bind_level_order(self, level: int, order_id: object) -> None:
         """Record which order carries a level's quantity (``level`` is 1-based)."""

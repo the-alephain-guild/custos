@@ -668,3 +668,47 @@ class TestAPartiallyFilledLevelKeepsItsRemainder:
         h.tick("103")
 
         assert len(h.sent) == 1, "the level's whole target was taken"
+
+
+class TestRecoveryArmsATrailingStop:
+    """Audit H1: observing the market must not disarm a trailing stop.
+
+    Activation is not a consumable. Unlike a scaled level it carries no exit
+    quota, so recording it costs nothing -- while losing it leaves a restarted
+    runner holding a stop that will not fire.
+    """
+
+    @staticmethod
+    def _trailing_harness() -> Harness:
+        from custos_toolkit_nautilus.adapter.tick_monitor import TickMonitorManager
+
+        monitor = TickMonitorManager(
+            mode="tick",
+            tp_method="trailing",
+            trailing_activation_pct=Decimal(".02"),
+            trailing_pct=Decimal(".01"),
+        )
+        # Entry 100; the harness cache reports the last bar at 105, i.e. +5%,
+        # already past the 2% activation threshold.
+        return Harness(monitor=monitor)
+
+    def test_recovery_arms_a_stop_already_past_activation(self):
+        h = self._trailing_harness()
+
+        OrderReconciler(h).recover_from_existing_positions()
+
+        assert h.ctx.tick_monitor.peak_price == Decimal("105")
+        assert h.ctx.tick_monitor._trailing_manager._activated, (
+            "the recovered position is already past activation"
+        )
+
+    def test_a_recovered_trailing_stop_fires_on_the_drawdown(self):
+        """The consequence: price falls back under activation, stop must still fire."""
+        h = self._trailing_harness()
+        OrderReconciler(h).recover_from_existing_positions()
+
+        # 101.5 is only +1.5% from entry -- below the activation threshold -- but
+        # 3.3% down from the 105 peak, well past the 1% trail.
+        h.tick("101.5")
+
+        assert h.closed, "a stop armed before the restart must not need re-arming"
