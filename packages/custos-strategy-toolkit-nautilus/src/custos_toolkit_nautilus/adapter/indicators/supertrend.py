@@ -1,21 +1,32 @@
 """
-SuperTrend indicator using pandas-ta.
+SuperTrend indicator, carried forward bar by bar.
 
 Provides NautilusTrader-compatible SuperTrend indicator with snapshot support
 for indicator warmup alignment.
+
+SuperTrend is path dependent. Each bar's bands are clamped against the previous
+bar's *already clamped* bands, the direction carries the previous direction when
+price sits between them, and the ATR underneath is a Wilder recursion. Recomputing
+a rolling window re-derives all of that from a starting point that moves with the
+window, so a trend established before the window can be reinvented out of flat
+data. This carries the state forward instead, which is what the algorithm means.
+
+The arithmetic matches the vendored pandas-ta run over the whole series, bar for
+bar; ``tests/toolkit/test_supertrend_continuity.py`` holds it to that.
 """
 
 import logging
-from collections import deque
+import sys
 from typing import cast
 
-import pandas as pd
 from nautilus_trader.model import Bar
-
-from ._pandas_ta import ta
 
 # Module-level logger for indicator errors
 _logger = logging.getLogger(__name__)
+
+# ``non_zero_range`` nudges a zero high-low range by this much before it reaches
+# the true range, which happens on flat bars in crypto data.
+_ZERO_RANGE_NUDGE = sys.float_info.epsilon
 
 
 def _supertrend_column_names(length: float, multiplier: float) -> tuple[str, str, str, str]:
@@ -61,11 +72,21 @@ class SuperTrend:
         self.length = length
         self.multiplier = multiplier
 
-        # Data collection using deque for efficient FIFO with automatic size limit
-        max_size = length + 50
-        self._highs: deque[float] = deque(maxlen=max_size)
-        self._lows: deque[float] = deque(maxlen=max_size)
-        self._closes: deque[float] = deque(maxlen=max_size)
+        # Carried state. Nothing here is a price history: the recursion needs the
+        # previous bar and its outcome, not the bars before it.
+        self._bar_count: int = 0
+        self._prev_close: float | None = None
+        # Wilder ATR as pandas' ewm(alpha=1/length, adjust=True) computes it: the
+        # numerator and denominator each carry forward, and their ratio is the ATR.
+        self._atr_alpha: float = 1.0 / length
+        self._atr_numerator: float = 0.0
+        self._atr_denominator: float = 0.0
+        self._atr_samples: int = 0
+        # The previous bar's clamped bands and direction -- clamped, because that is
+        # what the next bar compares against.
+        self._prev_upper: float | None = None
+        self._prev_lower: float | None = None
+        self._prev_direction: int = 1
 
         # SuperTrend state
         self._trend: int = 0  # 1: bullish, -1: bearish, 0: neutral
@@ -117,7 +138,7 @@ class SuperTrend:
     @property
     def has_inputs(self) -> bool:
         """Return whether the indicator has received inputs."""
-        return len(self._closes) > 0
+        return self._bar_count > 0
 
     @property
     def initialized(self) -> bool:
@@ -126,7 +147,7 @@ class SuperTrend:
         A loaded snapshot makes the indicator immediately usable (it carries a valid
         trend/value); otherwise readiness requires ``length + 1`` real bars.
         """
-        return self._from_snapshot or len(self._closes) >= self._warmup_period
+        return self._from_snapshot or self._bar_count >= self._warmup_period
 
     def handle_bar(self, bar: Bar) -> None:
         """
@@ -161,94 +182,74 @@ class SuperTrend:
         close : float
             The close price
         """
-        self._highs.append(high)
-        self._lows.append(low)
-        self._closes.append(close)
+        self._bar_count += 1
 
-        # deque with maxlen handles size limiting automatically
-
-        # Compute only once enough *real* bars are buffered. Before that, a loaded
-        # snapshot keeps its trend/value (so the strategy trades on the snapshot),
-        # and a cold start stays neutral. Gating on real-bar count (not on
-        # ``initialized``) prevents feeding a short/snapshot-seeded window into
-        # ta.supertrend, which would produce a contaminated value.
-        if len(self._closes) < self._warmup_period:
-            return
-
-        # Calculate SuperTrend using pandas-ta with Series (more efficient than DataFrame)
-        high_series = pd.Series(self._highs)
-        low_series = pd.Series(self._lows)
-        close_series = pd.Series(self._closes)
-
-        result = ta.supertrend(
-            high_series,
-            low_series,
-            close_series,
-            length=self.length,
-            multiplier=self.multiplier,
-        )
-
-        # Validate pandas-ta result before use
-        if result is None:
-            _logger.error("pandas-ta supertrend returned None")
-            return
-
-        if len(result) == 0:
-            _logger.error("pandas-ta supertrend returned empty DataFrame")
-            return
-
-        if result is not None and len(result) > 0:
-            # pandas-ta column naming convention
-            st_col, dir_col, long_col, short_col = _supertrend_column_names(
-                self.length, self.multiplier
+        # True range. The first bar has no previous close, so it has no range --
+        # pandas-ta writes NaN there and the ATR ignores it.
+        if self._prev_close is not None:
+            high_low = high - low
+            if high_low == 0.0:
+                high_low += _ZERO_RANGE_NUDGE
+            true_range = max(
+                abs(high_low),
+                abs(high - self._prev_close),
+                abs(self._prev_close - low),
             )
+            decay = 1.0 - self._atr_alpha
+            self._atr_numerator = true_range + decay * self._atr_numerator
+            self._atr_denominator = 1.0 + decay * self._atr_denominator
+            self._atr_samples += 1
 
-            # Fallback: try to find column by prefix if exact match fails
-            if st_col not in result.columns:
-                for col in result.columns:
-                    if (
-                        col.startswith("SUPERT_")
-                        and not col.startswith("SUPERTd")
-                        and not col.startswith("SUPERTl")
-                        and not col.startswith("SUPERTs")
-                    ):
-                        st_col = col
-                        # Derive other column names from the found pattern
-                        suffix = col.replace("SUPERT_", "")
-                        dir_col = f"SUPERTd_{suffix}"
-                        long_col = f"SUPERTl_{suffix}"
-                        short_col = f"SUPERTs_{suffix}"
-                        break
+        previous_close = self._prev_close
+        self._prev_close = close
 
-            # Validate values are not NaN before using
-            st_value = result[st_col].iloc[-1]
-            dir_value = result[dir_col].iloc[-1]
+        # Until the ATR has its full sample the bands have no value, and neither
+        # does a direction derived from them. A loaded snapshot keeps its own
+        # trend/value through this stretch; a cold start stays neutral.
+        if self._atr_samples < self.length:
+            return
 
-            if pd.isna(st_value):
-                _logger.warning("pandas-ta supertrend value is NaN")
-                return
-            if pd.isna(dir_value):
-                _logger.warning("pandas-ta supertrend direction is NaN")
-                return
+        atr = self._atr_numerator / self._atr_denominator
+        midpoint = 0.5 * (high + low)
+        upper = midpoint + self.multiplier * atr
+        lower = midpoint - self.multiplier * atr
 
-            self._supertrend = float(st_value)
-            self._trend = int(dir_value)
+        if self._prev_upper is None or self._prev_lower is None or previous_close is None:
+            # First priced bar: seed the recursion, direction defaults to long the
+            # way pandas-ta seeds its direction array.
+            direction = self._prev_direction
+        elif close > self._prev_upper:
+            direction = 1
+        elif close < self._prev_lower:
+            direction = -1
+        else:
+            # Price sits between the bands: the trend stands, and the band behind
+            # it may not loosen.
+            direction = self._prev_direction
+            if direction > 0 and lower < self._prev_lower:
+                lower = self._prev_lower
+            if direction < 0 and upper > self._prev_upper:
+                upper = self._prev_upper
 
-            # Extract band values
-            if long_col in result.columns:
-                val = result[long_col].iloc[-1]
-                if pd.notna(val):
-                    self._lower_band = float(val)
-            if short_col in result.columns:
-                val = result[short_col].iloc[-1]
-                if pd.notna(val):
-                    self._upper_band = float(val)
+        self._prev_upper = upper
+        self._prev_lower = lower
+        self._prev_direction = direction
+
+        self._trend = direction
+        self._upper_band = upper
+        self._lower_band = lower
+        self._supertrend = lower if direction > 0 else upper
 
     def reset(self) -> None:
         """Reset the indicator to its initial state."""
-        self._highs.clear()
-        self._lows.clear()
-        self._closes.clear()
+        self._bar_count = 0
+        self._prev_close = None
+        self._atr_numerator = 0.0
+        self._atr_denominator = 0.0
+        self._atr_samples = 0
+        self._prev_upper = None
+        self._prev_lower = None
+        self._prev_direction = 1
         self._trend = 0
         self._supertrend = 0.0
         self._upper_band = 0.0
@@ -282,8 +283,8 @@ class SuperTrend:
         self._snapshot_atr = values.get("atr", 0.0)
 
         # Mark as snapshot-initialized: ``initialized`` returns True immediately so
-        # the strategy can trade on the snapshot trend/value. The price deques stay
-        # empty and accumulate only real bars; the snapshot value is held until a
+        # the strategy can trade on the snapshot trend/value. The carried state stays
+        # unset and accumulate only real bars; the snapshot value is held until a
         # full real warmup window is collected (see update_raw). No dummy bars.
         self._from_snapshot = True
 
@@ -305,7 +306,7 @@ class SuperTrend:
 
     # Full Snapshot Persistence (for Redis-based recovery)
 
-    SNAPSHOT_VERSION = 1
+    SNAPSHOT_VERSION = 2
 
     @property
     def snapshot_version(self) -> int:
@@ -334,12 +335,19 @@ class SuperTrend:
                 "length": self.length,
                 "multiplier": self.multiplier,
             },
-            "data": {
-                "highs": list(self._highs),
-                "lows": list(self._lows),
-                "closes": list(self._closes),
-            },
+            # Version 2 carries the recursion rather than a price window. A window
+            # cannot restore this indicator: replaying it would restart the
+            # recursion from the window's first bar, which is the defect this
+            # snapshot format replaced.
             "state": {
+                "bar_count": self._bar_count,
+                "prev_close": self._prev_close,
+                "atr_numerator": self._atr_numerator,
+                "atr_denominator": self._atr_denominator,
+                "atr_samples": self._atr_samples,
+                "prev_upper": self._prev_upper,
+                "prev_lower": self._prev_lower,
+                "prev_direction": self._prev_direction,
                 "trend": self._trend,
                 "supertrend": self._supertrend,
                 "upper_band": self._upper_band,
@@ -383,21 +391,20 @@ class SuperTrend:
                 f"expected {self.multiplier}"
             )
 
-        # Restore data window
-        data = cast(dict[str, object], snapshot.get("data", {}))
-        self._highs.clear()
-        self._lows.clear()
-        self._closes.clear()
-
-        for h in cast(list[float], data.get("highs", [])):
-            self._highs.append(h)
-        for low in cast(list[float], data.get("lows", [])):
-            self._lows.append(low)
-        for c in cast(list[float], data.get("closes", [])):
-            self._closes.append(c)
-
-        # Restore state
+        # Restore the recursion itself, so the next bar continues the series
+        # rather than starting a new one.
         state = cast(dict[str, object], snapshot.get("state", {}))
+        self._bar_count = cast(int, state.get("bar_count", 0))
+        prev_close = state.get("prev_close")
+        self._prev_close = None if prev_close is None else float(cast(float, prev_close))
+        self._atr_numerator = cast(float, state.get("atr_numerator", 0.0))
+        self._atr_denominator = cast(float, state.get("atr_denominator", 0.0))
+        self._atr_samples = cast(int, state.get("atr_samples", 0))
+        prev_upper = state.get("prev_upper")
+        prev_lower = state.get("prev_lower")
+        self._prev_upper = None if prev_upper is None else float(cast(float, prev_upper))
+        self._prev_lower = None if prev_lower is None else float(cast(float, prev_lower))
+        self._prev_direction = cast(int, state.get("prev_direction", 1))
         self._trend = cast(int, state.get("trend", 0))
         self._supertrend = cast(float, state.get("supertrend", 0.0))
         self._upper_band = cast(float, state.get("upper_band", 0.0))
@@ -409,5 +416,5 @@ class SuperTrend:
         _logger.info(
             f"SuperTrend restored from snapshot: "
             f"trend={self._trend}, value={self._supertrend:.2f}, "
-            f"data_points={len(self._closes)}"
+            f"atr_samples={self._atr_samples}"
         )
