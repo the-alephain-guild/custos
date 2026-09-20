@@ -302,3 +302,4 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 | [2026-09/14 — protection priced off the fill](fixes/2026-09/14-protection-priced-off-the-fill.md) | ✅ Completed (2026-09-20) | RS-3：保护改按场所报告的持仓均价定价，不再锚在信号 K 线收盘价 |
 | [2026-09/15 — risk state survives restart](fixes/2026-09/15-risk-state-survives-restart.md) | ✅ Completed (2026-09-20) | RS-6 **B 半**：日亏损/回撤/暂停状态随快照跨重启；A 半（熔断冻结跨重启）待定作用域与解除条件 |
 | [2026-09/16 — plain close cannot reverse](fixes/2026-09/16-plain-close-cannot-reverse.md) | ✅ Completed (2026-09-20) | EE-1：普通平仓按剩余可平量判定，原生 close_position/close_all_positions 纳入执行门 |
+| [2026-09/17 — a blocked stream cannot starve the rest](fixes/2026-09/17-a-blocked-stream-cannot-starve-the-rest.md) | ✅ Completed (2026-09-20) | EE-4：事实 outbox 与信号队列都带着受阻流的排除集合继续翻页，健康流不再被一页积压挡住 |
