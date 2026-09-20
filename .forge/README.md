@@ -304,3 +304,4 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 | [2026-09/16 — plain close cannot reverse](fixes/2026-09/16-plain-close-cannot-reverse.md) | ✅ Completed (2026-09-20) | EE-1：普通平仓按剩余可平量判定，原生 close_position/close_all_positions 纳入执行门 |
 | [2026-09/17 — a blocked stream cannot starve the rest](fixes/2026-09/17-a-blocked-stream-cannot-starve-the-rest.md) | ✅ Completed (2026-09-20) | EE-4：事实 outbox 与信号队列都带着受阻流的排除集合继续翻页，健康流不再被一页积压挡住 |
 | [2026-09/18 — a price improvement must not keep the reservation](fixes/2026-09/18-a-price-improvement-must-not-keep-the-reservation.md) | ✅ Completed (2026-09-20) | EE-6：预留按未成交数量收回，整单价格改善不再永久占用上限 |
+| [2026-09/19 — order attribution must outlive the bridge](fixes/2026-09/19-order-attribution-must-outlive-the-bridge.md) | ✅ Completed (2026-09-20) | EE-3：订单归属落盘并按实例装载，重建后旧订单的回报不再静默丢失 |
