@@ -50,7 +50,13 @@ class OrderSemantics(Protocol):
 
     def fill_quantity(self, event: Any) -> Decimal: ...
 
-    def order_is_risk_reducing(self, order: Any) -> bool: ...
+    def order_instrument_id(self, order: Any) -> str: ...
+
+    def order_quantity(self, order: Any) -> Decimal: ...
+
+    def order_is_risk_reducing(
+        self, order: Any, already_reducing: Decimal = Decimal(0)
+    ) -> bool: ...
 
     def event_is_risk_reducing(self, event: Any) -> bool: ...
 
@@ -118,6 +124,10 @@ class RunnerReservationBoundary:
         # their local ownership separately, otherwise account-wide venue events from a
         # sibling deployment are indistinguishable from this instance's protection.
         self._risk_reducing_order_ids: set[str] = set()
+        # client_order_id -> (instrument_id, quantity still unsettled). A plain
+        # close is only "reducing" against the room left after the closes already
+        # accepted, so that room has to be tracked until they settle.
+        self._unsettled_reductions: dict[str, tuple[str, Decimal]] = {}
 
     def bind_runtime(self, *, semantics: OrderSemantics) -> None:
         if self._semantics is None:
@@ -142,6 +152,29 @@ class RunnerReservationBoundary:
         """Return the durable policy-scoped reservation/exposure aggregate."""
 
         return await self._store.load_runner_exposure(self._policy_id)
+
+    def _unsettled_reduction_for(self, instrument_id: str) -> Decimal:
+        """How much of this instrument's position accepted closes already claim."""
+        return sum(
+            (
+                quantity
+                for claimed_instrument, quantity in self._unsettled_reductions.values()
+                if claimed_instrument == instrument_id
+            ),
+            Decimal(0),
+        )
+
+    def _settle_reduction(self, client_order_id: str, filled_quantity: Decimal) -> None:
+        """Give back the room a fill has now actually used."""
+        claim = self._unsettled_reductions.get(client_order_id)
+        if claim is None:
+            return
+        instrument_id, outstanding = claim
+        remaining = outstanding - filled_quantity
+        if remaining > 0:
+            self._unsettled_reductions[client_order_id] = (instrument_id, remaining)
+        else:
+            self._unsettled_reductions.pop(client_order_id, None)
 
     def before_submit_order(self, command: Any) -> tuple[_Reservation, ...]:
         return self._reserve_orders((command.order,), command_id=runner_command_id(command))
@@ -245,6 +278,8 @@ class RunnerReservationBoundary:
                 return
             notional = semantics.fill_notional(event)
             quantity = semantics.fill_quantity(event)
+            if risk_reducing:
+                self._settle_reduction(client_order_id, quantity)
             try:
                 if risk_reducing:
                     if position_id is not None:
@@ -298,6 +333,7 @@ class RunnerReservationBoundary:
         if event_name in {"OrderRejected", "OrderDenied"}:
             if client_order_id in self._risk_reducing_order_ids:
                 self._risk_reducing_order_ids.discard(client_order_id)
+                self._unsettled_reductions.pop(client_order_id, None)
                 return
             if not self._has_reservation(client_order_id):
                 return
@@ -312,6 +348,7 @@ class RunnerReservationBoundary:
         if event_name in {"OrderCanceled", "OrderExpired"}:
             if client_order_id in self._risk_reducing_order_ids:
                 self._risk_reducing_order_ids.discard(client_order_id)
+                self._unsettled_reductions.pop(client_order_id, None)
                 return
             if not self._has_reservation(client_order_id):
                 return
@@ -342,8 +379,16 @@ class RunnerReservationBoundary:
         reservations: list[_Reservation] = []
         try:
             for order in orders:
-                if semantics.order_is_risk_reducing(order):
-                    self._risk_reducing_order_ids.add(str(order.client_order_id))
+                instrument_id = semantics.order_instrument_id(order)
+                if semantics.order_is_risk_reducing(
+                    order, self._unsettled_reduction_for(instrument_id)
+                ):
+                    client_order_id = str(order.client_order_id)
+                    self._risk_reducing_order_ids.add(client_order_id)
+                    self._unsettled_reductions[client_order_id] = (
+                        instrument_id,
+                        semantics.order_quantity(order),
+                    )
                     continue
                 self._require_risk_increasing_allowed()
                 client_order_id = str(order.client_order_id)

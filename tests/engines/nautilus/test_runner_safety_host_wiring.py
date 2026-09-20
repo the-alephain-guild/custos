@@ -62,6 +62,10 @@ class _Strategy:
 
     def market_exit(self, *args, **kwargs) -> None: ...
 
+    def close_position(self, position, *args, **kwargs) -> None: ...
+
+    def close_all_positions(self, *args, **kwargs) -> None: ...
+
 
 class _FactBridge:
     def __init__(self) -> None:

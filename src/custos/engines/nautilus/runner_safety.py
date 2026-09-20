@@ -54,6 +54,7 @@ _SAFETY_BOUNDARY_REJECTION_REASON = "custos_runner_safety_boundary_unavailable"
 _CLIENT_ORDER_ID_REJECTION_REASON = "custos_runner_client_order_id_too_long_for_venue"
 _ROUTED_AWAY_REJECTION_REASON = "custos_runner_order_would_bypass_the_gate"
 _MARKET_EXIT_REJECTION_REASON = "custos_runner_market_exit_bypasses_the_gate"
+_NATIVE_PLAIN_CLOSE_REJECTION_REASON = "custos_runner_native_plain_close_bypasses_the_gate"
 
 # The strategy methods the gate wraps. submit_order / submit_order_list / modify_order
 # carry risk and are decided on; market_exit is refused outright because nautilus
@@ -62,6 +63,8 @@ SUBMIT_ORDER = "submit_order"
 SUBMIT_ORDER_LIST = "submit_order_list"
 MODIFY_ORDER = "modify_order"
 MARKET_EXIT = "market_exit"
+CLOSE_POSITION = "close_position"
+CLOSE_ALL_POSITIONS = "close_all_positions"
 
 # Config switches that let the order manager submit on the strategy's behalf, which
 # would go around this gate entirely. All three default to False in 2.0.
@@ -146,7 +149,25 @@ class NautilusCachedOrderSemantics:
     def fill_quantity(self, event: Any) -> Decimal:
         return _decimal(event.last_qty, field="fill quantity")
 
-    def order_is_risk_reducing(self, order: Any) -> bool:
+    def order_instrument_id(self, order: Any) -> str:
+        return str(order.instrument_id)
+
+    def order_quantity(self, order: Any) -> Decimal:
+        return _decimal(order.quantity, field="order quantity")
+
+    def order_is_risk_reducing(
+        self,
+        order: Any,
+        already_reducing: Decimal = Decimal(0),
+    ) -> bool:
+        """Whether this order only reduces exposure that is actually still there.
+
+        ``already_reducing`` is the quantity other accepted-but-unsettled plain
+        closes have already claimed on this instrument. Without it each order is
+        judged against the whole open position -- so two closes for the full size
+        both read as reducing, both skip the freeze check and the reservation, and
+        the second one opens the opposite side.
+        """
         if bool(order.is_reduce_only):
             return True
         if bool(order.is_quote_quantity):
@@ -167,7 +188,8 @@ class NautilusCachedOrderSemantics:
             return False
         quantity = _decimal(order.quantity, field="plain close quantity")
         position_quantity = _decimal(position.quantity, field="open position quantity")
-        return quantity > 0 and quantity <= position_quantity
+        remaining = position_quantity - already_reducing
+        return quantity > 0 and quantity <= remaining
 
     def event_is_risk_reducing(self, event: Any) -> bool:
         order = self._cache.order(event.client_order_id)
@@ -413,6 +435,42 @@ class RunnerSafetyOrderGate:
         )
         return None
 
+    def close_position(self, close: Callable[..., None], *args: Any, **kwargs: Any):
+        """Let a reduce-only close through; refuse a plain one.
+
+        ``close_position`` is compiled, so the order it builds reaches the venue
+        without passing the ``submit_order`` hook -- the judgement that stops a
+        plain close from opening the opposite side never runs on it. A reduce-only
+        close cannot open anything, so it needs no judgement. A plain one does,
+        and the strategy already has a path for that: submit the order, where it
+        is measured against the room actually left on the position.
+        """
+        if kwargs.get("reduce_only", True):
+            return close(*args, **kwargs)
+        return self._refuse_plain_native_close(CLOSE_POSITION)
+
+    def close_all_positions(self, close: Callable[..., None], *args: Any, **kwargs: Any):
+        """Same judgement as close_position, for the all-positions form."""
+        if kwargs.get("reduce_only", True):
+            return close(*args, **kwargs)
+        return self._refuse_plain_native_close(CLOSE_ALL_POSITIONS)
+
+    def _refuse_plain_native_close(self, method_name: str):
+        _log.warning(
+            "runner_native_plain_close_refused",
+            method=method_name,
+            reason_code=_NATIVE_PLAIN_CLOSE_REJECTION_REASON,
+        )
+        self._report(
+            OrderRefusal(
+                client_order_id="",
+                instrument_id="",
+                side="",
+                reason_code=_NATIVE_PLAIN_CLOSE_REJECTION_REASON,
+            )
+        )
+        return None
+
     def _pre_trade_refusal(self, order: Any) -> str | None:
         """The reasons that can be read off the order alone, before any reservation."""
         if self._client_order_id_validator is not None and not self._client_order_id_validator(
@@ -523,6 +581,8 @@ def install_order_gate(strategy: Any, gate: RunnerSafetyOrderGate) -> None:
         (SUBMIT_ORDER_LIST, gate.submit_order_list),
         (MODIFY_ORDER, gate.modify_order),
         (MARKET_EXIT, gate.market_exit),
+        (CLOSE_POSITION, gate.close_position),
+        (CLOSE_ALL_POSITIONS, gate.close_all_positions),
     ):
         install_hook(
             strategy,
@@ -534,5 +594,12 @@ def install_order_gate(strategy: Any, gate: RunnerSafetyOrderGate) -> None:
     _log.info(
         "runner_order_gate_installed",
         strategy=type(strategy).__name__,
-        methods=[SUBMIT_ORDER, SUBMIT_ORDER_LIST, MODIFY_ORDER, MARKET_EXIT],
+        methods=[
+            SUBMIT_ORDER,
+            SUBMIT_ORDER_LIST,
+            MODIFY_ORDER,
+            MARKET_EXIT,
+            CLOSE_POSITION,
+            CLOSE_ALL_POSITIONS,
+        ],
     )

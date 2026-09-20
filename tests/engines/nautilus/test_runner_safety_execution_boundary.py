@@ -101,7 +101,16 @@ class _Semantics:
     def fill_quantity(self, event) -> Decimal:
         return Decimal(str(event.quantity))
 
-    def order_is_risk_reducing(self, order) -> bool:
+    def order_instrument_id(self, order) -> str:
+        return str(getattr(order, "instrument_id", "INSTRUMENT"))
+
+    def order_quantity(self, order) -> Decimal:
+        return Decimal(str(getattr(order, "quantity", 0)))
+
+    def order_is_risk_reducing(self, order, already_reducing: Decimal = Decimal(0)) -> bool:
+        # This double declares reduce-only directly, so there is no position to
+        # measure the claimed room against; the real semantics does that.
+        del already_reducing
         return bool(order.reduce_only)
 
     def event_is_risk_reducing(self, event) -> bool:
@@ -187,6 +196,8 @@ class _GatedStrategy:
     def cancel_all_orders(self, instrument_id, *_args, **_kwargs) -> None: ...
 
     def close_position(self, position, *_args, **_kwargs) -> None: ...
+
+    def close_all_positions(self, *_args, **_kwargs) -> None: ...
 
 
 def _order(
@@ -405,11 +416,18 @@ def test_cancelling_is_not_something_the_gate_can_refuse() -> None:
     1.x passed them straight through a client it had wrapped. Here they are simply
     not wrapped, which says the same thing in a way that cannot be got wrong: there
     is no code path on which a cancel could be refused.
+
+    ``close_position`` used to be on this list. It is wrapped now: it is compiled,
+    so the order it builds reaches the venue without passing the submit_order
+    hook, and a plain close through it could open the opposite side with nothing
+    judging it. Being wrapped does not make it refusable as a cancel is not -- a
+    reduce-only close still passes untouched; only the plain form is sent back to
+    submit_order to be measured.
     """
     strategy = _GatedStrategy()
     install_order_gate(strategy, _gate(_boundary(_Store([]))))
 
-    for untouched in ("cancel_order", "cancel_all_orders", "close_position"):
+    for untouched in ("cancel_order", "cancel_all_orders"):
         assert untouched not in vars(strategy), (
             f"{untouched} was wrapped, so a cancel could be refused"
         )
