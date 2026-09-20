@@ -728,3 +728,48 @@ async def test_engine_restart_budget_survives_reopen_and_applied_commit(
     assert after.restart_count == 2
     assert after.applied_generation == verified.command.generation
     assert after.observed_status == "ready"
+
+
+@pytest.mark.asyncio
+async def test_supervised_restart_marks_degraded_until_recovered_ready(tmp_path: Path) -> None:
+    import time
+
+    database = tmp_path / "runner-supervised-restart.sqlite3"
+    _, store = _runner_fact_store(database)
+    _, _, verified = _verified_command()
+    await store.record_desired_command(
+        command=verified.command,
+        command_fingerprint=verified.command_fingerprint,
+        verification_receipt=verified.verification_receipt,
+    )
+    await store.record_in_progress_lease(
+        delivery_id="initial-apply",
+        verified=verified,
+        lease_until_ns=time.time_ns() + 60_000_000_000,
+    )
+    await store.commit_applied_and_enqueue_lifecycle(
+        delivery_id="initial-apply",
+        verified=verified,
+        engine_handle="old-handle",
+        observed_status="ready",
+    )
+
+    await store.record_engine_restart(
+        delivery_id="terminal-restart",
+        verified=verified,
+        reason_code="engine_task_failed",
+        lease_until_ns=time.time_ns() + 60_000_000_000,
+    )
+    degraded = await store.load_engine_lifecycle_state(verified)
+    assert degraded.observed_status == "degraded"
+    assert degraded.quarantine_reason == "engine_task_failed"
+
+    await store.commit_recovered_engine_ready(
+        verified=verified,
+        engine_handle="replacement-handle",
+        observed_status="ready",
+    )
+    recovered = await store.load_engine_lifecycle_state(verified)
+    assert recovered.observed_status == "ready"
+    assert recovered.engine_handle == "replacement-handle"
+    assert recovered.restart_count == 1

@@ -436,6 +436,8 @@ async def test_terminal_and_zombie_events_use_same_durable_quarantine_or_restart
     assert restarted is not None
     assert engine.stop_calls == 1
     assert engine.deploy_calls == 1
+    assert "commit_recovered_ready" in store.events
+    assert "commit_ready" not in store.events
 
     with pytest.raises(EngineLifecycleQuarantined, match="engine_task_failed"):
         await subject.supervise_once(

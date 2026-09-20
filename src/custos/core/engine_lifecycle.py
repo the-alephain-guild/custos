@@ -282,6 +282,7 @@ class EngineLifecycleSupervisor:
             artifact_activation_id=artifact_activation_id,
             artifact_policy_id=artifact_policy_id,
             restart_count=restart_count,
+            recovered_applied=True,
         )
 
     async def _start_with_budget(

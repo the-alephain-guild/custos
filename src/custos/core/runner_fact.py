@@ -3589,6 +3589,21 @@ class RunnerStateStore:
                     time.time_ns(),
                 ),
             )
+            connection.execute(
+                """
+                UPDATE applied_deployments
+                SET observed_status = 'degraded', quarantine_reason = ?, updated_at_ns = ?
+                WHERE deployment_instance_id = ? AND generation = ?
+                  AND command_fingerprint = ?
+                """,
+                (
+                    reason,
+                    time.time_ns(),
+                    str(command.deployment_instance_id),
+                    command.generation,
+                    verified.command_fingerprint,
+                ),
+            )
             row = connection.execute(
                 """
                 SELECT restart_count FROM command_in_progress_lease
