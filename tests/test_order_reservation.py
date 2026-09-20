@@ -138,6 +138,77 @@ def test_synchronous_engine_callback_api_commits_the_reservation_lifecycle(
     assert released.reserved_notional == Decimal("0")
 
 
+@pytest.mark.asyncio
+async def test_policy_rollover_keeps_prior_exposure_in_runner_scope(tmp_path: Path) -> None:
+    store = _store(tmp_path / "runner-policy-rollover.sqlite3")
+    store.reserve_order_notional_sync(
+        event_id="old-reserve",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="old-entry",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("100"),
+    )
+    store.record_order_fill_sync(
+        event_id="old-fill",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="old-entry",
+        fill_notional=Decimal("100"),
+        fill_quantity=Decimal("1"),
+    )
+    new_policy_id = UUID("20000000-0000-4000-8000-000000000002")
+    with store._outbox._connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO runner_cap_policy (
+                policy_id, policy_revision, policy_digest,
+                tenant_scope, trading_mode, runner_id, previous_policy_id,
+                previous_policy_revision, previous_policy_digest,
+                settlement_currency, max_order_notional, max_notional,
+                effective_at_ns, expires_at_ns, policy_status, signer_key_id,
+                signature_profile, exact_subject, fingerprint,
+                verified_event_bytes_digest, exact_event_bytes, signed_policy,
+                policy_json, consumed_at_ns
+            ) SELECT ?, 2, ?, tenant_scope, trading_mode, runner_id, policy_id,
+                     1, policy_digest, settlement_currency, max_order_notional,
+                     max_notional, effective_at_ns, expires_at_ns, policy_status,
+                     signer_key_id, signature_profile, exact_subject, ?, ?,
+                     exact_event_bytes, signed_policy, policy_json, 2
+              FROM runner_cap_policy WHERE policy_id = ?
+            """,
+            (str(new_policy_id), "1" * 64, "2" * 64, "3" * 64, str(POLICY_ID)),
+        )
+        connection.execute(
+            """
+            UPDATE runner_cap_policy_head
+            SET policy_id = ?, policy_revision = 2, policy_digest = ?, updated_at_ns = 2
+            WHERE tenant_scope = ? AND trading_mode = 'sandbox' AND runner_id = ?
+            """,
+            (str(new_policy_id), "1" * 64, TENANT_ID, str(RUNNER_ID)),
+        )
+
+    exposure = await store.load_runner_exposure(new_policy_id)
+    assert exposure.open_exposure == Decimal("100")
+    assert exposure.total_exposure == Decimal("100")
+    with pytest.raises(RunnerStateAuthorityError, match="aggregate cap"):
+        store.reserve_order_notional_sync(
+            event_id="new-reserve",
+            deployment_instance_id=INSTANCE_A,
+            client_order_id="new-entry",
+            policy_id=new_policy_id,
+            requested_notional=Decimal("100"),
+        )
+
+    rebuilt = await store.rebuild_runner_exposure(
+        event_id="rollover-rebuild",
+        policy_id=new_policy_id,
+        open_exposure=Decimal("100"),
+        active_reservations=(),
+        source_digest="4" * 64,
+    )
+    assert rebuilt.open_exposure == Decimal("100")
+    assert rebuilt.total_exposure == Decimal("100")
+
+
 def test_market_fill_can_settle_above_quote_reservation_within_signed_caps(
     tmp_path: Path,
 ) -> None:
@@ -240,6 +311,92 @@ async def test_partial_close_releases_proportional_entry_cost_basis(
         "filled",
     )
     assert exposure.open_exposure == Decimal("60")
+
+
+@pytest.mark.asyncio
+async def test_position_reduction_consumes_all_entry_lots_fifo(tmp_path: Path) -> None:
+    store = _store(tmp_path / "runner-position-lots.sqlite3")
+    for index, order_id in enumerate(("entry-1", "entry-2"), start=1):
+        store.reserve_order_notional_sync(
+            event_id=f"reserve-{index}",
+            deployment_instance_id=INSTANCE_A,
+            client_order_id=order_id,
+            policy_id=POLICY_ID,
+            requested_notional=Decimal("50"),
+        )
+        store.record_order_fill_sync(
+            event_id=f"fill-{index}",
+            deployment_instance_id=INSTANCE_A,
+            client_order_id=order_id,
+            fill_notional=Decimal("50"),
+            fill_quantity=Decimal("1"),
+            position_id="position-1",
+            instrument_id="BTCUSDT-PERP.BINANCE",
+            side="buy",
+        )
+
+    store.record_position_reduction_fifo_sync(
+        event_id="close-position-1",
+        deployment_instance_id=INSTANCE_A,
+        position_id="position-1",
+        reduction_notional=Decimal("100"),
+        reduction_quantity=Decimal("2"),
+    )
+    reopened = _store(tmp_path / "runner-position-lots.sqlite3")
+    exposure = await reopened.load_runner_exposure(POLICY_ID)
+
+    assert exposure.open_exposure == Decimal("0")
+    assert reopened.load_order_reservation_sync(INSTANCE_A, "entry-1").state == "closed"
+    assert reopened.load_order_reservation_sync(INSTANCE_A, "entry-2").state == "closed"
+
+
+@pytest.mark.asyncio
+async def test_position_reversal_closes_fifo_lots_and_records_only_new_side(
+    tmp_path: Path,
+) -> None:
+    store = _store(tmp_path / "runner-position-reversal.sqlite3")
+    store.reserve_order_notional_sync(
+        event_id="reserve-long",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="long-entry",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("50"),
+    )
+    store.record_order_fill_sync(
+        event_id="fill-long",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="long-entry",
+        fill_notional=Decimal("50"),
+        fill_quantity=Decimal("2"),
+        position_id="position-reverse",
+        instrument_id="BTCUSDT-PERP.BINANCE",
+        side="buy",
+    )
+    store.reserve_order_notional_sync(
+        event_id="reserve-reversal",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="short-reversal",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("75"),
+    )
+
+    reversed_position = store.record_order_fill_sync(
+        event_id="fill-reversal",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="short-reversal",
+        fill_notional=Decimal("75"),
+        fill_quantity=Decimal("3"),
+        position_id="position-reverse",
+        instrument_id="BTCUSDT-PERP.BINANCE",
+        side="sell",
+    )
+    exposure = await store.load_runner_exposure(POLICY_ID)
+
+    assert store.load_order_reservation_sync(INSTANCE_A, "long-entry").state == "closed"
+    assert reversed_position.filled_quantity == Decimal("1")
+    assert reversed_position.filled_exposure == Decimal("25")
+    assert exposure.open_exposure == Decimal("25")
+    assert exposure.total_exposure == Decimal("25")
 
 
 def test_multiple_partial_fills_accumulate_without_dropping_the_source_reservation(

@@ -55,6 +55,7 @@ from custos.contracts.crucible_runner_safety_policy import (
 from custos.core.credential_resolver import VaultRunnerCredentialResolverV1
 from custos.core.engine_lifecycle import EngineLifecycleConfig, EngineLifecycleSupervisor
 from custos.core.engine_protocol import EngineDependencyUnavailable, ExecutionEngineProtocol
+from custos.core.engine_safety import EngineSafetySupervisor
 from custos.core.fallback_breaker import FallbackBreaker
 from custos.core.machine_credential_vault import (
     MachineCredentialError,
@@ -398,6 +399,7 @@ def _build_runner_safety_boundary_factory(
     *,
     state_store,
     safety_policy_resolver: RunnerSafetyPolicyResolver,
+    boundaries: dict[str, RunnerReservationBoundary] | None = None,
 ):
     async def build(spec: dict):
         try:
@@ -411,14 +413,49 @@ def _build_runner_safety_boundary_factory(
                 "runner safety execution requires a durable verified owner policy"
             )
 
-        return RunnerReservationBoundary(
-            store=state_store,
-            deployment_instance_id=UUID(str(spec["deployment_instance_id"])),
-            policy_id=limits.policy_id,
-            fallback_breaker=FallbackBreaker(limits.breaker),
+        instance_id = str(spec["deployment_instance_id"])
+        prior_boundary = boundaries.get(instance_id) if boundaries is not None else None
+        breaker = (
+            prior_boundary.fallback_breaker
+            if prior_boundary is not None
+            else FallbackBreaker(limits.breaker)
         )
+        breaker.apply_config(limits.breaker)
+        boundary = RunnerReservationBoundary(
+            store=state_store,
+            deployment_instance_id=UUID(instance_id),
+            policy_id=limits.policy_id,
+            fallback_breaker=breaker,
+        )
+        if boundaries is not None:
+            boundaries[instance_id] = boundary
+        return boundary
 
     return build
+
+
+async def _run_signed_safety_supervision(
+    stop: asyncio.Event,
+    *,
+    host: RunnerExecutionHost,
+    boundaries: Mapping[str, RunnerReservationBoundary],
+    interval_secs: float,
+) -> None:
+    if interval_secs <= 0:
+        raise ValueError("signed safety supervision interval must be positive")
+    while not stop.is_set():
+        for deployment in tuple(host.runner_fact_deployments()):
+            boundary = boundaries.get(deployment.deployment_instance_id)
+            if boundary is None:
+                raise RuntimeError("active signed deployment has no runner safety boundary")
+            await EngineSafetySupervisor(
+                engine=host,
+                breaker=boundary.fallback_breaker,
+            ).evaluate_once(deployment.deployment_instance_id)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval_secs)
+        except TimeoutError:
+            continue
 
 
 async def _synchronize_runner_safety_policies(
@@ -866,6 +903,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 machine_credential.assert_active,
             )
             safety_policy_resolver = DurableRunnerSafetyPolicyResolver(state_store)
+            runner_safety_boundaries: dict[str, RunnerReservationBoundary] = {}
             host = _build_host(
                 args,
                 fact_emitter=fact_emitter,
@@ -873,6 +911,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 runner_safety_boundary_factory=_build_runner_safety_boundary_factory(
                     state_store=state_store,
                     safety_policy_resolver=safety_policy_resolver,
+                    boundaries=runner_safety_boundaries,
                 ),
             )
             artifact_capability = ArtifactRuntimeCapabilityV1.production_ready()
@@ -933,6 +972,15 @@ async def run_daemon(args: argparse.Namespace) -> int:
                     asyncio.create_task(
                         fact_production.run_periods(stop),
                         name="runner-fact-periods",
+                    ),
+                    asyncio.create_task(
+                        _run_signed_safety_supervision(
+                            stop,
+                            host=host,
+                            boundaries=runner_safety_boundaries,
+                            interval_secs=args.runner_fact_snapshot_interval_secs,
+                        ),
+                        name="runner-signed-safety-supervision",
                     ),
                 )
             )

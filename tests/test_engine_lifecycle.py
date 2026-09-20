@@ -319,6 +319,37 @@ async def test_process_restart_rebuilds_engine_without_duplicate_applied_fact() 
 
 
 @pytest.mark.asyncio
+async def test_new_running_generation_stops_old_engine_before_deploy() -> None:
+    prior = _verified()
+    verified = _verified(generation=2)
+    store = _Store(
+        state=EngineLifecycleDurableState(
+            desired_status="pending",
+            applied_generation=1,
+            applied_command_fingerprint=prior.command_fingerprint,
+            engine_handle="old-handle",
+            observed_status="ready",
+            restart_count=0,
+            quarantine_reason=None,
+        )
+    )
+    engine = _Engine([_ready(verified)])
+
+    await _supervisor(store, engine).apply(
+        delivery_id="replacement",
+        verified=verified,
+        runtime_spec={"trading_mode": "sandbox", "connector": "binance"},
+        credential={},
+        artifact=_Artifact(),
+    )
+
+    assert engine.events == ["stop", "deploy", "wait_ready"]
+    assert engine.stop_calls == 1
+    assert engine.deploy_calls == 1
+    assert store.state.applied_generation == 2
+
+
+@pytest.mark.asyncio
 async def test_readiness_timeout_exhausts_durable_budget_and_quarantines() -> None:
     verified = _verified()
     store = _Store()

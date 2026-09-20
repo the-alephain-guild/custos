@@ -175,6 +175,15 @@ C17–C22 的防护已绑定现有测试。修改对应路径时，至少运行�
 | C21 | `tests/test_offline_reconciler.py`、`tests/test_offline_guard_waits_for_readiness.py` | 更新失败可重试；不重复启动；保留 breaker 与高水位；等待新节点就绪 |
 | C22 | `tests/test_plan_closeout_counts.py` | plans 与 fixes 均纳入当前计数；旧报告数字不改 |
 
+Runner exposure and signed-runtime changes additionally require
+`tests/test_order_reservation.py`, `tests/test_runner_policy_runtime.py`,
+`tests/cli/test_runner_safety_daemon_composition.py`,
+`tests/engines/nautilus/test_runner_safety_execution_boundary.py`, and
+`tests/test_engine_lifecycle.py`. Position-event and economic-ledger changes also
+require `tests/test_strategy_signal_bridge.py`,
+`tests/test_runner_fact_production_loop.py`, and
+`tests/engines/nautilus/test_binance_ledger_economic_rows.py`.
+
 完整本地入口为 `make verify-nt`，其 preflight 要求实际加载 Nautilus，随后运行完整测试集。
 定向回归可使用 `uv run --extra dev --extra nautilus pytest <上表文件> -q`。
 

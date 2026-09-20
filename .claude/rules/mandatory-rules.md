@@ -76,6 +76,15 @@ neither routed through the guard nor declared mode-agnostic fails the gate.
   Resolve replacement materials before stopping; retain breaker state and equity
   high-water marks across replacement. Apply the new generation only after a
   successful engine operation; retries must not create duplicate nodes. See C21.
+- Runner aggregate exposure belongs to the stable tenant, mode and runner scope;
+  replacing the signed policy changes the active limits without abandoning open
+  exposure or reservations recorded under earlier revisions. Net-position
+  reductions consume every durable opening lot for that position in FIFO order,
+  atomically and across restart.
+- Reconciliation compares realized PnL only for a complete position cycle opened
+  and flattened inside one period. Internal net PnL is compared with venue gross
+  realized PnL less separately observed commission; incomplete and cross-period
+  cycles do not create a falsely comparable scope.
 - Current test-count checks must include plans and fixes. Record fresh evidence
   in the current report; preserve historical close-outs and acceptance receipts.
   Local test success does not establish venue or production readiness. See C22.

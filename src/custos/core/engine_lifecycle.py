@@ -175,6 +175,16 @@ class EngineLifecycleSupervisor:
                 return receipt
         else:
             restart_count = state.restart_count
+            if (
+                state.applied_generation is not None
+                and state.applied_generation < verified.command.generation
+            ):
+                await self._store.record_in_progress_lease(
+                    delivery_id=delivery_id,
+                    verified=verified,
+                    lease_until_ns=self._lease_deadline_ns(),
+                )
+                await self._engine.stop(str(authority.deployment_instance_id))
         return await self._start_with_budget(
             delivery_id=delivery_id,
             verified=verified,

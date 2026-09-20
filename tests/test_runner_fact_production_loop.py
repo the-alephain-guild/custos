@@ -291,6 +291,40 @@ async def test_observability_emits_signed_capital_basis_without_log_inference() 
     }
 
 
+async def test_observability_reports_degraded_when_host_audit_state_is_unreliable() -> None:
+    authority = SimpleNamespace(
+        stream_key="default:testnet:runner:degraded",
+        deployment_spec_id=uuid4(),
+    )
+    deployment = SimpleNamespace(
+        authority=authority,
+        deployment_instance_id=str(uuid4()),
+        currency="USDT",
+    )
+
+    class DegradedHost(_CapitalBasisHost):
+        async def get_engine_status(self, deployment_instance_id):
+            assert deployment_instance_id == deployment.deployment_instance_id
+            return SimpleNamespace(
+                reliable=False,
+                unreliable_reason="runner_event_forwarding_failed:fixture",
+            )
+
+    emitter = _CapturingEmitter()
+    loop = RunnerFactProductionLoop(
+        host=DegradedHost(deployment),
+        emitter=emitter,
+        snapshot_interval_secs=1,
+        period_secs=60,
+        period_retry_secs=1,
+    )
+
+    await loop._emit_observability(deployment)
+
+    heartbeat = next(fact for fact in emitter.emissions[0][1] if fact["kind"] == "heartbeat")
+    assert heartbeat["status"] == "degraded"
+
+
 async def test_valuation_failure_publishes_no_partial_period() -> None:
     class UnpricedHost(_ValuationHost):
         async def runner_fact_valuation_snapshot(self, *args):

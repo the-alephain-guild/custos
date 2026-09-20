@@ -164,6 +164,21 @@ class NautilusCachedOrderSemantics:
         opening_order_id = getattr(position, "opening_order_id", None)
         return str(opening_order_id) if opening_order_id is not None else None
 
+    @staticmethod
+    def event_position_id(event: Any) -> str | None:
+        value = getattr(event, "position_id", None)
+        return str(value) if value is not None else None
+
+    @staticmethod
+    def event_instrument_id(event: Any) -> str | None:
+        value = getattr(event, "instrument_id", None)
+        return str(value) if value is not None else None
+
+    @staticmethod
+    def event_side(event: Any) -> str | None:
+        value = getattr(event, "order_side", None)
+        return str(value) if value is not None else None
+
     def _order_price(self, order: Any) -> Any:
         """The price to value this order at, from the first source that has one.
 
@@ -245,9 +260,10 @@ class _SubmitListIntent:
 
 
 class _ModifyIntent:
-    __slots__ = ("client_order_id", "id", "price", "quantity", "trigger_price")
+    __slots__ = ("client_order_id", "id", "order", "price", "quantity", "trigger_price")
 
     def __init__(self, order: Any, quantity: Any, price: Any, trigger_price: Any) -> None:
+        self.order = order
         self.client_order_id = order.client_order_id
         self.quantity = quantity
         self.price = price

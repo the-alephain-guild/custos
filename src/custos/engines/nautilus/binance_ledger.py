@@ -380,10 +380,10 @@ class BinanceVenueLedgerSource:
             symbol = self._required(row.get("symbol"), "trade.symbol")
             quote = self._quote_currency(symbol)
             commission_currency = str(row.get("commissionAsset") or quote).upper()
-            if commission_currency != quote or quote not in SUPPORTED_CURRENCIES:
+            if quote not in SUPPORTED_CURRENCIES or commission_currency not in SUPPORTED_CURRENCIES:
                 raise BinanceVenueLedgerError(
                     f"trade {row.get('id')} fee currency {commission_currency} cannot be represented "
-                    f"by RunnerFact v1 settlement currency {quote}"
+                    "by RunnerFact v1"
                 )
             trade_id = self._required(row.get("id"), "trade.id")
             order_id = self._required(row.get("orderId"), "trade.orderId")
@@ -409,7 +409,7 @@ class BinanceVenueLedgerSource:
                 {
                     "fee_id": f"trade:{symbol}:{trade_id}:commission",
                     "kind": "commission",
-                    "currency": quote,
+                    "currency": commission_currency,
                     "amount": fee,
                     "occurred_at": occurred_at,
                 }

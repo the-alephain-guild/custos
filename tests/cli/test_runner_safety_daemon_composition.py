@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 from decimal import Decimal
 from pathlib import Path
@@ -16,9 +17,10 @@ from custos.artifacts.release_resolver import (
 from custos.cli._daemon import (
     _build_runner_safety_boundary_factory,
     _build_strategy_release_runtime,
+    _run_signed_safety_supervision,
     _synchronize_runner_safety_policies,
 )
-from custos.core.engine_protocol import EngineDependencyUnavailable
+from custos.core.engine_protocol import EngineDependencyUnavailable, EngineStatus
 from custos.core.fallback_breaker import FallbackBreakerConfig
 from custos.core.runner_fact import RunnerPolicyCommitResult, RunnerPolicyIdentityDecision
 
@@ -81,9 +83,11 @@ async def test_policy_bootstrap_records_each_mode_and_uses_commit_decision() -> 
 async def test_boundary_factory_uses_durable_owner_policy_identity() -> None:
     store = object()
     resolver = _Resolver()
+    boundaries = {}
     factory = _build_runner_safety_boundary_factory(
         state_store=store,
         safety_policy_resolver=resolver,
+        boundaries=boundaries,
     )
 
     boundary = await factory(
@@ -98,6 +102,66 @@ async def test_boundary_factory_uses_durable_owner_policy_identity() -> None:
     assert boundary._deployment_instance_id == DEPLOYMENT_INSTANCE_ID
     assert boundary._policy_id == POLICY_ID
     assert boundary._fallback_breaker.config.max_notional == Decimal("100")
+    assert boundaries[str(DEPLOYMENT_INSTANCE_ID)] is boundary
+
+    boundary.fallback_breaker.fail_closed("fixture_generation_trip")
+    replacement = await factory(
+        {
+            "deployment_instance_id": str(DEPLOYMENT_INSTANCE_ID),
+            "trading_mode": "testnet",
+        }
+    )
+    assert replacement is not boundary
+    assert replacement.fallback_breaker is boundary.fallback_breaker
+    assert replacement.fallback_breaker.frozen is True
+
+
+@pytest.mark.asyncio
+async def test_signed_safety_supervision_trips_the_order_boundary_breaker() -> None:
+    stop = asyncio.Event()
+    boundary = await _build_runner_safety_boundary_factory(
+        state_store=object(),
+        safety_policy_resolver=_Resolver(),
+    )(
+        {
+            "deployment_instance_id": str(DEPLOYMENT_INSTANCE_ID),
+            "trading_mode": "sandbox",
+        }
+    )
+
+    class Host:
+        def __init__(self) -> None:
+            self.flattened: list[str] = []
+
+        def runner_fact_deployments(self):
+            return (SimpleNamespace(deployment_instance_id=str(DEPLOYMENT_INSTANCE_ID)),)
+
+        async def get_engine_status(self, deployment_instance_id: str):
+            stop.set()
+            return EngineStatus(
+                phase="running",
+                position_count=1,
+                order_count=0,
+                open_notional=Decimal("50"),
+                peak_equity=Decimal("1000"),
+                current_equity=Decimal("500"),
+                drawdown_pct=Decimal("50"),
+                reliable=True,
+            )
+
+        async def flatten_positions(self, deployment_instance_id: str, reason: str):
+            self.flattened.append(f"{deployment_instance_id}:{reason}")
+
+    host = Host()
+    await _run_signed_safety_supervision(
+        stop,
+        host=host,
+        boundaries={str(DEPLOYMENT_INSTANCE_ID): boundary},
+        interval_secs=0.001,
+    )
+
+    assert boundary.fallback_breaker.frozen is True
+    assert host.flattened == [f"{DEPLOYMENT_INSTANCE_ID}:drawdown_breach"]
 
 
 @pytest.mark.asyncio

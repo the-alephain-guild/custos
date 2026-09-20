@@ -614,7 +614,7 @@ class RunnerFactEventBridge:
         if type(event).__name__ != "PositionClosed":
             return
         try:
-            data = type(event).to_dict(event)
+            data = self._position_event_data(event)
             authority = self._deployment.authority
             event_identity = str(data.get("event_id") or "").strip()
             position_identity = str(data.get("position_id") or "").strip()
@@ -640,6 +640,27 @@ class RunnerFactEventBridge:
         except Exception as exc:  # the forwarder isolates and records audit failures
             _log.error("runner_fact_position_event_failed", error=str(exc))
             raise
+
+    @staticmethod
+    def _position_event_data(event: Any) -> dict[str, Any]:
+        converter = getattr(type(event), "to_dict", None)
+        if callable(converter):
+            converted = converter(event)
+            if isinstance(converted, dict):
+                return converted
+        return {
+            field: getattr(event, field, None)
+            for field in (
+                "currency",
+                "event_id",
+                "instrument_id",
+                "position_id",
+                "realized_pnl",
+                "ts_closed",
+                "ts_event",
+                "ts_opened",
+            )
+        }
 
 
 class RunnerFactProductionLoop:
@@ -672,6 +693,12 @@ class RunnerFactProductionLoop:
         observed_at = datetime.now(UTC)
         authority = deployment.authority
         try:
+            status_reader = getattr(self._host, "get_engine_status", None)
+            status = (
+                await status_reader(deployment.deployment_instance_id)
+                if callable(status_reader)
+                else None
+            )
             equity, positions = await self._host.runner_fact_risk_snapshot(
                 deployment.deployment_instance_id, deployment.currency
             )
@@ -689,7 +716,7 @@ class RunnerFactProductionLoop:
                 ),
                 heartbeat(
                     event_id=_scoped_event_id(authority, "heartbeat", observed_at.isoformat()),
-                    status="online",
+                    status=("online" if status is None or status.reliable else "degraded"),
                     observed_at=observed_at,
                 ),
             )

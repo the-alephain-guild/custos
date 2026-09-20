@@ -72,6 +72,10 @@ class _Store:
         self.log.append(("reduce", kwargs))
         return self.reservations.get(kwargs["client_order_id"])
 
+    def record_position_reduction_fifo(self, **kwargs):
+        self.log.append(("reduce_fifo", kwargs))
+        return next(iter(self.reservations.values()), None)
+
     reserve_order_notional_sync = reserve_order_notional
     load_order_reservation_sync = load_order_reservation
     has_order_reservation_sync = has_order_reservation
@@ -79,6 +83,7 @@ class _Store:
     release_order_reservation_sync = release_order_reservation
     record_order_fill_sync = record_order_fill
     record_position_reduction_sync = record_position_reduction
+    record_position_reduction_fifo_sync = record_position_reduction_fifo
 
 
 class _Semantics:
@@ -104,6 +109,15 @@ class _Semantics:
 
     def event_exposure_source_order_id(self, event) -> str | None:
         return getattr(event, "exposure_source_order_id", None)
+
+    def event_position_id(self, event) -> str | None:
+        return getattr(event, "position_id", None)
+
+    def event_instrument_id(self, event) -> str | None:
+        return getattr(event, "instrument_id", None)
+
+    def event_side(self, event) -> str | None:
+        return getattr(event, "order_side", None)
 
 
 class _Downstream:
@@ -345,6 +359,22 @@ def test_frozen_breaker_refuses_risk_increasing_but_not_reduce_only() -> None:
     assert refusals[0].reason_code == "custos_runner_fallback_breaker_frozen"
 
 
+def test_frozen_breaker_allows_reduce_only_modification_without_reservation() -> None:
+    log: list[tuple] = []
+    breaker = _breaker()
+    breaker.fail_closed("portfolio_snapshot_unreliable")
+    refusals: list[OrderRefusal] = []
+    downstream = _Downstream(log)
+    gate = _gate(_boundary(_Store(log), fallback_breaker=breaker), refusals)
+    order = _order("protective", reduce_only=True)
+
+    gate.submit_order(downstream.submit_order, order)
+    gate.modify_order(downstream.modify_order, order, trigger_price=Decimal("99"))
+
+    assert [entry[0] for entry in log] == ["submit", "modify_upstream"]
+    assert refusals == []
+
+
 def test_modify_reserves_new_notional_before_upstream() -> None:
     log: list[tuple] = []
     store = _Store(log)
@@ -366,6 +396,7 @@ def test_modify_reserves_new_notional_before_upstream() -> None:
             instrument_id="BTCUSDT-PERP.BINANCE",
             venue_order_id="venue-2",
             notional="40",
+            reduce_only=False,
         ),
         "40",
     )

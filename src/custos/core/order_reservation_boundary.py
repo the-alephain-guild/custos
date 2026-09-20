@@ -36,6 +36,8 @@ class RunnerReservationStore(Protocol):
 
     def record_position_reduction_sync(self, **kwargs: Any) -> Any: ...
 
+    def record_position_reduction_fifo_sync(self, **kwargs: Any) -> Any: ...
+
     async def load_runner_exposure(self, policy_id: UUID) -> Any: ...
 
 
@@ -53,6 +55,12 @@ class OrderSemantics(Protocol):
     def event_is_risk_reducing(self, event: Any) -> bool: ...
 
     def event_exposure_source_order_id(self, event: Any) -> str | None: ...
+
+    def event_position_id(self, event: Any) -> str | None: ...
+
+    def event_instrument_id(self, event: Any) -> str | None: ...
+
+    def event_side(self, event: Any) -> str | None: ...
 
 
 class RunnerRiskIncreaseFrozenError(RuntimeError):
@@ -84,7 +92,7 @@ class _Reservation:
 @dataclass(frozen=True)
 class _Modification:
     client_order_id: str
-    prior_reserved_notional: Decimal
+    prior_reserved_notional: Decimal | None
 
 
 class RunnerReservationBoundary:
@@ -115,6 +123,10 @@ class RunnerReservationBoundary:
         if self._semantics is None:
             self._semantics = semantics
 
+    @property
+    def fallback_breaker(self) -> FallbackBreaker:
+        return self._fallback_breaker
+
     def bootstrap(self, forwarder: Any) -> None:
         """Register with the host's event forwarder.
 
@@ -141,9 +153,15 @@ class RunnerReservationBoundary:
         )
 
     def before_modify_order(self, command: Any) -> _Modification:
-        self._require_risk_increasing_allowed()
         semantics = self._require_semantics()
         client_order_id = str(command.client_order_id)
+        order = getattr(command, "order", None)
+        if order is not None and semantics.order_is_risk_reducing(order):
+            return _Modification(
+                client_order_id=client_order_id,
+                prior_reserved_notional=None,
+            )
+        self._require_risk_increasing_allowed()
         prior = self._store.load_order_reservation_sync(
             self._deployment_instance_id,
             client_order_id,
@@ -180,6 +198,8 @@ class RunnerReservationBoundary:
             )
 
     def rollback_modify(self, modification: _Modification, *, event_id: Any) -> None:
+        if modification.prior_reserved_notional is None:
+            return
         self._store.replace_order_reservation_sync(
             event_id=self._event_id(
                 "modify_rejected",
@@ -212,6 +232,7 @@ class RunnerReservationBoundary:
             source_order_id = (
                 semantics.event_exposure_source_order_id(event) if risk_reducing else None
             )
+            position_id = semantics.event_position_id(event)
             if risk_reducing:
                 if client_order_id not in self._risk_reducing_order_ids and (
                     source_order_id is None or not self._has_reservation(source_order_id)
@@ -223,17 +244,28 @@ class RunnerReservationBoundary:
             quantity = semantics.fill_quantity(event)
             try:
                 if risk_reducing:
-                    if source_order_id is None or not self._has_reservation(source_order_id):
-                        raise RuntimeError(
-                            "risk-reducing fill has no durable opening-order exposure"
+                    if position_id is not None:
+                        self._store.record_position_reduction_fifo_sync(
+                            event_id=self._event_id("fill_reduce", stable_event_id, position_id),
+                            deployment_instance_id=self._deployment_instance_id,
+                            position_id=position_id,
+                            reduction_notional=notional,
+                            reduction_quantity=quantity,
                         )
-                    self._store.record_position_reduction_sync(
-                        event_id=self._event_id("fill_reduce", stable_event_id, source_order_id),
-                        deployment_instance_id=self._deployment_instance_id,
-                        client_order_id=source_order_id,
-                        reduction_notional=notional,
-                        reduction_quantity=quantity,
-                    )
+                    else:
+                        if source_order_id is None or not self._has_reservation(source_order_id):
+                            raise RuntimeError(
+                                "risk-reducing fill has no durable opening-order exposure"
+                            )
+                        self._store.record_position_reduction_sync(
+                            event_id=self._event_id(
+                                "fill_reduce", stable_event_id, source_order_id
+                            ),
+                            deployment_instance_id=self._deployment_instance_id,
+                            client_order_id=source_order_id,
+                            reduction_notional=notional,
+                            reduction_quantity=quantity,
+                        )
                 else:
                     self._store.record_order_fill_sync(
                         event_id=self._event_id("fill", stable_event_id, client_order_id),
@@ -241,6 +273,9 @@ class RunnerReservationBoundary:
                         client_order_id=client_order_id,
                         fill_notional=notional,
                         fill_quantity=quantity,
+                        position_id=position_id,
+                        instrument_id=semantics.event_instrument_id(event),
+                        side=semantics.event_side(event),
                     )
             except Exception as exc:
                 # An exchange fill is already authoritative and cannot be rejected after

@@ -377,3 +377,87 @@ def test_audit_failure_reaches_host_without_interrupting_strategy(kind) -> None:
     assert strategy.events == [event]
     assert len(failures) == 1
     assert failures[0][1].endswith(":OSError")
+
+
+def test_native_position_closed_event_emits_a_durable_fact_without_to_dict() -> None:
+    pytest.importorskip("nautilus_trader")
+    from nautilus_trader.core import UUID4
+    from nautilus_trader.model import (
+        AccountId,
+        ClientOrderId,
+        CryptoPerpetual,
+        Currency,
+        InstrumentId,
+        LiquiditySide,
+        Money,
+        OrderSide,
+        OrderType,
+        Position,
+        PositionId,
+        Price,
+        Quantity,
+        StrategyId,
+        Symbol,
+        TradeId,
+        TraderId,
+        VenueOrderId,
+    )
+    from nautilus_trader.model import (
+        OrderFilled as NativeOrderFilled,
+    )
+    from nautilus_trader.model import (
+        PositionClosed as NativePositionClosed,
+    )
+
+    instrument = CryptoPerpetual(
+        InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+        Symbol("BTCUSDT"),
+        Currency.from_str("BTC"),
+        Currency.from_str("USDT"),
+        Currency.from_str("USDT"),
+        False,
+        2,
+        3,
+        Price.from_str("0.01"),
+        Quantity.from_str("0.001"),
+        0,
+        0,
+    )
+
+    def fill(side, price: str, fee: str, sequence: int):
+        return NativeOrderFilled(
+            TraderId("TRADER-001"),
+            StrategyId("TEST-001"),
+            instrument.id,
+            ClientOrderId(f"order-{sequence}"),
+            VenueOrderId(str(sequence)),
+            AccountId("BINANCE-001"),
+            TradeId(str(sequence)),
+            side,
+            OrderType.MARKET,
+            Quantity.from_str("1.000"),
+            Price.from_str(price),
+            Currency.from_str("USDT"),
+            LiquiditySide.TAKER,
+            UUID4(),
+            sequence * 1_000_000_000,
+            sequence * 1_000_000_000,
+            False,
+            position_id=PositionId("P-001"),
+            commission=Money.from_str(f"{fee} USDT"),
+        )
+
+    position = Position(instrument, fill(OrderSide.BUY, "100.00", "1", 1))
+    closing = fill(OrderSide.SELL, "110.00", "1", 2)
+    position.apply(closing)
+    event = NativePositionClosed.create(position, closing, UUID4(), 2_000_000_000)
+    emitter = _Emitter()
+    bridge = RunnerFactEventBridge(emitter=emitter, deployment=_deployment())
+
+    bridge._on_position_event(event)
+
+    assert len(emitter.fact_batches) == 1
+    (fact,) = emitter.fact_batches[0]
+    assert fact["kind"] == "position_closed"
+    assert fact["realized_pnl"] == "8"
+    assert fact["currency"] == "USDT"

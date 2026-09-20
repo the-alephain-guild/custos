@@ -1670,6 +1670,21 @@ class RunnerFactOutbox:
                     source_digest TEXT NOT NULL,
                     FOREIGN KEY (policy_id) REFERENCES runner_cap_policy(policy_id)
                 );
+                CREATE TABLE IF NOT EXISTS runner_position_exposure_lot (
+                    deployment_instance_id TEXT NOT NULL,
+                    position_id TEXT NOT NULL,
+                    client_order_id TEXT NOT NULL,
+                    instrument_id TEXT NOT NULL,
+                    side TEXT NOT NULL CHECK (side IN ('buy', 'sell')),
+                    opened_at_ns INTEGER NOT NULL,
+                    PRIMARY KEY (deployment_instance_id, position_id, client_order_id),
+                    FOREIGN KEY (deployment_instance_id, client_order_id)
+                        REFERENCES order_reservation(deployment_instance_id, client_order_id)
+                );
+                CREATE INDEX IF NOT EXISTS runner_position_exposure_lot_fifo
+                    ON runner_position_exposure_lot(
+                        deployment_instance_id, position_id, opened_at_ns, client_order_id
+                    );
                 CREATE TABLE IF NOT EXISTS runner_order_reservation_event (
                     event_id TEXT PRIMARY KEY,
                     event_kind TEXT NOT NULL,
@@ -1705,6 +1720,15 @@ class RunnerFactOutbox:
             if "filled_quantity" not in reservation_columns:
                 raise RunnerStateMigrationError(
                     "runner state database predates quantity-aware exposure accounting; "
+                    "recreate the pre-production database"
+                )
+            lot_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(runner_position_exposure_lot)")
+            }
+            if "side" not in lot_columns:
+                raise RunnerStateMigrationError(
+                    "runner state database predates side-aware position lots; "
                     "recreate the pre-production database"
                 )
             connection.execute(
@@ -3632,6 +3656,17 @@ class RunnerStateStore:
                 (self._tenant_id, policy.trading_mode, str(self._runner_id)),
             ).fetchone()
             if head is not None:
+                head_policy = connection.execute(
+                    "SELECT settlement_currency FROM runner_cap_policy WHERE policy_id = ?",
+                    (head["policy_id"],),
+                ).fetchone()
+                if (
+                    head_policy is None
+                    or head_policy["settlement_currency"] != policy.settlement_currency
+                ):
+                    raise RunnerStateAuthorityError(
+                        "runner policy settlement currency differs from its prior revision"
+                    )
                 head_revision = int(head["policy_revision"])
                 head_digest = str(head["policy_digest"])
                 if policy.revision < head_revision:
@@ -3960,11 +3995,13 @@ class RunnerStateStore:
             if replay is not None:
                 return self._reservation_from_document(replay)
             row = self._reservation_row(connection, instance, order)
-            policy_row = self._reservation_policy(
+            reservation_policy = self._reservation_policy(
                 connection,
                 str(row["policy_id"]),
                 deployment_instance_id=instance,
+                require_current=False,
             )
+            policy_row = self._current_policy_for_scope(connection, reservation_policy)
             filled = Decimal(str(row["filled_exposure"]))
             if filled + new_reserved > Decimal(str(policy_row["max_order_notional"])):
                 raise RunnerStateAuthorityError("runner policy per-order cap exceeded")
@@ -4062,6 +4099,7 @@ class RunnerStateStore:
                 connection,
                 str(row["policy_id"]),
                 deployment_instance_id=instance,
+                require_current=False,
             )
             filled = Decimal(str(row["filled_exposure"]))
             state = "filled" if filled > 0 else "released"
@@ -4095,6 +4133,9 @@ class RunnerStateStore:
         client_order_id: str,
         fill_notional: Decimal,
         fill_quantity: Decimal,
+        position_id: str | None = None,
+        instrument_id: str | None = None,
+        side: str | None = None,
     ) -> OrderReservationSnapshot:
         return await asyncio.to_thread(
             self._record_order_fill,
@@ -4103,6 +4144,9 @@ class RunnerStateStore:
             client_order_id,
             fill_notional,
             fill_quantity,
+            position_id,
+            instrument_id,
+            side,
         )
 
     def record_order_fill_sync(
@@ -4113,6 +4157,9 @@ class RunnerStateStore:
         client_order_id: str,
         fill_notional: Decimal,
         fill_quantity: Decimal,
+        position_id: str | None = None,
+        instrument_id: str | None = None,
+        side: str | None = None,
     ) -> OrderReservationSnapshot:
         return self._record_order_fill(
             event_id,
@@ -4120,6 +4167,9 @@ class RunnerStateStore:
             client_order_id,
             fill_notional,
             fill_quantity,
+            position_id,
+            instrument_id,
+            side,
         )
 
     def _record_order_fill(
@@ -4129,6 +4179,9 @@ class RunnerStateStore:
         client_order_id: str,
         fill_notional: Decimal,
         fill_quantity: Decimal,
+        position_id: str | None,
+        instrument_id: str | None,
+        side: str | None,
     ) -> OrderReservationSnapshot:
         instance = _uuid(deployment_instance_id, "deployment_instance_id")
         order = _non_empty(client_order_id, "client_order_id")
@@ -4140,6 +4193,9 @@ class RunnerStateStore:
             "client_order_id": order,
             "fill_notional": _decimal(fill, "fill_notional"),
             "fill_quantity": _decimal(quantity, "fill_quantity"),
+            "position_id": position_id,
+            "instrument_id": instrument_id,
+            "side": side,
         }
         with self._outbox._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -4147,22 +4203,107 @@ class RunnerStateStore:
             if replay is not None:
                 return self._reservation_from_document(replay)
             row = self._reservation_row(connection, instance, order)
-            policy_row = self._reservation_policy(
+            reservation_policy = self._reservation_policy(
                 connection,
                 str(row["policy_id"]),
                 deployment_instance_id=instance,
+                require_current=False,
             )
+            policy_row = self._current_policy_for_scope(connection, reservation_policy)
             reserved = Decimal(str(row["reserved_notional"]))
-            filled = Decimal(str(row["filled_exposure"])) + fill
-            filled_quantity = Decimal(str(row["filled_quantity"])) + quantity
+            opening_quantity = quantity
+            opening_notional = fill
+            position: str | None = None
+            instrument: str | None = None
+            normalized_side: str | None = None
+            if position_id is not None:
+                position = _non_empty(position_id, "position_id")
+                instrument = _non_empty(instrument_id, "instrument_id")
+                normalized_side = _non_empty(side, "side").lower().split(".")[-1]
+                if normalized_side not in {"buy", "sell"}:
+                    raise RunnerStateAuthorityError("fill side is invalid")
+                opposite = "sell" if normalized_side == "buy" else "buy"
+                opposite_rows = connection.execute(
+                    """
+                    SELECT reservation.* FROM runner_position_exposure_lot AS lot
+                    JOIN order_reservation AS reservation
+                      ON reservation.deployment_instance_id = lot.deployment_instance_id
+                     AND reservation.client_order_id = lot.client_order_id
+                    WHERE lot.deployment_instance_id = ? AND lot.position_id = ?
+                      AND lot.instrument_id = ? AND lot.side = ?
+                      AND CAST(reservation.filled_quantity AS NUMERIC) > 0
+                    ORDER BY lot.opened_at_ns, lot.client_order_id
+                    """,
+                    (instance, position, instrument, opposite),
+                ).fetchall()
+                closing_quantity = min(
+                    quantity,
+                    sum(
+                        (Decimal(str(item["filled_quantity"])) for item in opposite_rows),
+                        Decimal("0"),
+                    ),
+                )
+                remaining_close = closing_quantity
+                for opposite_row in opposite_rows:
+                    if remaining_close <= 0:
+                        break
+                    opposite_quantity = Decimal(str(opposite_row["filled_quantity"]))
+                    allocated = min(remaining_close, opposite_quantity)
+                    opposite_filled = Decimal(str(opposite_row["filled_exposure"]))
+                    released = (
+                        opposite_filled
+                        if allocated == opposite_quantity
+                        else opposite_filled * allocated / opposite_quantity
+                    )
+                    remaining_opposite_quantity = opposite_quantity - allocated
+                    remaining_opposite_filled = opposite_filled - released
+                    opposite_reserved = Decimal(str(opposite_row["reserved_notional"]))
+                    opposite_state = (
+                        "partially_filled"
+                        if opposite_reserved > 0
+                        else ("filled" if remaining_opposite_filled > 0 else "closed")
+                    )
+                    connection.execute(
+                        """
+                        UPDATE order_reservation
+                        SET filled_exposure = ?, filled_quantity = ?, state = ?, updated_at_ns = ?
+                        WHERE deployment_instance_id = ? AND client_order_id = ?
+                        """,
+                        (
+                            _decimal(remaining_opposite_filled, "filled_exposure"),
+                            _decimal(remaining_opposite_quantity, "filled_quantity"),
+                            opposite_state,
+                            time.time_ns(),
+                            instance,
+                            opposite_row["client_order_id"],
+                        ),
+                    )
+                    self._adjust_exposure_checkpoint(
+                        connection,
+                        str(opposite_row["policy_id"]),
+                        -released,
+                        time.time_ns(),
+                        source_digest=self._reservation_event_fingerprint(payload),
+                    )
+                    remaining_close -= allocated
+                opening_quantity = quantity - closing_quantity
+                opening_notional = (
+                    Decimal("0") if opening_quantity == 0 else fill * opening_quantity / quantity
+                )
+            filled = Decimal(str(row["filled_exposure"])) + opening_notional
+            filled_quantity = Decimal(str(row["filled_quantity"])) + opening_quantity
             if filled > Decimal(str(policy_row["max_order_notional"])):
                 raise RunnerStateAuthorityError("fill exceeds the runner policy per-order cap")
             exposure = self._runner_exposure(connection, policy_row)
             remaining = max(reserved - fill, Decimal("0"))
-            settled_total = exposure.total_exposure + fill - (reserved - remaining)
+            settled_total = exposure.total_exposure + opening_notional - (reserved - remaining)
             if settled_total > exposure.max_total_notional:
                 raise RunnerStateAuthorityError("fill exceeds the runner aggregate cap")
-            state = "partially_filled" if remaining > 0 else "filled"
+            state = (
+                "partially_filled"
+                if remaining > 0
+                else ("filled" if filled_quantity > 0 else "closed")
+            )
             recorded_at_ns = time.time_ns()
             connection.execute(
                 """
@@ -4181,10 +4322,22 @@ class RunnerStateStore:
                     order,
                 ),
             )
+            if position is not None and opening_quantity > 0:
+                connection.execute(
+                    """
+                    INSERT INTO runner_position_exposure_lot (
+                        deployment_instance_id, position_id, client_order_id,
+                        instrument_id, side, opened_at_ns
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(deployment_instance_id, position_id, client_order_id)
+                    DO NOTHING
+                    """,
+                    (instance, position, order, instrument, normalized_side, recorded_at_ns),
+                )
             self._adjust_exposure_checkpoint(
                 connection,
                 str(row["policy_id"]),
-                fill,
+                opening_notional,
                 recorded_at_ns,
                 source_digest=self._reservation_event_fingerprint(payload),
             )
@@ -4204,6 +4357,119 @@ class RunnerStateStore:
                 recorded_at_ns,
             )
             return snapshot
+
+    def record_position_reduction_fifo_sync(
+        self,
+        *,
+        event_id: str,
+        deployment_instance_id: UUID,
+        position_id: str,
+        reduction_notional: Decimal,
+        reduction_quantity: Decimal,
+    ) -> OrderReservationSnapshot:
+        instance = _uuid(deployment_instance_id, "deployment_instance_id")
+        position = _non_empty(position_id, "position_id")
+        reduction = Decimal(_decimal(reduction_notional, "reduction_notional", positive=True))
+        quantity = Decimal(_decimal(reduction_quantity, "reduction_quantity", positive=True))
+        payload = {
+            "event_kind": "position_reduction_fifo",
+            "deployment_instance_id": instance,
+            "position_id": position,
+            "reduction_notional": _decimal(reduction, "reduction_notional"),
+            "reduction_quantity": _decimal(quantity, "reduction_quantity"),
+        }
+        with self._outbox._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            replay = self._reservation_event_replay(connection, event_id, payload)
+            if replay is not None:
+                return self._reservation_from_document(replay)
+            rows = connection.execute(
+                """
+                SELECT reservation.* FROM runner_position_exposure_lot AS lot
+                JOIN order_reservation AS reservation
+                  ON reservation.deployment_instance_id = lot.deployment_instance_id
+                 AND reservation.client_order_id = lot.client_order_id
+                WHERE lot.deployment_instance_id = ? AND lot.position_id = ?
+                  AND CAST(reservation.filled_quantity AS NUMERIC) > 0
+                ORDER BY lot.opened_at_ns, lot.client_order_id
+                """,
+                (instance, position),
+            ).fetchall()
+            available = sum(
+                (Decimal(str(row["filled_quantity"])) for row in rows),
+                Decimal("0"),
+            )
+            if quantity > available:
+                raise RunnerStateAuthorityError(
+                    "position reduction exceeds durable position lot quantity"
+                )
+            remaining = quantity
+            recorded_at_ns = time.time_ns()
+            last_snapshot: OrderReservationSnapshot | None = None
+            for row in rows:
+                if remaining <= 0:
+                    break
+                self._reservation_policy(
+                    connection,
+                    str(row["policy_id"]),
+                    deployment_instance_id=instance,
+                    require_current=False,
+                )
+                filled_quantity = Decimal(str(row["filled_quantity"]))
+                allocated = min(remaining, filled_quantity)
+                filled = Decimal(str(row["filled_exposure"]))
+                released = (
+                    filled if allocated == filled_quantity else filled * allocated / filled_quantity
+                )
+                remaining_quantity = filled_quantity - allocated
+                remaining_filled = filled - released
+                reserved = Decimal(str(row["reserved_notional"]))
+                state = (
+                    "partially_filled"
+                    if reserved > 0
+                    else ("filled" if remaining_filled > 0 else "closed")
+                )
+                connection.execute(
+                    """
+                    UPDATE order_reservation
+                    SET filled_exposure = ?, filled_quantity = ?, state = ?, updated_at_ns = ?
+                    WHERE deployment_instance_id = ? AND client_order_id = ?
+                    """,
+                    (
+                        _decimal(remaining_filled, "filled_exposure"),
+                        _decimal(remaining_quantity, "filled_quantity"),
+                        state,
+                        recorded_at_ns,
+                        instance,
+                        row["client_order_id"],
+                    ),
+                )
+                self._adjust_exposure_checkpoint(
+                    connection,
+                    str(row["policy_id"]),
+                    -released,
+                    recorded_at_ns,
+                    source_digest=self._reservation_event_fingerprint(payload),
+                )
+                last_snapshot = self._reservation_snapshot(
+                    row,
+                    reserved=reserved,
+                    filled=remaining_filled,
+                    filled_quantity=remaining_quantity,
+                    state=state,
+                )
+                remaining -= allocated
+            if last_snapshot is None:
+                raise RunnerStateAuthorityError("position reduction has no durable position lots")
+            self._record_reservation_event(
+                connection,
+                event_id,
+                payload,
+                str(last_snapshot.policy_id),
+                last_snapshot,
+                recorded_at_ns,
+            )
+            return last_snapshot
 
     async def record_position_reduction(
         self,
@@ -4269,6 +4535,7 @@ class RunnerStateStore:
                 connection,
                 str(row["policy_id"]),
                 deployment_instance_id=instance,
+                require_current=False,
             )
             filled = Decimal(str(row["filled_exposure"]))
             filled_quantity = Decimal(str(row["filled_quantity"]))
@@ -4412,9 +4679,17 @@ class RunnerStateStore:
                 UPDATE order_reservation
                 SET reserved_notional = '0', filled_exposure = '0', filled_quantity = '0',
                     state = 'released', updated_at_ns = ?
-                WHERE policy_id = ?
+                WHERE policy_id IN (
+                    SELECT policy_id FROM runner_cap_policy
+                    WHERE tenant_scope = ? AND trading_mode = ? AND runner_id = ?
+                )
                 """,
-                (recorded_at_ns, policy),
+                (
+                    recorded_at_ns,
+                    policy_row["tenant_scope"],
+                    policy_row["trading_mode"],
+                    policy_row["runner_id"],
+                ),
             )
             for entry in entries:
                 connection.execute(
@@ -4440,6 +4715,20 @@ class RunnerStateStore:
                         recorded_at_ns,
                     ),
                 )
+            connection.execute(
+                """
+                DELETE FROM runner_exposure_checkpoint
+                WHERE policy_id IN (
+                    SELECT policy_id FROM runner_cap_policy
+                    WHERE tenant_scope = ? AND trading_mode = ? AND runner_id = ?
+                )
+                """,
+                (
+                    policy_row["tenant_scope"],
+                    policy_row["trading_mode"],
+                    policy_row["runner_id"],
+                ),
+            )
             connection.execute(
                 """
                 INSERT INTO runner_exposure_checkpoint (
@@ -4537,15 +4826,11 @@ class RunnerStateStore:
         policy_id: str,
         *,
         deployment_instance_id: str | None = None,
+        require_current: bool = True,
     ) -> sqlite3.Row:
         row = connection.execute(
             """
             SELECT policy.* FROM runner_cap_policy AS policy
-            JOIN runner_cap_policy_head AS head
-              ON head.tenant_scope = policy.tenant_scope
-             AND head.trading_mode = policy.trading_mode
-             AND head.runner_id = policy.runner_id
-             AND head.policy_id = policy.policy_id
             WHERE policy.policy_id = ?
             """,
             (policy_id,),
@@ -4556,12 +4841,18 @@ class RunnerStateStore:
             or row["tenant_scope"] != self._tenant_id
             or row["runner_id"] != str(self._runner_id)
             or row["policy_status"] != "active"
-            or now_ns < int(row["effective_at_ns"])
-            or now_ns >= int(row["expires_at_ns"])
         ):
-            raise RunnerStateAuthorityError(
-                "reservation requires the current effective runner policy"
-            )
+            raise RunnerStateAuthorityError("reservation policy is outside runner authority")
+        if require_current:
+            head = self._current_policy_for_scope(connection, row)
+            if (
+                head["policy_id"] != row["policy_id"]
+                or now_ns < int(row["effective_at_ns"])
+                or now_ns >= int(row["expires_at_ns"])
+            ):
+                raise RunnerStateAuthorityError(
+                    "reservation requires the current effective runner policy"
+                )
         if deployment_instance_id is not None:
             desired = connection.execute(
                 """
@@ -4579,6 +4870,35 @@ class RunnerStateStore:
                 raise RunnerStateAuthorityError(
                     "reservation instance is outside runner policy scope"
                 )
+        return row
+
+    @staticmethod
+    def _current_policy_for_scope(
+        connection: sqlite3.Connection,
+        policy_row: Mapping[str, Any],
+    ) -> sqlite3.Row:
+        row = connection.execute(
+            """
+            SELECT policy.* FROM runner_cap_policy_head AS head
+            JOIN runner_cap_policy AS policy ON policy.policy_id = head.policy_id
+            WHERE head.tenant_scope = ? AND head.trading_mode = ? AND head.runner_id = ?
+            """,
+            (
+                policy_row["tenant_scope"],
+                policy_row["trading_mode"],
+                policy_row["runner_id"],
+            ),
+        ).fetchone()
+        now_ns = time.time_ns()
+        if (
+            row is None
+            or row["policy_status"] != "active"
+            or now_ns < int(row["effective_at_ns"])
+            or now_ns >= int(row["expires_at_ns"])
+        ):
+            raise RunnerStateAuthorityError(
+                "reservation requires the current effective runner policy"
+            )
         return row
 
     @staticmethod
@@ -4630,22 +4950,36 @@ class RunnerStateStore:
         connection: sqlite3.Connection,
         policy_row: Mapping[str, Any],
     ) -> RunnerExposureSnapshot:
-        checkpoint = connection.execute(
+        checkpoints = connection.execute(
             """
-            SELECT open_exposure, source_digest
-            FROM runner_exposure_checkpoint WHERE policy_id = ?
+            SELECT checkpoint.open_exposure, checkpoint.source_digest
+            FROM runner_exposure_checkpoint AS checkpoint
+            JOIN runner_cap_policy AS policy ON policy.policy_id = checkpoint.policy_id
+            WHERE policy.tenant_scope = ? AND policy.trading_mode = ? AND policy.runner_id = ?
+            ORDER BY policy.policy_revision
             """,
-            (policy_row["policy_id"],),
-        ).fetchone()
-        open_exposure = (
-            Decimal(str(checkpoint["open_exposure"])) if checkpoint is not None else Decimal("0")
+            (
+                policy_row["tenant_scope"],
+                policy_row["trading_mode"],
+                policy_row["runner_id"],
+            ),
+        ).fetchall()
+        open_exposure = sum(
+            (Decimal(str(checkpoint["open_exposure"])) for checkpoint in checkpoints),
+            Decimal("0"),
         )
         rows = connection.execute(
             """
-            SELECT reserved_notional FROM order_reservation
-            WHERE policy_id = ? AND state IN ('reserved', 'partially_filled', 'filled')
+            SELECT reservation.reserved_notional FROM order_reservation AS reservation
+            JOIN runner_cap_policy AS policy ON policy.policy_id = reservation.policy_id
+            WHERE policy.tenant_scope = ? AND policy.trading_mode = ? AND policy.runner_id = ?
+              AND reservation.state IN ('reserved', 'partially_filled', 'filled')
             """,
-            (policy_row["policy_id"],),
+            (
+                policy_row["tenant_scope"],
+                policy_row["trading_mode"],
+                policy_row["runner_id"],
+            ),
         ).fetchall()
         reserved = sum(
             (Decimal(str(row["reserved_notional"])) for row in rows),
@@ -4660,7 +4994,17 @@ class RunnerStateStore:
             total_exposure=total,
             max_total_notional=maximum,
             within_policy=total <= maximum,
-            source_digest=(str(checkpoint["source_digest"]) if checkpoint is not None else None),
+            source_digest=(
+                str(checkpoints[0]["source_digest"])
+                if len(checkpoints) == 1
+                else _sha256_hex(
+                    _canonical_json_bytes(
+                        [str(checkpoint["source_digest"]) for checkpoint in checkpoints]
+                    )
+                )
+                if checkpoints
+                else None
+            ),
         )
 
     @staticmethod

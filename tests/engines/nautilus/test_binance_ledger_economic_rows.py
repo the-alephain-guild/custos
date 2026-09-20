@@ -20,6 +20,21 @@ def _source() -> BinanceVenueLedgerSource:
     )
 
 
+def _spot_source() -> BinanceVenueLedgerSource:
+    return BinanceVenueLedgerSource(
+        spec={
+            "trading_mode": "testnet",
+            "connector": "binance",
+            "pairs": ["BTC-USDT"],
+        },
+        credential={
+            "api_key": "test-key",
+            "api_secret": "test-secret",
+            "key_type": "HMAC",
+        },
+    )
+
+
 def test_income_rows_preserve_realized_pnl_and_funding_direction() -> None:
     rows = _source()._income_fee_rows(
         [
@@ -164,6 +179,29 @@ def test_perpetual_trade_rows_use_the_canonical_instrument_identity() -> None:
 
     assert fills[0]["instrument"] == "BTCUSDT-PERP.BINANCE"
     assert fees[0]["amount"] == "0.17781372"
+
+
+def test_spot_trade_rows_preserve_base_asset_commission_currency() -> None:
+    fills, fees = _spot_source()._trade_rows(
+        [
+            {
+                "symbol": "BTCUSDT",
+                "id": 1,
+                "orderId": 2,
+                "isBuyer": True,
+                "qty": "1",
+                "price": "100",
+                "commission": "0.001",
+                "commissionAsset": "BTC",
+                "time": 1_786_662_060_971,
+            }
+        ]
+    )
+
+    assert fills[0]["currency"] == "USDT"
+    assert fills[0]["fee"] == "0.001"
+    assert fees[0]["currency"] == "BTC"
+    assert fees[0]["amount"] == "0.001"
 
 
 def test_venue_event_queries_use_a_half_open_reconciliation_period() -> None:

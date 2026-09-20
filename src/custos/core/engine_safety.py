@@ -46,6 +46,11 @@ class EngineSafetySupervisor:
             return EngineSafetyTick(instance_id, None, verdict, True)
 
         if status.reliable:
+            if status.peak_equity > status.current_equity:
+                self._breaker.evaluate(
+                    open_notional=status.open_notional,
+                    current_equity=status.peak_equity,
+                )
             verdict = self._breaker.evaluate(
                 open_notional=status.open_notional,
                 current_equity=status.current_equity,

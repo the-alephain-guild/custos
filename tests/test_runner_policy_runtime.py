@@ -76,6 +76,7 @@ def _verified_policy(
     runner_id: UUID = RUNNER_ID,
     max_order: str = "100",
     max_total: str = "500",
+    settlement_currency: str = "USDT",
     effective_at: str = "2026-07-15T00:00:00Z",
     expires_at: str = "2026-08-15T00:00:00Z",
     actor_assertion_jti: str | None = "30000000-0000-4000-8000-000000000003",
@@ -88,7 +89,7 @@ def _verified_policy(
         "runner_id": str(runner_id),
         "trading_mode": trading_mode,
         "revision": revision,
-        "settlement_currency": "USDT",
+        "settlement_currency": settlement_currency,
         "max_order_notional": max_order,
         "max_total_notional": max_total,
         "exposure_model": "filled_plus_active_reservations",
@@ -322,6 +323,15 @@ async def test_policy_revision_digest_and_prior_fence_fail_closed(tmp_path: Path
     )
     accepted = await store.record_verified_runner_safety_policy(second)
     assert accepted.decision is RunnerPolicyIdentityDecision.NEWER
+
+    currency_change = _verified_policy(
+        private_key,
+        revision=3,
+        previous=_prior(second),
+        settlement_currency="USD",
+    )
+    with pytest.raises(RunnerStateAuthorityError, match="settlement currency"):
+        await store.record_verified_runner_safety_policy(currency_change)
 
     with pytest.raises(RunnerStateAuthorityError, match="stale"):
         await store.record_verified_runner_safety_policy(first)
