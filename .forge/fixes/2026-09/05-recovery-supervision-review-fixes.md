@@ -68,4 +68,4 @@
 |---|---:|---|---|---|
 | 1 | P0/P1 | ✅ | 2026-09-20 | pending close-out |
 | 2 | P2 | ✅ | 2026-09-20 | pending close-out |
-| 3 | P2 | 🔲 | — | — |
+| 3 | P2 | ✅ | 2026-09-20 | pending close-out |

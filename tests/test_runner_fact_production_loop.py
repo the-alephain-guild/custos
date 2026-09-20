@@ -321,6 +321,81 @@ async def test_generation_change_keeps_one_instance_period_coverage(monkeypatch)
     assert any(fact.get("fills") for _, facts in emitter.emissions for fact in facts)
 
 
+async def test_generation_change_after_long_gap_resets_without_fabricated_close(
+    monkeypatch,
+) -> None:
+    from custos.core import runner_fact_producer as producer
+
+    started_at = datetime(2026, 9, 20, 12, 0, tzinfo=UTC)
+    clock = [started_at + timedelta(seconds=20)]
+    stream_key = f"default:testnet:runner:{uuid4()}"
+    first = SimpleNamespace(
+        stream_key=stream_key,
+        deployment_spec_id=uuid4(),
+        trading_mode="testnet",
+        generation=1,
+    )
+    second = SimpleNamespace(
+        stream_key=stream_key,
+        deployment_spec_id=uuid4(),
+        trading_mode="testnet",
+        generation=2,
+    )
+
+    def deployment(authority, coverage_started_at):
+        return SimpleNamespace(
+            authority=authority,
+            deployment_instance_id="gap-instance",
+            reconciliation_available=True,
+            valuation_checkpoint_available=False,
+            currency="USDT",
+            reconciliation_coverage_started_at=coverage_started_at,
+        )
+
+    class Host(_CoverageHost):
+        current = deployment(first, started_at)
+
+        def runner_fact_deployments(self):
+            return (self.current,)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock[0]
+
+    host = Host()
+    emitter = _CapturingEmitter()
+    stop = asyncio.Event()
+    loop = RunnerFactProductionLoop(
+        host=host,
+        emitter=emitter,
+        snapshot_interval_secs=1,
+        period_secs=60,
+        period_retry_secs=1,
+    )
+    waits = 0
+
+    async def step(stop_event, _seconds):
+        nonlocal waits
+        waits += 1
+        if waits == 1:
+            host.current = deployment(second, started_at + timedelta(seconds=30))
+            clock[0] = started_at + timedelta(seconds=125)
+        else:
+            stop_event.set()
+
+    loop._wait = step
+    monkeypatch.setattr(producer, "datetime", Clock)
+
+    await loop.run_periods(stop)
+
+    resumed_at = started_at + timedelta(seconds=120)
+    assert loop._period_starts[stream_key] == resumed_at
+    assert loop._period_coverage_starts[stream_key] == resumed_at
+    assert host.requests == []
+    assert emitter.emissions == []
+
+
 class _CapitalBasisHost:
     def __init__(self, deployment) -> None:
         self.deployment = deployment
