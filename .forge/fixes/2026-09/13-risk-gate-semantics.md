@@ -1,6 +1,7 @@
 # 13 - risk-gate-semantics
 
-> **Status**: ⏳ In Progress
+> **Status**: ✅ Completed
+> **Completed**: 2026-09-20
 > **Created**: 2026-09-20
 > **Project**: custos
 > **Source**: `.forge/reviews/2026-09-20-custos-risk-state-deep-review.md` RS-8、RS-4、RS-5
@@ -72,16 +73,86 @@ session_pnl 从 -60 清成 0，5% 日亏损阈值没有拦住入场。
 
 ## 验证清单
 
-- [ ] 三项失败测试先红后绿，经扰动验证
-- [ ] 审查方三个探针不再成立
-- [ ] `make verify` 与 `make verify-nt` 均 exit 0
+- [x] 三项失败测试先红后绿，经扰动验证（7 红 → 10 绿）
+- [x] 审查方探针：RS-4 不再成立；RS-5 / RS-8 见下方「两个探针为何仍断言成立」
+- [x] `make verify` 与 `make verify-nt` 均 exit 0
 
 ## 进度追踪
 
 | Fix | Priority | Status | Completed | Notes |
 |---|---|---|---|---|
-| 1 软暂停不关保护退出 | P1 | 🔲 | | RS-8 |
-| 2 回撤基准每次采样 | P1 | 🔲 | | RS-4 |
-| 3 成交按事件时间归日 | P1 | 🔲 | | RS-5 |
+| 1 软暂停不关保护退出 | P1 | ✅ | 2026-09-20 | RS-8 |
+| 2 回撤基准每次采样 | P1 | ✅ | 2026-09-20 | RS-4 |
+| 3 成交按事件时间归日 | P1 | ✅ | 2026-09-20 | RS-5 |
 
 ## 偏离与改进日志
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-09-20
+- **总 Task 数**: 3
+- **偏离数**: 0
+- **验证结果**: 全部通过
+- **实施 commit 范围**: `d8675a8`（plan 自身 `53b053b`，早于实施）
+- **契约影响**: `RiskController.record_trade` 新增可选参数 `current_ts`（默认 0，行为不变）。
+  唯一调用点已更新。`make check-authority` 通过。
+- **红线守护**: 四条红线全数守住。三项都在恢复风控的有效范围。
+
+### 两个探针为何仍断言成立（重要，不是没修好）
+
+审查方的 11 个探针里，RS-4 的已经翻转。RS-5 与 RS-8 的仍然断言成立，原因都**不是**缺陷还在，
+而是它们调用的不是生产路径。两条都实测过，不是推断：
+
+**RS-8**：探针用 `NautilusStrategyCore.on_trade(h, ...)`，其中 `h` 是审查脚本自己的 Harness。
+修复后 `on_trade` 读 `self._shutdown_position_policy`，而那个 Harness 没有这个属性——
+`AttributeError` 被回调自身的 `except Exception` 吞掉，`on_core_trade_tick` 因此没被调用，
+探针的断言照旧成立。实测：
+
+```
+缺属性时: on_core_trade_tick 被调用 False，_log_error 记录
+          "on_trade: AttributeError: 'Harness' object has no attribute '_shutdown_position_policy'"
+补上属性: 软暂停下 on_core_trade_tick 被调用 True   <- 修复生效
+          shutdown 下 on_core_trade_tick 被调用 False <- 仍然停止
+```
+
+真实的 core 在 `strategy_core.py:299` 的 `__init__` 里就设了这个属性，所以生产上不存在这条路径。
+`test_the_core_always_has_the_shutdown_flag` 把这一点钉住了。
+
+**RS-5**：探针直接调 `h._risk_controller.record_trade(D("-60"))`，不传时间——那是修复前的签名。
+本 plan 有意保留「时间未知时不推进日界」（不用墙钟冒充成交时间，见 Fix 3 第 3 条），所以这条调用
+的行为不变，探针照旧成立。生产路径是 `TradeEventHandler` → `record_trade(pnl, event.ts_event)`，
+实测：
+
+```
+成交后 session_pnl: -60
+次日首次检查 allowed: False | reason: Daily loss limit (5.0%) reached
+```
+
+`test_the_close_handler_books_a_fill_on_its_own_day` 走的正是这条真实路径。
+
+> 这两条值得单独记下来：**探针红不等于缺陷在，探针绿也不等于缺陷不在**。判断依据只能是生产路径
+> 上的实测。写「探针仍成立所以没修好」和写「探针不算数所以修好了」都是偷懒——要给出路径差异的
+> 证据。
+
+### 测试计数（取自 `pytest --collect-only`）
+
+| 测试文件 | 条数 |
+|---|---|
+| `tests/toolkit/test_risk_gate_semantics.py` | 10 |
+| `tests/test_plan_closeout_counts.py` | 47 |
+
+上表合计 57 条。第一行是本轮新建；第二行由本 plan 的表格从 45 推到 47。
+
+### 扰动验证
+
+三处修复同时回退（tick 回调改回判 `_paused`、去掉峰值采样、去掉日界推进）：10 项中 5 项转红。
+还原后全绿。
+
+### 功能验证（主路径）
+
+1. HYBRID 模式持仓并让追踪止盈激活，制造一次安全止损被拒（触发软暂停）。预期：追踪退出仍然工作，
+   价格回落到追踪线时仍会平仓。修复前 tick 回调整个停转，仓位退不出来。
+2. compound 模式、最大回撤 5%，持仓期间让权益从 1000 涨到 1100 再回落到 1030（期间无成交）。
+   预期：下一次入场检查被拒，日志 `Max drawdown`。修复前峰值停在 1000，6.36% 的回撤不被识别。
+3. 让一笔止损在 UTC 午夜后几分钟成交，随后触发入场检查。预期：当日亏损计入当日，超过日亏损阈值
+   时阻止入场。修复前这笔亏损被算进前一日并随日切清零。
