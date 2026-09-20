@@ -110,13 +110,36 @@ class SLTPCoordinator:
         else:
             ctx.order_tracker.set_sl_order(new_sl.client_order_id, position.quantity)
 
-        s.submit_order(new_sl)
+        if not self._dispatch_protection(ctx, new_sl, "Break-even stop"):
+            return
         self._link_order_to_signal(new_sl, ctx)
         ctx.break_even_applied = True
         s.log.info(
             f"[{ctx.pair}] Break-even: SL moved to entry price {new_sl.trigger_price}",
             color=LogColor.GREEN,
         )
+
+    def _dispatch_protection(self, ctx: PairContext, order: Order, kind: str) -> bool:
+        """Send a protective order, and un-register it if it never left.
+
+        The local gate refuses before the order reaches the native cache, so there
+        is no OrderRejected callback and the repairer -- which only drops orders
+        the cache reports as terminal -- would treat the entry as protection in
+        flight forever. Registration happens before dispatch so a report that
+        races back finds its owner; a refusal has to undo it.
+        """
+        s = self._strategy
+        dispatched = cast(bool | None, s.submit_order(order))
+        if dispatched is not False:
+            return True
+        ctx.order_tracker.remove_order(order.client_order_id)
+        s.log.error(
+            f"[{ctx.pair}] {kind} was refused locally before dispatch "
+            f"(id={order.client_order_id}); coverage released, position is unprotected "
+            "until the next repair window",
+            color=LogColor.RED,
+        )
+        return False
 
     def cancel_sl_tp_orders(self, ctx: PairContext, *, preserve_entry: bool = False) -> int:
         """Cancel all tracked SL/TP orders for a specific pair.
@@ -218,7 +241,8 @@ class SLTPCoordinator:
 
         protected_quantity = position.quantity if quantity is None else quantity
         ctx.order_tracker.add_sl_order(order.client_order_id, protected_quantity)
-        s.submit_order(order)
+        if not self._dispatch_protection(ctx, order, "Stop-loss"):
+            return None
         self._link_order_to_signal(order, ctx)
         s.log.info(
             f"[{ctx.pair}] STOP_LOSS: submitted (id={order.client_order_id})",
@@ -329,7 +353,8 @@ class SLTPCoordinator:
 
         protected_quantity = position.quantity if quantity is None else quantity
         ctx.order_tracker.add_exchange_sl_order(order.client_order_id, protected_quantity)
-        s.submit_order(order)
+        if not self._dispatch_protection(ctx, order, "Safety stop-loss"):
+            return
         self._link_order_to_signal(order, ctx)
         s.log.info(
             f"[{ctx.pair}] SAFETY SL: {order.trigger_price} ({max_loss_pct * 100:.1f}%) "
@@ -394,7 +419,8 @@ class SLTPCoordinator:
             # Track as the exchange-managed protective stop (sweep/recovery aware)
             protected_quantity = position.quantity if quantity is None else quantity
             ctx.order_tracker.add_exchange_sl_order(order.client_order_id, protected_quantity)
-            s.submit_order(order)
+            if not self._dispatch_protection(ctx, order, "Native trailing stop"):
+                return None
             self._link_order_to_signal(order, ctx)
             s.log.info(
                 f"[{ctx.pair}] NATIVE_TRAILING: submitted exchange-managed trailing stop "

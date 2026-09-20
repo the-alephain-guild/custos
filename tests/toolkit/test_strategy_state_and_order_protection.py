@@ -1123,3 +1123,67 @@ class TestReversalSizingRespectsTheContractMultiplier:
         _, submitted = self._reverse_with_multiplier(".01", "10", "10")
 
         assert submitted == Decimal("20"), "ten to close plus ten to open"
+
+
+class TestARefusedProtectionIsNotCoverage:
+    """RS-2: registering protection must agree with what was dispatched.
+
+    The local gate refuses before the order reaches the native cache, so there is
+    no OrderRejected callback and nothing for the repairer to find. A tracker
+    entry written before dispatch therefore counts as coverage forever, and the
+    position never gets the stop it is missing.
+    """
+
+    @staticmethod
+    def _refusing(mode: SLTPMode) -> Harness:
+        h = Harness(mode=mode)
+        h.ctx.position_tracker.set_pending_signal(Signal.enter_long(price=100.0), Decimal("2"))
+        h.config.risk.trade.max_loss_pct = 0.05
+
+        def refuse(order):
+            # The gate refuses before the order reaches the native cache, so the
+            # cache must not hold it either -- that absence is precisely why the
+            # repairer cannot notice the order is gone.
+            h.orders.pop(order.client_order_id, None)
+            return False
+
+        h.submit_order = refuse
+        return h
+
+    def test_a_refused_exchange_stop_leaves_zero_coverage(self):
+        h = self._refusing(SLTPMode.EXCHANGE)
+
+        h._sltp_coordinator.submit_stop_loss(h.ctx, Signal.enter_long(price=100.0))
+
+        assert h.ctx.order_tracker.protected_quantity(exchange_managed=False) == Decimal("0")
+        assert h.ctx.order_tracker.sl_order_ids == []
+
+    def test_a_refused_safety_stop_leaves_zero_coverage(self):
+        h = self._refusing(SLTPMode.HYBRID)
+
+        h._sltp_coordinator.submit_safety_stop_loss(h.ctx, Signal.enter_long(price=100.0))
+
+        assert h.ctx.order_tracker.protected_quantity(exchange_managed=True) == Decimal("0")
+        assert h.ctx.order_tracker.exchange_sl_order_ids == []
+
+    def test_a_refused_break_even_stop_leaves_zero_coverage(self):
+        h = self._refusing(SLTPMode.EXCHANGE)
+
+        h._sltp_coordinator.move_stop_to_break_even(h.ctx, h.position, Decimal("100"))
+
+        assert h.ctx.order_tracker.protected_quantity(exchange_managed=False) == Decimal("0")
+
+    def test_the_repairer_tries_again_after_a_refusal(self):
+        """The point of not counting it: the next repair window must act."""
+        h = self._refusing(SLTPMode.EXCHANGE)
+        reconciler = OrderReconciler(h)
+
+        reconciler.ensure_exchange_sl_protection(h.ctx)
+        attempts_after_first = len(h.cancelled)  # nothing dispatched; count attempts below
+        h.now_ns += 61_000_000_000
+        sent_orders: list = []
+        h.submit_order = sent_orders.append  # the gate lets it through this time
+        reconciler.ensure_exchange_sl_protection(h.ctx)
+
+        assert attempts_after_first == 0
+        assert len(sent_orders) == 1, "a position with no coverage must be repaired"
