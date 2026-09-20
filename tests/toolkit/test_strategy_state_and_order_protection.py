@@ -987,3 +987,72 @@ class TestAnEntryRefusedLocallyIsRolledBack:
         assert h.ctx.position_tracker.entry_count == 0
         assert h.ctx.position_tracker.pending_signal is None
         assert h.ctx.order_tracker.entry_order_id is None
+
+
+class TestTheExitBaseFollowsTheWholeEntry:
+    """EE-5: the scaled base must be the exposure that ended up open.
+
+    Introduced by the ST-1 fix: the base is taken when the tick monitor is seeded,
+    which happens on the first lot that opens exposure. An entry that fills in two
+    parts therefore sizes its exits against the first part alone.
+    """
+
+    @staticmethod
+    def _entry_filling_in(parts: tuple[str, ...]) -> Harness:
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        monitor = scaled_monitor(2)
+        h = Harness(monitor=monitor)
+        h.flat()
+        SignalExecutionCoordinator(h).execute_entry_for_pair(
+            h.ctx, Signal.enter_long(price=100.0), size=Decimal("100"), bar=NS(close=Decimal("100"))
+        )
+        entry = h.sent[0]
+        h.positions = [h.position]
+        filled = Decimal("0")
+        for part in parts:
+            filled += Decimal(part)
+            h.position.quantity = filled
+            TradeEventHandler(h).handle_order_filled(
+                NS(
+                    instrument_id=h.instrument.id,
+                    client_order_id=entry.client_order_id,
+                    order_side=OrderSide.BUY,
+                    last_qty=Quantity.from_str(f"{Decimal(part):.3f}"),
+                    last_px=Price.from_str("100.00"),
+                )
+            )
+        h.sent.clear()
+
+        def fill(order):
+            h.sent.append(order)
+            h.position.quantity -= Decimal(str(order.quantity))
+
+        h.submit_order = fill
+        return h
+
+    def test_an_entry_filled_in_two_parts_exits_all_of_it(self):
+        h = self._entry_filling_in(("0.5", "0.5"))
+        assert h.position.quantity == Decimal("1"), "precondition: the whole entry filled"
+
+        h.tick("110")  # clears both 50% levels
+
+        exits = [Decimal(str(o.quantity)) for o in h.sent]
+        assert sum(exits) == Decimal("1"), f"half the position would be stranded: {exits}"
+
+    def test_a_single_fill_still_exits_all_of_it(self):
+        """The one-lot case must keep working."""
+        h = self._entry_filling_in(("1",))
+
+        h.tick("110")
+
+        assert sum(Decimal(str(o.quantity)) for o in h.sent) == Decimal("1")
+
+    def test_a_level_already_taken_survives_the_later_fill(self):
+        """A later lot extends the base; it must not reset finished levels."""
+        h = self._entry_filling_in(("0.5",))
+        h.tick("103")  # level 1 fires against the 0.5 open so far
+        first = [Decimal(str(o.quantity)) for o in h.sent]
+        assert first, "precondition: a level fired before the entry finished"
+
+        assert h.ctx.tick_monitor._tp_level_states[0].value == "pending"

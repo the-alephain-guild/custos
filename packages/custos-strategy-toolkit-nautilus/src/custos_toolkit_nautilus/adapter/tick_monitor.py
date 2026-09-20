@@ -508,6 +508,25 @@ class TickMonitorManager:
         """The position size the scaled exit percentages are shares of."""
         return self._initial_quantity
 
+    def extend_base(self, additional: Decimal | float) -> None:
+        """Add newly opened exposure to the base the scaled shares are taken from.
+
+        An entry can fill in several lots. The monitor is seeded on the first lot
+        that opens exposure, so without this the levels would size against that
+        first lot alone and leave the rest of the position unsold.
+
+        Re-seeding through init_position would be wrong: that resets level state
+        and the filled ledger, discarding levels already taken while the entry was
+        still filling.
+        """
+        extra = self._to_decimal(additional)
+        if extra <= 0:
+            return
+        if self._initial_quantity is None:
+            self._initial_quantity = extra
+        else:
+            self._initial_quantity += extra
+
     def is_final_level(self, level: int) -> bool:
         """Whether this 1-based level is the last one configured."""
         return level == len(self._tp_levels)

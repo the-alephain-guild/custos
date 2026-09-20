@@ -100,18 +100,30 @@ class SLTPMode(str, Enum):  # noqa: UP042 - preserve pre-T4b str(Enum) runtime s
         if self is SLTPMode.EXCHANGE:
             strategy._sltp_coordinator.submit_stop_loss(ctx, signal, quantity=protection_quantity)
             strategy._sltp_coordinator.submit_take_profit(ctx, signal, quantity=protection_quantity)
-        elif self is SLTPMode.TICK and initialize_position:
-            _init_tick_position(ctx, signal, position, entry_px, entry_atr)
+        elif self is SLTPMode.TICK:
+            if initialize_position:
+                _init_tick_position(ctx, signal, position, entry_px, entry_atr)
+            else:
+                _extend_tick_base(ctx, protection_quantity)
         elif self is SLTPMode.HYBRID:
             strategy._sltp_coordinator.submit_safety_stop_loss(
                 ctx, signal, quantity=protection_quantity
             )
             if initialize_position:
                 _init_tick_position(ctx, signal, position, entry_px, entry_atr)
+            else:
+                _extend_tick_base(ctx, protection_quantity)
         elif self is SLTPMode.NATIVE_TRAILING:
             strategy._sltp_coordinator.submit_native_trailing(
                 ctx, signal, quantity=protection_quantity
             )
+
+
+def _extend_tick_base(ctx: PairContext, additional: Quantity | Decimal | None) -> None:
+    """A later lot of the same entry enlarges what the scaled exits are shares of."""
+    if ctx.tick_monitor is None or additional is None:
+        return
+    ctx.tick_monitor.extend_base(Decimal(str(additional)))
 
 
 def _init_tick_position(
