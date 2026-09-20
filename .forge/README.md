@@ -290,3 +290,4 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 | [2026-09/02 — runtime and ledger](fixes/2026-09/02-runtime-ledger-fixes.md) | ✅ Completed (2026-09-20) | 六项 finding；Custos 2597 passed；Crucible 69 passed；生产验收独立开放 |
 | [2026-09/03 — signed runtime risk and ledger](fixes/2026-09/03-signed-runtime-risk-and-ledger-fixes.md) | ✅ Completed (2026-09-20) | 九项 finding；签名 daemon、policy scope、FIFO lots、原生事件与 PnL 口径闭合 |
 | [2026-09/04 — recovery and post-execution consistency](fixes/2026-09/04-recovery-and-post-execution-consistency-fixes.md) | ✅ Completed (2026-09-20) | 五项 P1；post-trade latch、plain close、ACK、terminal recovery、跨 generation 对账闭合 |
+| [2026-09/05 — recovery supervision review fixes](fixes/2026-09/05-recovery-supervision-review-fixes.md) | ✅ Completed (2026-09-20) | chain review C1/H1/M1/M2；durable authority fence、fail-loud supervision、heartbeat/gap 时序闭合 |
