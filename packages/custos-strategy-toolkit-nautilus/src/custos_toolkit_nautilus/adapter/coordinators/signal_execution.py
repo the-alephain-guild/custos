@@ -244,6 +244,8 @@ class SignalExecutionCoordinator:
             order.client_order_id,
             entry_side,
             exposure_offset_quantity=reversal_close_quantity,
+            reserved_capital=final_size,
+            order_quantity=order.quantity,
         )
 
         s.log.info(

@@ -372,3 +372,85 @@ class TestARefusedAllocationBlocksTheOrder:
         assert len(h.sent) == 1
         assert h.ctx.allocated_capital == Decimal("400")
         assert h._capital_allocator.available_cash == Decimal("600")
+
+
+class TestAnUnfilledEntryReleasesWhatItReserved:
+    """ST-6: a submitted order is not a position, and its reservation is not spent."""
+
+    @staticmethod
+    def _entered(size: str = "400") -> tuple[Harness, object]:
+        from custos_toolkit_nautilus.adapter.capital_allocator import CapitalAllocator
+        from custos_toolkit_nautilus.adapter.config.allocation import AllocationConfig
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        h = Harness()
+        h.flat()
+        h._capital_allocator = CapitalAllocator(
+            AllocationConfig(tiers={"BTC-USDT": 1.0}), Decimal("1000"), h.cache
+        )
+        h._capital_allocator.register_pair(h.ctx.pair, h.instrument.id)
+        SignalExecutionCoordinator(h).execute_entry_for_pair(
+            h.ctx,
+            Signal.enter_long(price=100.0),
+            size=Decimal(size),
+            bar=NS(close=Decimal("100")),
+        )
+        entry = h.sent[0]
+        entry.is_open = False
+        entry.is_closed = True
+        return h, entry
+
+    @staticmethod
+    def _terminal_event(h: Harness, entry, outcome: str) -> None:
+        event = NS(
+            instrument_id=h.instrument.id,
+            client_order_id=entry.client_order_id,
+            reason="terminated before any fill",
+        )
+        if outcome == "cancel":
+            TradeEventHandler(h).handle_order_canceled(event)
+        else:
+            OrderReconciler(h).handle_order_rejected(event)
+
+    @pytest.mark.parametrize("outcome", ["cancel", "reject"])
+    def test_a_zero_fill_terminal_returns_the_reservation(self, outcome):
+        h, entry = self._entered()
+
+        self._terminal_event(h, entry, outcome)
+
+        assert h._capital_allocator.available_cash == Decimal("1000")
+        assert h.ctx.allocated_capital == Decimal("0")
+
+    @pytest.mark.parametrize("outcome", ["cancel", "reject"])
+    def test_a_zero_fill_terminal_leaves_no_phantom_entry(self, outcome):
+        h, entry = self._entered()
+
+        self._terminal_event(h, entry, outcome)
+
+        assert h.positions == [], "precondition: the venue has no position"
+        assert h.ctx.position_tracker.entry_count == 0
+        assert not h.ctx.position_tracker.has_position
+
+    def test_a_partial_fill_keeps_the_part_that_filled(self):
+        """Cancelling after a partial fill releases only what was never bought."""
+        h, entry = self._entered()  # 400 at 100 -> 4 units
+        entry.is_open = True
+        entry.is_closed = False
+        h.positions = [h.position]
+        TradeEventHandler(h).handle_order_filled(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=entry.client_order_id,
+                order_side=OrderSide.BUY,
+                last_qty=Quantity.from_str("1.000"),
+                last_px=Price.from_str("100.00"),
+            )
+        )
+        entry.is_open = False
+        entry.is_closed = True
+
+        self._terminal_event(h, entry, "cancel")
+
+        assert h._capital_allocator.available_cash == Decimal("900"), "3 of 4 units unfilled"
+        assert h.ctx.allocated_capital == Decimal("100")
+        assert h.ctx.position_tracker.has_position, "the filled unit is a real position"

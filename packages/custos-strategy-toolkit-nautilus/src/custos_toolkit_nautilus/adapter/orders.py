@@ -62,6 +62,11 @@ class OrderTracker:
         default_factory=lambda: Decimal("0"), repr=False
     )
     _entry_protected_quantity: Decimal = field(default_factory=lambda: Decimal("0"), repr=False)
+    # What the entry reserved, and the order size that reservation bought. A submitted
+    # order is not a position: if it terminates without filling, the part that never
+    # filled was never spent and has to go back.
+    _entry_reserved_capital: Decimal = field(default_factory=lambda: Decimal("0"), repr=False)
+    _entry_order_quantity: Decimal = field(default_factory=lambda: Decimal("0"), repr=False)
     # Full-close in-flight / cooldown gate. 0 = a close may be submitted; > 0 = blocked
     # until this timestamp (ns). Set to now+timeout after submitting a close (in-flight
     # protection) and to now+cooldown after a close is rejected (backoff retry). Prevents
@@ -141,6 +146,8 @@ class OrderTracker:
         side: int = 0,
         *,
         exposure_offset_quantity: Decimal | None = None,
+        reserved_capital: Decimal | None = None,
+        order_quantity: Quantity | Decimal | None = None,
     ) -> None:
         """Set the pending entry order ID and its direction (1=long, -1=short)."""
         offset = (
@@ -155,6 +162,12 @@ class OrderTracker:
         self._entry_filled_quantity = Decimal("0")
         self._entry_exposure_offset_quantity = offset
         self._entry_protected_quantity = Decimal("0")
+        self._entry_reserved_capital = (
+            Decimal("0") if reserved_capital is None else Decimal(str(reserved_capital))
+        )
+        self._entry_order_quantity = (
+            Decimal("0") if order_quantity is None else Decimal(str(order_quantity))
+        )
 
     def record_entry_fill(self, fill_quantity: Decimal) -> tuple[Decimal, bool]:
         """Return the newly opened exposure requiring its own protective lot.
@@ -184,6 +197,25 @@ class OrderTracker:
         self._entry_filled_quantity = Decimal("0")
         self._entry_exposure_offset_quantity = Decimal("0")
         self._entry_protected_quantity = Decimal("0")
+        self._entry_reserved_capital = Decimal("0")
+        self._entry_order_quantity = Decimal("0")
+
+    @property
+    def entry_unfilled_capital(self) -> Decimal:
+        """The reserved capital covering the part of the entry that never filled.
+
+        With no recorded order size the whole reservation is treated as unfilled,
+        which is the safe direction: returning capital that was never spent.
+        """
+        if self._entry_order_quantity <= 0:
+            return self._entry_reserved_capital
+        unfilled = max(self._entry_order_quantity - self._entry_filled_quantity, Decimal("0"))
+        return self._entry_reserved_capital * unfilled / self._entry_order_quantity
+
+    @property
+    def entry_has_fills(self) -> bool:
+        """Whether any part of the tracked entry reached the book."""
+        return self._entry_filled_quantity > 0
 
     def clear(self) -> None:
         """Clear all tracked order IDs."""

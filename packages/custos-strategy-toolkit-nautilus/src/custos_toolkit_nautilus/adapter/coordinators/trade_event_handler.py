@@ -19,6 +19,7 @@ from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
 from custos_toolkit.risk import RiskController
+from custos_toolkit_nautilus.adapter.coordinators.entry_reservation import release_unfilled_entry
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import (
     OrderCanceled,
@@ -231,6 +232,7 @@ class TradeEventHandler:
             ctx.order_tracker.entry_order_id is not None
             and ctx.order_tracker.entry_order_id == event.client_order_id
         ):
+            release_unfilled_entry(s, ctx)
             ctx.order_tracker.clear_entry_order()
             # Entry cancel confirmation is terminal: a leftover pending_signal /
             # pending_entry_is_reversal would be consumed by any later fill on the

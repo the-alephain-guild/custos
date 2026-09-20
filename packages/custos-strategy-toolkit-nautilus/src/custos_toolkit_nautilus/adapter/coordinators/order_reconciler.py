@@ -26,6 +26,9 @@ from custos_toolkit.signals.types import Signal, SignalDirection
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import OrderCancelRejected, OrderRejected, OrderSide, OrderType
 
+from custos_toolkit_nautilus.adapter.coordinators.entry_reservation import (
+    release_unfilled_entry,
+)
 from custos_toolkit_nautilus.adapter.orders import STALE_SWEEP_RETRY_COOLDOWN_NS, is_stale_order
 from custos_toolkit_nautilus.adapter.runtime_types import Order, Position
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
@@ -575,6 +578,7 @@ class OrderReconciler:
             ctx.order_tracker.entry_order_id is not None
             and ctx.order_tracker.entry_order_id == event.client_order_id
         ):
+            release_unfilled_entry(s, ctx)
             ctx.order_tracker.clear_entry_order()
             ctx.position_tracker.clear_pending_signal()
             ctx.pending_entry_is_reversal = False
