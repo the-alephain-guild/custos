@@ -244,6 +244,9 @@ class EngineLifecycleSupervisor:
         artifact_activation_id = artifact.activation_id
         event = await self._engine.wait_terminal(authority)
         self._require_terminal_identity(event, authority)
+        state = await self._store.load_engine_lifecycle_state(verified)
+        if not self._matches_ready_applied(state, verified):
+            return None
         await self._engine.stop(str(authority.deployment_instance_id))
         if not event.retryable:
             await self._quarantine(
@@ -454,7 +457,8 @@ class EngineLifecycleSupervisor:
     @staticmethod
     def _matches_ready_applied(state: EngineLifecycleDurableState, verified: Any) -> bool:
         return (
-            state.applied_generation == verified.command.generation
+            state.desired_status == "applied"
+            and state.applied_generation == verified.command.generation
             and state.applied_command_fingerprint == verified.command_fingerprint
             and state.observed_status == "ready"
             and state.engine_handle is not None

@@ -451,6 +451,62 @@ async def test_terminal_and_zombie_events_use_same_durable_quarantine_or_restart
 
 
 @pytest.mark.asyncio
+async def test_replaced_desired_generation_retires_old_terminal_watcher_before_stop() -> None:
+    verified = _verified()
+    authority = _authority(verified)
+    store = _Store(
+        state=EngineLifecycleDurableState(
+            desired_status="applied",
+            applied_generation=1,
+            applied_command_fingerprint=verified.command_fingerprint,
+            engine_handle="old-handle",
+            observed_status="ready",
+            restart_count=0,
+            quarantine_reason=None,
+        )
+    )
+    engine = _Engine(
+        [],
+        terminal_events=[
+            EngineTerminalEvent.from_authority(
+                authority,
+                reason_code="engine_task_failed",
+                retryable=True,
+            )
+        ],
+    )
+    original_wait_terminal = engine.wait_terminal
+
+    async def replaced_while_waiting(value):
+        event = await original_wait_terminal(value)
+        store.state = EngineLifecycleDurableState(
+            desired_status="recorded",
+            applied_generation=1,
+            applied_command_fingerprint=verified.command_fingerprint,
+            engine_handle="old-handle",
+            observed_status="ready",
+            restart_count=0,
+            quarantine_reason=None,
+        )
+        return event
+
+    engine.wait_terminal = replaced_while_waiting  # type: ignore[method-assign]
+
+    result = await _supervisor(store, engine).supervise_once(
+        delivery_id="old-generation-watcher",
+        verified=verified,
+        runtime_spec={"trading_mode": "sandbox", "connector": "binance"},
+        credential={},
+        artifact=_Artifact(),
+    )
+
+    assert result is None
+    assert engine.stop_calls == 0
+    assert engine.deploy_calls == 0
+    assert store.events == ["load_state"]
+
+
+@pytest.mark.asyncio
 async def test_blocked_artifact_capability_and_live_mode_fail_before_engine_action() -> None:
     store = _Store()
     engine = _Engine([_ready()])

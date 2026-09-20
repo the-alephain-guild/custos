@@ -109,6 +109,12 @@ class RunnerCommandRuntimeCoordinator:
         self._entry_point_loader = entry_point_loader
         self._credential_resolver = credential_resolver
         self._engine_lifecycle = engine_lifecycle
+        try:
+            supervise_once = engine_lifecycle.supervise_once
+        except AttributeError as exc:
+            raise TypeError("engine lifecycle must provide supervise_once") from exc
+        if not callable(supervise_once):
+            raise TypeError("engine lifecycle supervise_once must be callable")
         self._policy = delivery_policy
         self._engine_supervisions: dict[object, asyncio.Task[None]] = {}
         self._engine_supervision_failures: asyncio.Queue[BaseException] = asyncio.Queue()
@@ -304,9 +310,6 @@ class RunnerCommandRuntimeCoordinator:
         artifact: ActivatedStrategyArtifact | ActivatedDevelopmentStrategyArtifact,
         artifact_policy_id: str | None,
     ) -> None:
-        supervise_once = getattr(self._engine_lifecycle, "supervise_once", None)
-        if not callable(supervise_once):
-            return
         instance_id = verified.command.deployment_instance_id
         task = asyncio.create_task(
             self._supervise_running_engine(
@@ -329,7 +332,9 @@ class RunnerCommandRuntimeCoordinator:
 
     async def _supervise_running_engine(self, **context: Any) -> None:
         while True:
-            await self._engine_lifecycle.supervise_once(**context)
+            recovered = await self._engine_lifecycle.supervise_once(**context)
+            if recovered is None:
+                return
 
     async def _cancel_engine_supervision(self, instance_id: object) -> None:
         task = self._engine_supervisions.pop(instance_id, None)
@@ -348,12 +353,12 @@ class RunnerCommandRuntimeCoordinator:
         if task.cancelled():
             return
         error = task.exception()
+        if error is None:
+            return
         if isinstance(error, EngineLifecycleQuarantined):
             logger.warning("runner engine supervision reached durable quarantine")
             return
-        self._engine_supervision_failures.put_nowait(
-            error or RuntimeError("runner engine supervision exited unexpectedly")
-        )
+        self._engine_supervision_failures.put_nowait(error)
 
     async def run_engine_supervision(self, stop: asyncio.Event) -> None:
         failure = asyncio.create_task(self._engine_supervision_failures.get())

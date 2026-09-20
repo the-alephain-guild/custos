@@ -171,6 +171,9 @@ class _Lifecycle:
     async def apply_non_running(self, **kwargs):
         self.events.append("apply_non_running")
 
+    async def supervise_once(self, **kwargs):
+        raise EngineLifecycleQuarantined("fixture supervision complete")
+
 
 def _coordinator(
     events: list[str],
@@ -192,6 +195,13 @@ def _coordinator(
         engine_lifecycle=lifecycle or _Lifecycle(events),
         delivery_policy=policy,
     )
+
+
+def test_coordinator_refuses_lifecycle_without_terminal_supervision() -> None:
+    lifecycle = SimpleNamespace(apply=object(), apply_non_running=object())
+
+    with pytest.raises(TypeError, match="supervise_once"):
+        _coordinator([], _Resolver(), lifecycle=lifecycle)
 
 
 @pytest.mark.asyncio
@@ -234,6 +244,39 @@ async def test_failed_ack_heartbeat_cannot_override_a_successful_apply() -> None
     assert result.status is RunnerCommandRuntimeStatus.APPLIED_ACKED
     assert events == ["apply"]
     assert delivery.events == ["in_progress_failed", "ack"]
+
+
+@pytest.mark.asyncio
+async def test_hung_ack_heartbeat_cannot_block_successful_apply_completion() -> None:
+    heartbeat_started = asyncio.Event()
+    heartbeat_finished = asyncio.Event()
+
+    class Delivery(_Delivery):
+        async def in_progress(self) -> None:
+            self.events.append("in_progress_started")
+            heartbeat_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                await asyncio.sleep(0.03)
+                heartbeat_finished.set()
+
+    class Lifecycle(_Lifecycle):
+        async def apply(self, **kwargs):
+            await asyncio.wait_for(heartbeat_started.wait(), timeout=1)
+            return await super().apply(**kwargs)
+
+    events: list[str] = []
+    delivery = Delivery()
+
+    result = await asyncio.wait_for(
+        _coordinator(events, _Resolver(), lifecycle=Lifecycle(events)).process(delivery),
+        timeout=0.2,
+    )
+    await asyncio.wait_for(heartbeat_finished.wait(), timeout=0.2)
+
+    assert result.status is RunnerCommandRuntimeStatus.APPLIED_ACKED
+    assert delivery.events == ["in_progress_started", "ack"]
 
 
 @pytest.mark.asyncio

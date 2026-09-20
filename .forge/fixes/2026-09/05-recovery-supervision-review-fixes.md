@@ -60,11 +60,12 @@
 
 - taste 的四个巨型文件属于数据结构上界；Fix 05 不按行数拆分。
 - `--nostop` 继续解释为不等待批次确认，不跳过硬门。
+- Fix 1/2 共用 command runtime 时序测试，合并为一个原子 commit，避免人为拆 hunk。
 
 ## 进度追踪
 
 | Fix | Priority | Status | Completed | Commit |
 |---|---:|---|---|---|
-| 1 | P0/P1 | 🔲 | — | — |
-| 2 | P2 | 🔲 | — | — |
+| 1 | P0/P1 | ✅ | 2026-09-20 | pending close-out |
+| 2 | P2 | ✅ | 2026-09-20 | pending close-out |
 | 3 | P2 | 🔲 | — | — |
