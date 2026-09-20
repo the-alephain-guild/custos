@@ -1296,3 +1296,68 @@ class TestCloseCleanupRespectsWhatSurvives:
         )
 
         assert len(h.sent) > before, "the remaining exposure must be protected"
+
+
+class TestProtectionIsPricedOffTheFill:
+    """RS-3: the stop belongs to what the position cost, not to the signal bar.
+
+    bar.close is the reference the signal was formed on. A limit offset, price
+    improvement or slippage all move the actual cost away from it, and a stop
+    priced off the bar can land on the wrong side of the market.
+    """
+
+    @staticmethod
+    def _entered_at(signal_bar: str, fill_price: str, fills: tuple[str, ...] = ("1",)) -> Harness:
+        from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+
+        h = Harness(mode=SLTPMode.EXCHANGE)
+        h.flat()
+        h.config.risk.trade.stop_loss = NS(method="fixed", fixed=NS(stop_loss_pct=0.02))
+        SignalExecutionCoordinator(h).execute_entry_for_pair(
+            h.ctx,
+            Signal.enter_long(price=float(signal_bar)),
+            size=Decimal("100"),
+            bar=NS(close=Decimal(signal_bar)),
+        )
+        entry = h.sent[0]
+        h.positions = [h.position]
+        h.position.avg_px_open = Decimal(fill_price)
+        filled = Decimal("0")
+        for part in fills:
+            filled += Decimal(part)
+            h.position.quantity = filled
+            TradeEventHandler(h).handle_order_filled(
+                NS(
+                    instrument_id=h.instrument.id,
+                    client_order_id=entry.client_order_id,
+                    order_side=OrderSide.BUY,
+                    last_qty=Quantity.from_str(f"{Decimal(part):.3f}"),
+                    last_px=Price.from_str(f"{Decimal(fill_price):.2f}"),
+                )
+            )
+        return h
+
+    def test_a_limit_offset_fill_prices_the_stop_off_the_fill(self):
+        """Signal bar 100, filled at 90: a 2% stop is 88.2, not 98."""
+        h = self._entered_at("100", "90")
+
+        assert h.ctx.position_tracker.first_entry_price == Decimal("90")
+
+    def test_price_improvement_is_honoured_too(self):
+        h = self._entered_at("100", "101")
+
+        assert h.ctx.position_tracker.first_entry_price == Decimal("101")
+
+    def test_multiple_fills_use_the_venue_s_average(self):
+        """The venue reports the weighted average; nothing is recomputed here."""
+        h = self._entered_at("100", "95", fills=("0.5", "0.5"))
+
+        assert h.ctx.position_tracker.first_entry_price == Decimal("95")
+
+    def test_the_submitted_stop_sits_below_a_long_entry(self):
+        """The consequence: a stop priced off the bar would be above the market."""
+        h = self._entered_at("100", "90")
+        stops = [o for o in h.sent if o.trigger_price is not None]
+
+        assert stops, "the entry fill must arm a stop"
+        assert Decimal(str(stops[-1].trigger_price)) < Decimal("90")

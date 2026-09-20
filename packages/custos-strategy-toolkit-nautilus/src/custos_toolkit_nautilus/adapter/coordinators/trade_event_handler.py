@@ -15,7 +15,7 @@ their thin shells delegate the body to this component's ``handle_*`` methods.
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING, cast
 
 from custos_toolkit.risk import RiskController
@@ -100,6 +100,28 @@ class TradeEventHandler:
 
             positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
             position = positions[0] if positions else None
+
+            # The entry was recorded from the signal bar's close; the venue now
+            # says what it cost. Protection is priced off this, so correct it
+            # before any protective order is built. avg_px_open is already the
+            # weighted average, so partial and multiple fills need no arithmetic
+            # here -- and the tick path, which seeds from the fill price, ends up
+            # on the same basis as the exchange path.
+            if position is not None and position.avg_px_open is not None:
+                try:
+                    corrected = Decimal(str(position.avg_px_open))
+                except (InvalidOperation, ValueError):
+                    # An unreadable average must not take the protection down with
+                    # it: the fill is real and the position needs a stop. Keep the
+                    # reference price and say so, rather than aborting the handler.
+                    s.log.error(
+                        f"[{ctx.pair}] Could not read the position's average open price "
+                        f"({position.avg_px_open!r}); protection stays priced off the "
+                        "signal bar",
+                        color=LogColor.RED,
+                    )
+                else:
+                    ctx.position_tracker.correct_entry_price(corrected)
 
             # Only tag reversal entries: SL/TP submitted here for a normal entry
             # belong to the current position and must be cancelled on close by

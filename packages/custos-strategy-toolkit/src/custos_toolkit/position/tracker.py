@@ -104,6 +104,20 @@ class PositionTracker:
         self._pending_signal = signal
         self._pending_entry_atr = entry_atr
 
+    def correct_entry_price(self, actual_price: Decimal) -> None:
+        """Replace the reference entry price with what the position actually cost.
+
+        An entry is recorded from the signal bar's close, because that is all
+        that is known before the order goes out. Once the venue reports a fill
+        the real cost is known, and every protective order is priced off it: a
+        limit offset, price improvement or slippage otherwise leaves the stop
+        measured from a price the position was never opened at.
+        """
+        if actual_price <= 0:
+            return
+        self._state.first_entry_price = actual_price
+        self._state.avg_entry_price = actual_price
+
     def clear_pending_signal(self) -> None:
         """Clear the pending signal and entry ATR after fill or rejection."""
         self._pending_signal = None
