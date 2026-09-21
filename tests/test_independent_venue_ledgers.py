@@ -177,6 +177,13 @@ def test_okx_sandbox_refuses_environment_credential_fallback(monkeypatch):
 
 
 def test_okx_position_history_paginates_by_time_and_excludes_funding(monkeypatch):
+    """Neither the funding fee nor the commission belongs in this row.
+
+    ``fundingFee`` has always been excluded -- it arrives through bills-archive.
+    ``fee`` is excluded for the same kind of reason: it is reported per fill as
+    its own commission row, so counting it here would tell that money twice.
+    See tests/test_a_fee_must_be_reported_once.py for the cross-path proof.
+    """
     source = okx()
     calls = []
 
@@ -200,7 +207,7 @@ def test_okx_position_history_paginates_by_time_and_excludes_funding(monkeypatch
 
     monkeypatch.setattr(source, "_get", get)
     result = source._closed_position_pnl("BTC-USDT-SWAP", 100, 200)
-    assert result[0]["amount"] == "10"
+    assert result[0]["amount"] == "12"
     assert result[0]["kind"] == "realized_pnl_credit"
     assert calls[0]["after"] == 201
 

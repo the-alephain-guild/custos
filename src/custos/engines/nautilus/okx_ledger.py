@@ -155,7 +155,11 @@ class OkxVenueLedgerSource:
                 currency = str(row["ccy"])
                 if currency not in SUPPORTED_CURRENCIES:
                     raise VenueLedgerError("OKX position settlement currency is unsupported")
-                pnl = decimal(row["pnl"], "position PnL") + decimal(row["fee"], "position fees")
+                # Gross, deliberately. ``fee`` on this row is the position's
+                # accumulated commission, and every one of those commissions is
+                # already emitted as its own ``commission`` row from the fills
+                # below. Folding it in here would report the same money twice.
+                pnl = decimal(row["pnl"], "position PnL")
                 identity = f"position:{symbol}:{row['posId']}:{row['cTime']}:{at}"
                 value = {
                     "fee_id": identity,
