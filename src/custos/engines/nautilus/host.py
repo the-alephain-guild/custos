@@ -1609,6 +1609,12 @@ class NtTradingNodeHost:
                 reason=reason,
             )
             return
+        # Before closing, not after: the breaker's freeze only stops new submissions,
+        # and an order the venue has already accepted is past that gate. Left resting,
+        # a risk-increasing one can fill again the moment the position is flat and
+        # reopen exactly the exposure this is containing. Reduce-only orders stay --
+        # they are the position's own protection, which containment wants kept.
+        self._cancel_risk_increasing_orders(deployment_instance_id, runtime, reason)
         for strategy in runtime.strategies:
             # NT's own close_all_positions is reduce-only, and a venue that refuses that
             # form refuses it here too -- leaving containment unable to contain at the
@@ -1627,6 +1633,61 @@ class NtTradingNodeHost:
             deployment_instance_id=deployment_instance_id,
             reason=reason,
             instrument_count=len(instrument_ids),
+        )
+
+    def _cancel_risk_increasing_orders(
+        self,
+        deployment_instance_id: str,
+        runtime: _NodeRuntime,
+        reason: str,
+    ) -> None:
+        """Withdraw this instance's working orders that could add exposure.
+
+        Same judgement as the preserve shutdown: reduce-only is protection and stays,
+        everything else is a way back into the position being contained. Cancelling is
+        a request like any other -- this does not claim the venue has withdrawn them,
+        only that it was asked, which is why nothing here is logged as confirmation.
+        """
+        try:
+            _positions, orders = self._open_venue_state(runtime)
+        except Exception as exc:  # noqa: BLE001 - closing the position outranks this
+            # Containment's first duty is to close the position. An order list we
+            # cannot read must not stop that from happening -- it is reported loudly
+            # and the close proceeds, rather than the whole flatten failing on the
+            # part that was meant to make it more thorough.
+            _log.error(
+                "nt_containment_orders_unreadable",
+                deployment_instance_id=deployment_instance_id,
+                reason=reason,
+                error_type=type(exc).__name__,
+            )
+            return
+        risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
+        if not risk_increasing:
+            return
+        canceler = next(
+            (
+                strategy
+                for strategy in runtime.strategies
+                if callable(getattr(strategy, "cancel_order", None))
+            ),
+            None,
+        )
+        if canceler is None:
+            _log.error(
+                "nt_containment_cannot_cancel_risk_increasing_orders",
+                deployment_instance_id=deployment_instance_id,
+                reason=reason,
+                order_count=len(risk_increasing),
+            )
+            return
+        for order in risk_increasing:
+            canceler.cancel_order(order.client_order_id)
+        _log.warning(
+            "nt_containment_cancelled_risk_increasing_orders",
+            deployment_instance_id=deployment_instance_id,
+            reason=reason,
+            order_count=len(risk_increasing),
         )
 
     async def get_positions(self, deployment_instance_id: str) -> list[PositionSnapshot]:

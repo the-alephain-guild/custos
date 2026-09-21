@@ -19,10 +19,11 @@ import hashlib
 import logging
 import os
 import signal
+import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Final, Protocol
 from uuid import UUID
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -57,6 +58,7 @@ from custos.core.engine_lifecycle import EngineLifecycleConfig, EngineLifecycleS
 from custos.core.engine_protocol import EngineDependencyUnavailable, ExecutionEngineProtocol
 from custos.core.engine_safety import EngineSafetySupervisor
 from custos.core.fallback_breaker import FallbackBreaker
+from custos.core.log import get_logger
 from custos.core.machine_credential_vault import (
     MachineCredentialError,
     MachineCredentialHttpClient,
@@ -106,6 +108,12 @@ from custos.core.runner_toml import RunnerToml
 from custos.engines.nautilus.runtime_loader import NautilusRuntimeEntryPointLoaderV1
 
 log = logging.getLogger("custos")
+# New code logs through structlog: this module's stdlib logger is configured with
+# ``format="%(message)s"``, which renders no ``extra`` fields at all, so anything
+# passed that way is dropped before it reaches an operator. The existing stdlib
+# call sites stay as they are -- they are covered by a signed asset receipt and
+# converting them belongs with re-issuing it.
+_slog = get_logger("custos.supervision")
 
 _AVAILABLE_ENGINES = {"nautilus", "sandbox-sim"}
 
@@ -465,20 +473,101 @@ def _build_runner_safety_boundary_factory(
     return build
 
 
+# How long to let a deployment finish starting before guarding it regardless.
+#
+# The same bound, for the same reason, as the offline lane's
+# ``offline.safety.READINESS_TIMEOUT_SECS``: NautilusTrader announces its own
+# ``reconciliation_startup_delay_secs`` (default 10) and measured startup
+# reconciliation has completed around 5s in, so this is an order of magnitude above
+# it. Waiting slightly too long leaves a short unguarded window on a deployment that
+# is not trading yet; giving up too early is the fail-closed trip this exists to
+# avoid, and since the freeze became durable that trip needs an operator to lift.
+SIGNED_SUPERVISION_READINESS_TIMEOUT_SECS: Final = 120.0
+
+
+class _SupervisionStartups:
+    """Holds each deployment at the start line until it has finished starting.
+
+    A deployment whose account balance has not arrived yet reports an unreliable
+    snapshot, and the supervisor reads unreliable as having lost the view of a
+    *running* deployment -- so it fails closed on data that has not landed rather
+    than on exposure that exists. The offline lane measured exactly this on
+    2026-08-01, 116ms before the balance came in.
+
+    Waiting is not exempting: past the bound a deployment is evaluated regardless,
+    which fails closed, and that is the right way round.
+    """
+
+    def __init__(self, timeout_secs: float) -> None:
+        self._timeout_secs = timeout_secs
+        self._evaluating: set[str] = set()
+        self._first_seen: dict[str, float] = {}
+        self._announced: set[str] = set()
+
+    async def may_evaluate(self, host: object, deployment_instance_id: str) -> bool:
+        if deployment_instance_id in self._evaluating:
+            return True
+
+        probe = getattr(host, "deployment_ready", None)
+        if not callable(probe):
+            # Evaluated exactly as before, but said once: a safety check that is
+            # quietly not running is worse than one that is loudly not.
+            if deployment_instance_id not in self._announced:
+                self._announced.add(deployment_instance_id)
+                _slog.warning(
+                    "signed_supervision_readiness_unknown",
+                    deployment_instance_id=deployment_instance_id,
+                )
+            self._evaluating.add(deployment_instance_id)
+            return True
+
+        first_seen = self._first_seen.setdefault(deployment_instance_id, time.monotonic())
+        if await probe(deployment_instance_id):
+            self._evaluating.add(deployment_instance_id)
+            _slog.info(
+                "signed_supervision_evaluating",
+                deployment_instance_id=deployment_instance_id,
+                waited_seconds=round(time.monotonic() - first_seen, 3),
+            )
+            return True
+
+        if time.monotonic() - first_seen >= self._timeout_secs:
+            self._evaluating.add(deployment_instance_id)
+            _slog.error(
+                "signed_supervision_readiness_timeout",
+                deployment_instance_id=deployment_instance_id,
+                timeout_seconds=self._timeout_secs,
+            )
+            return True
+
+        if deployment_instance_id not in self._announced:
+            self._announced.add(deployment_instance_id)
+            _slog.info(
+                "signed_supervision_awaiting_readiness",
+                deployment_instance_id=deployment_instance_id,
+                timeout_seconds=self._timeout_secs,
+            )
+        return False
+
+
 async def _run_signed_safety_supervision(
     stop: asyncio.Event,
     *,
     host: RunnerExecutionHost,
     boundaries: Mapping[str, RunnerReservationBoundary],
     interval_secs: float,
+    readiness_timeout_secs: float = SIGNED_SUPERVISION_READINESS_TIMEOUT_SECS,
 ) -> None:
     if interval_secs <= 0:
         raise ValueError("signed safety supervision interval must be positive")
+    startups = _SupervisionStartups(readiness_timeout_secs)
     while not stop.is_set():
         for deployment in tuple(host.runner_fact_deployments()):
             boundary = boundaries.get(deployment.deployment_instance_id)
             if boundary is None:
                 raise RuntimeError("active signed deployment has no runner safety boundary")
+            if not await startups.may_evaluate(host, deployment.deployment_instance_id):
+                continue
             await EngineSafetySupervisor(
                 engine=host,
                 breaker=boundary.fallback_breaker,
