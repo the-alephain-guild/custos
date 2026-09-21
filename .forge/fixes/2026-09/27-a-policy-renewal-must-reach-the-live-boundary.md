@@ -1,6 +1,6 @@
 # 27 - a-policy-renewal-must-reach-the-live-boundary
 
-> **Status**: 🔲 Not started
+> **Status**: ✅ Completed
 > **Created**: 2026-09-21
 > **Project**: custos
 > **Source**: `.forge/reviews/2026-09-20-custos-fix03-recheck-review.md` RR-5
@@ -71,17 +71,93 @@ trip」。验收要的「保留 breaker 锁定和高水位」在那里已经成�
 
 ## 验证清单
 
-- [ ] 失败测试先红后绿
-- [ ] 全程不 stop/deploy（「不断开节点的 policy renewal」）
-- [ ] 冻结 / 高水位 / 风险域三条各自有断言
-- [ ] 回调失败不把落盘成功的策略 nak 掉
-- [ ] `make verify` 与 `make verify-nt` 均 exit 0
+- [x] 失败测试先红后绿
+- [x] 全程不 stop/deploy（「不断开节点的 policy renewal」）
+- [x] 冻结 / 高水位 / 风险域三条各自有断言
+- [x] 回调失败不把落盘成功的策略 nak 掉
+- [x] `make verify` 与 `make verify-nt` 均 exit 0
 
 ## 进度追踪
 
 | Fix | Priority | Status | Completed | Notes |
 |---|---|---|---|---|
-| 1 换版到达 boundary | P1 | 🔲 | | RR-5 |
-| 2 守护状态不丢 | P1 | 🔲 | | RR-5 验收 |
+| 1 换版到达 boundary | P1 | ✅ | 2026-09-21 | RR-5 |
+| 2 守护状态不丢 | P1 | ✅ | 2026-09-21 | RR-5 验收 |
 
 ## 偏离与改进日志
+
+无。审查报告的验收条款被逐句拆开对照（C27），没有一句需要改写设计。
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-09-21
+- **总 Fix 数**: 2
+- **偏离数**: 0
+- **验证结果**: 全部通过
+- **实施 commit 范围**: `bd23a0e`（plan）..`03c08d2`（实施）
+- **契约影响**: 无。`RunnerControlConsumerV1.__init__` 新增的 `on_policy_committed` 是
+  keyword-only 且默认 `None`，既有调用点不改也能构造；wire 契约、schema、authority 资产均未动。
+- **红线守护**: 四条全数守住。与本 fix 最相关的是红线 0.3「失联≠停止」——换版通知失败时
+  boundary 保留旧 policy 继续守，不降级、不放行；消费者也不因此 nak 掉已落盘的策略。
+
+### 测试条数（`pytest --collect-only` 实跑）
+
+| 测试文件 | 条数 |
+|---|---|
+| `tests/test_a_policy_renewal_reaches_the_live_boundary.py` | 9 |
+| `tests/test_plan_closeout_counts.py` | 75 |
+
+第二行不是本 fix 新写的测试：那个探针按 plan / fix 文件参数化，本份 close-out 的存在让它从 73
+长到 75。按 `progress-management.md` 的规则，动了别人数过的文件就得在自己的 close-out 里重数
+一遍，而不是去改 fix 26 那份历史记录。
+
+### 验收条款逐句对照（C27）
+
+报告 RR-5 的验收原文：「为已验签策略更新实现原子的约束切换，并保留稳定风险域、breaker 锁定和
+高水位。覆盖不断开节点的 policy renewal。」拆成五个分句，逐句点名覆盖它的测试：
+
+| 验收分句 | 覆盖它的测试 |
+|---|---|
+| 原子的约束切换 | `test_adopting_the_renewal_lets_the_strategy_keep_trading` —— 一次 `adopt_policy` 之内 policy id 与 breaker 上限同时换掉；扰动 P1 / P2 各拆掉其中一件，都会红 |
+| 保留稳定风险域 | `test_a_renewal_keeps_the_exposure_recorded_under_the_old_revision` |
+| 保留 breaker 锁定 | `test_adopting_a_renewal_keeps_an_existing_freeze` |
+| 保留高水位 | `test_adopting_a_renewal_keeps_the_high_water_mark` |
+| 不断开节点 | 整个文件不出现 stop / deploy —— 缺陷本身就是「必须重新 deploy 才恢复」，用 deploy 演示等于没演示 |
+
+另有两条不在验收原文里、但缺了就等于没接线：消费者提交后真的叫了通知
+（`test_the_consumer_calls_the_notifier_after_it_commits`），以及 daemon 真的把通知器交给了
+消费者（`test_the_daemon_hands_the_notifier_to_the_control_consumer`）。后者是 lesson #40 的
+形态——能力齐备而 composition root 没接，测试照样全绿。
+
+### 扰动验证
+
+五处，各用独立的 `PYTHONPYCACHEPREFIX`（C15），还原一律从 scratchpad 的备份拷回、不从
+`git show HEAD:` 取（C15 续编：本次修复尚未提交时 HEAD 上是缺陷版本）。
+
+| # | 把修复改回什么 | 转红的测试 |
+|---|---|---|
+| P1 | `adopt_policy` 不再换 policy id | 3 条，含换版后仍被拒 |
+| P2 | `adopt_policy` 不再 `apply_config` | 2 条，含新上限不生效 |
+| P3 | 消费者提交后不叫通知 | 2 条 |
+| P4 | 通知抛错不再被拦住 | `..._does_not_undo_a_committed_policy` |
+| P5 | daemon 构造消费者时不传通知器 | `..._hands_the_notifier_to_the_control_consumer` |
+
+还原后 9 条全绿。
+
+### 本次顺带修掉的一处静默
+
+`_build_policy_renewal_notifier` 里「策略换版但没有 owner policy 可采纳」那条警告，初版写成
+stdlib `log.warning(..., extra={...})`。本仓 `configure()` 是 `format="%(message)s"`，**不渲染
+extra**——运维只会看到一个孤零零的事件名，`trading_mode` 整个丢掉。改走
+`custos.core.log.get_logger` 的 kwargs（`_slog`）。`_daemon.py` 既有的 11 处 `extra={}` 按 C6
+不动，它们被 `docs/authority/**` 按字节 pin 住。
+
+### 功能验证（主路径）
+
+1. 让一个 runner 在 live boundary 上跑着，从控制面下发一份新的已签名 runner safety policy
+   （同 tenant / mode / runner，policy id 递增）。
+2. 不做任何 stop 或 redeploy，观察日志里应出现 `runner_policy_renewal_adopted`，
+   每个活着的 deployment instance 一条，带新的 `policy_id`。
+3. 让策略继续下一单额度之内的委托：应当正常通过，而不是被
+   `reservation requires the current effective runner policy` 拒掉。若新策略收紧了上限，
+   超过新上限的那一单应当被拒——这两件事一起才说明换的是同一份策略。
