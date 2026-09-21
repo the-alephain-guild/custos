@@ -1,6 +1,6 @@
 # 30 - answers-outliving-their-question
 
-> **Status**: 🔲 Todo
+> **Status**: ✅ Completed
 > **Created**: 2026-09-21
 > **Project**: custos
 > **Source**: `.forge/reviews/2026-09-21-custos-fix-recheck-review.md` FR-1 … FR-7（7 项 P1）
@@ -361,34 +361,102 @@ fix 13 的测试直接调 `check_risk_limits` 三次，所以看不到这个调�
 
 ## 验证清单
 
-- [ ] 七处各自先写失败测试、先红后绿
-- [ ] 报告的 7 条探针逐条复跑，并在 close-out 里写明每条是「中止在哪一行」还是
+- [x] 七处各自先写失败测试、先红后绿
+- [x] 报告的 7 条探针逐条复跑，并在 close-out 里写明每条是「中止在哪一行」还是
       「为什么还绿」（C29）
-- [ ] 每处扰动验证用独立 `PYTHONPYCACHEPREFIX`（C15），扰动后先 `git diff --stat`
-      确认真的改到了（C31），还原从 scratchpad 备份拷回（C15 续编）
-- [ ] 原场景回归全部保留且仍绿（fix 11/13/16/20/26/27/29）
-- [ ] `make verify` 与 `make verify-nt` 均 exit 0
-- [ ] close-out 的测试条数来自 `pytest --collect-only` 实跑，逐文件列表
+- [x] 每处扰动验证用独立 `PYTHONPYCACHEPREFIX`（C15），扰动后先与 scratchpad 备份
+      逐字节比对确认真的改到了（C31），还原从同一份备份拷回（C15 续编）
+- [x] 原场景回归全部保留且仍绿（fix 11/13/16/20/26/27/29）
+- [x] `make verify` 与 `make verify-nt` 均 exit 0
+- [x] close-out 的测试条数来自 `pytest --collect-only` 实跑，逐文件列表
 
 ## 进度追踪
 
 | Fix | Priority | Status | Completed | Notes |
 |---|---|---|---|---|
-| 1 改单按改后判定 | P1 | 🔲 | | FR-1，报告列为最优先 |
-| 3 空仓也要撤增险挂单 | P1 | 🔲 | | FR-3，报告列为最优先 |
-| 5 换版只到本模式 | P1 | 🔲 | | FR-5，报告列为最优先 |
-| 2 新持仓重新初始化保护 | P1 | 🔲 | | FR-2 |
-| 4 readiness 每轮重问 | P1 | 🔲 | | FR-4 |
-| 6 未写下的冻结要重试 | P1 | 🔲 | | FR-6 |
-| 7 峰值按 bar 采样 | P1 | 🔲 | | FR-7 |
+| 1 改单按改后判定 | P1 | ✅ | 2026-09-21 | FR-1，报告列为最优先 |
+| 3 空仓也要撤增险挂单 | P1 | ✅ | 2026-09-21 | FR-3，报告列为最优先 |
+| 5 换版只到本模式 | P1 | ✅ | 2026-09-21 | FR-5，报告列为最优先 |
+| 2 新持仓重新初始化保护 | P1 | ✅ | 2026-09-21 | FR-2 |
+| 4 readiness 每轮重问 | P1 | ✅ | 2026-09-21 | FR-4 |
+| 6 未写下的冻结要重试 | P1 | ✅ | 2026-09-21 | FR-6 |
+| 7 峰值按 bar 采样 | P1 | ✅ | 2026-09-21 | FR-7 |
 
 ## 偏离与改进日志
 
-（实施中追加）
+### DEVIATION: `trading_mode` 变成 `RunnerReservationBoundary` 的必填构造参数
+- **等级**: 中（跨 11 处构造点的内部契约变更，无 wire 影响）
+- **原因**: FR-5 要按模式选择换版对象。可选的做法有三种：边界注册表旁边再维护一张
+  `{instance_id: mode}` 表、让通知器去问 host、或让边界自己带着模式。前两种都制造了
+  「两份关于同一件事的记录」，而这正是本轮在修的病。
+- **决定**: 边界带 `trading_mode`（部署跑在一个模式里，策略按模式签发，两者本来就是
+  一对一），并让 `adopt_policy` 在模式不符时抛错。外层选择 + 内层拒绝是两层，按
+  lesson #22/#28 各自可测（扰动 R4/R5 分别只让对方那层的测试转红）。
+- **影响**: `src/custos/cli/_daemon.py` 一处构造 + 6 个测试文件共 10 处构造点，
+  `adopt_policy` 4 处调用点。`_run_signed_safety_supervision` 的签名不变。
+
+### DEVIATION: 「已预留的委托被改小成减仓单」时释放预留，reason 用 `canceled`
+- **等级**: 低
+- **原因**: 存储的 release 只接受 `rejected` / `canceled` 两个理由，两个都不是
+  「这张单不再增加敞口了」的精确说法。
+- **决定**: 用 `canceled`，并在代码注释里写明被取消的是**那笔预留**而不是委托本身。
+  不释放的代价更大：那张单会同时待在两本账上——成交时按缓存里的新数量判成减仓、走 FIFO
+  路径，预留就一直挂着；而 `_unsettled_reductions` 里没有它的认领，于是另一张平仓单
+  会以为可平量还是满的，EE-1 的缺陷从改单这扇门原样回来。
+
+### DEVIATION: 用正则批量给测试加构造参数，改坏了 5 个文件（C10 dogfood）
+- **等级**: 低（未提交，当场恢复）
+- **原因**: 给 11 处 `RunnerReservationBoundary(...)` 补 `trading_mode=` 时图快写了一条
+  正则，作用域是「`fallback_breaker=` 那一行之后」。而其中几处的
+  `fallback_breaker=FallbackBreaker(` 是跨多行的，参数被插进了构造调用的中间。
+- **决定**: 按 C10 的规矩重做——逐处手写替换、每处断言**整行唯一匹配**、改完
+  `ast.parse` 验证。恢复用 `git show HEAD:<path>`（这几个文件在 HEAD 上是干净的，
+  所以 HEAD 与备份等价；若已改过则必须用 scratchpad 备份，见 C15 续编）。
+- **教训**: C10 原文写的是「作用域必须是语法结构而不是行」。这次我没用清理性正则，
+  只用了「锚点行 + 追加一行」，仍然中招——**「行」在多行调用里根本不是一个可锚定的
+  位置**。`git checkout --` 被护栏拦下是对的，它逼我去想恢复源头取哪一份。
+
+### DEVIATION: FR-7 的复现探针中止在一行「与缺陷无关」的断言上（C29）
+- **等级**: 低（证据链，不是代码）
+- **原因**: 报告的探针把 `_on_bar_risk_hygiene` 绑到 harness 上，但本轮的修复让那个方法
+  去调一个兄弟方法 `_sample_drawdown_baseline`。harness 没有它，于是 `on_bar` 的顶层
+  `except` 把 AttributeError 吞成 `_log_error`，探针中止在 `assert not h._log_error.called`
+  ——**看起来像修好了，实际是那个 harness 里的策略根本没有这条修复**。
+- **决定**: 在 scratchpad 的副本里补上那一行绑定再跑，探针这才中止在真正的缺陷断言
+  （`assert h._risk_controller.peak_equity == 1000`）。原报告文件一字未动。
+  本仓的回归测试两个方法都绑真实实现，钉的是生产形态。
 
 ## 完成报告 (Close-out Report)
 
-（实施中，逐项补齐）
+- **完成日期**: 2026-09-21
+- **总 Fix 数**: 7（全部 P1）
+- **偏离数**: 4（1 中 / 3 低，见上）
+- **验证结果**: 全部通过。`make verify` exit 0；`make verify-nt` exit 0，
+  **2960 passed / 29 skipped / 1 xfailed**
+- **实施 commit 范围**: `9afb68b`（plan）`3c7012b` · `b921498` · `5607c2e` ·
+  `c96faa7` · `fe9e0c3`
+- **契约影响**: 无 wire / schema / authority 资产变更。内部契约两处：
+  `RunnerReservationBoundary` 的构造与 `adopt_policy` 各多一个 `trading_mode`；
+  `OrderSemantics` 协议新增 `modified_order_quantity` 与
+  `modified_order_is_risk_reducing`。新增日志事件两条
+  （`runner_policy_renewal_no_boundary` · `signed_supervision_restart_awaiting_readiness`）；
+  `fallback_breaker_state_persist_failed` 多一个 `attempt` 字段，
+  `runner_policy_renewal_adopted` 多一个 `trading_mode` 字段。预留事件 id 新增两个前缀
+  （`modify_to_reducing` · `modify_to_increasing`），它们只是 `_event_id` 的幂等键，
+  不进 wire。
+
+### 红线 gate 满足度（C/lesson #40 模板）
+
+| 红线 | code test 覆盖 | runtime wire | defer | 说明 |
+|---|---|---|---|---|
+| 0.1 Key/KEK 不出进程 | 未触及 | 未触及 | 无 | 本轮不碰凭据路径 |
+| 0.2 引擎启动七道门不绕过 | 未触及 | 未触及 | 无 | 本轮不碰启动门 |
+| 0.3 失联 ≠ 停止 | ✅ FR-3/4/6 三处新增回归 | ✅ 全部在生产接线上 | 无 | 见下 |
+| 0.4 Money 用 Decimal | ✅ 现有 money contract 测试仍绿 | 未触及 | 无 | 本轮新增代码无 float |
+
+红线 0.3 是本轮的主要服务对象，三处各自是它的一个缺口：熔断收缴对空仓书视而不见
+（FR-3）、重启窗口内被误判为失联而冻结（FR-4）、冻结落盘失败一次就再也不写、重启等于
+一次无人署名的解除（FR-6）。三处的修复都在生产接线上，不是只有单测。
 
 ### 测试条数（`pytest --collect-only` 实跑）
 
@@ -402,3 +470,120 @@ fix 13 的测试直接调 `check_risk_limits` 三次，所以看不到这个调�
 | `tests/test_startup_is_not_a_breach.py` | 10 |
 | `tests/toolkit/test_risk_gate_semantics.py` | 14 |
 | `tests/toolkit/test_strategy_state_and_order_protection.py` | 76 |
+
+### 报告探针逐条复跑（C29）
+
+在 scratchpad 的副本上跑（原报告文件一字未动），两处按 API 变化做了最小适配：
+`RunnerReservationBoundary(...)` 补 `trading_mode=`，FR-7 的 harness 补一行
+`_sample_drawdown_baseline` 绑定（理由见偏离日志第四条）。
+
+| 探针 | 结果 |
+|---|---|
+| CONTROL（EE-1 双平仓） | 仍然通过 —— 上一轮的修复没有被本轮破坏 |
+| FR-1 | 中止在 `assert len(positions) == 1 and positions[0].is_short ...`：改单被拒，撮合后没有反向仓位 |
+| FR-2 | 中止在 `assert monitor._entry_price is None`：新持仓拿到了 100 |
+| FR-3 | 中止在 `assert not strategy.cancel_order.called`：空仓书上的入场单被撤了 |
+| FR-4 | 中止在第二次 `assert await startups.may_evaluate(...)`：替换节点被挡住 |
+| FR-5 | 中止在 `assert active.policy_id == other_policy ...`：testnet 边界一个字段都没动 |
+| FR-6 | 中止在 `assert calls == 2 and durable["frozen"] is False ...`：第三次 tick 重试写成功 |
+| FR-7 | 中止在 `assert h._risk_controller.peak_equity == 1000`：NEUTRAL bar 已经把峰值抬到 1100 |
+
+七条全部中止在各自的缺陷断言上。**没有一条是「还绿但输入形态不同」**——本轮不需要用到
+C29 的那半边解释。
+
+### 验收条款逐句对照（C27）
+
+| finding | 验收分句 | 覆盖它的测试 |
+|---|---|---|
+| FR-1 | 比较修改后的净敞口 | `test_enlarging_a_plain_close_past_the_position_is_refused` · `test_enlarging_within_the_position_is_still_a_close` |
+| FR-1 | 原子调整在途可平数量 | `test_shrinking_a_close_hands_back_the_room_it_held` |
+| FR-1 | 原子调整金额预留 | `test_an_amendment_into_risk_reserves_what_it_would_add` · `test_an_order_that_stops_adding_risk_releases_its_reservation` |
+| FR-1 | 拒绝/撤销修改时回滚 | `TestARejectedAmendmentPutsBothBooksBack` 三条 |
+| FR-1 | 同时存在其他退出订单 | `test_another_exit_order_narrows_what_an_amendment_may_claim` |
+| FR-1 | 不能只对 reduce_only 改单做测试 | 全部用普通平仓单；`test_a_reduce_only_amendment_is_never_refused` 是对照 |
+| FR-2 | 归零后同一订单继续开仓要重新初始化新仓保护 | `test_the_new_position_knows_what_it_paid`（hybrid/tick 各一） |
+| FR-2 | 同时保留尚未成交的订单身份 | fix 11 的 `test_a_partly_filled_entry_keeps_its_ownership_through_a_stop_out` 仍绿 |
+| FR-2 | 测「成交→平仓→余量成交」，不能只验同一仓位的两次连续入场 | `test_the_new_position_can_still_trail_out` + 对照 `test_a_second_lot_of_the_same_position_still_only_extends` |
+| FR-3 | 是否撤单独立于是否存在持仓 | `test_a_working_entry_is_cancelled_even_with_no_position_open` |
+| FR-3 | 每次确认都检查当前挂单，不依赖历史成功标记 | `test_a_previous_confirmation_does_not_excuse_a_new_entry` |
+| FR-3 | 覆盖初始空仓 / 平仓后残单 / 先前确认后新发现的订单 | 上两条 + `test_an_unreadable_order_book_is_not_a_clear_one` |
+| FR-4 | 启动等待属于每一次引擎启动 | `test_a_restart_under_the_same_id_is_asked_again` |
+| FR-4 | 清理离开的运行状态 | `test_a_deployment_that_goes_away_leaves_no_spent_window_behind` · `test_the_supervision_loop_forgets_deployments_that_left` |
+| FR-4 | 保留有界等待 | `test_a_restart_that_never_finishes_is_still_guarded` |
+| FR-4 | 测首次启动 / 同代自动重启 / 换代重启 / 重启超时 | fix 26 的四条仍绿 + 上述三条（自动重启与换代重启在 runner 侧同形：同一 instance id、新节点） |
+| FR-5 | 按 tenant/runner/mode 精确归属选择更新对象 | `test_a_sandbox_renewal_leaves_a_testnet_boundary_alone` |
+| FR-5 | 同步更新 ID 与配置 | `test_the_daemon_hands_a_renewal_to_the_boundary_of_that_mode`（fix 27 原场景） |
+| FR-5 | 混合注册表：目标模式更新、其他模式完全不变 | 上面第一条 + `test_exposure_that_was_legitimate_stays_legitimate` |
+| FR-5 | 验证过期和非当前 policy 的处理 | `test_a_renewal_for_a_mode_with_no_deployment_is_recorded_not_lost` + `test_the_boundary_refuses_a_policy_from_another_mode_on_its_own` |
+| FR-6 | 跟踪未确认的状态写入并有界重试 | `test_the_next_evaluation_writes_what_the_failed_one_could_not` |
+| FR-6 | 恢复时不能把未确认锁定误当作正常解锁 | `test_a_stale_durable_row_cannot_lift_a_freeze_that_is_already_held` |
+| FR-6 | 一次失败后恢复 | `test_a_restart_after_the_retry_still_refuses_orders` |
+| FR-6 | 连续失败 | `test_a_sink_that_never_works_keeps_trying_and_keeps_saying_so` |
+| FR-6 | 旧 durable row 仍为未冻结 | `test_a_restart_after_the_retry_still_refuses_orders` 走的正是这条路 |
+| FR-7 | 观察节拍独立于入场决策 | `test_a_high_printed_while_holding_enters_the_baseline` |
+| FR-7 | 把「更新风险状态」与「准入检查」分开 | `test_admission_no_longer_moves_the_baseline_itself` |
+| FR-7 | 从真实 bar 流程测上涨持有 | `test_a_high_printed_while_holding_enters_the_baseline` |
+| FR-7 | 回落后入场 | `test_the_give_back_after_that_high_is_refused` |
+| FR-7 | 软暂停期间的峰值 | `test_a_paused_strategy_still_samples_the_baseline` |
+
+**两处验收分句没有直接对应的新测试，各自说明**：
+
+1. FR-6 的「显式人工解除与待写锁定的顺序」。本仓没有「内存里解除冻结」的 API——解除
+   走 `arx-runner breaker clear`，它改的是 durable 行，进程要重启才读到（fix 20）。
+   所以「先解除还是先补写」这个顺序在当前设计里不存在两种可能：待写的锁定只会写回
+   frozen=True，而操作员的解除写的是另一条记录、由下一次 `restore` 读取，而 `restore`
+   现在拒绝用一行 frozen=False 去解除内存里的冻结。**不为一个不存在的路径编测试**。
+2. FR-4 的「换代重启」。runner 这一侧看不到 generation：`_SupervisionStartups` 只拿到
+   `deployment_instance_id`，同代自动重启与换代替换在它眼里完全同形（同一个 id、一个新
+   节点）。所以一条测试覆盖两种情形，而不是假装分开测了。
+
+### 扰动验证
+
+18 处，各用独立 `PYTHONPYCACHEPREFIX`（C15）；每次施加后先与 scratchpad 备份逐字节
+比对确认真的改到了（C31），还原从同一份备份拷回（C15 续编）。
+
+| # | 把修复改回什么 | 转红的测试 |
+|---|---|---|
+| R1 | 改单仍按缓存里那张判定 | 6 条 |
+| R2 | 减仓改单不刷新可平量认领 | 2 条 |
+| R3 | 回滚不还原可平量认领 | 2 条 |
+| R4 | 换版通知不按模式筛选 | 3 条（内层抛错，证明两层独立） |
+| R5 | `adopt_policy` 不校验模式 | `..._refuses_a_policy_from_another_mode_on_its_own` |
+| R6 | 撤单挪回持仓判空之后 | 3 条 |
+| R7 | `still_clear` 短路不看挂单数 | `..._an_unreadable_order_book_is_not_a_clear_one` |
+| R8 | readiness 判定重新加闩 | 2 条 |
+| R9 | 监督循环不调 `retain` | `..._loop_forgets_deployments_that_left` |
+| R10 | `retain` 不清等待窗口与超时标记 | `..._leaves_no_spent_window_behind` |
+| R11 | evaluate 不重试待写状态 | 3 条 |
+| R12 | 重试用本 tick 的 reason | `..._carries_the_reason_the_freeze_was_reached_under` |
+| R13 | `restore` 直接覆盖 frozen/peak | `..._cannot_lift_a_freeze_that_is_already_held` |
+| R14 | `fail_closed` 不重试待写状态 | `..._a_restart_after_the_retry_still_refuses_orders` |
+| R15 | 平仓时不 rebase 入场保护基数 | 4 条 |
+| R16 | rebase 只清 protected、不推 offset | `..._only_the_quantity_that_reopened_is_protected` |
+| R17 | 不在 bar hygiene 里采样峰值 | 4 条 |
+| R18 | 采样不看权益可靠性 | `..._an_unreliable_equity_is_not_a_new_high` |
+
+R9 第一次不咬：当时只有一条直接调 `retain` 的测试，删掉循环里的调用它照样绿。补了
+`test_the_supervision_loop_forgets_deployments_that_left`（走真实监督循环）之后才转红。
+留在这里是因为「方法有测试」和「有人调它」是两件事——前者绿不代表后者接上了。
+
+### 功能验证（主路径，需真实环境）
+
+1. **FR-1**：testnet 上挂一张合法的普通平仓单，触发熔断，然后把它改大到超过当前持仓。
+   应当在日志里看到 `runner_order_refused`，`reason_code` 为
+   `custos_runner_fallback_breaker_frozen`；场所侧的委托数量不变。
+2. **FR-3**：持仓为空但挂着一张入场限价单时触发熔断。应当先看到
+   `nt_containment_cancelled_risk_increasing_orders`，再看到 `nt_containment_confirmed`，
+   **不应**看到 `nt_containment_still_clear`。
+3. **FR-4**：让 NT 节点在同一部署下重启。重启窗口内不应出现 `fallback_breaker_fail_closed`；
+   应当看到 `signed_supervision_restart_awaiting_readiness`，随后是第二条
+   `signed_supervision_evaluating`。
+4. **FR-5**：同时启用 sandbox 与 testnet，只给 sandbox 推一条策略换版。日志里
+   `runner_policy_renewal_adopted` 的 `trading_mode` 应当只有 sandbox；testnet 上原本
+   合法的敞口不应触发 `fallback_breaker_tripped`。
+5. **FR-6**：冻结发生时让状态库短暂不可写（如临时改权限）。应当看到
+   `fallback_breaker_state_persist_failed` 带 `attempt=1`，恢复可写后下一个监督 tick
+   不再报错；随后重启 daemon，`arx-runner breaker status` 仍应显示 frozen。
+6. **FR-2 / FR-7**：在 testnet 跑一个 HYBRID 策略，制造「入场单半仓成交 → 被止损 →
+   余量成交」，确认新持仓的追踪止损会随回撤触发；并确认持仓期间的行情新高会进入回撤基准
+   （下一次入场在回撤超限时被拒）。
