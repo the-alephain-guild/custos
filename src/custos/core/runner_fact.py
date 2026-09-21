@@ -1425,6 +1425,13 @@ class RunnerFactOutbox:
                         "runner state database is not the canonical first-production V1; "
                         "recreate the pre-production database"
                     )
+            # Read this *before* the schema script runs. Every table below is
+            # created with IF NOT EXISTS, so afterwards there is no way left to
+            # tell an old database that never had a table from a current one.
+            tables_before = {
+                str(row[0])
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+            }
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS runner_fact_stream (
@@ -1768,6 +1775,25 @@ class RunnerFactOutbox:
                     "runner state database predates side-aware position lots; "
                     "recreate the pre-production database"
                 )
+            if "runner_position_exposure_lot" not in tables_before:
+                open_quantity = connection.execute(
+                    """
+                    SELECT 1 FROM order_reservation
+                    WHERE CAST(filled_quantity AS NUMERIC) > 0
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if open_quantity is not None:
+                    # Nothing can attribute these to a position: the position id
+                    # is precisely what the old shape never recorded. Say so now,
+                    # rather than at the first real reduce-only fill -- by then
+                    # the venue has already executed and the accounting failure
+                    # freezes the boundary instead of refusing an order.
+                    raise RunnerStateMigrationError(
+                        "runner state database predates position lots and still holds filled "
+                        "quantity with no position attribution; flatten at the venue, then "
+                        "recreate the pre-production database"
+                    )
             connection.execute(
                 """
                 CREATE UNIQUE INDEX IF NOT EXISTS runner_cap_policy_scope_revision
