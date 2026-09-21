@@ -8,12 +8,15 @@ values, not just ranges. Critical: the native FixedRiskSizer default
 
 import inspect
 from decimal import Decimal
+from types import SimpleNamespace as NS
 
 import pytest
 
 pytest.importorskip("msgspec")
 pytest.importorskip("nautilus_trader")
 
+from _strategy_harness import Harness  # noqa: E402
+from custos_toolkit.signals.types import Signal  # noqa: E402
 from custos_toolkit_nautilus.adapter.coordinators import (  # noqa: E402
     SignalExecutionCoordinator,
     SizingCoordinator,  # noqa: E402
@@ -90,14 +93,39 @@ class TestDefaultPositionSizeBranch:
 
 
 class TestEntryZeroSizeGuard:
-    """A computed size at or below zero skips the entry, rather than ordering nothing."""
+    """A computed size at or below zero skips the entry, rather than ordering nothing.
 
-    def test_execute_entry_guards_zero_size(self):
-        src = inspect.getsource(SignalExecutionCoordinator.execute_entry_for_pair)
-        assert "final_size <= 0" in src, (
-            "execute_entry_for_pair must skip when final_size <= 0 (avoid make_qty(0) order)"
+    This used to grep the method source for the guard expression and for its position
+    relative to ``create_entry_order``. That is a test of the implementation: splitting
+    the method into decide/commit without changing a single behaviour turned it red.
+    It now asks the decision phase what it decided.
+    """
+
+    def test_a_zero_size_produces_no_plan_to_commit(self):
+        harness = Harness()
+        coordinator = SignalExecutionCoordinator(harness)
+
+        plan = coordinator._plan_entry(
+            harness.ctx,
+            Signal.enter_long(price=100.0),
+            Decimal("0"),
+            NS(close=Decimal("100")),
         )
-        # the guard must return before building the order
-        guard_idx = src.index("final_size <= 0")
-        order_idx = src.index("create_entry_order")
-        assert guard_idx < order_idx, "0-size guard must come before create_entry_order"
+
+        assert plan is None, "a zero size must not reach the venue as make_qty(0)"
+        assert harness.sent == [], "nothing may be submitted for a zero size"
+
+    def test_a_positive_size_does_produce_a_plan(self):
+        """The negative above is only evidence if the same call can succeed."""
+        harness = Harness()
+        coordinator = SignalExecutionCoordinator(harness)
+
+        plan = coordinator._plan_entry(
+            harness.ctx,
+            Signal.enter_long(price=100.0),
+            Decimal("50"),
+            NS(close=Decimal("100")),
+        )
+
+        assert plan is not None
+        assert plan.size == Decimal("50")

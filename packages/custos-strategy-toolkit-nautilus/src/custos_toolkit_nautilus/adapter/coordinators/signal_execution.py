@@ -13,6 +13,7 @@ it delegates the signal-execution steps (entry/exit/manage) to this component.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
@@ -32,6 +33,41 @@ if TYPE_CHECKING:
 
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
+
+
+@dataclass(frozen=True, slots=True)
+class EntrySizing:
+    """How big an entry is once a possible reversal's close leg is counted in."""
+
+    size: Decimal
+    is_reversal: bool
+    close_quantity: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class EntryPlan:
+    """An entry that has passed every check that could still refuse it.
+
+    The split this represents is load-bearing, not cosmetic. Clearing the way for a
+    reversal cancels the old position's protection; doing that before the last
+    refusal leaves the old position open with no stop and no replacement on the way.
+    That ordering used to be held by a comment in the middle of one long method.
+    Now it is the boundary between :meth:`SignalExecutionCoordinator._plan_entry`,
+    which only reads, and :meth:`SignalExecutionCoordinator._commit_entry`, which
+    cannot refuse because it is only ever called with one of these.
+
+    ``reserved_capital`` is already spent by the time this exists: the allocator is
+    the last gate, and passing it takes the money. The commit phase owns returning
+    it if the local execution gate refuses the order before it reaches the venue.
+    """
+
+    order: object
+    size: Decimal
+    order_type: str
+    is_reversal: bool
+    reversal_close_quantity: Decimal
+    signal_id: str | None
+    reserved_capital: Decimal
 
 
 class SignalExecutionCoordinator:
@@ -88,6 +124,24 @@ class SignalExecutionCoordinator:
     ) -> None:
         """Execute entry trade for a specific pair.
 
+        Two phases with a hard boundary: decide, then commit. Everything that can
+        still refuse this entry lives in :meth:`_plan_entry`, which only reads.
+        Once it hands back a plan, nothing may refuse -- see :class:`EntryPlan`.
+        """
+        plan = self._plan_entry(ctx, signal, size, bar)
+        if plan is None:
+            return
+        self._commit_entry(ctx, signal, bar, plan)
+
+    def _plan_entry(
+        self, ctx: PairContext, signal: Signal, size: Decimal, bar: Bar
+    ) -> EntryPlan | None:
+        """Decide whether this entry goes out, and how big. Reads only.
+
+        Returns ``None`` when anything refuses (having logged why). The one thing
+        here that is not a pure read is the capital allocation at the end: it is the
+        last gate, and passing it takes the money.
+
         Signal Override Layer:
             - signal.amount: Overrides the calculated size
             - signal.order_type: Overrides config order_type
@@ -111,58 +165,27 @@ class SignalExecutionCoordinator:
                 "cancellation is confirmed",
                 color=LogColor.YELLOW,
             )
-            return
+            return None
 
         # Check position limits
         pos_config = s.config.position
         if pos_config.limits.max_total_positions:
             if len(s.cache.positions_open()) >= pos_config.limits.max_total_positions:
                 s.log.warning(f"[{ctx.pair}] Max open positions reached")
-                return
+                return None
 
         # Signal Override: amount > calculated size
         final_size = signal.amount if signal.amount is not None else size
 
-        # Reversal sizing: add current position size for close+open in netting accounts.
-        # This part only reads the position. Clearing the way for a reversal cancels
-        # the old position's protection, and that must not happen until every check
-        # that can still refuse this entry has passed -- a refusal afterwards would
-        # leave the old position open with no stop and no replacement on the way.
+        # Reversal sizing only reads the position. Clearing the way for a reversal
+        # cancels the old position's protection, and that belongs to the commit phase.
         ctx.pending_entry_is_reversal = False
-        is_reversal = False
-        reversal_close_quantity = Decimal("0")
-        positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
-        if positions:
-            position = positions[0]
-            is_reversal_to_long = (
-                signal.direction == SignalDirection.ENTER_LONG and position.is_short
-            )
-            is_reversal_to_short = (
-                signal.direction == SignalDirection.ENTER_SHORT and position.is_long
-            )
-            if is_reversal_to_long or is_reversal_to_short:
-                is_reversal = True
-                # Convert current position quantity (base currency, e.g., BTC) to notional value
-                # (quote currency, e.g., USDT) to ensure we're adding USDT + USDT, not USDT + BTC
-                current_qty = Decimal(str(position.quantity))
-                reversal_close_quantity = current_qty
-                current_price = Decimal(str(bar.close))
-                instrument = s.cache.instrument(ctx.instrument_id)
-                if instrument is None:
-                    s.log.error(
-                        f"[{ctx.pair}] Instrument not found; cannot size the reversal",
-                        color=LogColor.RED,
-                    )
-                    return
-                current_value_usdt = notional_from_quantity(
-                    instrument, current_qty, current_price
-                )
-                final_size = final_size + current_value_usdt
-                s.log.info(
-                    f"[{ctx.pair}] Reversal sizing: base={size:.3f} USDT, "
-                    f"close_qty={current_qty} ({current_value_usdt:.3f} USDT), "
-                    f"total={final_size:.3f} USDT"
-                )
+        sizing = self._size_against_open_position(ctx, signal, bar, final_size)
+        if sizing is None:
+            return None
+        final_size = sizing.size
+        is_reversal = sizing.is_reversal
+        reversal_close_quantity = sizing.close_quantity
 
         # A computed size <= 0 (e.g. fixed_risk with no valid stop-loss, or check_limits
         # below min_order_size) must not become an exchange-rejected make_qty(0) — skip this
@@ -173,7 +196,7 @@ class SignalExecutionCoordinator:
                 f"[{ctx.pair}] computed entry size <= 0 ({final_size}); skipping entry",
                 color=LogColor.YELLOW,
             )
-            return
+            return None
 
         # Signal Override: order_type > config
         order_type = signal.order_type or s.config.trading.order_type
@@ -199,7 +222,7 @@ class SignalExecutionCoordinator:
             tags=_tags,
         )
         if order is None:
-            return
+            return None
 
         # Reserve the capital before recording anything. allocate() returning False is
         # a refusal -- the pair tier or the total cash cannot cover this size -- and
@@ -212,7 +235,71 @@ class SignalExecutionCoordinator:
                 "skipping entry",
                 color=LogColor.YELLOW,
             )
-            return
+            return None
+
+        return EntryPlan(
+            order=order,
+            size=final_size,
+            order_type=order_type,
+            is_reversal=is_reversal,
+            reversal_close_quantity=reversal_close_quantity,
+            signal_id=_sig_id,
+            reserved_capital=final_size,
+        )
+
+    def _size_against_open_position(
+        self, ctx: PairContext, signal: Signal, bar: Bar, base_size: Decimal
+    ) -> EntrySizing | None:
+        """How big this entry has to be, counting a close leg if it reverses.
+
+        A netting account reverses by closing and opening in one order, so the entry
+        carries the old position's notional too. Returns ``None`` when the instrument
+        needed to convert that close quantity into notional is missing -- sizing a
+        reversal off base quantity would be adding BTC to USDT.
+        """
+        s = self._strategy
+        flat = EntrySizing(base_size, is_reversal=False, close_quantity=Decimal("0"))
+        positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
+        if not positions:
+            return flat
+        position = positions[0]
+        reverses = (signal.direction == SignalDirection.ENTER_LONG and position.is_short) or (
+            signal.direction == SignalDirection.ENTER_SHORT and position.is_long
+        )
+        if not reverses:
+            return flat
+
+        instrument = s.cache.instrument(ctx.instrument_id)
+        if instrument is None:
+            s.log.error(
+                f"[{ctx.pair}] Instrument not found; cannot size the reversal",
+                color=LogColor.RED,
+            )
+            return None
+        close_quantity = Decimal(str(position.quantity))
+        close_notional = notional_from_quantity(instrument, close_quantity, Decimal(str(bar.close)))
+        s.log.info(
+            f"[{ctx.pair}] Reversal sizing: base={base_size:.3f} USDT, "
+            f"close_qty={close_quantity} ({close_notional:.3f} USDT), "
+            f"total={base_size + close_notional:.3f} USDT"
+        )
+        return EntrySizing(
+            base_size + close_notional, is_reversal=True, close_quantity=close_quantity
+        )
+
+    def _commit_entry(self, ctx: PairContext, signal: Signal, bar: Bar, plan: EntryPlan) -> None:
+        """Put a decided entry into the world. Nothing here may refuse it.
+
+        Reaching this means every check has passed, so it is finally safe to take
+        down the old position's protection for a reversal.
+        """
+        s = self._strategy
+        order = plan.order
+        final_size = plan.size
+        is_reversal = plan.is_reversal
+        reversal_close_quantity = plan.reversal_close_quantity
+        order_type = plan.order_type
+        _sig_id = plan.signal_id
 
         # Past every refusal. Only now is it safe to take down the old position's
         # protection, because this entry is going out.
