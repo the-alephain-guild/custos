@@ -679,13 +679,19 @@ class NtTradingNodeHost:
             self._release_execution_account_partition(deployment_instance_id)
             raise
 
-        fact_context = self._build_runner_fact_context(
-            spec,
-            credential,
-            identity,
-            runtime_strategy=strategy,
-        )
         try:
+            # Everything between taking the account partition and registering the node
+            # is one ownership scope. This validation used to sit between two cleanup
+            # blocks without being in either, so any of its exits kept the partition
+            # and left the node undisposed -- and with the instance not yet in
+            # _active_nodes, stop() could not undo it. The corrected config was then
+            # refused by a deployment that had never started.
+            fact_context = self._build_runner_fact_context(
+                spec,
+                credential,
+                identity,
+                runtime_strategy=strategy,
+            )
             self._attach_runtime_bridges(
                 deployment_instance_id,
                 strategy,
