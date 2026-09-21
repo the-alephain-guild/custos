@@ -225,3 +225,103 @@ async def test_a_startup_trip_does_not_become_a_durable_freeze(tmp_path) -> None
     assert store.load_breaker_state_sync(INSTANCE_A) is None, (
         "a deployment that never started must not leave a freeze an operator has to lift"
     )
+
+
+class _RestartingHost(_Host):
+    """A node that was ready, and was then replaced by one that is still starting.
+
+    Nothing about the deployment changed: the id is the deployment, not the run. NT
+    restarts the node under it, and the replacement has its own startup reconciliation
+    to finish -- with an account balance that has not arrived yet, which is the same
+    unready engine the wait exists for, arriving by a different door.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(ready=True, reliable=True)
+
+    async def deployment_ready(self, deployment_instance_id: str) -> bool:
+        self.readiness_calls += 1
+        if self.readiness_calls >= 2:
+            self._ready = False
+            self._reliable = False
+        return self._ready
+
+
+@pytest.mark.asyncio
+async def test_a_restart_under_the_same_id_is_asked_again() -> None:
+    """FR-4: the first node's answer was latched and never revisited."""
+    host = _RestartingHost()
+    boundary = _boundary()
+
+    await _one_round(host, boundary)
+
+    assert host.readiness_calls > 1, "readiness is a current fact, not a one-off gate"
+    assert host.status_calls == 1, "the replacement node must not be evaluated mid-startup"
+    assert boundary.fallback_breaker.frozen is False
+    assert host.flattened == []
+
+
+@pytest.mark.asyncio
+async def test_a_restart_that_never_finishes_is_still_guarded() -> None:
+    """Waiting is not exempting, and reopening the window must not change that."""
+    host = _RestartingHost()
+    boundary = _boundary()
+
+    with capture_logs() as events:
+        await _one_round(host, boundary, readiness_timeout_secs=0.0)
+
+    assert boundary.fallback_breaker.frozen is True
+    names = [event["event"] for event in events]
+    assert "signed_supervision_restart_awaiting_readiness" in names
+    assert names.count("signed_supervision_readiness_timeout") == 1, (
+        "an error repeated every round is one nobody can read"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_deployment_that_goes_away_leaves_no_spent_window_behind() -> None:
+    """An id that returns is a new deployment and gets its own bounded wait.
+
+    Carrying the previous occupant's exhausted window across would evaluate the new
+    one from its first round -- the startup trip this whole wait exists to avoid,
+    handed to it by its predecessor.
+    """
+    from custos.cli._daemon import _SupervisionStartups
+
+    startups = _SupervisionStartups(0.01)
+    host = _Host(ready=False)
+
+    assert await startups.may_evaluate(host, str(INSTANCE)) is False
+    await asyncio.sleep(0.02)
+    assert await startups.may_evaluate(host, str(INSTANCE)) is True, "past the bound"
+
+    startups.retain(set())
+
+    assert await startups.may_evaluate(host, str(INSTANCE)) is False
+
+
+class _ChurningHost(_Host):
+    """The deployment leaves the registry and comes back under the same id."""
+
+    def __init__(self) -> None:
+        super().__init__(ready=True, reliable=True)
+        self.listings = 0
+
+    def runner_fact_deployments(self):
+        self.listings += 1
+        return () if self.listings % 2 else (NS(deployment_instance_id=str(INSTANCE)),)
+
+
+@pytest.mark.asyncio
+async def test_the_supervision_loop_forgets_deployments_that_left() -> None:
+    """Wiring: ``retain`` changes nothing if nobody calls it each round."""
+    host = _ChurningHost()
+    boundary = _boundary()
+
+    with capture_logs() as events:
+        await _one_round(host, boundary)
+
+    starts = [event for event in events if event["event"] == "signed_supervision_evaluating"]
+    assert len(starts) > 1, (
+        "a deployment that left and returned is a new one, and starts being evaluated again"
+    )

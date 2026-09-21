@@ -20,7 +20,7 @@ import logging
 import os
 import signal
 import time
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, Protocol
@@ -551,48 +551,85 @@ class _SupervisionStartups:
 
     Waiting is not exempting: past the bound a deployment is evaluated regardless,
     which fails closed, and that is the right way round.
+
+    Readiness is asked every round rather than latched. The deployment instance id
+    names the deployment, not the run: a node that restarts -- automatically, or as
+    a same-generation replacement -- keeps it, so a latch taken by the first node
+    answers for the second one, which has not reconciled yet. What is remembered
+    here is only enough to say each thing once and to know when a wait began.
     """
 
     def __init__(self, timeout_secs: float) -> None:
         self._timeout_secs = timeout_secs
-        self._evaluating: set[str] = set()
-        self._first_seen: dict[str, float] = {}
+        self._ready: set[str] = set()
+        self._waiting_since: dict[str, float] = {}
         self._announced: set[str] = set()
+        self._timed_out: set[str] = set()
+        self._probeless: set[str] = set()
+
+    def retain(self, active: Collection[str]) -> None:
+        """Forget deployments that are no longer running.
+
+        Not only hygiene: an id that comes back is a new deployment and has to start
+        a fresh window, rather than inherit the one the previous occupant left open.
+        """
+        live = set(active)
+        self._ready &= live
+        self._announced &= live
+        self._timed_out &= live
+        self._probeless &= live
+        self._waiting_since = {
+            instance: since for instance, since in self._waiting_since.items() if instance in live
+        }
 
     async def may_evaluate(self, host: object, deployment_instance_id: str) -> bool:
-        if deployment_instance_id in self._evaluating:
-            return True
-
         probe = getattr(host, "deployment_ready", None)
         if not callable(probe):
             # Evaluated exactly as before, but said once: a safety check that is
             # quietly not running is worse than one that is loudly not.
-            if deployment_instance_id not in self._announced:
-                self._announced.add(deployment_instance_id)
+            if deployment_instance_id not in self._probeless:
+                self._probeless.add(deployment_instance_id)
                 _slog.warning(
                     "signed_supervision_readiness_unknown",
                     deployment_instance_id=deployment_instance_id,
                 )
-            self._evaluating.add(deployment_instance_id)
             return True
 
-        first_seen = self._first_seen.setdefault(deployment_instance_id, time.monotonic())
+        since = self._waiting_since.setdefault(deployment_instance_id, time.monotonic())
         if await probe(deployment_instance_id):
-            self._evaluating.add(deployment_instance_id)
-            _slog.info(
-                "signed_supervision_evaluating",
-                deployment_instance_id=deployment_instance_id,
-                waited_seconds=round(time.monotonic() - first_seen, 3),
-            )
+            if deployment_instance_id not in self._ready:
+                self._ready.add(deployment_instance_id)
+                self._announced.discard(deployment_instance_id)
+                self._timed_out.discard(deployment_instance_id)
+                _slog.info(
+                    "signed_supervision_evaluating",
+                    deployment_instance_id=deployment_instance_id,
+                    waited_seconds=round(time.monotonic() - since, 3),
+                )
             return True
 
-        if time.monotonic() - first_seen >= self._timeout_secs:
-            self._evaluating.add(deployment_instance_id)
-            _slog.error(
-                "signed_supervision_readiness_timeout",
+        if deployment_instance_id in self._ready:
+            # It was ready and is not any more. Whatever is holding the deployment
+            # now has its own startup to finish, so the window reopens instead of
+            # carrying the previous run's verdict across.
+            self._ready.discard(deployment_instance_id)
+            self._announced.discard(deployment_instance_id)
+            self._timed_out.discard(deployment_instance_id)
+            since = self._waiting_since[deployment_instance_id] = time.monotonic()
+            _slog.info(
+                "signed_supervision_restart_awaiting_readiness",
                 deployment_instance_id=deployment_instance_id,
                 timeout_seconds=self._timeout_secs,
             )
+
+        if time.monotonic() - since >= self._timeout_secs:
+            if deployment_instance_id not in self._timed_out:
+                self._timed_out.add(deployment_instance_id)
+                _slog.error(
+                    "signed_supervision_readiness_timeout",
+                    deployment_instance_id=deployment_instance_id,
+                    timeout_seconds=self._timeout_secs,
+                )
             return True
 
         if deployment_instance_id not in self._announced:
@@ -617,7 +654,9 @@ async def _run_signed_safety_supervision(
         raise ValueError("signed safety supervision interval must be positive")
     startups = _SupervisionStartups(readiness_timeout_secs)
     while not stop.is_set():
-        for deployment in tuple(host.runner_fact_deployments()):
+        deployments = tuple(host.runner_fact_deployments())
+        startups.retain({deployment.deployment_instance_id for deployment in deployments})
+        for deployment in deployments:
             boundary = boundaries.get(deployment.deployment_instance_id)
             if boundary is None:
                 raise RuntimeError("active signed deployment has no runner safety boundary")

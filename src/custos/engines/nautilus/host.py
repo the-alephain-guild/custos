@@ -1607,14 +1607,28 @@ class NtTradingNodeHost:
                 reason=reason,
             )
             return
+        # Before reading the positions, and regardless of what they say: the breaker's
+        # freeze only stops new submissions, and an order the venue has already
+        # accepted is past that gate. Whether a position is open right now says
+        # nothing about it -- a resting entry fills on the next tick and reopens
+        # exactly the exposure this is containing. Reduce-only orders stay: they are
+        # the position's own protection, which containment wants kept.
+        working = self._cancel_risk_increasing_orders(deployment_instance_id, runtime, reason)
         instrument_ids = {position.instrument_id for position in runtime.cache.positions_open()}
         if not instrument_ids:
+            if working:
+                # Nothing to close, but something that could reopen. The cancel above
+                # was a request like any other; confirm the venue honoured it.
+                await self._confirm_containment(deployment_instance_id, runtime, reason)
+                return
             # Nothing was contained, and at startup that is not the same as nothing being
             # there: reconciliation may not yet have delivered the account's existing
             # positions, in which case they arrive seconds later untouched. Recording this
             # as a flatten would read as containment and stop anyone from asking further,
-            # which is precisely what C9 asks us not to do.
-            if deployment_instance_id in self._containment_confirmed:
+            # which is precisely what C9 asks us not to do. An order book that could not
+            # be read lands here too -- ``working`` is None then, and unreadable is not
+            # clear.
+            if working == 0 and deployment_instance_id in self._containment_confirmed:
                 _log.info(
                     "nt_containment_still_clear",
                     deployment_instance_id=deployment_instance_id,
@@ -1627,12 +1641,6 @@ class NtTradingNodeHost:
                 reason=reason,
             )
             return
-        # Before closing, not after: the breaker's freeze only stops new submissions,
-        # and an order the venue has already accepted is past that gate. Left resting,
-        # a risk-increasing one can fill again the moment the position is flat and
-        # reopen exactly the exposure this is containing. Reduce-only orders stay --
-        # they are the position's own protection, which containment wants kept.
-        self._cancel_risk_increasing_orders(deployment_instance_id, runtime, reason)
         self._request_close(runtime, instrument_ids)
         _log.warning(
             "positions_flattened",
@@ -1757,13 +1765,17 @@ class NtTradingNodeHost:
         deployment_instance_id: str,
         runtime: _NodeRuntime,
         reason: str,
-    ) -> None:
+    ) -> int | None:
         """Withdraw this instance's working orders that could add exposure.
 
         Same judgement as the preserve shutdown: reduce-only is protection and stays,
         everything else is a way back into the position being contained. Cancelling is
         a request like any other -- this does not claim the venue has withdrawn them,
         only that it was asked, which is why nothing here is logged as confirmation.
+
+        Returns how many risk-increasing orders were found, or ``None`` when the order
+        book could not be read. The caller needs those apart: zero means the book is
+        clear, ``None`` means nobody knows.
         """
         try:
             _positions, orders = self._open_venue_state(runtime)
@@ -1778,10 +1790,10 @@ class NtTradingNodeHost:
                 reason=reason,
                 error_type=type(exc).__name__,
             )
-            return
+            return None
         risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
         if not risk_increasing:
-            return
+            return 0
         canceler = self._canceler(runtime.strategies)
         if canceler is None:
             _log.error(
@@ -1790,7 +1802,7 @@ class NtTradingNodeHost:
                 reason=reason,
                 order_count=len(risk_increasing),
             )
-            return
+            return len(risk_increasing)
         for order in risk_increasing:
             canceler.cancel_order(order.client_order_id)
         _log.warning(
@@ -1799,6 +1811,7 @@ class NtTradingNodeHost:
             reason=reason,
             order_count=len(risk_increasing),
         )
+        return len(risk_increasing)
 
     async def get_positions(self, deployment_instance_id: str) -> list[PositionSnapshot]:
         """Return positions valued by the canonical portfolio snapshot."""

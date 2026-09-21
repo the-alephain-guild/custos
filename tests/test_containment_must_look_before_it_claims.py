@@ -246,3 +246,89 @@ async def test_a_redeployed_instance_does_not_inherit_the_old_confirmation(host)
     names = [event["event"] for event in events]
     assert "nt_flatten_containment_unconfirmed" in names
     assert "nt_containment_still_clear" not in names
+
+
+@pytest.mark.asyncio
+async def test_a_working_entry_is_cancelled_even_with_no_position_open(host) -> None:
+    """FR-3: a flat book says nothing about an order that fills on the next tick.
+
+    ``flatten_positions`` built its instrument set from open positions and returned
+    when it was empty -- before the cancel added by fix 26 ever ran. Freezing only
+    stops new submissions; an order the venue already accepted is past that gate and
+    reopens exactly the exposure being contained.
+    """
+    strategy, instance = await _deployed(host, "contain-flat-entry")
+    strategy.node.cache.orders.append(_VenueOrder(is_reduce_only=False, client_order_id="O-entry"))
+
+    with capture_logs() as events:
+        await host.flatten_positions(instance, "drawdown_breach")
+
+    names = [event["event"] for event in events]
+    assert "nt_containment_cancelled_risk_increasing_orders" in names
+    assert "nt_containment_confirmed" in names
+    assert not strategy.node.cache.orders, "the entry must not still be resting"
+
+
+@pytest.mark.asyncio
+async def test_a_previous_confirmation_does_not_excuse_a_new_entry(host) -> None:
+    """The ``still_clear`` short circuit must not skip the order check.
+
+    A drawdown breach keeps tripping after the position is gone, so containment is
+    called again and again. The instance is marked confirmed by then, and answering
+    from that mark alone means an order that appeared since is never looked at.
+    """
+    strategy, instance = await _deployed(host, "contain-flat-entry-later")
+    strategy.node.cache.positions.append(_VenuePosition())
+    await host.flatten_positions(instance, "drawdown_breach")
+    strategy.node.cache.orders.append(_VenueOrder(is_reduce_only=False, client_order_id="O-late"))
+
+    with capture_logs() as events:
+        await host.flatten_positions(instance, "drawdown_breach")
+
+    names = [event["event"] for event in events]
+    assert "nt_containment_cancelled_risk_increasing_orders" in names
+    assert "nt_containment_still_clear" not in names, (
+        "an instance with a working entry order is not clear"
+    )
+    assert not strategy.node.cache.orders
+
+
+@pytest.mark.asyncio
+async def test_a_flat_book_with_only_protection_stays_protected(host) -> None:
+    """The control: reduce-only orders are the position's own protection.
+
+    fix 26 decided they survive containment. Reaching the cancel earlier must not
+    turn them into something that gets withdrawn.
+    """
+    strategy, instance = await _deployed(host, "contain-flat-protection")
+    strategy.node.cache.orders.append(_VenueOrder(is_reduce_only=True, client_order_id="O-stop"))
+
+    with capture_logs() as events:
+        await host.flatten_positions(instance, "drawdown_breach")
+
+    names = [event["event"] for event in events]
+    assert "nt_containment_cancelled_risk_increasing_orders" not in names
+    assert "nt_flatten_containment_unconfirmed" in names, (
+        "nothing was contained, and protection alone is not evidence that it was"
+    )
+    assert strategy.node.cache.orders
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_order_book_is_not_a_clear_one(host) -> None:
+    """Cannot read is not the same as nothing there -- including on the repeat call."""
+    strategy, instance = await _deployed(host, "contain-flat-unreadable")
+    strategy.node.cache.positions.append(_VenuePosition())
+    await host.flatten_positions(instance, "drawdown_breach")
+
+    def explode(**_kwargs):
+        raise RuntimeError("the venue cache is unavailable")
+
+    strategy.node.cache.orders_open = explode
+
+    with capture_logs() as events:
+        await host.flatten_positions(instance, "drawdown_breach")
+
+    names = [event["event"] for event in events]
+    assert "nt_containment_orders_unreadable" in names
+    assert "nt_containment_still_clear" not in names

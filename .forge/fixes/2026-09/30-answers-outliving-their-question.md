@@ -396,4 +396,6 @@ fix 13 的测试直接调 `check_risk_limits` 三次，所以看不到这个调�
 |---|---|
 | `tests/engines/nautilus/test_an_amendment_is_judged_by_what_it_would_leave.py` | 11 |
 | `tests/test_a_policy_renewal_reaches_the_live_boundary.py` | 13 |
+| `tests/test_containment_must_look_before_it_claims.py` | 13 |
 | `tests/test_plan_closeout_counts.py` | 81 |
+| `tests/test_startup_is_not_a_breach.py` | 10 |
