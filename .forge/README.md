@@ -159,13 +159,15 @@ Plan close-out 后 (Status: ✅ Completed):
 （「until an operator intervenes」）。fix 20 已交付：冻结与峰值权益落盘、准入前装载、
 `arx-runner breaker clear` 作为唯一解除入口且记下解除者与理由。
 
-#### 品味 defer — 三项上界，须数据结构先行
+#### ~~品味 defer — 三项上界，须数据结构先行~~ → 已交付
 
-`.forge/fixes/2026-09/07-strategy-state-fixes-followup.md` 把三处超上界移交 backlog：
-`adapter/tick_monitor.py`（约 700 行）、`adapter/coordinators/order_reconciler.py`（637 行）、
-`signal_execution.py` 的 `execute_entry_for_pair`（165 行）。按 `coding-taste.md` 的判据，超限是
-「该复盘」的软信号而非红线；拆之前要先想清分解，硬切成浅函数会制造新的阅读负担。另有 6 处既有
-`getattr` 防御同批留下，收敛它们要先在边界把双形态归一化。
+fix 21 做完了 T2–T5。判据按 fix 07 定的「特殊情况是否消失」，不按行数：层级台账从四个并行集合
+收成一个值对象、拒单的分类与处置分开、入场的决策/落地缝从注释变成类型边界、六处 getattr 归还
+给类型。
+
+**仍在软上限之上且有意留着**：`order_reconciler.py` 633 行、`handle_order_rejected` 119 行。
+剩下的是四种处置本身，各自成段、互不交叉，再切就是按行数切了。仓里另有约三十处同型 getattr
+防御，按范围纪律没有夹带。
 
 ### 内部系统名对外收敛 — 两项 deferred (CEO 2026-07-28 决定先记录不做)
 
@@ -325,3 +327,4 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 | [2026-09/18 — a price improvement must not keep the reservation](fixes/2026-09/18-a-price-improvement-must-not-keep-the-reservation.md) | ✅ Completed (2026-09-20) | EE-6：预留按未成交数量收回，整单价格改善不再永久占用上限 |
 | [2026-09/19 — order attribution must outlive the bridge](fixes/2026-09/19-order-attribution-must-outlive-the-bridge.md) | ✅ Completed (2026-09-20) | EE-3：订单归属落盘并按实例装载，重建后旧订单的回报不再静默丢失 |
 | [2026-09/20 — a freeze must outlive the process](fixes/2026-09/20-a-freeze-must-outlive-the-process.md) | ✅ Completed (2026-09-21) | RS-6 **A 半**：熔断冻结与峰值权益按 deployment instance 落盘，重启不再等于一次无人署名的解除；`arx-runner breaker clear` 是唯一解除入口 |
+| [2026-09/21 — decompositions the line counts were pointing at](fixes/2026-09/21-decompositions-the-line-counts-were-pointing-at.md) | ✅ Completed (2026-09-21) | 品味 T2–T5：层级台账收成一个值对象、拒单分类与处置分开、入场的决策/落地缝变成类型边界、六处 getattr 归还给类型 |
