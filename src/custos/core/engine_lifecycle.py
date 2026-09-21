@@ -313,6 +313,20 @@ class EngineLifecycleSupervisor:
                 handle = await self._engine.deploy(runtime_spec, credential, artifact)
                 receipt = await self._await_ready(authority)
                 self._require_ready_identity(receipt, authority)
+                # Recording the engine is the last thing that can fail while it is
+                # already running, so it belongs in the same cleanup scope. Outside it,
+                # a failed commit left an engine nobody had a handle for: the retry's
+                # deploy was refused as "already deployed", the stop below never ran
+                # because that refusal returned no handle, and the record reached
+                # quarantined while the engine kept trading.
+                await self._commit_engine_ready(
+                    delivery_id=delivery_id,
+                    verified=verified,
+                    handle=handle,
+                    recovered_applied=recovered_applied,
+                    artifact_activation_id=artifact_activation_id,
+                    artifact_policy_id=artifact_policy_id,
+                )
             except EngineDependencyUnavailable as exc:
                 raise EngineLifecycleBlocked(str(exc)) from exc
             except Exception as exc:  # noqa: BLE001 - typed terminal mapping below
@@ -354,24 +368,36 @@ class EngineLifecycleSupervisor:
                 )
                 await self._sleep(self._backoff(restart_count))
                 continue
-            if recovered_applied:
-                await self._store.commit_recovered_engine_ready(
-                    verified=verified,
-                    engine_handle=handle,
-                    observed_status="ready",
-                    artifact_activation_id=artifact_activation_id,
-                    artifact_policy_id=artifact_policy_id,
-                )
-            else:
-                await self._store.commit_applied_and_enqueue_lifecycle(
-                    delivery_id=delivery_id,
-                    verified=verified,
-                    engine_handle=handle,
-                    observed_status="ready",
-                    artifact_activation_id=artifact_activation_id,
-                    artifact_policy_id=artifact_policy_id,
-                )
             return receipt
+
+    async def _commit_engine_ready(
+        self,
+        *,
+        delivery_id: str,
+        verified: Any,
+        handle: str,
+        recovered_applied: bool,
+        artifact_activation_id: str,
+        artifact_policy_id: str | None,
+    ) -> None:
+        """Record a started engine. Both exits are the same step, so both are guarded."""
+        if recovered_applied:
+            await self._store.commit_recovered_engine_ready(
+                verified=verified,
+                engine_handle=handle,
+                observed_status="ready",
+                artifact_activation_id=artifact_activation_id,
+                artifact_policy_id=artifact_policy_id,
+            )
+            return
+        await self._store.commit_applied_and_enqueue_lifecycle(
+            delivery_id=delivery_id,
+            verified=verified,
+            engine_handle=handle,
+            observed_status="ready",
+            artifact_activation_id=artifact_activation_id,
+            artifact_policy_id=artifact_policy_id,
+        )
 
     async def _quarantine(
         self,

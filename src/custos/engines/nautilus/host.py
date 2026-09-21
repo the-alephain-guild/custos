@@ -1407,16 +1407,29 @@ class NtTradingNodeHost:
         try:
             await asyncio.shield(task)
         except asyncio.CancelledError:
-            reason_code = "engine_task_cancelled"
+            # The shield exists to separate "the node was cancelled" from "whoever was
+            # waiting was cancelled". Both raise here, and only the first is a terminal
+            # event. Reporting the second restarts a healthy engine -- and swallowing
+            # the cancel instead of propagating it leaves the supervision task alive,
+            # so the gather that follows a shutdown never finishes.
+            if not task.done():
+                raise
         except Exception:  # noqa: BLE001 - reason is deliberately sanitized
-            reason_code = "engine_task_failed"
-        else:
-            reason_code = "engine_task_exited"
+            pass
         return EngineTerminalEvent.from_authority(
             authority,
-            reason_code=reason_code,
+            reason_code=self._terminal_reason(task),
             retryable=True,
         )
+
+    @staticmethod
+    def _terminal_reason(task: asyncio.Task[object]) -> str:
+        """How the node task ended, read from the task rather than from how we woke."""
+        if task.cancelled():
+            return "engine_task_cancelled"
+        if task.exception() is not None:
+            return "engine_task_failed"
+        return "engine_task_exited"
 
     async def close(self) -> None:
         for deployment_instance_id in tuple(self._active_nodes):
