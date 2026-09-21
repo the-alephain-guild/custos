@@ -169,6 +169,34 @@ fix 21 做完了 T2–T5。判据按 fix 07 定的「特殊情况是否消失」
 剩下的是四种处置本身，各自成段、互不交叉，再切就是按行数切了。仓里另有约三十处同型 getattr
 防御，按范围纪律没有夹带。
 
+那个「约三十处」是 **toolkit 的数**，别读成全仓。2026-09-21 实测（探针取自 tasting skill
+§二 的 getattr 模式）：`packages/` 31 处、`src/` 94 处。fix 07 与 fix 21 的品味审查范围都
+只覆盖 toolkit，runner 自身那 94 处**从未被审过**，所以它不是「剩下没做的」，是**还没被看过的**
+——两者对后来者的含义完全不同。其中一部分是有意的鸭子类型可选接口（例如
+`host.py` 对 `close_all_positions_with_fallback` 的探测，注释里写明了为什么不能用 isinstance），
+真要动得先分清哪些是防御、哪些是可选协议。
+
+### 跨仓移交 — RR-6 的投影侧跨 venue 回归（Crucible 所有）
+
+custos 侧已闭环（fix 28）：三个 venue 一律输出**毛** realized PnL + 独立 commission 行，
+消费端 `net_realized_pnl(gross, commission) = gross - commission`
+（`crucible-rust/crates/store/src/runner_fact_reconciliation_projector.rs:1808`）对 OKX 从此成立，
+**Crucible 不需要改行为**。
+
+缺的是那边的回归覆盖：该文件的投影测试 fixture 只有 `BINANCE`
+（`:3384`/`:3405`/`:3442`/`:3450`，2026-09-21 grep 实测，OKX 与 SODEX 零命中）。
+RR-6 验收里「加入跨 venue fixture 到投影的验证」指的就是这一条。
+
+**本轮没有去改那个仓**，两条理由都是当场核实的，不是回避：
+
+1. 那边工作区不干净 —— `crates/runner-transport-authority/src/authority_bundle.rs` 有 11 行
+   未提交改动，不是本会话产生的。往别人正在改的仓里落测试，是教训 #27 / C16 的正面入口。
+2. 那边 HEAD 停在 `4c3dae2`，plan 112 的标题是「the CI has never been green」——它自己的门
+   正在修。此刻塞一条新测试进去，该不该、什么时候，是那个仓的 owner 的判断。
+
+接手时要写的东西很具体：一条与现有 BINANCE fixture 同形、venue 为 OKX 的投影用例，
+喂毛 realized PnL 12 + commission 2，断言投影出的净值是 10。
+
 ### 内部系统名对外收敛 — 两项 deferred (CEO 2026-07-28 决定先记录不做)
 
 **背景**: 仓库 public。docs-site 有 disclosure gate、README 已清理, 但 `src/` 与
