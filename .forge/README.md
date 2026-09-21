@@ -153,16 +153,11 @@ Plan close-out 后 (Status: ✅ Completed):
 三份报告（strategy 8 项 ST · risk-state 9 项 RS · execution-edge 6 项 EE）共 23 项 finding 全部
 有对应 fix plan 且已 close-out，见下方「修复 (Fixes)」表。以下两类是**有意留下**的，不是遗漏。
 
-#### 待定决策 — RS-6 A：熔断冻结跨重启
+#### ~~待定决策 — RS-6 A：熔断冻结跨重启~~ → 已交付
 
-`.forge/fixes/2026-09/15-risk-state-survives-restart.md` 只做了 RS-6 的 B 半（Toolkit 风控状态
-随快照跨重启）。A 半是 daemon 重启清除 `FallbackBreaker` 冻结，**不是机械修复**：要先定下冻结的
-**作用域**（per deployment instance 还是 per runner）与**解除条件**——审查方的验收明写要区分
-「崩溃恢复、正常重启、热更新、跨日恢复和显式解除」，那是策略决定。它落在 non-custodial 红线 0.3
-的区域，按 `deviation-protocol.md` 属高风险偏离，需要先有决定再动手。
-
-实现路径已探明：store 里已有 `runner_risk_latch`（C23 的持久化风险闩），
-`RunnerStateStore._latch_runner_risk` / `_require_runner_risk_unlatched` 可直接作模板。
+作用域由 wukai 于 2026-09-21 定为 **per deployment instance**，解除条件取熔断器自己的契约
+（「until an operator intervenes」）。fix 20 已交付：冻结与峰值权益落盘、准入前装载、
+`arx-runner breaker clear` 作为唯一解除入口且记下解除者与理由。
 
 #### 品味 defer — 三项上界，须数据结构先行
 
@@ -329,3 +324,4 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 | [2026-09/17 — a blocked stream cannot starve the rest](fixes/2026-09/17-a-blocked-stream-cannot-starve-the-rest.md) | ✅ Completed (2026-09-20) | EE-4：事实 outbox 与信号队列都带着受阻流的排除集合继续翻页，健康流不再被一页积压挡住 |
 | [2026-09/18 — a price improvement must not keep the reservation](fixes/2026-09/18-a-price-improvement-must-not-keep-the-reservation.md) | ✅ Completed (2026-09-20) | EE-6：预留按未成交数量收回，整单价格改善不再永久占用上限 |
 | [2026-09/19 — order attribution must outlive the bridge](fixes/2026-09/19-order-attribution-must-outlive-the-bridge.md) | ✅ Completed (2026-09-20) | EE-3：订单归属落盘并按实例装载，重建后旧订单的回报不再静默丢失 |
+| [2026-09/20 — a freeze must outlive the process](fixes/2026-09/20-a-freeze-must-outlive-the-process.md) | ✅ Completed (2026-09-21) | RS-6 **A 半**：熔断冻结与峰值权益按 deployment instance 落盘，重启不再等于一次无人署名的解除；`arx-runner breaker clear` 是唯一解除入口 |
