@@ -77,13 +77,10 @@ class RiskControlCoordinator:
         if controller is None:
             s.log.error("Risk controller unavailable; blocking trading")
             return False
-        # Sample the drawdown baseline here, on the evaluation tempo, rather than
-        # waiting for the next fill. A high the market prints while a position is
-        # held is part of the peak the drawdown is measured from; sampling only on
-        # fills meant a run-up followed by a give-back never registered as one.
-        # update_peak_equity only raises the peak, so a new high reads as zero
-        # drawdown rather than resetting the measurement.
-        controller.update_peak_equity(equity)
+        # No sampling here. This is the admission check, and it is reached only when
+        # there is a candidate entry whose direction is allowed -- a tempo that has
+        # nothing to do with when the market prints a high. The baseline is observed
+        # on every bar instead, in _on_bar_risk_hygiene.
         allowed, reason = controller.check_limits(equity, current_ts)
         if not allowed:
             if reason != s._last_risk_reason:

@@ -72,11 +72,20 @@ class TestASoftPauseKeepsProtectiveExits:
 
 
 class TestTheDrawdownBaselineTracksTheMarket:
-    """RS-4: a high printed while holding is part of the drawdown baseline."""
+    """RS-4: a high printed while holding is part of the drawdown baseline.
+
+    The first repair sampled the baseline inside ``check_risk_limits``, which the
+    bar pipeline reaches only for a candidate entry whose direction is allowed --
+    so a run-up during a hold was still never sampled, and the fix's own tests
+    could not see it because they called the risk function directly. The sampling
+    now runs on the bar, next to the other hygiene that has to happen whatever the
+    signal says, and ``check_risk_limits`` is an admission check and nothing else.
+    """
 
     @staticmethod
-    def _strategy(equities: list[str]):
+    def _strategy(equity: str = "1000", *, reliable: bool = True, paused: bool = False):
         from custos_toolkit_nautilus.adapter.coordinators import RiskControlCoordinator
+        from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
 
         controller = RiskController(
             config={"max_drawdown": 0.05, "max_daily_loss": 0, "consecutive_loss_pause": 0},
@@ -84,29 +93,95 @@ class TestTheDrawdownBaselineTracksTheMarket:
             capital_mode="compound",
         )
         controller.update_peak_equity(Decimal("1000"))
-        remaining = list(equities)
         strategy = NS(
             _risk_controller=controller,
-            _get_risk_equity=lambda: Decimal(remaining.pop(0)),
+            equity=Decimal(equity),
             log=MagicMock(),
             _last_risk_reason="",
+            _reconciler=MagicMock(),
+            _equity_provider=NS(is_risk_equity_reliable=lambda: reliable),
+            _paused=paused,
+            _shutdown_position_policy=None,
+            _log_error=MagicMock(),
+            on_core_bar=MagicMock(),
         )
-        return RiskControlCoordinator(strategy), controller
+        strategy._get_risk_equity = lambda: strategy.equity
+        strategy._get_context_from_instrument = lambda _instrument_id: NS(pair="BTC-USDT")
+        strategy._risk_control_coordinator = RiskControlCoordinator(strategy)
+        # The strategy is abstract, so the methods under test are bound onto the
+        # double by hand rather than inherited. Both are the real implementations:
+        # the hygiene pass is what has to call the sampler, and the sampler is what
+        # has to apply the reliability guard.
+        for name in ("_on_bar_risk_hygiene", "_sample_drawdown_baseline"):
+            setattr(
+                strategy,
+                name,
+                getattr(NautilusTradingStrategy, name).__get__(strategy, NS),
+            )
+        return strategy, controller
 
-    def test_a_drawdown_from_an_unrealised_high_is_caught(self):
-        coordinator, _ = self._strategy(["1000", "1100", "1030"])
+    @staticmethod
+    def _bar(instrument_id: str = "BTC-USDT.OKX"):
+        return NS(bar_type=NS(instrument_id=instrument_id), close=Decimal("110"), ts_event=10**9)
 
-        assert coordinator.check_risk_limits(0) is True
-        assert coordinator.check_risk_limits(0) is True, "1100 is a new high, not a drawdown"
+    def test_a_high_printed_while_holding_enters_the_baseline(self):
+        """No entry signal, no entry gate -- and still the high has to be sampled."""
+        strategy, controller = self._strategy("1100")
 
-        assert coordinator.check_risk_limits(0) is False, "6.36% from 1100 exceeds the 5% cap"
+        NautilusStrategyCore.on_bar(strategy, self._bar())
+
+        assert controller.peak_equity == Decimal("1100")
+
+    def test_the_give_back_after_that_high_is_refused(self):
+        """The consequence: the entry that follows is measured from 1100, not 1030."""
+        strategy, _controller = self._strategy("1100")
+        NautilusStrategyCore.on_bar(strategy, self._bar())
+        strategy.equity = Decimal("1030")
+
+        assert strategy._risk_control_coordinator.check_risk_limits(0) is False, (
+            "6.36% from 1100 exceeds the 5% cap"
+        )
+
+    def test_a_paused_strategy_still_samples_the_baseline(self):
+        """A pause stops new risk. The market keeps printing highs regardless."""
+        strategy, controller = self._strategy("1100", paused=True)
+
+        NautilusStrategyCore.on_bar(strategy, self._bar())
+
+        assert strategy.on_core_bar.called is False, "precondition: the pause held the bar"
+        assert controller.peak_equity == Decimal("1100")
+
+    def test_an_unreliable_equity_is_not_a_new_high(self):
+        """update_peak_equity only ever raises the peak, so a bad read is permanent.
+
+        An unpriced position reads high, the mark becomes a number the account never
+        had, and every check afterwards measures a fall that did not happen.
+        """
+        strategy, controller = self._strategy("1100", reliable=False)
+
+        NautilusStrategyCore.on_bar(strategy, self._bar())
+
+        assert controller.peak_equity == Decimal("1000")
 
     def test_a_new_high_is_not_itself_a_drawdown(self):
-        coordinator, controller = self._strategy(["1000", "1100"])
-        coordinator.check_risk_limits(0)
+        strategy, controller = self._strategy("1100")
 
-        assert coordinator.check_risk_limits(0) is True
-        assert controller._state.peak_equity == Decimal("1100")
+        NautilusStrategyCore.on_bar(strategy, self._bar())
+
+        assert strategy._risk_control_coordinator.check_risk_limits(0) is True
+        assert controller.peak_equity == Decimal("1100")
+
+    def test_admission_no_longer_moves_the_baseline_itself(self):
+        """The two are separated: checking is not observing.
+
+        Leaving the sample in the gate would keep a path that reaches it without the
+        reliability guard the hygiene pass applies.
+        """
+        strategy, controller = self._strategy("1100")
+
+        strategy._risk_control_coordinator.check_risk_limits(0)
+
+        assert controller.peak_equity == Decimal("1000")
 
 
 class TestAFillBelongsToItsOwnDay:

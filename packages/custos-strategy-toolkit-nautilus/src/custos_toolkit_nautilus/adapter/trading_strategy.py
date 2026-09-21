@@ -555,13 +555,36 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         live order/position state, not on indicator warmup, so it must run for any bar
         with a known context. Gating it behind ``warmed_up`` would leave a hot-restarted
         position unprotected for the whole warmup window.
+
+        The drawdown baseline is sampled here for the same reason: it is an
+        observation, not a decision. Sampling it inside the admission check tied it
+        to there being a candidate entry whose direction is allowed, so a run-up
+        during a hold never entered the mark and the give-back that followed was
+        measured from wherever equity happened to be at the next entry.
         """
+        self._sample_drawdown_baseline()
         ctx = self._get_context_from_instrument(bar.bar_type.instrument_id)
         if ctx is None:
             return
         self._reconciler.sweep_stale_orders_for_pair(ctx)
         self._reconciler.ensure_exchange_sl_protection(ctx)
         self._reconciler.ensure_native_trailing_protection(ctx)
+
+    def _sample_drawdown_baseline(self) -> None:
+        """Raise the high-water mark to what the account is worth on this bar.
+
+        Deliberately not gated on the pair context: equity is the account's, and
+        tying an account-level measurement to which instrument happened to tick
+        would make the mark depend on subscription order.
+
+        Only a reliable reading is sampled. ``update_peak_equity`` only ever raises
+        the mark, so an unpriced position reading high sets a number the account
+        never had, and every check afterwards measures a fall that did not happen.
+        """
+        controller = self._risk_controller
+        if controller is None or not self._equity_provider.is_risk_equity_reliable():
+            return
+        controller.update_peak_equity(self._get_risk_equity())
 
     def on_core_bar(self, bar: Bar) -> None:
         """Route bar to corresponding pair context."""

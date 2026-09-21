@@ -400,4 +400,5 @@ fix 13 的测试直接调 `check_risk_limits` 三次，所以看不到这个调�
 | `tests/test_containment_must_look_before_it_claims.py` | 13 |
 | `tests/test_plan_closeout_counts.py` | 81 |
 | `tests/test_startup_is_not_a_breach.py` | 10 |
+| `tests/toolkit/test_risk_gate_semantics.py` | 14 |
 | `tests/toolkit/test_strategy_state_and_order_protection.py` | 76 |
