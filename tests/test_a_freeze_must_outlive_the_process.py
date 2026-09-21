@@ -356,3 +356,125 @@ def test_clearing_a_breaker_that_is_not_frozen_fails_loudly(
 
     assert exit_code == 1
     assert "not frozen" in capsys.readouterr().err
+
+
+class _FlakyState:
+    """A state sink that refuses the first ``failures`` freezes and then works.
+
+    Only the freeze is refused: the pre-freeze high-water mark has to land, because
+    what this is about is a store that took everything up to the freeze and then
+    missed exactly the row that matters.
+    """
+
+    def __init__(self, failures: int) -> None:
+        self._remaining = failures
+        self.written: list[tuple[Decimal, bool, str | None]] = []
+        self.attempts = 0
+
+    def __call__(self, peak_equity: Decimal, frozen: bool, reason_code: str | None) -> None:
+        self.attempts += 1
+        if frozen and self._remaining > 0:
+            self._remaining -= 1
+            raise OSError("state database is temporarily unavailable")
+        self.written.append((peak_equity, frozen, reason_code))
+
+
+class TestAFreezeThatCouldNotBeWrittenIsWrittenLater:
+    """FR-6: a single transient write failure made the freeze memory-only forever.
+
+    The failure was caught and logged, and nothing remembered it. Every later
+    publication is conditional -- ``fail_closed`` writes only on the transition,
+    ``evaluate`` only on a new trip or a new high -- so the store kept the
+    pre-freeze row, and the next restart rebuilt a breaker that let orders through
+    while nobody had lifted anything.
+    """
+
+    @staticmethod
+    def _tripped(sink: _FlakyState) -> FallbackBreaker:
+        breaker = FallbackBreaker(_config(), on_state_change=sink)
+        breaker.evaluate(open_notional=Decimal("0"), current_equity=Decimal("1000"))
+        breaker.fail_closed("execution_accounting_error")
+        return breaker
+
+    def test_the_next_evaluation_writes_what_the_failed_one_could_not(self):
+        sink = _FlakyState(failures=1)
+        breaker = self._tripped(sink)
+        assert sink.written == [(Decimal("1000"), False, None)], "only the pre-freeze row landed"
+
+        breaker.evaluate(open_notional=Decimal("0"), current_equity=Decimal("1000"))
+
+        assert sink.written[-1][1] is True
+
+    def test_the_retry_carries_the_reason_the_freeze_was_reached_under(self):
+        """This tick froze nothing; explaining the freeze with its reason is wrong."""
+        sink = _FlakyState(failures=1)
+        breaker = self._tripped(sink)
+
+        breaker.evaluate(open_notional=Decimal("0"), current_equity=Decimal("1000"))
+
+        assert sink.written[-1][2] == "execution_accounting_error"
+
+    def test_a_restart_after_the_retry_still_refuses_orders(self, tmp_path: Path):
+        """The consequence, through the durable store the daemon actually uses."""
+        store = _store(tmp_path / "flaky.sqlite3")
+        failures = {"left": 1}
+
+        def write(peak_equity, frozen, reason_code):
+            if frozen and failures["left"]:
+                failures["left"] -= 1
+                raise OSError("state database is temporarily unavailable")
+            store.record_breaker_state_sync(
+                deployment_instance_id=INSTANCE_A,
+                peak_equity=peak_equity,
+                frozen=frozen,
+                reason_code=reason_code,
+            )
+
+        breaker = FallbackBreaker(_config(), on_state_change=write)
+        breaker.evaluate(open_notional=Decimal("0"), current_equity=Decimal("1000"))
+        breaker.fail_closed("execution_accounting_error")
+        breaker.fail_closed("execution_accounting_error")
+
+        assert _restored_breaker(store, INSTANCE_A).allows_new_orders() is False
+
+    def test_a_sink_that_never_works_keeps_trying_and_keeps_saying_so(self):
+        sink = _FlakyState(failures=99)
+
+        with capture_logs() as events:
+            breaker = self._tripped(sink)
+            for _ in range(3):
+                breaker.evaluate(open_notional=Decimal("0"), current_equity=Decimal("1000"))
+
+        failures = [
+            event for event in events if event["event"] == "fallback_breaker_state_persist_failed"
+        ]
+        assert len(failures) == 4, "each attempt is reported; a silent retry is not a retry"
+        assert [event["attempt"] for event in failures] == [1, 2, 3, 4]
+        assert breaker.frozen is True, "the in-memory freeze stands regardless"
+
+    def test_a_write_that_succeeded_is_not_written_again(self):
+        """The control: the retry must not turn every tick into a write."""
+        sink = _FlakyState(failures=0)
+        breaker = self._tripped(sink)
+        before = sink.attempts
+
+        for _ in range(3):
+            breaker.evaluate(open_notional=Decimal("0"), current_equity=Decimal("1000"))
+
+        assert sink.attempts == before
+
+
+def test_a_stale_durable_row_cannot_lift_a_freeze_that_is_already_held() -> None:
+    """Restoring is loading, and loading must not be a release.
+
+    A freeze is lifted by an operator. A row that says otherwise is a row that was
+    written before the freeze -- which is exactly the row a failed write leaves
+    behind.
+    """
+    breaker = FallbackBreaker(_config())
+    breaker.fail_closed("execution_accounting_error")
+
+    breaker.restore(peak_equity=Decimal("500"), frozen=False)
+
+    assert breaker.frozen is True
+    assert breaker.peak_equity == Decimal("500"), "the durable mark is still adopted"

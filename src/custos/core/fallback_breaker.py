@@ -94,6 +94,14 @@ class FallbackBreaker:
         self._peak_equity: Decimal = Decimal("0")
         self._frozen = False
         self._on_state_change = on_state_change
+        # A state the sink refused, still owed. Every publication below is
+        # conditional on something changing, so without this a single refused write
+        # is final: the store keeps the row from before the freeze, and the next
+        # restart rebuilds a breaker that lets orders through with nobody having
+        # lifted anything.
+        self._state_write_pending = False
+        self._pending_reason_code: str | None = None
+        self._persist_attempts = 0
 
     @property
     def frozen(self) -> bool:
@@ -109,9 +117,14 @@ class FallbackBreaker:
 
         This is loading, not tripping, so it does not notify the state sink --
         writing back what was just read would only add a round trip.
+
+        Loading is also not releasing. A row that says "not frozen" against a
+        breaker that is, is a row written before the freeze -- which is exactly what
+        a refused write leaves behind. The mark moves to whichever is higher for the
+        same reason: losing it hides the fall it measures.
         """
-        self._peak_equity = peak_equity
-        self._frozen = frozen
+        self._peak_equity = max(self._peak_equity, peak_equity)
+        self._frozen = self._frozen or frozen
 
     def _publish_state(self, reason_code: str | None) -> None:
         """Hand the new state to whoever is writing it down.
@@ -119,19 +132,32 @@ class FallbackBreaker:
         Containment must not depend on the database answering: a sink that raises
         leaves the in-memory freeze standing, which is the conservative side. It is
         loud rather than silent, because a freeze nobody wrote down is a freeze the
-        next restart will not honour.
+        next restart will not honour -- and it is remembered, so the next evaluation
+        tries again rather than leaving that freeze memory-only for good.
+
+        Nothing here promises the write eventually lands. A store that stays
+        unavailable stays unavailable; what is promised is that it keeps being tried
+        and keeps being said out loud.
         """
         if self._on_state_change is None:
             return
         try:
             self._on_state_change(self._peak_equity, self._frozen, reason_code)
         except Exception as exc:  # noqa: BLE001 - the freeze outranks its bookkeeping
+            self._state_write_pending = True
+            self._pending_reason_code = reason_code
+            self._persist_attempts += 1
             _log.error(
                 "fallback_breaker_state_persist_failed",
                 error_type=type(exc).__name__,
                 frozen=self._frozen,
                 reason_code=reason_code,
+                attempt=self._persist_attempts,
             )
+            return
+        self._state_write_pending = False
+        self._pending_reason_code = None
+        self._persist_attempts = 0
 
     @property
     def config(self) -> FallbackBreakerConfig:
@@ -159,6 +185,8 @@ class FallbackBreaker:
         _log.error("fallback_breaker_fail_closed", reason=reason)
         if not already_frozen:
             self._publish_state(reason)
+        elif self._state_write_pending:
+            self._publish_state(self._pending_reason_code)
         return BreakerVerdict(
             tripped=True,
             reason=reason,
@@ -196,8 +224,17 @@ class FallbackBreaker:
                 max_notional=str(self._config.max_notional),
                 max_drawdown_pct=str(self._config.max_drawdown_pct),
             )
-        if newly_frozen or peak_advanced:
-            self._publish_state(reason if self._frozen else None)
+        if newly_frozen:
+            reason_code = reason
+        elif self._frozen:
+            # Already frozen, and this tick froze nothing. An owed write carries the
+            # reason the freeze was reached under, not the reason of the tick that
+            # happens to be retrying it.
+            reason_code = self._pending_reason_code
+        else:
+            reason_code = None
+        if newly_frozen or peak_advanced or self._state_write_pending:
+            self._publish_state(reason_code)
         return BreakerVerdict(tripped=reason is not None, reason=reason, drawdown_pct=drawdown_pct)
 
     def _drawdown_pct(self, current_equity: Decimal) -> Decimal:
