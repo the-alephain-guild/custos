@@ -480,8 +480,9 @@ class OrderReconciler:
             return
 
         order = s.cache.order(event.client_order_id)
-        reason = str(getattr(event, "reason", "")) or "unknown"
-        is_reduce_only = bool(getattr(order, "is_reduce_only", False)) if order else False
+        reason = str(event.reason) or "unknown"
+        # The cache can miss the order; the attribute itself is never absent.
+        is_reduce_only = order is not None and bool(order.is_reduce_only)
         is_tracked_stop = event.client_order_id in {
             *ctx.order_tracker.sl_order_ids,
             *ctx.order_tracker.exchange_sl_order_ids,

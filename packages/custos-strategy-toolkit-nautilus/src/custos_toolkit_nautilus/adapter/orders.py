@@ -431,11 +431,11 @@ def is_stale_order(
     Returns:
         True when the order should be cancelled as a stale orphan
     """
-    if not getattr(order, "is_reduce_only", False):
+    if not order.is_reduce_only:
         return False
     if order.client_order_id in tracked_ids:
         return False
-    if now_ns - getattr(order, "ts_init", 0) < min_age_ns:
+    if now_ns - order.ts_init < min_age_ns:
         return False
     if position_is_long is None:
         return True
@@ -750,7 +750,7 @@ class NativeTrailingStopSubmitter:
         activation_price = Price(cast(float, aligned_activation), instrument.price_precision)
 
         # trigger_type: mark/last/default, fall back to MARK_PRICE on unknown value
-        trigger_price_type = str(getattr(trailing_cfg, "trigger_price_type", "mark")).lower()
+        trigger_price_type = str(trailing_cfg.trigger_price_type).lower()
         trigger_type = _TRIGGER_PRICE_TYPE_MAP.get(trigger_price_type)
         if trigger_type is None:
             self._log.warning(

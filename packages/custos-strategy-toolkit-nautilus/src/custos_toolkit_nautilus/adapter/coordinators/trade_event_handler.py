@@ -158,9 +158,7 @@ class TradeEventHandler:
             return
 
         realized_pnl = (
-            event.realized_pnl.as_decimal()
-            if event.realized_pnl is not None
-            else Decimal("0")
+            event.realized_pnl.as_decimal() if event.realized_pnl is not None else Decimal("0")
         )
         pnl_color = LogColor.GREEN if realized_pnl > 0 else LogColor.RED
         s.log.info(f"[{ctx.pair}] Position CLOSED: realized_pnl={realized_pnl}", color=pnl_color)
@@ -169,7 +167,7 @@ class TradeEventHandler:
         # event carries that time; the next entry check may be on the other side
         # of midnight, and advancing the boundary there instead would clear this
         # loss along with yesterday's.
-        closed_at = int(getattr(event, "ts_event", 0) or 0)
+        closed_at = int(event.ts_event)
         cast(RiskController, s._risk_controller).record_trade(realized_pnl, closed_at)
 
         if s._capital_allocator:

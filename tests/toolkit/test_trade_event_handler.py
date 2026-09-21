@@ -127,6 +127,7 @@ def test_handle_position_closed_resets_close_reject_count():
     )
     event = SimpleNamespace(
         instrument_id="BTCUSDT.BINANCE",
+        ts_event=0,
         realized_pnl=SimpleNamespace(as_decimal=lambda: Decimal("0")),
     )
 
@@ -184,6 +185,7 @@ def test_position_close_preserves_partial_reversal_entry_before_new_exposure():
     )
     event = SimpleNamespace(
         instrument_id="BTCUSDT.BINANCE",
+        ts_event=0,
         realized_pnl=SimpleNamespace(as_decimal=lambda: Decimal("0")),
     )
 
@@ -241,6 +243,7 @@ def test_position_close_keeps_new_protection_during_nonterminal_reversal_fill():
     )
     event = SimpleNamespace(
         instrument_id="BTCUSDT.BINANCE",
+        ts_event=0,
         realized_pnl=SimpleNamespace(as_decimal=lambda: Decimal("0")),
     )
 

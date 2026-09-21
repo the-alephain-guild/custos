@@ -1200,7 +1200,9 @@ class TestCloseCleanupRespectsWhatSurvives:
 
     @staticmethod
     def _closed_event(h: Harness):
-        return NS(instrument_id=h.instrument.id, realized_pnl=None)
+        # PositionClosed always carries ts_event; the double has to as well, or it
+        # proves the handler works against something the venue never sends.
+        return NS(instrument_id=h.instrument.id, realized_pnl=None, ts_event=0)
 
     def test_a_reversal_keeps_the_new_position_s_tick_protection(self):
         monitor = scaled_monitor(1)
