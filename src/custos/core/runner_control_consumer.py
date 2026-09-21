@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -67,10 +68,12 @@ class RunnerControlConsumerV1:
         command_runtime: RunnerCommandRuntimeCoordinator,
         policy_authenticator: CrucibleRunnerSafetyPolicyAuthenticator,
         state_store: RunnerStateStore,
+        on_policy_committed: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         self._command_runtime = command_runtime
         self._policy_authenticator = policy_authenticator
         self._state_store = state_store
+        self._on_policy_committed = on_policy_committed
 
     async def run(
         self,
@@ -119,7 +122,28 @@ class RunnerControlConsumerV1:
             )
             await message.nak(delay=10.0)
             return
+        await self._notify_policy_committed(verified)
         await message.ack()
+
+    async def _notify_policy_committed(self, verified: Any) -> None:
+        """Tell the live boundaries about a policy that is already durable.
+
+        The order matters: a boundary told to adopt a policy whose commit failed
+        would point at a head that is not there. A failure here must stay loud
+        but must not nak - the policy is on disk, and redelivery would only
+        record it again while the boundaries stay just as stale.
+        """
+        if self._on_policy_committed is None:
+            return
+        trading_mode = str(verified.policy.trading_mode)
+        try:
+            await self._on_policy_committed(trading_mode)
+        except Exception as exc:  # noqa: BLE001 - a stale boundary must not undo a commit
+            log.error(
+                "runner_policy_renewal_notification_failed",
+                trading_mode=trading_mode,
+                error_type=type(exc).__name__,
+            )
 
 
 __all__ = ["JetStreamCommandDelivery", "RunnerControlConsumerV1"]

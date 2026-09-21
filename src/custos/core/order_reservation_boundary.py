@@ -421,6 +421,27 @@ class RunnerReservationBoundary:
             client_order_id,
         )
 
+    @property
+    def policy_id(self) -> UUID:
+        """The signed policy this boundary currently reserves under."""
+        return self._policy_id
+
+    def adopt_policy(self, policy_id: UUID, breaker_config: Any) -> None:
+        """Switch to a renewed signed policy without interrupting the deployment.
+
+        Both halves move together. Reserving requires the boundary's policy to be the
+        durable head, so a boundary left on the previous revision refuses every new
+        order -- while a boundary that took the new id but kept the old ceilings would
+        enforce limits nobody signed.
+
+        What is not touched is the guarding: the breaker's freeze and its high-water
+        mark survive, because a renewal raises or lowers ceilings and is not a way to
+        clear a trip. The risk scope is tenant + mode + runner rather than the policy
+        id, so exposure and latches recorded under the previous revision stay in view.
+        """
+        self._policy_id = policy_id
+        self._fallback_breaker.apply_config(breaker_config)
+
     def cached_order(self, client_order_id: Any) -> Any:
         """What the canonical cache holds for this id, or ``None``.
 

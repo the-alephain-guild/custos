@@ -403,6 +403,40 @@ async def _recover_durable_running_commands(
         )
 
 
+def _build_policy_renewal_notifier(
+    *,
+    boundaries: Mapping[str, RunnerReservationBoundary],
+    safety_policy_resolver: RunnerSafetyPolicyResolver,
+):
+    """Carry a freshly recorded policy to the boundaries already running under it.
+
+    Recording a renewal advances the durable head, and reserving requires a
+    boundary's policy to *be* that head -- so without this a routine renewal refuses
+    every new order from a strategy that is otherwise perfectly healthy.
+
+    The control consumer does not know what a boundary is and should not: it calls
+    this once the policy is durably committed, and what that means is decided here.
+    """
+
+    async def notify(trading_mode: str) -> None:
+        limits = await safety_policy_resolver.resolve(trading_mode)
+        if not limits.owner_policy or limits.policy_id is None:
+            _slog.warning(
+                "runner_policy_renewal_not_adopted",
+                trading_mode=trading_mode,
+            )
+            return
+        for instance_id, boundary in tuple(boundaries.items()):
+            boundary.adopt_policy(limits.policy_id, limits.breaker)
+            _slog.info(
+                "runner_policy_renewal_adopted",
+                deployment_instance_id=instance_id,
+                policy_id=str(limits.policy_id),
+            )
+
+    return notify
+
+
 def _breaker_state_writer(state_store, deployment_instance_id: str):
     """Bind the breaker's state callback to this instance's durable row."""
 
@@ -1112,6 +1146,10 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 command_runtime=command_runtime,
                 policy_authenticator=policy_authenticator,
                 state_store=state_store,
+                on_policy_committed=_build_policy_renewal_notifier(
+                    boundaries=runner_safety_boundaries,
+                    safety_policy_resolver=safety_policy_resolver,
+                ),
             )
             subscriptions = {
                 mode: await clients[mode].subscribe_control() for mode in args.enabled_modes
