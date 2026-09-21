@@ -86,12 +86,18 @@ class Harness:
         self.closed: list[tuple] = []
         self.now_ns = 100_000_000_000
         self.log = MagicMock()
+        self.bars: list[NS] = [NS(close=Decimal("105"))]
         self.cache = NS(
             instrument=lambda _: self.instrument,
             positions_open=lambda **kw: self.positions,
             orders_open=lambda **kw: [o for o in self.orders.values() if o.is_open],
             order=lambda oid: self.orders.get(oid),
-            bars=lambda _: [NS(close=Decimal("105"))],
+            # Newest first, the way the real cache stores them: NautilusTrader's
+            # add_bar does push_front, and its own docs say "Index 0 is the most
+            # recent". A single-bar double cannot catch a caller that reads the
+            # wrong end, which is how LB-3 survived.
+            bars=lambda _: list(self.bars),
+            bar=lambda _: self.bars[0] if self.bars else None,
         )
         self.order_factory = NS(
             market=lambda **kw: self.order(OrderType.MARKET, **kw),

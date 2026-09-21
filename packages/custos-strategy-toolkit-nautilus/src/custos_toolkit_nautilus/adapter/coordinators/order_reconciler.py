@@ -103,12 +103,15 @@ class OrderReconciler:
                     is_long=position.is_long,
                     quantity=Decimal(str(position.quantity)),
                 )
-                bars = s.cache.bars(ctx.bar_type)
-                if bars:
-                    current_price = Decimal(str(bars[-1].close))
+                # cache.bar is "the most recent"; cache.bars is newest-first, so
+                # indexing the other end reads whatever is still in the buffer from
+                # up to bar_capacity ago and restores protection against a price the
+                # market left long ago.
+                latest = s.cache.bar(ctx.bar_type)
+                if latest is not None:
                     # Observe, do not check: the return value is discarded here, and a
                     # check would spend a scaled level on an exit nobody submits.
-                    ctx.tick_monitor.observe(current_price)
+                    ctx.tick_monitor.observe(Decimal(str(latest.close)))
 
             # 3. Check and recreate exchange SL orders (exchange/hybrid mode)
             if s._mode.uses_exchange_sl:
