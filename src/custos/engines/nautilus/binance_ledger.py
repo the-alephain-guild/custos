@@ -402,6 +402,11 @@ class BinanceVenueLedgerSource:
                     "price": self._decimal(row.get("price"), "price"),
                     "fee": fee,
                     "currency": quote,
+                    # The trade is priced in the quote, but Binance may charge
+                    # the commission in any asset. Without this the fill row and
+                    # its own fee row name two different currencies for the same
+                    # amount.
+                    "fee_currency": commission_currency,
                     "occurred_at": occurred_at,
                 }
             )

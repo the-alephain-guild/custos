@@ -269,3 +269,87 @@ def test_common_valuation_inputs_use_wallet_balance_and_position_risk_mark() -> 
             "mark_price": "63504.9",
         }
     ]
+
+
+def test_a_spot_fill_carries_the_currency_its_fee_was_actually_charged_in() -> None:
+    """The fill row and its fee row must not name two different currencies.
+
+    A BTC commission on a USDT-quoted trade currently produces a fill saying
+    "fee 0.001 USDT" next to a fee row saying "0.001 BTC" -- the same number,
+    two currencies, one of them wrong. `fee_currency` is the existing V1 field
+    for exactly this; OKX and SoDEX already fill it in.
+    """
+    fills, fees = _spot_source()._trade_rows(
+        [
+            {
+                "symbol": "BTCUSDT",
+                "id": 1,
+                "orderId": 2,
+                "isBuyer": True,
+                "qty": "1",
+                "price": "100",
+                "commission": "0.001",
+                "commissionAsset": "BTC",
+                "time": 1_786_662_060_971,
+            }
+        ]
+    )
+
+    assert fills[0]["currency"] == "USDT", "the trade is still priced in the quote"
+    assert fills[0]["fee_currency"] == "BTC", "but the fee was charged in BTC"
+    assert fills[0]["fee_currency"] == fees[0]["currency"], (
+        "the fill and its fee row must agree about the fee's currency"
+    )
+
+
+def test_the_fee_currency_survives_venue_snapshot_serialization() -> None:
+    """Asserting the dict is not enough -- the wire is built by another function.
+
+    `_venue_ledger_snapshot` copies a fixed set of keys; a field it does not know
+    about is dropped without complaint. So the assertion has to be made after
+    serialization, on the row a consumer would actually read.
+    """
+    from datetime import UTC, datetime
+
+    from custos.core.runner_fact import venue_ledger_snapshot_facts
+
+    fills, fees = _spot_source()._trade_rows(
+        [
+            {
+                "symbol": "BTCUSDT",
+                "id": 1,
+                "orderId": 2,
+                "isBuyer": True,
+                "qty": "1",
+                "price": "100",
+                "commission": "0.001",
+                "commissionAsset": "BTC",
+                "time": 1_786_662_060_971,
+            }
+        ]
+    )
+    observed = datetime(2026, 9, 21, tzinfo=UTC)
+    chunks = venue_ledger_snapshot_facts(
+        snapshot_id="90000000-0000-4000-8000-000000000001",
+        venue="BINANCE",
+        source="venue_api",
+        watermark="w-1",
+        coverage_from=observed,
+        observed_through=observed,
+        completeness={
+            "balances_complete": True,
+            "positions_complete": True,
+            "fills_complete": True,
+            "fees_complete": True,
+        },
+        balances=[],
+        positions=[],
+        fills=fills,
+        fees=fees,
+    )
+
+    wire_fills = [row for chunk in chunks for row in chunk.get("fills", [])]
+    assert len(wire_fills) == 1
+    wire_fill = wire_fills[0]
+    assert wire_fill["currency"] == "USDT"
+    assert wire_fill["fee_currency"] == "BTC"
