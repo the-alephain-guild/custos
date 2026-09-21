@@ -26,6 +26,10 @@ from custos_toolkit.signals.types import Signal, SignalDirection
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import OrderCancelRejected, OrderRejected, OrderSide, OrderType
 
+from custos_toolkit_nautilus.adapter.coordinators.rejection_triage import (
+    RejectedOrderKind,
+    classify_rejected_order,
+)
 from custos_toolkit_nautilus.adapter.coordinators.entry_reservation import (
     release_unfilled_entry,
 )
@@ -481,18 +485,12 @@ class OrderReconciler:
 
         order = s.cache.order(event.client_order_id)
         reason = str(event.reason) or "unknown"
-        # The cache can miss the order; the attribute itself is never absent.
-        is_reduce_only = order is not None and bool(order.is_reduce_only)
-        is_tracked_stop = event.client_order_id in {
-            *ctx.order_tracker.sl_order_ids,
-            *ctx.order_tracker.exchange_sl_order_ids,
-        }
-        is_tracked_take_profit = event.client_order_id in set(ctx.order_tracker.tp_order_ids)
+        kind = classify_rejected_order(event.client_order_id, order, ctx.order_tracker)
 
         # A rejected order will never fill, so its signal link goes.
         s._order_signal_map.pop(str(event.client_order_id), None)
 
-        if is_tracked_stop:
+        if kind is RejectedOrderKind.TRACKED_STOP:
             # A protective lot is not an active close attempt. Cancel-all/clear here
             # would erase other accepted lots and a still-partially-filling entry.
             # Remove only the rejected lot, pause new risk, and let the per-bar
@@ -508,7 +506,7 @@ class OrderReconciler:
             )
             return
 
-        if is_tracked_take_profit:
+        if kind is RejectedOrderKind.TRACKED_TAKE_PROFIT:
             # A rejected profit-taking lot does not consume stop coverage and must not
             # enter the full-close -2022 escape path.
             ctx.order_tracker.remove_order(event.client_order_id)
@@ -523,7 +521,7 @@ class OrderReconciler:
 
         # Rejected active close order -> severity-tiered breaker: break the tight loop without
         # hammering a throttled endpoint.
-        if is_reduce_only:
+        if kind is RejectedOrderKind.REDUCE_ONLY_CLOSE:
             now_ns = s.clock.timestamp_ns()
             tier = classify_rejection_reason(reason)
             if tier == "server":
@@ -576,10 +574,7 @@ class OrderReconciler:
                     )
 
         # Rejected entry order -> clear the tracker.
-        if (
-            ctx.order_tracker.entry_order_id is not None
-            and ctx.order_tracker.entry_order_id == event.client_order_id
-        ):
+        if kind is RejectedOrderKind.ENTRY:
             release_unfilled_entry(s, ctx)
             ctx.order_tracker.clear_entry_order()
             ctx.position_tracker.clear_pending_signal()

@@ -22,7 +22,7 @@ from nautilus_trader.common import LogColor
 from nautilus_trader.model import Bar
 
 from custos_toolkit_nautilus.adapter.execution import ExecutionManager
-from custos_toolkit_nautilus.adapter.runtime_types import Indicator
+from custos_toolkit_nautilus.adapter.runtime_types import Indicator, Order
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
 from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
 from custos_toolkit_nautilus.adapter.sizing import notional_from_quantity
@@ -61,7 +61,7 @@ class EntryPlan:
     it if the local execution gate refuses the order before it reaches the venue.
     """
 
-    order: object
+    order: Order
     size: Decimal
     order_type: str
     is_reversal: bool
