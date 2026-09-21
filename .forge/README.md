@@ -331,3 +331,4 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 | [2026-09/22 — stopping must actually stop](fixes/2026-09/22-stopping-must-actually-stop.md) | ✅ Completed (2026-09-21) | LB-2 + LB-1：取消等待者不再被当成节点终态（关停曾会重启引擎并挂死在 gather），启动成功但提交失败的引擎不再被隔离记录放着不管 |
 | [2026-09/23 — recovery must read the latest bar](fixes/2026-09/23-recovery-must-read-the-latest-bar.md) | ✅ Completed (2026-09-21) | LB-3：恢复取的是缓存最旧一根（NT 按 newest-first 存），追踪止损按陈旧价恢复；改用 `cache.bar` 并对真实引擎缓存验证 |
 | [2026-09/24 — one ownership scope from claim to registration](fixes/2026-09/24-one-ownership-scope-from-claim-to-registration.md) | ✅ Completed (2026-09-21) | LB-4：事实校验夹在两个清理块之间不受保护，失败后账户分区与 node 双双泄漏，改对配置的新实例被一个从未启动的部署挡住 |
+| [2026-09/25 — the gate must cover the API that exists](fixes/2026-09/25-the-gate-must-cover-the-api-that-exists.md) | ✅ Completed (2026-09-21) | RR-1/2/3（fix03-recheck 报告首次被处理）：批量改单绕过执行门、金额计算给原生接口传 Decimal、改单撤单按旧签名调用；覆盖面改为从原生 API 枚举 |
