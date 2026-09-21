@@ -13,6 +13,7 @@ when equity is not supplied the breaker still enforces the notional ceiling.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
@@ -82,15 +83,55 @@ class FallbackBreaker:
     trips (and stays frozen) on the first breach; ``allows_new_orders`` reflects
     the freeze."""
 
-    def __init__(self, config: FallbackBreakerConfig) -> None:
+    def __init__(
+        self,
+        config: FallbackBreakerConfig,
+        *,
+        on_state_change: Callable[[Decimal, bool, str | None], None] | None = None,
+    ) -> None:
         self._config = config
         # Decimal high-water mark — never a float (red line 0.4).
         self._peak_equity: Decimal = Decimal("0")
         self._frozen = False
+        self._on_state_change = on_state_change
 
     @property
     def frozen(self) -> bool:
         return self._frozen
+
+    @property
+    def peak_equity(self) -> Decimal:
+        """The drawdown high-water mark. Losing it hides the fall it measures."""
+        return self._peak_equity
+
+    def restore(self, *, peak_equity: Decimal, frozen: bool) -> None:
+        """Adopt durable state read back after a restart.
+
+        This is loading, not tripping, so it does not notify the state sink --
+        writing back what was just read would only add a round trip.
+        """
+        self._peak_equity = peak_equity
+        self._frozen = frozen
+
+    def _publish_state(self, reason_code: str | None) -> None:
+        """Hand the new state to whoever is writing it down.
+
+        Containment must not depend on the database answering: a sink that raises
+        leaves the in-memory freeze standing, which is the conservative side. It is
+        loud rather than silent, because a freeze nobody wrote down is a freeze the
+        next restart will not honour.
+        """
+        if self._on_state_change is None:
+            return
+        try:
+            self._on_state_change(self._peak_equity, self._frozen, reason_code)
+        except Exception as exc:  # noqa: BLE001 - the freeze outranks its bookkeeping
+            _log.error(
+                "fallback_breaker_state_persist_failed",
+                error_type=type(exc).__name__,
+                frozen=self._frozen,
+                reason_code=reason_code,
+            )
 
     @property
     def config(self) -> FallbackBreakerConfig:
@@ -113,8 +154,11 @@ class FallbackBreaker:
     def fail_closed(self, reason: str = "unreliable_portfolio") -> BreakerVerdict:
         """Freeze immediately when trustworthy financial inputs are unavailable."""
 
+        already_frozen = self._frozen
         self._frozen = True
         _log.error("fallback_breaker_fail_closed", reason=reason)
+        if not already_frozen:
+            self._publish_state(reason)
         return BreakerVerdict(
             tripped=True,
             reason=reason,
@@ -128,9 +172,11 @@ class FallbackBreaker:
         current_equity: Decimal | None = None,
     ) -> BreakerVerdict:
         drawdown_pct = Decimal("0")
+        peak_advanced = False
         if current_equity is not None:
             if current_equity > self._peak_equity:
                 self._peak_equity = current_equity
+                peak_advanced = True
             drawdown_pct = self._drawdown_pct(current_equity)
 
         reason: str | None = None
@@ -139,7 +185,8 @@ class FallbackBreaker:
         elif current_equity is not None and drawdown_pct > self._config.max_drawdown_pct:
             reason = "drawdown_breach"
 
-        if reason is not None and not self._frozen:
+        newly_frozen = reason is not None and not self._frozen
+        if newly_frozen:
             self._frozen = True
             _log.warning(
                 "fallback_breaker_tripped",
@@ -149,6 +196,8 @@ class FallbackBreaker:
                 max_notional=str(self._config.max_notional),
                 max_drawdown_pct=str(self._config.max_drawdown_pct),
             )
+        if newly_frozen or peak_advanced:
+            self._publish_state(reason if self._frozen else None)
         return BreakerVerdict(tripped=reason is not None, reason=reason, drawdown_pct=drawdown_pct)
 
     def _drawdown_pct(self, current_equity: Decimal) -> Decimal:

@@ -395,6 +395,20 @@ async def _recover_durable_running_commands(
         )
 
 
+def _breaker_state_writer(state_store, deployment_instance_id: str):
+    """Bind the breaker's state callback to this instance's durable row."""
+
+    def write(peak_equity, frozen: bool, reason_code: str | None) -> None:
+        state_store.record_breaker_state_sync(
+            deployment_instance_id=deployment_instance_id,
+            peak_equity=peak_equity,
+            frozen=frozen,
+            reason_code=reason_code,
+        )
+
+    return write
+
+
 def _build_runner_safety_boundary_factory(
     *,
     state_store,
@@ -415,11 +429,28 @@ def _build_runner_safety_boundary_factory(
 
         instance_id = str(spec["deployment_instance_id"])
         prior_boundary = boundaries.get(instance_id) if boundaries is not None else None
-        breaker = (
-            prior_boundary.fallback_breaker
-            if prior_boundary is not None
-            else FallbackBreaker(limits.breaker)
-        )
+        if prior_boundary is not None:
+            breaker = prior_boundary.fallback_breaker
+        else:
+            # A fresh registry means a restarted daemon, not a fresh deployment. The
+            # breaker's contract is "frozen until an operator intervenes", so the trip
+            # and the drawdown high-water mark have to come back off disk before this
+            # boundary is handed to anything that can place an order.
+            breaker = FallbackBreaker(
+                limits.breaker,
+                on_state_change=_breaker_state_writer(state_store, instance_id),
+            )
+            durable = state_store.load_breaker_state_sync(instance_id)
+            if durable is not None:
+                breaker.restore(peak_equity=durable.peak_equity, frozen=durable.frozen)
+                if durable.frozen:
+                    log.warning(
+                        "fallback_breaker_freeze_restored",
+                        extra={
+                            "deployment_instance_id": instance_id,
+                            "reason_code": durable.reason_code,
+                        },
+                    )
         breaker.apply_config(limits.breaker)
         boundary = RunnerReservationBoundary(
             store=state_store,

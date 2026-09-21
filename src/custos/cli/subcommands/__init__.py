@@ -17,6 +17,7 @@ import asyncio
 import sys
 
 from custos.cli.subcommands import (
+    breaker,
     credential,
     deployment,
     enroll,
@@ -61,10 +62,11 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(
         dest="cmd",
         metavar=(
-            "{credential,deployment,enroll,health,identity,nats,nats-transport,"
-            "publish-capability,release-policy,start,vault}"
+            "{breaker,credential,deployment,enroll,health,identity,nats,"
+            "nats-transport,publish-capability,release-policy,start,vault}"
         ),
     )
+    breaker.register(subparsers)
     credential.register(subparsers)
     deployment.register(subparsers)
     enroll.register(subparsers)

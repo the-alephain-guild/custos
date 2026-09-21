@@ -81,7 +81,7 @@ async def test_policy_bootstrap_records_each_mode_and_uses_commit_decision() -> 
 
 @pytest.mark.asyncio
 async def test_boundary_factory_uses_durable_owner_policy_identity() -> None:
-    store = object()
+    store = _EmptyBreakerStore()
     resolver = _Resolver()
     boundaries = {}
     factory = _build_runner_safety_boundary_factory(
@@ -116,11 +116,30 @@ async def test_boundary_factory_uses_durable_owner_policy_identity() -> None:
     assert replacement.fallback_breaker.frozen is True
 
 
+class _EmptyBreakerStore:
+    """A store that has never recorded breaker state, and forgets what it is told.
+
+    The factory now reads durable breaker state before handing out a boundary, so
+    ``object()`` no longer stands in for "the store is not involved". Tests that
+    care about durability use a real store instead
+    (``tests/test_a_freeze_must_outlive_the_process.py``).
+    """
+
+    def __init__(self) -> None:
+        self.recorded: list[tuple] = []
+
+    def load_breaker_state_sync(self, _deployment_instance_id):
+        return None
+
+    def record_breaker_state_sync(self, **state) -> None:
+        self.recorded.append(tuple(sorted(state.items())))
+
+
 @pytest.mark.asyncio
 async def test_signed_safety_supervision_trips_the_order_boundary_breaker() -> None:
     stop = asyncio.Event()
     boundary = await _build_runner_safety_boundary_factory(
-        state_store=object(),
+        state_store=_EmptyBreakerStore(),
         safety_policy_resolver=_Resolver(),
     )(
         {
@@ -167,7 +186,7 @@ async def test_signed_safety_supervision_trips_the_order_boundary_breaker() -> N
 @pytest.mark.asyncio
 async def test_boundary_factory_fails_closed_without_owner_policy() -> None:
     factory = _build_runner_safety_boundary_factory(
-        state_store=object(),
+        state_store=_EmptyBreakerStore(),
         safety_policy_resolver=_Resolver(policy_id=None, owner_policy=False),
     )
 

@@ -51,6 +51,25 @@ sidebar_position: 1
 
 <!-- generated:cli -->
 
+### breaker
+
+### breaker status
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--deployment-instance-id` | 必填 | — | — |
+| `--runner-fact-outbox` | 可选 | `~/.arx/state/runner-fact-outbox.db` | — |
+| `--json` | 可选 | `False` | — |
+
+### breaker clear
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--deployment-instance-id` | 必填 | — | — |
+| `--runner-fact-outbox` | 可选 | `~/.arx/state/runner-fact-outbox.db` | — |
+| `--operator` | 必填 | — | — |
+| `--reason` | 必填 | — | — |
+
 ### credential
 
 ### credential verify

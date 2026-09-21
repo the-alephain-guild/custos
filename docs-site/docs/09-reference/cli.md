@@ -51,6 +51,25 @@ The following tables are generated from the actual parser. Defaults are shown wi
 
 <!-- generated:cli -->
 
+### breaker
+
+### breaker status
+
+| Option | Requirement | Default | Choices / repetition |
+|---|---|---|---|
+| `--deployment-instance-id` | required | — | — |
+| `--runner-fact-outbox` | optional | `~/.arx/state/runner-fact-outbox.db` | — |
+| `--json` | optional | `False` | — |
+
+### breaker clear
+
+| Option | Requirement | Default | Choices / repetition |
+|---|---|---|---|
+| `--deployment-instance-id` | required | — | — |
+| `--runner-fact-outbox` | optional | `~/.arx/state/runner-fact-outbox.db` | — |
+| `--operator` | required | — | — |
+| `--reason` | required | — | — |
+
 ### credential
 
 ### credential verify

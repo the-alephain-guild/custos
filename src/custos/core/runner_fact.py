@@ -1620,6 +1620,19 @@ class RunnerFactOutbox:
                     PRIMARY KEY (tenant_scope, trading_mode, runner_id),
                     FOREIGN KEY (policy_id) REFERENCES runner_cap_policy(policy_id)
                 );
+                CREATE TABLE IF NOT EXISTS runner_breaker_state (
+                    deployment_instance_id TEXT PRIMARY KEY,
+                    peak_equity TEXT NOT NULL,
+                    frozen INTEGER NOT NULL CHECK (frozen IN (0, 1)),
+                    reason_code TEXT,
+                    frozen_at_ns INTEGER,
+                    released_at_ns INTEGER,
+                    released_by TEXT,
+                    release_reason TEXT,
+                    updated_at_ns INTEGER NOT NULL,
+                    FOREIGN KEY (deployment_instance_id)
+                        REFERENCES desired_deployments(deployment_instance_id)
+                );
                 CREATE TABLE IF NOT EXISTS applied_deployments (
                     deployment_instance_id TEXT PRIMARY KEY,
                     deployment_spec_id TEXT NOT NULL,
@@ -2107,6 +2120,130 @@ class RunnerFactOutbox:
             raise
         finally:
             connection.close()
+
+    def load_breaker_state_sync(
+        self, deployment_instance_id: UUID | str
+    ) -> DurableBreakerState | None:
+        """Read the breaker state a restart has to adopt before admitting orders."""
+        instance = _uuid(deployment_instance_id, "deployment_instance_id")
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT peak_equity, frozen, reason_code, frozen_at_ns,
+                       released_at_ns, released_by, release_reason
+                FROM runner_breaker_state
+                WHERE deployment_instance_id = ?
+                """,
+                (instance,),
+            ).fetchone()
+        if row is None:
+            return None
+        return DurableBreakerState(
+            deployment_instance_id=UUID(instance),
+            peak_equity=Decimal(str(row["peak_equity"])),
+            frozen=bool(row["frozen"]),
+            reason_code=None if row["reason_code"] is None else str(row["reason_code"]),
+            frozen_at_ns=None if row["frozen_at_ns"] is None else int(row["frozen_at_ns"]),
+            released_at_ns=None if row["released_at_ns"] is None else int(row["released_at_ns"]),
+            released_by=None if row["released_by"] is None else str(row["released_by"]),
+            release_reason=(None if row["release_reason"] is None else str(row["release_reason"])),
+        )
+
+    def record_breaker_state_sync(
+        self,
+        *,
+        deployment_instance_id: UUID | str,
+        peak_equity: Decimal,
+        frozen: bool,
+        reason_code: str | None,
+    ) -> None:
+        """Write down a trip or a new high-water mark, from the breaker's own callback.
+
+        A freeze keeps the moment it first happened: re-recording a still-frozen
+        breaker must not look like a fresh trip, or "how long has this been frozen"
+        becomes unanswerable. A trip also clears any earlier release, so the row
+        never reads as both frozen and released.
+        """
+        instance = _uuid(deployment_instance_id, "deployment_instance_id")
+        equity = _decimal(peak_equity, "peak_equity")
+        recorded_at_ns = time.time_ns()
+        frozen_at = recorded_at_ns if frozen else None
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                INSERT INTO runner_breaker_state (
+                    deployment_instance_id, peak_equity, frozen, reason_code,
+                    frozen_at_ns, released_at_ns, released_by, release_reason, updated_at_ns
+                ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?)
+                ON CONFLICT(deployment_instance_id) DO UPDATE SET
+                    peak_equity = excluded.peak_equity,
+                    frozen = excluded.frozen,
+                    reason_code = CASE
+                        WHEN excluded.frozen = 1 AND runner_breaker_state.frozen = 1
+                        THEN runner_breaker_state.reason_code
+                        ELSE excluded.reason_code
+                    END,
+                    frozen_at_ns = CASE
+                        WHEN excluded.frozen = 1 AND runner_breaker_state.frozen = 1
+                        THEN runner_breaker_state.frozen_at_ns
+                        ELSE excluded.frozen_at_ns
+                    END,
+                    released_at_ns = CASE
+                        WHEN excluded.frozen = 1 THEN NULL
+                        ELSE runner_breaker_state.released_at_ns
+                    END,
+                    released_by = CASE
+                        WHEN excluded.frozen = 1 THEN NULL
+                        ELSE runner_breaker_state.released_by
+                    END,
+                    release_reason = CASE
+                        WHEN excluded.frozen = 1 THEN NULL
+                        ELSE runner_breaker_state.release_reason
+                    END,
+                    updated_at_ns = excluded.updated_at_ns
+                """,
+                (instance, equity, 1 if frozen else 0, reason_code, frozen_at, recorded_at_ns),
+            )
+
+    def release_breaker_sync(
+        self,
+        *,
+        deployment_instance_id: UUID | str,
+        operator: str,
+        reason: str,
+    ) -> DurableBreakerState:
+        """Lift a freeze, on the record.
+
+        ``operator`` is what the person running the command called themselves. It
+        is attribution, not authentication -- the real gate is who can write to this
+        state database, which on operator-owned infrastructure is whoever owns the
+        machine. Releasing is not a pardon: the next evaluation re-freezes if the
+        breach is still there.
+        """
+        instance = _uuid(deployment_instance_id, "deployment_instance_id")
+        who = _non_empty(operator, "operator")
+        why = _non_empty(reason, "reason")
+        released_at_ns = time.time_ns()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            updated = connection.execute(
+                """
+                UPDATE runner_breaker_state
+                SET frozen = 0, released_at_ns = ?, released_by = ?,
+                    release_reason = ?, updated_at_ns = ?
+                WHERE deployment_instance_id = ? AND frozen = 1
+                """,
+                (released_at_ns, who, why, released_at_ns, instance),
+            ).rowcount
+            if updated != 1:
+                raise RunnerStateAuthorityError(
+                    f"deployment instance {instance} breaker is not frozen"
+                )
+        state = self.load_breaker_state_sync(instance)
+        if state is None:  # pragma: no cover - the row was just updated in place
+            raise RunnerStateAuthorityError("breaker state vanished during release")
+        return state
 
     def remember_order_sync(
         self,
@@ -2784,6 +2921,27 @@ class DurableRunnerSafetyPolicy:
     signature_key_id: str
     fingerprint: str
     verified_event_bytes_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class DurableBreakerState:
+    """One deployment instance's breaker state as it survives a restart.
+
+    ``peak_equity`` is the drawdown high-water mark; it is durable even when the
+    breaker has never tripped, because rebuilding it from the current equity would
+    silently re-baseline the drawdown at whatever level the restart happened to
+    catch. ``frozen`` is cleared only by an explicit release, which records who
+    asked and why.
+    """
+
+    deployment_instance_id: UUID
+    peak_equity: Decimal
+    frozen: bool
+    reason_code: str | None
+    frozen_at_ns: int | None
+    released_at_ns: int | None
+    released_by: str | None
+    release_reason: str | None
 
 
 class RunnerStateStore:
@@ -4006,6 +4164,39 @@ class RunnerStateStore:
             client_order_id,
             policy_id,
             requested_notional,
+        )
+
+    def load_breaker_state_sync(
+        self, deployment_instance_id: UUID | str
+    ) -> DurableBreakerState | None:
+        return self._outbox.load_breaker_state_sync(deployment_instance_id)
+
+    def record_breaker_state_sync(
+        self,
+        *,
+        deployment_instance_id: UUID | str,
+        peak_equity: Decimal,
+        frozen: bool,
+        reason_code: str | None,
+    ) -> None:
+        self._outbox.record_breaker_state_sync(
+            deployment_instance_id=deployment_instance_id,
+            peak_equity=peak_equity,
+            frozen=frozen,
+            reason_code=reason_code,
+        )
+
+    def release_breaker_sync(
+        self,
+        *,
+        deployment_instance_id: UUID | str,
+        operator: str,
+        reason: str,
+    ) -> DurableBreakerState:
+        return self._outbox.release_breaker_sync(
+            deployment_instance_id=deployment_instance_id,
+            operator=operator,
+            reason=reason,
         )
 
     def reserve_order_notional_sync(

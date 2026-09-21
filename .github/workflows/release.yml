@@ -179,7 +179,7 @@ jobs:
           docker pull --platform linux/arm64 "${CUSTOS_TEST_IMAGE}"
           test "$(docker run --rm --platform linux/arm64 --entrypoint /usr/bin/id "${CUSTOS_TEST_IMAGE}" -u)" = 1000
           docker run --rm --platform linux/arm64 "${CUSTOS_TEST_IMAGE}" --help
-          for command in credential deployment enroll health identity nats nats-transport publish-capability release-policy start vault; do
+          for command in breaker credential deployment enroll health identity nats nats-transport publish-capability release-policy start vault; do
             docker run --rm --platform linux/arm64 "${CUSTOS_TEST_IMAGE}" "$command" --help
           done
 
@@ -350,7 +350,7 @@ jobs:
             test "$(docker image inspect "$IMAGE_REF" --format '{{json .Config.Cmd}}')" = \
               '["start","--production-state-root","/home/custos/.arx"]'
             docker run --rm --platform "$platform" "$IMAGE_REF" --help
-            for command in credential deployment enroll health identity nats nats-transport publish-capability release-policy start vault; do
+            for command in breaker credential deployment enroll health identity nats nats-transport publish-capability release-policy start vault; do
               docker run --rm --platform "$platform" "$IMAGE_REF" "$command" --help
             done
             docker image rm "$IMAGE_REF"
