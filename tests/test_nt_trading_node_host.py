@@ -382,6 +382,7 @@ class _VenuePosition:
 class _VenueOrder:
     is_reduce_only: bool
     instrument_id: str = "BTCUSDT-PERP.BINANCE"
+    client_order_id: str = "O-1"
 
 
 class _ShutdownAwareStrategy(_StrategyDouble):
@@ -400,9 +401,17 @@ class _ShutdownAwareStrategy(_StrategyDouble):
         self.cancelled_all.append(instrument_id)
         self.node.cache.orders.clear()
 
-    def cancel_order(self, order: _VenueOrder) -> None:
-        self.cancelled.append(order)
-        self.node.cache.orders.remove(order)
+    def cancel_order(self, client_order_id: str) -> None:
+        """As strict as 2.0's cancel_order, which takes an id and not an order.
+
+        Accepting an order here is what let the host keep passing one.
+        """
+        if isinstance(client_order_id, _VenueOrder):
+            raise TypeError("argument 'client_order_id': 'Order' object cannot be converted")
+        self.cancelled.append(client_order_id)
+        self.node.cache.orders[:] = [
+            order for order in self.node.cache.orders if order.client_order_id != client_order_id
+        ]
 
     def close_all_positions_with_fallback(self, instrument_id: str) -> None:
         self.closed.append(instrument_id)
@@ -454,15 +463,15 @@ async def test_default_preserve_shutdown_keeps_reduce_only_protection(monkeypatc
     await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
     node = host._active_nodes[deployment_instance_id].node
     strategy.node = node
-    risk_order = _VenueOrder(is_reduce_only=False)
-    protection = _VenueOrder(is_reduce_only=True)
+    risk_order = _VenueOrder(is_reduce_only=False, client_order_id="O-risk")
+    protection = _VenueOrder(is_reduce_only=True, client_order_id="O-protective")
     node.cache.positions.append(_VenuePosition())
     node.cache.orders.extend((risk_order, protection))
 
     await host.stop(deployment_instance_id)
 
     assert strategy.prepared == ["preserve"]
-    assert strategy.cancelled == [risk_order]
+    assert strategy.cancelled == ["O-risk"], "2.0 cancels by id, not by order object"
     assert node.cache.positions == [_VenuePosition()]
     assert node.cache.orders == [protection]
     assert node.disposed is True

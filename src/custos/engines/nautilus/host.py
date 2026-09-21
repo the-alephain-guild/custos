@@ -1170,9 +1170,7 @@ class NtTradingNodeHost:
         deadline = asyncio.get_running_loop().time() + timeout_secs
         while asyncio.get_running_loop().time() < deadline:
             _positions, orders = self._open_venue_state(runtime)
-            risk_increasing = [
-                order for order in orders if not bool(getattr(order, "is_reduce_only", False))
-            ]
+            risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
             if not risk_increasing:
                 _log.info(
                     "nt_shutdown_preserve_confirmed",
@@ -1194,7 +1192,10 @@ class NtTradingNodeHost:
                         "shutdown preserve cannot cancel risk-increasing venue orders"
                     )
                 for order in risk_increasing:
-                    canceler.cancel_order(order)
+                    # 2.0 cancels by id. Passing the order raises before anything is
+                    # withdrawn, so a preserve shutdown could never finish and the
+                    # orderly handover to a new generation stalled with it.
+                    canceler.cancel_order(order.client_order_id)
             await asyncio.sleep(self._shutdown_poll_secs)
         raise RuntimeError("shutdown preserve confirmation timed out")
 
