@@ -241,6 +241,12 @@ class TradeEventHandler:
         # resetting it to zero makes the later fill unpriceable.
         if not surviving_positions and not entry_may_still_fill:
             ctx.position_tracker.reset()
+        elif not surviving_positions:
+            # The entry outlives the position it opened. Its running total does not:
+            # the protection that total accounts for went with the position, so the
+            # next lot has to read as the first exposure of a new one rather than as
+            # a continuation of a position that is no longer there.
+            ctx.order_tracker.rebase_entry_protection()
         if reversal_entry_signal is not None:
             ctx.position_tracker.set_pending_signal(reversal_entry_signal, pending_entry_atr)
         # Position confirmed flat -> reset the consecutive close-reject halt count. Both the

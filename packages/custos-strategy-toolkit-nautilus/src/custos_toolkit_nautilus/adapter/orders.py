@@ -190,6 +190,22 @@ class OrderTracker:
         self._entry_protected_quantity = target_exposure
         return protection_delta, previous_protected == 0 and protection_delta > 0
 
+    def rebase_entry_protection(self) -> None:
+        """The exposure this entry opened has gone; what fills next opens a new one.
+
+        The order is still working and still owned -- its later lots arrive under the
+        same id. What ended is the position those earlier lots built, so everything
+        filled so far stops counting towards the open position and the next lot is
+        the first of a new one.
+
+        ``_entry_exposure_offset_quantity`` already means "the part of this order
+        that does not open exposure in the current position": a reversal uses it for
+        the part that closes the old side, and this uses it for the part that opened
+        a position which has since been closed.
+        """
+        self._entry_exposure_offset_quantity = self._entry_filled_quantity
+        self._entry_protected_quantity = Decimal("0")
+
     def clear_entry_order(self) -> None:
         """Clear only the entry order ID (e.g., after fill or cancel)."""
         self._entry_order_id = None

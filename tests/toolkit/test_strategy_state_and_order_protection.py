@@ -1366,3 +1366,117 @@ class TestProtectionIsPricedOffTheFill:
 
         assert stops, "the entry fill must arm a stop"
         assert Decimal(str(stops[-1].trigger_price)) < Decimal("90")
+
+
+class TestARefilledEntryOpensANewPositionToProtect:
+    """FR-2: the entry order's running total is not the position's lifecycle.
+
+    fix 11 kept a partly filled entry's ownership through a stop-out, which is what
+    lets the rest of it arrive owned and get a stop. But ``record_entry_fill``
+    answers "is this the first exposure this order opened" from the order's own
+    cumulative protected quantity, and that total survived the close along with the
+    ownership. The monitor was reset by the close; the next lot reported itself as a
+    continuation and only extended a base that no longer described anything, so the
+    new position had no entry price, no direction and no trailing state.
+    """
+
+    @staticmethod
+    def _entry_of(h: Harness, quantity: str = "1.000"):
+        entry = h.order(
+            OrderType.LIMIT, quantity=Quantity.from_str(quantity), order_side=OrderSide.BUY
+        )
+        h.ctx.order_tracker.set_entry_order(
+            entry.client_order_id, 1, order_quantity=Decimal(quantity)
+        )
+        return entry
+
+    @staticmethod
+    def _fill(h: Harness, entry, quantity: str = "0.5"):
+        TradeEventHandler(h).handle_order_filled(
+            NS(
+                instrument_id=h.instrument.id,
+                client_order_id=entry.client_order_id,
+                order_side=OrderSide.BUY,
+                last_qty=Decimal(quantity),
+                last_px=Price.from_str("100.00"),
+            )
+        )
+
+    @classmethod
+    def _stopped_then_refilled(cls, mode: SLTPMode):
+        from custos_toolkit_nautilus.adapter.tick_monitor import TickMonitorManager
+
+        monitor = TickMonitorManager(
+            mode="hybrid" if mode is SLTPMode.HYBRID else "tick",
+            tp_method="trailing",
+            trailing_activation_pct=Decimal(".02"),
+            trailing_pct=Decimal(".01"),
+        )
+        h = Harness(mode=mode, monitor=monitor)
+        h.config.risk.trade.max_loss_pct = Decimal(".05")
+        h.ctx.position_tracker.set_pending_signal(Signal.enter_long(price=100), Decimal("2"))
+        entry = cls._entry_of(h)
+
+        h.position.quantity = Decimal("0.5")
+        cls._fill(h, entry)
+        assert monitor._entry_price == 100, "precondition: the first half armed the monitor"
+
+        # That half is stopped out; the rest of the entry is still at the venue.
+        h.positions.clear()
+        TradeEventHandler(h).handle_position_closed(
+            NS(instrument_id=h.instrument.id, realized_pnl=None, ts_event=10**9)
+        )
+        h.positions.append(h.position)
+        h.position.quantity = Decimal("0.5")
+        cls._fill(h, entry)
+        return h, monitor
+
+    @pytest.mark.parametrize("mode", [SLTPMode.HYBRID, SLTPMode.TICK])
+    def test_the_new_position_knows_what_it_paid(self, mode):
+        _h, monitor = self._stopped_then_refilled(mode)
+
+        assert monitor._entry_price == 100
+
+    @pytest.mark.parametrize("mode", [SLTPMode.HYBRID, SLTPMode.TICK])
+    def test_the_new_position_can_still_trail_out(self, mode):
+        """The consequence: without an entry price the trailing exit never fires."""
+        _h, monitor = self._stopped_then_refilled(mode)
+
+        assert monitor.check(Decimal("120")) is None, "rising is not an exit"
+
+        assert monitor.check(Decimal("115")) is not None, (
+            "a give-back from the peak past the trailing distance has to exit"
+        )
+
+    def test_only_the_quantity_that_reopened_is_protected(self):
+        """The lot is 0.5, not the 1.0 the order has filled in total."""
+        h, _monitor = self._stopped_then_refilled(SLTPMode.HYBRID)
+
+        protective = [order for order in h.sent if order.is_reduce_only]
+        assert protective, "the refilled position still gets its exchange safety stop"
+        assert Decimal(str(protective[-1].quantity)) == Decimal("0.5")
+
+    def test_a_second_lot_of_the_same_position_still_only_extends(self):
+        """The control: two fills into one live position arm the monitor once.
+
+        Rebasing on every fill would re-seed the entry price from the latest lot and
+        move the stop with it, which is the behaviour fix 11 and its predecessors
+        deliberately do not have.
+        """
+        from custos_toolkit_nautilus.adapter.tick_monitor import TickMonitorManager
+
+        monitor = TickMonitorManager(
+            mode="hybrid", tp_method="trailing", trailing_activation_pct=Decimal(".02")
+        )
+        h = Harness(mode=SLTPMode.HYBRID, monitor=monitor)
+        h.config.risk.trade.max_loss_pct = Decimal(".05")
+        h.ctx.position_tracker.set_pending_signal(Signal.enter_long(price=100), Decimal("2"))
+        entry = self._entry_of(h)
+        h.position.quantity = Decimal("0.5")
+        self._fill(h, entry)
+
+        h.position.quantity = Decimal("1")
+        h.position.avg_px_open = Decimal("110")
+        self._fill(h, entry)
+
+        assert monitor._entry_price == 100, "the position's basis is its average, not the last lot"
