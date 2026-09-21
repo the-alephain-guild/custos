@@ -138,17 +138,50 @@ class NautilusCachedOrderSemantics:
             self._order_price(order),
         )
 
+    def modified_order_quantity(self, intent: Any) -> Decimal:
+        """The quantity a modification would leave in force.
+
+        Taken by asking whether the intent gave one, not by falling through a chain
+        of ``or`` -- a modification to quantity zero is a mistake worth surfacing,
+        and ``or`` would silently keep the old quantity instead.
+        """
+        order = self._require_cached_order(intent)
+        quantity = intent.quantity if intent.quantity is not None else order.quantity
+        return _decimal(quantity, field="modified order quantity")
+
+    def modified_order_is_risk_reducing(
+        self,
+        intent: Any,
+        already_reducing: Decimal = Decimal(0),
+    ) -> bool:
+        """Whether the order would still only reduce exposure after this modification.
+
+        The judgement has to be made against the order the amendment would leave,
+        not the one the cache holds now. Reading the resting quantity here is how a
+        legitimate close of a long 1 could be amended to sell 2 and open a short
+        without passing the freeze check or reserving anything.
+        """
+        order = self._require_cached_order(intent)
+        return self._reduces_exposure(
+            order,
+            self.modified_order_quantity(intent),
+            already_reducing,
+        )
+
+    def _require_cached_order(self, intent: Any) -> Any:
+        order = self._cache.order(intent.client_order_id)
+        if order is None:
+            raise RuntimeError("modified order is absent from the canonical Nautilus cache")
+        return order
+
     def modified_order_notional(self, intent: Any) -> Decimal:
         """The notional a modification would leave in force.
 
         The requested quantity and price come from the intent and the rest from the
-        cached order. Each is taken by asking whether it was given, not by falling
-        through a chain of ``or`` -- a modification to quantity zero is a mistake
-        worth surfacing, and ``or`` would silently keep the old quantity instead.
+        cached order, each taken by presence rather than by truth for the reason
+        given on :meth:`modified_order_quantity`.
         """
-        order = self._cache.order(intent.client_order_id)
-        if order is None:
-            raise RuntimeError("modified order is absent from the canonical Nautilus cache")
+        order = self._require_cached_order(intent)
         quantity = intent.quantity if intent.quantity is not None else order.quantity
         if order.is_quote_quantity:
             return _decimal(quantity, field="modified quote order quantity")
@@ -206,6 +239,24 @@ class NautilusCachedOrderSemantics:
         both read as reducing, both skip the freeze check and the reservation, and
         the second one opens the opposite side.
         """
+        return self._reduces_exposure(
+            order,
+            _decimal(order.quantity, field="plain close quantity"),
+            already_reducing,
+        )
+
+    def _reduces_exposure(
+        self,
+        order: Any,
+        quantity: Decimal,
+        already_reducing: Decimal,
+    ) -> bool:
+        """The judgement itself, over a quantity the caller names.
+
+        Submission asks about the order's own quantity; an amendment asks about the
+        one it would leave. Same question, different quantity -- so the quantity is
+        an argument rather than something read back off the order.
+        """
         if bool(order.is_reduce_only):
             return True
         if bool(order.is_quote_quantity):
@@ -224,7 +275,6 @@ class NautilusCachedOrderSemantics:
         )
         if not closes_position:
             return False
-        quantity = _decimal(order.quantity, field="plain close quantity")
         position_quantity = _decimal(position.quantity, field="open position quantity")
         remaining = position_quantity - already_reducing
         return quantity > 0 and quantity <= remaining

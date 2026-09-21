@@ -365,6 +365,7 @@ def test_boundary_freezes_after_persisting_an_executed_overlimit_fill(tmp_path: 
         deployment_instance_id=INSTANCE_A,
         policy_id=POLICY_ID,
         fallback_breaker=breaker,
+        trading_mode="sandbox",
         semantics=Semantics(),
     )
 

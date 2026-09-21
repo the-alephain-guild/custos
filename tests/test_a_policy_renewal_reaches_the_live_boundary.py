@@ -83,6 +83,7 @@ def _boundary(store, breaker: FallbackBreaker | None = None) -> RunnerReservatio
         deployment_instance_id=INSTANCE_A,
         policy_id=POLICY_ID,
         fallback_breaker=breaker or FallbackBreaker(_config()),
+        trading_mode="sandbox",
     )
 
 
@@ -118,7 +119,7 @@ def test_adopting_the_renewal_lets_the_strategy_keep_trading(tmp_path: Path) -> 
     boundary = _boundary(store)
     _renew(store)
 
-    boundary.adopt_policy(SECOND_POLICY, _config())
+    boundary.adopt_policy(SECOND_POLICY, _config(), trading_mode="sandbox")
 
     _reserve(boundary, store, "after-renewal", "25")
     assert boundary.policy_id == SECOND_POLICY
@@ -134,7 +135,7 @@ def test_adopting_a_renewal_keeps_an_existing_freeze(tmp_path: Path) -> None:
     boundary = _boundary(store, breaker)
     _renew(store)
 
-    boundary.adopt_policy(SECOND_POLICY, _config(max_notional="5000"))
+    boundary.adopt_policy(SECOND_POLICY, _config(max_notional="5000"), trading_mode="sandbox")
 
     assert breaker.frozen is True, "a renewal must not be a way to clear the breaker"
     assert breaker.config.max_notional == Decimal("5000"), "but the ceilings do change"
@@ -154,7 +155,7 @@ def test_adopting_a_renewal_keeps_the_high_water_mark(tmp_path: Path) -> None:
     boundary = _boundary(store, breaker)
     _renew(store)
 
-    boundary.adopt_policy(SECOND_POLICY, _config(max_notional="5000"))
+    boundary.adopt_policy(SECOND_POLICY, _config(max_notional="5000"), trading_mode="sandbox")
 
     assert breaker.peak_equity == Decimal("1000"), (
         "losing the mark would re-baseline the drawdown at whatever equity is now"
@@ -178,14 +179,14 @@ def test_a_renewal_keeps_the_exposure_recorded_under_the_old_revision(
     )
     _renew(store)
 
-    boundary.adopt_policy(SECOND_POLICY, _config())
+    boundary.adopt_policy(SECOND_POLICY, _config(), trading_mode="sandbox")
 
     with pytest.raises(RunnerStateAuthorityError, match="aggregate cap"):
         _reserve(boundary, store, "over-the-cap", "100")
 
 
-def test_the_daemon_hands_a_renewal_to_every_live_boundary() -> None:
-    """The wiring: the consumer records the policy, and the boundaries hear about it."""
+def test_the_daemon_hands_a_renewal_to_the_boundary_of_that_mode() -> None:
+    """The wiring: the consumer records the policy, and the boundary hears about it."""
     from custos.cli._daemon import _build_policy_renewal_notifier
 
     breaker = FallbackBreaker(_config())
@@ -194,6 +195,7 @@ def test_the_daemon_hands_a_renewal_to_every_live_boundary() -> None:
         deployment_instance_id=INSTANCE_A,
         policy_id=POLICY_ID,
         fallback_breaker=breaker,
+        trading_mode="sandbox",
     )
     boundaries = {str(INSTANCE_A): boundary}
 
@@ -339,3 +341,83 @@ def test_the_daemon_hands_the_notifier_to_the_control_consumer() -> None:
             "the notifier must hold the same registry the deployment path writes into"
         )
         assert passed.get("safety_policy_resolver") == "safety_policy_resolver"
+
+
+class TestARenewalStaysInsideItsOwnMode:
+    """FR-5: a policy is signed per trading mode; a renewal is too.
+
+    The notifier resolved limits for the mode the message carried and then walked
+    every boundary in the registry. A runner with more than one mode enabled --
+    which is what ``--enabled-modes`` is for -- had its testnet ceilings replaced
+    by whatever sandbox was signed for, and an exposure that was legitimate under
+    the testnet policy tripped the breaker on the next evaluation.
+    """
+
+    @staticmethod
+    def _live(trading_mode: str, max_notional: str):
+        breaker = FallbackBreaker(_config(max_notional))
+        return breaker, RunnerReservationBoundary(
+            store=NS(),
+            deployment_instance_id=INSTANCE_A,
+            policy_id=POLICY_ID,
+            fallback_breaker=breaker,
+            trading_mode=trading_mode,
+        )
+
+    @staticmethod
+    def _notify(boundaries, *, max_notional: str = "100"):
+        import asyncio
+
+        from custos.cli._daemon import _build_policy_renewal_notifier
+
+        async def resolve(_trading_mode: str):
+            return NS(owner_policy=True, policy_id=SECOND_POLICY, breaker=_config(max_notional))
+
+        return lambda mode: asyncio.run(
+            _build_policy_renewal_notifier(
+                boundaries=boundaries, safety_policy_resolver=NS(resolve=resolve)
+            )(mode)
+        )
+
+    def test_a_sandbox_renewal_leaves_a_testnet_boundary_alone(self):
+        testnet_breaker, testnet = self._live("testnet", "10000")
+        _sandbox_breaker, sandbox = self._live("sandbox", "100")
+
+        self._notify({"testnet-instance": testnet, "sandbox-instance": sandbox})("sandbox")
+
+        assert testnet.policy_id == POLICY_ID, "a sandbox renewal is not testnet's head"
+        assert testnet_breaker.config.max_notional == Decimal("10000")
+        assert sandbox.policy_id == SECOND_POLICY, "and the mode it was signed for adopts it"
+
+    def test_exposure_that_was_legitimate_stays_legitimate(self):
+        """The consequence the report measured: the wrong ceiling trips the breaker."""
+        testnet_breaker, testnet = self._live("testnet", "10000")
+
+        self._notify({"testnet-instance": testnet})("sandbox")
+
+        assert not testnet_breaker.evaluate(
+            open_notional=Decimal("500"), current_equity=Decimal("1000")
+        ).tripped
+
+    def test_the_boundary_refuses_a_policy_from_another_mode_on_its_own(self):
+        """A relaxed double: the selection layer removed, the boundary still refuses.
+
+        Without this the inner check is a dead branch -- the notifier would be the
+        only thing standing between a sandbox policy and a testnet deployment.
+        """
+        _breaker, testnet = self._live("testnet", "10000")
+
+        with pytest.raises(RuntimeError, match="trading mode"):
+            testnet.adopt_policy(SECOND_POLICY, _config("100"), trading_mode="sandbox")
+
+        assert testnet.policy_id == POLICY_ID
+
+    def test_a_renewal_for_a_mode_with_no_deployment_is_recorded_not_lost(self):
+        from structlog.testing import capture_logs
+
+        _breaker, testnet = self._live("testnet", "10000")
+
+        with capture_logs() as events:
+            self._notify({"testnet-instance": testnet})("live")
+
+        assert any(event["event"] == "runner_policy_renewal_no_boundary" for event in events)

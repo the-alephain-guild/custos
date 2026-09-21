@@ -140,6 +140,20 @@ class _Semantics:
         del already_reducing
         return bool(order.reduce_only)
 
+    def modified_order_quantity(self, intent) -> Decimal:
+        order = self.cached_orders[str(intent.client_order_id)]
+        quantity = intent.quantity if intent.quantity is not None else order.quantity
+        return Decimal(str(quantity))
+
+    def modified_order_is_risk_reducing(
+        self, intent, already_reducing: Decimal = Decimal(0)
+    ) -> bool:
+        # Reduce-only is not something an amendment can change, and this double
+        # declares it on the order; the real semantics measures the requested
+        # quantity against the position.
+        del already_reducing
+        return bool(self.cached_orders[str(intent.client_order_id)].reduce_only)
+
     def event_is_risk_reducing(self, event) -> bool:
         return bool(event.reduce_only)
 
@@ -237,6 +251,7 @@ def _order(
     client_order_id: str,
     *,
     notional: str = "25",
+    quantity: str = "1",
     reduce_only: bool = False,
     emulation_trigger=None,
     exec_algorithm_id=None,
@@ -247,6 +262,7 @@ def _order(
         instrument_id="BTCUSDT-PERP.BINANCE",
         side="OrderSide.BUY",
         notional=notional,
+        quantity=quantity,
         reduce_only=reduce_only,
         emulation_trigger=emulation_trigger,
         exec_algorithm_id=exec_algorithm_id,
@@ -362,6 +378,7 @@ def test_verified_plain_close_skips_new_risk_reservation_and_reports_dispatch() 
         deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
         policy_id=POLICY_ID,
         fallback_breaker=_breaker(),
+        trading_mode="testnet",
         semantics=NautilusCachedOrderSemantics(cache),
     )
     gate = _gate(boundary)
@@ -393,6 +410,7 @@ def _boundary(
         deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
         policy_id=POLICY_ID,
         fallback_breaker=fallback_breaker or _breaker(),
+        trading_mode="testnet",
         semantics=_Semantics(),
     )
 

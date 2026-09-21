@@ -289,6 +289,7 @@ def test_the_boundary_reports_the_unfilled_quantity_to_the_store(tmp_path: Path)
         fallback_breaker=FallbackBreaker(
             FallbackBreakerConfig(max_notional=Decimal("150"), max_drawdown_pct=Decimal("10"))
         ),
+        trading_mode="sandbox",
         semantics=_EventSemantics(),
     )
 

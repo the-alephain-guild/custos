@@ -416,6 +416,12 @@ def _build_policy_renewal_notifier(
 
     The control consumer does not know what a boundary is and should not: it calls
     this once the policy is durably committed, and what that means is decided here.
+
+    A policy is signed per trading mode, so a renewal reaches the boundaries of that
+    mode and no others. A runner with several modes enabled receives renewals for
+    each of them on its own subject; handing every one of them to every boundary
+    replaced ceilings nobody had renewed, and exposure that was legitimate under the
+    deployment's own policy tripped the breaker on the next evaluation.
     """
 
     async def notify(trading_mode: str) -> None:
@@ -426,11 +432,25 @@ def _build_policy_renewal_notifier(
                 trading_mode=trading_mode,
             )
             return
+        adopted = 0
         for instance_id, boundary in tuple(boundaries.items()):
-            boundary.adopt_policy(limits.policy_id, limits.breaker)
+            if boundary.trading_mode != trading_mode:
+                continue
+            boundary.adopt_policy(limits.policy_id, limits.breaker, trading_mode=trading_mode)
+            adopted += 1
             _slog.info(
                 "runner_policy_renewal_adopted",
                 deployment_instance_id=instance_id,
+                trading_mode=trading_mode,
+                policy_id=str(limits.policy_id),
+            )
+        if adopted == 0:
+            # Not an error: a mode is enabled before anything is deployed into it,
+            # and renewals keep arriving while it is empty. Said out loud anyway, so
+            # "the renewal never reached my deployment" has an answer either way.
+            _slog.info(
+                "runner_policy_renewal_no_boundary",
+                trading_mode=trading_mode,
                 policy_id=str(limits.policy_id),
             )
 
@@ -499,6 +519,7 @@ def _build_runner_safety_boundary_factory(
             deployment_instance_id=UUID(instance_id),
             policy_id=limits.policy_id,
             fallback_breaker=breaker,
+            trading_mode=str(spec["trading_mode"]),
         )
         if boundaries is not None:
             boundaries[instance_id] = boundary

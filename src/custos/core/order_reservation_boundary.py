@@ -46,6 +46,12 @@ class OrderSemantics(Protocol):
 
     def modified_order_notional(self, command: Any) -> Decimal: ...
 
+    def modified_order_quantity(self, command: Any) -> Decimal: ...
+
+    def modified_order_is_risk_reducing(
+        self, command: Any, already_reducing: Decimal = Decimal(0)
+    ) -> bool: ...
+
     def fill_notional(self, event: Any) -> Decimal: ...
 
     def fill_quantity(self, event: Any) -> Decimal: ...
@@ -75,6 +81,14 @@ class RunnerRiskIncreaseFrozenError(RuntimeError):
     """The local fallback breaker intentionally refused new exposure."""
 
 
+def _non_empty_mode(trading_mode: str) -> str:
+    """A blank mode would match no renewal and raise nothing while doing it."""
+    mode = str(trading_mode).strip()
+    if not mode:
+        raise ValueError("runner reservation boundary requires a trading mode")
+    return mode
+
+
 def runner_command_id(command: Any) -> Any:
     """Read the public Nautilus command identity across supported test doubles.
 
@@ -99,8 +113,18 @@ class _Reservation:
 
 @dataclass(frozen=True)
 class _Modification:
+    """What an amendment moved, so a rejection can move it back.
+
+    An amendment can carry an order between the two books this boundary keeps --
+    the room accepted closes claim on an open position, and the notional a
+    risk-increasing order reserves -- in either direction. Undoing it needs the
+    state of both before the move, not just the reservation.
+    """
+
     client_order_id: str
     prior_reserved_notional: Decimal | None
+    prior_reduction_claim: tuple[str, Decimal] | None = None
+    reduces_exposure: bool = True
 
 
 class RunnerReservationBoundary:
@@ -113,11 +137,16 @@ class RunnerReservationBoundary:
         deployment_instance_id: UUID,
         policy_id: UUID,
         fallback_breaker: FallbackBreaker,
+        trading_mode: str,
         semantics: OrderSemantics | None = None,
     ) -> None:
         self._store = store
         self._deployment_instance_id = deployment_instance_id
         self._policy_id = policy_id
+        # A deployment runs in exactly one mode, and a safety policy is signed per
+        # mode. Keeping the mode here rather than in a second registry beside the
+        # boundary leaves the two nothing to disagree about.
+        self._trading_mode = _non_empty_mode(trading_mode)
         self._fallback_breaker = fallback_breaker
         self._semantics = semantics
         self._pending_modifications: dict[str, _Modification] = {}
@@ -188,34 +217,112 @@ class RunnerReservationBoundary:
         )
 
     def before_modify_order(self, command: Any) -> _Modification:
+        """Judge the order the amendment would leave, and move both books to match.
+
+        The order being modified comes from the canonical cache, not from the caller:
+        2.0 identifies it by id and hands over no object, and the engine's view of
+        what is resting is the one that counts. What the *amendment* asks for comes
+        from the command -- reading the resting quantity for the risk judgement is
+        how a legitimate close of a long 1 could be amended to sell 2, skip the
+        freeze check, reserve nothing, and open a short.
+
+        An amendment can move an order from the reducing book to the reserved one or
+        back, so both are settled here. The durable book is written first: an order
+        left in neither book, or in both, is worse than a refused amendment.
+        """
         semantics = self._require_semantics()
         client_order_id = str(command.client_order_id)
-        # The risk semantics of the order being modified comes from the canonical
-        # cache, not from the caller: 2.0 identifies it by id and hands over no
-        # object, and the engine's view of what is resting is the one that counts.
         order = self.cached_order(command.client_order_id)
-        if order is not None and semantics.order_is_risk_reducing(order):
-            return _Modification(
+        if order is None:
+            # Said here rather than arrived at further down. Judging an order the
+            # engine does not hold would be judging the caller's description of it.
+            raise RuntimeError("modified order is absent from the canonical Nautilus cache")
+
+        instrument_id = semantics.order_instrument_id(order)
+        prior_claim = self._unsettled_reductions.get(client_order_id)
+        had_reservation = self._has_reservation(client_order_id)
+        # What other accepted closes claim on this instrument. This order's own
+        # outstanding claim is excluded: counting it would have the amendment
+        # compete with the order it is amending.
+        claimed_elsewhere = self._unsettled_reduction_for(instrument_id)
+        if prior_claim is not None and prior_claim[0] == instrument_id:
+            claimed_elsewhere -= prior_claim[1]
+
+        if semantics.modified_order_is_risk_reducing(command, claimed_elsewhere):
+            modification = _Modification(
                 client_order_id=client_order_id,
-                prior_reserved_notional=None,
+                prior_reserved_notional=self._reserved_notional(client_order_id)
+                if had_reservation
+                else None,
+                prior_reduction_claim=prior_claim,
+                reduces_exposure=True,
             )
+            if had_reservation:
+                # The reservation is what is being cancelled, not the order: this
+                # order no longer adds exposure, so holding notional against it
+                # would charge the policy for risk that is not there. Leaving it
+                # reserved is worse than releasing it -- the fill would be accounted
+                # as a reduction and the reservation would rest there until cancel,
+                # while the room it claims stays invisible to the next close.
+                self._store.release_order_reservation_sync(
+                    event_id=self._event_id(
+                        "modify_to_reducing",
+                        runner_command_id(command),
+                        client_order_id,
+                    ),
+                    deployment_instance_id=self._deployment_instance_id,
+                    client_order_id=client_order_id,
+                    reason="canceled",
+                )
+            self._risk_reducing_order_ids.add(client_order_id)
+            self._unsettled_reductions[client_order_id] = (
+                instrument_id,
+                semantics.modified_order_quantity(command),
+            )
+            self._pending_modifications[client_order_id] = modification
+            return modification
+
         self._require_risk_increasing_allowed()
-        prior = self._store.load_order_reservation_sync(
-            self._deployment_instance_id,
-            client_order_id,
-        )
         modification = _Modification(
             client_order_id=client_order_id,
-            prior_reserved_notional=Decimal(prior.reserved_notional),
+            prior_reserved_notional=self._reserved_notional(client_order_id)
+            if had_reservation
+            else None,
+            prior_reduction_claim=prior_claim,
+            reduces_exposure=False,
         )
-        self._store.replace_order_reservation_sync(
-            event_id=self._event_id("modify", runner_command_id(command), client_order_id),
-            deployment_instance_id=self._deployment_instance_id,
-            client_order_id=client_order_id,
-            new_reserved_notional=semantics.modified_order_notional(command),
-        )
+        new_notional = semantics.modified_order_notional(command)
+        if had_reservation:
+            self._store.replace_order_reservation_sync(
+                event_id=self._event_id("modify", runner_command_id(command), client_order_id),
+                deployment_instance_id=self._deployment_instance_id,
+                client_order_id=client_order_id,
+                new_reserved_notional=new_notional,
+            )
+        else:
+            self._store.reserve_order_notional_sync(
+                event_id=self._event_id(
+                    "modify_to_increasing",
+                    runner_command_id(command),
+                    client_order_id,
+                ),
+                deployment_instance_id=self._deployment_instance_id,
+                client_order_id=client_order_id,
+                policy_id=self._policy_id,
+                requested_notional=new_notional,
+            )
+        self._risk_reducing_order_ids.discard(client_order_id)
+        self._unsettled_reductions.pop(client_order_id, None)
         self._pending_modifications[client_order_id] = modification
         return modification
+
+    def _reserved_notional(self, client_order_id: str) -> Decimal:
+        return Decimal(
+            self._store.load_order_reservation_sync(
+                self._deployment_instance_id,
+                client_order_id,
+            ).reserved_notional
+        )
 
     def rollback_submit(
         self,
@@ -236,19 +343,47 @@ class RunnerReservationBoundary:
             )
 
     def rollback_modify(self, modification: _Modification, *, event_id: Any) -> None:
+        """Put both books back where the amendment found them.
+
+        The venue refused, so the resting order is the one that was there before --
+        including the room it claims on the position and the notional it reserves.
+        """
+        client_order_id = modification.client_order_id
+        self._pending_modifications.pop(client_order_id, None)
+
+        if modification.prior_reduction_claim is not None:
+            self._risk_reducing_order_ids.add(client_order_id)
+            self._unsettled_reductions[client_order_id] = modification.prior_reduction_claim
+        else:
+            self._risk_reducing_order_ids.discard(client_order_id)
+            self._unsettled_reductions.pop(client_order_id, None)
+
         if modification.prior_reserved_notional is None:
+            if not modification.reduces_exposure:
+                # The amendment reserved for an order that held nothing before.
+                self._store.release_order_reservation_sync(
+                    event_id=self._event_id("modify_rejected", event_id, client_order_id),
+                    deployment_instance_id=self._deployment_instance_id,
+                    client_order_id=client_order_id,
+                    reason="rejected",
+                )
+            return
+        if modification.reduces_exposure:
+            # The amendment released a reservation this order is holding again.
+            self._store.reserve_order_notional_sync(
+                event_id=self._event_id("modify_rejected", event_id, client_order_id),
+                deployment_instance_id=self._deployment_instance_id,
+                client_order_id=client_order_id,
+                policy_id=self._policy_id,
+                requested_notional=modification.prior_reserved_notional,
+            )
             return
         self._store.replace_order_reservation_sync(
-            event_id=self._event_id(
-                "modify_rejected",
-                event_id,
-                modification.client_order_id,
-            ),
+            event_id=self._event_id("modify_rejected", event_id, client_order_id),
             deployment_instance_id=self._deployment_instance_id,
-            client_order_id=modification.client_order_id,
+            client_order_id=client_order_id,
             new_reserved_notional=modification.prior_reserved_notional,
         )
-        self._pending_modifications.pop(modification.client_order_id, None)
 
     def on_order_event(self, event: Any) -> None:
         event_name = type(event).__name__
@@ -426,7 +561,12 @@ class RunnerReservationBoundary:
         """The signed policy this boundary currently reserves under."""
         return self._policy_id
 
-    def adopt_policy(self, policy_id: UUID, breaker_config: Any) -> None:
+    @property
+    def trading_mode(self) -> str:
+        """The mode this deployment runs in, and therefore whose policies apply."""
+        return self._trading_mode
+
+    def adopt_policy(self, policy_id: UUID, breaker_config: Any, *, trading_mode: str) -> None:
         """Switch to a renewed signed policy without interrupting the deployment.
 
         Both halves move together. Reserving requires the boundary's policy to be the
@@ -438,7 +578,14 @@ class RunnerReservationBoundary:
         mark survive, because a renewal raises or lowers ceilings and is not a way to
         clear a trip. The risk scope is tenant + mode + runner rather than the policy
         id, so exposure and latches recorded under the previous revision stay in view.
+
+        A policy signed for another mode is refused here rather than only being
+        filtered out by whoever distributes renewals. That caller has to pick the
+        right boundaries anyway; this makes picking wrongly an error instead of a
+        silently lowered ceiling on a deployment nobody was renewing.
         """
+        if trading_mode != self._trading_mode:
+            raise RuntimeError("runner safety policy trading mode does not match this deployment")
         self._policy_id = policy_id
         self._fallback_breaker.apply_config(breaker_config)
 

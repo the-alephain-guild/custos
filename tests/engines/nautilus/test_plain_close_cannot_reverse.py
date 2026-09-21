@@ -107,6 +107,7 @@ def _wired(position):
         deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
         policy_id=POLICY_ID,
         fallback_breaker=_frozen_breaker(),
+        trading_mode="testnet",
         semantics=NautilusCachedOrderSemantics(cache),
     )
     gate = RunnerSafetyOrderGate(
@@ -189,6 +190,7 @@ class TestTheNativeCloseIsBehindTheGate:
             deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
             policy_id=POLICY_ID,
             fallback_breaker=_frozen_breaker(),
+            trading_mode="testnet",
             semantics=NautilusCachedOrderSemantics(cache),
         )
         return RunnerSafetyOrderGate(

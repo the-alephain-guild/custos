@@ -47,6 +47,7 @@ def _boundary() -> RunnerReservationBoundary:
                 max_drawdown_pct=Decimal("10"),
             )
         ),
+        trading_mode="testnet",
     )
 
 
@@ -216,6 +217,7 @@ async def test_a_startup_trip_does_not_become_a_durable_freeze(tmp_path) -> None
         deployment_instance_id=INSTANCE,
         policy_id=POLICY,
         fallback_breaker=breaker,
+        trading_mode="testnet",
     )
 
     await _one_round(_Host(ready=False), boundary)
