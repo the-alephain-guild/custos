@@ -328,3 +328,4 @@ research + 单栈简洁诉求匹配)。拒绝 Full 档 (`pre-commit` framework �
 | [2026-09/19 — order attribution must outlive the bridge](fixes/2026-09/19-order-attribution-must-outlive-the-bridge.md) | ✅ Completed (2026-09-20) | EE-3：订单归属落盘并按实例装载，重建后旧订单的回报不再静默丢失 |
 | [2026-09/20 — a freeze must outlive the process](fixes/2026-09/20-a-freeze-must-outlive-the-process.md) | ✅ Completed (2026-09-21) | RS-6 **A 半**：熔断冻结与峰值权益按 deployment instance 落盘，重启不再等于一次无人署名的解除；`arx-runner breaker clear` 是唯一解除入口 |
 | [2026-09/21 — decompositions the line counts were pointing at](fixes/2026-09/21-decompositions-the-line-counts-were-pointing-at.md) | ✅ Completed (2026-09-21) | 品味 T2–T5：层级台账收成一个值对象、拒单分类与处置分开、入场的决策/落地缝变成类型边界、六处 getattr 归还给类型 |
+| [2026-09/22 — stopping must actually stop](fixes/2026-09/22-stopping-must-actually-stop.md) | ✅ Completed (2026-09-21) | LB-2 + LB-1：取消等待者不再被当成节点终态（关停曾会重启引擎并挂死在 gather），启动成功但提交失败的引擎不再被隔离记录放着不管 |

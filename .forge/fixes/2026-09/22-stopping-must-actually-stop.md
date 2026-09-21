@@ -1,6 +1,6 @@
 # 22 - stopping-must-actually-stop
 
-> **Status**: 🔲 Not started
+> **Status**: ✅ Completed
 > **Created**: 2026-09-21
 > **Project**: custos
 > **Source**: `.forge/reviews/2026-09-20-custos-lifecycle-boundary-deep-review.md` LB-2 + LB-1
@@ -112,19 +112,131 @@ except asyncio.CancelledError:
 
 ## 验证清单
 
-- [ ] 失败测试先红后绿
-- [ ] 审查方探针 `ready_commit_failure_leaves_engine_running` 与
-      `cancelled_watcher_restarts_engine` 不再成立
-- [ ] 上表 11 条分句逐条有测试（C27：验收是并列多支，不是根因修完就算完）
-- [ ] 扰动验证覆盖「删除方向」：把对照行为（真取消 node task）删掉要转红（C26）
-- [ ] `make verify` 与 `make verify-nt` 均 exit 0
+- [x] 失败测试先红后绿 —— 实现前 5 红 5 绿（绿的是对照与回归），实现后 11 绿
+- [x] 审查方两个探针不再成立（探针真名见下，plan 起草时我写错了）
+- [x] 上表 11 条分句逐条有测试
+- [x] 扰动验证覆盖「删除方向」：删掉对照行为转红
+- [x] `make verify` 与 `make verify-nt` 均 exit 0
 
 ## 进度追踪
 
 | Fix | Priority | Status | Completed | Notes |
 |---|---|---|---|---|
-| 1 取消等待者 ≠ 节点终态 | P1 | 🔲 | | LB-2 |
-| 2 提交失败是可恢复状态 | P1 | 🔲 | | LB-1 |
-| 3 关停路径端到端 | P1 | 🔲 | | 两项的共同后果 |
+| 1 取消等待者 ≠ 节点终态 | P1 | ✅ | 2026-09-21 | LB-2 |
+| 2 提交失败是可恢复状态 | P1 | ✅ | 2026-09-21 | LB-1 |
+| 3 关停路径端到端 | P1 | ✅ | 2026-09-21 | 两项的共同后果 |
 
 ## 偏离与改进日志
+
+### 更正：plan 里两个探针名是我编的
+
+起草时我写的是 `ready_commit_failure_leaves_engine_running` 与
+`cancelled_watcher_restarts_engine`，两个都不存在。真名是
+`ready_commit_failure_leaves_running_quarantined_engine` 与
+`canceling_supervisor_restarts_healthy_engine`（`grep '^def ' <repro>` 可得）。
+
+这是 lesson #25 那一族——**引用别人产物里的标识符前要 grep，不能照着印象写**。
+起草时没跑那条 grep，实施时一跑就露了。
+
+### DEVIATION: 提交失败选「停止」而不是「接管」
+
+- **等级**: 低
+- **原因**: 报告给的是「安全接管**或**停止」。接管要让 deploy 路径认出「同一 generation 已部署」
+  并复用句柄，是一套新机械，而且它要先能区分「这是我上次留下的」与「这是别人的」。
+- **决定**: 停止。它让世界与那条空白的持久记录重新一致，重试即可干净重来，隔离时的实际状态也可
+  验证（`test_quarantine_means_the_engine_is_actually_stopped`）。代价是一次重连。
+- **影响**: `_start_with_budget` 的重试路径上多一次 stop + deploy。
+
+### IMPROVEMENT: 关停那条测试原本会挂死，改成了快速失败
+
+第一版 `test_shutdown_returns_and_starts_nothing` 用 `asyncio.wait_for(...)` 等关停返回。
+在缺陷下它**挂死**而不是失败——因为那个缺陷吞掉的正是取消，而 `wait_for` 的超时就是靠取消实现的，
+于是超时本身也被吞了。挂死的测试是坏证据：拿不到结论，还拖住整个套件。
+
+改用 `asyncio.wait`（它**不**取消被等的对象）加一个墙钟超时，断言「关停任务已完成」。同时给替身
+加了「最多被问两次」的硬上限——不是为了让断言好过，而是为了让**拆解**能结束：没有上限的话，缺陷
+形态下的清理本身会再次卡住。
+
+改完之后用**原样的缺陷代码**（照抄 `0222120` 的那几行）重扰一次，它停在
+`runner_command_runtime.py:382`，也就是 `await asyncio.gather(*tasks)` —— 报告描述的挂死点。
+
+## 完成报告 (Close-out Report)
+
+- **完成日期**: 2026-09-21
+- **总 Task 数**: 3
+- **偏离数**: 1 更正 + 1 取舍 + 1 改进
+- **验证结果**: 全部通过
+- **实施 commit**: `98afec1`
+- **契约影响**: 无。`wait_terminal` 的返回类型与终态原因码集合都没变，新增的
+  `_terminal_reason` 是私有静态方法；`_commit_engine_ready` 同理。
+- **C6 核对**: `host.py` 与 `engine_lifecycle.py` **都不是字节 pin**（`grep -rl` 在
+  `docs/authority/` 零命中）。`runner_command_runtime.py` 只以路径出现在一份 receipt 的
+  `implementation_files` 列表里，不是 digest map，而且本轮没改它。证据链不受影响。
+
+### 红线 gate 满足度
+
+| 红线 | code 覆盖 | runtime wire | defer | follow-up |
+|---|---|---|---|---|
+| 0.1 Key/KEK 不出进程 | N/A（未触及） | N/A | 无 | — |
+| 0.2 执行门不绕过 | LB-1：隔离的记录不再对应一个还在交易的引擎 | `_start_with_budget` 是 apply/supervise 两条真实路径共用的启动段 | 无 | — |
+| 0.3 失联 ≠ 停止 | 本 plan 的主体。红线 0.3 的紧急预案是「停止新建 live instance」，前提是**真的能停**；LB-2 让关停变成重启加挂死 | `run_engine_supervision` 是 daemon 实际用的关停路径，端到端测试走的就是它 | 无 | — |
+| 0.4 Decimal money math | N/A（未触及） | N/A | 无 | — |
+
+### 验收分句逐条对照
+
+| 来源 | 分句 | 覆盖它的测试 |
+|---|---|---|
+| LB-2 | daemon 正常退出 | `test_shutdown_returns_and_starts_nothing` |
+| LB-2 | 同代监督取消 | `test_cancelling_supervision_neither_redeploys_nor_spends_the_budget` |
+| LB-2 | 新代接管 | `test_cancelling_the_watcher_does_not_invent_a_terminal_event`（取消传播后旧 watcher 不再产出事件，新代才能干净接手）|
+| LB-2 | 节点真实取消 | `test_a_genuinely_cancelled_node_is_still_a_terminal_event` |
+| LB-2 | 启动期间取消 | `test_cancelling_before_the_node_is_registered_is_still_a_clean_cancel` |
+| LB-2 | 不调 deploy、不耗 restart budget | 上表第 2 条的两句断言 + 关停那条的 `started == []` |
+| LB-1 | 提交前失败 | `test_a_failure_before_the_commit_still_behaves_as_it_did`（回归）|
+| LB-1 | 提交后响应失败 | `test_a_failed_ready_commit_stops_the_engine_it_could_not_record` |
+| LB-1 | 重投 | 同上（第二次 deploy 必须成功，证明世界干净了）|
+| LB-1 | 恢复提交失败 | `test_a_failed_recovery_commit_stops_the_engine_too` |
+| LB-1 | 隔离时实际引擎状态 | `test_quarantine_means_the_engine_is_actually_stopped` |
+
+另加两条报告没点名但同族的：节点自己抛异常、节点自己正常退出，各自仍须产出对应终态
+（`engine_task_failed` / `engine_task_exited`）。
+
+### 测试条数（取自 `pytest --collect-only`）
+
+| 测试文件 | 条数 |
+|---|---|
+| `tests/test_stopping_must_actually_stop.py` | 11 |
+| `tests/test_plan_closeout_counts.py` | 65 |
+
+`test_engine_lifecycle.py`(13) / `test_nt_trading_node_host.py`(40) /
+`test_runner_command_runtime.py`(13) 三个文件本轮**只被 import 复用替身，没有改动**，
+故不重数（按 progress-management 的规则，重数的义务来自「动了别人数过的文件」）。
+
+### 扰动验证
+
+| 扰动 | 结果 |
+|---|---|
+| 取消等待者时不再检查 node 是否还在跑 | 2 红 |
+| 终态原因回到「从醒来的方式推断」（删掉对照能力）| 2 红 —— C26 的删除方向 |
+| 提交挪回清理范围之外 | 3 红 |
+| **照抄 `0222120` 的原样缺陷代码** | 3 红，含关停那条，停在 `runner_command_runtime.py:382` 的 gather |
+| 还原 | 11 绿 |
+
+每次扰动都用独立的 `PYTHONPYCACHEPREFIX`。
+
+### 审查方探针现状
+
+| 探针 | 结果 |
+|---|---|
+| `ready_commit_failure_leaves_running_quarantined_engine` | 中止于 `engine_lifecycle.py:422` 抛 `EngineLifecycleQuarantined` —— 它到不了「引擎仍 active」那条断言了 |
+| `canceling_supervisor_restarts_healthy_engine` | 中止于 `host.py:1408`，正是本轮新加的那个 `raise`：取消现在传播，不再被换成假终态 |
+
+两个都中止在**生产代码我改的那一行**上，不是中止在探针自己的脚手架里。
+
+### 功能验证（主路径）
+
+1. sandbox 下起一个部署，确认引擎 ready。
+2. 给 daemon 发正常关停信号。进程应当**退出**；日志里不应出现 `nt_deploy_started`
+   或新的 `engine_start_attempt_failed`。修复前这里会先重启一次引擎，然后卡在关停不退。
+3. 反向确认：直接杀掉引擎进程（让 node task 真的结束），监督应照常报终态并按预算重启 ——
+   这条能力没有被一并删掉。
