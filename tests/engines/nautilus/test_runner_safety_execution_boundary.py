@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import UUID
@@ -86,7 +87,29 @@ class _Store:
     record_position_reduction_fifo_sync = record_position_reduction_fifo
 
 
+@dataclass(frozen=True, slots=True)
+class _NativePrice:
+    """Stands in for nautilus ``Price`` so the doubles can refuse a bare Decimal."""
+
+    value: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class _NativeQuantity:
+    """Stands in for nautilus ``Quantity``, for the same reason."""
+
+    value: Decimal
+
+
 class _Semantics:
+    def __init__(self) -> None:
+        # What the canonical cache would hold, keyed by client order id. The real
+        # semantics reads it back for a modification, which is identified by id.
+        self.cached_orders: dict = {}
+
+    def cached_order(self, client_order_id):
+        return self.cached_orders.get(str(client_order_id))
+
     def order_notional(self, order) -> Decimal:
         return Decimal(str(order.notional))
 
@@ -152,8 +175,9 @@ class _Downstream:
     def submit_order_list(self, order_list, *_args, **_kwargs) -> None:
         self.log.append(("submit_list", tuple(o.client_order_id for o in order_list.orders)))
 
-    def modify_order(self, order, *_args, **_kwargs) -> None:
-        self.log.append(("modify_upstream", order.client_order_id))
+    def modify_order(self, client_order_id, *_args, **_kwargs) -> None:
+        # 2.0 passes the id, not the order.
+        self.log.append(("modify_upstream", str(client_order_id)))
 
 
 def _gate(
@@ -191,6 +215,11 @@ class _GatedStrategy:
 
     def modify_order(self, order, *_args, **_kwargs) -> None:
         self.submitted.append(order)
+
+    def modify_orders(self, updates, *_args, **_kwargs) -> None:
+        # The real Strategy has this; a double without it would let the installer's
+        # fail-loud check hide that the gate is not covering it.
+        self.submitted.append(updates)
 
     def market_exit(self, *_args, **_kwargs) -> None:
         self.submitted.append("market_exit")
@@ -235,9 +264,28 @@ def _breaker() -> FallbackBreaker:
 
 def test_market_order_uses_the_subscribed_mark_when_mid_price_is_unavailable() -> None:
     class Instrument:
+        """As demanding as the real thing about the types it is handed.
+
+        A real instrument raises ``TypeError: 'Decimal' object is not an instance of
+        'Price'``. The double used to accept Decimal, which is exactly why the
+        notional path could pass one for so long.
+        """
+
+        @staticmethod
+        def make_qty(value):
+            return _NativeQuantity(Decimal(str(value)))
+
+        @staticmethod
+        def make_price(value):
+            return _NativePrice(Decimal(str(value)))
+
         @staticmethod
         def notional_value(quantity, price):
-            return Decimal(str(quantity)) * Decimal(str(price))
+            if not isinstance(quantity, _NativeQuantity):
+                raise TypeError("'Decimal' object is not an instance of 'Quantity'")
+            if not isinstance(price, _NativePrice):
+                raise TypeError("'Decimal' object is not an instance of 'Price'")
+            return quantity.value * price.value
 
     class Cache:
         @staticmethod
@@ -463,7 +511,11 @@ def test_frozen_breaker_allows_reduce_only_modification_without_reservation() ->
     order = _order("protective", reduce_only=True)
 
     gate.submit_order(downstream.submit_order, order)
-    gate.modify_order(downstream.modify_order, order, trigger_price=Decimal("99"))
+    # 2.0 identifies the order to modify by id; its risk semantics is read back from
+    # the cache, so the cache is what has to know about it.
+    boundary = gate._boundary  # noqa: SLF001 - harness wiring
+    boundary._semantics.cached_orders["protective"] = order  # noqa: SLF001
+    gate.modify_order(downstream.modify_order, "protective", trigger_price=Decimal("99"))
 
     assert [entry[0] for entry in log] == ["submit", "modify_upstream"]
     assert refusals == []
@@ -482,18 +534,15 @@ def test_modify_reserves_new_notional_before_upstream() -> None:
     log.clear()
     gate = _gate(_boundary(store))
 
-    gate.modify_order(
-        _Downstream(log).modify_order,
-        SimpleNamespace(
-            client_order_id="order-2",
-            strategy_id="STRATEGY-001",
-            instrument_id="BTCUSDT-PERP.BINANCE",
-            venue_order_id="venue-2",
-            notional="40",
-            reduce_only=False,
-        ),
-        "40",
+    gate._boundary._semantics.cached_orders["order-2"] = SimpleNamespace(  # noqa: SLF001
+        client_order_id="order-2",
+        strategy_id="STRATEGY-001",
+        instrument_id="BTCUSDT-PERP.BINANCE",
+        venue_order_id="venue-2",
+        notional="40",
+        reduce_only=False,
     )
+    gate.modify_order(_Downstream(log).modify_order, "order-2", "40")
 
     assert [entry[0] for entry in log] == ["replace", "modify_upstream"]
     assert log[0][1]["new_reserved_notional"] == Decimal("40")
@@ -861,7 +910,13 @@ class _CacheWithPrice:
         self._price = price
 
     def instrument(self, _instrument_id):
-        return SimpleNamespace(notional_value=lambda quantity, price: Decimal(str(price)) * 2)
+        # Native-typed like the real one, for the reason the Instrument double above
+        # spells out: a forgiving stand-in is what let a Decimal reach notional_value.
+        return SimpleNamespace(
+            make_qty=lambda value: _NativeQuantity(Decimal(str(value))),
+            make_price=lambda value: _NativePrice(Decimal(str(value))),
+            notional_value=lambda quantity, price: price.value * 2,
+        )
 
     def price(self, _instrument_id, _price_type):
         return self._price

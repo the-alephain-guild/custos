@@ -55,6 +55,7 @@ _CLIENT_ORDER_ID_REJECTION_REASON = "custos_runner_client_order_id_too_long_for_
 _ROUTED_AWAY_REJECTION_REASON = "custos_runner_order_would_bypass_the_gate"
 _MARKET_EXIT_REJECTION_REASON = "custos_runner_market_exit_bypasses_the_gate"
 _NATIVE_PLAIN_CLOSE_REJECTION_REASON = "custos_runner_native_plain_close_bypasses_the_gate"
+_BATCH_MODIFY_REJECTION_REASON = "custos_runner_batch_modify_has_no_atomic_reservation"
 
 # The strategy methods the gate wraps. submit_order / submit_order_list / modify_order
 # carry risk and are decided on; market_exit is refused outright because nautilus
@@ -62,6 +63,7 @@ _NATIVE_PLAIN_CLOSE_REJECTION_REASON = "custos_runner_native_plain_close_bypasse
 SUBMIT_ORDER = "submit_order"
 SUBMIT_ORDER_LIST = "submit_order_list"
 MODIFY_ORDER = "modify_order"
+MODIFY_ORDERS = "modify_orders"
 MARKET_EXIT = "market_exit"
 CLOSE_POSITION = "close_position"
 CLOSE_ALL_POSITIONS = "close_all_positions"
@@ -100,6 +102,25 @@ def _positive_decimal(value: Any, *, field: str) -> Decimal:
     if result <= 0:
         raise RuntimeError(f"{field} must be a positive decimal")
     return result
+
+
+def _as_native(construct: Callable[[Any], Any], value: Any, *, field: str) -> Any:
+    """Hand the native API the type it asks for, without moving money onto floats.
+
+    Amounts stay ``Decimal`` inside this module, but ``instrument.notional_value``
+    takes ``Price`` and ``Quantity`` and rejects anything else -- a real instrument
+    raises ``TypeError: 'Decimal' object is not an instance of 'Price'``. Our own
+    doubles accepted Decimal, which is how that went unnoticed.
+
+    A value that is already the native type is passed through: reconstructing it
+    would quantise it a second time.
+    """
+    if isinstance(value, Decimal | int | str):
+        try:
+            return construct(Decimal(str(value)))
+        except Exception as exc:  # noqa: BLE001 - the field names itself below
+            raise RuntimeError(f"{field} cannot be expressed in this instrument") from exc
+    return value
 
 
 class NautilusCachedOrderSemantics:
@@ -148,6 +169,10 @@ class NautilusCachedOrderSemantics:
 
     def fill_quantity(self, event: Any) -> Decimal:
         return _decimal(event.last_qty, field="fill quantity")
+
+    def cached_order(self, client_order_id: Any) -> Any:
+        """What the canonical cache holds for this id, or ``None``."""
+        return self._cache.order(client_order_id)
 
     def fill_leaves_quantity(self, event: Any) -> Decimal | None:
         """The order's still-unfilled quantity once this fill has been applied.
@@ -270,7 +295,10 @@ class NautilusCachedOrderSemantics:
         if instrument is None:
             raise RuntimeError("order instrument is absent from the canonical Nautilus cache")
         return _decimal(
-            instrument.notional_value(quantity, price),
+            instrument.notional_value(
+                _as_native(instrument.make_qty, quantity, field="order quantity"),
+                _as_native(instrument.make_price, price, field="order price"),
+            ),
             field="instrument notional",
         )
 
@@ -315,11 +343,18 @@ class _SubmitListIntent:
 
 
 class _ModifyIntent:
-    __slots__ = ("client_order_id", "id", "order", "price", "quantity", "trigger_price")
+    """A requested modification, named the way the native API names it.
 
-    def __init__(self, order: Any, quantity: Any, price: Any, trigger_price: Any) -> None:
-        self.order = order
-        self.client_order_id = order.client_order_id
+    The order itself is not carried: 2.0 gives ``modify_order`` an id, and the risk
+    semantics reads the order back from the canonical cache. Keeping a passed-in
+    object here would mean trusting whatever the caller handed over rather than what
+    the engine believes is resting.
+    """
+
+    __slots__ = ("client_order_id", "id", "price", "quantity", "trigger_price")
+
+    def __init__(self, client_order_id: Any, quantity: Any, price: Any, trigger_price: Any) -> None:
+        self.client_order_id = client_order_id
         self.quantity = quantity
         self.price = price
         self.trigger_price = trigger_price
@@ -405,27 +440,43 @@ class RunnerSafetyOrderGate:
     def modify_order(
         self,
         modify: Callable[..., None],
-        order: Any,
+        client_order_id: Any,
         quantity: Any = None,
         price: Any = None,
         trigger_price: Any = None,
         *args: Any,
         **kwargs: Any,
     ):
-        intent = _ModifyIntent(order, quantity, price, trigger_price)
+        # 2.0 identifies the order to modify by id, not by handing over the object.
+        # This used to read ``.client_order_id`` off the argument, which works only
+        # for a double shaped like the old API -- against the real strategy it raised
+        # AttributeError before any judgement was made.
+        intent = _ModifyIntent(client_order_id, quantity, price, trigger_price)
         try:
             modification = self._boundary.before_modify_order(intent)
         except Exception as exc:  # noqa: BLE001 - every refusal reason is reported below
             # Symmetric with the submit path, which has always reported its refusals;
             # this one used to fall through to a nautilus rejection event and say
             # nothing itself, and there is no such event any more.
-            self._refuse((order,), self._reservation_refusal_reason(exc), exc=exc)
+            self._refuse_modification(intent, self._reservation_refusal_reason(exc), exc=exc)
             return None
         try:
-            return modify(order, quantity, price, trigger_price, *args, **kwargs)
+            return modify(client_order_id, quantity, price, trigger_price, *args, **kwargs)
         except Exception:
             self._boundary.rollback_modify(modification, event_id=runner_command_id(intent))
             raise
+
+    def modify_orders(self, _modify: Callable[..., None], *_args: Any, **_kwargs: Any):
+        """Refuse batch modification outright.
+
+        ``modify_orders`` builds its command natively, so the per-order judgement in
+        :meth:`modify_order` is never reached -- a frozen breaker would watch a
+        resting order's quantity grow. Honouring it properly means reserving every
+        leg atomically, which is its own piece of work; until that exists the honest
+        answer is no, rather than a judgement that silently applies to nothing.
+        """
+        self._refuse((), _BATCH_MODIFY_REJECTION_REASON)
+        return None
 
     def market_exit(self, _exit: Callable[..., None], *_args: Any, **_kwargs: Any):
         """Refuse the exit nautilus would perform on the strategy's behalf.
@@ -527,6 +578,34 @@ class RunnerSafetyOrderGate:
             return False
         return len(str(order.client_order_id)) >= self._client_order_id_len_limit
 
+    def _refuse_modification(
+        self, intent: Any, reason_code: str, *, exc: Exception | None = None
+    ) -> None:
+        """Report a refused modification, reading the order back from the cache.
+
+        The refusal names an instrument and a side, and with only an id in hand those
+        come from what the engine believes is resting -- not from an object the caller
+        supplied.
+        """
+        order = self._cached_order(intent.client_order_id)
+        self._refuse(
+            (order,) if order is not None else (),
+            reason_code,
+            exc=exc,
+        )
+        if order is None:
+            _log.warning(
+                "runner_modification_refused_for_unknown_order",
+                client_order_id=str(intent.client_order_id),
+                reason_code=reason_code,
+            )
+
+    def _cached_order(self, client_order_id: Any) -> Any:
+        try:
+            return self._boundary.cached_order(client_order_id)
+        except Exception:  # noqa: BLE001 - a refusal must not be lost to its own report
+            return None
+
     def _refuse(self, orders: tuple, reason_code: str, *, exc: Exception | None = None) -> None:
         _log.warning(
             "runner_order_refused",
@@ -593,6 +672,7 @@ def install_order_gate(strategy: Any, gate: RunnerSafetyOrderGate) -> None:
         (SUBMIT_ORDER, gate.submit_order),
         (SUBMIT_ORDER_LIST, gate.submit_order_list),
         (MODIFY_ORDER, gate.modify_order),
+        (MODIFY_ORDERS, gate.modify_orders),
         (MARKET_EXIT, gate.market_exit),
         (CLOSE_POSITION, gate.close_position),
         (CLOSE_ALL_POSITIONS, gate.close_all_positions),

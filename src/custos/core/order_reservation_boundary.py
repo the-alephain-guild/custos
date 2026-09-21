@@ -190,7 +190,10 @@ class RunnerReservationBoundary:
     def before_modify_order(self, command: Any) -> _Modification:
         semantics = self._require_semantics()
         client_order_id = str(command.client_order_id)
-        order = getattr(command, "order", None)
+        # The risk semantics of the order being modified comes from the canonical
+        # cache, not from the caller: 2.0 identifies it by id and hands over no
+        # object, and the engine's view of what is resting is the one that counts.
+        order = self.cached_order(command.client_order_id)
         if order is not None and semantics.order_is_risk_reducing(order):
             return _Modification(
                 client_order_id=client_order_id,
@@ -417,6 +420,16 @@ class RunnerReservationBoundary:
             self._deployment_instance_id,
             client_order_id,
         )
+
+    def cached_order(self, client_order_id: Any) -> Any:
+        """What the canonical cache holds for this id, or ``None``.
+
+        The gate needs it to name the instrument and side of a refused modification:
+        2.0 identifies an order to modify by id, so there is no object to read those
+        from, and the engine's view is the one that matters anyway.
+        """
+        reader = getattr(self._require_semantics(), "cached_order", None)
+        return None if reader is None else reader(client_order_id)
 
     def _require_semantics(self) -> OrderSemantics:
         if self._semantics is None:
