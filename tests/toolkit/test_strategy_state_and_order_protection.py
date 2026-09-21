@@ -27,6 +27,9 @@ from custos_toolkit_nautilus.adapter.coordinators import (  # noqa: E402
     TradeEventHandler,
 )
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode  # noqa: E402
+from custos_toolkit_nautilus.adapter.tick_monitor import (  # noqa: E402
+    TakeProfitLevelState,
+)
 from nautilus_trader.model import OrderSide, OrderType, Price, Quantity  # noqa: E402
 
 
@@ -1055,7 +1058,7 @@ class TestTheExitBaseFollowsTheWholeEntry:
         first = [Decimal(str(o.quantity)) for o in h.sent]
         assert first, "precondition: a level fired before the entry finished"
 
-        assert h.ctx.tick_monitor._tp_level_states[0].value == "pending"
+        assert h.ctx.tick_monitor.level_state(1) is TakeProfitLevelState.PENDING
 
 
 class TestReversalSizingRespectsTheContractMultiplier:

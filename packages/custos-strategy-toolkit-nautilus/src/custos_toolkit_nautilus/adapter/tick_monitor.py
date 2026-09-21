@@ -9,30 +9,22 @@ scaled take profit handling.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
 from decimal import Decimal
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
+
+from custos_toolkit_nautilus.adapter.scaled_exit_ladder import (
+    ScaledExitLadder,
+    TakeProfitLevelSpec,
+    TakeProfitLevelState,
+)
 
 if TYPE_CHECKING:
     from .config.risk import TradeRiskConfig
 
 
-class _TakeProfitLevel(TypedDict):
-    target_pct: Decimal
-    exit_pct: Decimal
-
-
-class TakeProfitLevelState(str, Enum):  # noqa: UP042 - match the str(Enum) style of SLTPMode
-    """Where one scaled take-profit level stands.
-
-    Reaching the target price is an intent, not an outcome. A level is only spent
-    once the venue reports the fill that took the quantity, so a dispatch that was
-    refused, rejected or never sent returns the level to the market.
-    """
-
-    ARMED = "armed"
-    PENDING = "pending"
-    COMPLETED = "completed"
+# The level ledger lives in scaled_exit_ladder; these are re-exported because
+# callers and tests have always reached for them here.
+_TakeProfitLevel = TakeProfitLevelSpec
 
 
 @dataclass
@@ -311,19 +303,7 @@ class TickMonitorManager:
         self._tp_method = tp_method
         self._tp_fixed_pct = tp_fixed_pct
         self._tp_levels = tp_levels or []
-        self._tp_level_states: list[TakeProfitLevelState] = [
-            TakeProfitLevelState.ARMED
-        ] * len(self._tp_levels)
-        # order id -> zero-based level index, for the level a dispatched order owns.
-        self._level_orders: dict[str, int] = {}
-        # The position size the exit percentages are shares of. Exchange mode prices
-        # every level off the size at submission; tick mode must use one base too, or
-        # the same config exits a different total depending on fill timing.
-        self._initial_quantity: Decimal | None = None
-        # zero-based level index -> quantity actually dispatched for it.
-        self._level_dispatched: dict[int, Decimal] = {}
-        # zero-based level index -> quantity a venue has confirmed filled for it.
-        self._level_filled: dict[int, Decimal] = {}
+        self._ladder = ScaledExitLadder.from_specs(self._tp_levels)
 
         # Trailing stop manager (only created for trailing method)
         self._trailing_manager: TrailingStopManager | None = None
@@ -381,10 +361,11 @@ class TickMonitorManager:
         self._entry_price = self._to_decimal(entry_price)
         self._is_long = is_long
         self._entry_atr = self._to_decimal(entry_atr) if entry_atr is not None else None
-        self._initial_quantity = self._to_decimal(quantity) if quantity is not None else None
 
-        # Reset scaled TP levels
-        self._reset_levels()
+        # Reset every level's account and re-seed the base the shares come from.
+        self._ladder.reset()
+        if quantity is not None:
+            self._ladder.base = self._to_decimal(quantity)
 
         # Initialize trailing manager if present
         if self._trailing_manager is not None:
@@ -400,8 +381,7 @@ class TickMonitorManager:
         self._entry_price = None
         self._is_long = None
         self._entry_atr = None
-        self._initial_quantity = None
-        self._reset_levels()
+        self._ladder.reset()
 
         if self._trailing_manager is not None:
             self._trailing_manager.reset()
@@ -458,129 +438,52 @@ class TickMonitorManager:
         if self._trailing_manager is not None:
             self._check_trailing_tp(self._to_decimal(current_price))
 
+    def level_state(self, level: int) -> TakeProfitLevelState | None:
+        """Where a 1-based scaled level stands, or ``None`` if there is no such level."""
+        entry = self._ladder.at(level)
+        return None if entry is None else entry.state
+
+    def carries_level_order(self, order_id: object) -> bool:
+        """Whether some level is still waiting on this order's execution report."""
+        return self._ladder.carries_order(order_id)
+
     def bind_level_order(self, level: int, order_id: object) -> None:
         """Record which order carries a level's quantity (``level`` is 1-based)."""
-        index = level - 1
-        if 0 <= index < len(self._tp_level_states):
-            self._level_orders[str(order_id)] = index
+        self._ladder.bind_order(level, order_id)
 
     def confirm_level_order(self, order_id: object, filled_quantity: Decimal | float) -> bool:
-        """Credit a fill to the level its order carries. Returns True if one matched.
-
-        An IOC lot can come back part filled, and the part that did not fill was not
-        sold: the level closes only once nothing is outstanding on it.
-        """
-        key = str(order_id)
-        index = self._level_orders.get(key)
-        if index is None:
-            return False
-        self._level_filled[index] = self._level_filled.get(index, Decimal("0")) + self._to_decimal(
-            filled_quantity
-        )
-        if self._level_outstanding(index) <= 0:
-            self._tp_level_states[index] = TakeProfitLevelState.COMPLETED
-            self._level_orders.pop(key, None)
-        return True
+        """Credit a fill to the level its order carries. Returns True if one matched."""
+        return self._ladder.confirm_order(order_id, self._to_decimal(filled_quantity))
 
     def release_level_order(self, order_id: object) -> bool:
         """The order is done at the venue: settle its level by what it still owes."""
-        index = self._level_orders.pop(str(order_id), None)
-        if index is None:
-            return False
-        if self._tp_level_states[index] is TakeProfitLevelState.PENDING:
-            if self._level_outstanding(index) > 0:
-                self._tp_level_states[index] = TakeProfitLevelState.ARMED
-            else:
-                self._tp_level_states[index] = TakeProfitLevelState.COMPLETED
-            self._level_dispatched.pop(index, None)
-        return True
+        return self._ladder.release_order(order_id)
 
     def release_level(self, level: int) -> None:
         """Return a level that was triggered but never dispatched (``level`` is 1-based)."""
-        index = level - 1
-        if 0 <= index < len(self._tp_level_states):
-            if self._tp_level_states[index] is TakeProfitLevelState.PENDING:
-                self._tp_level_states[index] = TakeProfitLevelState.ARMED
-                self._level_dispatched.pop(index, None)
+        self._ladder.release_level(level)
 
     @property
     def initial_quantity(self) -> Decimal | None:
         """The position size the scaled exit percentages are shares of."""
-        return self._initial_quantity
+        return self._ladder.base
 
     def extend_base(self, additional: Decimal | float) -> None:
-        """Add newly opened exposure to the base the scaled shares are taken from.
-
-        An entry can fill in several lots. The monitor is seeded on the first lot
-        that opens exposure, so without this the levels would size against that
-        first lot alone and leave the rest of the position unsold.
-
-        Re-seeding through init_position would be wrong: that resets level state
-        and the filled ledger, discarding levels already taken while the entry was
-        still filling.
-        """
-        extra = self._to_decimal(additional)
-        if extra <= 0:
-            return
-        if self._initial_quantity is None:
-            self._initial_quantity = extra
-        else:
-            self._initial_quantity += extra
+        """Add newly opened exposure to the base the scaled shares are taken from."""
+        self._ladder.extend_base(self._to_decimal(additional))
 
     def is_final_level(self, level: int) -> bool:
         """Whether this 1-based level is the last one configured."""
-        return level == len(self._tp_levels)
+        return self._ladder.is_final(level)
 
     def planned_exit_quantity(self, level: int, remaining: Decimal) -> Decimal:
-        """The quantity this 1-based level should take now.
-
-        Levels are shares of the base recorded at init_position, so the total taken
-        does not depend on how much earlier levels already sold, and a retry after a
-        part fill asks only for the part still owed.
-        """
-        index = level - 1
-        if not 0 <= index < len(self._tp_levels):
-            return Decimal("0")
-        if self._initial_quantity is None or self._initial_quantity <= 0:
-            outstanding = self._level_outstanding(index)
-            if outstanding > 0:
-                return outstanding
-            return remaining * self._tp_levels[index].get("exit_pct", Decimal("0"))
-        return self._level_outstanding(index)
-
-    def _level_outstanding(self, index: int) -> Decimal:
-        """How much of this level's target has still not been sold.
-
-        The final level is owed whatever is left of the planned total, so rounding
-        the earlier levels lost is recovered there rather than stranded.
-        """
-        filled = self._level_filled.get(index, Decimal("0"))
-        base = self._initial_quantity
-        if base is None or base <= 0:
-            # No base: the only target on record is what was actually dispatched.
-            return max(self._level_dispatched.get(index, Decimal("0")) - filled, Decimal("0"))
-        if index == len(self._tp_levels) - 1:
-            planned_total = base * sum(
-                (level_config.get("exit_pct", Decimal("0")) for level_config in self._tp_levels),
-                Decimal("0"),
-            )
-            return max(
-                planned_total - sum(self._level_filled.values(), Decimal("0")), Decimal("0")
-            )
-        exit_pct = self._tp_levels[index].get("exit_pct", Decimal("0"))
-        return max(base * exit_pct - filled, Decimal("0"))
+        """The quantity this 1-based level should take now."""
+        return self._ladder.planned_exit_quantity(level, remaining)
 
     def record_dispatch(self, level: int, quantity: Decimal) -> None:
         """Record the quantity actually sent for a 1-based level."""
-        index = level - 1
-        if 0 <= index < len(self._tp_levels):
-            self._level_dispatched[index] = Decimal(str(quantity))
+        self._ladder.record_dispatch(level, Decimal(str(quantity)))
 
-    def _reset_levels(self) -> None:
-        self._tp_level_states = [TakeProfitLevelState.ARMED] * len(self._tp_levels)
-        self._level_orders = {}
-        self._level_dispatched = {}
-        self._level_filled = {}
 
     def _check_fixed_tp(self, current_price: Decimal, pnl_pct: Decimal) -> ExitAction | None:
         """Check fixed take profit trigger."""
@@ -597,25 +500,20 @@ class TickMonitorManager:
 
     def _check_scaled_tp(self, current_price: Decimal, pnl_pct: Decimal) -> ExitAction | None:
         """Check scaled take profit levels."""
-        for i, level in enumerate(self._tp_levels):
-            # Skip levels already taken, and those awaiting an execution report.
-            if self._tp_level_states[i] is not TakeProfitLevelState.ARMED:
-                continue
-
-            target_pct = level.get("target_pct", Decimal("0"))
-            exit_pct = level.get("exit_pct", Decimal("0"))
-
-            if pnl_pct >= target_pct:
-                # Awaiting dispatch and its report -- not yet spent.
-                self._tp_level_states[i] = TakeProfitLevelState.PENDING
-                return ExitAction(
-                    exit_type="partial_tp",
-                    price=current_price,
-                    reason=f"Scaled take profit level {i + 1} reached: {pnl_pct:.2%} >= {target_pct:.2%}",
-                    partial_pct=exit_pct,
-                    level=i + 1,
-                )
-        return None
+        claimed = self._ladder.claim_next_reached(pnl_pct)
+        if claimed is None:
+            return None
+        level, entry = claimed
+        return ExitAction(
+            exit_type="partial_tp",
+            price=current_price,
+            reason=(
+                f"Scaled take profit level {level} reached: "
+                f"{pnl_pct:.2%} >= {entry.target_pct:.2%}"
+            ),
+            partial_pct=entry.exit_pct,
+            level=level,
+        )
 
     def _check_trailing_tp(self, current_price: Decimal) -> ExitAction | None:
         """Check trailing take profit trigger."""

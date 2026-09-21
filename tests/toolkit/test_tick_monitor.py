@@ -617,19 +617,24 @@ class TestTickMonitorManagerInitPosition:
             tp_method="scaled",
             tp_levels=levels,
         )
-        # Simulate one level taken and another awaiting its execution report
-        manager._tp_level_states = [
-            TakeProfitLevelState.COMPLETED,
-            TakeProfitLevelState.PENDING,
-        ]
-        manager._level_orders = {"O-1": 1}
+        # One level taken, another awaiting its execution report. Driving this through
+        # the monitor rather than assigning its internals means the precondition is
+        # reached the way the venue reaches it.
+        manager.init_position(entry_price=Decimal("100.00"), is_long=True, quantity=Decimal("3"))
+        manager.check(Decimal("104.00"))  # level 1 fires
+        manager.bind_level_order(1, "O-0")
+        manager.confirm_level_order("O-0", Decimal("3"))
+        manager.check(Decimal("108.00"))  # level 2 fires and waits on its report
+        manager.bind_level_order(2, "O-1")
+        assert manager.level_state(1) is TakeProfitLevelState.COMPLETED
+        assert manager.level_state(2) is TakeProfitLevelState.PENDING
+        assert manager.carries_level_order("O-1")
 
         manager.init_position(entry_price=Decimal("100.00"), is_long=True)
-        assert manager._tp_level_states == [
-            TakeProfitLevelState.ARMED,
-            TakeProfitLevelState.ARMED,
-        ]
-        assert manager._level_orders == {}
+
+        assert manager.level_state(1) is TakeProfitLevelState.ARMED
+        assert manager.level_state(2) is TakeProfitLevelState.ARMED
+        assert not manager.carries_level_order("O-1")
 
 
 class TestTickMonitorManagerReset:
