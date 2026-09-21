@@ -519,6 +519,16 @@ class NtTradingNodeHost:
         self._shutdown_poll_secs = 0.2
         self._shutdown_stable_polls = 3
         self._shutdown_close_retry_secs = 2.0
+        # Containment runs inside a supervision tick (10s by default), so its
+        # confirmation has to finish well inside one and never outlive it.
+        self._containment_confirm_secs = 5.0
+        self._containment_retry_secs = 2.0
+        # One bit per instance: has containment ever been confirmed on this node.
+        # It is what separates "we closed it and it stayed closed" from "we have
+        # never seen anything here", which look identical in the cache. Cleared
+        # with the node, because the instance id outlives it and the next
+        # generation must answer that question with its own evidence.
+        self._containment_confirmed: set[str] = set()
         self._tenant_id = tenant_id
         self._runner_id = runner_id
         self._runner_fact_emitter = runner_fact_emitter
@@ -1084,6 +1094,7 @@ class NtTradingNodeHost:
             self._event_forwarding_failures.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)
             self._active_nodes.pop(deployment_instance_id, None)
+            self._containment_confirmed.discard(deployment_instance_id)
             self._lifecycle_authorities.pop(deployment_instance_id, None)
             self._shutdown_policies.pop(deployment_instance_id, None)
         _log.info("nt_stop_completed", deployment_instance_id=deployment_instance_id)
@@ -1603,6 +1614,13 @@ class NtTradingNodeHost:
             # positions, in which case they arrive seconds later untouched. Recording this
             # as a flatten would read as containment and stop anyone from asking further,
             # which is precisely what C9 asks us not to do.
+            if deployment_instance_id in self._containment_confirmed:
+                _log.info(
+                    "nt_containment_still_clear",
+                    deployment_instance_id=deployment_instance_id,
+                    reason=reason,
+                )
+                return
             _log.error(
                 "nt_flatten_containment_unconfirmed",
                 deployment_instance_id=deployment_instance_id,
@@ -1615,6 +1633,17 @@ class NtTradingNodeHost:
         # reopen exactly the exposure this is containing. Reduce-only orders stay --
         # they are the position's own protection, which containment wants kept.
         self._cancel_risk_increasing_orders(deployment_instance_id, runtime, reason)
+        self._request_close(runtime, instrument_ids)
+        _log.warning(
+            "positions_flattened",
+            deployment_instance_id=deployment_instance_id,
+            reason=reason,
+            instrument_count=len(instrument_ids),
+        )
+        await self._confirm_containment(deployment_instance_id, runtime, reason)
+
+    @staticmethod
+    def _request_close(runtime: _NodeRuntime, instrument_ids: set) -> None:
         for strategy in runtime.strategies:
             # NT's own close_all_positions is reduce-only, and a venue that refuses that
             # form refuses it here too -- leaving containment unable to contain at the
@@ -1628,11 +1657,99 @@ class NtTradingNodeHost:
                     close_with_fallback(instrument_id)
                 else:
                     strategy.close_all_positions(instrument_id)
-        _log.warning(
-            "positions_flattened",
+
+    async def _confirm_containment(
+        self,
+        deployment_instance_id: str,
+        runtime: _NodeRuntime,
+        reason: str,
+    ) -> None:
+        """Read the venue back until it agrees, re-asking for whatever is still there.
+
+        Having sent a close is not the same as the position being gone, and the
+        difference is the whole of this deployment's remaining exposure. The
+        shutdown path has confirmed its own work this way since it was written;
+        containment, which is the more urgent of the two, never did.
+
+        Done means no positions *and* no risk-increasing orders. Reduce-only
+        orders are the position's protection and are meant to survive
+        containment, so counting them as leftovers would silently undo that.
+
+        A deadline expiring is reported, not raised: this runs inside the
+        supervisor's tripped branch, and an exception there travels up into the
+        supervision task -- which the daemon treats as grounds to fail the whole
+        process. One slow venue would stop every other instance from being
+        watched. The breaker stays frozen either way, so new submissions remain
+        blocked while this is unresolved.
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._containment_confirm_secs
+        last_request = loop.time()
+        positions: list = []
+        risk_increasing: list = []
+        while True:
+            try:
+                positions, orders = self._open_venue_state(runtime)
+            except Exception as exc:  # noqa: BLE001 - unreadable is not confirmed
+                # Neither "it worked" nor a reason to sit here until the deadline:
+                # the cache will not answer, and waiting for it to change its mind
+                # only delays the operator hearing about it.
+                _log.error(
+                    "nt_containment_state_unreadable",
+                    deployment_instance_id=deployment_instance_id,
+                    reason=reason,
+                    error_type=type(exc).__name__,
+                )
+                return
+            risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
+            if not positions and not risk_increasing:
+                self._containment_confirmed.add(deployment_instance_id)
+                _log.info(
+                    "nt_containment_confirmed",
+                    deployment_instance_id=deployment_instance_id,
+                    reason=reason,
+                    protective_order_count=len(orders),
+                )
+                return
+            now = loop.time()
+            if now >= deadline:
+                break
+            if now - last_request >= self._containment_retry_secs:
+                self._retry_containment(runtime, positions, risk_increasing)
+                last_request = now
+            await asyncio.sleep(self._shutdown_poll_secs)
+        _log.error(
+            "nt_containment_not_confirmed",
             deployment_instance_id=deployment_instance_id,
             reason=reason,
-            instrument_count=len(instrument_ids),
+            position_count=len(positions),
+            risk_increasing_order_count=len(risk_increasing),
+        )
+
+    def _retry_containment(
+        self,
+        runtime: _NodeRuntime,
+        positions: list,
+        risk_increasing: list,
+    ) -> None:
+        """Ask again for exactly what is still outstanding, and nothing else."""
+        if risk_increasing:
+            canceler = self._canceler(runtime.strategies)
+            if canceler is not None:
+                for order in risk_increasing:
+                    canceler.cancel_order(order.client_order_id)
+        if positions:
+            self._request_close(runtime, self._instrument_ids(positions, []))
+
+    @staticmethod
+    def _canceler(strategies: tuple):
+        return next(
+            (
+                strategy
+                for strategy in strategies
+                if callable(getattr(strategy, "cancel_order", None))
+            ),
+            None,
         )
 
     def _cancel_risk_increasing_orders(
@@ -1665,14 +1782,7 @@ class NtTradingNodeHost:
         risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
         if not risk_increasing:
             return
-        canceler = next(
-            (
-                strategy
-                for strategy in runtime.strategies
-                if callable(getattr(strategy, "cancel_order", None))
-            ),
-            None,
-        )
+        canceler = self._canceler(runtime.strategies)
         if canceler is None:
             _log.error(
                 "nt_containment_cannot_cancel_risk_increasing_orders",
@@ -1810,6 +1920,7 @@ class NtTradingNodeHost:
         runtime = self._active_nodes.get(deployment_instance_id)
         if runtime is not None and runtime.task is task:
             self._active_nodes.pop(deployment_instance_id, None)
+            self._containment_confirmed.discard(deployment_instance_id)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
             self._runner_safety_boundaries.pop(deployment_instance_id, None)
             self._event_forwarding_failures.pop(deployment_instance_id, None)
