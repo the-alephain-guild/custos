@@ -3691,6 +3691,7 @@ class RunnerStateStore:
         if type(lease_until_ns) is not int or lease_until_ns <= time.time_ns():
             raise RunnerStateDurabilityError("in-progress lease must expire in the future")
         with self._outbox._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             desired = connection.execute(
                 "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?",
                 (str(verified.command.deployment_instance_id),),
@@ -3702,20 +3703,32 @@ class RunnerStateStore:
                 raise RunnerStateDurabilityError(
                     "in-progress lease requires the current durable desired command"
                 )
+            applied = connection.execute(
+                """SELECT restart_count FROM applied_deployments
+                   WHERE deployment_instance_id = ? AND generation = ?
+                     AND command_fingerprint = ?""",
+                (
+                    str(verified.command.deployment_instance_id),
+                    verified.command.generation,
+                    verified.command_fingerprint,
+                ),
+            ).fetchone()
+            restart_count = int(applied["restart_count"]) if applied is not None else 0
             connection.execute(
                 """
                 INSERT INTO command_in_progress_lease (
                     deployment_instance_id, delivery_id, generation,
                     command_fingerprint, lease_until_ns, restart_count,
                     last_reason_code, updated_at_ns
-                ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
                 ON CONFLICT(deployment_instance_id) DO UPDATE SET
                     delivery_id = excluded.delivery_id,
                     restart_count = CASE
                         WHEN command_in_progress_lease.generation != excluded.generation
                           OR command_in_progress_lease.command_fingerprint
                              != excluded.command_fingerprint
-                        THEN 0 ELSE command_in_progress_lease.restart_count END,
+                        THEN excluded.restart_count
+                        ELSE MAX(command_in_progress_lease.restart_count, excluded.restart_count) END,
                     last_reason_code = CASE
                         WHEN command_in_progress_lease.generation != excluded.generation
                           OR command_in_progress_lease.command_fingerprint
@@ -3732,6 +3745,7 @@ class RunnerStateStore:
                     verified.command.generation,
                     verified.command_fingerprint,
                     lease_until_ns,
+                    restart_count,
                     time.time_ns(),
                 ),
             )
@@ -3849,13 +3863,24 @@ class RunnerStateStore:
                 raise RunnerStateDurabilityError(
                     "engine restart differs from the durable command fingerprint"
                 )
+            applied = connection.execute(
+                """SELECT restart_count FROM applied_deployments
+                   WHERE deployment_instance_id = ? AND generation = ?
+                     AND command_fingerprint = ?""",
+                (
+                    str(command.deployment_instance_id),
+                    command.generation,
+                    verified.command_fingerprint,
+                ),
+            ).fetchone()
+            next_count = (int(applied["restart_count"]) if applied is not None else 0) + 1
             connection.execute(
                 """
                 INSERT INTO command_in_progress_lease (
                     deployment_instance_id, delivery_id, generation,
                     command_fingerprint, lease_until_ns, restart_count,
                     last_reason_code, updated_at_ns
-                ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(deployment_instance_id) DO UPDATE SET
                     delivery_id = excluded.delivery_id,
                     generation = excluded.generation,
@@ -3865,7 +3890,8 @@ class RunnerStateStore:
                         WHEN command_in_progress_lease.generation = excluded.generation
                           AND command_in_progress_lease.command_fingerprint
                               = excluded.command_fingerprint
-                        THEN command_in_progress_lease.restart_count + 1 ELSE 1 END,
+                        THEN MAX(command_in_progress_lease.restart_count + 1, excluded.restart_count)
+                        ELSE excluded.restart_count END,
                     last_reason_code = excluded.last_reason_code,
                     updated_at_ns = excluded.updated_at_ns
                 """,
@@ -3875,6 +3901,7 @@ class RunnerStateStore:
                     command.generation,
                     verified.command_fingerprint,
                     lease_until_ns,
+                    next_count,
                     reason,
                     time.time_ns(),
                 ),

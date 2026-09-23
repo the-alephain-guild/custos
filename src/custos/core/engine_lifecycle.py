@@ -154,7 +154,11 @@ class EngineLifecycleSupervisor:
         authority = self._require_authorized_runtime(verified, runtime_spec, credential)
         artifact_activation_id = artifact.activation_id
         state = await self._store.load_engine_lifecycle_state(verified)
-        recovered_applied = False
+        recovered_applied = (
+            state.desired_status == "applied"
+            and state.applied_generation == verified.command.generation
+            and state.applied_command_fingerprint == verified.command_fingerprint
+        )
         if state.desired_status == "quarantined":
             raise EngineLifecycleQuarantined(
                 state.quarantine_reason or "deployment lifecycle is durably quarantined"
@@ -185,6 +189,14 @@ class EngineLifecycleSupervisor:
                     lease_until_ns=self._lease_deadline_ns(),
                 )
                 await self._engine.stop(str(authority.deployment_instance_id))
+        if restart_count > self._config.restart_budget:
+            await self._quarantine(
+                delivery_id=delivery_id,
+                verified=verified,
+                reason_code="restart_budget_exhausted:process_recovery",
+                artifact_activation_id=artifact_activation_id,
+                artifact_policy_id=artifact_policy_id,
+            )
         return await self._start_with_budget(
             delivery_id=delivery_id,
             verified=verified,
