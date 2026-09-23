@@ -70,7 +70,11 @@ test-nt:  ## Run NT gate (requires py3.12+): run NT host tests under --extra nau
 		|| (echo "❌ nautilus_trader is not installed with nautilus extra (requires Python 3.12+); NT gate cannot run"; exit 1)
 	uv run --extra nautilus pytest tests/
 
-verify: check test-baseline  ## Base release gate: check + green test-baseline
+check-public-surface:  ## Refuse tracked private working notes (runs first in verify)
+	python3 scripts/check-public-surface.py --self-test
+	python3 scripts/check-public-surface.py
+
+verify: check-public-surface check test-baseline  ## Base release gate: public surface + check + green test-baseline
 	@echo "✅ make verify passed"
 
 verify-base-clean:  ## Clean dev-only sync followed by the base release gate

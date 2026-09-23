@@ -29,5 +29,8 @@ if [[ -z "${PYTHON_BIN}" ]]; then
   exit 1
 fi
 
-# 1. Enforce English-only comments / logs in source code (`.claude/rules/code-style.md` §6).
+# 0. Refuse maintainers' private working notes (public repository).
+"$PYTHON_BIN" scripts/check-public-surface.py
+
+# 1. Enforce English-only comments / logs in source code (CONTRIBUTING.md).
 "$PYTHON_BIN" scripts/check-code-english.py

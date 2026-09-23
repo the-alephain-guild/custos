@@ -1,0 +1,21 @@
+name: Public surface
+
+# No path filter on purpose: the paths this refuses are exactly the ones a
+# path-filtered workflow would never be triggered by.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  public-surface:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse private working notes
+        run: |
+          python3 scripts/check-public-surface.py --self-test
+          python3 scripts/check-public-surface.py
