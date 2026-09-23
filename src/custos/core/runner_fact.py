@@ -2336,6 +2336,18 @@ class RunnerFactOutbox:
                 ),
             )
 
+    async def pending_counts(self) -> tuple[int, int]:
+        """Bound a publication round to the backlog present when it starts."""
+        return await asyncio.to_thread(self._pending_counts)
+
+    def _pending_counts(self) -> tuple[int, int]:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT (SELECT COUNT(*) FROM runner_fact_outbox), "
+                "(SELECT COUNT(*) FROM strategy_signal_outbox)"
+            ).fetchone()
+        return int(row[0]), int(row[1])
+
     async def pending(
         self,
         limit: int = 64,
@@ -6250,8 +6262,13 @@ class RunnerFactJetStreamPublisher:
         connection = self._nats.get(trading_mode)
         if connection is not None and connection.is_connected:
             return self._jetstreams[trading_mode]
+        if connection is not None and not connection.is_closed:
+            raise RunnerFactError("RunnerFact transport is reconnecting")
         connection = await profile.connect(
             name=f"custos-runner-fact-{self._runner_id}-{trading_mode}",
+            # nats-py treats both zero and negative limits as unbounded inside
+            # its initial server selector. One permits a bounded retry.
+            max_reconnect_attempts=1,
         )
         self._nats[trading_mode] = connection
         self._jetstreams[trading_mode] = connection.jetstream()
@@ -6276,15 +6293,19 @@ class RunnerFactJetStreamPublisher:
         """
         self._authority_guard()
         delivered = 0
+        facts_remaining, signals_remaining = await self._outbox.pending_counts()
         blocked_streams: set[str] = set()
-        while True:
-            batches = await self._outbox.pending(exclude_streams=blocked_streams)
+        while facts_remaining > 0:
+            batches = await self._outbox.pending(
+                limit=min(64, facts_remaining), exclude_streams=blocked_streams
+            )
             if not batches:
                 break
             progressed = False
             for batch in batches:
                 if batch.stream_key in blocked_streams:
                     continue
+                facts_remaining -= 1
                 try:
                     document = json.loads(batch.payload)
                     trading_mode = (
@@ -6342,9 +6363,9 @@ class RunnerFactJetStreamPublisher:
             if not progressed:
                 break
         blocked_signal_streams: set[str] = set()
-        while True:
+        while signals_remaining > 0:
             signals = await self._outbox.pending_strategy_signals(
-                exclude_streams=blocked_signal_streams
+                limit=min(64, signals_remaining), exclude_streams=blocked_signal_streams
             )
             if not signals:
                 break
@@ -6352,6 +6373,7 @@ class RunnerFactJetStreamPublisher:
             for signal in signals:
                 if signal.stream_key in blocked_signal_streams:
                     continue
+                signals_remaining -= 1
                 try:
                     document = json.loads(signal.payload)
                     trading_mode = (
@@ -6427,10 +6449,27 @@ class RunnerFactJetStreamPublisher:
                     pass
 
     async def close(self) -> None:
-        for connection in self._nats.values():
-            await connection.drain()
+        connections = tuple(self._nats.values())
         self._nats.clear()
         self._jetstreams.clear()
+        errors: list[Exception] = []
+        for connection in connections:
+            try:
+                if connection.is_connected:
+                    try:
+                        await connection.drain()
+                    except Exception as exc:
+                        _log.warning(
+                            "runner_fact_transport_drain_failed", error_type=type(exc).__name__
+                        )
+            finally:
+                if not connection.is_closed:
+                    try:
+                        await connection.close()
+                    except Exception as exc:
+                        errors.append(exc)
+        if errors:
+            raise ExceptionGroup("RunnerFact transport close failures", errors)
 
 
 class RunnerFactEmitter:
