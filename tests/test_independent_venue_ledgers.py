@@ -145,6 +145,7 @@ def test_okx_perpetual_fill_carries_base_quantity_and_independent_fee_currency(m
                     "tradeId": "2",
                     "ordId": "3",
                     "ts": str(stamp - 1),
+                    "fillTime": str(stamp - 1),
                     "side": "buy",
                     "fillSz": "3",
                     "fillPx": "60000",

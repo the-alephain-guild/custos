@@ -279,14 +279,20 @@ class OkxVenueLedgerSource:
                 "/api/v5/trade/fills-history",
                 {"instType": self._kind, "instId": symbol},
                 begin,
-                finish,
+                # OKX filters ts (record generation), not fillTime. Include
+                # records available at collection time, then select executions
+                # by the requested half-open business window below.
+                int(collection_started.timestamp() * 1000),
             )
             for row in trades:
+                executed_at = timestamp_ms(row.get("fillTime"))
+                if not start <= executed_at < end:
+                    continue
                 fee_currency = str(row.get("feeCcy", ""))
                 if fee_currency not in SUPPORTED_CURRENCIES:
                     raise VenueLedgerError("OKX fee currency is unsupported")
                 fee = -decimal(row.get("fee"), "fee")
-                trade_id, at = str(row["tradeId"]), timestamp_ms(row["ts"]).isoformat()
+                trade_id, at = str(row["tradeId"]), executed_at.isoformat()
                 fills.append(
                     {
                         "venue_trade_id": trade_id,
