@@ -7,6 +7,6 @@ lane and never stands in for it: it carries its own contract, produces no
 receipts, and nothing it observes is promotion evidence.
 
 Its one hard bound is live, refused by :mod:`custos.offline.mode_guard`. See
-``.claude/rules/mandatory-rules.md`` §Trust for the rule and
+the live execution gate page of the documentation site for the rule and
 ``verify_offline_lane`` in ``scripts/check-authority-docs.py`` for what enforces it.
 """

@@ -1,8 +1,7 @@
 """Shared in-memory strategy harness for the coordinator regression suite.
 
-Built from the review probes in
-``.forge/reviews/2026-09-20-custos-strategy-deep-repro.py`` so the regressions
-exercise the real coordinators, trackers, price calculators and allocator. The
+Built from the probes of the 2026-09-20 strategy-coordinator review so the
+regressions exercise the real coordinators, trackers, price calculators and allocator. The
 strategy environment, cache and order dispatch/report are controlled doubles; no
 venue is contacted and no matching engine is imitated.
 """

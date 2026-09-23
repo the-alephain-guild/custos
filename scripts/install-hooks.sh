@@ -10,7 +10,7 @@
 # Currently installs:
 #   pre-commit -> scripts/hooks/pre-commit
 #     Runs scripts/check-code-english.py to enforce English-only comments and
-#     log strings in source code (see `.claude/rules/code-style.md` §6).
+#     log strings in source code (see CONTRIBUTING.md).
 
 set -euo pipefail
 

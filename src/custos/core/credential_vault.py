@@ -76,7 +76,7 @@ class _BaseVault:
 
     @staticmethod
     def _verify_permission_scope(cred: dict, credential_id: str) -> None:
-        """Reject creds that allow withdrawal (CLAUDE.md red line + security.md)."""
+        """Reject creds that allow withdrawal (SECURITY.md: keys never leave the host)."""
         scope = cred.get("permission_scope")
         if scope != "trade_no_withdraw":
             _log.error(

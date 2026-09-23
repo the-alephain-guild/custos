@@ -81,9 +81,8 @@ to be able to determine exactly what they are running.
 ## Before you open the PR
 
 - [ ] `make verify` is green
-- [ ] the change respects `.claude/rules/code-style.md`
-- [ ] none of the four guarantees is weakened — see the grep probes in
-      `.claude/rules/verification.md`:
+- [ ] comments, docstrings and log strings are in English (the pre-commit hook from `scripts/install-hooks.sh` enforces it)
+- [ ] none of the four guarantees in [`SECURITY.md`](SECURITY.md) is weakened:
   - no key or KEK reaches a log, a message, or an HTTP body
   - no cloud SDK dependency was added
   - no `float` entered a money path
@@ -105,7 +104,7 @@ to be able to determine exactly what they are running.
 | the disconnect path in the command runtime | safety survives a disconnect |
 | a price, quantity or notional calculation | money arithmetic is exact |
 
-All four are stated in `.claude/rules/mandatory-rules.md`. The emergency
+All four are stated in [`SECURITY.md`](SECURITY.md). The emergency
 response to a problem with any of them is to stop creating live deployments and
 fall back to sandbox or testnet — never to bypass the guarantee.
 
@@ -127,7 +126,8 @@ grep -rho '"src/custos/[^"]*\.py"' docs/authority/ | sort -u
 4. Run `make verify` before push; CI runs the same target on PRs.
 5. Open the PR against `main` with a short "why" + "what changed"
    summary. Point at any authority document whose recorded behaviour you are
-   changing (see `.claude/rules/authority-docs.md`).
+   changing (`authority-manifest.json` lists them; `make check-authority`
+   verifies them).
 6. Review is via GitHub PR + inline comments. Expect at least one
    round of "hmm, does this break red line X?" — it isn't personal.
 

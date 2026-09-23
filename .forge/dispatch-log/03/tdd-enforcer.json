@@ -1,9 +1,0 @@
-{
-  "plan_id": "03",
-  "role": "tdd-enforcer",
-  "resolved_model_id": "sonnet",
-  "escalate_reasons": ["fixed by teams.yaml by_role.tdd-enforcer"],
-  "agent_tool_use_id": "tdd-enforcer@session-active",
-  "worktree_path": ".forge/worktrees/03-runner",
-  "spawned_at": "2026-07-09T11:00:00Z"
-}

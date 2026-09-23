@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Enforce the "code artifacts must be English" red line from CLAUDE.md.
+Enforce the "code artifacts must be English" rule from CONTRIBUTING.md.
 
 Scans **newly-added lines** (git staged `+` lines, not existing lines) in
 `.py` / `.rs` / `.ts` / `.tsx` files for CJK characters. Existing Chinese
 comments / logs are intentionally NOT flagged — the policy is "touch-and-fix"
 (rewrite when you edit them), not "big-bang rewrite the world".
 
-Scope aligned with the root `.claude/rules/code-style.md` §6 red line:
+Scope:
 - IN scope: source code (`.py`, `.rs`, `.ts`, `.tsx`)
 - OUT of scope: Markdown, `.planning/*`, Grimoire, config YAML, user-facing UI
   copy (i18n bundles / message JSON), CJK inside `data:` / URL literals
@@ -256,8 +256,7 @@ def main() -> int:
     print(
         "\n[check-code-english] BLOCKED: newly-added lines contain Chinese "
         "characters in source code (.py / .rs / .ts / .tsx).\n"
-        "Red line: see `.claude/rules/code-style.md` §6 and each subsystem "
-        "CLAUDE.md 'Language Policy (Code Artifacts)'.\n"
+        "Rule: see CONTRIBUTING.md, 'Before you open the PR'.\n"
         "Rewrite these lines in English (comments, log/event names, "
         "error messages). User-facing UI copy belongs in i18n bundles, not "
         "source code strings.\n"

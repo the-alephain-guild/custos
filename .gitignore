@@ -45,14 +45,11 @@ custos-vault/
 *.age.key
 *-key.txt
 
-# forge 临时物件 (scratchpad / handoff packet / worktree 是会话内产出物, 不入 git)
-.forge/scratch/
-.forge/handoff/
-.forge/worktrees/
-
-# Claude Code 会话内 agent 定义 (双轨 model 注入 track 2, session-specific;
-# 与 .claude/settings.local.json 同源, 属 client-side workspace 状态, 不入 git)
-.claude/agents/
+# 维护者的内部工作文档不属于公开仓库；本地以符号链接形式存在。
+# scripts/check-public-surface.py 在 pre-commit 与 CI 中拒绝它们被跟踪。
+/.forge
+/.claude
+/CLAUDE.md
 
 # examples/ 环境变量: 每个 example 目录的 .env 用于本地开发, 但 .env.example
 # 是模板必须入 git — lesson #26 boundary constant 显式反向豁免

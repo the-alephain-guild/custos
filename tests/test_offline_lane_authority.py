@@ -18,7 +18,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 CHECKER_PATH = ROOT / "scripts/check-authority-docs.py"
-MANDATORY_RULES = ROOT / ".claude/rules/mandatory-rules.md"
+LIVE_GATE_DOC = ROOT / "docs-site/docs/03-concepts/live-execution-gate.md"
 MANIFEST = ROOT / "authority-manifest.json"
 
 SIGNED_PATH_BANS = (
@@ -65,14 +65,14 @@ def _lane_tree(root: Path, *, modules: dict[str, str]) -> None:
         (lane / name).write_text(body, encoding="utf-8")
 
 
-def test_trust_rule_admits_the_offline_lane_and_still_refuses_live() -> None:
-    text = MANDATORY_RULES.read_text(encoding="utf-8")
+def test_published_gate_admits_the_offline_lane_and_still_refuses_live() -> None:
+    text = LIVE_GATE_DOC.read_text(encoding="utf-8")
 
-    assert "Live mode fails closed without signed promotion evidence." in text
-    assert "Offline lane" in text
-    assert "sandbox" in text and "testnet" in text
-    assert "src/custos/offline/mode_guard.py" in text
+    assert "Live execution is disabled by default." in text
+    assert "## Offline admission" in text
     assert "--reconcile-strategy-id" in text
+    assert "rejects live" in text
+    assert "src/custos/offline/mode_guard.py" in text
 
 
 def test_manifest_declares_the_lane_as_non_live(manifest: dict) -> None:

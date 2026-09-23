@@ -1,7 +1,0 @@
-{
-  "task_id": "03-worktree",
-  "plan_file": ".forge/plans/2026-07/03-nt-host-hardening.md",
-  "artifacts": [".forge/marker/03-worktree.complete.json"],
-  "completed_at": "2026-07-09T03:37:03Z",
-  "status": "merge_complete"
-}

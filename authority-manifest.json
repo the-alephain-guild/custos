@@ -420,11 +420,8 @@
   },
   "doc_drift": {
     "paths": [
-      ".forge/plans/2026-07/19-crucible-command-runner-fact-runtime-convergence.md",
-      ".claude/rules/authority-docs.md",
       ".github/workflows/promote-toolkit-rc.yml",
       ".github/workflows/release-toolkit-rc.yml",
-      "CLAUDE.md",
       "Makefile",
       "docs/authority/crucible-runner-command-consumer-assets-v1.json",
       "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json",

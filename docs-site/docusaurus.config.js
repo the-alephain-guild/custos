@@ -1,6 +1,5 @@
 // @ts-check
 // custos docs site — Docusaurus 3.x config
-// Authoritative plan: .forge/plans/2026-07/20-custos-docs-site-scaffold.md
 
 const {themes: prismThemes} = require('prism-react-renderer');
 

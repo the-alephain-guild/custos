@@ -1,7 +1,6 @@
 """Regressions for the strategy-coordinator review of 2026-09-20.
 
-Each class corresponds to one finding from
-``.forge/reviews/2026-09-20-custos-strategy-deep-review.md``. The review shipped
+Each class corresponds to one finding of that review. The review shipped
 probes asserting the defective behaviour; these assert the repaired behaviour
 against the same real coordinators, so a regression flips them back to red.
 
