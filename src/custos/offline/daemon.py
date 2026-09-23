@@ -18,6 +18,7 @@ import os
 import shutil
 import sys
 from collections.abc import Coroutine
+from copy import deepcopy
 from pathlib import Path
 from typing import Any, Final
 
@@ -51,10 +52,18 @@ class BindMountedStrategy:
     honest about where the code came from.
     """
 
-    def __init__(self, *, strategy_path: Path, registry_name: str, digest: str) -> None:
+    def __init__(
+        self,
+        *,
+        strategy_path: Path,
+        registry_name: str,
+        digest: str,
+        strategy_config: dict | None = None,
+    ) -> None:
         self._strategy_path = strategy_path
         self._registry_name = registry_name
         self._digest = digest
+        self._strategy_config = deepcopy(strategy_config or {})
 
     @property
     def activation_id(self) -> str:
@@ -64,11 +73,13 @@ class BindMountedStrategy:
     def strategy(self) -> object:
         self.select_discovery_path()
         # Imported lazily: the toolkit registry pulls in NautilusTrader.
+        from custos_toolkit.config import ConfigWrapper, deep_merge, load_config
         from custos_toolkit_nautilus.adapter import create_strategy
 
+        defaults = load_config(self._strategy_path / "config.yaml")
         return create_strategy(
             self._registry_name,
-            config_path=self._strategy_path / "config.yaml",
+            config_wrapper=ConfigWrapper(deep_merge(defaults.raw, self._strategy_config)),
         )
 
     def select_discovery_path(self) -> None:
@@ -249,6 +260,7 @@ def _artifact_for(spec: OfflineDeploymentSpec) -> BindMountedStrategy:
         strategy_path=Path(spec.strategy_path),
         registry_name=spec.strategy_registry_name,
         digest=spec.code_hash or "unpinned",
+        strategy_config=spec.strategy_config,
     )
 
 

@@ -40,7 +40,9 @@ from custos.offline.state import AppliedRecord
 _log = get_logger("custos.offline.reconciler")
 
 _IDENTITY_NAMESPACE: Final = UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
-_TERMINAL_STATES: Final = frozenset({LifecycleState.STOPPED, LifecycleState.ARCHIVED})
+_NON_RUNNING_STATES: Final = frozenset(
+    {LifecycleState.PAUSED, LifecycleState.STOPPED, LifecycleState.ARCHIVED}
+)
 _POLL_SECS: Final = 0.5
 _RETRY_SECS: Final = 5.0
 
@@ -195,7 +197,15 @@ class OfflineReconciler:
                 _log.warning("offline_desired_state_read_failed", error=str(exc))
                 await asyncio.sleep(_POLL_SECS)
                 continue
-            await self._settle(message, await self.handle(message.data))
+            settlement = await self.handle(message.data)
+            try:
+                await self._settle(message, settlement)
+            except Exception as exc:  # a failed acknowledgement must not stop the local guard
+                _log.warning(
+                    "offline_delivery_settlement_failed",
+                    settlement=settlement.value,
+                    error_type=type(exc).__name__,
+                )
 
     async def handle(self, data: bytes) -> Settlement:
         """Apply the desired state in ``data`` and say how it was disposed of."""
@@ -319,7 +329,7 @@ class OfflineReconciler:
         applied record survives a restart and the attachment it describes does not.
         """
 
-        wants_an_engine = spec.lifecycle_state not in _TERMINAL_STATES
+        wants_an_engine = spec.lifecycle_state not in _NON_RUNNING_STATES
         attached = self._engine.attached(str(identity.deployment_instance_id))
         return bool(attached) == wants_an_engine
 
@@ -337,7 +347,7 @@ class OfflineReconciler:
 
         if self._guard is None:
             return
-        if spec.lifecycle_state in _TERMINAL_STATES:
+        if spec.lifecycle_state in _NON_RUNNING_STATES:
             self._guard.release(spec.spec_id)
             return
         self._guard.watch(spec.spec_id, str(identity.deployment_instance_id), limits)
@@ -361,8 +371,10 @@ class OfflineReconciler:
     ) -> str:
         document = runtime_spec(spec, identity)
         deployment_instance_id = str(identity.deployment_instance_id)
-        if spec.lifecycle_state in _TERMINAL_STATES:
+        if spec.lifecycle_state in _NON_RUNNING_STATES:
             await self._engine.stop(deployment_instance_id)
+            if self._engine.attached(deployment_instance_id):
+                raise RuntimeError("offline runtime did not reach the requested non-running state")
             return ""
         credential = self._credential_for(spec)
         artifact = self._artifact_for(spec)
