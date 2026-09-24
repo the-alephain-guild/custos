@@ -31,9 +31,7 @@ ACTIVE_RUNTIME_DOCS = (
 )
 LOCAL_IMAGE = "custos-runner:v0.3.0"
 REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.3.0"
-DEPLOYMENT_RUNTIME_CONTRACT = (
-    REPO_ROOT / ".forge" / "plans" / "2026-07" / "14-clean-deployment-runtime-contract.md"
-)
+MAKEFILE = REPO_ROOT / "Makefile"
 OPERATOR_DEPLOYMENT = REPO_ROOT / "docs-site" / "docs" / "04-operator-guide" / "deployment.md"
 
 
@@ -145,12 +143,13 @@ def test_testnet_readme_requires_local_image_gate() -> None:
 
 
 def test_local_consumer_gate_is_registered_in_deployment_runtime_contract() -> None:
+    # The gate a downstream consumer runs is a public make target, documented
+    # where an operator deploys.
     verification = OPERATOR_DEPLOYMENT.read_text(encoding="utf-8")
-    deployment_runtime_contract = DEPLOYMENT_RUNTIME_CONTRACT.read_text(encoding="utf-8")
+    makefile = MAKEFILE.read_text(encoding="utf-8")
 
     assert "make verify-local-v030" in verification
-    assert "Plan 16 verified local image" in deployment_runtime_contract
-    assert "PS local-development gate" in deployment_runtime_contract
+    assert "\nverify-local-v030:" in makefile
 
 
 def test_testnet_example_has_no_derived_dockerfile() -> None:
