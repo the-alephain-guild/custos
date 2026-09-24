@@ -50,6 +50,7 @@ custos-vault/
 /.forge
 /.claude
 /CLAUDE.md
+/AGENTS.md
 
 # examples/ 环境变量: 每个 example 目录的 .env 用于本地开发, 但 .env.example
 # 是模板必须入 git — lesson #26 boundary constant 显式反向豁免
