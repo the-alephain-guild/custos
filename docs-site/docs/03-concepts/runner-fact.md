@@ -19,7 +19,7 @@ The batch has thirteen kinds, listed with exact signing rules in [consumer refer
 
 ## Settlement and reconciliation
 
-`period_closed` is a calendar settlement observation whose period is `YYYY-MM`. It is emitted through the settlement lifecycle. A reconciliation interval does not create a settlement close: venue-ledger evidence uses `reconciliation_period_closed`. If independent ledger evidence is unavailable, that path does not emit a close fact.
+`period_closed` is a calendar settlement observation whose period is `YYYY-MM`. The runtime emits it once per stream and calendar month, as the last fact of its own batch, when a reconciliation period crosses a month boundary. A reconciliation interval inside one month does not create a settlement close: venue-ledger evidence uses `reconciliation_period_closed`. If independent ledger evidence is unavailable, that path does not emit a close fact.
 
 ## Other observation channels
 
