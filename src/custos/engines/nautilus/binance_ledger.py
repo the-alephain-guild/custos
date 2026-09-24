@@ -21,6 +21,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 
 from custos.core.runner_fact import SUPPORTED_CURRENCIES
 from custos.core.runner_fact_producer import VenueLedgerEvidence
+from custos.core.venue_proxy import VenueProxy
 from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory
 
 _SPOT_LIVE = "https://api.binance.com"
@@ -44,13 +45,20 @@ class BinanceVenueLedgerSource:
         "_key_type",
         "_base_url",
         "_futures",
+        "_opener",
         "_pairs",
         "_symbols",
         "_currencies",
         "_settlement_currencies",
     )
 
-    def __init__(self, *, spec: Mapping[str, Any], credential: Mapping[str, Any]) -> None:
+    def __init__(
+        self,
+        *,
+        spec: Mapping[str, Any],
+        credential: Mapping[str, Any],
+        proxy: VenueProxy | None = None,
+    ) -> None:
         mode = str(spec.get("trading_mode") or "").lower()
         if mode not in {"testnet", "live"}:
             raise BinanceVenueLedgerError(
@@ -60,6 +68,11 @@ class BinanceVenueLedgerSource:
         if connector not in {"binance", "binance_perpetual"}:
             raise BinanceVenueLedgerError(f"unsupported Binance ledger connector {connector!r}")
         self._futures = connector == "binance_perpetual"
+        # An explicit, possibly empty, proxy table: urllib would otherwise route
+        # through whatever HTTPS_PROXY the process inherited, which is not the
+        # route the engine's own clients to this venue take.
+        proxies = {"http": proxy.url, "https": proxy.url} if proxy is not None else {}
+        self._opener = urllib.request.build_opener(urllib.request.ProxyHandler(proxies))
         self._base_url = (
             (_FUTURES_TESTNET if self._futures else _SPOT_TESTNET)
             if mode == "testnet"
@@ -484,15 +497,14 @@ class BinanceVenueLedgerSource:
             raise BinanceVenueLedgerError("Binance private signing key is invalid") from exc
         return base64.b64encode(signature).decode("ascii")
 
-    @staticmethod
-    def _request_json(url: str, *, headers: Mapping[str, str]) -> Any:
+    def _request_json(self, url: str, *, headers: Mapping[str, str]) -> Any:
         request = urllib.request.Request(
             url,
             headers={"Accept": "application/json", "User-Agent": "custos-runner/0.3", **headers},
             method="GET",
         )
         try:
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with self._opener.open(request, timeout=10) as response:
                 payload = response.read(_MAX_RESPONSE_BYTES + 1)
         except HTTPError as exc:
             body = exc.read(512).decode("utf-8", errors="replace")

@@ -16,12 +16,14 @@ without NT; NtTradingNodeHost.deploy fails fast if NT is missing.
 from __future__ import annotations
 
 import asyncio
+import functools
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from inspect import isawaitable
+from typing import Any
 from uuid import UUID
 
 from custos.core.engine_protocol import (
@@ -51,6 +53,7 @@ from custos.core.runner_fact_producer import (
     strategy_signal_metadata,
 )
 from custos.core.runtime_log_fact import RunnerRuntimeLogEmitter, RuntimeLogRedactor
+from custos.core.venue_proxy import VenueProxy
 from custos.engines.nautilus.portfolio_snapshot import (
     NautilusPortfolioSnapshotProvider,
 )
@@ -488,6 +491,7 @@ class NtTradingNodeHost:
         capability_receipt: RunnerCapabilityReceipt | None = None,
         portfolio_snapshot_provider: NautilusPortfolioSnapshotProvider | None = None,
         runner_safety_boundary_factory: Callable[[dict], object] | None = None,
+        venue_proxy: VenueProxy | None = None,
     ) -> None:
         # deployment_instance_id -> its running node and the state captured with it.
         # Never holds credentials.
@@ -534,6 +538,7 @@ class NtTradingNodeHost:
         self._runner_fact_emitter = runner_fact_emitter
         self._capability_receipt = capability_receipt
         self._runner_safety_boundary_factory = runner_safety_boundary_factory
+        self._venue_proxy = venue_proxy
         self._portfolio_snapshot_provider = portfolio_snapshot_provider or (
             NautilusPortfolioSnapshotProvider(price_type_mid=PriceType.MID if PriceType else None)
         )
@@ -633,10 +638,13 @@ class NtTradingNodeHost:
         strategy = create_strategy() if callable(create_strategy) else artifact.strategy
 
         venue = _venue_module_for(identity.connector)
+        # Refuse before anything reaches the venue: an account check that went out
+        # directly would already be the connection the proxy was named to prevent.
+        data_config_for_mode = self._venue_function(venue, "build_data_client_config_for_mode")
         await venue.validate_account_configuration(spec, credential)
 
         trading_mode = identity.trading_mode
-        data_cfg = venue.build_data_client_config_for_mode(spec, credential, trading_mode)
+        data_cfg = data_config_for_mode(spec, credential, trading_mode)
         exec_cfg, exec_factory, reconciliation = self._build_exec_plan(
             trading_mode, spec, credential, venue
         )
@@ -788,7 +796,9 @@ class NtTradingNodeHost:
             exec_cfg = venue.build_exec_client_config_sandbox(spec, credential, starting_balances)
             return exec_cfg, SandboxExecutionClientFactory(), False
         if trading_mode == "testnet":
-            exec_cfg = venue.build_exec_client_config_testnet(spec, credential)
+            exec_cfg = self._venue_function(venue, "build_exec_client_config_testnet")(
+                spec, credential
+            )
             return exec_cfg, venue.exec_client_factory(), True
         if trading_mode == "live":
             _log.warning(
@@ -797,11 +807,30 @@ class NtTradingNodeHost:
                 connector=spec.get("connector"),
                 promotion_id=spec.get("promotion_id"),
             )
-            exec_cfg = venue.build_exec_client_config_live(spec, credential)
+            exec_cfg = self._venue_function(venue, "build_exec_client_config_live")(
+                spec, credential
+            )
             return exec_cfg, venue.exec_client_factory(), True
         raise RuntimeError(
             f"unsupported trading_mode {trading_mode!r} (expected sandbox / testnet / live)"
         )
+
+    def _venue_function(self, venue, name: str) -> Callable[..., Any]:
+        """A venue module function that reaches the venue, routed through the proxy.
+
+        A venue that cannot take the proxy refuses once one is named. Connecting
+        directly would expose the egress address the operator configured the proxy
+        to hide, and fail where the venue is unreachable without it.
+        """
+        function = getattr(venue, name)
+        if getattr(venue, "SUPPORTS_VENUE_PROXY", False):
+            return functools.partial(function, proxy=self._venue_proxy)
+        if self._venue_proxy is not None:
+            raise RuntimeError(
+                f"venue module {venue.__name__.rsplit('.', 1)[-1]} does not route through a "
+                f"proxy; refusing to connect directly while {self._venue_proxy} is configured"
+            )
+        return function
 
     async def _build_runner_safety_boundary(self, spec: dict):
         """Build the reservation boundary this deployment's orders answer to.
@@ -991,7 +1020,9 @@ class NtTradingNodeHost:
             raise RuntimeError(f"settlement currency {currency!r} is outside RunnerFact v1")
         provider = None
         if identity.trading_mode in {"testnet", "live"}:
-            provider = _venue_module_for(identity.connector).venue_ledger_source(spec, credential)
+            provider = self._venue_function(
+                _venue_module_for(identity.connector), "venue_ledger_source"
+            )(spec, credential)
         strategy_version, timeframe = strategy_signal_metadata(
             spec,
             runtime_strategy=runtime_strategy,

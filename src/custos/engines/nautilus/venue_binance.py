@@ -44,6 +44,7 @@ from nautilus_trader.model import (
     Venue,
 )
 
+from custos.core.venue_proxy import VenueProxy
 from custos.engines.nautilus.venues import venue_for_connector
 
 # The sandbox exec config takes these as model enums, not as their string names.
@@ -239,6 +240,8 @@ def build_data_client_config(
     spec: dict,
     credential: dict,
     environment: BinanceEnvironment = BinanceEnvironment.LIVE,
+    *,
+    proxy: VenueProxy | None = None,
 ) -> BinanceDataClientConfig:
     """Binance data-feed config for the requested trading mode and environment.
 
@@ -269,6 +272,7 @@ def build_data_client_config(
         spot_market_data_mode=spot_market_data_mode,
         product_type=_binance_product_type(connector),
         environment=environment,
+        proxy_url=proxy.url if proxy is not None else None,
         instrument_provider=BinanceInstrumentProviderConfig(
             load_all=False,
             load_ids=build_instrument_id_strings(spec),
@@ -309,6 +313,7 @@ def _build_binance_exec_config(
     spec: dict,
     credential: dict,
     environment: BinanceEnvironment,
+    proxy: VenueProxy | None,
 ) -> BinanceExecutionClientConfig:
     """Real Binance exec-client config (testnet / live) for the given environment.
 
@@ -335,6 +340,7 @@ def _build_binance_exec_config(
         environment=environment,
         oms_type=_OMS_TYPE_NETTING,
         futures_leverages=futures_leverages,
+        proxy_url=proxy.url if proxy is not None else None,
         instrument_provider=BinanceInstrumentProviderConfig(
             load_all=False,
             load_ids=build_instrument_id_strings(spec),
@@ -342,15 +348,19 @@ def _build_binance_exec_config(
     )
 
 
-def build_exec_client_config_testnet(spec: dict, credential: dict) -> BinanceExecutionClientConfig:
+def build_exec_client_config_testnet(
+    spec: dict, credential: dict, *, proxy: VenueProxy | None = None
+) -> BinanceExecutionClientConfig:
     """Real Binance exec against the testnet endpoint (test funds)."""
-    return _build_binance_exec_config(spec, credential, BinanceEnvironment.TESTNET)
+    return _build_binance_exec_config(spec, credential, BinanceEnvironment.TESTNET, proxy)
 
 
-def build_exec_client_config_live(spec: dict, credential: dict) -> BinanceExecutionClientConfig:
+def build_exec_client_config_live(
+    spec: dict, credential: dict, *, proxy: VenueProxy | None = None
+) -> BinanceExecutionClientConfig:
     """Real Binance exec against live, gated by signed control-plane owner evidence."""
     require_live_owner_evidence(spec)
-    return _build_binance_exec_config(spec, credential, BinanceEnvironment.LIVE)
+    return _build_binance_exec_config(spec, credential, BinanceEnvironment.LIVE, proxy)
 
 
 def venue_name(spec: dict) -> str:
@@ -385,16 +395,18 @@ def build_data_client_config_for_mode(
     spec: dict,
     credential: dict,
     mode: str,
+    *,
+    proxy: VenueProxy | None = None,
 ) -> BinanceDataClientConfig:
     """Uniform entry point the host calls for every venue.
 
     Each venue decides for itself what a mode means for its data feed; the host only
     knows the mode name.
     """
-    return build_data_client_config(spec, credential, data_environment_for_mode(mode))
+    return build_data_client_config(spec, credential, data_environment_for_mode(mode), proxy=proxy)
 
 
-def venue_ledger_source(spec: dict, credential: dict):
+def venue_ledger_source(spec: dict, credential: dict, *, proxy: VenueProxy | None = None):
     """The independent ledger this venue's reconciliation evidence is read from.
 
     Independent of the Nautilus cache on purpose: reconciliation evidence that came
@@ -402,7 +414,12 @@ def venue_ledger_source(spec: dict, credential: dict):
     """
     from custos.engines.nautilus.binance_ledger import BinanceVenueLedgerSource
 
-    return BinanceVenueLedgerSource(spec=spec, credential=credential)
+    return BinanceVenueLedgerSource(spec=spec, credential=credential, proxy=proxy)
+
+
+# Every request this module builds -- market data, execution and the ledger --
+# takes the operator's venue proxy, so the host may route this venue through one.
+SUPPORTS_VENUE_PROXY = True
 
 
 def client_order_id_len_limit() -> int | None:

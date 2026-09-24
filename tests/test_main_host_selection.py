@@ -48,3 +48,28 @@ async def test_build_host_nt_without_runtime_fails_fast(monkeypatch) -> None:
             {},
             SimpleNamespace(activation_id="activation-x", strategy=object()),
         )
+
+
+def test_build_host_routes_venue_traffic_through_the_configured_proxy(monkeypatch) -> None:
+    monkeypatch.setenv("CUSTOS_VENUE_PROXY_URL", "http://alice:proxy-secret@proxy.example:8080")
+
+    host = _build_host(_host_args())
+
+    assert host._venue_proxy.redacted == "http://proxy.example:8080"
+
+
+def test_build_host_connects_directly_without_a_proxy(monkeypatch) -> None:
+    monkeypatch.delenv("CUSTOS_VENUE_PROXY_URL", raising=False)
+    monkeypatch.setenv("HTTPS_PROXY", "http://elsewhere.example:3128")
+
+    assert _build_host(_host_args())._venue_proxy is None
+
+
+def test_build_host_refuses_an_unusable_proxy_without_echoing_it(monkeypatch) -> None:
+    monkeypatch.setenv("CUSTOS_VENUE_PROXY_URL", "socks5://alice:proxy-secret@proxy.example:1080")
+
+    with pytest.raises(SystemExit) as raised:
+        _build_host(_host_args())
+
+    assert "proxy-secret" not in str(raised.value)
+    assert "CUSTOS_VENUE_PROXY_URL" in str(raised.value)

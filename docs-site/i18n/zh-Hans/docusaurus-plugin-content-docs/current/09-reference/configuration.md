@@ -53,5 +53,14 @@ sidebar_position: 2
 | `CUSTOS_ARTIFACT_REGISTRY_USERNAME` / `CUSTOS_ARTIFACT_REGISTRY_TOKEN` | 私有 registry 认证，需同时提供 |
 | `CUSTOS_DEVELOPMENT_ARTIFACT_ROOT` | 显式 sandbox 开发源码位置 |
 | `CUSTOS_DEVELOPMENT_LOCAL_NATS_URL` | 签名开发路径中显式的 loopback sandbox 传输例外 |
+| `CUSTOS_VENUE_PROXY_URL` | 所有交易所流量的出站代理，见下文 |
+
+### 交易所代理
+
+交易所无法直连时，将 `CUSTOS_VENUE_PROXY_URL` 设为 `http://` 或 `https://` 正向代理，例如 `http://proxy.internal:3128`。行情、下单执行与独立账户账本都会经由该代理连接。SOCKS 代理在启动时即被拒绝。
+
+- 代理地址可能包含凭据，请通过环境变量传入，不要写在命令行上。日志只显示其协议、主机和端口。
+- `HTTPS_PROXY` 等通用变量不影响交易所流量。
+- Binance 支持经代理连接。OKX 与 SoDEX 暂不支持；配置了代理时，这两个交易所上的部署会被拒绝，而不是改为直连。
 
 运行时从金库解密交易所秘密，不继承环境中的交易凭据。`vault put --api-secret-env` 仅用于配置输入，优先使用 stdin。策略配置见[部署指南](/operator-guide/deployment)，通道选择见[交易模式](/concepts/trading-modes)。

@@ -53,5 +53,14 @@ Files holding identity or credentials use `0600`; private directories use `0700`
 | `CUSTOS_ARTIFACT_REGISTRY_USERNAME` / `CUSTOS_ARTIFACT_REGISTRY_TOKEN` | Private registry authentication, provided together |
 | `CUSTOS_DEVELOPMENT_ARTIFACT_ROOT` | Explicit sandbox development-source location |
 | `CUSTOS_DEVELOPMENT_LOCAL_NATS_URL` | Explicit loopback sandbox transport exception for the signed development path |
+| `CUSTOS_VENUE_PROXY_URL` | Forward proxy for all venue traffic; see below |
+
+### Venue proxy
+
+Where a venue cannot be reached directly, set `CUSTOS_VENUE_PROXY_URL` to an `http://` or `https://` forward proxy, for example `http://proxy.internal:3128`. Market data, order execution and the independent account ledger then all connect through it. SOCKS proxies are refused at startup.
+
+- The address may include credentials. Pass it in the environment, not on the command line. Logs show only its scheme, host and port.
+- General variables such as `HTTPS_PROXY` do not affect venue traffic.
+- Binance routes through the proxy. OKX and SoDEX do not yet; while a proxy is configured, a deployment on them is refused instead of connecting directly.
 
 Venue secrets are decrypted from the vault rather than inherited as runtime environment credentials. `vault put --api-secret-env` is a provisioning input; prefer stdin. See [deployment](/operator-guide/deployment) for policy provisioning and [trading modes](/concepts/trading-modes) for lane selection.

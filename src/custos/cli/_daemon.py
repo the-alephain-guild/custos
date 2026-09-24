@@ -105,6 +105,7 @@ from custos.core.runner_safety_policy import (
 )
 from custos.core.runner_safety_policy_authority import RunnerSafetyPolicyAuthorityClient
 from custos.core.runner_toml import RunnerToml
+from custos.core.venue_proxy import VenueProxyError, venue_proxy_from_environment
 from custos.engines.nautilus.runtime_loader import NautilusRuntimeEntryPointLoaderV1
 
 log = logging.getLogger("custos")
@@ -337,12 +338,19 @@ def _build_host(
     if engine == "nautilus":
         from custos.engines.nautilus.host import NtTradingNodeHost
 
+        try:
+            venue_proxy = venue_proxy_from_environment(os.environ)
+        except VenueProxyError as error:
+            raise SystemExit(str(error)) from None
+        if venue_proxy is not None:
+            _slog.info("runner_venue_proxy_configured", proxy=venue_proxy.redacted)
         return NtTradingNodeHost(
             tenant_id=args.tenant_id,
             runner_id=args.runner_id,
             runner_fact_emitter=fact_emitter,
             capability_receipt=capability_receipt,
             runner_safety_boundary_factory=runner_safety_boundary_factory,
+            venue_proxy=venue_proxy,
         )
     if engine == "sandbox-sim":
         from custos.engines.nautilus.sandbox_runner_fact_host import (
