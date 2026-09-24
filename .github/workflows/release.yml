@@ -386,7 +386,9 @@ jobs:
     name: Publish GitHub release notes
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
-    needs: [publish-pypi, verify-release]
+    # The notes describe the verified image. PyPI is a separate channel, so a
+    # declined or failed package publication does not withhold them.
+    needs: [verify-release]
     permissions:
       contents: write
     steps:
@@ -398,8 +400,9 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          awk -v v="[${version}]" '
-            $0 ~ "^## " v { flag=1; next }
+          # A literal prefix match: "[0.3.0]" in a regex is a character class.
+          awk -v heading="## [${version}]" '
+            index($0, heading) == 1 { flag=1; next }
             flag && /^## \[/ { exit }
             flag { print }
           ' CHANGELOG.md > release-notes.md

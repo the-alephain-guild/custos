@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
+import tomllib
 from pathlib import Path
 
 from custos.cli.subcommands import _build_parser
@@ -190,3 +192,40 @@ def test_release_identity_prevention_is_documented() -> None:
     assert "same image digest that passed the full runtime gate" in published
     assert "does not rebuild between the gate and the stable tag" in published
     assert "SOURCE_DATE_EPOCH" in published
+
+
+def _step_script(job: str, step_name: str) -> str:
+    import yaml
+
+    workflow = yaml.safe_load(WORKFLOW.read_text())
+    (step,) = [s for s in workflow["jobs"][job]["steps"] if s.get("name") == step_name]
+    return step["run"]
+
+
+def test_release_notes_are_the_changelog_entry_for_the_tagged_version(tmp_path: Path) -> None:
+    # Run the workflow's own extraction, not a copy of it: a version in square
+    # brackets is a character class to awk, and a script that matched nothing
+    # would publish no notes or stop the release after the image was out.
+    version = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
+    (tmp_path / "CHANGELOG.md").write_text((ROOT / "CHANGELOG.md").read_text())
+
+    subprocess.run(
+        ["bash", "-c", _step_script("release-notes", "Extract exact CHANGELOG section")],
+        cwd=tmp_path,
+        env={"GITHUB_REF_NAME": f"v{version}", "PATH": "/usr/bin:/bin"},
+        check=True,
+    )
+
+    notes = (tmp_path / "release-notes.md").read_text()
+    changelog = (ROOT / "CHANGELOG.md").read_text()
+    entry = changelog.split(f"## [{version}]", 1)[1].split("\n## [", 1)[0]
+    assert notes.strip() == entry.split("\n", 1)[1].strip()
+
+
+def test_release_notes_do_not_wait_for_the_package_channel() -> None:
+    import yaml
+
+    jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
+
+    assert jobs["release-notes"]["needs"] == ["verify-release"]
+    assert "verify-release" in jobs["publish-pypi"]["needs"]
