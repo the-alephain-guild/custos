@@ -16,6 +16,7 @@ lives in SnapshotCoordinator (``apply_loaded_snapshot``).
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, cast
 
 import pandas as pd
@@ -28,6 +29,17 @@ from custos_toolkit_nautilus.adapter.warmup_manager import WarmupManager
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
+
+
+def _history_start(timestamp_ns: int) -> datetime:
+    """The datetime a history request starts from, for a nanosecond timestamp.
+
+    datetime holds microseconds, so the timestamp is floored to the microsecond
+    before conversion; pandas would otherwise warn on every nonzero nanosecond
+    remainder. Flooring keeps the start at or before the requested instant.
+    """
+    microseconds = timestamp_ns - timestamp_ns % 1_000
+    return pd.Timestamp(microseconds, unit="ns", tz="UTC").to_pydatetime()
 
 
 class _InitializedIndicator(Protocol):
@@ -82,14 +94,12 @@ class WarmupCoordinator:
             # serialize) must request a full history window or it would receive too few
             # bars and stay stuck in warmup forever (partial-restore regression).
             if snapshot_timestamp and self.check_pair_warmup(ctx):
-                start = pd.Timestamp(snapshot_timestamp, unit="ns", tz="UTC").to_pydatetime()
-                s.request_bars(ctx.bar_type, start=start)
+                s.request_bars(ctx.bar_type, start=_history_start(snapshot_timestamp))
             elif warmup_config and warmup_config.mode in ("warmup", "snapshot"):
                 bar_duration_ns = get_bar_duration_ns(ctx.bar_type)
                 current_ns = s.clock.timestamp_ns()
                 start_ns = current_ns - (warmup_config.preferred_bars * bar_duration_ns)
-                start = pd.Timestamp(start_ns, unit="ns", tz="UTC").to_pydatetime()
-                s.request_bars(ctx.bar_type, start=start)
+                s.request_bars(ctx.bar_type, start=_history_start(start_ns))
 
         # Log warmup info once
         if snapshot_timestamp:

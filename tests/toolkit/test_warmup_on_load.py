@@ -165,6 +165,52 @@ class TestRequestHistoricalPerPair:
             == pd.Timestamp(expected_fresh_ns, unit="ns", tz="UTC").to_pydatetime()
         )
 
+    def test_history_start_drops_sub_microsecond_time_without_a_warning(self, monkeypatch):
+        """A clock or snapshot timestamp is in nanoseconds; datetime holds microseconds.
+
+        Converting one with a nonzero nanosecond remainder made pandas warn
+        "Discarding nonzero nanoseconds in conversion" on every warmup. The start
+        is floored to the microsecond first, which keeps the start at or before
+        the requested instant, so no bar in the window is lost.
+        """
+        import warnings
+        from datetime import UTC, datetime, timedelta
+        from types import SimpleNamespace
+
+        import custos_toolkit_nautilus.adapter.coordinators.warmup as wc_mod
+
+        bar_ns = 60_000_000_000
+        monkeypatch.setattr(wc_mod, "get_bar_duration_ns", lambda _bt: bar_ns)
+        snap_ts = 1_000_000_000_000_000 + 456
+        now_ns = snap_ts + bar_ns + 123 - 456
+        contexts = {
+            "AAA": SimpleNamespace(
+                pair="AAA", bar_type="AAA-bt", indicators={"i": SimpleNamespace(initialized=True)}
+            ),
+            "BBB": SimpleNamespace(
+                pair="BBB", bar_type="BBB-bt", indicators={"i": SimpleNamespace(initialized=False)}
+            ),
+        }
+        requests: dict = {}
+        strat = SimpleNamespace(
+            _get_warmup_config=lambda: SimpleNamespace(mode="snapshot", preferred_bars=100),
+            _snapshot_coordinator=SimpleNamespace(apply_loaded_snapshot=lambda: snap_ts),
+            _contexts=contexts,
+            request_bars=lambda bar_type, start: requests.__setitem__(bar_type, start),
+            clock=SimpleNamespace(timestamp_ns=lambda: now_ns),
+            log=MagicMock(),
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            WarmupCoordinator(strat).request_historical_data()
+
+        def floored(ns: int) -> datetime:
+            return datetime(1970, 1, 1, tzinfo=UTC) + timedelta(microseconds=ns // 1_000)
+
+        assert requests["AAA-bt"] == floored(snap_ts)
+        assert requests["BBB-bt"] == floored(now_ns - 100 * bar_ns)
+
 
 class TestOnLoadStashesOnly:
     def test_on_load_stashes_does_not_restore_directly(self):
