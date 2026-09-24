@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from uuid import UUID
@@ -368,6 +369,59 @@ async def test_readiness_timeout_exhausts_durable_budget_and_quarantines() -> No
     assert engine.stop_calls == 3
     assert store.state.restart_count == 2
     assert store.terminal == [("retry_exhausted", "engine_ready_timeout")]
+
+
+class _EngineThatNeverBecomesReady(_Engine):
+    async def wait_ready(
+        self,
+        authority: EngineLifecycleAuthority,
+        *,
+        timeout_secs: float,
+    ) -> EngineReadyReceipt:
+        self.events.append("wait_ready")
+        await asyncio.Event().wait()
+        raise AssertionError("unreachable")
+
+
+@pytest.mark.asyncio
+async def test_a_start_cancelled_while_waiting_stops_the_engine_it_deployed() -> None:
+    # A newer command or a shutdown can cancel a start that is still waiting for
+    # the venue. The node it deployed must not be left running without an owner,
+    # and the cancellation is not a failed attempt: nothing is recorded for it.
+    verified = _verified()
+    store = _Store()
+    engine = _EngineThatNeverBecomesReady([])
+
+    async def no_sleep(_delay: float) -> None:
+        return None
+
+    supervisor = EngineLifecycleSupervisor(
+        engine=engine,
+        state_store=store,
+        artifact_capability=_capability(),
+        config=EngineLifecycleConfig(readiness_timeout_secs=30.0, restart_budget=2),
+        sleep=no_sleep,
+        clock_ns=lambda: 10,
+    )
+    start = asyncio.create_task(
+        supervisor.apply(
+            delivery_id="delivery-cancelled",
+            verified=verified,
+            runtime_spec={"trading_mode": "sandbox", "connector": "binance"},
+            credential={},
+            artifact=_Artifact(),
+        )
+    )
+    while "wait_ready" not in engine.events:
+        await asyncio.sleep(0)
+
+    start.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await start
+
+    assert engine.events == ["deploy", "wait_ready", "stop"]
+    assert store.state.restart_count == 0
+    assert store.terminal == []
 
 
 @pytest.mark.asyncio

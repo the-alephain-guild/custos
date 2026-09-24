@@ -393,14 +393,10 @@ async def _recover_durable_running_commands(
             command_fingerprint=durable.command_fingerprint,
             verification_receipt=durable.verification_receipt,
         )
-        await command_runtime.recover(verified)
-        log.info(
-            "durable_command_recovered",
-            extra={
-                "deployment_instance_id": str(command.deployment_instance_id),
-                "generation": command.generation,
-            },
-        )
+        # Recovery waits for the engine and therefore for the venue; it runs in
+        # the background so the runner is ready, reporting and taking commands
+        # meanwhile, and one deployment that cannot recover leaves the rest alone.
+        command_runtime.schedule_recovery(verified)
 
 
 def _build_policy_renewal_notifier(
@@ -729,14 +725,20 @@ async def _shutdown_in_order(
     fact_outbox: object,
     fact_publisher: object,
     clients: Mapping[str, object],
+    command_runtime: object | None = None,
 ) -> None:
-    """Stop intake/tasks, stop deployments, flush facts, then close transports."""
+    """Stop intake/tasks and recoveries, stop deployments, flush facts, close transports."""
 
     stop.set()
     for task in tasks:
         if not task.done():
             task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    # A recovery still starting an engine must end before the host closes, or
+    # it could start one on a host that has already been told to stop.
+    close_recoveries = getattr(command_runtime, "close_recoveries", None)
+    if callable(close_recoveries):
+        await close_recoveries()
     try:
         close_host = getattr(host, "close", None)
         if callable(close_host):
@@ -1044,6 +1046,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
 
     tasks: list[asyncio.Task] = []
     host: object | None = None
+    command_runtime: RunnerCommandRuntimeCoordinator | None = None
     try:
         tasks.append(
             asyncio.create_task(
@@ -1165,11 +1168,6 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 engine_lifecycle=lifecycle,
                 delivery_policy=delivery_policy,
             )
-            await _recover_durable_running_commands(
-                state_store=state_store,
-                command_runtime=command_runtime,
-                capability=capability,
-            )
             fact_production = RunnerFactProductionLoop(
                 host=host,
                 emitter=fact_emitter,
@@ -1225,6 +1223,11 @@ async def run_daemon(args: argparse.Namespace) -> int:
                         name=f"crucible-runner-control-{mode}",
                     )
                 )
+            await _recover_durable_running_commands(
+                state_store=state_store,
+                command_runtime=command_runtime,
+                capability=capability,
+            )
             deployment_subscription = True
         tasks.append(
             asyncio.create_task(
@@ -1254,6 +1257,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
             fact_outbox=fact_outbox,
             fact_publisher=fact_publisher,
             clients=clients,
+            command_runtime=command_runtime,
         )
         log.info("runner_stopped")
     return 0

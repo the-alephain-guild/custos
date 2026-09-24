@@ -341,6 +341,14 @@ class EngineLifecycleSupervisor:
                 )
             except EngineDependencyUnavailable as exc:
                 raise EngineLifecycleBlocked(str(exc)) from exc
+            except asyncio.CancelledError:
+                # A newer command or a shutdown cancelled this start. Whatever it
+                # deployed must not keep running without an owner; stopping by
+                # instance also covers a deploy cancelled before it returned a
+                # handle. A cancellation is not a failed attempt, so nothing is
+                # recorded and the restart budget is untouched.
+                await self._engine.stop(str(authority.deployment_instance_id))
+                raise
             except Exception as exc:  # noqa: BLE001 - typed terminal mapping below
                 try:
                     error = RuntimeLogRedactor(

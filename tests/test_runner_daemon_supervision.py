@@ -56,6 +56,10 @@ async def test_daemon_shutdown_stops_deployments_flushes_facts_then_closes_trans
         async def close(self) -> None:
             events.append("close_nats")
 
+    class Runtime:
+        async def close_recoveries(self) -> None:
+            events.append("cancel_recoveries")
+
     await _shutdown_in_order(
         stop=stop,
         tasks=[],
@@ -63,7 +67,16 @@ async def test_daemon_shutdown_stops_deployments_flushes_facts_then_closes_trans
         fact_outbox=Outbox(),
         fact_publisher=Publisher(),
         clients={"sandbox": Client()},
+        command_runtime=Runtime(),
     )
 
     assert stop.is_set()
-    assert events == ["stop_deployments", "flush_facts", "close_publisher", "close_nats"]
+    # A recovery still starting an engine is cancelled before the deployments
+    # are stopped, or it could start one after the host was closed.
+    assert events == [
+        "cancel_recoveries",
+        "stop_deployments",
+        "flush_facts",
+        "close_publisher",
+        "close_nats",
+    ]

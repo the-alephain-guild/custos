@@ -35,6 +35,7 @@ from custos.core.engine_lifecycle import (
     EngineLifecycleSupervisor,
 )
 from custos.core.engine_protocol import EngineReadyReceipt
+from custos.core.log import get_logger
 from custos.core.runner_command_intake import (
     CommandDeliveryPolicy,
     CommandIntakeCoordinator,
@@ -46,6 +47,7 @@ from custos.core.runner_command_intake import (
 )
 
 logger = logging.getLogger(__name__)
+_slog = get_logger("custos.runner_command_runtime")
 
 
 class RunnerCredentialResolutionError(RuntimeError):
@@ -118,6 +120,10 @@ class RunnerCommandRuntimeCoordinator:
         self._policy = delivery_policy
         self._engine_supervisions: dict[object, asyncio.Task[None]] = {}
         self._engine_supervision_failures: asyncio.Queue[BaseException] = asyncio.Queue()
+        # One lifecycle operation per deployment at a time, and the background
+        # recovery a restarted runner started for it, if one is still running.
+        self._lifecycle_locks: dict[object, asyncio.Lock] = {}
+        self._recoveries: dict[object, asyncio.Task[None]] = {}
 
     async def process(self, delivery: InboundCommandDelivery) -> RunnerCommandRuntimeResult:
         intake = await self._intake.process(delivery)
@@ -133,7 +139,19 @@ class RunnerCommandRuntimeCoordinator:
         verified = intake.verified
         if verified is None:
             raise RuntimeError("applicable command intake result lost verified authority")
+        instance = verified.command.deployment_instance_id
+        # A newer signed command supersedes a recovery still waiting on the venue;
+        # a stop must not queue behind every remaining recovery attempt.
+        await self._preempt_recovery(instance)
+        async with self._lifecycle_lock(instance):
+            return await self._apply_verified(delivery, intake, verified)
 
+    async def _apply_verified(
+        self,
+        delivery: InboundCommandDelivery,
+        intake: Any,
+        verified: VerifiedRunnerCommand,
+    ) -> RunnerCommandRuntimeResult:
         activated: ActivatedStrategyArtifact | ActivatedDevelopmentStrategyArtifact | None
         ready: EngineReadyReceipt | None
         try:
@@ -205,6 +223,81 @@ class RunnerCommandRuntimeCoordinator:
             intake=intake,
             activation_id=activated.activation_id if activated is not None else None,
             ready_receipt=ready,
+        )
+
+    def schedule_recovery(self, verified: VerifiedRunnerCommand) -> None:
+        """Recover one durable running command in the background.
+
+        Recovery waits for the engine, which waits for the venue. Running it here
+        instead of inline lets a restarted runner become ready, report and take
+        commands while a venue is unreachable, and keeps one deployment that
+        cannot recover from stopping the others.
+        """
+
+        instance = verified.command.deployment_instance_id
+        existing = self._recoveries.get(instance)
+        if existing is not None and not existing.done():
+            existing.cancel()
+        task = asyncio.create_task(
+            self._recover_in_background(verified),
+            name=f"runner-recovery-{instance}",
+        )
+        self._recoveries[instance] = task
+        task.add_done_callback(lambda done: self._forget_recovery(instance, done))
+
+    def recovery_in_progress(self, instance: object) -> bool:
+        task = self._recoveries.get(instance)
+        return task is not None and not task.done()
+
+    async def recoveries_settled(self) -> None:
+        await asyncio.gather(*tuple(self._recoveries.values()), return_exceptions=True)
+
+    async def close_recoveries(self) -> None:
+        tasks = tuple(self._recoveries.values())
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    def _forget_recovery(self, instance: object, task: asyncio.Task[None]) -> None:
+        if self._recoveries.get(instance) is task:
+            del self._recoveries[instance]
+
+    def _lifecycle_lock(self, instance: object) -> asyncio.Lock:
+        lock = self._lifecycle_locks.get(instance)
+        if lock is None:
+            lock = self._lifecycle_locks[instance] = asyncio.Lock()
+        return lock
+
+    async def _preempt_recovery(self, instance: object) -> None:
+        task = self._recoveries.get(instance)
+        if task is None or task.done() or task is asyncio.current_task():
+            return
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    async def _recover_in_background(self, verified: VerifiedRunnerCommand) -> None:
+        instance = verified.command.deployment_instance_id
+        async with self._lifecycle_lock(instance):
+            try:
+                await self.recover(verified)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - one deployment must not end the runner
+                # A quarantine has already been made durable and reported as a
+                # lifecycle RunnerFact; what remains is to say so locally and
+                # leave the runner and its other deployments running.
+                _slog.warning(
+                    "durable_command_recovery_failed",
+                    deployment_instance_id=str(instance),
+                    generation=verified.command.generation,
+                    error_type=type(exc).__name__,
+                    reason_code=str(exc) if isinstance(exc, EngineLifecycleQuarantined) else None,
+                )
+                return
+        _slog.info(
+            "durable_command_recovered",
+            deployment_instance_id=str(instance),
+            generation=verified.command.generation,
         )
 
     async def recover(self, verified: VerifiedRunnerCommand) -> EngineReadyReceipt:
