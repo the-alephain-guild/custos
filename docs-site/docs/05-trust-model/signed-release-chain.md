@@ -30,6 +30,8 @@ The suite also records expected behavior without an explicit epoch. Interpret it
 
 ## Image verification
 
+A stable release tag names the same image digest that passed the full runtime gate. The release workflow builds one candidate, runs the gate against that digest, then promotes and signs the same digest; it does not rebuild between the gate and the stable tag.
+
 ```bash
 make verify-local-v030
 ```

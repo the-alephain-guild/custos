@@ -12,8 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 MAKEFILE = ROOT / "Makefile"
 DOCKERFILE = ROOT / "Dockerfile"
-VERIFICATION_RULE = ROOT / ".claude" / "rules" / "verification.md"
-HISTORICAL_LESSONS = ROOT / ".claude" / "rules" / "historical-lessons.md"
+SIGNED_RELEASE_CHAIN = ROOT / "docs-site" / "docs" / "05-trust-model" / "signed-release-chain.md"
 EXPECTED_JOBS = ("build-docker", "verify-release", "publish-pypi", "release-notes")
 
 
@@ -186,10 +185,8 @@ def test_every_makefile_test_path_exists() -> None:
 
 
 def test_release_identity_prevention_is_documented() -> None:
-    verification = " ".join(VERIFICATION_RULE.read_text().split())
-    lessons = " ".join(HISTORICAL_LESSONS.read_text().split())
-    assert "same verified digest" in verification
-    assert "must not rebuild" in verification
-    assert "C3" in lessons
-    assert "SOURCE_DATE_EPOCH" in verification
-    assert "C7" in lessons
+    # The guarantee an auditor relies on is stated where an auditor reads it.
+    published = " ".join(SIGNED_RELEASE_CHAIN.read_text(encoding="utf-8").split())
+    assert "same image digest that passed the full runtime gate" in published
+    assert "does not rebuild between the gate and the stable tag" in published
+    assert "SOURCE_DATE_EPOCH" in published

@@ -30,6 +30,8 @@ uv run pytest tests/test_reproducible_build.py
 
 ## 镜像验证
 
+稳定版本 tag 指向的，正是通过完整 runtime gate 的那个镜像 digest。发布工作流只构建一次候选镜像，针对该 digest 运行 gate，然后对同一个 digest 打稳定 tag 并签名；在 gate 与稳定 tag 之间不会重新构建。
+
 ```bash
 make verify-local-v030
 ```

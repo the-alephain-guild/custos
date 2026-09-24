@@ -34,7 +34,7 @@ REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.3.0"
 DEPLOYMENT_RUNTIME_CONTRACT = (
     REPO_ROOT / ".forge" / "plans" / "2026-07" / "14-clean-deployment-runtime-contract.md"
 )
-VERIFICATION_RULE = REPO_ROOT / ".claude" / "rules" / "verification.md"
+OPERATOR_DEPLOYMENT = REPO_ROOT / "docs-site" / "docs" / "04-operator-guide" / "deployment.md"
 
 
 def test_project_and_lock_are_versioned_v030() -> None:
@@ -145,7 +145,7 @@ def test_testnet_readme_requires_local_image_gate() -> None:
 
 
 def test_local_consumer_gate_is_registered_in_deployment_runtime_contract() -> None:
-    verification = VERIFICATION_RULE.read_text(encoding="utf-8")
+    verification = OPERATOR_DEPLOYMENT.read_text(encoding="utf-8")
     deployment_runtime_contract = DEPLOYMENT_RUNTIME_CONTRACT.read_text(encoding="utf-8")
 
     assert "make verify-local-v030" in verification
