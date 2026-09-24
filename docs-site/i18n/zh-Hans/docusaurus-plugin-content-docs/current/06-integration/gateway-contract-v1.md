@@ -15,6 +15,8 @@ ARX 拥有正式 DeploymentSpec 和指令签发权。Custos 的严格消费者�
 
 `offline_deployment_spec.schema.json` 描述独立的操作者契约。`deployment validate/publish` 仅在 sandbox/testnet 校验和发布该输入，不能产生正式签名指令或晋升证据。
 
+每份离线 spec 都要声明它所依据的 `spec_version`，当前版本为 2。runner 会拒绝其他版本的 spec，并在拒绝信息中说明自己接受的版本。`arx-runner deployment schema` 会输出目标 runner 的 schema（含该版本号），渲染方可以据此核对，而不必猜测。
+
 ## 观测输出
 
 RunnerFact 批次包含封闭的 13 种 kind，以及签名身份、摘要和序号字段。策略信号使用独立签名 envelope。离线状态未签名，签名事实消费者不得接受它。

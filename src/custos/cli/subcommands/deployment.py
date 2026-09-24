@@ -38,9 +38,10 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         "deployment",
         help="Validate or publish offline desired state (sandbox and testnet only).",
     )
-    actions = parser.add_subparsers(dest="action", metavar="{validate,publish}")
+    actions = parser.add_subparsers(dest="action", metavar="{validate,publish,schema}")
     _register_validate(actions)
     _register_publish(actions)
+    _register_schema(actions)
     parser.set_defaults(handler=_dispatch)
 
 
@@ -69,6 +70,14 @@ def _register_publish(actions: argparse._SubParsersAction) -> None:
     parser.set_defaults(action_handler=_publish)
 
 
+def _register_schema(actions: argparse._SubParsersAction) -> None:
+    parser = actions.add_parser(
+        "schema",
+        help="Print the JSON Schema of the deployment spec this runner accepts.",
+    )
+    parser.set_defaults(action_handler=_schema)
+
+
 def _add_mode_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--mode",
@@ -83,9 +92,16 @@ def _add_mode_argument(parser: argparse.ArgumentParser) -> None:
 def _dispatch(args: argparse.Namespace) -> int:
     handler = getattr(args, "action_handler", None)
     if handler is None:
-        print("deployment requires an action ({validate,publish})", file=sys.stderr)
+        print("deployment requires an action ({validate,publish,schema})", file=sys.stderr)
         return 2
     return handler(args)
+
+
+def _schema(args: argparse.Namespace) -> int:
+    """Print the contract, including its spec_version, from the model the runner uses."""
+    del args
+    print(json.dumps(OfflineDeploymentSpec.model_json_schema(), indent=2, sort_keys=True))
+    return 0
 
 
 def _validate(args: argparse.Namespace) -> int:

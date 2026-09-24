@@ -25,6 +25,7 @@ def main() -> None:
         "  leverage:\n    value: 1\n"
     )
     spec = {
+        "spec_version": 2,
         "spec_id": "docs-sandbox",
         "generation": 1,
         "trading_mode": "sandbox",

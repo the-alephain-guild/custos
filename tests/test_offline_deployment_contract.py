@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from custos.offline.mode_guard import OfflineModeRefused
 from custos.offline.spec import (
+    OFFLINE_SPEC_VERSION,
     OfflineDeploymentMessage,
     OfflineDeploymentSpec,
     compute_strategy_code_hash,
@@ -41,6 +42,7 @@ def _rendered_spec(**overrides: Any) -> dict[str, Any]:
         "strategy_path": "/opt/ps/trend/supertrend",
         "provenance_ref": {"credential_id": "binance-supertrend"},
         "strategy_registry_name": "supertrend",
+        "spec_version": 2,
     }
     spec.update(overrides)
     return spec
@@ -210,3 +212,41 @@ def test_published_samples_validate(mode: str) -> None:
     spec = OfflineDeploymentSpec.model_validate_json(sample.read_bytes())
 
     assert spec.trading_mode.value == mode
+
+
+def test_a_spec_without_a_version_is_refused_naming_the_version_accepted() -> None:
+    # Renderers only ever see the spec document, never the envelope around it, so
+    # the version a consumer must write lives in the document itself.
+    document = _rendered_spec()
+    del document["spec_version"]
+
+    with pytest.raises(
+        ValueError, match="declares no spec_version; this runner accepts spec_version 2"
+    ):
+        OfflineDeploymentSpec.model_validate(document)
+
+
+@pytest.mark.parametrize("version", [1, 3, "2"])
+def test_a_spec_of_another_version_is_refused_naming_both(version: object) -> None:
+    with pytest.raises(
+        ValueError, match=f"declares spec_version {version!r}; this runner accepts spec_version 2"
+    ):
+        OfflineDeploymentSpec.model_validate(_rendered_spec(spec_version=version))
+
+
+def test_the_published_contract_names_its_version() -> None:
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+
+    assert schema["title"] == f"OfflineDeploymentSpec v{OFFLINE_SPEC_VERSION}"
+    assert schema["properties"]["spec_version"]["const"] == OFFLINE_SPEC_VERSION
+    assert "spec_version" in schema["required"]
+
+
+def test_the_envelope_carries_the_spec_version() -> None:
+    message = OfflineDeploymentMessage.create(
+        tenant_id="local",
+        strategy_id="supertrend-sandbox",
+        spec=OfflineDeploymentSpec.model_validate(_rendered_spec()),
+    )
+
+    assert message.envelope["payload_schema_version"] == OFFLINE_SPEC_VERSION

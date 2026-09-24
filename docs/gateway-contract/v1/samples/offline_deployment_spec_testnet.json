@@ -6,6 +6,7 @@
     "credential_id": "binance-supertrend"
   },
   "spec_id": "supertrend-testnet",
+  "spec_version": 2,
   "strategy_path": "/opt/ps/trend/supertrend",
   "strategy_registry_name": "supertrend",
   "trading_mode": "testnet"

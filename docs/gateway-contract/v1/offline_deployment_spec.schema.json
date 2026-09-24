@@ -118,6 +118,11 @@
       "title": "Spec Id",
       "type": "string"
     },
+    "spec_version": {
+      "const": 2,
+      "title": "Spec Version",
+      "type": "integer"
+    },
     "strategy_path": {
       "minLength": 1,
       "title": "Strategy Path",
@@ -140,6 +145,7 @@
     }
   },
   "required": [
+    "spec_version",
     "spec_id",
     "generation",
     "trading_mode",
@@ -147,6 +153,6 @@
     "strategy_path",
     "provenance_ref"
   ],
-  "title": "OfflineDeploymentSpec v1",
+  "title": "OfflineDeploymentSpec v2",
   "type": "object"
 }

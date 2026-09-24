@@ -14,7 +14,7 @@ sidebar_position: 1
 | `identity standalone` | 创建离线使用的本地未认证身份 |
 | `vault put/verify/list` | 存储和检查本地交易所凭据 |
 | `nats bootstrap` | 通过 `--profile standalone` 初始化自有离线 stream |
-| `deployment validate/publish` | 校验或发布 `OfflineDeploymentSpec`，仅限 sandbox/testnet |
+| `deployment validate/publish/schema` | 校验或发布 `OfflineDeploymentSpec`（仅限 sandbox/testnet），或输出其接受的 spec 版本与 schema |
 | `nats-transport enroll/rotate/revoke/resume/verify` | 管理签名通道传输授权 |
 | `publish-capability` | 使用已注册身份发布签名能力版本 |
 | `release-policy generate-development-authority/issue` | 创建本地发布信任策略材料；开发 authority 不构成生产批准 |
@@ -115,6 +115,8 @@ sidebar_position: 1
 | `--nats-url` | 可选 | `nats://localhost:4222` | — |
 | `--strategy-dir` | 可选 | — | — |
 | `--mode` | 可选 | — | — |
+
+### deployment schema
 
 ### enroll
 

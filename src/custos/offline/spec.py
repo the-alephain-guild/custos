@@ -16,7 +16,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, Self
+from typing import Annotated, Any, Literal, Self
 from uuid import UUID
 
 import uuid6
@@ -44,6 +44,11 @@ _HASH_EXCLUDE_DIRS = frozenset({"__pycache__"})
 _HASH_EXCLUDE_SUFFIXES = frozenset({".pyc", ".pyo"})
 _SUBJECT_ROOT = "arx"
 
+# The shape of the offline spec, raised whenever a document valid for one version
+# is refused by the next. It lives in the document because renderers only ever
+# see the document; the envelope around it is added by this runner at publish.
+OFFLINE_SPEC_VERSION = 2
+
 
 class ProvenanceRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -60,8 +65,11 @@ class SandboxConfig(BaseModel):
 class OfflineDeploymentSpec(BaseModel):
     """Desired state accepted on the offline lane, in the shape PS renders."""
 
-    model_config = ConfigDict(extra="forbid", title="OfflineDeploymentSpec v1")
+    model_config = ConfigDict(
+        extra="forbid", title=f"OfflineDeploymentSpec v{OFFLINE_SPEC_VERSION}"
+    )
 
+    spec_version: Literal[2]
     spec_id: SafeId
     generation: StrictInt = Field(ge=1)
     trading_mode: TradingMode
@@ -78,6 +86,25 @@ class OfflineDeploymentSpec(BaseModel):
     approved_by: list[str] = Field(default_factory=list)
     risk_config: dict[str, Any] = Field(default_factory=dict)
     nautilus_config: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def require_this_version(cls, data: Any) -> Any:
+        # Checked before the fields so the refusal names the version to write,
+        # instead of listing whichever fields the two shapes disagree on.
+        if isinstance(data, dict):
+            if "spec_version" not in data:
+                raise ValueError(
+                    "offline deployment spec declares no spec_version; "
+                    f"this runner accepts spec_version {OFFLINE_SPEC_VERSION}"
+                )
+            declared = data["spec_version"]
+            if type(declared) is not int or declared != OFFLINE_SPEC_VERSION:
+                raise ValueError(
+                    f"offline deployment spec declares spec_version {declared!r}; "
+                    f"this runner accepts spec_version {OFFLINE_SPEC_VERSION}"
+                )
+        return data
 
     @model_validator(mode="after")
     def enforce_mode_requirements(self) -> Self:
@@ -101,7 +128,7 @@ class _OfflineWireEnvelope(BaseModel):
     event_id: UUID
     tenant_id: SafeId
     occurred_at: Rfc3339Nanos
-    payload_schema_version: Annotated[StrictInt, Field(ge=1, le=1)]
+    payload_schema_version: Literal[2]
     payload: _OfflinePayload
 
     @field_validator("event_id")
@@ -134,7 +161,7 @@ class OfflineDeploymentMessage:
             "event_id": str(uuid6.uuid7()),
             "tenant_id": tenant_id,
             "occurred_at": now_rfc3339_nanos(),
-            "payload_schema_version": 1,
+            "payload_schema_version": OFFLINE_SPEC_VERSION,
             "payload": payload.model_dump(mode="json"),
         }
         wire = _OfflineWireEnvelope.model_validate(envelope)

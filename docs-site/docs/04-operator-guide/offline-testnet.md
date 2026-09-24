@@ -15,7 +15,7 @@ Use this path to run compatible strategy code against a venue's testnet without 
 
 ## Configure and validate
 
-Start from your strategy's offline spec. Set `trading_mode` to `testnet`, remove the `sandbox` object and choose explicit risk limits. The spec does not carry the connector, pairs or leverage: the runner reads them from the `trading` section of `config.yaml` under `strategy_path`, the same values the strategy reads, and refuses a spec that still sets them. Confirm those three suit your testnet account before publishing. `risk_config` accepts only `max_total_notional` and `max_drawdown_pct`; values must be positive decimal strings or integers. Limits apply per deployment.
+Start from your strategy's offline spec, which must declare `"spec_version": 2`; `arx-runner deployment schema` prints the version your runner accepts. Set `trading_mode` to `testnet`, remove the `sandbox` object and choose explicit risk limits. The spec does not carry the connector, pairs or leverage: the runner reads them from the `trading` section of `config.yaml` under `strategy_path`, the same values the strategy reads, and refuses a spec that still sets them. Confirm those three suit your testnet account before publishing. `risk_config` accepts only `max_total_notional` and `max_drawdown_pct`; values must be positive decimal strings or integers. Limits apply per deployment.
 
 Set `SPEC_FILE`, `STRATEGY_DIR`, `STATE_ROOT`, `TENANT_ID`, `STRATEGY_ID`, `RUNNER_LABEL` and `NATS_URL` to your local configuration. Export the age identity path through `SOPS_AGE_KEY_FILE`.
 

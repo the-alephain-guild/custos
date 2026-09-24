@@ -14,7 +14,7 @@ sidebar_position: 1
 | `identity standalone` | Create a local unattested identity for offline work |
 | `vault put/verify/list` | Store and inspect local exchange credentials |
 | `nats bootstrap` | Provision owned offline streams with `--profile standalone` |
-| `deployment validate/publish` | Validate or publish `OfflineDeploymentSpec`; sandbox/testnet only |
+| `deployment validate/publish/schema` | Validate or publish `OfflineDeploymentSpec` (sandbox/testnet only), or print the spec version and schema it accepts |
 | `nats-transport enroll/rotate/revoke/resume/verify` | Manage signed-lane transport authority |
 | `publish-capability` | Publish a signed capability revision using an enrolled identity |
 | `release-policy generate-development-authority/issue` | Create local trust-policy material; development authorities are not production approval |
@@ -115,6 +115,8 @@ The following tables are generated from the actual parser. Defaults are shown wi
 | `--nats-url` | optional | `nats://localhost:4222` | — |
 | `--strategy-dir` | optional | — | — |
 | `--mode` | optional | — | — |
+
+### deployment schema
 
 ### enroll
 

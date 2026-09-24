@@ -97,6 +97,29 @@ def test_deployment_is_registered_on_the_cli_surface(capsys: pytest.CaptureFixtu
     assert "validate" in capsys.readouterr().out
 
 
+def test_schema_prints_the_contract_the_runner_accepts(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # A consumer asks the runner it will talk to, rather than reading its internals.
+    published = ROOT / "docs/gateway-contract/v1/offline_deployment_spec.schema.json"
+
+    assert main(["deployment", "schema"]) == 0
+
+    printed = json.loads(capsys.readouterr().out)
+    assert printed == json.loads(published.read_text(encoding="utf-8"))
+    assert printed["properties"]["spec_version"]["const"] == 2
+
+
+def test_validate_names_the_version_it_accepts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    spec_file = _spec_file(tmp_path, spec_version=1)
+
+    assert main(["deployment", "validate", "--spec-file", str(spec_file)]) == 1
+
+    assert "this runner accepts spec_version 2" in capsys.readouterr().err
+
+
 def test_the_consumer_validate_invocation_is_accepted(tmp_path: Path, strategy_dir: Path) -> None:
     """`deploy/custos/Makefile` spec-validate passes exactly these flags."""
 

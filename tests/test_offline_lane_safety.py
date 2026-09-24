@@ -33,6 +33,7 @@ _STILL_HELD = "offline_exposure_latched_deployment_stopping"
 
 def _spec(**overrides: Any) -> OfflineDeploymentSpec:
     document: dict[str, Any] = {
+        "spec_version": 2,
         "spec_id": "supertrend-sandbox",
         "generation": 1,
         "trading_mode": "sandbox",

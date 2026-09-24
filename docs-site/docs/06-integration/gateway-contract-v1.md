@@ -15,6 +15,8 @@ The signed command client binds an existing authorized durable. See [NATS subjec
 
 `offline_deployment_spec.schema.json` describes a separate, operator-owned contract. `deployment validate/publish` checks and publishes that input in sandbox/testnet only. It cannot produce canonical signed commands or promotion evidence.
 
+Every offline spec declares the `spec_version` it was written for; the current version is 2. A runner refuses a spec of any other version, and says which version it accepts. `arx-runner deployment schema` prints the schema, including that version, of the runner you will publish to, so a renderer can check it instead of assuming.
+
 ## Observation output
 
 RunnerFact batches have a closed 13-kind union with signed identity, digest and sequence fields. Strategy signals use a separate signed envelope. Offline status is unsigned and must not be accepted by a signed-fact consumer.

@@ -39,6 +39,7 @@ TRADING = StrategyTradingConfig(
 
 def _spec(**overrides: Any) -> OfflineDeploymentSpec:
     document = {
+        "spec_version": 2,
         "spec_id": "supertrend-sandbox",
         "generation": 1,
         "trading_mode": "sandbox",

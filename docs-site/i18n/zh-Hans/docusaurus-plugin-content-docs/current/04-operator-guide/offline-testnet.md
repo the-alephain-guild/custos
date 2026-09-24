@@ -15,7 +15,7 @@ sidebar_position: 7
 
 ## 配置与校验
 
-从策略的离线 spec 开始，将 `trading_mode` 设为 `testnet`，移除 `sandbox` 对象，并设置明确限额。spec 不携带 connector、pairs 和 leverage：runner 从 `strategy_path` 下 `config.yaml` 的 `trading` 段读取这三项，与策略读取的是同一份值；spec 中仍写有这三项时会被拒绝。发布前请确认它们适用于你的测试网账户。`risk_config` 仅接受 `max_total_notional` 和 `max_drawdown_pct`，值为正的十进制字符串或整数，按部署生效。
+从策略的离线 spec 开始，它必须声明 `"spec_version": 2`（`arx-runner deployment schema` 会输出 runner 接受的版本）；将 `trading_mode` 设为 `testnet`，移除 `sandbox` 对象，并设置明确限额。spec 不携带 connector、pairs 和 leverage：runner 从 `strategy_path` 下 `config.yaml` 的 `trading` 段读取这三项，与策略读取的是同一份值；spec 中仍写有这三项时会被拒绝。发布前请确认它们适用于你的测试网账户。`risk_config` 仅接受 `max_total_notional` 和 `max_drawdown_pct`，值为正的十进制字符串或整数，按部署生效。
 
 将 `SPEC_FILE`、`STRATEGY_DIR`、`STATE_ROOT`、`TENANT_ID`、`STRATEGY_ID`、`RUNNER_LABEL` 和 `NATS_URL` 设为本地配置，并通过 `SOPS_AGE_KEY_FILE` 导出 age identity 路径。
 
