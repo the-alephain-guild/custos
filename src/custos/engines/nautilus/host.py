@@ -584,13 +584,18 @@ class NtTradingNodeHost:
         self._execution_account_partitions.pop(deployment_instance_id, None)
 
     def _require_the_only_node(self, deployment_instance_id: str) -> None:
-        """Refuse a second node on this runner's event loop.
+        """Refuse a second node in this runner process.
 
-        Nautilus 2.0 binds the runner's senders and the message bus to thread-local
-        storage, so two hosted nodes on one loop would deliver each other's events
-        rather than fail. Nautilus refuses the second ``run_async`` for that reason;
-        refusing here names the deployment that already holds the loop, and does it
-        before a node is built and has to be disposed again.
+        Nautilus 2.0 supports one concurrent live node per process. Its message bus,
+        registries and channel senders are installed thread-locally for the thread
+        driving the node, while the logger, logging worker and Tokio runtime are
+        process-wide, so two nodes in one process do not have isolated state. On one
+        event loop they would deliver each other's events rather than fail, which is
+        also why ``run_async`` refuses a second hosted node. Nautilus's guidance is
+        one node per process; a runner therefore hosts one deployment instance, and
+        more instances run as more runner processes. Refusing here names the
+        instance that already holds the runner, before a node is built and has to be
+        disposed again.
         """
         held = [
             instance for instance, runtime in self._active_nodes.items() if not runtime.task.done()
@@ -598,7 +603,8 @@ class NtTradingNodeHost:
         if held:
             raise RuntimeError(
                 f"deployment instance {held[0]!r} already holds this runner's event loop; "
-                "nautilus runs one live node per loop, so stop it before deploying "
+                "nautilus runs one live node per process, so stop it or run another "
+                "runner process before deploying "
                 f"{deployment_instance_id!r}"
             )
 
