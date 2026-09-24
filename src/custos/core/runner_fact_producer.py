@@ -106,6 +106,8 @@ class RunnerCapitalBasisSnapshot:
 class RunnerFactHost(Protocol):
     def runner_fact_deployments(self) -> Sequence[RunnerFactDeployment]: ...
 
+    async def deployment_ready(self, deployment_instance_id: str) -> bool: ...
+
     async def runner_fact_risk_snapshot(
         self, deployment_instance_id: str, currency: str
     ) -> tuple[Decimal, Sequence[Mapping[str, Any]]]: ...
@@ -761,6 +763,10 @@ class RunnerFactProductionLoop:
                 if callable(status_reader)
                 else None
             )
+            # A deployment is registered as soon as a start attempt begins, well
+            # before its engine is ready; one whose venue cannot be reached never
+            # gets there. Only a ready engine may report itself online.
+            ready = await self._host.deployment_ready(deployment.deployment_instance_id)
             equity, positions = await self._host.runner_fact_risk_snapshot(
                 deployment.deployment_instance_id, deployment.currency
             )
@@ -778,7 +784,9 @@ class RunnerFactProductionLoop:
                 ),
                 heartbeat(
                     event_id=_scoped_event_id(authority, "heartbeat", observed_at.isoformat()),
-                    status=("online" if status is None or status.reliable else "degraded"),
+                    status=(
+                        "online" if ready and (status is None or status.reliable) else "degraded"
+                    ),
                     observed_at=observed_at,
                 ),
             )

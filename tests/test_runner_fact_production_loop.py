@@ -400,6 +400,9 @@ class _CapitalBasisHost:
     def __init__(self, deployment) -> None:
         self.deployment = deployment
 
+    async def deployment_ready(self, deployment_instance_id):
+        return True
+
     async def runner_fact_risk_snapshot(self, deployment_instance_id, currency):
         assert deployment_instance_id == self.deployment.deployment_instance_id
         assert currency == "USDT"
@@ -504,6 +507,48 @@ async def test_observability_reports_degraded_when_host_audit_state_is_unreliabl
 
     heartbeat = next(fact for fact in emitter.emissions[0][1] if fact["kind"] == "heartbeat")
     assert heartbeat["status"] == "degraded"
+
+
+async def test_observability_reports_degraded_until_the_engine_is_ready() -> None:
+    # A start attempt registers the deployment before the engine is ready. When the
+    # venue cannot be reached the attempt times out and retries, and a heartbeat
+    # that said online meanwhile showed a deployment that never traded as healthy.
+    authority = SimpleNamespace(
+        stream_key="default:sandbox:runner:starting",
+        deployment_spec_id=uuid4(),
+    )
+    deployment = SimpleNamespace(
+        authority=authority,
+        deployment_instance_id=str(uuid4()),
+        currency="USDT",
+    )
+
+    class StartingHost(_CapitalBasisHost):
+        ready = False
+
+        async def deployment_ready(self, deployment_instance_id):
+            assert deployment_instance_id == deployment.deployment_instance_id
+            return self.ready
+
+    host = StartingHost(deployment)
+    emitter = _CapturingEmitter()
+    loop = RunnerFactProductionLoop(
+        host=host,
+        emitter=emitter,
+        snapshot_interval_secs=1,
+        period_secs=60,
+        period_retry_secs=1,
+    )
+
+    await loop._emit_observability(deployment)
+    host.ready = True
+    await loop._emit_observability(deployment)
+
+    statuses = [
+        next(fact for fact in facts if fact["kind"] == "heartbeat")["status"]
+        for _, facts in emitter.emissions
+    ]
+    assert statuses == ["degraded", "online"]
 
 
 async def test_valuation_failure_publishes_no_partial_period() -> None:

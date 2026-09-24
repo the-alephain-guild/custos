@@ -52,6 +52,8 @@ signed bytes = DOMAIN || canonical_json(header)
 | 对账 | `execution_fill`、`venue_ledger_snapshot_manifest`、`venue_ledger_snapshot_chunk`、`reconciliation_period_closed` |
 | 部署生命周期 | `RunnerDeploymentLifecycleFact.v1` |
 
+只有部署的引擎已就绪且状态可靠时，`heartbeat` 才报告 `online`。仍在启动中的部署，包括因连不上交易所而在重试的部署，报告 `degraded`。
+
 生命周期事件 id 包含稳定指令/应用身份，不包含观测时间。同一应用的重投递因此保持幂等。
 
 ## 策略信号

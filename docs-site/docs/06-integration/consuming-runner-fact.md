@@ -52,6 +52,8 @@ Contract golden keys are synthetic test evidence and must not be trusted as runt
 | Reconciliation | `execution_fill`, `venue_ledger_snapshot_manifest`, `venue_ledger_snapshot_chunk`, `reconciliation_period_closed` |
 | Deployment lifecycle | `RunnerDeploymentLifecycleFact.v1` |
 
+A `heartbeat` reports `online` only while the deployment's engine is ready and its state is reliable. A deployment that is still starting, including one retrying because its venue cannot be reached, reports `degraded`.
+
 A lifecycle event id includes stable command/apply identity and excludes observation time. Redelivery of the same apply therefore remains idempotent.
 
 ## Strategy signals
