@@ -26,6 +26,7 @@ pytest.importorskip("nautilus_trader")
 from nautilus_trader.adapters.binance import (  # noqa: E402
     BinanceEnvironment,
     BinanceProductType,
+    BinanceSpotMarketDataMode,
 )
 from nautilus_trader.model import AccountType, Money, Venue  # noqa: E402
 
@@ -220,6 +221,28 @@ def test_build_data_client_config_sandbox_uses_anonymous_public_feed(monkeypatch
 
     assert forwarded["api_key"] is None
     assert forwarded["api_secret"] is None
+
+
+def test_sandbox_spot_reads_the_public_json_feed() -> None:
+    # Nautilus 2.0 defaults spot market data to SBE, which needs Ed25519 credentials
+    # even for public streams. Sandbox authenticates nothing, so it must ask for JSON
+    # or its data client never connects and the engine never becomes ready.
+    spec = _spec("binance")
+    spec["trading_mode"] = "sandbox"
+
+    cfg = build_data_client_config(spec, _credential())
+
+    assert cfg.product_type == BinanceProductType.SPOT
+    assert cfg.spot_market_data_mode == BinanceSpotMarketDataMode.Json
+
+
+def test_testnet_spot_keeps_the_authenticated_default_feed() -> None:
+    spec = _spec("binance")
+    spec["trading_mode"] = "testnet"
+
+    cfg = build_data_client_config(spec, _credential())
+
+    assert cfg.spot_market_data_mode == BinanceSpotMarketDataMode.Sbe
 
 
 def test_build_exec_client_config_sandbox_futures() -> None:

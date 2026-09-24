@@ -32,6 +32,7 @@ from nautilus_trader.adapters.binance import (
     BinanceExecutionClientFactory,
     BinanceInstrumentProviderConfig,
     BinanceProductType,
+    BinanceSpotMarketDataMode,
 )
 from nautilus_trader.adapters.sandbox import SandboxExecutionClientConfig
 from nautilus_trader.model import (
@@ -245,20 +246,27 @@ def build_data_client_config(
     exchange: execution is local and a bootstrap-only vault credential may be
     deliberately non-functional. Testnet and live retain authenticated data
     clients so their credential failures remain fail-fast.
+
+    Nautilus defaults spot market data to SBE, which requires Ed25519 credentials
+    even for public streams, so an anonymous sandbox client asks for JSON instead.
+    Authenticated modes keep the default.
     """
     connector = spec["connector"]
     trading_mode = str(spec.get("trading_mode") or "sandbox").lower()
     if trading_mode == "sandbox":
         api_key = None
         api_secret = None
+        spot_market_data_mode = BinanceSpotMarketDataMode.Json
     else:
         # Fail-fast on a malformed credential before any NT object is built.
         require_supported_key_type(credential)
         api_key = credential["api_key"]
         api_secret = credential["api_secret"]
+        spot_market_data_mode = None
     return BinanceDataClientConfig(
         api_key=api_key,
         api_secret=api_secret,
+        spot_market_data_mode=spot_market_data_mode,
         product_type=_binance_product_type(connector),
         environment=environment,
         instrument_provider=BinanceInstrumentProviderConfig(
