@@ -98,6 +98,6 @@ After observing generation 2, stop the runner with Ctrl-C in its terminal, then 
 
 ## Run an actual strategy
 
-For Nautilus, install `make install-nt` and supply a compatible strategy directory with `config.yaml`, a registered strategy name, matching instruments, and suitable risk ceilings. The offline loader discovers that directory once per process. A second directory or node requires another process and isolated state.
+For Nautilus, install `make install-nt` and supply a compatible strategy directory whose `config.yaml` sets `trading.connector`, `trading.pairs` and `trading.leverage`, a registered strategy name, and suitable risk ceilings. The runner takes the venue, pairs and leverage from that file, not from the spec. The offline loader discovers that directory once per process. A second directory or node requires another process and isolated state.
 
 To use Binance testnet, supply testnet-only credentials, set the spec to `testnet`, remove its sandbox balances, and select `--engine nautilus`; see [offline testnet](/operator-guide/offline-testnet). SoDEX has additional input limitations documented in [SoDEX](/engines/sodex).

@@ -9,13 +9,13 @@ sidebar_position: 7
 
 1. 在 Python 3.12 环境安装 Nautilus extra。
 2. 按[独立 sandbox](/getting-started/standalone-sandbox)创建独立身份和 broker 拓扑，使用单独的持久化状态目录。
-3. 提供包含 `config.yaml` 的真实兼容策略目录及注册名称，不能使用模拟宿主 fixture。
+3. 提供真实兼容的策略目录及注册名称，其 `config.yaml` 必须显式设置 `trading.connector`、`trading.pairs` 和 `trading.leverage`。不能使用模拟宿主 fixture。
 4. 将测试网专用交易凭据写入本地金库，匹配租户和 `provenance_ref.credential_id`。
 5. 选择测试网账户支持的 Binance connector。SoDEX 用户先阅读[输入限制](/engines/sodex)。
 
 ## 配置与校验
 
-从策略的离线 spec 开始，将 `trading_mode` 设为 `testnet`，移除 `sandbox` 对象，核对 connector、pairs、leverage 并设置明确限额。`risk_config` 仅接受 `max_total_notional` 和 `max_drawdown_pct`，值为正的十进制字符串或整数，按部署生效。
+从策略的离线 spec 开始，将 `trading_mode` 设为 `testnet`，移除 `sandbox` 对象，并设置明确限额。spec 不携带 connector、pairs 和 leverage：runner 从 `strategy_path` 下 `config.yaml` 的 `trading` 段读取这三项，与策略读取的是同一份值；spec 中仍写有这三项时会被拒绝。发布前请确认它们适用于你的测试网账户。`risk_config` 仅接受 `max_total_notional` 和 `max_drawdown_pct`，值为正的十进制字符串或整数，按部署生效。
 
 将 `SPEC_FILE`、`STRATEGY_DIR`、`STATE_ROOT`、`TENANT_ID`、`STRATEGY_ID`、`RUNNER_LABEL` 和 `NATS_URL` 设为本地配置，并通过 `SOPS_AGE_KEY_FILE` 导出 age identity 路径。
 

@@ -17,6 +17,7 @@ sidebar_position: 6
 | `credential scope already has an active ...` | 使用同一范围的活动 testnet 部署 | 先停止并检查已有实例，再复用凭据范围 |
 | `already holds this runner's event loop` | 已有 Nautilus node | 停止该 node 或使用独立进程和状态目录 |
 | `strategy discovery is already pointed at ...` | 挂载策略目录 | 每个离线进程只使用一个策略目录 |
+| `strategy config ... does not set trading.<key>` | spec 中 `strategy_path` 下的 `config.yaml` | 在该文件中设置 `trading.connector`、`trading.pairs` 和 `trading.leverage`；不会使用内置默认值 |
 | `portfolio_prices_missing:<instrument>` | 缺失标的及其标记/计价资产 | 检查名称、网络和行情可用性，不以零代替 |
 | `portfolio_equity_missing:<currency>` | 账户与结算币种 | 检查账户余额和估值所需价格 |
 | 熔断后拒绝离线 generation | 熔断锁存与近期风险控制日志 | 核对持仓/订单，处理原因后再主动重启 |

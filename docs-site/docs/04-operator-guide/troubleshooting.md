@@ -17,6 +17,7 @@ Start with the selected lane, source/image revision, CLI arguments and local JSO
 | `credential scope already has an active ...` | Existing testnet deployment using that scope | Stop and inspect the existing instance before reusing it |
 | `already holds this runner's event loop` | Existing Nautilus node | Stop it or use a separate process and state root |
 | `strategy discovery is already pointed at ...` | Mounted strategy directory | Use one directory per offline process |
+| `strategy config ... does not set trading.<key>` | `config.yaml` under the spec's `strategy_path` | Set `trading.connector`, `trading.pairs` and `trading.leverage` in that file; built-in defaults are not used |
 | `portfolio_prices_missing:<instrument>` | Exact missing instrument and its mark/quote asset | Check symbol, network and market-data availability; do not substitute zero |
 | `portfolio_equity_missing:<currency>` | Account and settlement currency | Confirm the account balance and required valuation prices |
 | Offline generation refused after trip | Guard latch and recent containment logs | Inspect positions/orders, address the cause, then deliberately restart |

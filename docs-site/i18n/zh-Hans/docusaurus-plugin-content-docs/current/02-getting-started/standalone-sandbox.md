@@ -98,6 +98,6 @@ uv run python docs-site/examples/standalone/status.py \
 
 ## 运行真实策略代码
 
-使用 Nautilus 时执行 `make install-nt`，提供包含 `config.yaml` 的兼容策略目录、注册名称、匹配的交易标的和适当的风险限额。离线加载器在每个进程中只选择一次策略目录。另一个目录或 node 需要独立进程及状态。
+使用 Nautilus 时执行 `make install-nt`，提供兼容的策略目录（其 `config.yaml` 须设置 `trading.connector`、`trading.pairs` 和 `trading.leverage`）、注册名称和适当的风险限额。runner 从该文件读取交易所、交易对和杠杆，而不是从 spec 读取。离线加载器在每个进程中只选择一次策略目录。另一个目录或 node 需要独立进程及状态。
 
 使用 Binance testnet 时配置测试网专用凭据，将 spec 改为 `testnet`、移除 sandbox 余额，并选择 `--engine nautilus`，详见[离线 testnet](/operator-guide/offline-testnet)。SoDEX 的额外输入限制见[SoDEX](/engines/sodex)。
