@@ -44,4 +44,4 @@ healthcheck:
   start_period: 60s
 ```
 
-Use the matching ready-file path in container probes. Keep process liveness separate from readiness; investigate unready state before configuring automatic restarts. See [troubleshooting](/operator-guide/troubleshooting).
+After a restart the runner reports ready before its deployments have recovered: each recovers in the background, and a deployment that cannot reach its venue shows as not yet healthy (or, once its restart budget is exhausted, quarantined) while the runner itself stays ready and accepts commands. Use the matching ready-file path in container probes. Keep process liveness separate from readiness; investigate unready state before configuring automatic restarts. See [troubleshooting](/operator-guide/troubleshooting).

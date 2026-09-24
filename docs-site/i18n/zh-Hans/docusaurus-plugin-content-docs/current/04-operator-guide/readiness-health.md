@@ -44,4 +44,4 @@ healthcheck:
   start_period: 60s
 ```
 
-容器探针需使用匹配的 ready-file 路径。将进程存活与就绪检查分开，在配置自动重启前先调查未就绪原因。详见[排错指南](/operator-guide/troubleshooting)。
+重启后，runner 在各部署恢复完成之前就会报告就绪：每个部署在后台各自恢复；连不上交易所的部署显示为尚未 healthy（重启预算耗尽后显示为 quarantined），而 runner 本身保持就绪并继续接收指令。容器探针需使用匹配的 ready-file 路径。将进程存活与就绪检查分开，在配置自动重启前先调查未就绪原因。详见[排错指南](/operator-guide/troubleshooting)。

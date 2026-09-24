@@ -21,7 +21,7 @@ Desired/applied deployments, command leases and outcomes, artifact activation, p
 6. Commit applied state and the lifecycle fact in one transaction.
 7. Acknowledge the delivery only after that durable boundary.
 
-Exact redelivery reuses the prior disposition. Restart recovery probes a matching ready engine before deciding to deploy again. The lifecycle event id includes stable stream, command and outcome identity, excluding observation time.
+Exact redelivery reuses the prior disposition. Restart recovery probes a matching ready engine before deciding to deploy again. After a runner restart each recoverable deployment is recovered in the background: the runner is ready, reporting and accepting commands first, and a signed command for a deployment that is still recovering cancels that recovery before it applies. The lifecycle event id includes stable stream, command and outcome identity, excluding observation time.
 
 ## Delivery outcomes
 
@@ -35,7 +35,7 @@ Exact redelivery reuses the prior disposition. Restart recovery probes a matchin
 
 ## Supervision
 
-Ready timeout, retryable terminal events and zombie disconnection use a durable restart budget with bounded backoff. Non-retryable failures and exhausted budgets quarantine the instance and record the outcome. An unexpected long-running task exit is fatal to the daemon; shutdown stops intake/deployments, flushes pending facts and closes transport in order.
+Ready timeout, retryable terminal events and zombie disconnection use a durable restart budget with bounded backoff. Non-retryable failures and exhausted budgets quarantine the instance and record the outcome. An unexpected long-running task exit is fatal to the daemon. Startup recovery is not one of those tasks: a recovery that exhausts its budget quarantines only its own instance and the runner keeps running. Shutdown cancels recoveries still in flight, stops intake/deployments, flushes pending facts and closes transport in order.
 
 The breaker reads one coherent engine status per instance per tick. Missing equity, missing marks or probe failure are unreliable valuation, not zero exposure. Signed runner policy supplies the aggregate cap; the deployment's `risk_config` cannot override it.
 
