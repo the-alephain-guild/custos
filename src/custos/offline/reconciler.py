@@ -36,6 +36,7 @@ from custos.offline.spec import (
     offline_subject,
 )
 from custos.offline.state import AppliedRecord
+from custos.offline.strategy_config import StrategyTradingConfig
 
 _log = get_logger("custos.offline.reconciler")
 
@@ -90,22 +91,35 @@ class OfflineRuntimeIdentity:
     deployment_spec_digest: str
 
 
-def runtime_identity(spec: OfflineDeploymentSpec) -> OfflineRuntimeIdentity:
+def runtime_identity(
+    spec: OfflineDeploymentSpec, trading: StrategyTradingConfig | None
+) -> OfflineRuntimeIdentity:
     """Derive the runtime keys from the spec, so they survive a restart."""
 
     return OfflineRuntimeIdentity(
         deployment_instance_id=uuid5(_IDENTITY_NAMESPACE, f"instance:{spec.spec_id}"),
         deployment_spec_id=uuid5(_IDENTITY_NAMESPACE, f"spec:{spec.spec_id}"),
-        deployment_spec_digest=_content_digest(spec),
+        deployment_spec_digest=_content_digest(spec, trading),
     )
 
 
-def runtime_spec(spec: OfflineDeploymentSpec, identity: OfflineRuntimeIdentity) -> dict[str, Any]:
-    """Present the offline spec in the shape the engine host reads."""
+def runtime_spec(
+    spec: OfflineDeploymentSpec,
+    identity: OfflineRuntimeIdentity,
+    trading: StrategyTradingConfig,
+) -> dict[str, Any]:
+    """Present the offline spec in the shape the engine host reads.
+
+    Connector, pairs and leverage come from the strategy's config, the same
+    values the strategy itself reads, so the host and the strategy agree.
+    """
 
     document = spec.model_dump(mode="json")
     document.update(
         {
+            "connector": trading.connector,
+            "pairs": list(trading.pairs),
+            "leverage": trading.leverage,
             "deployment_instance_id": str(identity.deployment_instance_id),
             "deployment_spec_id": str(identity.deployment_spec_id),
             "deployment_spec_digest": identity.deployment_spec_digest,
@@ -166,6 +180,7 @@ class OfflineReconciler:
         publish: PublishStatus,
         artifact_for: Callable[[OfflineDeploymentSpec], Any],
         credential_for: Callable[[OfflineDeploymentSpec], dict],
+        strategy_config_for: Callable[[OfflineDeploymentSpec], StrategyTradingConfig],
         applied_store: AppliedStore | None = None,
         guard: OfflineExposureGuard | None = None,
     ) -> None:
@@ -176,6 +191,7 @@ class OfflineReconciler:
         self._publish = publish
         self._artifact_for = artifact_for
         self._credential_for = credential_for
+        self._strategy_config_for = strategy_config_for
         self._store = applied_store
         self._guard = guard
         self._applied: dict[str, _Applied] = {
@@ -261,7 +277,23 @@ class OfflineReconciler:
             return Settlement.REJECTED
 
         applied = self._applied.setdefault(spec.spec_id, _Applied())
-        identity = runtime_identity(spec)
+        trading: StrategyTradingConfig | None = None
+        if spec.lifecycle_state not in _NON_RUNNING_STATES:
+            # Only a running deployment needs trading parameters; a stop must
+            # stay possible when the strategy config it no longer uses is bad.
+            try:
+                trading = self._strategy_config_for(spec)
+            except ValueError as exc:
+                # Terminal: the same config will not read better on redelivery.
+                _log.error(
+                    "offline_strategy_config_rejected",
+                    spec_id=spec.spec_id,
+                    generation=spec.generation,
+                    error=str(exc),
+                )
+                await self._report(spec, healthy=False)
+                return Settlement.REJECTED
+        identity = runtime_identity(spec, trading)
 
         if spec.generation < applied.generation:
             _log.warning(
@@ -300,7 +332,7 @@ class OfflineReconciler:
                 self._guard.lifecycle_transition() if self._guard else contextlib.nullcontext()
             )
             async with transition:
-                applied.container_id = await self._engage(spec, applied, identity)
+                applied.container_id = await self._engage(spec, applied, identity, trading)
         except Exception as exc:  # noqa: BLE001 - a failed apply is reported, then retried
             _log.error(
                 "offline_reconcile_failed",
@@ -368,14 +400,17 @@ class OfflineReconciler:
         spec: OfflineDeploymentSpec,
         applied: _Applied,
         identity: OfflineRuntimeIdentity,
+        trading: StrategyTradingConfig | None,
     ) -> str:
-        document = runtime_spec(spec, identity)
         deployment_instance_id = str(identity.deployment_instance_id)
         if spec.lifecycle_state in _NON_RUNNING_STATES:
             await self._engine.stop(deployment_instance_id)
             if self._engine.attached(deployment_instance_id):
                 raise RuntimeError("offline runtime did not reach the requested non-running state")
             return ""
+        if trading is None:
+            raise RuntimeError("a running offline deployment reached the engine without its config")
+        document = runtime_spec(spec, identity, trading)
         credential = self._credential_for(spec)
         artifact = self._artifact_for(spec)
         if self._engine.attached(deployment_instance_id):
@@ -420,6 +455,10 @@ class OfflineReconciler:
             )
 
 
-def _content_digest(spec: OfflineDeploymentSpec) -> str:
-    canonical = json.dumps(spec.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+def _content_digest(spec: OfflineDeploymentSpec, trading: StrategyTradingConfig | None) -> str:
+    content = {
+        "spec": spec.model_dump(mode="json"),
+        "strategy_config": trading.digest if trading is not None else None,
+    }
+    canonical = json.dumps(content, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

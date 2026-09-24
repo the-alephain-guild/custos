@@ -10,6 +10,7 @@ from custos.offline.daemon import BindMountedStrategy, _artifact_for
 from custos.offline.reconciler import Settlement, runtime_identity
 from custos.offline.state import OfflineAppliedStore
 from tests.test_offline_reconciler import (
+    TRADING,
     _FakeEngine,
     _message,
     _reconciler,
@@ -26,7 +27,7 @@ async def test_paused_state_stops_the_engine_and_stays_stopped_after_replay(tmp_
     assert await reconciler.apply(_spec()) == Settlement.APPLIED
     paused = _spec(generation=2, lifecycle_state="paused")
     assert await reconciler.apply(paused) == Settlement.APPLIED
-    assert not engine.attached(str(runtime_identity(paused).deployment_instance_id))
+    assert not engine.attached(str(runtime_identity(paused, TRADING).deployment_instance_id))
     assert len(engine.deployed) == 1
     assert store.load()[paused.spec_id].generation == 2
     assert await reconciler.apply(paused) == Settlement.APPLIED
@@ -64,7 +65,7 @@ async def test_delivery_acknowledgement_failure_does_not_end_the_offline_loop(re
     assert len(engine.deployed) == (0 if retryable else 1)
 
 
-def test_artifact_factory_applies_spec_configuration_over_mounted_defaults(tmp_path, monkeypatch):
+def test_artifact_factory_reads_only_the_mounted_strategy_config(tmp_path, monkeypatch):
     pytest.importorskip("nautilus_trader")
     from custos_toolkit_nautilus.adapter import registry
 
@@ -86,19 +87,8 @@ def test_artifact_factory_applies_spec_configuration_over_mounted_defaults(tmp_p
     mounted = tmp_path / "config.yaml"
     original = "parameters:\n  period:\n    value: 10\n    type: integer\n"
     mounted.write_text(original)
-    spec = _spec(
-        strategy_path=str(tmp_path),
-        strategy_registry_name="config-regression",
-        strategy_config={"parameters": {"period": {"value": 99, "type": "integer"}}},
-    )
-    artifact = _artifact_for(spec)
-    assert artifact.strategy.period == 99
-    spec.strategy_config["parameters"]["period"]["value"] = 77
-    assert artifact.strategy.period == 99
-    assert (
-        _artifact_for(
-            _spec(strategy_path=str(tmp_path), strategy_registry_name="config-regression")
-        ).strategy.period
-        == 10
-    )
+    # The spec carries no strategy configuration any more, so the parameters
+    # the strategy runs with are exactly what its mounted config.yaml says.
+    spec = _spec(strategy_path=str(tmp_path), strategy_registry_name="config-regression")
+    assert _artifact_for(spec).strategy.period == 10
     assert mounted.read_text() == original

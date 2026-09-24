@@ -68,10 +68,9 @@ class OfflineDeploymentSpec(BaseModel):
     lifecycle_state: LifecycleState
     strategy_path: str = Field(min_length=1)
     provenance_ref: ProvenanceRef
-    connector: str = Field(min_length=1)
-    pairs: list[str] = Field(min_length=1)
-    leverage: StrictInt = Field(ge=1)
-    strategy_config: dict[str, Any] = Field(default_factory=dict)
+    # Connector, pairs and leverage are not here: the strategy's config.yaml
+    # under strategy_path is their only source, read by the host and the
+    # strategy alike.
     strategy_registry_name: str | None = None
     code_hash: Sha256Hex | None = None
     log_level: str = "INFO"

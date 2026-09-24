@@ -27,6 +27,7 @@ from custos.offline.reconciler import (
 from custos.offline.safety import OfflineExposureGuard
 from custos.offline.spec import OfflineDeploymentMessage, OfflineDeploymentSpec
 from custos.offline.state import AppliedRecord
+from custos.offline.strategy_config import StrategyTradingConfig
 
 TENANT = "local"
 RUNNER = "ps-supertrend"
@@ -41,13 +42,16 @@ def _spec(**overrides: Any) -> OfflineDeploymentSpec:
         "lifecycle_state": "running",
         "strategy_path": "/opt/ps/trend/supertrend",
         "provenance_ref": {"credential_id": "binance-supertrend"},
-        "connector": "binance_perpetual",
-        "pairs": ["BTC-USDT"],
-        "leverage": 3,
         "sandbox": {"starting_balances": ["10_000 USDT"]},
     }
     document.update(overrides)
     return OfflineDeploymentSpec.model_validate(document)
+
+
+# What the strategy's config.yaml resolves to; the spec no longer carries it.
+TRADING = StrategyTradingConfig(
+    connector="binance_perpetual", pairs=("BTC-USDT",), leverage=3, digest="a" * 64
+)
 
 
 def _message(spec: OfflineDeploymentSpec) -> bytes:
@@ -147,6 +151,7 @@ def _reconciler(
     publisher: _RecordingPublisher,
     guard: OfflineExposureGuard | None = None,
     applied_store: _WhatThePreviousProcessWrote | None = None,
+    strategy_config_for: Any = None,
 ) -> OfflineReconciler:
     return OfflineReconciler(
         tenant_id=TENANT,
@@ -156,6 +161,7 @@ def _reconciler(
         publish=publisher,
         artifact_for=lambda spec: object(),
         credential_for=lambda spec: {"api_key": "k", "api_secret": "s"},
+        strategy_config_for=strategy_config_for or (lambda spec: TRADING),
         applied_store=applied_store,
         guard=guard,
     )
@@ -180,8 +186,8 @@ def _after_a_restart(
 
 
 def test_runtime_identity_is_stable_for_a_spec_id() -> None:
-    first = runtime_identity(_spec())
-    second = runtime_identity(_spec(generation=9))
+    first = runtime_identity(_spec(), TRADING)
+    second = runtime_identity(_spec(generation=9), TRADING)
 
     assert first.deployment_instance_id == second.deployment_instance_id
     assert first.deployment_spec_id == second.deployment_spec_id
@@ -189,20 +195,74 @@ def test_runtime_identity_is_stable_for_a_spec_id() -> None:
 
 def test_runtime_identity_separates_distinct_specs() -> None:
     assert (
-        runtime_identity(_spec()).deployment_instance_id
-        != runtime_identity(_spec(spec_id="other-sandbox")).deployment_instance_id
+        runtime_identity(_spec(), TRADING).deployment_instance_id
+        != runtime_identity(_spec(spec_id="other-sandbox"), TRADING).deployment_instance_id
     )
 
 
 def test_runtime_identity_digest_follows_the_content() -> None:
-    assert runtime_identity(_spec()).deployment_spec_digest != (
-        runtime_identity(_spec(leverage=5)).deployment_spec_digest
+    assert runtime_identity(_spec(), TRADING).deployment_spec_digest != (
+        runtime_identity(_spec(log_level="DEBUG"), TRADING).deployment_spec_digest
     )
+
+
+def test_runtime_identity_digest_follows_the_strategy_config() -> None:
+    # Changing only the pairs in config.yaml changes what is deployed, so the
+    # digest that describes the deployment has to change with it.
+    edited = StrategyTradingConfig(
+        connector="binance_perpetual", pairs=("ETH-USDT",), leverage=3, digest="b" * 64
+    )
+
+    assert runtime_identity(_spec(), TRADING).deployment_spec_digest != (
+        runtime_identity(_spec(), edited).deployment_spec_digest
+    )
+
+
+def test_the_host_reads_the_trading_parameters_the_strategy_config_resolved() -> None:
+    spec = _spec()
+    translated = runtime_spec(spec, runtime_identity(spec, TRADING), TRADING)
+
+    assert translated["connector"] == "binance_perpetual"
+    assert translated["pairs"] == ["BTC-USDT"]
+    assert translated["leverage"] == 3
+
+
+async def test_an_unreadable_strategy_config_is_refused_and_reported() -> None:
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+
+    def unreadable(spec: OfflineDeploymentSpec) -> StrategyTradingConfig:
+        raise ValueError("strategy config does not set trading.pairs")
+
+    settlement = await _reconciler(engine, publisher, strategy_config_for=unreadable).handle(
+        _message(_spec())
+    )
+
+    assert settlement is Settlement.REJECTED
+    assert engine.deployed == []
+    assert publisher.payloads[-1]["health"] == "unhealthy"
+
+
+async def test_a_broken_strategy_config_does_not_stand_in_the_way_of_stopping() -> None:
+    # Stopping needs no trading parameters. Refusing a stop because the config
+    # it no longer uses went bad would leave the strategy trading.
+    engine, publisher = _FakeEngine(), _RecordingPublisher()
+    reconciler = _reconciler(engine, publisher)
+    await reconciler.handle(_message(_spec()))
+
+    def unreadable(spec: OfflineDeploymentSpec) -> StrategyTradingConfig:
+        raise ValueError("strategy config is unreadable")
+
+    reconciler._strategy_config_for = unreadable
+    settlement = await reconciler.handle(_message(_spec(generation=2, lifecycle_state="stopped")))
+
+    assert settlement is Settlement.APPLIED
+    assert engine.stopped
+    assert publisher.payloads[-1]["phase"] == "stopped"
 
 
 def test_runtime_spec_carries_the_keys_the_engine_host_reads() -> None:
     spec = _spec()
-    translated = runtime_spec(spec, runtime_identity(spec))
+    translated = runtime_spec(spec, runtime_identity(spec, TRADING), TRADING)
 
     for key in (
         "deployment_instance_id",
@@ -224,7 +284,7 @@ def test_a_testnet_spec_carries_the_scope_the_host_partitions_by() -> None:
     requires instance and credential-scope identity" and no spec can fix it.
     """
     spec = _spec(trading_mode="testnet", sandbox=None)
-    translated = runtime_spec(spec, runtime_identity(spec))
+    translated = runtime_spec(spec, runtime_identity(spec, TRADING), TRADING)
 
     scope = translated.get("credential_scope")
     assert isinstance(scope, dict), "the host reads credential_scope as an object"
@@ -237,7 +297,9 @@ def test_a_testnet_spec_carries_the_scope_the_host_partitions_by() -> None:
     republished = _spec(trading_mode="testnet", sandbox=None, generation=spec.generation + 1)
     assert (
         str(
-            runtime_spec(republished, runtime_identity(republished))["credential_scope"]["scope_id"]
+            runtime_spec(republished, runtime_identity(republished, TRADING), TRADING)[
+                "credential_scope"
+            ]["scope_id"]
         )
         == scope_id
     )
@@ -259,7 +321,11 @@ def test_two_credentials_partition_apart_and_one_credential_does_not() -> None:
             sandbox=None,
             provenance_ref={"credential_id": credential_id},
         )
-        return str(runtime_spec(spec, runtime_identity(spec))["credential_scope"]["scope_id"])
+        return str(
+            runtime_spec(spec, runtime_identity(spec, TRADING), TRADING)["credential_scope"][
+                "scope_id"
+            ]
+        )
 
     # Same credential, different deployments — one account, one partition.
     assert scope_of("binance-supertrend", "a-testnet") == scope_of(
@@ -304,7 +370,7 @@ async def test_a_second_generation_stops_before_redeploying() -> None:
     reconciler = _reconciler(engine, publisher)
     await reconciler.handle(_message(_spec()))
 
-    await reconciler.handle(_message(_spec(generation=2, leverage=5)))
+    await reconciler.handle(_message(_spec(generation=2)))
 
     assert len(engine.deployed) == 2
     assert len(engine.stopped) == 1
@@ -348,7 +414,7 @@ async def test_a_new_generation_after_a_restart_is_deployed_not_reconfigured() -
     engine, publisher = _FakeEngine(), _RecordingPublisher()
     reconciler = _after_a_restart(engine, publisher, generation=1)
 
-    await reconciler.handle(_message(_spec(generation=2, leverage=5)))
+    await reconciler.handle(_message(_spec(generation=2)))
 
     assert len(engine.deployed) == 1
     assert engine.reconfigured == []

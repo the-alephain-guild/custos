@@ -142,6 +142,13 @@ def test_standalone_fixture_uses_the_actual_offline_contract(tmp_path: Path) -> 
     assert stopped.generation > running.generation
     assert stopped.lifecycle_state.value == "stopped"
 
+    from custos.offline.strategy_config import read_strategy_trading_config
+
+    # The running spec is only deployable if the fixture's strategy directory
+    # says what the spec no longer does.
+    trading = read_strategy_trading_config(Path(running.strategy_path))
+    assert (trading.connector, trading.pairs, trading.leverage) == ("binance", ("BTC-USDT",), 1)
+
 
 def test_private_build_suffix_is_not_generated(isolated_checker: ModuleType) -> None:
     checker = isolated_checker

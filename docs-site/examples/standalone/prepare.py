@@ -16,6 +16,14 @@ def main() -> None:
     (strategy / "README.txt").write_text(
         "Lifecycle fixture only. sandbox-sim never imports or trades this directory.\n"
     )
+    # The runner reads the venue, pairs and leverage from the strategy's own
+    # config.yaml; the spec does not carry them.
+    (strategy / "config.yaml").write_text(
+        "trading:\n"
+        "  connector:\n    value: binance\n"
+        "  pairs:\n    value: [BTC-USDT]\n"
+        "  leverage:\n    value: 1\n"
+    )
     spec = {
         "spec_id": "docs-sandbox",
         "generation": 1,
@@ -24,9 +32,6 @@ def main() -> None:
         "strategy_path": str(strategy),
         "strategy_registry_name": "docs-simulation",
         "provenance_ref": {"credential_id": "docs-demo"},
-        "connector": "binance",
-        "pairs": ["BTC-USDT"],
-        "leverage": 1,
         "sandbox": {"starting_balances": ["10000 USDT"]},
         "risk_config": {"max_total_notional": "200", "max_drawdown_pct": "0.05"},
     }

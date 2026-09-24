@@ -22,11 +22,19 @@ from custos.offline.daemon import run_offline_lane
 from custos.offline.mode_guard import OfflineModeRefused
 from custos.offline.spec import OfflineDeploymentMessage, OfflineDeploymentSpec
 from custos.offline.state import AppliedRecord, OfflineAppliedStore
+from custos.offline.strategy_config import StrategyTradingConfig
 
 TENANT = "local"
 RUNNER = "ps-supertrend"
 RUNNER_ID = "11111111-1111-4111-8111-111111111111"
 STRATEGY = "supertrend"
+
+
+# The spec's strategy_path is a container path; the trading parameters it
+# would resolve to are supplied directly.
+TRADING = StrategyTradingConfig(
+    connector="binance_perpetual", pairs=("BTC-USDT",), leverage=3, digest="a" * 64
+)
 
 
 def _spec(**overrides: Any) -> OfflineDeploymentSpec:
@@ -37,9 +45,6 @@ def _spec(**overrides: Any) -> OfflineDeploymentSpec:
         "lifecycle_state": "running",
         "strategy_path": "/opt/ps/trend/supertrend",
         "provenance_ref": {"credential_id": "binance-supertrend"},
-        "connector": "binance_perpetual",
-        "pairs": ["BTC-USDT"],
-        "leverage": 3,
         "strategy_registry_name": "supertrend",
         "sandbox": {"starting_balances": ["10_000 USDT"]},
     }
@@ -137,6 +142,7 @@ async def _run(tmp_path: Path, messages: list[bytes], **overrides: Any) -> dict[
     connection = _FakeConnection(jetstream)
     engine = overrides.pop("engine", _FakeEngine())
     overrides.setdefault("credential_for", lambda spec: {"api_key": "k", "api_secret": "s"})
+    overrides.setdefault("strategy_config_for", lambda spec: TRADING)
 
     async def connect(url: str) -> _FakeConnection:
         return connection
@@ -225,6 +231,7 @@ async def test_marks_the_runner_ready_so_the_health_probe_can_pass(tmp_path: Pat
             readiness=readiness,
             connect_factory=connect,
             credential_for=lambda spec: {},
+            strategy_config_for=lambda spec: TRADING,
             stop=stop,
         ),
         timeout=2,
@@ -289,6 +296,7 @@ async def _run_with_broken_transport(
             state_path=tmp_path / "state" / "offline.db",
             connect_factory=connect,
             credential_for=lambda spec: {"api_key": "k", "api_secret": "s"},
+            strategy_config_for=lambda spec: TRADING,
             safety_interval=0.001,
             stop=stop,
         ),

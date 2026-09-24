@@ -18,7 +18,6 @@ import os
 import shutil
 import sys
 from collections.abc import Coroutine
-from copy import deepcopy
 from pathlib import Path
 from typing import Any, Final
 
@@ -32,6 +31,7 @@ from custos.offline.reconciler import OfflineReconciler
 from custos.offline.safety import TICK_SECS, OfflineExposureGuard
 from custos.offline.spec import OfflineDeploymentSpec, now_rfc3339_nanos, offline_subject
 from custos.offline.state import OfflineAppliedStore
+from custos.offline.strategy_config import strategy_trading_config_for
 
 _log = get_logger("custos.offline.daemon")
 
@@ -58,12 +58,10 @@ class BindMountedStrategy:
         strategy_path: Path,
         registry_name: str,
         digest: str,
-        strategy_config: dict | None = None,
     ) -> None:
         self._strategy_path = strategy_path
         self._registry_name = registry_name
         self._digest = digest
-        self._strategy_config = deepcopy(strategy_config or {})
 
     @property
     def activation_id(self) -> str:
@@ -73,13 +71,12 @@ class BindMountedStrategy:
     def strategy(self) -> object:
         self.select_discovery_path()
         # Imported lazily: the toolkit registry pulls in NautilusTrader.
-        from custos_toolkit.config import ConfigWrapper, deep_merge, load_config
+        from custos_toolkit.config import load_config
         from custos_toolkit_nautilus.adapter import create_strategy
 
-        defaults = load_config(self._strategy_path / "config.yaml")
         return create_strategy(
             self._registry_name,
-            config_wrapper=ConfigWrapper(deep_merge(defaults.raw, self._strategy_config)),
+            config_wrapper=load_config(self._strategy_path / "config.yaml"),
         )
 
     def select_discovery_path(self) -> None:
@@ -120,6 +117,7 @@ async def run_offline_lane(
     readiness: ReadinessFile | None = None,
     connect_factory: Any | None = None,
     credential_for: Any | None = None,
+    strategy_config_for: Any | None = None,
     safety_interval: float = TICK_SECS,
     stop: asyncio.Event | None = None,
 ) -> int:
@@ -163,6 +161,7 @@ async def run_offline_lane(
             publish=jetstream.publish,
             artifact_for=_artifact_for,
             credential_for=credential_for or _credential_reader(vault_dir, tenant_id, runner_id),
+            strategy_config_for=strategy_config_for or strategy_trading_config_for,
             applied_store=store,
             guard=guard,
         )
@@ -260,7 +259,6 @@ def _artifact_for(spec: OfflineDeploymentSpec) -> BindMountedStrategy:
         strategy_path=Path(spec.strategy_path),
         registry_name=spec.strategy_registry_name,
         digest=spec.code_hash or "unpinned",
-        strategy_config=spec.strategy_config,
     )
 
 

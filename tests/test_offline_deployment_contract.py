@@ -38,13 +38,9 @@ def _rendered_spec(**overrides: Any) -> dict[str, Any]:
         "sandbox": {"starting_balances": ["10_000 USDT"]},
         "spec_id": "supertrend-sandbox",
         "generation": 1,
-        "strategy_path": "/opt/ps/trend/supertrend/refinement/nautilus",
+        "strategy_path": "/opt/ps/trend/supertrend",
         "provenance_ref": {"credential_id": "binance-supertrend"},
-        "connector": "binance_perpetual",
-        "pairs": ["BTC-USDT"],
-        "leverage": 3,
         "strategy_registry_name": "supertrend",
-        "strategy_config": {"timeframe": "1m"},
     }
     spec.update(overrides)
     return spec
@@ -94,6 +90,23 @@ def test_rejects_a_malformed_generation(generation: Any) -> None:
 def test_rejects_an_undeclared_field() -> None:
     with pytest.raises(ValidationError):
         OfflineDeploymentSpec.model_validate(_rendered_spec(smuggled="payload"))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("connector", "binance_perpetual"),
+        ("pairs", ["BTC-USDT"]),
+        ("leverage", 3),
+        ("strategy_config", {"trading": {"leverage": 3}}),
+    ],
+)
+def test_refuses_the_trading_parameters_its_strategy_config_owns(field: str, value: Any) -> None:
+    # The host and the strategy once read these from two documents that
+    # disagreed. They live only in the strategy's config.yaml now, and a spec
+    # that still carries one is refused rather than silently ignored.
+    with pytest.raises(ValidationError, match=field):
+        OfflineDeploymentSpec.model_validate(_rendered_spec(**{field: value}))
 
 
 def test_code_hash_covers_content_and_layout(strategy_dir: Path) -> None:

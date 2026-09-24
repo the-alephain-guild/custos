@@ -76,19 +76,9 @@
       "default": null,
       "title": "Code Hash"
     },
-    "connector": {
-      "minLength": 1,
-      "title": "Connector",
-      "type": "string"
-    },
     "generation": {
       "minimum": 1,
       "title": "Generation",
-      "type": "integer"
-    },
-    "leverage": {
-      "minimum": 1,
-      "title": "Leverage",
       "type": "integer"
     },
     "lifecycle_state": {
@@ -103,14 +93,6 @@
       "additionalProperties": true,
       "title": "Nautilus Config",
       "type": "object"
-    },
-    "pairs": {
-      "items": {
-        "type": "string"
-      },
-      "minItems": 1,
-      "title": "Pairs",
-      "type": "array"
     },
     "provenance_ref": {
       "$ref": "#/$defs/ProvenanceRef"
@@ -135,11 +117,6 @@
       "pattern": "^[a-zA-Z0-9_-]{1,64}$",
       "title": "Spec Id",
       "type": "string"
-    },
-    "strategy_config": {
-      "additionalProperties": true,
-      "title": "Strategy Config",
-      "type": "object"
     },
     "strategy_path": {
       "minLength": 1,
@@ -168,10 +145,7 @@
     "trading_mode",
     "lifecycle_state",
     "strategy_path",
-    "provenance_ref",
-    "connector",
-    "pairs",
-    "leverage"
+    "provenance_ref"
   ],
   "title": "OfflineDeploymentSpec v1",
   "type": "object"

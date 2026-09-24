@@ -1,12 +1,7 @@
 {
   "code_hash": null,
-  "connector": "binance_perpetual",
   "generation": 1,
-  "leverage": 3,
   "lifecycle_state": "running",
-  "pairs": [
-    "BTC-USDT"
-  ],
   "provenance_ref": {
     "credential_id": "binance-supertrend"
   },
@@ -16,10 +11,7 @@
     ]
   },
   "spec_id": "supertrend-sandbox",
-  "strategy_config": {
-    "timeframe": "1m"
-  },
-  "strategy_path": "/opt/ps/trend/supertrend/refinement/nautilus",
+  "strategy_path": "/opt/ps/trend/supertrend",
   "strategy_registry_name": "supertrend",
   "trading_mode": "sandbox"
 }

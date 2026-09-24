@@ -39,9 +39,6 @@ def _spec(**overrides: Any) -> OfflineDeploymentSpec:
         "lifecycle_state": "running",
         "strategy_path": "/opt/ps/trend/supertrend",
         "provenance_ref": {"credential_id": "binance-supertrend"},
-        "connector": "binance_perpetual",
-        "pairs": ["BTC-USDT"],
-        "leverage": 3,
         "sandbox": {"starting_balances": ["10_000 USDT"]},
     }
     document.update(overrides)
