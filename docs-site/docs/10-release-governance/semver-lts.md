@@ -46,13 +46,9 @@ patches (see next section) and — best-effort — bug-fix patches. EOL is
 announced at least 30 days in advance in the GitHub release notes and copied
 into the changelog's `### Deprecated` section.
 
-:::note No line has started its window yet
-No stable support window is registered in the table below. A support window begins with the formal release of a supported version. See [release status](/release-governance/release-status) for current availability.
-:::
-
 | Minor line | First release | EOL |
 | ---------- | ------------- | --- |
-| — | — | first row appears when a line is cut |
+| 0.3.x | 2026-09-25 | 2027-09-25 |
 
 Each row, once present, is a hard commitment: a line is not dropped before its
 published end-of-life date.

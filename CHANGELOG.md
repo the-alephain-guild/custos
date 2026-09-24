@@ -13,92 +13,85 @@ protocol — is published at
 
 ## [Unreleased]
 
-### Changed
+Nothing yet.
 
-- Deployment authority moved upstream. The runner consumes signed desired-state
-  commands and no longer produces them, so `arx-runner deployment validate`,
-  `arx-runner deployment publish` and `arx-runner nats bootstrap` are gone with
-  no replacement: publishing a command and bootstrapping stream topology are not
-  runner operations. There is correspondingly no offline spec validation — a
-  spec is validated after its signature is verified, on arrival.
-- The simulation engine is selected with `--engine sandbox-sim`. The
-  `--engine noop` spelling from the 0.3.0 entry below never shipped under that
-  name.
-- `arx-runner credential`, `arx-runner nats-transport` and
-  `arx-runner publish-capability` are the current machine-authority commands.
+## [0.3.0] - 2026-09-25
 
-Nothing above has been released as an artifact. No version has been published as
-a wheel or an image, so these are changes between source revisions.
-
-## [0.3.0] - 2026-07-12
-
-Custos 0.3.0 closes the standalone deployment loop. The verified local image
-`custos-runner:v0.3.0` is the complete NautilusTrader runtime, and the
-desired-state producer and consumer share one strict public contract. This is
-a clean break: downstream development must start from 0.3.0 rather than
-carrying compatibility code for an older runner. **Remote release: deferred**;
-this entry records the code and local Docker contract, not a GitHub, PyPI, or
-GHCR publication event.
+The first published release. It ships as the signed container image
+`ghcr.io/the-alephain-guild/custos:v0.3.0`, verified by digest against the full
+runtime gate before the stable tag was applied, and as source. There is no PyPI
+package. The entries below this one describe source revisions that were never
+published as artifacts; an earlier, unpublished 0.3.0 entry dated 2026-07-12 is
+replaced by this one.
 
 ### Added
 
-- `custos.contracts.DeploymentSpec` and `DeploymentMessage` as the normative
-  consumer and transport interfaces. The contract requires `generation >= 1`,
-  separates `trading_mode` from `lifecycle_state`, rejects unknown fields, and
-  passes opaque `strategy_config` to the selected strategy factory unchanged.
-- `arx-runner deployment validate` and `arx-runner deployment publish`,
-  including canonical subject and JetStream acknowledgement handling;
-  producers no longer assemble envelopes or import engine-private hash helpers.
-- `arx-runner nats bootstrap --profile standalone`, which idempotently owns the
-  FILE-backed deployment and observed-state stream topology without letting
-  the production runner mutate infrastructure implicitly.
-- `arx-runner health` and atomic ready-state files for Compose, systemd, and
-  Kubernetes probes. Readiness is asserted only after the deployment
-  subscription succeeds and is cleared on shutdown or retry.
-- A hermetic standalone acceptance test covering real NATS bootstrap,
-  sops+age vault decrypt, running-to-stopped-to-running generation
-  reconciliation, status publication, and readiness through the official image.
+- A NautilusTrader 2.0 runtime (`nautilus-trader==2.0.0rc5+sodex.1`) hosted on
+  `LiveNode`, with the connectors `binance`, `binance_perpetual`, `okx`,
+  `okx_perpetual`, `sodex` and `sodex_perpetual`. Live trading additionally
+  requires signed promotion evidence; see [release status](https://custos.alephain.com/release-governance/release-status).
+- The signed lane: desired state is accepted only as signed commands verified
+  byte for byte, and the desired and applied state, leases and outcomes are kept
+  in the local runner database so a restart resumes where it stopped.
+- Signed RunnerFact V1 reporting through a durable outbox: fills, equity and
+  position snapshots, heartbeats, lifecycle, runtime logs, and reconciliation
+  evidence (venue ledger snapshots, valuation checkpoints, period close).
+- Local safety that keeps working while the control plane is unreachable: the
+  fallback breaker and the signed runner safety policy's `max_total_notional`
+  ceiling, enforced where orders leave the strategy.
+- The offline lane for sandbox and testnet strategy verification:
+  `arx-runner deployment validate`, `publish` and `schema`,
+  `arx-runner nats bootstrap --profile standalone` and
+  `arx-runner identity standalone`. Live is refused on this lane.
+- `arx-runner credential`, `nats-transport`, `publish-capability` and
+  `release-policy` for machine identity, transport and capability authority.
+- `CUSTOS_VENUE_PROXY_URL` sends Binance market data, execution and ledger
+  traffic through an `http://` or `https://` forward proxy. The address is read
+  from the environment and logged only as scheme, host and port.
 
 ### Changed
 
-- The verified local `custos-runner:v0.3.0` image includes
-  NautilusTrader, PyYAML, sops, and age. `ENTRYPOINT ["arx-runner"]` plus an
-  explicit `CMD ["start"]` gives both daemon-by-default and subcommand-safe
-  Docker behavior.
-- Engine selection is the closed enum `--engine nautilus|noop`; `nautilus` is
-  the default and `noop` is an explicit non-live contract-test host.
-- Deployment payloads are validated at the runtime boundary before vault, gate
-  or host code runs. Successful `stopped` and `archived` desired state now
-  reports `phase=stopped` rather than claiming the deployment is running.
-- Subscription failure uses bounded exponential retry while local guard ticks
-  continue; deployment readiness reflects the real subscription state.
-- Release CI shape is prepared to verify the lightweight base install, the
-  Nautilus extra, the complete candidate image contract, and the signed
-  published artifact when remote publication is authorized.
-
-### Removed
-
-- `--use-nt-host`; no compatibility alias is retained. Use
-  `--engine nautilus` or `--engine noop` explicitly.
-- The testnet example's derived Custos Dockerfile. Downstream development
-  consumes the verified local image directly and owns only strategy material
-  and `strategy_config` assembly.
+- **Breaking:** an offline deployment spec must declare `"spec_version": 2`. A
+  runner refuses any other version and names the version it accepts;
+  `arx-runner deployment schema` prints the schema it validates with.
+- **Breaking:** the offline spec no longer carries `connector`, `pairs`,
+  `leverage` or `strategy_config`. They come from the `trading` section of the
+  strategy's `config.yaml`, which must set `trading.leverage` explicitly.
+- **Breaking:** the simulation engine is `--engine sandbox-sim`; the earlier
+  `noop` spelling never shipped.
+- After a restart the runner becomes ready, reports and accepts commands first,
+  and recovers each deployment in the background. A newer command, including a
+  stop, cancels an in-flight recovery; a deployment that exhausts its restart
+  budget is quarantined without ending the runner.
+- A heartbeat reports `online` only once the deployment's engine is ready and
+  its state reliable; a deployment still starting reports `degraded`.
+- The base install supports Python 3.11; the NautilusTrader runtime requires
+  Python 3.12.
 
 ### Fixed
 
-- Per-key vault decryption now pins JSON input and output types so sops 3.13.x
-  does not infer the `.enc` payload as binary.
-- Live checks use `trading_mode == "live"` instead of conflating execution mode
-  with lifecycle state.
-- A higher-generation active spec after `stopped` now creates a fresh engine
-  deployment and re-runs vault and gate checks instead of reconfiguring a removed one.
+- Sandbox Binance spot uses the public JSON market data feed, which needs no
+  credentials.
+- Warmup history requests start on a whole microsecond instead of emitting a
+  precision warning.
+- Many execution, risk and reconciliation corrections made while hardening the
+  runtime, including preserved breaker and restart state across restarts,
+  confirmed containment on stop, reservation release by unfilled quantity, and
+  independent cash and perpetual valuation for reconciliation.
 
 ### Security
 
-- The local runtime remains non-root and the local gate checks the CLI,
-  Nautilus/YAML imports, sops/age executables, readiness probe, package
-  version, and source-revision label. A future remote release additionally
-  requires cosign verification before acceptance.
+- The image runs as a non-root user. Its stable tag names the same digest that
+  passed the runtime gate, signed keyless with cosign; see
+  [signed release verification](https://custos.alephain.com/trust-model/signed-release-chain).
+
+### Known limitations
+
+- OKX and SoDEX do not route through the venue proxy yet; a deployment on them is
+  refused while a proxy is configured. SOCKS proxies are not supported.
+- Docker image bytes are not reproducible bit for bit.
+- A passing build, health probe or sandbox run does not establish production
+  readiness.
 
 ## [0.2.0] - 2026-07-11
 

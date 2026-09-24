@@ -46,24 +46,17 @@ def test_project_and_lock_are_versioned_v030() -> None:
     assert locked_project["version"] == "0.3.0"
 
 
-def test_changelog_documents_v030_clean_break() -> None:
+def test_changelog_documents_the_published_v030() -> None:
+    # The release notes are cut from this entry, so it must describe what was
+    # published and every change a consumer has to act on.
     text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    v030 = text[text.index("## [0.3.0]") : text.index("## [0.2.0]")]
+    v030 = " ".join(text[text.index("## [0.3.0]") : text.index("## [0.2.0]")].split())
 
-    assert "## [0.3.0] - 2026-07-12" in text
-    assert LOCAL_IMAGE in v030
-    assert "Remote release: deferred" in v030
-    assert REMOTE_IMAGE not in v030
-    for contract in (
-        "--engine",
-        "--use-nt-host",
-        "generation",
-        "lifecycle_state",
-        "deployment publish",
-        "nats bootstrap",
-        "health",
-    ):
-        assert contract in text
+    assert "## [0.3.0] - 2026-09-25" in text
+    assert REMOTE_IMAGE in v030
+    assert "There is no PyPI package" in v030
+    for breaking in ('"spec_version": 2', "trading.leverage", "--engine sandbox-sim"):
+        assert breaking in v030
 
 
 def test_readme_declares_single_authority_topology() -> None:
