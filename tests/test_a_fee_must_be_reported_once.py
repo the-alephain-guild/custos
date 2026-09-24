@@ -87,6 +87,7 @@ def _okx_that_opened_and_closed_one_position():
                     "fillPx": "100",
                     "fee": "-1",
                     "feeCcy": "USDT",
+                    "fillTime": str(TRADE_TS - 500),
                     "ts": str(TRADE_TS - 500),
                 },
                 {
@@ -99,6 +100,7 @@ def _okx_that_opened_and_closed_one_position():
                     "fillPx": "112",
                     "fee": "-1",
                     "feeCcy": "USDT",
+                    "fillTime": str(TRADE_TS),
                     "ts": str(TRADE_TS),
                 },
             ]
