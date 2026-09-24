@@ -1,180 +1,180 @@
 # =============================================================================
-# The Alephain Guild -
+# The Alephain Guild - base strategy configuration
 # =============================================================================
-#
-#  config.yaml
+# General settings shared by every strategy
+# A strategy may override these defaults in its own config.yaml
 # =============================================================================
 
 # =============================================================================
-#
+# Trading
 # =============================================================================
 trading:
   _section:
-    title: "General"
+    title: "Trading"
   connector:
     value: "binance_perpetual"
     type: string
-    title: "General"
+    title: "Exchange connector"
     enum: ["binance", "binance_perpetual", "okx_perpetual", "kucoin"]
-    description: "No description"
+    description: "Exchange connector name"
   leverage:
     value: 1
     type: integer
-    title: "General"
+    title: "Leverage"
     minimum: 1
     maximum: 125
-    description: "No description"
+    description: "Contract leverage (perpetual contracts only)"
   pairs:
     value: ["BTC-USDT"]
     type: array
-    title: "General"
-    description: "No description"
+    title: "Trading pairs"
+    description: "Trading pairs (multi-pair supported)"
   direction:
     value: "both"
     type: string
-    title: "General"
+    title: "Trade direction"
     enum: ["long", "short", "both"]
-    description: "No description"
+    description: "Allowed trade directions"
   order_type:
     value: "limit"
     type: string
-    title: "General"
+    title: "Order type"
     enum: ["market", "limit"]
-    description: "No description"
+    description: "Order type used to open positions"
   position_mode:
     value: "ONEWAY"
     type: string
-    title: "General"
+    title: "Position mode"
     enum: ["ONEWAY", "HEDGE"]
-    description: "No description"
+    description: "One-way or hedge position mode"
   fees:
     _section:
-      title: "General"
+      title: "Fees"
     maker:
       value: 0.0002
       type: number
-      title: "Maker "
-      description: " (0.0002 = 0.02%)"
+      title: "Maker fee"
+      description: "Fee on limit order fills (0.0002 = 0.02%)"
       minimum: 0
       maximum: 0.01
     taker:
       value: 0.0004
       type: number
-      title: "Taker "
-      description: " (0.0004 = 0.04%)"
+      title: "Taker fee"
+      description: "Fee on market order fills (0.0004 = 0.04%)"
       minimum: 0
       maximum: 0.01
     funding_rate:
       value: 0.0
       type: number
-      title: "General"
-      description: "No description"
+      title: "Funding rate"
+      description: "Perpetual funding rate (cost estimates only; the exchange computes the real one)"
       minimum: -0.01
       maximum: 0.01
 
-  # : execution
+  # Nested section: execution
   execution:
     _section:
-      title: "General"
+      title: "Order execution"
     price_type:
       value: "mid"
       type: string
-      title: "General"
+      title: "Order price type"
       enum: ["mid", "bid", "ask"]
-      description: "No description"
+      description: "Mid price / best bid / best ask"
     limit_order_timeout:
       value: 60
       type: integer
-      title: "General"
+      title: "Limit order timeout"
       minimum: 0
       maximum: 300
-      description: "No description"
+      description: "Limit order timeout (seconds)"
     slippage_tolerance:
       value: 0.001
       type: number
-      title: "General"
+      title: "Slippage tolerance"
       minimum: 0.0001
       maximum: 0.01
-      description: " (0.001 = 0.1%)"
+      description: "Maximum slippage tolerance (0.001 = 0.1%)"
     retry_on_failure:
       value: true
       type: boolean
-      title: "General"
-      description: "No description"
+      title: "Retry on failure"
+      description: "Whether a failed order is retried"
     max_retries:
       value: 3
       type: integer
-      title: "General"
+      title: "Maximum retries"
       minimum: 1
       maximum: 10
     split_orders:
       _section:
-        title: "General"
+        title: "Order splitting"
       enabled:
         value: false
         type: boolean
-        title: "General"
-        description: "No description"
+        title: "Enable order splitting"
+        description: "Split large orders to reduce market impact"
       max_single_order_pct:
         value: 0.1
         type: number
-        title: "General"
+        title: "Maximum slice ratio"
         minimum: 0.05
         maximum: 0.5
-        description: "No description"
+        description: "Largest share of the total position in a single child order"
       interval_ms:
         value: 1000
         type: integer
-        title: "General"
+        title: "Slice interval"
         minimum: 100
         maximum: 10000
-        description: "No description"
+        description: "Milliseconds between child orders"
     price_improvement:
       _section:
-        title: "General"
+        title: "Price optimization"
       enabled:
         value: false
         type: boolean
-        title: "General"
+        title: "Enable price optimization"
       wait_for_pullback:
         value: false
         type: boolean
-        title: "General"
-        description: "No description"
+        title: "Wait for pullback entry"
+        description: "After a trend signal, wait for a small pullback before entering"
       pullback_pct:
         value: 0.002
         type: number
-        title: "General"
+        title: "Pullback size"
         minimum: 0.001
         maximum: 0.01
-        description: "No description"
+        description: "Pullback percentage to wait for"
       pullback_timeout:
         value: 300
         type: integer
-        title: "General"
+        title: "Pullback wait timeout"
         minimum: 60
         maximum: 3600
-        description: "No description"
+        description: "Seconds; enter at market once it expires"
 
 # =============================================================================
-#
+# Position management
 # =============================================================================
 position:
   _section:
-    title: "General"
+    title: "Position management"
   size_type:
     value: "percentage"
     type: string
-    title: "General"
+    title: "Sizing method"
     enum: ["percentage", "fixed", "kelly", "fixed_risk"]
-    description: " (fixed_risk: ,  fixed_risk.risk_pct, )"
+    description: "Position sizing method (fixed_risk: sized from the stop distance using fixed_risk.risk_pct; requires a stop loss)"
   size_value:
     value: 0.1
     type: number
-    title: "General"
+    title: "Position size"
     minimum: 0.01
     maximum: 1.0
-    description: " (percentage )  (fixed )"
+    description: "Position fraction (percentage mode) or fixed amount (fixed mode)"
     optimization:
       enabled: true
       range: [0.05, 0.3]
@@ -182,84 +182,84 @@ position:
   capital_mode:
     value: "compound"
     type: string
-    title: "General"
+    title: "Capital mode"
     enum: ["compound", "fixed_capital"]
-    description: "No description"
+    description: "Compounding or fixed capital"
   initial_capital:
     value: 10000
     type: number
-    title: "General"
+    title: "Initial capital"
     minimum: 100
-    description: "fixed_capital "
+    description: "Initial capital used in fixed_capital mode"
   base_size_factor:
     value: 1.0
     type: number
-    title: "General"
+    title: "Base position multiplier"
     minimum: 0.1
     maximum: 1.0
-    description: " (1.0 = )"
+    description: "Global multiplier that scales every position down together (1.0 = unchanged)"
 
-  # : kelly
+  # Nested section: kelly
   kelly:
     _section:
-      title: "General"
-      description: "size_type: kelly "
+      title: "Kelly parameters"
+      description: "Used when size_type is kelly"
     fraction:
       value: 0.25
       type: number
-      title: "General"
+      title: "Kelly fraction"
       minimum: 0.1
       maximum: 1.0
-      description: " 0.25-0.5 (1/4  1/2 )"
+      description: "0.25-0.5 recommended (quarter to half Kelly)"
     win_rate:
       value: 0.55
       type: number
-      title: "General"
+      title: "Historical win rate"
       minimum: 0.1
       maximum: 0.9
     payoff_ratio:
       value: 2.0
       type: number
-      title: "General"
+      title: "Win/loss ratio"
       minimum: 0.5
       maximum: 10.0
-      description: "No description"
+      description: "Average win / average loss"
 
-  # : fixed_risk (size_type: fixed_risk )
+  # Nested section: fixed_risk (used when size_type is fixed_risk)
   fixed_risk:
     _section:
-      title: "General"
-      description: "size_type: fixed_risk ;  FixedRiskSizer "
+      title: "Fixed-risk parameters"
+      description: "Used when size_type is fixed_risk; the native FixedRiskSizer sizes the position from the stop distance"
     risk_pct:
       value: 0.01
       type: number
-      title: "General"
+      title: "Risk per trade"
       minimum: 0.001
       maximum: 0.1
-      description: " (, 0.01 = 1%); "
+      description: "Share of equity risked per trade (decimal, 0.01 = 1%); hitting the stop loses exactly this share"
 
-  # : scaling
+  # Nested section: scaling
   scaling:
     _section:
-      title: "General"
+      title: "Scaling in"
     enabled:
       value: false
       type: boolean
-      title: "General"
-      description: "No description"
+      title: "Enable scaling in"
+      description: "Whether positions are built in several entries"
     method:
       value: "pyramid"
       type: string
-      title: "General"
+      title: "Scaling method"
       enum: ["pyramid", "fixed", "martingale"]
-      description: "No description"
+      description: "Pyramid / fixed / martingale"
     max_entries:
       value: 3
       type: integer
-      title: "General"
+      title: "Maximum entries"
       minimum: 1
       maximum: 10
-      description: "No description"
+      description: "Maximum number of entries, including the initial position"
       optimization:
         enabled: true
         range: [1, 5]
@@ -267,10 +267,10 @@ position:
     entry_interval_pct:
       value: 0.02
       type: number
-      title: "General"
+      title: "Scaling interval"
       minimum: 0.005
       maximum: 0.1
-      description: "No description"
+      description: "Price move percentage that triggers the next entry"
       optimization:
         enabled: true
         range: [0.01, 0.05]
@@ -279,265 +279,265 @@ position:
       scale_factor:
         value: 0.5
         type: number
-        title: "General"
+        title: "Pyramid decay ratio"
         minimum: 0.1
         maximum: 1.0
-        description: "2=×0.5, 3=×0.25"
+        description: "2nd entry = initial x 0.5, 3rd = initial x 0.25"
     fixed:
       size_per_entry:
         value: 0.1
         type: number
-        title: "General"
+        title: "Fixed scaling ratio"
         minimum: 0.01
         maximum: 0.5
-        description: "No description"
+        description: "Position fraction added on each entry"
     martingale:
       multiplier:
         value: 2.0
         type: number
-        title: "General"
+        title: "Martingale multiplier"
         minimum: 1.5
         maximum: 3.0
-        description: "No description"
+        description: "Doubling factor (high risk)"
 
-  # : limits
+  # Nested section: limits
   limits:
     _section:
-      title: "General"
+      title: "Position limits"
     max_positions_per_pair:
       value: 1
       type: integer
-      title: "General"
+      title: "Maximum positions per pair"
       minimum: 1
       maximum: 10
     min_order_size:
       value: 10
       type: number
-      title: "General"
+      title: "Minimum order value"
       minimum: 1
-      description: "No description"
+      description: "In quote currency"
     max_position_pct:
       value: 0.5
       type: number
-      title: "General"
+      title: "Maximum position ratio"
       minimum: 0.1
       maximum: 1.0
-      description: "No description"
+      description: "Largest single-instrument position as a share of total capital"
     max_total_positions:
       value: 5
       type: integer
-      title: "General"
+      title: "Maximum total positions"
       minimum: 1
       maximum: 20
-      description: "No description"
+      description: "Cap on the number of open positions across all pairs"
     max_total_exposure:
       value: 0.8
       type: number
-      title: "General"
+      title: "Maximum total exposure"
       minimum: 0.1
       maximum: 1.0
-      description: "No description"
+      description: "Cap on all open positions as a share of total capital"
     max_correlated_exposure:
       value: 0.5
       type: number
-      title: "General"
+      title: "Maximum correlated exposure"
       minimum: 0.1
       maximum: 1.0
-      description: " ( BTC+ETH) "
+      description: "Maximum combined exposure to correlated assets (such as BTC + ETH)"
     correlation_groups:
       value: []
       type: array
-      title: "General"
-      description: " [['BTC-USDT', 'ETH-USDT'], ['SOL-USDT', 'AVAX-USDT']]"
+      title: "Correlation groups"
+      description: "For example [['BTC-USDT', 'ETH-USDT'], ['SOL-USDT', 'AVAX-USDT']]"
     max_trade_size:
       value: null
       type: number
-      title: "General"
-      description: " (null = )"
+      title: "Maximum order value"
+      description: "Largest order value the exchange allows (null = no limit)"
 
-  # : dynamic_sizing
+  # Nested section: dynamic_sizing
   dynamic_sizing:
     _section:
-      title: "General"
+      title: "Dynamic sizing"
     enabled:
       value: false
       type: boolean
-      title: "General"
-      description: "No description"
+      title: "Enable dynamic sizing"
+      description: "Adjust position size to market conditions and signal strength"
     volatility_adjustment:
       _section:
-        title: "General"
+        title: "Volatility adjustment"
       enabled:
         value: false
         type: boolean
-        title: "General"
-        description: "No description"
+        title: "Volatility adjustment"
+        description: "Smaller positions when volatility is high, larger when it is low"
       target_volatility:
         value: 0.02
         type: number
-        title: "General"
+        title: "Target volatility"
         minimum: 0.005
         maximum: 0.1
-        description: " (2%)"
+        description: "Daily volatility target (2%)"
       lookback:
         value: 20
         type: integer
-        title: "General"
+        title: "Volatility lookback"
         minimum: 5
         maximum: 60
       min_multiplier:
         value: 0.5
         type: number
-        title: "General"
+        title: "Minimum adjustment factor"
         minimum: 0.1
         maximum: 1.0
       max_multiplier:
         value: 1.5
         type: number
-        title: "General"
+        title: "Maximum adjustment factor"
         minimum: 1.0
         maximum: 3.0
     streak_adjustment:
       _section:
-        title: "General"
+        title: "Streak adjustment"
       enabled:
         value: false
         type: boolean
-        title: "General"
-        description: "No description"
+        title: "Win/loss streak adjustment"
+        description: "Reduce size after consecutive losses, increase modestly after consecutive wins"
       loss_reduction:
         value: 0.2
         type: number
-        title: "General"
+        title: "Reduction per loss"
         minimum: 0.05
         maximum: 0.5
-        description: " 20%"
+        description: "Reduce 20% for each consecutive loss"
       win_increase:
         value: 0.1
         type: number
-        title: "General"
+        title: "Increase per win"
         minimum: 0.05
         maximum: 0.3
-        description: " 10%"
+        description: "Increase 10% for each consecutive win"
       max_streak_adjustment:
         value: 3
         type: integer
-        title: "General"
+        title: "Maximum streak counted"
         minimum: 1
         maximum: 5
-        description: " 3 "
+        description: "Counts at most 3 consecutive results"
 
 # =============================================================================
-#
+# Risk management
 # =============================================================================
 risk:
   _section:
-    title: "General"
+    title: "Risk management"
 
-  #
+  # Global risk
   global:
     _section:
-      title: "General"
-      description: "No description"
+      title: "Global risk"
+      description: "Account- and portfolio-level risk controls"
     max_daily_loss:
       value: 0.05
       type: number
-      title: "General"
+      title: "Maximum daily loss"
       minimum: 0.01
       maximum: 0.2
-      description: "No description"
+      description: "Daily loss ratio that pauses trading"
     max_drawdown:
       value: 0.10
       type: number
-      title: "General"
+      title: "Maximum drawdown"
       minimum: 0.05
       maximum: 0.5
-      description: "No description"
+      description: "Drawdown ratio that pauses trading"
     consecutive_loss_pause:
       value: 3
       type: integer
-      title: "General"
+      title: "Pause after consecutive losses"
       minimum: 1
       maximum: 10
-      description: " N "
+      description: "Pause trading after N consecutive losses"
     max_daily_trades:
       value: 0
       type: integer
-      title: "General"
+      title: "Maximum trades per day"
       minimum: 0
-      description: "0 = "
+      description: "0 = no limit"
     max_daily_profit:
       value: 0
       type: number
-      title: "General"
+      title: "Maximum daily profit"
       minimum: 0
       maximum: 1.0
-      description: " (0 = )"
+      description: "Pause once the target profit is reached (0 = no limit)"
     reset_time:
       value: "00:00"
       type: string
-      title: "General"
-      description: "UTC , "
+      title: "Risk reset time"
+      description: "UTC time at which the daily risk counters reset"
     pause_duration:
       value: 0
       type: integer
-      title: "General"
+      title: "Pause duration after trigger"
       minimum: 0
-      description: ", 0 = "
+      description: "Seconds; 0 = pause until the next trading day"
 
-  #
+  # Per-trade risk
   trade:
     _section:
-      title: "General"
+      title: "Per-trade risk"
     sl_tp_mode:
       value: "hybrid"
       type: string
-      title: "SL/TP "
+      title: "SL/TP execution mode"
       enum: ["exchange", "tick", "hybrid", "native_trailing"]
       description: |
-        exchange: SL/TP
-        tick: SL/TP  Tick
-        hybrid: SL  + TP/ Tick ()
-        native_trailing:  (TrailingStopMarketOrder)
+        exchange: SL and TP both as exchange orders
+        tick: SL and TP both monitored on ticks
+        hybrid: SL on the exchange + TP and trailing stop on ticks (recommended)
+        native_trailing: exchange-native trailing stop (TrailingStopMarketOrder)
     max_loss_pct:
       value: 0.02
       type: number
-      title: "General"
+      title: "Maximum loss per trade"
       minimum: 0.005
       maximum: 0.1
-      description: "No description"
+      description: "Maximum loss per trade, as a percentage"
     time_limit:
       value: 604800
       type: integer
-      title: "General"
+      title: "Maximum holding time"
       minimum: 3600
-      description: ", 604800 = 7"
+      description: "Seconds; 604800 = 7 days"
     atr_period:
       value: 14
       type: integer
-      title: "ATR "
+      title: "ATR period"
       minimum: 5
       maximum: 50
-      description: "/ ATR "
+      description: "ATR period used for stop-loss and take-profit calculations"
 
-    #
+    # Take profit
     take_profit:
       _section:
-        title: "General"
+        title: "Take profit"
       method:
         value: "atr"
         type: string
-        title: "General"
+        title: "Take-profit method"
         enum: ["atr", "fixed", "trailing", "scaled", "none"]
-        description: " (scaled: )"
+        description: "How the take profit is computed (scaled: exit in tranches)"
       atr:
         multiplier:
           value: 6.0
           type: number
-          title: " ATR "
+          title: "Take-profit ATR multiplier"
           minimum: 1.0
           maximum: 20.0
-          description: "ATR "
+          description: "ATR multiplier for the take profit"
           optimization:
             enabled: true
             range: [3.0, 12.0]
@@ -546,96 +546,96 @@ risk:
         value:
           value: 0.04
           type: number
-          title: "General"
+          title: "Fixed take-profit ratio"
           minimum: 0.01
           maximum: 0.2
-          description: "No description"
+          description: "Fixed take-profit percentage"
       trailing:
         activation_pct:
           value: 0.03
           type: number
-          title: "General"
+          title: "Trailing take-profit activation"
           minimum: 0.01
           maximum: 0.1
-          description: "No description"
+          description: "Profit at which it activates"
         callback_pct:
           value: 0.01
           type: number
-          title: "General"
+          title: "Pullback trigger ratio"
           minimum: 0.005
           maximum: 0.05
-          description: "No description"
+          description: "Pullback that triggers the take profit"
       scaled:
         _section:
-          title: "General"
-          description: "method: scaled "
+          title: "Scaled take profit"
+          description: "Used when method is scaled"
         levels:
           value: 3
           type: integer
-          title: "General"
+          title: "Take-profit levels"
           minimum: 2
           maximum: 5
         level_1:
           target_pct:
             value: 0.02
             type: number
-            title: "General"
+            title: "First target"
             minimum: 0.005
             maximum: 0.1
-            description: " 2% "
+            description: "Triggers at 2% profit"
           exit_pct:
             value: 0.33
             type: number
-            title: "General"
+            title: "Close ratio"
             minimum: 0.1
             maximum: 0.5
-            description: " 33% "
+            description: "Closes 33% of the position"
         level_2:
           target_pct:
             value: 0.04
             type: number
-            title: "General"
+            title: "Second target"
             minimum: 0.01
             maximum: 0.15
           exit_pct:
             value: 0.33
             type: number
-            title: "General"
+            title: "Close ratio"
             minimum: 0.1
             maximum: 0.5
         level_3:
           target_pct:
             value: 0.06
             type: number
-            title: "General"
+            title: "Third target"
             minimum: 0.02
             maximum: 0.2
           exit_pct:
             value: 0.34
             type: number
-            title: "General"
+            title: "Close ratio"
             minimum: 0.1
             maximum: 1.0
-            description: "No description"
+            description: "Closes whatever remains"
 
-    #
+    # Stop loss
     stop_loss:
       _section:
-        title: "General"
+        title: "Stop loss"
       method:
         value: "atr"
         type: string
-        title: "General"
+        title: "Stop-loss method"
         enum: ["atr", "fixed", "trailing", "indicator", "none"]
-        description: "No description"
+        description: "How the stop loss is computed"
       atr:
         multiplier:
           value: 2.0
           type: number
-          title: " ATR "
+          title: "Stop-loss ATR multiplier"
           minimum: 0.5
           maximum: 10.0
-          description: "ATR "
+          description: "ATR multiplier for the stop loss"
           optimization:
             enabled: true
             range: [1.0, 5.0]
@@ -644,107 +644,107 @@ risk:
         value:
           value: 0.02
           type: number
-          title: "General"
+          title: "Fixed stop-loss ratio"
           minimum: 0.005
           maximum: 0.1
-          description: "No description"
+          description: "Fixed stop-loss percentage"
       trailing:
         _section:
-          title: "General"
+          title: "Trailing stop"
         enabled:
           value: false
           type: boolean
-          title: "General"
-          description: "No description"
+          title: "Enable trailing stop"
+          description: "Whether the stop trails the price"
         activation_pct:
           value: 0.02
           type: number
-          title: "General"
+          title: "Activation"
           minimum: 0.01
           maximum: 0.1
-          description: "No description"
+          description: "Profit at which it activates"
         trailing_pct:
           value: 0.015
           type: number
-          title: "General"
+          title: "Trailing distance"
           minimum: 0.005
           maximum: 0.05
-          description: "No description"
+          description: "Price pullback that triggers the stop"
       indicator:
         type:
           value: "supertrend"
           type: string
-          title: "General"
+          title: "Indicator type"
           enum: ["supertrend", "ma", "sar"]
-          description: "No description"
+          description: "Indicator the stop is based on"
       break_even:
         _section:
-          title: "General"
-          description: "No description"
+          title: "Break-even stop"
+          description: "Move the stop to the entry price once the target profit is reached"
         enabled:
           value: false
           type: boolean
-          title: "General"
+          title: "Enable break-even stop"
         activation_pct:
           value: 0.015
           type: number
-          title: "General"
+          title: "Activation"
           minimum: 0.005
           maximum: 0.05
-          description: " 1.5% "
+          description: "Activates once profit reaches 1.5%"
         offset:
           value: 0.001
           type: number
-          title: "General"
+          title: "Offset"
           minimum: 0
           maximum: 0.005
-          description: " 0.1% ()"
+          description: "Stop placed 0.1% beyond the entry price (covers fees)"
 
-  # Tick
+  # Tick-level monitoring
   tick_monitoring:
     _section:
-      title: "Tick "
-      description: " tick /"
+      title: "Tick-level monitoring"
+      description: "Watch for stop-loss and take-profit triggers on live tick data"
     enabled:
       value: true
       type: boolean
-      title: " Tick "
-      description: " tick  SL/TP"
+      title: "Enable tick monitoring"
+      description: "When enabled, subscribes to tick data and checks SL/TP in real time"
     tick_type:
       value: "trade"
       type: string
-      title: "Tick "
+      title: "Tick type"
       enum: ["trade", "quote", "both"]
-      description: "trade: ; quote: ; both: "
+      description: "trade: trade ticks; quote: quote ticks; both: both"
 
 # =============================================================================
-#
+# Signal filters
 # =============================================================================
 filters:
   _section:
-    title: "General"
+    title: "Signal filters"
 
   adx_filter:
     _section:
-      title: "ADX "
+      title: "ADX trend filter"
     enabled:
       value: false
       type: boolean
-      title: " ADX "
-      description: " ADX "
+      title: "Enable ADX filter"
+      description: "Use ADX to filter out signals in weak trends"
     period:
       value: 14
       type: integer
-      title: "ADX "
+      title: "ADX period"
       minimum: 7
       maximum: 30
     threshold:
       value: 25
       type: number
-      title: "ADX "
+      title: "ADX threshold"
       minimum: 15
       maximum: 50
-      description: "ADX "
+      description: "Positions open only when ADX is above this value"
       optimization:
         enabled: true
         range: [20, 40]
@@ -752,434 +752,434 @@ filters:
 
   volatility_filter:
     _section:
-      title: "General"
+      title: "Volatility filter"
     enabled:
       value: false
       type: boolean
-      title: "General"
-      description: "No description"
+      title: "Enable volatility filter"
+      description: "Filter out periods of low or high volatility"
     min_atr_pct:
       value: 0.003
       type: number
-      title: " ATR  (, 0.003=0.3%)"
+      title: "Minimum ATR ratio (decimal, 0.003 = 0.3%)"
       minimum: 0.001
       maximum: 0.01
-      description: "ATR/ "
+      description: "No entries while ATR/price is below this decimal ratio"
     max_atr_pct:
       value: 0.05
       type: number
-      title: " ATR  (, 0.05=5%)"
+      title: "Maximum ATR ratio (decimal, 0.05 = 5%)"
       minimum: 0.01
       maximum: 0.1
-      description: "ATR/  ()"
+      description: "No entries while ATR/price is above this decimal ratio (avoids extreme volatility)"
     atr_lookback:
       value: 14
       type: integer
-      title: "ATR "
+      title: "ATR lookback"
       minimum: 5
       maximum: 50
-      description: " ( atr_period)"
+      description: "Volatility period (defaults to the strategy atr_period)"
 
   volume_filter:
     _section:
-      title: "General"
+      title: "Volume filter"
     enabled:
       value: false
       type: boolean
-      title: "General"
-      description: "No description"
+      title: "Enable volume filter"
+      description: "Filter out low-volume periods"
     ma_period:
       value: 20
       type: integer
-      title: "MA "
+      title: "MA period"
       minimum: 5
       maximum: 50
     threshold:
       value: 1.2
       type: number
-      title: "General"
+      title: "Volume multiple"
       minimum: 1.0
       maximum: 3.0
-      description: " MA "
+      description: "Multiple of the moving average that current volume must exceed"
 
   time_filter:
     _section:
-      title: "General"
+      title: "Time filter"
     enabled:
       value: false
       type: boolean
-      title: "General"
-      description: "No description"
+      title: "Enable time filter"
+      description: "Restrict trading sessions"
     trading_hours:
       value: "00:00-23:59"
       type: string
-      title: "General"
-      description: "UTC ,  HH:MM-HH:MM"
+      title: "Trading sessions"
+      description: "UTC time, format HH:MM-HH:MM"
     excluded_days:
       value: []
       type: array
-      title: "General"
-      description: "0=, 6="
+      title: "Excluded weekdays"
+      description: "0 = Monday, 6 = Sunday"
     excluded_dates:
       value: []
       type: array
-      title: "General"
-      description: " YYYY-MM-DD"
+      title: "Excluded dates"
+      description: "Format YYYY-MM-DD"
 
   cooldown:
     _section:
-      title: "General"
+      title: "Cooldowns"
     min_holding_time:
       value: 0
       type: integer
-      title: "General"
+      title: "Minimum holding time"
       minimum: 0
-      description: "No description"
+      description: "Seconds; avoids opening and closing too often"
     after_exit:
       value: 0
       type: integer
-      title: "General"
+      title: "Cooldown after close"
       minimum: 0
     after_stop_loss:
       value: 300
       type: integer
-      title: "General"
+      title: "Cooldown after stop loss"
       minimum: 0
-      description: "No description"
+      description: "Seconds; usually longer, to avoid emotional trading"
     after_take_profit:
       value: 0
       type: integer
-      title: "General"
+      title: "Cooldown after take profit"
       minimum: 0
 
   mtf_filter:
     _section:
-      title: "General"
+      title: "Multi-timeframe filter"
     enabled:
       value: false
       type: boolean
-      title: " MTF "
-      description: "No description"
+      title: "Enable MTF filter"
+      description: "Confirm the trend direction on a higher timeframe"
     higher_timeframe:
       value: "4h"
       type: string
-      title: "General"
+      title: "Confirmation timeframe"
       enum: ["1h", "4h", "1d"]
-      description: "No description"
+      description: "Higher timeframe used to confirm the trend"
     alignment_mode:
       value: "same_direction"
       type: string
-      title: "General"
+      title: "Alignment mode"
       enum: ["same_direction", "not_against"]
-      description: "same_direction: ; not_against: "
+      description: "same_direction: must agree; not_against: must not oppose"
 
   regime_filter:
     _section:
-      title: "General"
+      title: "Market regime filter"
     enabled:
       value: false
       type: boolean
-      title: "General"
-      description: "No description"
+      title: "Enable market regime filter"
+      description: "Distinguish trending from ranging markets"
     method:
       value: "efficiency_ratio"
       type: string
-      title: "General"
+      title: "Detection method"
       enum: ["adx_slope", "atr_percentile", "efficiency_ratio"]
-      description: "adx_slope: ADX; atr_percentile: ATR; efficiency_ratio: "
+      description: "adx_slope: ADX slope; atr_percentile: ATR percentile; efficiency_ratio: efficiency ratio"
     lookback:
       value: 20
       type: integer
-      title: "General"
+      title: "Lookback period"
       minimum: 10
       maximum: 100
     trending_threshold:
       value: 0.5
       type: number
-      title: " (efficiency_ratio)"
+      title: "Trend threshold (efficiency_ratio)"
       minimum: 0.3
       maximum: 0.8
-      description: " efficiency_ratio  (0..1)"
+      description: "efficiency_ratio only: an efficiency ratio above this value counts as trending (0..1)"
     range_pct_threshold:
       value: 0.03
       type: number
-      title: " (atr_percentile)"
+      title: "Range threshold (atr_percentile)"
       minimum: 0.005
       maximum: 0.2
-      description: " atr_percentile /  (, 0.03=3%)"
+      description: "atr_percentile only: a price range / mean price above this value counts as trending (decimal, 0.03 = 3%)"
     adx_period:
       value: 14
       type: integer
-      title: "ADX  (adx_slope)"
+      title: "ADX period (adx_slope)"
       minimum: 5
       maximum: 50
-      description: " adx_slope  ADX "
+      description: "adx_slope only: period used to compute ADX"
 
   momentum_filter:
     _section:
-      title: "General"
+      title: "Momentum filter"
     enabled:
       value: false
       type: boolean
-      title: "General"
-      description: "No description"
+      title: "Enable momentum filter"
+      description: "Use a momentum indicator to filter out weak signals"
     indicator:
       value: "rsi"
       type: string
-      title: "General"
+      title: "Momentum indicator"
       enum: ["rsi", "roc", "macd"]
       description: "RSI/ROC/MACD"
     rsi:
       _section:
-        title: "RSI "
+        title: "RSI settings"
       period:
         value: 14
         type: integer
-        title: "RSI "
+        title: "RSI period"
         minimum: 5
         maximum: 30
       long_min:
         value: 40
         type: number
-        title: " RSI"
+        title: "Minimum RSI for longs"
         minimum: 20
         maximum: 60
       long_max:
         value: 70
         type: number
-        title: " RSI"
+        title: "Maximum RSI for longs"
         minimum: 60
         maximum: 90
       short_min:
         value: 30
         type: number
-        title: " RSI"
+        title: "Minimum RSI for shorts"
         minimum: 10
         maximum: 40
       short_max:
         value: 60
         type: number
-        title: " RSI"
+        title: "Maximum RSI for shorts"
         minimum: 40
         maximum: 80
     roc:
       _section:
-        title: "ROC "
+        title: "ROC settings"
       period:
         value: 10
         type: integer
-        title: "ROC "
+        title: "ROC period"
         minimum: 5
         maximum: 30
       long_threshold:
         value: 0
         type: number
-        title: "General"
-        description: "ROC "
+        title: "Long threshold"
+        description: "ROC must be above this value to go long"
       short_threshold:
         value: 0
         type: number
-        title: "General"
-        description: "ROC "
+        title: "Short threshold"
+        description: "ROC must be below this value to go short"
     macd:
       _section:
-        title: "MACD "
+        title: "MACD settings"
       fast:
         value: 12
         type: integer
-        title: "General"
+        title: "Fast period"
       slow:
         value: 26
         type: integer
-        title: "General"
+        title: "Slow period"
       signal:
         value: 9
         type: integer
-        title: "General"
+        title: "Signal period"
       require_crossover:
         value: false
         type: boolean
-        title: "General"
-        description: " MACD "
+        title: "Require crossover"
+        description: "Whether a MACD crossover is required for confirmation"
       histogram_positive:
         value: true
         type: boolean
-        title: "General"
-        description: "No description"
+        title: "Histogram direction"
+        description: "Longs require a positive histogram, shorts a negative one"
 
   behavior:
     _section:
-      title: "General"
+      title: "Filter behaviour"
     mode:
       value: "all"
       type: string
-      title: "General"
+      title: "Filter mode"
       enum: ["all", "any", "weighted"]
-      description: "all: ; any: ; weighted: "
+      description: "all: every filter passes; any: at least one passes; weighted: weighted score"
     min_score:
       value: 0.6
       type: number
-      title: "General"
+      title: "Minimum score"
       minimum: 0.1
       maximum: 1.0
-      description: "weighted "
+      description: "Minimum passing score in weighted mode"
     weights:
       _section:
-        title: "General"
-        description: "weighted "
+        title: "Filter weights"
+        description: "Per-filter weights in weighted mode"
       adx_filter:
         value: 0.3
         type: number
-        title: "ADX "
+        title: "ADX weight"
         minimum: 0
         maximum: 1.0
       volatility_filter:
         value: 0.25
         type: number
-        title: "General"
+        title: "Volatility weight"
         minimum: 0
         maximum: 1.0
       volume_filter:
         value: 0.25
         type: number
-        title: "General"
+        title: "Volume weight"
         minimum: 0
         maximum: 1.0
       regime_filter:
         value: 0.2
         type: number
-        title: "General"
+        title: "Market regime weight"
         minimum: 0
         maximum: 1.0
     on_filter_fail:
       value: "skip"
       type: string
-      title: "General"
+      title: "Behaviour on filter failure"
       enum: ["skip", "reduce_size", "delay"]
-      description: "skip: ; reduce_size: ; delay: "
+      description: "skip: skip the entry; reduce_size: smaller position; delay: delay the entry"
     reduce_size_factor:
       value: 0.5
       type: number
-      title: "General"
+      title: "Size reduction factor"
       minimum: 0.1
       maximum: 0.9
-      description: "reduce_size "
+      description: "Position reduction ratio in reduce_size mode"
 
 # =============================================================================
-#
+# Indicator warmup
 # =============================================================================
-#
-#
-#   - none:
-#   - warmup:  ()
-#   - snapshot:
+# Warmup accumulates enough history before trading starts to compute the indicators.
+# Three modes are supported:
+#   - none: no warmup; indicators start from live data
+#   - warmup: request historical data to compute the indicators (recommended)
+#   - snapshot: load indicator state from a snapshot for a fast restart
 # =============================================================================
 warmup:
   _section:
-    title: "General"
-    description: "No description"
+    title: "Indicator warmup"
+    description: "How the strategy indicators are warmed up so that signals are valid"
 
   mode:
     value: "none"
     type: string
-    title: "General"
+    title: "Warmup mode"
     enum: ["none", "snapshot", "warmup"]
     description: |
-      none:  ()
-      warmup:  K  ()
-      snapshot:  ()
+      none: no warmup; indicators start from zero (suits a first run)
+      warmup: request historical bars to compute the indicators (recommended for most cases)
+      snapshot: restore indicator state from a snapshot (suits a fast restart)
 
-  #  (mode="warmup" )
+  # Historical data (used when mode="warmup")
   history:
     _section:
-      title: "General"
-      description: "warmup "
+      title: "Historical data"
+      description: "Historical data request parameters in warmup mode"
     min_bars:
       value: 500
       type: integer
-      title: " K "
+      title: "Minimum bars"
       minimum: 50
       maximum: 5000
-      description: " K "
+      description: "Minimum number of historical bars the indicators need"
     preferred_bars:
       value: 2000
       type: integer
-      title: " K "
+      title: "Preferred bars"
       minimum: 100
       maximum: 10000
-      description: " K "
+      description: "Number of historical bars requested ideally, so the indicators are stable"
     timeout_secs:
       value: 30
       type: integer
-      title: "General"
+      title: "Data request timeout"
       minimum: 5
       maximum: 300
-      description: "No description"
+      description: "Seconds; timeout for the historical data request"
 
-  #  (mode="snapshot" )
+  # Snapshot (used when mode="snapshot")
   snapshot:
     _section:
-      title: "General"
-      description: "snapshot  TradingView "
+      title: "Indicator snapshot"
+      description: "Initial indicator state in snapshot mode; can be aligned with an external source such as TradingView"
 
     timestamp:
       value: null
       type: string
-      title: "General"
-      description: "ISO 8601  2024-01-01T00:00:00Z"
+      title: "Snapshot timestamp"
+      description: "ISO 8601, for example 2024-01-01T00:00:00Z"
 
-    #  ()
-    #
-    # SuperTrend
+    # Indicator snapshot values (overridden by each strategy)
+    # Each strategy defines the snapshot format of the indicators it uses
+    # Example: SuperTrend indicator snapshot
     indicators:
       _section:
-        title: "General"
-        description: " config.yaml "
+        title: "Indicator snapshot values"
+        description: "State snapshot of each indicator; strategies override this section in config.yaml"
 
-      #  (SuperTrend)
+      # Example: trend indicator (SuperTrend)
       # supertrend:
-      #   value: 45000.0       # SuperTrend
-      #   trend: 1             # : 1=, -1=, 0=
-      #   upper_band: 45500.0  #  ()
-      #   lower_band: 44500.0  #  ()
+      #   value: 45000.0       # SuperTrend line price
+      #   trend: 1             # Trend direction: 1 = bullish, -1 = bearish, 0 = uninitialized
+      #   upper_band: 45500.0  # Upper band (resistance in a downtrend)
+      #   lower_band: 44500.0  # Lower band (support in an uptrend)
 
-      #  (RSI)
+      # Example: momentum indicator (RSI)
       # rsi:
-      #   value: 55.0          # RSI  (0-100)
-      #   avg_gain: 0.5        #
-      #   avg_loss: 0.4        #
+      #   value: 55.0          # RSI value (0-100)
+      #   avg_gain: 0.5        # Average gain
+      #   avg_loss: 0.4        # Average loss
 
-      #  (EMA)
+      # Example: moving average (EMA)
       # ema_20:
-      #   value: 44800.0       # EMA
+      #   value: 44800.0       # EMA value
 
-    #
+    # Checkpoint validation
     checkpoints:
       _section:
-        title: "General"
-        description: "No description"
+        title: "Checkpoint validation"
+        description: "Validation points after a snapshot restore, to confirm the indicators compute correctly"
 
       tolerance_pct:
         value: 0.1
         type: number
-        title: "General"
+        title: "Tolerance percentage"
         minimum: 0.01
         maximum: 1.0
-        description: " (0.1 = 0.1%)"
+        description: "Allowed deviation of indicator values, as a percentage (0.1 = 0.1%)"
 
       trend_strict:
         value: true
         type: boolean
-        title: "General"
-        description: "No description"
+        title: "Strict trend match"
+        description: "Whether the trend direction must match exactly"
 
-      #
+      # Validation points
       points:
         value: []
         type: array
-        title: "General"
+        title: "Validation points"
         description: |
-          :
+          Format example:
           - offset_bars: 5
             bar_close_time: "2024-01-01T05:00:00Z"
             supertrend:
@@ -1187,139 +1187,139 @@ warmup:
               trend: 1
 
 # =============================================================================
-#  ( Speculum )
+# Backtesting (Speculum backtests only)
 # =============================================================================
 backtesting:
   _section:
-    title: "General"
-    description: "Speculum "
+    title: "Backtesting"
+    description: "Settings for Speculum backtests only; no effect on live trading"
 
   log_indicators:
     value: true
     type: boolean
-    title: "General"
-    description: " get_indicator_history() "
+    title: "Record indicator data"
+    description: "When enabled, the strategy must implement get_indicator_history()"
 
   ui_config_schema:
     _section:
-      title: "UI "
-      description: " Speculum UI "
+      title: "UI configuration schema"
+      description: "Which configuration sections the Speculum UI shows"
     sections:
       value: ["parameters", "trading", "position", "risk", "filters", "warmup"]
       type: array
-      title: "General"
-      description: "UI "
+      title: "Visible sections"
+      description: "Configuration sections listed in the UI"
 
   data_source:
     _section:
-      title: "General"
+      title: "Data source"
     provider:
       value: "databento"
       type: string
-      title: "General"
+      title: "Data provider"
       enum: ["databento", "binance", "local"]
-      description: "No description"
+      description: "Where backtest data comes from"
     warmup_bars:
       value: 100
       type: integer
-      title: "K"
+      title: "Warmup bars"
       minimum: 0
       maximum: 1000
-      description: "K"
+      description: "Number of warmup bars the indicators need"
 
   execution_model:
     _section:
-      title: "General"
+      title: "Execution model"
     fill_model:
       value: "realistic"
       type: string
-      title: "General"
+      title: "Fill model"
       enum: ["immediate", "realistic", "conservative"]
-      description: "immediate: ; realistic: ; conservative: "
+      description: "immediate: fill at once; realistic: simulated slippage; conservative: conservative estimate"
     slippage_model:
       value: "fixed"
       type: string
-      title: "General"
+      title: "Slippage model"
       enum: ["fixed", "volume_based", "volatility_based"]
     simulated_latency_ms:
       value: 0
       type: integer
-      title: "General"
+      title: "Simulated latency"
       minimum: 0
       maximum: 1000
-      description: "No description"
+      description: "Milliseconds; simulated network latency"
 
 # =============================================================================
 # Logging Configuration
 # =============================================================================
 logging:
   _section:
-    title: "General"
-    description: "No description"
+    title: "Logging"
+    description: "Log output settings"
 
   level:
     value: "INFO"
     type: string
-    title: "General"
+    title: "Log level"
     description: "DEBUG, INFO, WARNING, ERROR"
 
 # =============================================================================
-# OKX
+# Signals (compatible with OKX signal strategies)
 # =============================================================================
 signal:
   _section:
-    title: "General"
-    description: " OKX "
+    title: "Signals"
+    description: "External signal handling, compatible with the OKX signal bot"
 
-  # OKX
+  # OKX-specific settings
   okx:
     _section:
-      title: "OKX "
+      title: "OKX signal bot"
     signal_token:
       value: ""
       type: string
-      title: "General"
-      description: "OKX  signalToken"
+      title: "Signal token"
+      description: "The signalToken generated when the OKX signal is created"
     instrument_format:
       value: "okx"
       type: string
-      title: "General"
+      title: "Instrument format"
       enum: ["okx", "tradingview"]
       description: "okx: BTC-USDT-SWAP; tradingview: BTCUSDT.P"
     max_lag:
       value: 60
       type: integer
-      title: "General"
+      title: "Maximum delay"
       minimum: 1
       maximum: 3600
-      description: "No description"
+      description: "Signal validity (seconds)"
 
-  #
+  # Defaults (used when the signal does not specify a value)
   defaults:
     _section:
-      title: "General"
+      title: "Signal defaults"
     order_type:
       value: "market"
       type: string
-      title: "General"
+      title: "Default order type"
       enum: ["market", "limit"]
-      description: "No description"
+      description: "Order type used when the signal does not specify one"
     order_price_offset:
       value: 0.1
       type: number
-      title: "General"
+      title: "Limit order offset"
       minimum: 0
       maximum: 100
-      description: "No description"
+      description: "Percentage; limit orders only"
     investment_type:
       value: "percentage_investment"
       type: string
-      title: "General"
+      title: "Default investment type"
       enum: ["margin", "contract", "percentage_balance", "percentage_investment", "percentage_position"]
-      description: "No description"
+      description: "Investment type used by default for entry signals"
 
 # =============================================================================
-#  ()
+# Platform settings (kept simple; not optimized)
 # =============================================================================
 platforms:
   hummingbot:
@@ -1330,121 +1330,121 @@ platforms:
     venue:
       value: "BINANCE"
       type: string
-      title: "General"
+      title: "Venue code"
     bar_type:
       value: "1-HOUR"
       type: string
-      title: "K"
+      title: "Bar type"
     trading_node:
       _section:
-        title: "General"
-        description: "NautilusTrader TradingNode "
+        title: "Trading node"
+        description: "NautilusTrader TradingNode settings"
       timeout_connection:
         value: 60.0
         type: number
-        title: "General"
+        title: "Connection timeout (seconds)"
       timeout_reconciliation:
         value: 10.0
         type: number
-        title: "General"
+        title: "Reconciliation timeout (seconds)"
       timeout_portfolio:
         value: 10.0
         type: number
-        title: "General"
+        title: "Portfolio timeout (seconds)"
       timeout_disconnection:
         value: 10.0
         type: number
-        title: "General"
+        title: "Disconnection timeout (seconds)"
       reconciliation_lookback_mins:
         value: 1440
         type: integer
-        title: "General"
+        title: "Reconciliation lookback (minutes)"
       database:
         _section:
-          title: "Redis "
-          description: " Redis "
+          title: "Redis database"
+          description: "Redis persistence for the cache and message bus"
         enabled:
           value: false
           type: boolean
-          title: " Redis"
-          description: " Redis  Redis "
+          title: "Enable Redis"
+          description: "Enable Redis persistence (requires a Redis service)"
         type:
           value: "redis"
           type: string
-          title: "General"
+          title: "Database type"
         host:
           value: "redis"
           type: string
-          title: "General"
-          description: "Docker Compose  IP "
+          title: "Host"
+          description: "Docker Compose service name or IP address"
         port:
           value: 6380
           type: integer
-          title: "General"
+          title: "Port"
         username:
           value: null
           type: string
-          title: "General"
-          description: " Redis "
+          title: "Username"
+          description: "Optional; a local Redis usually does not need one"
         password:
           value: null
           type: string
-          title: "General"
-          description: " Redis "
+          title: "Password"
+          description: "Optional; a local Redis usually does not need one"
       cache:
         _section:
-          title: "General"
-          description: "NautilusTrader "
+          title: "Cache"
+          description: "NautilusTrader cache settings"
         tick_capacity:
           value: 10000
           type: integer
-          title: "Tick "
-          description: " tick "
+          title: "Tick capacity"
+          description: "Maximum length of the internal tick queue"
         bar_capacity:
           value: 10000
           type: integer
-          title: "Bar "
-          description: " bar "
+          title: "Bar capacity"
+          description: "Maximum length of the internal bar queue"
         buffer_interval_ms:
           value: 100
           type: integer
-          title: "General"
-          description: " 10-1000ms"
+          title: "Buffer interval (ms)"
+          description: "Batch write interval; 10-1000 ms recommended"
         flush_on_start:
           value: false
           type: boolean
-          title: "General"
-          description: "No description"
+          title: "Flush on start"
+          description: "Whether the database is cleared on start"
       message_bus:
         _section:
-          title: "General"
-          description: "NautilusTrader "
+          title: "Message bus"
+          description: "NautilusTrader message bus settings"
         autotrim_mins:
           value: 1440
           type: integer
-          title: "General"
-          description: "24=1440"
+          title: "Auto-trim (minutes)"
+          description: "Time window of retained messages (24 hours = 1440)"
         buffer_interval_ms:
           value: 100
           type: integer
-          title: "General"
-          description: "No description"
+          title: "Buffer interval (ms)"
+          description: "Batch write interval"
         heartbeat_interval_secs:
           value: 10
           type: integer
-          title: "General"
-          description: "No description"
+          title: "Heartbeat interval (seconds)"
+          description: "Heartbeat interval for trading node health checks"
     sandbox:
       _section:
-        title: "Sandbox "
-        description: "No description"
+        title: "Sandbox mode"
+        description: "Settings for local simulated execution"
       use_testnet_data:
         value: false
         type: boolean
-        title: "General"
-        description: "No description"
+        title: "Use testnet data"
+        description: "Whether market data comes from the exchange testnet"
       starting_balances:
         value: ["10_000 USDT", "1 BTC", "10 ETH"]
         type: array
-        title: "General"
-        description: "No description"
+        title: "Starting balances"
+        description: "Initial balances of the simulated account"
