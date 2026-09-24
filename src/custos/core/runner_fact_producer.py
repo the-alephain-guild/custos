@@ -25,6 +25,7 @@ from custos.core.runner_fact import (
     runner_fact_event_id,
     settlement_fee,
     settlement_fill,
+    settlement_period_closed,
     valuation_checkpoint,
     venue_ledger_snapshot_facts,
 )
@@ -737,6 +738,11 @@ class RunnerFactProductionLoop:
         self._period_secs = period_secs
         self._period_retry_secs = period_retry_secs
         self._period_starts: dict[str, datetime] = {}
+        # Calendar months whose settlement close is owed or already emitted,
+        # per stream: the daemon is the only automatic producer of the close
+        # Crucible's month-end completeness gate waits for.
+        self._pending_month_closes: dict[str, tuple[str, datetime]] = {}
+        self._emitted_month_closes: dict[str, str] = {}
         self._period_coverage_starts: dict[str, datetime] = {}
 
     async def run_observability(self, stop: asyncio.Event) -> None:
@@ -827,6 +833,11 @@ class RunnerFactProductionLoop:
                 for key, value in self._period_coverage_starts.items()
                 if key in active_keys
             }
+            self._pending_month_closes = {
+                key: value
+                for key, value in self._pending_month_closes.items()
+                if key in active_keys
+            }
             for deployment in active:
                 key = deployment.authority.stream_key
                 start = self._period_starts.setdefault(key, self._floor_period(now))
@@ -856,7 +867,49 @@ class RunnerFactProductionLoop:
                 ):
                     self._period_starts[key] = closed_at
                     self._period_coverage_starts[key] = closed_at
+                    self._note_month_boundary(key, start, closed_at)
+            for deployment in active:
+                await self._close_pending_month(deployment)
             await self._wait(stop, self._period_retry_secs)
+
+    def _note_month_boundary(self, key: str, started_at: datetime, closed_at: datetime) -> None:
+        month_start = closed_at.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if started_at >= month_start:
+            return
+        period = f"{started_at:%Y-%m}"
+        if self._emitted_month_closes.get(key) == period:
+            return
+        self._pending_month_closes[key] = (period, month_start)
+
+    async def _close_pending_month(self, deployment: RunnerFactDeployment) -> None:
+        """Emit the settlement close for a month a reconciliation period has
+        just crossed out of. The close is its own batch because the owner
+        refuses one that does not terminate the batch it arrives in; it is
+        retried every tick until the emitter takes it."""
+        key = deployment.authority.stream_key
+        pending = self._pending_month_closes.get(key)
+        if pending is None:
+            return
+        period, month_start = pending
+        authority = deployment.authority
+        fact = settlement_period_closed(
+            event_id=_scoped_event_id(authority, "settlement_period", period),
+            period=period,
+            closed_at=month_start,
+        )
+        try:
+            await self._emitter.emit(authority, (fact,))
+        except Exception as exc:
+            _log.error(
+                "runner_fact_month_close_failed",
+                deployment_instance_id=deployment.deployment_instance_id,
+                deployment_spec_id=str(authority.deployment_spec_id),
+                period=period,
+                error=str(exc),
+            )
+            return
+        del self._pending_month_closes[key]
+        self._emitted_month_closes[key] = period
 
     async def _close_reconciliation_period(
         self,
