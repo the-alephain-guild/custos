@@ -13,7 +13,17 @@ protocol — is published at
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **Breaking:** `StrategyManifestV1` requires `trading_scope` --
+  `{"connector": ..., "pairs": [...], "leverage": ...}` -- the connector, pairs
+  and leverage the release was validated to trade. A release whose manifest has
+  no `trading_scope` is refused; rebuild and republish it.
+- A signed deployment runs only on the trading scope its strategy declares. The
+  runner compares the strategy's connector, claimed instruments and leverage
+  with the deployment's before the engine starts, and quarantines a mismatch at
+  once with `strategy_trading_scope_mismatch`. A signed strategy config may not
+  carry its own `trading` section.
 
 ## [0.3.0] - 2026-09-25
 

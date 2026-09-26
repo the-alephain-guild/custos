@@ -120,6 +120,31 @@ class ArtifactMemberV1(_StrictFrozenModel):
         return _validate_relative_artifact_name(value)
 
 
+ConnectorName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
+
+
+class TradingScopeV1(_StrictFrozenModel):
+    """The connector, pairs and leverage a release was validated to trade.
+
+    A deployment of the release must authorize exactly this scope: the exchange
+    clients are built from the deployment, the strategy trades what its config
+    declares, and the two have to be the same.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, title="TradingScopeV1")
+
+    connector: ConnectorName
+    pairs: tuple[NonEmptyString, ...] = Field(min_length=1)
+    leverage: StrictInt = Field(ge=1)
+
+    @field_validator("pairs")
+    @classmethod
+    def validate_unique_pairs(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(set(value)) != len(value):
+            raise ValueError("trading_scope pairs must be unique")
+        return value
+
+
 class StrategyManifestV1(_StrictFrozenModel):
     """Artifact-local compatibility metadata, never release authority."""
 
@@ -142,6 +167,7 @@ class StrategyManifestV1(_StrictFrozenModel):
     base_contracts_version: NonEmptyString
     engine_toolkit_version: NonEmptyString
     config_schema_sha256: Sha256Hex
+    trading_scope: TradingScopeV1
     catalog_alias: NonEmptyString | None = None
     runtime_artifacts: tuple[ArtifactMemberV1, ...] = ()
 
@@ -884,6 +910,7 @@ __all__ = [
     "StrategyArtifactPreImportVerificationReceiptV1",
     "StrategyExecutionContextV1",
     "StrategyManifestV1",
+    "TradingScopeV1",
     "StrategyRuntimeAdapterV1",
     "canonical_json_bytes",
     "canonical_json_digest",

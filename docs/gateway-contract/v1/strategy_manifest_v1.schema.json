@@ -51,6 +51,38 @@
       ],
       "title": "ArtifactMemberV1",
       "type": "object"
+    },
+    "TradingScopeV1": {
+      "additionalProperties": false,
+      "description": "The connector, pairs and leverage a release was validated to trade.\n\nA deployment of the release must authorize exactly this scope: the exchange\nclients are built from the deployment, the strategy trades what its config\ndeclares, and the two have to be the same.",
+      "properties": {
+        "connector": {
+          "pattern": "^[a-z][a-z0-9_]{1,63}$",
+          "title": "Connector",
+          "type": "string"
+        },
+        "leverage": {
+          "minimum": 1,
+          "title": "Leverage",
+          "type": "integer"
+        },
+        "pairs": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Pairs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "connector",
+        "pairs",
+        "leverage"
+      ],
+      "title": "TradingScopeV1",
+      "type": "object"
     }
   },
   "$id": "https://custos.the-alephain-guild/contracts/strategy-manifest-v1.schema.json",
@@ -128,6 +160,9 @@
       "default": 1,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "trading_scope": {
+      "$ref": "#/$defs/TradingScopeV1"
     }
   },
   "required": [
@@ -139,7 +174,8 @@
     "requires_python",
     "base_contracts_version",
     "engine_toolkit_version",
-    "config_schema_sha256"
+    "config_schema_sha256",
+    "trading_scope"
   ],
   "title": "StrategyManifestV1",
   "type": "object"

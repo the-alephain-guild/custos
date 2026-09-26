@@ -141,3 +141,77 @@ def test_root_python311_consumes_separate_toolkit_distributions() -> None:
     assert "custos-strategy-toolkit-nautilus==0.1.0" in nautilus_requirements
     assert all("nautilus-trader" not in requirement for requirement in nautilus_requirements)
     assert all("python_version" not in requirement for requirement in nautilus_requirements)
+
+
+def _manifest(**overrides: object) -> dict[str, object]:
+    manifest: dict[str, object] = {
+        "schema_version": 1,
+        "execution_abi": "alephain.strategy_runtime.v1",
+        "entry_point_group": "alephain.strategy_runtime.v1",
+        "entry_point": "alephain_strategy.supertrend.runtime:SuperTrendRuntimeAdapterV1",
+        "engine": "nautilus",
+        "engine_version": "2.0.0rc5+sodex.1",
+        "requires_python": ">=3.12,<3.13",
+        "base_contracts_version": "0.1.0rc8",
+        "engine_toolkit_version": "0.1.0rc8",
+        "config_schema_sha256": "a" * 64,
+        "trading_scope": {
+            "connector": "binance_perpetual",
+            "pairs": ["BTC-USDT"],
+            "leverage": 3,
+        },
+    }
+    manifest.update(overrides)
+    return manifest
+
+
+def test_the_manifest_declares_the_trading_scope_the_release_was_validated_on() -> None:
+    manifest = StrategyManifestV1.model_validate(_manifest())
+
+    assert manifest.trading_scope.connector == "binance_perpetual"
+    assert manifest.trading_scope.pairs == ("BTC-USDT",)
+    assert manifest.trading_scope.leverage == 3
+
+
+def test_a_manifest_without_a_trading_scope_is_refused() -> None:
+    value = _manifest()
+    del value["trading_scope"]
+
+    with pytest.raises(ValidationError, match="trading_scope"):
+        StrategyManifestV1.model_validate(value)
+
+
+@pytest.mark.parametrize(
+    "scope",
+    [
+        {"connector": "binance_perpetual", "pairs": [], "leverage": 3},
+        {"connector": "binance_perpetual", "pairs": ["BTC-USDT", "BTC-USDT"], "leverage": 3},
+        {"connector": "binance_perpetual", "pairs": [""], "leverage": 3},
+        {"connector": "binance_perpetual", "pairs": ["BTC-USDT"], "leverage": 0},
+        {"connector": "binance_perpetual", "pairs": ["BTC-USDT"], "leverage": "3"},
+        {"connector": "Binance Perpetual", "pairs": ["BTC-USDT"], "leverage": 3},
+        {"connector": "binance", "pairs": ["BTC-USDT"], "leverage": 1, "margin": "cross"},
+    ],
+    ids=[
+        "no-pairs",
+        "repeated-pair",
+        "empty-pair",
+        "zero-leverage",
+        "leverage-as-text",
+        "connector-not-a-name",
+        "unknown-key",
+    ],
+)
+def test_an_unusable_trading_scope_is_refused(scope: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        StrategyManifestV1.model_validate(_manifest(trading_scope=scope))
+
+
+def test_the_published_schema_requires_the_trading_scope() -> None:
+    schema = json.loads(
+        (ROOT / "docs/gateway-contract/v1/strategy_manifest_v1.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert "trading_scope" in schema["required"]
