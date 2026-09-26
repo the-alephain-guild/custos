@@ -17,6 +17,7 @@ from custos.core.engine_lifecycle import (
 )
 from custos.core.engine_protocol import (
     EngineDependencyUnavailable,
+    EngineDeploymentRefused,
     EngineLifecycleAuthority,
     EngineReadinessChecks,
     EngineReadyReceipt,
@@ -422,6 +423,39 @@ async def test_a_start_cancelled_while_waiting_stops_the_engine_it_deployed() ->
     assert engine.events == ["deploy", "wait_ready", "stop"]
     assert store.state.restart_count == 0
     assert store.terminal == []
+
+
+@pytest.mark.asyncio
+async def test_a_refused_deployment_is_quarantined_without_retrying() -> None:
+    # A strategy whose trading scope differs from what the deployment authorizes
+    # will differ on every attempt. Retrying only delays the quarantine and runs
+    # the backoff against a decision that cannot change.
+    verified = _verified()
+    store = _Store()
+    engine = _Engine([_ready(verified)])
+
+    async def refused(spec: dict, credential: dict, artifact: object) -> str:
+        engine.deploy_calls += 1
+        engine.events.append("deploy")
+        raise EngineDeploymentRefused(
+            "strategy_trading_scope_mismatch",
+            "strategy trades BTCUSDT-PERP.BINANCE; deployment authorizes BTCUSDT.BINANCE",
+        )
+
+    engine.deploy = refused  # type: ignore[method-assign]
+
+    with pytest.raises(EngineLifecycleQuarantined, match="strategy_trading_scope_mismatch"):
+        await _supervisor(store, engine, restart_budget=2).apply(
+            delivery_id="delivery-refused",
+            verified=verified,
+            runtime_spec={"trading_mode": "sandbox", "connector": "binance"},
+            credential={},
+            artifact=_Artifact(),
+        )
+
+    assert engine.deploy_calls == 1
+    assert store.state.restart_count == 0
+    assert store.terminal == [("retry_exhausted", "strategy_trading_scope_mismatch")]
 
 
 @pytest.mark.asyncio

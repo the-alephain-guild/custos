@@ -37,6 +37,7 @@ from tests.fixtures.fake_live_node import (  # noqa: E402
     FakeLiveNodeType,
     only_exec_client,
 )
+from tests.fixtures.trading_scope import declare_trading_scope_of  # noqa: E402
 
 
 def _deployment_instance_id(label: str) -> str:
@@ -84,9 +85,12 @@ class _StrategyDouble:
     directly by ``test_a_strategy_without_the_event_callbacks_is_refused``.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, spec: dict | None = None) -> None:
         self.order_events: list = []
         self.position_events: list = []
+        # The host refuses a strategy that does not declare what it trades; a
+        # double stands in for one trading exactly what its deployment authorizes.
+        declare_trading_scope_of(self, spec if spec is not None else _spec())
 
     def on_order_event(self, event) -> None:
         self.order_events.append(event)
@@ -180,11 +184,15 @@ async def test_a_strategy_without_the_event_callbacks_is_refused(monkeypatch) ->
     monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
 
+    class _NoCallbacks:
+        pass
+
+    spec = _spec("no-callbacks")
     with pytest.raises(RuntimeError, match="on_order_event"):
         await host.deploy(
-            _spec("no-callbacks"),
+            spec,
             _credential(),
-            _Artifact(strategy=object()),
+            _Artifact(strategy=declare_trading_scope_of(_NoCallbacks(), spec)),
         )
 
     assert host._active_nodes == {}
@@ -824,7 +832,7 @@ async def test_deploy_sodex_sandbox_simulates_execution_against_the_venues_own_f
     monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     spec = _sodex_spec("sodex-sb")
-    await host.deploy(spec, _credential(), _Artifact())
+    await host.deploy(spec, _credential(), _Artifact(strategy=_StrategyDouble(spec)))
     try:
         node = FakeLiveNode.instances[-1]
         # Both clients register under the engine's venue, not the adapter's registry
@@ -850,7 +858,7 @@ async def test_deploy_sodex_testnet_uses_the_adapters_own_execution_client(monke
     monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host = NtTradingNodeHost()
     spec = _sodex_spec("sodex-tn", trading_mode="testnet")
-    await host.deploy(spec, _credential(), _Artifact())
+    await host.deploy(spec, _credential(), _Artifact(strategy=_StrategyDouble(spec)))
     try:
         node = FakeLiveNode.instances[-1]
         assert node.builder.simulated_exec_clients == []
@@ -947,7 +955,7 @@ async def test_a_deployments_facts_name_the_venue_it_actually_trades_on(monkeypa
         "facts-sodex",
         strategy_id=str(uuid5(NAMESPACE_URL, "custos-test-strategy:facts-sodex")),
     )
-    await host.deploy(spec, _credential(), _Artifact())
+    await host.deploy(spec, _credential(), _Artifact(strategy=_StrategyDouble(spec)))
     try:
         assert [d.venue for d in host.runner_fact_deployments()] == ["SODEX_PERPS"]
     finally:

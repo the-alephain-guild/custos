@@ -12,6 +12,7 @@ from custos.artifacts.runtime import ArtifactRuntimeCapabilityV1
 from custos.core.engine_protocol import (
     ActivatedEngineArtifactV1,
     EngineDependencyUnavailable,
+    EngineDeploymentRefused,
     EngineLifecycleAuthority,
     EngineReadyReceipt,
     EngineTerminalEvent,
@@ -341,6 +342,22 @@ class EngineLifecycleSupervisor:
                 )
             except EngineDependencyUnavailable as exc:
                 raise EngineLifecycleBlocked(str(exc)) from exc
+            except EngineDeploymentRefused as exc:
+                log.warning(
+                    "engine_deployment_refused",
+                    deployment_instance_id=str(authority.deployment_instance_id),
+                    reason_code=exc.reason_code,
+                    detail=str(exc),
+                )
+                if handle is not None:
+                    await self._engine.stop(str(authority.deployment_instance_id))
+                await self._quarantine(
+                    delivery_id=delivery_id,
+                    verified=verified,
+                    reason_code=exc.reason_code,
+                    artifact_activation_id=artifact_activation_id,
+                    artifact_policy_id=artifact_policy_id,
+                )
             except asyncio.CancelledError:
                 # A newer command or a shutdown cancelled this start. Whatever it
                 # deployed must not keep running without an owner; stopping by

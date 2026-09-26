@@ -18,6 +18,8 @@ sidebar_position: 6
 | `already holds this runner's event loop` | 已有 Nautilus node | 停止该 node 或使用独立进程和状态目录 |
 | `strategy discovery is already pointed at ...` | 挂载策略目录 | 每个离线进程只使用一个策略目录 |
 | `strategy config ... does not set trading.<key>` | spec 中 `strategy_path` 下的 `config.yaml` | 在该文件中设置 `trading.connector`、`trading.pairs` 和 `trading.leverage`；不会使用内置默认值 |
+| 签名部署以 `strategy_trading_scope_mismatch` 被隔离 | 拒绝信息中策略一侧与部署一侧的 connector、品种和杠杆 | 按策略 release 声明的交易范围创建部署；runner 不会在部署未授权的品种或杠杆上运行策略 |
+| 以 `strategy_trading_scope_undeclared` 或 `signed_strategy_config_overrides_trading` 被隔离 | 策略配置，以及签名的 strategy config | 策略须在配置中声明 `trading`；签名的 strategy config 不得包含 `trading` 段 |
 | `portfolio_prices_missing:<instrument>` | 缺失标的及其标记/计价资产 | 检查名称、网络和行情可用性，不以零代替 |
 | `portfolio_equity_missing:<currency>` | 账户与结算币种 | 检查账户余额和估值所需价格 |
 | 熔断后拒绝离线 generation | 熔断锁存与近期风险控制日志 | 核对持仓/订单，处理原因后再主动重启 |

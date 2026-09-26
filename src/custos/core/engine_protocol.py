@@ -31,6 +31,20 @@ class EngineDependencyUnavailable(RuntimeError):
     """
 
 
+class EngineDeploymentRefused(RuntimeError):
+    """The engine refuses this deployment, and would refuse it on every attempt.
+
+    Raised for a decision about the command rather than a failure of the engine,
+    such as a strategy whose trading scope differs from the one the deployment
+    authorizes. Retrying cannot change the answer, so the instance is quarantined
+    at once under ``reason_code`` instead of spending the restart budget.
+    """
+
+    def __init__(self, reason_code: str, detail: str) -> None:
+        super().__init__(f"{reason_code}: {detail}")
+        self.reason_code = reason_code
+
+
 # Runtime invariant: every Decimal-declared money field on the snapshot
 # dataclasses must be a real ``Decimal`` — a float slipping through breaks
 # money math (red line 0.4). Non-money fields (identifier strings, phase

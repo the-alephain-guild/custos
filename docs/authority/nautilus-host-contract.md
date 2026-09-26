@@ -50,7 +50,13 @@ Before engine start, `EngineLifecycleSupervisor` requires:
 4. testnet/live credentials are `trade_no_withdraw`;
 5. live host capability is explicit;
 6. live has signed Crucible promotion evidence;
-7. the immutable production runtime receipt has enabled live execution.
+7. the immutable production runtime receipt has enabled live execution;
+8. the strategy's declared trading scope -- connector, claimed instruments and
+   leverage -- equals the signed deployment's, and the signed strategy config
+   carries no `trading` section. A mismatch is a terminal refusal: the instance is
+   quarantined at once under `strategy_trading_scope_mismatch`,
+   `strategy_trading_scope_undeclared` or `signed_strategy_config_overrides_trading`
+   without spending the restart budget.
 
 The default live enable gate is false. It becomes true only in the composition
 root that consumes the final exact-image receipt; it is not a compatibility or

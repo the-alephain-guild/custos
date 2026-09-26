@@ -29,6 +29,7 @@ from uuid import UUID
 from custos.core.engine_protocol import (
     ActivatedEngineArtifactV1,
     ConnectivityState,
+    EngineDeploymentRefused,
     EngineLifecycleAuthority,
     EngineReadinessChecks,
     EngineReadyReceipt,
@@ -116,6 +117,50 @@ def _venue_module_for(connector: str):
     from importlib import import_module
 
     return import_module(f"custos.engines.nautilus.{venue_module_name_for(connector)}")
+
+
+def _require_authorized_trading_scope(strategy: object, spec: dict, venue) -> None:
+    """Refuse a strategy whose trading scope differs from the deployment's.
+
+    The exchange clients are built from the deployment's connector, pairs and
+    leverage; the strategy trades what its own config declares. A strategy on
+    other instruments subscribes to something the clients never loaded and sits
+    idle while the deployment looks healthy, so the two must agree before the
+    node is built. The deployment's scope has one source, the strategy's
+    declared one; a trading section in the signed strategy config would be a
+    second, and is refused as such.
+    """
+    strategy_config = spec.get("strategy_config") or {}
+    if isinstance(strategy_config, dict) and "trading" in strategy_config:
+        raise EngineDeploymentRefused(
+            "signed_strategy_config_overrides_trading",
+            "the signed strategy config may not carry a trading section; the "
+            "strategy's declared trading scope is the only source",
+        )
+    config = getattr(strategy, "config", None)
+    trading = getattr(config, "trading", None)
+    claimed = getattr(config, "external_order_instrument_ids", None)
+    if trading is None or claimed is None:
+        raise EngineDeploymentRefused(
+            "strategy_trading_scope_undeclared",
+            "the strategy does not declare the connector, instruments and leverage it trades",
+        )
+    declared = (
+        str(trading.connector),
+        tuple(sorted(str(instrument) for instrument in claimed)),
+        int(trading.leverage),
+    )
+    authorized = (
+        str(spec["connector"]),
+        tuple(sorted(venue.build_instrument_id_strings(spec))),
+        int(spec["leverage"]),
+    )
+    if declared != authorized:
+        raise EngineDeploymentRefused(
+            "strategy_trading_scope_mismatch",
+            "strategy trades connector={} instruments={} leverage={}; deployment "
+            "authorizes connector={} instruments={} leverage={}".format(*declared, *authorized),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -638,6 +683,7 @@ class NtTradingNodeHost:
         strategy = create_strategy() if callable(create_strategy) else artifact.strategy
 
         venue = _venue_module_for(identity.connector)
+        _require_authorized_trading_scope(strategy, spec, venue)
         # Refuse before anything reaches the venue: an account check that went out
         # directly would already be the connection the proxy was named to prevent.
         data_config_for_mode = self._venue_function(venue, "build_data_client_config_for_mode")

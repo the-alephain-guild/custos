@@ -34,11 +34,11 @@ def fake_nodes(monkeypatch: pytest.MonkeyPatch):
     return FakeLiveNode
 
 
-def _artifact(timeframe: str = "5-MINUTE") -> _Artifact:
+def _artifact(timeframe: str = "5-MINUTE", spec: dict | None = None) -> _Artifact:
     from types import SimpleNamespace as NS
 
-    strategy = _StrategyDouble()
-    strategy.config = NS(platforms=NS(nautilus=NS(bar_type=timeframe)))
+    strategy = _StrategyDouble(spec)
+    strategy.config.platforms = NS(nautilus=NS(bar_type=timeframe))
     return _Artifact(strategy=strategy)
 
 
@@ -107,7 +107,7 @@ async def test_every_reachable_fact_validation_exit_releases_what_it_took(
     )
 
     with pytest.raises(Exception, match=expected):
-        await host.deploy(spec, _credential(), _artifact())
+        await host.deploy(spec, _credential(), _artifact(spec=spec))
 
     _assert_took_nothing(host, spec, fake_nodes)
 

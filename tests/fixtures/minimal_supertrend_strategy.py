@@ -18,6 +18,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Any
 
+from custos_toolkit_nautilus.adapter.config.trading import TradingConfig
 from nautilus_trader.indicators import AverageTrueRange
 from nautilus_trader.model import Bar, BarType, InstrumentId, OrderSide
 from nautilus_trader.trading import Strategy, StrategyConfig
@@ -42,15 +43,20 @@ class MinimalSupertrendConfig(StrategyConfig):
         atr_period: int = 10,
         atr_multiplier: float = 3.0,
         trade_size: Decimal = Decimal("0.001"),
+        trading: TradingConfig | None = None,
         **kwargs: Any,
     ) -> None:
         assign = object.__setattr__
+        # The trading scope a deployable strategy declares, as the toolkit's config does.
+        assign(self, "trading", trading or TradingConfig(connector="binance_perpetual", leverage=3))
         assign(self, "instrument_id", instrument_id)
         assign(self, "bar_type", bar_type)
         assign(self, "atr_period", atr_period)
         assign(self, "atr_multiplier", atr_multiplier)
         assign(self, "trade_size", trade_size)
-        super().__init__(**kwargs)
+        # The 2.0 base takes its own fields, such as the claimed instruments, in
+        # ``__new__``; ``object.__init__`` refuses them if they are forwarded here.
+        super().__init__()
 
 
 class MinimalSupertrendStrategy(Strategy):
@@ -122,5 +128,6 @@ def create_strategy(config: dict) -> MinimalSupertrendStrategy:
             atr_period=int(config.get("atr_period", 10)),
             atr_multiplier=float(config.get("atr_multiplier", 3.0)),
             trade_size=Decimal(str(config.get("trade_size", "0.001"))),
+            external_order_instrument_ids=[instrument_id],
         )
     )

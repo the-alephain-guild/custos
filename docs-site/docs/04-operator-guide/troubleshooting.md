@@ -18,6 +18,8 @@ Start with the selected lane, source/image revision, CLI arguments and local JSO
 | `already holds this runner's event loop` | Existing Nautilus node | Stop it or use a separate process and state root |
 | `strategy discovery is already pointed at ...` | Mounted strategy directory | Use one directory per offline process |
 | `strategy config ... does not set trading.<key>` | `config.yaml` under the spec's `strategy_path` | Set `trading.connector`, `trading.pairs` and `trading.leverage` in that file; built-in defaults are not used |
+| Signed deployment quarantined with `strategy_trading_scope_mismatch` | The connector, instruments and leverage in the refusal, strategy side against deployment side | Create the deployment with the scope the strategy release declares; the runner does not run a strategy on instruments or leverage its deployment did not authorize |
+| Quarantined with `strategy_trading_scope_undeclared` or `signed_strategy_config_overrides_trading` | The strategy's config, and the signed strategy config | The strategy must declare `trading` in its config; the signed strategy config may not carry a `trading` section |
 | `portfolio_prices_missing:<instrument>` | Exact missing instrument and its mark/quote asset | Check symbol, network and market-data availability; do not substitute zero |
 | `portfolio_equity_missing:<currency>` | Account and settlement currency | Confirm the account balance and required valuation prices |
 | Offline generation refused after trip | Guard latch and recent containment logs | Inspect positions/orders, address the cause, then deliberately restart |
