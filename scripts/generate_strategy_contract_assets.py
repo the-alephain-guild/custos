@@ -53,16 +53,12 @@ CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH = (
 )
 CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "8e38becf270c55f3676e6467015c2a3fbfd64588"
 PS_STRATEGY_CONSUMER_RECEIPT_PATH = (
-    "docs/authority/receipts/vendor/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+    "docs/authority/receipts/vendor/"
+    "ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
 )
-PS_STRATEGY_CONSUMER_COMMIT = "11f4fcf9ec0c2d7a4fd928b6cd6bab88ceee8769"
-# Each consumer pins the producer revision it accepted. Philosophers-Stone still
-# accepts the revision before trading_scope until it re-locks to a toolkit that
-# carries the field.
-PS_ACCEPTED_PRODUCER_COMMIT = "8bf45ac6b0f42018aae2a74ac9e743e41f9ca789"
-PS_ACCEPTED_STATUS = "CUSTOS_NAUTILUS_2_V1_CONTRACT_ACCEPTED"
-CRUCIBLE_ACCEPTED_PRODUCER_COMMIT = "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220"
-CRUCIBLE_ACCEPTED_STATUS = "CUSTOS_TRADING_SCOPE_V1_CONTRACT_ACCEPTED"
+PS_STRATEGY_CONSUMER_COMMIT = "c89ce7bd5187ad1c0b148b8554eeb234f63c1deb"
+STRATEGY_CONTRACT_PRODUCER_COMMIT = "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220"
+STRATEGY_CONTRACT_ACCEPTED_STATUS = "CUSTOS_TRADING_SCOPE_V1_CONTRACT_ACCEPTED"
 RUNNER_COMMAND_CONSUMER_INDEX_PATH = (
     "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json"
 )
@@ -159,8 +155,6 @@ def consumer_receipt_pin(
     producer_path: str,
     repository: str,
     commit: str,
-    accepted_producer_commit: str,
-    accepted_status: str,
 ) -> dict[str, str]:
     content = (ROOT / local_path).read_bytes()
     document = json.loads(content)
@@ -169,9 +163,9 @@ def consumer_receipt_pin(
     contract = document.get("contract", {})
     engine_version = document.get("engine_version", contract.get("engine_version"))
     if (
-        document.get("status") != accepted_status
+        document.get("status") != STRATEGY_CONTRACT_ACCEPTED_STATUS
         or producer.get("repository") != "tesseract-trading/custos"
-        or producer.get("commit") != accepted_producer_commit
+        or producer.get("commit") != STRATEGY_CONTRACT_PRODUCER_COMMIT
         or consumer.get("repository") != repository
         or engine_version != "2.0.0rc5+sodex.1"
         or document.get("runtime_ready") is not False
@@ -513,12 +507,10 @@ def build_v1_contract_assets() -> dict[str, bytes]:
                 local_path=PS_STRATEGY_CONSUMER_RECEIPT_PATH,
                 producer_path=(
                     "docs/authority/receipts/"
-                    "ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+                    "ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
                 ),
                 repository="alchymia-labs/philosophers-stone",
                 commit=PS_STRATEGY_CONSUMER_COMMIT,
-                accepted_producer_commit=PS_ACCEPTED_PRODUCER_COMMIT,
-                accepted_status=PS_ACCEPTED_STATUS,
             ),
         },
         "crucible_rust": {
@@ -531,8 +523,6 @@ def build_v1_contract_assets() -> dict[str, bytes]:
                 ),
                 repository="tesseract-trading/crucible-rust",
                 commit=CRUCIBLE_STRATEGY_CONSUMER_COMMIT,
-                accepted_producer_commit=CRUCIBLE_ACCEPTED_PRODUCER_COMMIT,
-                accepted_status=CRUCIBLE_ACCEPTED_STATUS,
             ),
         },
     }
@@ -561,9 +551,7 @@ def build_v1_contract_assets() -> dict[str, bytes]:
             "command_consumer_ready": True,
             "runtime_ready": False,
             "production_ready": False,
-            "open_blockers": [
-                "philosophers-stone accepts the trading_scope manifest revision",
-            ],
+            "open_blockers": [],
         }
     )
     return generated

@@ -13,10 +13,10 @@
     },
     "philosophers_stone": {
       "receipt": {
-        "commit": "11f4fcf9ec0c2d7a4fd928b6cd6bab88ceee8769",
-        "path": "docs/authority/receipts/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json",
-        "sha256": "19209b11b5c307e81f019234fc7909bce74ed52fed3b3c21379b453577bd7634",
-        "vendored_path": "docs/authority/receipts/vendor/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+        "commit": "c89ce7bd5187ad1c0b148b8554eeb234f63c1deb",
+        "path": "docs/authority/receipts/ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json",
+        "sha256": "9527b5329b08796c2231d2f831c25aeebc249d85b72ad115ffa7c59e7bc62baa",
+        "vendored_path": "docs/authority/receipts/vendor/ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
       },
       "repository": "alchymia-labs/philosophers-stone"
     }
@@ -27,9 +27,7 @@
     "size_bytes": 2828
   },
   "contract_consumer_ready": true,
-  "open_blockers": [
-    "philosophers-stone accepts the trading_scope manifest revision"
-  ],
+  "open_blockers": [],
   "policy_boundary": {
     "crucible_local_policy_decision_reused": false,
     "runner_local_policy_decision_required": true

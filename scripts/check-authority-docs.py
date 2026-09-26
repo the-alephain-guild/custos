@@ -21,9 +21,10 @@ CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH = (
 )
 CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "8e38becf270c55f3676e6467015c2a3fbfd64588"
 PS_STRATEGY_CONSUMER_RECEIPT_PATH = (
-    "docs/authority/receipts/vendor/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+    "docs/authority/receipts/vendor/"
+    "ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
 )
-PS_STRATEGY_CONSUMER_COMMIT = "11f4fcf9ec0c2d7a4fd928b6cd6bab88ceee8769"
+PS_STRATEGY_CONSUMER_COMMIT = "c89ce7bd5187ad1c0b148b8554eeb234f63c1deb"
 CANONICAL_INDEX_PATH = "docs/authority/strategy-contract-assets-v1.json"
 CANONICAL_ARTIFACT_REF_SCHEMA_PATH = "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json"
 CANONICAL_ARTIFACT_REF_GOLDEN_PATH = "docs/authority/strategy-artifact-ref-v1.golden.json"
@@ -538,7 +539,7 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
                 "commit": PS_STRATEGY_CONSUMER_COMMIT,
                 "path": (
                     "docs/authority/receipts/"
-                    "ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+                    "ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
                 ),
                 "vendored_path": PS_STRATEGY_CONSUMER_RECEIPT_PATH,
                 "sha256": hashlib.sha256(
@@ -563,29 +564,18 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
     }
     if receipt_consumers != expected_consumers:
         errors.append("Custos receipt consumer Git revisions or vendored evidence differ")
-    # Each consumer pins the producer revision it accepted; Philosophers-Stone
-    # has not yet accepted the revision that adds trading_scope.
-    for document, repository, accepted_status, accepted_producer_commit in (
-        (
-            ps_consumer_receipt,
-            "alchymia-labs/philosophers-stone",
-            "CUSTOS_NAUTILUS_2_V1_CONTRACT_ACCEPTED",
-            "8bf45ac6b0f42018aae2a74ac9e743e41f9ca789",
-        ),
-        (
-            crucible_consumer_receipt,
-            "tesseract-trading/crucible-rust",
-            "CUSTOS_TRADING_SCOPE_V1_CONTRACT_ACCEPTED",
-            "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220",
-        ),
+    for document, repository in (
+        (ps_consumer_receipt, "alchymia-labs/philosophers-stone"),
+        (crucible_consumer_receipt, "tesseract-trading/crucible-rust"),
     ):
         engine_version = document.get(
             "engine_version", document.get("contract", {}).get("engine_version")
         )
         if (
-            document.get("status") != accepted_status
+            document.get("status") != "CUSTOS_TRADING_SCOPE_V1_CONTRACT_ACCEPTED"
             or document.get("consumer", {}).get("repository") != repository
-            or document.get("producer", {}).get("commit") != accepted_producer_commit
+            or document.get("producer", {}).get("commit")
+            != "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220"
             or engine_version != "2.0.0rc5+sodex.1"
         ):
             errors.append(f"{repository} strategy consumer receipt semantics differ")

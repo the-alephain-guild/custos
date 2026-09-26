@@ -213,7 +213,7 @@
       "role": "crucible_strategy_contract_consumer_receipt_v1"
     },
     {
-      "path": "docs/authority/receipts/vendor/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json",
+      "path": "docs/authority/receipts/vendor/ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json",
       "role": "philosophers_stone_strategy_contract_consumer_receipt_v1"
     },
     {
@@ -432,6 +432,7 @@
       "docs/authority/receipts/vendor/crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json",
       "docs/authority/receipts/vendor/crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json",
       "docs/authority/receipts/vendor/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json",
+      "docs/authority/receipts/vendor/ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json",
       "docs/authority/receipts/custos-toolkit-rc8-authority-v1.json",
       "docs/authority/receipts/custos-toolkit-rc8-authority-v1.json.sha256",
       "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",

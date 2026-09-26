@@ -30,7 +30,7 @@ CRUCIBLE_RECEIPT = (
 )
 PS_RECEIPT = (
     ROOT / "docs/authority/receipts/vendor/"
-    "ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+    "ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
 )
 
 
@@ -247,7 +247,7 @@ def test_contract_receipt_records_both_nautilus_2_consumers() -> None:
     assert receipt["runtime_ready"] is False
     assert receipt["production_ready"] is False
     ps_pin = receipt["consumers"]["philosophers_stone"]["receipt"]
-    assert ps_pin["commit"] == "11f4fcf9ec0c2d7a4fd928b6cd6bab88ceee8769"
+    assert ps_pin["commit"] == "c89ce7bd5187ad1c0b148b8554eeb234f63c1deb"
     assert ps_pin["sha256"] == hashlib.sha256(PS_RECEIPT.read_bytes()).hexdigest()
     crucible_pin = receipt["consumers"]["crucible_rust"]["receipt"]
     assert crucible_pin["commit"] == "8e38becf270c55f3676e6467015c2a3fbfd64588"
