@@ -64,3 +64,8 @@ This lane is not a fallback and never substitutes for the signed one. Nothing it
 produces is promotion evidence, it emits no facts and no receipts, and it never
 parses or emits the canonical command bytes described above. A producer building
 against the signed original should ignore this schema entirely.
+
+When the offline lane is stopped it stops every deployment it runs through the
+engine, so each strategy's own stop handling runs, and reports each as
+`stopped`. The telemetry it publishes for the operator's own tools is unsigned
+and best effort, and is not a fact.

@@ -13,6 +13,27 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Added
+
+- The offline lane publishes local telemetry for the operator's own tools:
+  a snapshot of each running deployment's status, open positions and open
+  orders every 10 seconds on
+  `arx.<tenant>.telemetry.<runner-label>.<spec-id>.snapshot`, and each fill and
+  closed position on `.fill` and `.position_closed`. It is unsigned and best
+  effort, it is not RunnerFact evidence, and nothing in the lane reads it.
+- The offline lane's observed stream keeps at most 10,000 messages per subject;
+  `nats bootstrap --profile standalone` brings an existing stream up to the bound.
+
+### Fixed
+
+- The offline lane stops on SIGTERM and SIGINT. It used to ignore SIGTERM until
+  its supervisor killed it, and a stop it did notice left every deployment
+  running until the process died, so a strategy's own stop handler -- which
+  cancels the orders it left resting -- never ran. Each running deployment is now
+  stopped through the engine within 75 seconds, its status is published as
+  `stopped`, and the process exits non-zero when a deployment could not be
+  confirmed stopped. Give the container a stop grace period above 75 seconds.
+
 ### Changed
 
 - **Breaking:** `StrategyManifestV1` requires `trading_scope` --

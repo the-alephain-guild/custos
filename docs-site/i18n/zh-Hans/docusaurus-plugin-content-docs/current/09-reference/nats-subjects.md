@@ -41,7 +41,14 @@ crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance
 |---|---|
 | 操作者目标状态 | `arx.<tenant>.deployment_spec.<strategy-id>` |
 | Runner 观测状态 | `arx.<tenant>.deployment_status.<runner-label>.<spec-id>` |
+| Runner 遥测快照 | `arx.<tenant>.telemetry.<runner-label>.<spec-id>.snapshot` |
+| Runner 遥测成交 | `arx.<tenant>.telemetry.<runner-label>.<spec-id>.fill` |
+| Runner 遥测平仓 | `arx.<tenant>.telemetry.<runner-label>.<spec-id>.position_closed` |
 
-`nats bootstrap --profile standalone` 创建自有 deployment/observed stream。目标状态为每个 subject 保留最新消息。observed stream 还预留 heartbeat/telemetry subject，但预留不代表离线 daemon 一定发出这些消息。
+`nats bootstrap --profile standalone` 创建自有 deployment/observed stream。目标状态为每个 subject 保留最新消息；观测状态每个 subject 最多保留 10,000 条。observed stream 还预留 heartbeat subject，离线 daemon 不发出这类消息。
+
+遥测沿用观测状态的信封（`envelope_version`、`event_id`、`tenant_id`、`occurred_at`、`payload_schema_version`、`payload`），`payload.kind` 取值为 `snapshot`、`fill` 或 `position_closed`。每个运行中的部署每 10 秒发布一份快照，包含引擎状态、未平持仓和未成交挂单；金额是十进制字符串。状态不可靠时附上原因，并省略持仓。遥测未签名、尽力发布，不是 RunnerFact 证据，runner 自身也从不读取它。
+
+离线 daemon 收到 SIGTERM 或 SIGINT 时，会通过引擎停下每个运行中的部署，把其状态以 `stopped` 阶段发布；若有部署未能在 75 秒内确认停止，进程以非零退出码退出。
 
 离线输入和状态未签名，应限制在操作者自有基础设施中。仅绑定 loopback 的演示 broker 不适合共享部署。离线状态尽力发布，不经过签名事实 outbox。

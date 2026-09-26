@@ -210,6 +210,15 @@ class OfflineExposureGuard:
                 max_drawdown_pct=str(limits.max_drawdown_pct),
             )
 
+    def running(self) -> dict[str, str]:
+        """Each watched deployment the engine still holds, as spec id to instance id."""
+
+        return {
+            spec_id: watched.deployment_instance_id
+            for spec_id, watched in self._watched.items()
+            if self._engine.attached(watched.deployment_instance_id)
+        }
+
     def release(self, spec_id: str) -> None:
         """Stop guarding a deployment that has been stopped."""
 

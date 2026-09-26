@@ -198,6 +198,9 @@ class OfflineReconciler:
             spec_id: _Applied(generation=record.generation, container_id=record.container_id)
             for spec_id, record in (applied_store.load() if applied_store else {}).items()
         }
+        # What this process has running, by spec id: the spec it runs and the
+        # instance holding it. Shutdown stops exactly these.
+        self._running: dict[str, tuple[OfflineDeploymentSpec, str]] = {}
 
     async def run(self, subscription: Any, stop: asyncio.Event) -> None:
         """Consume desired state until asked to stop, outliving bad messages."""
@@ -345,6 +348,10 @@ class OfflineReconciler:
 
         applied.generation = spec.generation
         self._remember(spec.spec_id, applied)
+        if spec.lifecycle_state in _NON_RUNNING_STATES:
+            self._running.pop(spec.spec_id, None)
+        else:
+            self._running[spec.spec_id] = (spec, str(identity.deployment_instance_id))
         self._update_guard(spec, identity, limits)
         await self._report(spec, healthy=True)
         return Settlement.APPLIED
@@ -421,7 +428,58 @@ class OfflineReconciler:
                 self._guard.runtime_stopped(spec.spec_id)
         return await self._engine.deploy(document, credential, artifact)
 
-    async def _report(self, spec: OfflineDeploymentSpec, *, healthy: bool) -> None:
+    async def shutdown(self, *, deadline: float) -> bool:
+        """Stop every deployment this process runs, and say whether each one stopped.
+
+        Stopping through the engine is what lets a strategy clean up: its own stop
+        handler cancels what it had resting, and the host's shutdown policy runs
+        before the node goes down. Leaving the deployments to die with the process
+        skips all of it and leaves orders on the exchange nobody asked to keep.
+
+        One deadline covers all of them, so the whole shutdown fits inside the
+        grace period the process is given before it is killed.
+        """
+
+        loop = asyncio.get_running_loop()
+        ends_at = loop.time() + deadline
+        all_stopped = True
+        for spec_id, (spec, deployment_instance_id) in tuple(self._running.items()):
+            try:
+                await asyncio.wait_for(
+                    self._engine.stop(deployment_instance_id),
+                    timeout=max(ends_at - loop.time(), 0.0),
+                )
+            except TimeoutError:
+                _log.error(
+                    "offline_shutdown_stop_unconfirmed",
+                    spec_id=spec_id,
+                    deployment_instance_id=deployment_instance_id,
+                    deadline_seconds=deadline,
+                )
+            except Exception as exc:  # noqa: BLE001 - one failed stop must not skip the rest
+                _log.error(
+                    "offline_shutdown_stop_failed",
+                    spec_id=spec_id,
+                    deployment_instance_id=deployment_instance_id,
+                    error=str(exc),
+                )
+            stopped = not self._engine.attached(deployment_instance_id)
+            all_stopped = all_stopped and stopped
+            if stopped:
+                self._running.pop(spec_id, None)
+                if self._guard is not None:
+                    self._guard.release(spec_id)
+                _log.info("offline_shutdown_deployment_stopped", spec_id=spec_id)
+            await self._report(spec, healthy=stopped, phase=LifecycleState.STOPPED)
+        return all_stopped
+
+    async def _report(
+        self,
+        spec: OfflineDeploymentSpec,
+        *,
+        healthy: bool,
+        phase: LifecycleState | None = None,
+    ) -> None:
         """Publish observed state, and keep running if the channel is gone.
 
         Losing the status channel says nothing about whether the strategy should
@@ -430,7 +488,7 @@ class OfflineReconciler:
 
         payload = {
             "observed_generation": spec.generation,
-            "phase": spec.lifecycle_state.value,
+            "phase": (phase or spec.lifecycle_state).value,
             "health": "healthy" if healthy else "unhealthy",
         }
         envelope = {

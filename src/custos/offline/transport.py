@@ -28,6 +28,10 @@ _log = get_logger("custos.offline.transport")
 _SAFE_TENANT = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 _OWNER_METADATA: Final = {"owner": "custos", "profile": "standalone"}
 _CONNECT_RETRY_SECS: Final = 0.1
+# Observed state and telemetry are kept per subject up to this many messages. At
+# one snapshot every ten seconds that is a little over a day of a deployment's
+# snapshots; status readers only ever want the newest message.
+OBSERVED_MSGS_PER_SUBJECT: Final = 10_000
 
 ConnectFactory = Callable[[str], Awaitable[Any]]
 
@@ -36,7 +40,8 @@ def standalone_stream_configs(tenant_id: str) -> tuple[StreamConfig, StreamConfi
     """Return the complete offline topology for one tenant.
 
     Desired state keeps only the newest message per subject, because a spec is a
-    statement of what should be true rather than an event that happened.
+    statement of what should be true rather than an event that happened. Observed
+    state is bounded per subject, so telemetry cannot grow without limit.
     """
 
     tenant = _validate_tenant_id(tenant_id)
@@ -58,6 +63,7 @@ def standalone_stream_configs(tenant_id: str) -> tuple[StreamConfig, StreamConfi
             f"arx.{tenant}.telemetry.>",
         ],
         storage=StorageType.FILE,
+        max_msgs_per_subject=OBSERVED_MSGS_PER_SUBJECT,
         metadata=metadata,
     )
     return desired, observed

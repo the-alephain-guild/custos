@@ -16,6 +16,7 @@ import asyncio
 import contextlib
 import os
 import shutil
+import signal
 import sys
 from collections.abc import Coroutine
 from pathlib import Path
@@ -32,6 +33,7 @@ from custos.offline.safety import TICK_SECS, OfflineExposureGuard
 from custos.offline.spec import OfflineDeploymentSpec, now_rfc3339_nanos, offline_subject
 from custos.offline.state import OfflineAppliedStore
 from custos.offline.strategy_config import strategy_trading_config_for
+from custos.offline.telemetry import SNAPSHOT_SECS, OfflineTelemetry
 
 _log = get_logger("custos.offline.daemon")
 
@@ -40,6 +42,11 @@ _log = get_logger("custos.offline.daemon")
 RUNNER_RUNTIME_METRICS_SCHEMA_V1: Final = "alephain.custos.runner-runtime-metrics.v1"
 
 _DISCOVERY_PATH_VARIABLE: Final = "STRATEGY_INJECT_PATH"
+# How long stopping may take in all, from the stop signal to the last deployment.
+# The host allows up to 30s for its shutdown policy and 30s more for the node; this
+# leaves room for both, and the container's grace period has to exceed it.
+SHUTDOWN_DEADLINE_SECS: Final = 75.0
+_STOP_SIGNALS: Final = (signal.SIGINT, signal.SIGTERM)
 _REGISTRY_MODULE: Final = "custos_toolkit_nautilus.adapter.registry"
 
 
@@ -119,9 +126,16 @@ async def run_offline_lane(
     credential_for: Any | None = None,
     strategy_config_for: Any | None = None,
     safety_interval: float = TICK_SECS,
+    telemetry_interval: float = SNAPSHOT_SECS,
+    shutdown_deadline: float = SHUTDOWN_DEADLINE_SECS,
     stop: asyncio.Event | None = None,
 ) -> int:
-    """Subscribe to offline desired state and reconcile it until stopped."""
+    """Subscribe to offline desired state and reconcile it until stopped.
+
+    Returns non-zero when a deployment could not be confirmed stopped on the way
+    out, so whoever supervises the process can tell a clean stop from one that
+    may have left orders behind.
+    """
 
     # The identity is a v1 UUID; the label is what the operator's own probe
     # subscribes by. Keeping them separate lets the consumer name the runner
@@ -131,8 +145,10 @@ async def run_offline_lane(
     connect = connect_factory or nats.connect
     stop_event = stop or asyncio.Event()
     guard = OfflineExposureGuard(engine=engine, interval=safety_interval)
+    installed = _stop_on_signals(stop_event)
 
     connection = await connect(nats_url)
+    stopped_cleanly = True
     try:
         jetstream = connection.jetstream()
         subject = offline_subject(tenant_id, "deployment_spec", strategy_id)
@@ -165,38 +181,100 @@ async def run_offline_lane(
             applied_store=store,
             guard=guard,
         )
-        await _run_together(
-            reconciler.run(subscription, stop_event),
-            guard.run(stop_event),
-            stop=stop_event,
+        telemetry = OfflineTelemetry(
+            tenant_id=tenant_id,
+            runner_label=label,
+            engine=engine,
+            publish=jetstream.publish,
+            deployments=guard.running,
+            interval=telemetry_interval,
         )
+        telemetry.attach(engine)
+        try:
+            await _run_together(
+                reconciler.run(subscription, stop_event),
+                guard.run(stop_event),
+                stop=stop_event,
+                alongside=(telemetry.run(stop_event),),
+            )
+        finally:
+            _log.info("offline_lane_stopping")
+            stopped_cleanly = await reconciler.shutdown(deadline=shutdown_deadline)
     finally:
+        _restore_signals(installed)
         if readiness is not None:
             readiness.clear()
         else:
             ready_file.unlink(missing_ok=True)
         with contextlib.suppress(Exception):
             await connection.drain()
-    return 0
+    _log.info("offline_lane_stopped", clean=stopped_cleanly)
+    return 0 if stopped_cleanly else 1
 
 
-async def _run_together(*coroutines: Coroutine[Any, Any, Any], stop: asyncio.Event) -> None:
+def _stop_on_signals(stop: asyncio.Event) -> tuple[signal.Signals, ...]:
+    """Turn SIGINT and SIGTERM into a stop, so shutdown runs instead of a kill.
+
+    Without this the process ignores SIGTERM until the supervisor gives up and
+    kills it, and nothing a strategy does when it stops ever runs.
+    """
+
+    loop = asyncio.get_running_loop()
+    installed = []
+    for sig in _STOP_SIGNALS:
+        try:
+            loop.add_signal_handler(sig, stop.set)
+        except (NotImplementedError, RuntimeError) as exc:
+            # Only the main thread may own signals; a lane run elsewhere is
+            # stopped through its event instead.
+            _log.warning("offline_stop_signal_not_installed", signal=sig.name, error=str(exc))
+            continue
+        installed.append(sig)
+    return tuple(installed)
+
+
+def _restore_signals(installed: tuple[signal.Signals, ...]) -> None:
+    loop = asyncio.get_running_loop()
+    for sig in installed:
+        loop.remove_signal_handler(sig)
+
+
+async def _run_together(
+    *coroutines: Coroutine[Any, Any, Any],
+    stop: asyncio.Event,
+    alongside: tuple[Coroutine[Any, Any, Any], ...] = (),
+) -> None:
     """Run the lane's two loops, and let neither outlive a failure in the other.
 
     Reconciling and guarding are deliberately not the same clock — that is what
     keeps the guard alive while the transport is down. It also means a guard that
     dies would leave the lane trading with nothing watching it, so the first
     failure winds the other loop down and is then raised rather than logged.
+
+    ``alongside`` runs until the lane stops but is not part of that pact: nothing
+    trades on it, so its failure is logged and the lane carries on.
     """
 
     tasks = [asyncio.create_task(coroutine) for coroutine in coroutines]
+    extras = [asyncio.create_task(coroutine) for coroutine in alongside]
+    for extra in extras:
+        extra.add_done_callback(_report_companion_failure)
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
     finally:
         stop.set()
-        await asyncio.wait(tasks)
+        await asyncio.wait(tasks + extras)
     for task in tasks:
         task.result()
+
+
+def _report_companion_failure(task: asyncio.Task[Any]) -> None:
+    if not task.cancelled() and task.exception() is not None:
+        _log.error(
+            "offline_lane_companion_failed",
+            error_type=type(task.exception()).__name__,
+            error=str(task.exception()),
+        )
 
 
 def _servable_modes(engine: Any) -> dict[str, bool]:

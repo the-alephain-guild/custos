@@ -584,6 +584,12 @@ class NtTradingNodeHost:
         self._capability_receipt = capability_receipt
         self._runner_safety_boundary_factory = runner_safety_boundary_factory
         self._venue_proxy = venue_proxy
+        # Receivers of every order and position event, given the instance they
+        # belong to. Installed after the safety and fact sinks, and never a source
+        # of anything this host decides.
+        self._observation_sinks: (
+            tuple[Callable[[str, Any], None], Callable[[str, Any], None]] | None
+        ) = None
         self._portfolio_snapshot_provider = portfolio_snapshot_provider or (
             NautilusPortfolioSnapshotProvider(price_type_mid=PriceType.MID if PriceType else None)
         )
@@ -598,6 +604,21 @@ class NtTradingNodeHost:
 
     def supports_trading_mode(self, mode: str) -> bool:
         return mode in {"sandbox", "testnet", "live"}
+
+    def add_observation_sinks(
+        self,
+        *,
+        order: Callable[[str, Any], None],
+        position: Callable[[str, Any], None],
+    ) -> None:
+        """Hand every later deployment's order and position events to these, too.
+
+        A sink runs inside the strategy's callback, and one that raises marks the
+        deployment's status unreliable -- which fails it closed. Whoever passes
+        these has to make sure they never raise.
+        """
+
+        self._observation_sinks = (order, position)
 
     def supports_venue(self, venue: str, mode: str) -> bool:
         return venue.lower() in _VENUES_BY_MODE.get(mode.lower(), frozenset())
@@ -943,6 +964,14 @@ class NtTradingNodeHost:
                 ),
             )
             fact_bridge.bootstrap(forwarder)
+        if self._observation_sinks is not None:
+            order_sink, position_sink = self._observation_sinks
+            forwarder.add_order_sink(
+                "observation", functools.partial(order_sink, deployment_instance_id)
+            )
+            forwarder.add_position_sink(
+                "observation", functools.partial(position_sink, deployment_instance_id)
+            )
         forwarder.install(strategy)
         if runner_safety_boundary is not None:
             self._install_order_gate(

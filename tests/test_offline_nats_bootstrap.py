@@ -209,3 +209,22 @@ def test_bootstrap_reports_infrastructure_failure_as_a_non_zero_exit(
 def test_bootstrap_refuses_an_unknown_profile() -> None:
     with pytest.raises(SystemExit):
         main(["nats", "bootstrap", "--profile", "cloud", "--tenant-id", TENANT])
+
+
+def test_observed_state_is_bounded_per_subject() -> None:
+    _, observed = standalone_stream_configs(TENANT)
+
+    assert f"arx.{TENANT}.telemetry.>" in (observed.subjects or [])
+    assert observed.max_msgs_per_subject == 10_000
+
+
+async def test_an_observed_stream_without_the_bound_is_brought_up_to_it() -> None:
+    desired, observed = standalone_stream_configs(TENANT)
+    unbounded = observed.__class__.from_response(observed.as_dict())
+    unbounded.max_msgs_per_subject = -1
+    jetstream = _FakeJetStream({desired.name: desired, observed.name: unbounded})
+
+    await ensure_standalone_streams(jetstream, TENANT)
+
+    assert [config.name for config in jetstream.updated] == [observed.name]
+    assert jetstream.existing[observed.name].max_msgs_per_subject == 10_000
