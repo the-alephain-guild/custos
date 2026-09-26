@@ -17,9 +17,9 @@ STRATEGY_CONTRACT_RECEIPT_PATH = (
 )
 CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/vendor/"
-    "crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+    "crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
 )
-CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "3e85acbbf4c8b298dd2bd5d51911bdf08dd6d7a3"
+CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "8e38becf270c55f3676e6467015c2a3fbfd64588"
 PS_STRATEGY_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/vendor/ps-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
 )
@@ -105,12 +105,11 @@ RUNNER_COMMAND_CONTRACT_ASSETS = (
     ),
 )
 RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
-    "docs/authority/receipts/vendor/"
-    "crucible-runner-strategy-resolution-nautilus-2-v1-corrected.json"
+    "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-trading-scope-v1.json"
 )
-RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "dfa9619e3a5e26a289c9baa8d89cdd088cba5acd"
+RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "1a2e250e6a7d1fad290302b456b6f098a12dad24"
 RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT = RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
-RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "179cea1c46c2beb59e2d4f176a336590588723f9"
+RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "8e38becf270c55f3676e6467015c2a3fbfd64588"
 RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS = (
     (
         "docs/authority/runner-strategy-release-resolution-v1.schema.json",
@@ -553,7 +552,7 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
                 "commit": CRUCIBLE_STRATEGY_CONSUMER_COMMIT,
                 "path": (
                     "docs/authority/receipts/"
-                    "crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+                    "crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
                 ),
                 "vendored_path": CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH,
                 "sha256": hashlib.sha256(
@@ -564,18 +563,29 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
     }
     if receipt_consumers != expected_consumers:
         errors.append("Custos receipt consumer Git revisions or vendored evidence differ")
-    for document, repository in (
-        (ps_consumer_receipt, "alchymia-labs/philosophers-stone"),
-        (crucible_consumer_receipt, "tesseract-trading/crucible-rust"),
+    # Each consumer pins the producer revision it accepted; Philosophers-Stone
+    # has not yet accepted the revision that adds trading_scope.
+    for document, repository, accepted_status, accepted_producer_commit in (
+        (
+            ps_consumer_receipt,
+            "alchymia-labs/philosophers-stone",
+            "CUSTOS_NAUTILUS_2_V1_CONTRACT_ACCEPTED",
+            "8bf45ac6b0f42018aae2a74ac9e743e41f9ca789",
+        ),
+        (
+            crucible_consumer_receipt,
+            "tesseract-trading/crucible-rust",
+            "CUSTOS_TRADING_SCOPE_V1_CONTRACT_ACCEPTED",
+            "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220",
+        ),
     ):
         engine_version = document.get(
             "engine_version", document.get("contract", {}).get("engine_version")
         )
         if (
-            document.get("status") != "CUSTOS_NAUTILUS_2_V1_CONTRACT_ACCEPTED"
+            document.get("status") != accepted_status
             or document.get("consumer", {}).get("repository") != repository
-            or document.get("producer", {}).get("commit")
-            != "8bf45ac6b0f42018aae2a74ac9e743e41f9ca789"
+            or document.get("producer", {}).get("commit") != accepted_producer_commit
             or engine_version != "2.0.0rc5+sodex.1"
         ):
             errors.append(f"{repository} strategy consumer receipt semantics differ")
@@ -746,7 +756,7 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
                 errors.append("runner strategy resolution producer receipt pin differs")
             if (
                 resolution_receipt.get("receipt_id")
-                != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-NAUTILUS-2-V1"
+                != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-TRADING-SCOPE-V1"
                 or resolution_receipt.get("authority_coordinate")
                 != "crucible.runner-strategy-resolution.v1"
                 or resolution_receipt.get("status") != "CURRENT_ENGINE_CONTRACT_READY"

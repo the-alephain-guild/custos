@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "receipt_id": "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-TRADING-SCOPE-V1",
+  "owner": "crucible-rust",
+  "consumer": "custos",
+  "status": "CURRENT_ENGINE_CONTRACT_READY",
+  "authority_coordinate": "crucible.runner-strategy-resolution.v1",
+  "engine": "nautilus",
+  "engine_version": "2.0.0rc5+sodex.1",
+  "producer_commit": "1a2e250e6a7d1fad290302b456b6f098a12dad24",
+  "runtime_code_commit": "1a2e250e6a7d1fad290302b456b6f098a12dad24",
+  "contract_commit": "1a2e250e6a7d1fad290302b456b6f098a12dad24",
+  "supersedes_receipt": "docs/authority/receipts/crucible-runner-strategy-resolution-nautilus-2-v1-corrected.json",
+  "change": "StrategyManifestV1 requires trading_scope {connector, pairs, leverage}; the golden manifest declares binance_perpetual, BTC-USDT, leverage 3",
+  "strategy_release_binding": {
+    "request_accepts_strategy_release_id": false,
+    "release_derived_from_persisted_deployment_spec": true,
+    "release_version_semantics": "StrategyRelease.release_number",
+    "lifecycle_evidence_fence": "StrategyReleaseSnapshot.snapshot_digest",
+    "complete_artifact_binding_returned": true,
+    "complete_artifact_evidence_returned": true,
+    "artifact_evidence_digest_input_returned": true,
+    "credential_or_attestation_bundle_bytes_returned": false,
+    "signed_subject_claims_complete": true
+  },
+  "contract_assets": [
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.schema.json",
+      "sha256": "807e347558f7d637046d3effb3f39e77c806a46257e0a86d03308c0bf71aad7d",
+      "size_bytes": 9179
+    },
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.schema.json.sha256",
+      "sha256": "d1884a9f0f3a49ccc4d2bc2b717bbaf4fa0e1642a4632f359eaf36860b067eae",
+      "size_bytes": 116
+    },
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.golden.json",
+      "sha256": "3ad085c148dd7899028603110acb577e14e5217f3cce44e4ce715d94466c9fb3",
+      "size_bytes": 31367
+    },
+    {
+      "path": "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
+      "sha256": "491441d553688758c2d7c51e733b145ef3f824eda2d5b82a6c9e26a3c7cc5860",
+      "size_bytes": 116
+    }
+  ],
+  "generator": {
+    "path": "scripts/regenerate-runner-strategy-release-golden.py",
+    "sha256": "f7b4a2b308fa0e5f79a7d3429397772108b3294e45601209ec897b6aa7a98b59",
+    "size_bytes": 8553,
+    "check_passed": true
+  },
+  "acceptance": {
+    "domain_contracts": "cargo test -p domain",
+    "runner_resolution": "cargo test -p server-http --test runner_strategy_release_resolution_contract --test strategy_release_http_contract_authority --test strategy_release_read_contract",
+    "draft_persistence": "cargo test -p store --test strategy_release_draft_pg",
+    "authority": "make check-authority",
+    "local_postgresql_integration": true
+  },
+  "runtime_ready": false,
+  "live_ready": false,
+  "production_ready": false,
+  "open_blockers": [
+    "Custos vendored consumer update and full gate",
+    "ARX re-vendor of the StrategyRelease HTTP golden and schema",
+    "PS producer emits trading_scope and republishes the release",
+    "stored releases without trading_scope retired before deployed acceptance"
+  ]
+}

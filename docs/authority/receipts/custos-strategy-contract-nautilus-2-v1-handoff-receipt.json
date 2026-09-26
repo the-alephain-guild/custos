@@ -4,10 +4,10 @@
   "consumers": {
     "crucible_rust": {
       "receipt": {
-        "commit": "3e85acbbf4c8b298dd2bd5d51911bdf08dd6d7a3",
-        "path": "docs/authority/receipts/crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json",
-        "sha256": "88a50e6050caaffb0a755981a5aa3ef3704bececc506c5367d5e2accf7884d54",
-        "vendored_path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+        "commit": "8e38becf270c55f3676e6467015c2a3fbfd64588",
+        "path": "docs/authority/receipts/crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json",
+        "sha256": "cf5abd8913870846f67ded0f0330ad72d956896e04ee9af94124180cbfbb5ee3",
+        "vendored_path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
       },
       "repository": "tesseract-trading/crucible-rust"
     },
@@ -23,11 +23,13 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/strategy-contract-assets-v1.json",
-    "sha256": "5e5e4b585f349d1e22ebfac2e83573378e1346a46d2b53e91aa26668f2936c99",
+    "sha256": "f27961f03147b424f6934cb78cae90cd5b52bbde610f7c3e6f335e91a6791922",
     "size_bytes": 2828
   },
   "contract_consumer_ready": true,
-  "open_blockers": [],
+  "open_blockers": [
+    "philosophers-stone accepts the trading_scope manifest revision"
+  ],
   "policy_boundary": {
     "crucible_local_policy_decision_reused": false,
     "runner_local_policy_decision_required": true

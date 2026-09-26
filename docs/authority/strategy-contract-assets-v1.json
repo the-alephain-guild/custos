@@ -3,22 +3,22 @@
   "assets": [
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.golden.json",
-      "sha256": "e91af11fb030f2981222db06bd3396fcc7304c7099c49b7c47d6d477e095d5ea",
+      "sha256": "f980511b1829610709e3f0a7ba32219e8f6ab576e5159b60a2d544628f095ebd",
       "size_bytes": 18172
     },
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.golden.json.sha256",
-      "sha256": "1e6d4b6fc0c0049a003b472d4ba0624c8dfc38a5e820910d255757a6ddf7a7d4",
+      "sha256": "9cbe1f307d6e0bd16fa19badb22db17471f39e766f1622a3c88fc3390d349510",
       "size_bytes": 123
     },
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json",
-      "sha256": "c9d623ca833bbcdcb8778be6a87cbec18a976904115a29dcd9e8f74cb342c14e",
+      "sha256": "2168e9c3412e5f1ef9016bf9bce3197366bc9d68b1502804e69d47f02f4051b3",
       "size_bytes": 7242
     },
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json.sha256",
-      "sha256": "2746bdb9119d6e2651eb2f9d49b6a172e7e6b947c2ddaa8b13d9c3ab3f91f22c",
+      "sha256": "4f298feadd3d55eb7c946e595abafcc7fac1b7e2064a904517a904f052e6838f",
       "size_bytes": 125
     },
     {

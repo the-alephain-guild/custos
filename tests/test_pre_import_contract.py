@@ -26,7 +26,7 @@ RECEIPT = (
 )
 CRUCIBLE_RECEIPT = (
     ROOT / "docs/authority/receipts/vendor/"
-    "crucible-custos-strategy-contract-nautilus-2-v1-consumer-receipt.json"
+    "crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
 )
 PS_RECEIPT = (
     ROOT / "docs/authority/receipts/vendor/"
@@ -85,9 +85,9 @@ def test_schema_golden_and_index_are_the_same_v1_contract() -> None:
     assert claims["artifact_ref_digest"] == receipt["artifact_ref_digest"]
     assert claims["release_bom_digest"] == receipt["release_bom_digest"]
     crucible_receipt = json.loads(CRUCIBLE_RECEIPT.read_text(encoding="utf-8"))
-    assert crucible_receipt["producer"]["commit"] == ("8bf45ac6b0f42018aae2a74ac9e743e41f9ca789")
+    assert crucible_receipt["producer"]["commit"] == "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220"
     assert crucible_receipt["consumer"] == {
-        "accepted_at_commit": "9ce821143854a54ef7f6e0ada42c9e52a855d3bb",
+        "accepted_at_commit": "1a2e250e6a7d1fad290302b456b6f098a12dad24",
         "repository": "tesseract-trading/crucible-rust",
     }
     assert crucible_receipt["runtime_ready"] is False
@@ -250,5 +250,5 @@ def test_contract_receipt_records_both_nautilus_2_consumers() -> None:
     assert ps_pin["commit"] == "11f4fcf9ec0c2d7a4fd928b6cd6bab88ceee8769"
     assert ps_pin["sha256"] == hashlib.sha256(PS_RECEIPT.read_bytes()).hexdigest()
     crucible_pin = receipt["consumers"]["crucible_rust"]["receipt"]
-    assert crucible_pin["commit"] == "3e85acbbf4c8b298dd2bd5d51911bdf08dd6d7a3"
+    assert crucible_pin["commit"] == "8e38becf270c55f3676e6467015c2a3fbfd64588"
     assert crucible_pin["sha256"] == hashlib.sha256(CRUCIBLE_RECEIPT.read_bytes()).hexdigest()
