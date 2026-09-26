@@ -193,8 +193,8 @@ def test_authority_registers_exact_v1_ready_receipt() -> None:
         for entry in manifest["authority_documents"]
         if isinstance(entry, dict)
     )
-    receipt_path = ROOT / "docs/authority/receipts/custos-toolkit-rc7-authority-v1.json"
+    receipt_path = ROOT / "docs/authority/receipts/custos-toolkit-rc8-authority-v1.json"
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     assert receipt["status"] == "READY_TOOLKIT_RC"
-    assert receipt["candidate_version"] == "0.1.0rc7"
-    assert receipt["source_commit"] == "8bf45ac6b0f42018aae2a74ac9e743e41f9ca789"
+    assert receipt["candidate_version"] == "0.1.0rc8"
+    assert receipt["source_commit"] == "6b41727c26d51f686ada2186fad35373854a35d1"

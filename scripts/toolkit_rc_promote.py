@@ -39,7 +39,7 @@ WORKFLOW_REF: Final = (
     "the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main"
 )
 OIDC_ISSUER: Final = "https://token.actions.githubusercontent.com"
-STABLE_READY_PATH: Final = Path("docs/authority/receipts/custos-toolkit-rc7-authority-v1.json")
+STABLE_READY_PATH: Final = Path("docs/authority/receipts/custos-toolkit-rc8-authority-v1.json")
 PREREQUISITE_PATHS: Final = (
     Path("docs/authority/receipts/strategy-toolkit-extraction-receipt-v1.json"),
     Path("docs/authority/receipts/strategy-toolkit-typing-closure-receipt-v1.json"),

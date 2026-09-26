@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DATE_EPOCH = 1_704_067_200
 SOURCE_COMMIT = "a" * 40
 SCHEMA_PATH = ROOT / "docs/gateway-contract/v1/toolkit_rc_pending_receipt_v1.schema.json"
-READY_RECEIPT_PATH = ROOT / "docs/authority/receipts/custos-toolkit-rc7-authority-v1.json"
+READY_RECEIPT_PATH = ROOT / "docs/authority/receipts/custos-toolkit-rc8-authority-v1.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -235,7 +235,7 @@ def test_pending_contract_is_source_generated_and_has_one_operational_blocker(
     )
     ready_receipt = json.loads(READY_RECEIPT_PATH.read_text(encoding="utf-8"))
     assert ready_receipt["status"] == "READY_TOOLKIT_RC"
-    assert ready_receipt["candidate_version"] == "0.1.0rc7"
+    assert ready_receipt["candidate_version"] == "0.1.0rc8"
 
     authority = json.loads((ROOT / "authority-manifest.json").read_text(encoding="utf-8"))
     assert {

@@ -1,0 +1,360 @@
+{
+  "authority_registered": true,
+  "build_manifest_sha256": "02f61fcc385578b0c7ab696a0e1a7db3975e5c9cc1ca030a6f3839ee9b06213a",
+  "candidate_version": "0.1.0rc8",
+  "contract_version": "alephain.custos.toolkit-rc-authority-receipt.v1",
+  "engine_ready": false,
+  "final_blockers": [],
+  "handoff_ready": true,
+  "handoff_scope": "Custos base and Nautilus toolkit RC only",
+  "loaded": false,
+  "production_credentials_used": true,
+  "production_ready": false,
+  "production_signature_verified": true,
+  "publication_manifest": {
+    "coordinate": "ghcr.io/the-alephain-guild/custos-strategy-toolkit@sha256:94e8a3ecfca41f610061217b811cedf3d3e0a82e0e70fb3d3a53dd11124c2be5",
+    "sha256": "94e8a3ecfca41f610061217b811cedf3d3e0a82e0e70fb3d3a53dd11124c2be5",
+    "size_bytes": 7593
+  },
+  "publication_receipt": {
+    "artifact_type": "application/vnd.alephain.custos.strategy-toolkit.rc.v1",
+    "authority_registered": false,
+    "candidate_version": "0.1.0rc8",
+    "config": {
+      "digest": "sha256:46806ae03a7ec121c48968d3531b33e98565c8f9c0fa0b026e1356085688632c",
+      "media_type": "application/vnd.alephain.custos.strategy-toolkit.rc.config.v1+json",
+      "role": "release_config",
+      "size_bytes": 1006,
+      "source_coordinate": null,
+      "title": "toolkit-rc-config.json"
+    },
+    "contract_version": "alephain.custos.toolkit-rc-oci-publication-receipt.v1",
+    "descriptor_readback_verified": true,
+    "handoff_ready": false,
+    "layers": [
+      {
+        "digest": "sha256:c729cd8494ee3c12d12ec90e0ab08abeb8ec2a172f3412b72a1ce37a39aa1381",
+        "media_type": "application/json",
+        "role": "base_contracts_wheel.sigstore_attestation",
+        "size_bytes": 10147,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/attestations/toolkit-rc-provenance.sigstore.json@sha256:c729cd8494ee3c12d12ec90e0ab08abeb8ec2a172f3412b72a1ce37a39aa1381",
+        "title": "toolkit-rc-provenance.sigstore.json"
+      },
+      {
+        "digest": "sha256:f27961f03147b424f6934cb78cae90cd5b52bbde610f7c3e6f335e91a6791922",
+        "media_type": "application/json",
+        "role": "base_contracts_wheel.contract_asset_index",
+        "size_bytes": 2828,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/contracts/strategy-contract-assets-v1.json@sha256:f27961f03147b424f6934cb78cae90cd5b52bbde610f7c3e6f335e91a6791922",
+        "title": "strategy-contract-assets-v1.json"
+      },
+      {
+        "digest": "sha256:70c6cb46850a048d5f12aaa45b40be51a1b5d59d0afd5e741d9e120cb55b22e6",
+        "media_type": "application/json",
+        "role": "base_contracts_wheel.contract_schema",
+        "size_bytes": 6115,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/contracts/toolkit_rc_receipt_manifest_v1.schema.json@sha256:70c6cb46850a048d5f12aaa45b40be51a1b5d59d0afd5e741d9e120cb55b22e6",
+        "title": "toolkit_rc_receipt_manifest_v1.schema.json"
+      },
+      {
+        "digest": "sha256:424d990eee3b93166d1c254b1eed3a5f9491dae30e591cf50b0a220e54d63b3c",
+        "media_type": "application/json",
+        "role": "base_contracts_wheel.dependency_lock_evidence",
+        "size_bytes": 5537,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/dependencies/toolkit-rc-dependency-locks.json@sha256:424d990eee3b93166d1c254b1eed3a5f9491dae30e591cf50b0a220e54d63b3c",
+        "title": "toolkit-rc-dependency-locks.json"
+      },
+      {
+        "digest": "sha256:d98ed18a1e474ea2ade679ecd08fcdf00eef4221c2bcb47cf48fe12c18e070ce",
+        "media_type": "application/json",
+        "role": "base_contracts_wheel.pre_import_verifier_receipt",
+        "size_bytes": 1761,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/prerequisites/custos-strategy-contract-v1-producer-receipt.json@sha256:d98ed18a1e474ea2ade679ecd08fcdf00eef4221c2bcb47cf48fe12c18e070ce",
+        "title": "custos-strategy-contract-v1-producer-receipt.json"
+      },
+      {
+        "digest": "sha256:0830b8fd6ec5528a61ea65f0545f0bea9b3320af1e054fbf808d16a60851434f",
+        "media_type": "application/json",
+        "role": "base_contracts_wheel.toolkit_extraction_receipt",
+        "size_bytes": 5009,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/prerequisites/strategy-toolkit-extraction-receipt-v1.json@sha256:0830b8fd6ec5528a61ea65f0545f0bea9b3320af1e054fbf808d16a60851434f",
+        "title": "strategy-toolkit-extraction-receipt-v1.json"
+      },
+      {
+        "digest": "sha256:ef4cdd223f97fb4f92de88cf575ad1794211a32bbc0df0e6f7780b286b999143",
+        "media_type": "application/json",
+        "role": "base_contracts_wheel.toolkit_typing_closure_receipt",
+        "size_bytes": 2098,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/prerequisites/strategy-toolkit-typing-closure-receipt-v1.json@sha256:ef4cdd223f97fb4f92de88cf575ad1794211a32bbc0df0e6f7780b286b999143",
+        "title": "strategy-toolkit-typing-closure-receipt-v1.json"
+      },
+      {
+        "digest": "sha256:02f61fcc385578b0c7ab696a0e1a7db3975e5c9cc1ca030a6f3839ee9b06213a",
+        "media_type": "application/json",
+        "role": "build_manifest",
+        "size_bytes": 4783,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/provenance/toolkit-rc-build-manifest-input.json@sha256:02f61fcc385578b0c7ab696a0e1a7db3975e5c9cc1ca030a6f3839ee9b06213a",
+        "title": "toolkit-rc-build-manifest-input.json"
+      },
+      {
+        "digest": "sha256:10a2a9e2d626f5ffab53cbe909c0bfd296e5012a475dd8e6362228b301ea16e2",
+        "media_type": "application/json",
+        "role": "release_manifest",
+        "size_bytes": 8946,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/provenance/toolkit-rc-receipt-manifest.json@sha256:10a2a9e2d626f5ffab53cbe909c0bfd296e5012a475dd8e6362228b301ea16e2",
+        "title": "toolkit-rc-receipt-manifest.json"
+      },
+      {
+        "digest": "sha256:d09313730fcb7b49697fb191d692e6d8efc3cbbcba8ce95025229ce165917f2b",
+        "media_type": "application/json",
+        "role": "base_contracts_wheel.slsa_provenance",
+        "size_bytes": 3731,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/provenance/toolkit-rc.intoto.json@sha256:d09313730fcb7b49697fb191d692e6d8efc3cbbcba8ce95025229ce165917f2b",
+        "title": "toolkit-rc.intoto.json"
+      },
+      {
+        "digest": "sha256:0574be36d76892b079294b5ae171e1a1902da5f1839ccf9c55b2302a8f321242",
+        "media_type": "application/json",
+        "role": "nautilus_wheel.sbom",
+        "size_bytes": 3742,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/sbom/custos-strategy-toolkit-nautilus.cdx.json@sha256:0574be36d76892b079294b5ae171e1a1902da5f1839ccf9c55b2302a8f321242",
+        "title": "custos-strategy-toolkit-nautilus.cdx.json"
+      },
+      {
+        "digest": "sha256:69b80173a6a9b18eff380841501039360928514e9ced9c6d6f1ee2e34020d2cd",
+        "media_type": "application/json",
+        "role": "base_contracts_wheel.sbom",
+        "size_bytes": 1820,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/sbom/custos-strategy-toolkit.cdx.json@sha256:69b80173a6a9b18eff380841501039360928514e9ced9c6d6f1ee2e34020d2cd",
+        "title": "custos-strategy-toolkit.cdx.json"
+      },
+      {
+        "digest": "sha256:0ea7e812537991438b0f281d2f99d4eeba6c061ee5179a6d7e19b8820d713b9d",
+        "media_type": "application/vnd.pypa.wheel",
+        "role": "base_contracts_wheel.wheel",
+        "size_bytes": 78412,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/wheels/custos_strategy_toolkit-0.1.0rc8-py3-none-any.whl@sha256:0ea7e812537991438b0f281d2f99d4eeba6c061ee5179a6d7e19b8820d713b9d",
+        "title": "custos_strategy_toolkit-0.1.0rc8-py3-none-any.whl"
+      },
+      {
+        "digest": "sha256:d3b603d237eea0af73b66f6ad2cfc0c281fc96e2cb78ff200deab143b068c15a",
+        "media_type": "application/vnd.pypa.wheel",
+        "role": "nautilus_wheel.wheel",
+        "size_bytes": 375019,
+        "source_coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/wheels/custos_strategy_toolkit_nautilus-0.1.0rc8-py3-none-any.whl@sha256:d3b603d237eea0af73b66f6ad2cfc0c281fc96e2cb78ff200deab143b068c15a",
+        "title": "custos_strategy_toolkit_nautilus-0.1.0rc8-py3-none-any.whl"
+      }
+    ],
+    "manifest_commit_verified": true,
+    "manifest_digest": "sha256:94e8a3ecfca41f610061217b811cedf3d3e0a82e0e70fb3d3a53dd11124c2be5",
+    "manifest_media_type": "application/vnd.oci.image.manifest.v1+json",
+    "manifest_size_bytes": 7593,
+    "oci_coordinate": "ghcr.io/the-alephain-guild/custos-strategy-toolkit@sha256:94e8a3ecfca41f610061217b811cedf3d3e0a82e0e70fb3d3a53dd11124c2be5",
+    "oidc_issuer": "https://token.actions.githubusercontent.com",
+    "production_credentials_used": true,
+    "production_signature_verified": true,
+    "publication_atomic": true,
+    "ready": false,
+    "registry": "ghcr.io",
+    "release_environment": "toolkit-rc-release",
+    "repository": "the-alephain-guild/custos-strategy-toolkit",
+    "schema_version": 1,
+    "source_commit": "6b41727c26d51f686ada2186fad35373854a35d1",
+    "source_date_epoch": 1704067200,
+    "source_repository": "https://github.com/the-alephain-guild/custos",
+    "status": "PENDING_AUTHORITY_REGISTRATION",
+    "tag": "0.1.0rc8",
+    "tag_readback_verified": true,
+    "workflow_identity": "https://github.com/the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main",
+    "workflow_ref": "the-alephain-guild/custos/.github/workflows/release-toolkit-rc.yml@refs/heads/main",
+    "workflow_run_attempt": 1,
+    "workflow_run_id": 36235710919
+  },
+  "ready": true,
+  "receipt_schema_version": 1,
+  "remote_publication_verified": true,
+  "runtime_ready": false,
+  "source_commit": "6b41727c26d51f686ada2186fad35373854a35d1",
+  "source_date_epoch": 1704067200,
+  "source_repository": "https://github.com/the-alephain-guild/custos",
+  "status": "READY_TOOLKIT_RC",
+  "strategy_release_bom_created": false,
+  "toolkit_manifest": {
+    "candidate_version": "0.1.0rc8",
+    "contract_version": "alephain.custos.toolkit-rc-receipt-manifest.v1",
+    "immutable": true,
+    "members": [
+      {
+        "contract_asset_index": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/contracts/strategy-contract-assets-v1.json@sha256:f27961f03147b424f6934cb78cae90cd5b52bbde610f7c3e6f335e91a6791922",
+          "sha256": "f27961f03147b424f6934cb78cae90cd5b52bbde610f7c3e6f335e91a6791922",
+          "size_bytes": 2828
+        },
+        "contract_schema": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/contracts/toolkit_rc_receipt_manifest_v1.schema.json@sha256:70c6cb46850a048d5f12aaa45b40be51a1b5d59d0afd5e741d9e120cb55b22e6",
+          "sha256": "70c6cb46850a048d5f12aaa45b40be51a1b5d59d0afd5e741d9e120cb55b22e6",
+          "size_bytes": 6115
+        },
+        "dependencies": [
+          {
+            "name": "pydantic",
+            "requirement": "pydantic==2.13.4",
+            "version": "2.13.4"
+          },
+          {
+            "name": "pyyaml",
+            "requirement": "pyyaml==6.0.3",
+            "version": "6.0.3"
+          }
+        ],
+        "dependency_lock_evidence": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/dependencies/toolkit-rc-dependency-locks.json@sha256:424d990eee3b93166d1c254b1eed3a5f9491dae30e591cf50b0a220e54d63b3c",
+          "sha256": "424d990eee3b93166d1c254b1eed3a5f9491dae30e591cf50b0a220e54d63b3c",
+          "size_bytes": 5537
+        },
+        "distribution_name": "custos-strategy-toolkit",
+        "nautilus_version": null,
+        "pre_import_verifier_receipt": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/prerequisites/custos-strategy-contract-v1-producer-receipt.json@sha256:d98ed18a1e474ea2ade679ecd08fcdf00eef4221c2bcb47cf48fe12c18e070ce",
+          "sha256": "d98ed18a1e474ea2ade679ecd08fcdf00eef4221c2bcb47cf48fe12c18e070ce",
+          "size_bytes": 1761
+        },
+        "python_requires": ">=3.11",
+        "role": "base_contracts_wheel",
+        "sbom": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/sbom/custos-strategy-toolkit.cdx.json@sha256:69b80173a6a9b18eff380841501039360928514e9ced9c6d6f1ee2e34020d2cd",
+          "sha256": "69b80173a6a9b18eff380841501039360928514e9ced9c6d6f1ee2e34020d2cd",
+          "size_bytes": 1820
+        },
+        "sigstore_attestation": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/attestations/toolkit-rc-provenance.sigstore.json@sha256:c729cd8494ee3c12d12ec90e0ab08abeb8ec2a172f3412b72a1ce37a39aa1381",
+          "sha256": "c729cd8494ee3c12d12ec90e0ab08abeb8ec2a172f3412b72a1ce37a39aa1381",
+          "size_bytes": 10147
+        },
+        "slsa_provenance": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/provenance/toolkit-rc.intoto.json@sha256:d09313730fcb7b49697fb191d692e6d8efc3cbbcba8ce95025229ce165917f2b",
+          "sha256": "d09313730fcb7b49697fb191d692e6d8efc3cbbcba8ce95025229ce165917f2b",
+          "size_bytes": 3731
+        },
+        "source_commit": "6b41727c26d51f686ada2186fad35373854a35d1",
+        "source_repository": "https://github.com/the-alephain-guild/custos",
+        "toolkit_extraction_receipt": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/prerequisites/strategy-toolkit-extraction-receipt-v1.json@sha256:0830b8fd6ec5528a61ea65f0545f0bea9b3320af1e054fbf808d16a60851434f",
+          "sha256": "0830b8fd6ec5528a61ea65f0545f0bea9b3320af1e054fbf808d16a60851434f",
+          "size_bytes": 5009
+        },
+        "toolkit_typing_closure_receipt": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/prerequisites/strategy-toolkit-typing-closure-receipt-v1.json@sha256:ef4cdd223f97fb4f92de88cf575ad1794211a32bbc0df0e6f7780b286b999143",
+          "sha256": "ef4cdd223f97fb4f92de88cf575ad1794211a32bbc0df0e6f7780b286b999143",
+          "size_bytes": 2098
+        },
+        "top_level_modules": [
+          "custos_toolkit"
+        ],
+        "version": "0.1.0rc8",
+        "wheel": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/wheels/custos_strategy_toolkit-0.1.0rc8-py3-none-any.whl@sha256:0ea7e812537991438b0f281d2f99d4eeba6c061ee5179a6d7e19b8820d713b9d",
+          "sha256": "0ea7e812537991438b0f281d2f99d4eeba6c061ee5179a6d7e19b8820d713b9d",
+          "size_bytes": 78412
+        }
+      },
+      {
+        "contract_asset_index": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/contracts/strategy-contract-assets-v1.json@sha256:f27961f03147b424f6934cb78cae90cd5b52bbde610f7c3e6f335e91a6791922",
+          "sha256": "f27961f03147b424f6934cb78cae90cd5b52bbde610f7c3e6f335e91a6791922",
+          "size_bytes": 2828
+        },
+        "contract_schema": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/contracts/toolkit_rc_receipt_manifest_v1.schema.json@sha256:70c6cb46850a048d5f12aaa45b40be51a1b5d59d0afd5e741d9e120cb55b22e6",
+          "sha256": "70c6cb46850a048d5f12aaa45b40be51a1b5d59d0afd5e741d9e120cb55b22e6",
+          "size_bytes": 6115
+        },
+        "dependencies": [
+          {
+            "name": "custos-strategy-toolkit",
+            "requirement": "custos-strategy-toolkit==0.1.0rc8",
+            "version": "0.1.0rc8"
+          },
+          {
+            "name": "msgspec",
+            "requirement": "msgspec==0.21.1",
+            "version": "0.21.1"
+          },
+          {
+            "name": "nautilus-trader",
+            "requirement": "nautilus-trader==2.0.0rc5+sodex.1",
+            "version": "2.0.0rc5+sodex.1"
+          },
+          {
+            "name": "packaging",
+            "requirement": "packaging==26.2",
+            "version": "26.2"
+          },
+          {
+            "name": "pandas",
+            "requirement": "pandas==3.0.3",
+            "version": "3.0.3"
+          },
+          {
+            "name": "pyyaml",
+            "requirement": "pyyaml==6.0.3",
+            "version": "6.0.3"
+          }
+        ],
+        "dependency_lock_evidence": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/dependencies/toolkit-rc-dependency-locks.json@sha256:424d990eee3b93166d1c254b1eed3a5f9491dae30e591cf50b0a220e54d63b3c",
+          "sha256": "424d990eee3b93166d1c254b1eed3a5f9491dae30e591cf50b0a220e54d63b3c",
+          "size_bytes": 5537
+        },
+        "distribution_name": "custos-strategy-toolkit-nautilus",
+        "nautilus_version": "2.0.0rc5+sodex.1",
+        "pre_import_verifier_receipt": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/prerequisites/custos-strategy-contract-v1-producer-receipt.json@sha256:d98ed18a1e474ea2ade679ecd08fcdf00eef4221c2bcb47cf48fe12c18e070ce",
+          "sha256": "d98ed18a1e474ea2ade679ecd08fcdf00eef4221c2bcb47cf48fe12c18e070ce",
+          "size_bytes": 1761
+        },
+        "python_requires": ">=3.12,<3.13",
+        "role": "nautilus_wheel",
+        "sbom": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/sbom/custos-strategy-toolkit-nautilus.cdx.json@sha256:0574be36d76892b079294b5ae171e1a1902da5f1839ccf9c55b2302a8f321242",
+          "sha256": "0574be36d76892b079294b5ae171e1a1902da5f1839ccf9c55b2302a8f321242",
+          "size_bytes": 3742
+        },
+        "sigstore_attestation": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/attestations/toolkit-rc-provenance.sigstore.json@sha256:c729cd8494ee3c12d12ec90e0ab08abeb8ec2a172f3412b72a1ce37a39aa1381",
+          "sha256": "c729cd8494ee3c12d12ec90e0ab08abeb8ec2a172f3412b72a1ce37a39aa1381",
+          "size_bytes": 10147
+        },
+        "slsa_provenance": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/provenance/toolkit-rc.intoto.json@sha256:d09313730fcb7b49697fb191d692e6d8efc3cbbcba8ce95025229ce165917f2b",
+          "sha256": "d09313730fcb7b49697fb191d692e6d8efc3cbbcba8ce95025229ce165917f2b",
+          "size_bytes": 3731
+        },
+        "source_commit": "6b41727c26d51f686ada2186fad35373854a35d1",
+        "source_repository": "https://github.com/the-alephain-guild/custos",
+        "toolkit_extraction_receipt": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/prerequisites/strategy-toolkit-extraction-receipt-v1.json@sha256:0830b8fd6ec5528a61ea65f0545f0bea9b3320af1e054fbf808d16a60851434f",
+          "sha256": "0830b8fd6ec5528a61ea65f0545f0bea9b3320af1e054fbf808d16a60851434f",
+          "size_bytes": 5009
+        },
+        "toolkit_typing_closure_receipt": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/prerequisites/strategy-toolkit-typing-closure-receipt-v1.json@sha256:ef4cdd223f97fb4f92de88cf575ad1794211a32bbc0df0e6f7780b286b999143",
+          "sha256": "ef4cdd223f97fb4f92de88cf575ad1794211a32bbc0df0e6f7780b286b999143",
+          "size_bytes": 2098
+        },
+        "top_level_modules": [
+          "custos_toolkit_nautilus"
+        ],
+        "version": "0.1.0rc8",
+        "wheel": {
+          "coordinate": "artifact://custos/toolkit-rc/0.1.0rc8/wheels/custos_strategy_toolkit_nautilus-0.1.0rc8-py3-none-any.whl@sha256:d3b603d237eea0af73b66f6ad2cfc0c281fc96e2cb78ff200deab143b068c15a",
+          "sha256": "d3b603d237eea0af73b66f6ad2cfc0c281fc96e2cb78ff200deab143b068c15a",
+          "size_bytes": 375019
+        }
+      }
+    ],
+    "overwrite_allowed": false,
+    "schema_version": 1
+  },
+  "toolkit_manifest_sha256": "10a2a9e2d626f5ffab53cbe909c0bfd296e5012a475dd8e6362228b301ea16e2"
+}

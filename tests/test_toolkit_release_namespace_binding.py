@@ -24,7 +24,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/release-toolkit-rc.yml"
-RECEIPT = ROOT / "docs/authority/receipts/custos-toolkit-rc7-authority-v1.json"
+RECEIPT = ROOT / "docs/authority/receipts/custos-toolkit-rc8-authority-v1.json"
 SNAPSHOT = ROOT / "docs/authority/ecosystem-authority.json"
 
 _NAMESPACE = re.compile(r"^[A-Za-z0-9][-A-Za-z0-9]*/[-A-Za-z0-9_.]+$")
