@@ -1,0 +1,49 @@
+{
+  "$id": "https://philosophers-stone.the-alephain-guild/contracts/artifact-attestation-ref-v1.schema.json",
+  "additionalProperties": false,
+  "description": "Detached reference created after statement and bundle bytes are immutable; not a verification or trust-policy receipt.",
+  "properties": {
+    "bundle_coordinate": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "bundle_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "payload_type": {
+      "const": "application/vnd.in-toto+json",
+      "minLength": 1,
+      "type": "string"
+    },
+    "predicate_type": {
+      "const": "https://the-alephain-guild.dev/attestation/strategy-release/v1",
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "alephain.artifact-attestation-ref.v1",
+      "minLength": 1,
+      "type": "string"
+    },
+    "statement_coordinate": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "statement_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "statement_coordinate",
+    "statement_sha256",
+    "bundle_coordinate",
+    "bundle_sha256",
+    "payload_type",
+    "predicate_type"
+  ],
+  "title": "ArtifactAttestationRefV1",
+  "type": "object"
+}

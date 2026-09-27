@@ -97,6 +97,9 @@ members = [
     "packages/custos-strategy-toolkit",
     "packages/custos-strategy-toolkit-nautilus",
 ]
+# The publisher signs with sigstore 4, which the runner's verifier pin (<4) cannot
+# share one lock with; it is its own project with its own lock.
+exclude = ["packages/custos-strategy-publisher"]
 
 [tool.uv.sources]
 custos-strategy-toolkit = { workspace = true }

@@ -1,0 +1,57 @@
+"""Artifact-local Custos execution ABI adapter for SuperTrend."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from decimal import Decimal
+from pathlib import Path
+from typing import cast
+from custos_toolkit.config import ConfigWrapper, deep_merge, load_yaml_file
+from custos_toolkit.config import loader as _config_loader
+from custos_toolkit.contracts.strategy_execution import (
+    FrozenJsonObject,
+    StrategyExecutionContextV1,
+)
+from custos_toolkit_nautilus.adapter import create_strategy
+
+from .refinement.nautilus import strategy as _strategy_registration
+
+
+type JsonValue = None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
+
+
+def _materialize(value: object) -> JsonValue:
+    if isinstance(value, Mapping):
+        return {str(key): _materialize(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_materialize(item) for item in value]
+    if isinstance(value, Decimal):
+        return float(value)
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    raise TypeError(f"unsupported effective config value: {type(value).__name__}")
+
+
+class SuperTrendRuntimeAdapterV1:
+    """Build the registered strategy only through the Custos V1 execution ABI."""
+
+    def build_config(
+        self,
+        effective_config: FrozenJsonObject,
+        execution_context: StrategyExecutionContextV1,
+    ) -> ConfigWrapper:
+        if execution_context.engine != "nautilus":
+            raise ValueError("SuperTrend requires the Nautilus engine")
+        base_path = Path(_config_loader.__file__).with_name("base_config.yaml")
+        strategy_path = Path(__file__).with_name("config.yaml")
+        base = load_yaml_file(base_path)
+        defaults = load_yaml_file(strategy_path)
+        effective = _materialize(effective_config)
+        if not isinstance(effective, dict):
+            raise TypeError("effective strategy config must materialize to an object")
+        effective_mapping = cast(dict[str, object], effective)
+        return ConfigWrapper(deep_merge(deep_merge(base, defaults), effective_mapping))
+
+    def build_strategy(self, config: ConfigWrapper) -> object:
+        _ = _strategy_registration
+        return create_strategy("supertrend", config_wrapper=config)

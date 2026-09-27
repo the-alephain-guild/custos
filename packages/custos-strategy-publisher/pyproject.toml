@@ -1,0 +1,66 @@
+[project]
+name = "custos-strategy-publisher"
+version = "0.1.0"
+description = "Build and publish signed strategy releases for the Custos signed lane"
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+dependencies = [
+    "packaging>=24",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Keyless signing runs only in the publish job; building a candidate needs none of it.
+sign = [
+    "sigstore==4.4.0",
+]
+# Building a release runs strict mypy against the strategy with the exact engine
+# it will run on, so the build job installs both.
+build = [
+    "mypy==1.19.1",
+    "nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-macosx_11_0_arm64.whl ; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_aarch64.whl ; sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_x86_64.whl ; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+
+[project.scripts]
+custos-strategy-release = "custos_strategy_publisher.cli:main"
+
+[dependency-groups]
+dev = [
+    "cryptography>=42",
+    "pytest>=8",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+# NautilusTrader has wheels for these three platforms and no others.
+environments = [
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# The engine is the Guild's NautilusTrader fork, installed from its release assets.
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/custos_strategy_publisher"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+# The rule set the release producer code was written and reviewed under.
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP"]
+ignore = ["E501"]
