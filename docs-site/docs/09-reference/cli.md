@@ -163,9 +163,9 @@ The following tables are generated from the actual parser. Defaults are shown wi
 | `--version` | required | — | — |
 | `--not-before` | required | — | — |
 | `--expires-at` | required | — | — |
-| `--issuer` | required | — | — |
-| `--workflow-identity` | required | — | — |
-| `--source-repository` | required | — | — |
+| `--issuer` | required | — | —; repeatable |
+| `--workflow-identity` | required | — | —; repeatable |
+| `--source-repository` | required | — | —; repeatable |
 | `--envelope-output` | required | — | — |
 | `--receipt-output` | required | — | — |
 | `--environment-output` | required | — | — |
@@ -317,6 +317,7 @@ The following tables are generated from the actual parser. Defaults are shown wi
 | `--runner-capability` | optional | `~/.arx/runner-capability.json` | — |
 | `--runner-fact-outbox` | optional | `~/.arx/state/runner-fact-outbox.db` | — |
 | `--development-artifact-root` | optional | `~/.alephain/v1-team/strategy-artifacts` | — |
+| `--development-producer-repository` | optional | `[]` | —; repeatable |
 | `--artifact-quarantine-dir` | optional | `~/.arx/state/artifact-quarantine` | — |
 | `--artifact-activation-dir` | optional | `~/.arx/state/artifact-activations` | — |
 | `--artifact-cache-dir` | optional | `~/.arx/state/artifact-cache` | — |

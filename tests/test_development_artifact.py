@@ -13,6 +13,9 @@ from custos.artifacts.development_source import (
     verify_development_artifact,
 )
 
+PS_PRODUCER = "alchymia-labs/philosophers-stone"
+ACCEPTED = frozenset({PS_PRODUCER})
+
 
 def _canonical(value: object) -> bytes:
     return json.dumps(
@@ -32,7 +35,7 @@ def _descriptor(path: str, content: bytes) -> dict[str, object]:
     }
 
 
-def _store(root: Path) -> tuple[DevelopmentSourceRefV1, str, Path]:
+def _store(root: Path, producer: str = PS_PRODUCER) -> tuple[DevelopmentSourceRefV1, str, Path]:
     wheel = b"deterministic development wheel"
     strategy_manifest = _canonical(
         {
@@ -56,7 +59,7 @@ def _store(root: Path) -> tuple[DevelopmentSourceRefV1, str, Path]:
             },
             "entry_point_group": "alephain.strategy_runtime.v1",
             "entry_point_name": ("alephain_strategy_supertrend.runtime:SuperTrendRuntimeAdapterV1"),
-            "producer_repository": "alchymia-labs/philosophers-stone",
+            "producer_repository": producer,
             "schema_version": "alephain.strategy-development-build-manifest.v1",
             "strategy_coordinate": "ps://strategy/trend/supertrend@2.1.0",
             "strategy_source_tree_sha256": source_tree_digest,
@@ -80,7 +83,7 @@ def _store(root: Path) -> tuple[DevelopmentSourceRefV1, str, Path]:
         {
             "build_manifest_sha256": hashlib.sha256(build_manifest).hexdigest(),
             "external_publication_completed": False,
-            "producer_repository": "alchymia-labs/philosophers-stone",
+            "producer_repository": producer,
             "promotable": False,
             "publication_kind": "content-addressed-directory-v1",
             "schema_version": ("alephain.strategy-artifact-development-publication-receipt.v1"),
@@ -118,6 +121,7 @@ def test_development_artifact_verifies_minimal_local_manifest(tmp_path: Path) ->
         publication_receipt_digest=receipt_digest,
         configured_root=tmp_path,
         runtime_mode="sandbox",
+        accepted_producers=ACCEPTED,
     )
 
     assert verified.entry_point_group == "alephain.strategy_runtime.v1"
@@ -133,6 +137,7 @@ def test_development_artifact_rejects_live_and_byte_drift(tmp_path: Path) -> Non
             publication_receipt_digest=receipt_digest,
             configured_root=tmp_path,
             runtime_mode="live",
+            accepted_producers=ACCEPTED,
         )
 
     (source_root / "layers/strategy-manifest-v1.json").write_bytes(b"{}")
@@ -142,4 +147,45 @@ def test_development_artifact_rejects_live_and_byte_drift(tmp_path: Path) -> Non
             publication_receipt_digest=receipt_digest,
             configured_root=tmp_path,
             runtime_mode="sandbox",
+            accepted_producers=ACCEPTED,
+        )
+
+
+def test_a_development_source_from_a_listed_producer_verifies(tmp_path: Path) -> None:
+    source_ref, receipt_digest, _ = _store(tmp_path, producer="example-owner/example-strategies")
+
+    verified = verify_development_artifact(
+        source_ref,
+        publication_receipt_digest=receipt_digest,
+        configured_root=tmp_path,
+        runtime_mode="sandbox",
+        accepted_producers=frozenset({PS_PRODUCER, "example-owner/example-strategies"}),
+    )
+
+    assert verified.publication_receipt["producer_repository"] == "example-owner/example-strategies"
+
+
+def test_a_development_source_from_an_unlisted_producer_is_refused(tmp_path: Path) -> None:
+    source_ref, receipt_digest, _ = _store(tmp_path, producer="example-owner/example-strategies")
+
+    with pytest.raises(DevelopmentSourceVerificationError, match="not an accepted producer"):
+        verify_development_artifact(
+            source_ref,
+            publication_receipt_digest=receipt_digest,
+            configured_root=tmp_path,
+            runtime_mode="sandbox",
+            accepted_producers=ACCEPTED,
+        )
+
+
+def test_no_accepted_producer_refuses_every_development_source(tmp_path: Path) -> None:
+    source_ref, receipt_digest, _ = _store(tmp_path)
+
+    with pytest.raises(DevelopmentSourceVerificationError, match="no producer is accepted"):
+        verify_development_artifact(
+            source_ref,
+            publication_receipt_digest=receipt_digest,
+            configured_root=tmp_path,
+            runtime_mode="sandbox",
+            accepted_producers=frozenset(),
         )

@@ -33,6 +33,6 @@ pull -> quarantine -> verify and extract -> activate -> import
 
 ## 开发输入
 
-签名通道的 `DevelopmentSourceRefV1` 是显式、按内容寻址的 sandbox 专用输入，使用 `--development-artifact-root`。它不能用于 testnet/live，也不能晋升为生产发布。
+签名通道的 `DevelopmentSourceRefV1` 是显式、按内容寻址的 sandbox 专用输入，使用 `--development-artifact-root`。它不能用于 testnet/live，也不能晋升为生产发布。runner 只接受由 `--development-producer-repository`（或 `CUSTOS_DEVELOPMENT_PRODUCER_REPOSITORIES`）列出的仓库发布的开发源码；一个都没列时，所有开发源码都会被拒绝。
 
 离线通道另行在 sandbox/testnet 加载操作者挂载的目录。目录 hash 记录本地内容，不提供签名发布保障。详见[离线 testnet](/operator-guide/offline-testnet)和[产物签名](/toolkit/artifact-signing)。

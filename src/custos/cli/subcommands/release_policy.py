@@ -48,7 +48,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
     issue = actions.add_parser(
         "issue",
-        help="Sign one exact ReleaseTrustPolicyV1 with an explicit policy authority.",
+        help=(
+            "Sign one exact ReleaseTrustPolicyV1 with an explicit policy authority. "
+            "Repeat --issuer, --workflow-identity and --source-repository together "
+            "to accept releases from more than one producer."
+        ),
     )
     issue.add_argument("--authority-private-key", required=True, type=Path)
     issue.add_argument("--authority-public-key", required=True, type=Path)
@@ -57,9 +61,9 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     issue.add_argument("--version", required=True, type=int)
     issue.add_argument("--not-before", required=True, type=_aware_datetime)
     issue.add_argument("--expires-at", required=True, type=_aware_datetime)
-    issue.add_argument("--issuer", required=True)
-    issue.add_argument("--workflow-identity", required=True)
-    issue.add_argument("--source-repository", required=True)
+    issue.add_argument("--issuer", required=True, action="append")
+    issue.add_argument("--workflow-identity", required=True, action="append")
+    issue.add_argument("--source-repository", required=True, action="append")
     issue.add_argument("--envelope-output", required=True, type=Path)
     issue.add_argument("--receipt-output", required=True, type=Path)
     issue.add_argument("--environment-output", required=True, type=Path)
@@ -134,13 +138,7 @@ def _issue(args: argparse.Namespace) -> int:
             not_before=args.not_before,
             expires_at=args.expires_at,
             sigstore_trusted_root_sha256=hashlib.sha256(trusted_root_bytes).hexdigest(),
-            accepted_identities=(
-                SigstoreIdentityV1(
-                    issuer=args.issuer,
-                    workflow_identity=args.workflow_identity,
-                    source_repository=args.source_repository,
-                ),
-            ),
+            accepted_identities=_identities(args),
             require_transparency_log=True,
             archive_limits=ArchiveLimitsV1(),
         )
@@ -186,6 +184,23 @@ def _issue(args: argparse.Namespace) -> int:
         f"policy_id={policy.policy_id} version={policy.version} key_id={key_id}"
     )
     return 0
+
+
+def _identities(args: argparse.Namespace) -> tuple[SigstoreIdentityV1, ...]:
+    """Pair the repeated identity flags by position; each producer names all three."""
+
+    counts = {len(args.issuer), len(args.workflow_identity), len(args.source_repository)}
+    if len(counts) != 1:
+        raise ValueError(
+            "--issuer, --workflow-identity and --source-repository must be given the same "
+            "number of times, once for each accepted producer"
+        )
+    return tuple(
+        SigstoreIdentityV1(issuer=issuer, workflow_identity=workflow, source_repository=repository)
+        for issuer, workflow, repository in zip(
+            args.issuer, args.workflow_identity, args.source_repository, strict=True
+        )
+    )
 
 
 def _aware_datetime(value: str) -> datetime:

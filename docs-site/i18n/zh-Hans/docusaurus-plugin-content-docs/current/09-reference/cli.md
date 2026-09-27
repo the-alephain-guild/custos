@@ -163,9 +163,9 @@ sidebar_position: 1
 | `--version` | 必填 | — | — |
 | `--not-before` | 必填 | — | — |
 | `--expires-at` | 必填 | — | — |
-| `--issuer` | 必填 | — | — |
-| `--workflow-identity` | 必填 | — | — |
-| `--source-repository` | 必填 | — | — |
+| `--issuer` | 必填 | — | —; 可重复 |
+| `--workflow-identity` | 必填 | — | —; 可重复 |
+| `--source-repository` | 必填 | — | —; 可重复 |
 | `--envelope-output` | 必填 | — | — |
 | `--receipt-output` | 必填 | — | — |
 | `--environment-output` | 必填 | — | — |
@@ -317,6 +317,7 @@ sidebar_position: 1
 | `--runner-capability` | 可选 | `~/.arx/runner-capability.json` | — |
 | `--runner-fact-outbox` | 可选 | `~/.arx/state/runner-fact-outbox.db` | — |
 | `--development-artifact-root` | 可选 | `~/.alephain/v1-team/strategy-artifacts` | — |
+| `--development-producer-repository` | 可选 | `[]` | —; 可重复 |
 | `--artifact-quarantine-dir` | 可选 | `~/.arx/state/artifact-quarantine` | — |
 | `--artifact-activation-dir` | 可选 | `~/.arx/state/artifact-activations` | — |
 | `--artifact-cache-dir` | 可选 | `~/.arx/state/artifact-cache` | — |

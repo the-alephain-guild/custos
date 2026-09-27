@@ -46,6 +46,8 @@ class DevelopmentArtifactRuntimeConfigV1:
     quarantine_parent: Path
     activation_parent: Path
     archive_limits: ArchiveLimitsV1
+    # Repositories whose development sources this runner accepts; none by default.
+    accepted_producers: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if any(
@@ -140,6 +142,7 @@ class DevelopmentStrategyArtifactRuntimeV1:
                 publication_receipt_digest=material.publication_receipt_digest,
                 configured_root=self._config.artifact_root,
                 runtime_mode=command.mode,
+                accepted_producers=self._config.accepted_producers,
             )
         except FileNotFoundError as error:
             raise DevelopmentArtifactRuntimeBlocked(

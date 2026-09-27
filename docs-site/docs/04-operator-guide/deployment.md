@@ -33,6 +33,8 @@ uv run arx-runner release-policy issue \
   --environment-output "$POLICY_ENV_FILE"
 ```
 
+To accept releases from more than one producer, repeat `--issuer`, `--workflow-identity` and `--source-repository` together, once per producer, in the same order.
+
 `release-policy generate-development-authority` can create keys for an isolated local exercise. Such an authority is explicitly development-only; it is not production approval.
 
 Configure the runner with the resulting envelope, public key, derived key id and trusted root:

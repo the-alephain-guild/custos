@@ -10,7 +10,7 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json",
-    "sha256": "858ee666d3a83a6a9524b3101c5c019d5fbaff26f4d89dac9fc6457fa10c0f16",
+    "sha256": "cf5a5134b40251cf08587ea1a64b4a3680e735c5cff0412be918094f8d26dfc0",
     "size_bytes": 7595
   },
   "contract_guards": {

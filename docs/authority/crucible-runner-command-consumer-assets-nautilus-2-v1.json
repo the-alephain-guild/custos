@@ -26,8 +26,8 @@
     },
     {
       "path": "src/custos/artifacts/development_runtime.py",
-      "sha256": "8c799b71f8d2b596fc5224702832cfea1e8172959559d4ad5333ffb51cee7fb8",
-      "size_bytes": 9019
+      "sha256": "69ce0ba08f0131766b2066f5736a7f3b3dc37d8d57b202876aa3c5b7fd4ee4e2",
+      "size_bytes": 9223
     },
     {
       "path": "docs/authority/runner-deployment-command-golden-v1.json",

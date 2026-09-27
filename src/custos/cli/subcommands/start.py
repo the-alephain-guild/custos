@@ -144,6 +144,22 @@ def register(subparsers: argparse._SubParsersAction) -> None:
         help="Shared sandbox-only content-addressed artifact store.",
     )
     parser.add_argument(
+        "--development-producer-repository",
+        action="append",
+        default=[
+            repository.strip()
+            for repository in os.environ.get("CUSTOS_DEVELOPMENT_PRODUCER_REPOSITORIES", "").split(
+                ","
+            )
+            if repository.strip()
+        ],
+        metavar="OWNER/REPOSITORY",
+        help=(
+            "A repository whose development sources this runner accepts; repeat for "
+            "each. None is accepted by default."
+        ),
+    )
+    parser.add_argument(
         "--artifact-quarantine-dir",
         type=Path,
         default=DEFAULT_ARTIFACT_QUARANTINE_DIR,
@@ -385,6 +401,7 @@ def run(args: argparse.Namespace) -> int:
         runner_capability=args.runner_capability,
         runner_fact_outbox=args.runner_fact_outbox,
         development_artifact_root=args.development_artifact_root,
+        development_producer_repositories=tuple(args.development_producer_repository),
         artifact_quarantine_dir=args.artifact_quarantine_dir,
         artifact_activation_dir=args.artifact_activation_dir,
         artifact_cache_dir=args.artifact_cache_dir,

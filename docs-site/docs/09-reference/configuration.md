@@ -52,6 +52,7 @@ Files holding identity or credentials use `0600`; private directories use `0700`
 | `CUSTOS_ARTIFACT_REGISTRY` / `CUSTOS_ARTIFACT_CACHE_DIR` | Registry and cache defaults |
 | `CUSTOS_ARTIFACT_REGISTRY_USERNAME` / `CUSTOS_ARTIFACT_REGISTRY_TOKEN` | Private registry authentication, provided together |
 | `CUSTOS_DEVELOPMENT_ARTIFACT_ROOT` | Explicit sandbox development-source location |
+| `CUSTOS_DEVELOPMENT_PRODUCER_REPOSITORIES` | Comma-separated `OWNER/REPOSITORY` list whose development sources are accepted; none by default |
 | `CUSTOS_DEVELOPMENT_LOCAL_NATS_URL` | Explicit loopback sandbox transport exception for the signed development path |
 | `CUSTOS_VENUE_PROXY_URL` | Forward proxy for all venue traffic; see below |
 

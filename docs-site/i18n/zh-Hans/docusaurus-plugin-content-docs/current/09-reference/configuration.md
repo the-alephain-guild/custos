@@ -52,6 +52,7 @@ sidebar_position: 2
 | `CUSTOS_ARTIFACT_REGISTRY` / `CUSTOS_ARTIFACT_CACHE_DIR` | Registry 与缓存默认值 |
 | `CUSTOS_ARTIFACT_REGISTRY_USERNAME` / `CUSTOS_ARTIFACT_REGISTRY_TOKEN` | 私有 registry 认证，需同时提供 |
 | `CUSTOS_DEVELOPMENT_ARTIFACT_ROOT` | 显式 sandbox 开发源码位置 |
+| `CUSTOS_DEVELOPMENT_PRODUCER_REPOSITORIES` | 接受其开发源码的仓库，逗号分隔的 `OWNER/REPOSITORY`；默认一个都不接受 |
 | `CUSTOS_DEVELOPMENT_LOCAL_NATS_URL` | 签名开发路径中显式的 loopback sandbox 传输例外 |
 | `CUSTOS_VENUE_PROXY_URL` | 所有交易所流量的出站代理，见下文 |
 
