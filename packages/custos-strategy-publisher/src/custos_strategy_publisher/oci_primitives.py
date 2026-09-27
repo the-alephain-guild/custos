@@ -30,6 +30,10 @@ WORKFLOW_REF_PATTERN = (
     r"@(?:refs/(?:heads|tags)/\S+|[0-9a-f]{40})$"
 )
 SOURCE_REF_PATTERN = r"^refs/(?:heads|tags)/\S+$"
+# A discovery tag names the strategy and its version: <category>-<name>-<version>.
+DISCOVERY_TAG_PATTERN = r"^[a-z0-9][a-z0-9._-]*-[0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?$"
+# A producer repository as GitHub names it: <owner>/<name>.
+PRODUCER_REPOSITORY_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$"
 OIDC_SUBJECT_PATTERN = r"^repo:[A-Za-z0-9-]+/[A-Za-z0-9._-]+:ref:(refs/(?:heads|tags)/\S+)$"
 _GHCR_REPOSITORY_RE = re.compile(GHCR_REPOSITORY_PATTERN)
 _WORKFLOW_REF_RE = re.compile(WORKFLOW_REF_PATTERN)
@@ -56,7 +60,6 @@ RELEASE_LAYER_MEDIA_TYPES: dict[str, str] = {
 
 _SHA256_DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
-_RC_TAG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,110}rc[1-9][0-9]*$")
 _ROLE_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
 _SHA256_HEX_RE = re.compile(r"^[0-9a-f]{64}$")

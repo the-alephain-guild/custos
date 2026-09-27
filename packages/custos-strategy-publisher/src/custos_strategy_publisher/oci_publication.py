@@ -12,6 +12,7 @@ from typing import Protocol, Self, cast
 from .model import ArtifactAttestationRefV1, canonical_json_bytes
 from .oci_primitives import (
     ATTESTATION_REF_MEDIA_TYPE,
+    DISCOVERY_TAG_PATTERN,
     GHCR_REPOSITORY_PATTERN,
     GITHUB_OIDC_AUDIENCE,
     GITHUB_OIDC_ISSUER,
@@ -52,7 +53,7 @@ _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 # A discovery tag names the strategy and its version, such as trend-supertrend-2.1.1;
 # it is a pointer only, never authority.
-_TAG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*-[0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?$")
+_TAG_RE = re.compile(DISCOVERY_TAG_PATTERN)
 _NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$")
 
 
