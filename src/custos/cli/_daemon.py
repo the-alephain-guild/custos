@@ -1158,6 +1158,9 @@ async def run_daemon(args: argparse.Namespace) -> int:
                     quarantine_parent=args.artifact_quarantine_dir.expanduser().resolve(),
                     activation_parent=args.artifact_activation_dir.expanduser().resolve(),
                     archive_limits=ArchiveLimitsV1(),
+                    accepted_producers=frozenset(
+                        getattr(args, "development_producer_repositories", ())
+                    ),
                 ),
             )
             release_resolver, strategy_artifact_runtime = _build_strategy_release_runtime(

@@ -149,3 +149,58 @@ def test_issue_rejects_a_mismatched_public_key(tmp_path: Path) -> None:
 
     assert main(_issue(tmp_path, private_key, other_public_key, root)) == 1
     assert not (tmp_path / "issued" / "release-policy.json").exists()
+
+
+PRIVATE_REPOSITORY = "https://github.com/example-owner/example-strategies"
+PRIVATE_WORKFLOW = (
+    "https://github.com/the-alephain-guild/custos/"
+    ".github/workflows/publish-strategy-release.yml@refs/tags/v0.4.0"
+)
+
+
+def _with_second_identity(arguments: list[str]) -> list[str]:
+    index = arguments.index("--envelope-output")
+    return [
+        *arguments[:index],
+        "--issuer",
+        ISSUER,
+        "--workflow-identity",
+        PRIVATE_WORKFLOW,
+        "--source-repository",
+        PRIVATE_REPOSITORY,
+        *arguments[index:],
+    ]
+
+
+def test_a_policy_accepts_every_identity_it_is_issued_with(tmp_path: Path) -> None:
+    private_key, public_key, _ = _generate(tmp_path)
+    root = tmp_path / "sigstore-trusted-root.json"
+    root.write_bytes(b'{"trustedRoot":"fixture"}')
+
+    assert main(_with_second_identity(_issue(tmp_path, private_key, public_key, root))) == 0
+
+    receipt = json.loads((tmp_path / "issued" / "issuance-receipt.json").read_text())
+    public_bytes = base64.b64decode(public_key.read_text().strip(), validate=True)
+    verified = verify_signed_release_policy(
+        (tmp_path / "issued" / "release-policy.json").read_bytes(),
+        authority_key_id=receipt["authority_key_id"],
+        authority_public_key=Ed25519PublicKey.from_public_bytes(public_bytes),
+        sigstore_trusted_root_bytes=root.read_bytes(),
+        now=datetime(2026, 8, 10, 12, tzinfo=UTC),
+    )
+    assert [
+        (identity.workflow_identity, identity.source_repository)
+        for identity in verified.policy.accepted_identities
+    ] == [(WORKFLOW, REPOSITORY), (PRIVATE_WORKFLOW, PRIVATE_REPOSITORY)]
+
+
+def test_identity_parts_must_come_in_complete_sets(tmp_path: Path) -> None:
+    private_key, public_key, _ = _generate(tmp_path)
+    root = tmp_path / "sigstore-trusted-root.json"
+    root.write_bytes(b'{"trustedRoot":"fixture"}')
+    arguments = _issue(tmp_path, private_key, public_key, root)
+    index = arguments.index("--envelope-output")
+    incomplete = [*arguments[:index], "--source-repository", PRIVATE_REPOSITORY, *arguments[index:]]
+
+    assert main(incomplete) == 1
+    assert not (tmp_path / "issued" / "release-policy.json").exists()

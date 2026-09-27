@@ -5,11 +5,21 @@
 ## Ownership
 
 Custos owns the strategy execution ABI, toolkit implementation, pre-sign
-`StrategyArtifactRefV1`, and local fail-closed verifier. Philosophers-Stone owns
-strategy source, canonical `StrategyReleaseBomV1`, the signed
-`StrategyReleaseStatementV1`, and detached `ArtifactAttestationRefV1`. Crucible
+`StrategyArtifactRefV1`, the local fail-closed verifier, and the release
+contract every producer publishes: canonical `StrategyReleaseBomV1`, the signed
+`StrategyReleaseStatementV1`, and detached `ArtifactAttestationRefV1`. A
+producer owns its strategy source and publishes releases under that contract;
+Philosophers-Stone is one producer among those a trust policy lists. Crucible
 owns `ArtifactEvidenceV1`, acceptance receipts, StrategyRelease, artifact
 selection, DeploymentSpec, effective configuration, and business risk policy.
+
+Which producers are trusted is decided by whoever operates Crucible and the
+runner, in their trust policies: Crucible's strategy attestation policy and the
+runner's signed release trust policy each list the accepted source repositories
+and signing workflow identities, and the runner lists the repositories whose
+sandbox-only development sources it accepts. No code names a producer. Schema
+identifiers keep their existing names, including those that carry a
+producer's name, so published evidence stays valid.
 
 The legacy Philosophers-Stone `build-image.sh` to Crucible Python publication
 and deployment path remains an independent compatibility lane. It cannot

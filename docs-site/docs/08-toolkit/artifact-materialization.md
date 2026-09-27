@@ -33,6 +33,6 @@ Persist the activation and runtime state needed for restart recovery. A cache is
 
 ## Development inputs
 
-Signed-lane `DevelopmentSourceRefV1` is an explicit, content-addressed sandbox-only input selected through `--development-artifact-root`. It cannot be used in testnet/live or promoted into a production release.
+Signed-lane `DevelopmentSourceRefV1` is an explicit, content-addressed sandbox-only input selected through `--development-artifact-root`. It cannot be used in testnet/live or promoted into a production release. The runner accepts it only from a repository listed with `--development-producer-repository` (or `CUSTOS_DEVELOPMENT_PRODUCER_REPOSITORIES`); with none listed, every development source is refused.
 
 The offline lane separately loads an operator-mounted directory in sandbox/testnet. Its directory hash records local content; it provides no signed-release assurance. See [offline testnet](/operator-guide/offline-testnet) and [artifact signing](/toolkit/artifact-signing).

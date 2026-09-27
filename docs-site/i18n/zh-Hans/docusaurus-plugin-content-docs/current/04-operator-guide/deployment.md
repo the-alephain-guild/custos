@@ -33,6 +33,8 @@ uv run arx-runner release-policy issue \
   --environment-output "$POLICY_ENV_FILE"
 ```
 
+要接受多个发布方的 release，按发布方逐一重复 `--issuer`、`--workflow-identity` 与 `--source-repository`，三者成组、顺序一致。
+
 `release-policy generate-development-authority` 可为隔离的本地练习创建密钥。该 authority 明确仅供开发，不构成生产批准。
 
 使用生成的 envelope、公钥、派生 key id 和可信根配置 runner：

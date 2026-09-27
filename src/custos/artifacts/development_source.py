@@ -19,7 +19,6 @@ _BUILD_INPUT_FILENAME = "development-build-manifest-v1.json"
 _BUILD_SCHEMA = "alephain.strategy-development-build-manifest.v1"
 _RECEIPT_SCHEMA = "alephain.strategy-artifact-development-publication-receipt.v1"
 _PUBLICATION_KIND = "content-addressed-directory-v1"
-_PRODUCER_REPOSITORY = "alchymia-labs/philosophers-stone"
 _TOOLKIT_DIGEST_PROFILE = "sha256-canonical-custos-toolkit-source-v1"
 _ARTIFACT_ROLES = frozenset({"strategy_manifest", "strategy_wheel"})
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -171,7 +170,17 @@ def verify_development_artifact(
     publication_receipt_digest: str,
     configured_root: Path,
     runtime_mode: str,
+    accepted_producers: frozenset[str],
 ) -> VerifiedDevelopmentArtifactV1:
+    """Verify a development artifact published by one of `accepted_producers`.
+
+    Which repositories may publish development sources is the operator's decision,
+    passed in from the runner's configuration; none is accepted by default.
+    """
+    if not accepted_producers:
+        raise DevelopmentSourceVerificationError(
+            "no producer is accepted for development sources; list one in the runner configuration"
+        )
     source = verify_development_source(
         source_ref,
         configured_root=configured_root,
@@ -212,7 +221,6 @@ def verify_development_artifact(
         receipt["schema_version"] != _RECEIPT_SCHEMA
         or receipt["publication_kind"] != _PUBLICATION_KIND
         or receipt["source_digest_profile"] != DEVELOPMENT_SOURCE_DIGEST_PROFILE
-        or receipt["producer_repository"] != _PRODUCER_REPOSITORY
         or receipt["source_sha256"] != source_ref.source_sha256
         or receipt["trading_mode"] != "sandbox"
         or receipt["promotable"] is not False
@@ -223,6 +231,11 @@ def verify_development_artifact(
         or not receipt["toolkit_version"]
     ):
         raise DevelopmentSourceVerificationError("publication receipt authority differs")
+    producer = receipt["producer_repository"]
+    if not isinstance(producer, str) or producer not in accepted_producers:
+        raise DevelopmentSourceVerificationError(
+            f"{producer!r} is not an accepted producer of development sources"
+        )
     for field in (
         "build_manifest_sha256",
         "strategy_source_tree_sha256",

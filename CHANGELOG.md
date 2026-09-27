@@ -15,6 +15,12 @@ protocol — is published at
 
 ### Added
 
+- `release-policy issue` accepts more than one producer: repeat `--issuer`,
+  `--workflow-identity` and `--source-repository` together, once per producer.
+- `start --development-producer-repository OWNER/REPOSITORY` (repeatable, or
+  `CUSTOS_DEVELOPMENT_PRODUCER_REPOSITORIES`) lists the repositories whose
+  sandbox-only development sources the runner accepts.
+
 - The offline lane publishes local telemetry for the operator's own tools:
   a snapshot of each running deployment's status, open positions and open
   orders every 10 seconds on
@@ -39,6 +45,12 @@ protocol — is published at
 - Releases ship on GitHub only. The release workflow no longer has a PyPI
   job, and the post-publish check `make verify-release` verifies the signed
   image alone.
+- **Breaking:** a signed-lane runner no longer accepts development sources from
+  a producer named in its code. List each accepted repository with
+  `--development-producer-repository`; with none listed, development
+  deployments are refused. The release contract (`StrategyReleaseBomV1`, the
+  signed statement and the detached attestation) is now owned by Custos, with
+  every producer publishing under it; schema identifiers are unchanged.
 - **Breaking:** `StrategyManifestV1` requires `trading_scope` --
   `{"connector": ..., "pairs": [...], "leverage": ...}` -- the connector, pairs
   and leverage the release was validated to trade. A release whose manifest has
