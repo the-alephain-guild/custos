@@ -13,6 +13,23 @@ protocol — is published at
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-09-27
+
+It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.4.1`
+and as source; there is no PyPI package. It fixes the strategy release publisher,
+which the first release built from a strategy template could not get through.
+Call the reusable workflow at `@v0.4.1`; a runner or deployment service that
+trusts releases published through it lists that tag as the workflow identity.
+
+### Fixed
+
+- The publisher no longer takes a template strategy's section titles, such as
+  `parameters._section`, for parameters; a config that declares no parameters
+  is refused.
+- The publisher's build environment installs `msgspec`, which every release
+  declares as a dependency and template strategies import; strict typing of a
+  template strategy failed without it.
+
 ## [0.4.0] - 2026-09-27
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.4.0`
