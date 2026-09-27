@@ -1,7 +1,7 @@
-# SuperTrend on Binance testnet with Custos 0.4.1
+# SuperTrend on Binance testnet with Custos 0.4.2
 
 This Compose example runs only the Custos execution boundary from the verified
-local `custos-runner:v0.4.1` image. A reachable Crucible deployment service and
+local `custos-runner:v0.4.2` image. A reachable Crucible deployment service and
 its provisioned JetStream domain-event stream are prerequisites. No derived
 Custos Dockerfile, local business-stream bootstrap, or runner-side command
 publisher is used.
@@ -37,7 +37,7 @@ printf '%s' '<one-time-token>' > runtime/.arx/enrollment-token
 docker run --rm \
   -v "$PWD/runtime/.arx:/home/custos/.arx" \
   -e SOPS_AGE_RECIPIENT \
-  custos-runner:v0.4.1 enroll \
+  custos-runner:v0.4.2 enroll \
   --token-file /home/custos/.arx/enrollment-token \
   --backend "$CRUCIBLE_HTTP_URL" \
   --tenant-id "$CUSTOS_TENANT_ID" \
@@ -58,7 +58,7 @@ used by a source installation.
 ```bash
 printf '%s\n' '<binance-testnet-api-secret>' | docker run --rm -i \
   -v "$PWD/runtime/.arx:/home/custos/.arx" \
-  custos-runner:v0.4.1 vault put \
+  custos-runner:v0.4.2 vault put \
   --key-id binance-testnet \
   --tenant-id "$CUSTOS_TENANT_ID" \
   --api-key '<binance-testnet-api-key>' \

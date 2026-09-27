@@ -1,4 +1,4 @@
-# SuperTrend sandbox with Custos 0.4.1
+# SuperTrend sandbox with Custos 0.4.2
 
 This example runs NautilusTrader with live market data and locally simulated
 fills. Crucible remains the deployment owner: it enrolls the runner, owns the

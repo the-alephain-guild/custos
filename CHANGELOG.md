@@ -13,6 +13,20 @@ protocol — is published at
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-09-27
+
+It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.4.2`
+and as source; there is no PyPI package. Call the reusable publishing workflow at
+`@v0.4.2`; a runner or deployment service that trusts releases published through
+it lists that tag as the workflow identity.
+
+### Fixed
+
+- The publisher accepts GitHub's immutable OIDC subjects, in which each name
+  carries its numeric id (`repo:owner@1/name@2:ref:refs/heads/main`). A
+  repository with immutable subjects enabled could not publish: its release
+  stopped at assembly. A refused subject is now quoted in the error.
+
 ## [0.4.1] - 2026-09-27
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.4.1`

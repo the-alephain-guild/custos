@@ -29,23 +29,33 @@ ACTIVE_RUNTIME_DOCS = (
     SANDBOX_DIR / "README.md",
     TESTNET_DIR / "README.md",
 )
-LOCAL_IMAGE = "custos-runner:v0.4.1"
-REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.4.1"
+LOCAL_IMAGE = "custos-runner:v0.4.2"
+REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.4.2"
+REMOTE_IMAGE_V041 = "ghcr.io/the-alephain-guild/custos:v0.4.1"
 REMOTE_IMAGE_V040 = "ghcr.io/the-alephain-guild/custos:v0.4.0"
 REMOTE_IMAGE_V030 = "ghcr.io/the-alephain-guild/custos:v0.3.0"
 MAKEFILE = REPO_ROOT / "Makefile"
 OPERATOR_DEPLOYMENT = REPO_ROOT / "docs-site" / "docs" / "04-operator-guide" / "deployment.md"
 
 
-def test_project_and_lock_are_versioned_v041() -> None:
+def test_project_and_lock_are_versioned_v042() -> None:
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     locked_project = next(
         package for package in lock["package"] if package["name"] == "custos-runner"
     )
 
-    assert project["project"]["version"] == "0.4.1"
-    assert locked_project["version"] == "0.4.1"
+    assert project["project"]["version"] == "0.4.2"
+    assert locked_project["version"] == "0.4.2"
+
+
+def test_changelog_documents_the_published_v042() -> None:
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    v042 = " ".join(text[text.index("## [0.4.2]") : text.index("## [0.4.1]")].split())
+
+    assert "## [0.4.2] - 2026-09-27" in text
+    assert REMOTE_IMAGE in v042
+    assert "@v0.4.2" in v042
 
 
 def test_changelog_documents_the_published_v041() -> None:
@@ -53,7 +63,7 @@ def test_changelog_documents_the_published_v041() -> None:
     v041 = " ".join(text[text.index("## [0.4.1]") : text.index("## [0.4.0]")].split())
 
     assert "## [0.4.1] - 2026-09-27" in text
-    assert REMOTE_IMAGE in v041
+    assert REMOTE_IMAGE_V041 in v041
     assert "@v0.4.1" in v041
 
 

@@ -42,7 +42,7 @@ make toolkit-typecheck
 make verify-local-v030
 ```
 
-This builds `custos-runner:v0.4.1`, labels it with the source revision, checks the image runtime contract and prints the image id/revision. It does not exercise a full signed deployment round trip or prove production readiness. A modified derivative image needs its own verification.
+This builds `custos-runner:v0.4.2`, labels it with the source revision, checks the image runtime contract and prints the image id/revision. It does not exercise a full signed deployment round trip or prove production readiness. A modified derivative image needs its own verification.
 
 See [release status](/release-governance/release-status) for supported use and current limitations. A successful local build does not establish production readiness.
 
