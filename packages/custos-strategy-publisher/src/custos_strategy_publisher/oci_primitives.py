@@ -34,11 +34,23 @@ SOURCE_REF_PATTERN = r"^refs/(?:heads|tags)/\S+$"
 DISCOVERY_TAG_PATTERN = r"^[a-z0-9][a-z0-9._-]*-[0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?$"
 # A producer repository as GitHub names it: <owner>/<name>.
 PRODUCER_REPOSITORY_PATTERN = r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$"
-OIDC_SUBJECT_PATTERN = r"^repo:[A-Za-z0-9-]+/[A-Za-z0-9._-]+:ref:(refs/(?:heads|tags)/\S+)$"
+# GitHub's subject names the repository that ran the job. With immutable
+# subjects enabled, each name carries its numeric id: repo:owner@1/name@2:ref:...
+OIDC_SUBJECT_PATTERN = (
+    r"^repo:([A-Za-z0-9-]+)(?:@[0-9]+)?/([A-Za-z0-9._-]+)(?:@[0-9]+)?"
+    r":ref:(refs/(?:heads|tags)/\S+)$"
+)
 _GHCR_REPOSITORY_RE = re.compile(GHCR_REPOSITORY_PATTERN)
 _WORKFLOW_REF_RE = re.compile(WORKFLOW_REF_PATTERN)
 _SOURCE_REF_RE = re.compile(SOURCE_REF_PATTERN)
 _OIDC_SUBJECT_RE = re.compile(OIDC_SUBJECT_PATTERN)
+
+
+def subject_repository(subject: str) -> str | None:
+    """The <owner>/<name> an OIDC subject names, without immutable ids."""
+
+    match = _OIDC_SUBJECT_RE.fullmatch(subject)
+    return None if match is None else f"{match.group(1)}/{match.group(2)}"
 
 
 def require_ghcr_repository(repository: str) -> str:
@@ -265,8 +277,11 @@ class PublicationWorkflowIdentityV1:
         # reusable workflow is not the workflow's own repository; its ref must be
         # the source ref.
         subject = _OIDC_SUBJECT_RE.fullmatch(self.oidc_subject)
-        if subject is None or subject.group(1) != self.source_ref:
-            raise ValueError("oidc_subject must be repo:<owner>/<repo>:ref:<source_ref>")
+        if subject is None or subject.group(3) != self.source_ref:
+            raise ValueError(
+                "oidc_subject must be repo:<owner>/<repo>:ref:<source_ref>, "
+                f"got {self.oidc_subject!r} with source_ref {self.source_ref!r}"
+            )
         for field in ("workflow_run_id", "workflow_run_attempt"):
             value = getattr(self, field)
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:

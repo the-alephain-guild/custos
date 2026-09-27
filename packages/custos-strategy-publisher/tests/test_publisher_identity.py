@@ -19,6 +19,7 @@ from custos_strategy_publisher.oci_primitives import (
     OciPublicationError,
     PublicationWorkflowIdentityV1,
     require_ghcr_repository,
+    subject_repository,
 )
 from custos_strategy_publisher.oci_publication import _TAG_RE
 
@@ -47,6 +48,15 @@ def test_a_reusable_workflow_run_from_another_repository_is_accepted() -> None:
     identity = _identity()
 
     assert identity.oidc_subject.startswith("repo:example-owner/example-strategies:")
+
+
+def test_an_immutable_subject_with_ids_is_accepted() -> None:
+    subject = "repo:example-owner@90892465/example-strategies@1385027778:ref:refs/heads/main"
+
+    assert _identity(oidc_subject=subject).oidc_subject == subject
+    assert subject_repository(subject) == "example-owner/example-strategies"
+    assert subject_repository("repo:owner/name:ref:refs/heads/main") == "owner/name"
+    assert subject_repository("owner/name") is None
 
 
 def test_a_workflow_pinned_by_commit_is_accepted() -> None:

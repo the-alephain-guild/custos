@@ -35,6 +35,7 @@ from .oci_primitives import (
     SIGSTORE_BUNDLE_MEDIA_TYPE,
     OciBlobV1,
     PublicationWorkflowIdentityV1,
+    subject_repository,
 )
 from .oci_publication import PUBLISH_INPUT_V1_SCHEMA_VERSION, OciCandidateV1
 from .sigstore_signing import (
@@ -135,8 +136,10 @@ def assemble_publication_input(
             f"the statement was built for {built_for[1]} in {built_for[0]}, "
             f"but this job signs as {workflow.workflow_identity} in {producer_url}"
         )
-    if not workflow.oidc_subject.startswith(f"repo:{producer_repository}:"):
-        raise UnsignedCandidateError("this job's OIDC subject names another repository")
+    if subject_repository(workflow.oidc_subject) != producer_repository:
+        raise UnsignedCandidateError(
+            f"this job's OIDC subject {workflow.oidc_subject!r} names another repository"
+        )
     signing = sign_exact_statement(
         statement.content,
         backend=backend if backend is not None else PublicGoodSigstoreBackend(),

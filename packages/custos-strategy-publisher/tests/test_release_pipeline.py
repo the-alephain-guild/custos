@@ -207,8 +207,14 @@ def _b64(value: bytes) -> str:
 class FakeSigningBackend:
     """Returns a structurally complete bundle whose certificate names what it is told."""
 
-    def __init__(self, identity: str = PUBLISHER_IDENTITY, repository: str = PRODUCER) -> None:
+    def __init__(
+        self,
+        identity: str = PUBLISHER_IDENTITY,
+        repository: str = PRODUCER,
+        subject: str = SUBJECT,
+    ) -> None:
         self._certificate = _certificate(identity, repository)
+        self._subject = subject
 
     def sign_dsse(self, statement_bytes: bytes) -> SigningResult:
         bundle = {
@@ -248,7 +254,7 @@ class FakeSigningBackend:
         return SigningResult(
             bundle_json=json.dumps(bundle, separators=(",", ":")),
             trusted_root_json=json.dumps(trusted_root, separators=(",", ":")),
-            certificate_identity=SUBJECT,
+            certificate_identity=self._subject,
             oidc_issuer=GITHUB_OIDC_ISSUER,
             library_version="4.4.0",
         )
@@ -434,11 +440,26 @@ def test_a_statement_built_for_another_workflow_is_not_signed(tmp_path: Path) ->
     assert not (tmp_path / "assembled").exists()
 
 
+def test_an_immutable_subject_for_the_producer_signs(tmp_path: Path) -> None:
+    candidate = _finalize(tmp_path)
+    owner, name = PRODUCER.split("/")
+    subject = f"repo:{owner}@90892465/{name}@1385027778:ref:refs/heads/main"
+
+    assembled = _assemble(
+        candidate,
+        tmp_path / "assembled",
+        workflow=_workflow(oidc_subject=subject),
+        backend=FakeSigningBackend(subject=subject),
+    )
+
+    assert assembled.workflow.oidc_subject == subject
+
+
 def test_a_job_whose_subject_names_another_repository_does_not_sign(tmp_path: Path) -> None:
     candidate = _finalize(tmp_path)
     workflow = _workflow(oidc_subject="repo:someone-else/strategies:ref:refs/heads/main")
 
-    with pytest.raises(UnsignedCandidateError, match="OIDC subject names another repository"):
+    with pytest.raises(UnsignedCandidateError, match="names another repository"):
         _assemble(candidate, tmp_path / "assembled", workflow=workflow)
 
 
