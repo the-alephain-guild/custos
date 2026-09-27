@@ -409,11 +409,21 @@ def _package_files(
 
 
 def _characterized(parameters: object, named: tuple[str, ...] | None) -> tuple[str, ...]:
+    """The parameters whose values characterize the release.
+
+    Without an explicit list, every entry under `parameters` is one, except the
+    template's underscore-prefixed entries such as `_section`, which title a
+    group of parameters rather than being one.
+    """
+
     if named is not None:
         return named
     if not isinstance(parameters, Mapping):
         raise ArtifactBuildError("strategy parameters must be an object")
-    return tuple(sorted(str(name) for name in parameters))
+    names = tuple(sorted(str(name) for name in parameters if not str(name).startswith("_")))
+    if not names:
+        raise ArtifactBuildError("strategy config declares no parameters")
+    return names
 
 
 def _config_leaf(parameters: object, name: str) -> object:

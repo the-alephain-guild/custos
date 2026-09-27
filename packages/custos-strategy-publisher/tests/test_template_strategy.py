@@ -16,6 +16,7 @@ from custos_strategy_publisher.artifact_build import (
     ArtifactBuildError,
     ProducerIdentity,
     StrategyReleaseSpec,
+    _characterized,
     _runtime_module,
 )
 from custos_strategy_publisher.template import (
@@ -139,3 +140,19 @@ def test_a_pyproject_without_a_version_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ArtifactBuildError, match="name and version"):
         template_strategy_spec(tmp_path, STRATEGY, PRODUCER)
+
+
+def test_section_titles_are_not_characterized_parameters() -> None:
+    parameters = {
+        "_section": {"title": "Strategy parameters"},
+        "atr_period": {"value": 10},
+        "atr_multiplier": {"value": 3.0},
+    }
+
+    assert _characterized(parameters, None) == ("atr_multiplier", "atr_period")
+    assert _characterized(parameters, ("atr_period",)) == ("atr_period",)
+
+
+def test_a_config_without_parameters_is_refused() -> None:
+    with pytest.raises(ArtifactBuildError, match="declares no parameters"):
+        _characterized({"_section": {"title": "Strategy parameters"}}, None)
