@@ -29,21 +29,35 @@ ACTIVE_RUNTIME_DOCS = (
     SANDBOX_DIR / "README.md",
     TESTNET_DIR / "README.md",
 )
-LOCAL_IMAGE = "custos-runner:v0.3.0"
-REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.3.0"
+LOCAL_IMAGE = "custos-runner:v0.4.0"
+REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.4.0"
+REMOTE_IMAGE_V030 = "ghcr.io/the-alephain-guild/custos:v0.3.0"
 MAKEFILE = REPO_ROOT / "Makefile"
 OPERATOR_DEPLOYMENT = REPO_ROOT / "docs-site" / "docs" / "04-operator-guide" / "deployment.md"
 
 
-def test_project_and_lock_are_versioned_v030() -> None:
+def test_project_and_lock_are_versioned_v040() -> None:
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     locked_project = next(
         package for package in lock["package"] if package["name"] == "custos-runner"
     )
 
-    assert project["project"]["version"] == "0.3.0"
-    assert locked_project["version"] == "0.3.0"
+    assert project["project"]["version"] == "0.4.0"
+    assert locked_project["version"] == "0.4.0"
+
+
+def test_changelog_documents_the_published_v040() -> None:
+    # The release notes are cut from this entry: it must name the image and every
+    # change a consumer has to act on.
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    v040 = " ".join(text[text.index("## [0.4.0]") : text.index("## [0.3.0]")].split())
+
+    assert "## [0.4.0] - 2026-09-27" in text
+    assert REMOTE_IMAGE in v040
+    assert "there is no PyPI package" in v040
+    for breaking in ("--development-producer-repository", "trading_scope", "custos-strategy-release"):
+        assert breaking in v040
 
 
 def test_changelog_documents_the_published_v030() -> None:
@@ -53,7 +67,7 @@ def test_changelog_documents_the_published_v030() -> None:
     v030 = " ".join(text[text.index("## [0.3.0]") : text.index("## [0.2.0]")].split())
 
     assert "## [0.3.0] - 2026-09-25" in text
-    assert REMOTE_IMAGE in v030
+    assert REMOTE_IMAGE_V030 in v030
     assert "There is no PyPI package" in v030
     for breaking in ('"spec_version": 2', "trading.leverage", "--engine sandbox-sim"):
         assert breaking in v030

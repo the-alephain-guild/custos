@@ -13,8 +13,31 @@ protocol — is published at
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-27
+
+It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.4.0`
+and as source; there is no PyPI package. Its headline is that strategy releases
+no longer come from one producer: any strategy repository can publish signed
+releases through Custos's reusable publishing workflow, and runners trust the
+producers their operator lists. Two changes need action from a consumer, each
+marked **Breaking** below: list the development producers a runner accepts, and
+rebuild releases whose manifest lacks `trading_scope`.
+
 ### Added
 
+- **Strategy release publisher.** The package `custos-strategy-publisher`
+  (`packages/custos-strategy-publisher`, command `custos-strategy-release`)
+  builds a strategy's release twice and refuses a difference, type-checks it
+  strictly against the pinned toolkit and engine, signs it keylessly through
+  Sigstore's public instance and publishes it to the producer's own GitHub
+  Container Registry package. It derives every name a release carries from the
+  strategy template's layout, `strategies/<category>/<name>`.
+- **Reusable publishing workflow.** `.github/workflows/publish-strategy-release.yml`
+  (`workflow_call`) publishes for the repository that calls it. Its jobs hold
+  only what each needs: reading the signing identity, building without write
+  access, and signing and publishing. The signing certificate names this
+  workflow at the tag it was called with and the calling repository; a runner
+  trusts a producer by that pair.
 - `release-policy issue` accepts more than one producer: repeat `--issuer`,
   `--workflow-identity` and `--source-repository` together, once per producer.
 - `start --development-producer-repository OWNER/REPOSITORY` (repeatable, or
@@ -60,6 +83,16 @@ protocol — is published at
   with the deployment's before the engine starts, and quarantines a mismatch at
   once with `strategy_trading_scope_mismatch`. A signed strategy config may not
   carry its own `trading` section.
+
+### Known limitations
+
+- The make targets `docker-build-local-v030` and `verify-local-v030` keep their
+  names; they build and check `custos-runner:v0.4.0`.
+- OKX and SoDEX do not route through the venue proxy yet; a deployment on them is
+  refused while a proxy is configured. SOCKS proxies are not supported.
+- Docker image bytes are not reproducible bit for bit.
+- A passing build, health probe or sandbox run does not establish production
+  readiness.
 
 ## [0.3.0] - 2026-09-25
 

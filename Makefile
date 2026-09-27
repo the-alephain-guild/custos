@@ -98,7 +98,7 @@ clean:  ## Remove pycache / pytest cache / ruff cache
 # `make dist` produces the signed-artifact input; `docker-build` consumes it.
 # `verify-release` is the post-publish smoke gate for the image on GHCR.
 
-LOCAL_IMAGE ?= custos-runner:v0.3.0
+LOCAL_IMAGE ?= custos-runner:v0.4.0
 SOURCE_REVISION := $(shell git rev-parse HEAD)
 
 # NautilusTrader resolves from released, platform-specific wheel URLs. uv.lock
@@ -132,7 +132,7 @@ docker-build: dist  ## Build custos-runner:test image from the local dist/*.whl 
 		--tag custos-runner:test \
 		.
 
-docker-build-local-v030: dist  ## Build the local v0.3.0 consumer image with source provenance
+docker-build-local-v030: dist  ## Build the local consumer image with source provenance
 	@dirty="$$(git status --porcelain --untracked-files=normal)"; \
 		if [ -n "$$dirty" ]; then \
 			echo "local consumer image requires a clean worktree:" >&2; \
