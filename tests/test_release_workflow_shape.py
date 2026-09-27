@@ -15,7 +15,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 MAKEFILE = ROOT / "Makefile"
 DOCKERFILE = ROOT / "Dockerfile"
 SIGNED_RELEASE_CHAIN = ROOT / "docs-site" / "docs" / "05-trust-model" / "signed-release-chain.md"
-EXPECTED_JOBS = ("build-docker", "verify-release", "publish-pypi", "release-notes")
+EXPECTED_JOBS = ("build-docker", "verify-release", "release-notes")
 
 
 def _read() -> str:
@@ -222,10 +222,28 @@ def test_release_notes_are_the_changelog_entry_for_the_tagged_version(tmp_path: 
     assert notes.strip() == entry.split("\n", 1)[1].strip()
 
 
-def test_release_notes_do_not_wait_for_the_package_channel() -> None:
+def test_release_notes_follow_the_verified_image() -> None:
     import yaml
 
     jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
 
     assert jobs["release-notes"]["needs"] == ["verify-release"]
-    assert "verify-release" in jobs["publish-pypi"]["needs"]
+
+
+def test_nothing_is_published_to_pypi() -> None:
+    # Releases ship on GitHub only: the signed image on GHCR and the release
+    # notes. A PyPI job would publish on every tag push once a trusted
+    # publisher exists, and a PyPI version cannot be withdrawn and reused.
+    import yaml
+
+    jobs = yaml.safe_load(WORKFLOW.read_text())["jobs"]
+
+    for name, job in jobs.items():
+        environment = job.get("environment") or {}
+        if isinstance(environment, dict):
+            environment = environment.get("name", "")
+        assert "pypi" not in str(environment).lower(), name
+        for step in job.get("steps", []):
+            assert "pypi-publish" not in str(step.get("uses", "")), name
+            assert "twine upload" not in str(step.get("run", "")), name
+            assert "uv publish" not in str(step.get("run", "")), name

@@ -356,38 +356,11 @@ jobs:
             docker image rm "$IMAGE_REF"
           done
 
-  publish-pypi:
-    name: Publish public runner package
-    if: github.event_name == 'push'
-    runs-on: ubuntu-24.04
-    needs: [build-docker, verify-release]
-    environment:
-      name: pypi
-      url: https://pypi.org/p/custos-runner
-    steps:
-      - name: Download exact signed Python artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: dist-signed-${{ github.sha }}
-          path: dist/
-
-      - name: Keep only public package files
-        run: |
-          rm -f \
-            dist/*.sigstore \
-            dist/SHA256SUMS \
-            dist/custos_strategy_toolkit-*.whl \
-            dist/custos_strategy_toolkit_nautilus-*.whl
-
-      - name: Publish with OIDC trusted publishing
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
-
   release-notes:
     name: Publish GitHub release notes
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
-    # The notes describe the verified image. PyPI is a separate channel, so a
-    # declined or failed package publication does not withhold them.
+    # The notes describe the verified image, the only published artifact.
     needs: [verify-release]
     permissions:
       contents: write

@@ -10,8 +10,8 @@ Two layers cover FM1:
 
 - Layer 2 (this test): ``.sigstore`` bundle exists + ``sigstore verify``
   succeeds against the tag-driven cert-identity.
-- Layer 3 (``verify-release.sh``): post-publish, re-download the wheel from
-  PyPI and verify against the same cert-identity (independent smoke).
+- Wheels are not published, so there is no post-publish layer for them;
+  ``verify-release.sh`` re-verifies the published image instead.
 """
 
 from __future__ import annotations

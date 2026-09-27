@@ -36,6 +36,9 @@ protocol — is published at
 
 ### Changed
 
+- Releases ship on GitHub only. The release workflow no longer has a PyPI
+  job, and the post-publish check `make verify-release` verifies the signed
+  image alone.
 - **Breaking:** `StrategyManifestV1` requires `trading_scope` --
   `{"connector": ..., "pairs": [...], "leverage": ...}` -- the connector, pairs
   and leverage the release was validated to trade. A release whose manifest has

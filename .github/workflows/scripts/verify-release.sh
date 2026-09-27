@@ -2,9 +2,10 @@
 # Post-publish release verification.
 #
 # Independent Layer-3 smoke on top of the CI job's own build. Downloads the
-# wheel from PyPI, downloads the image from GHCR, verifies both signatures
-# against the tag-driven cert identity, then repeats the minimum complete
-# runtime contract against the published artifact.
+# image from GHCR, verifies its signature against the tag-driven cert
+# identity, then repeats the minimum complete runtime contract against the
+# published artifact. The image is the only published artifact; wheels are
+# built and signed inside the release run but not published.
 #
 # Usage: bash .github/workflows/scripts/verify-release.sh <version>
 #   e.g. bash .github/workflows/scripts/verify-release.sh 0.3.0
@@ -22,28 +23,6 @@ VERSION="${1:?version required (e.g. 0.3.0)}"
 
 CERT_IDENTITY="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/v${VERSION}"
 CERT_OIDC_ISSUER="https://token.actions.githubusercontent.com"
-
-echo "== Layer 3: pull + verify wheel signature =="
-TMP="$(mktemp -d)"
-trap 'rm -rf "${TMP}"' EXIT
-pip download "custos-runner==${VERSION}" --no-deps -d "${TMP}"
-
-if ! command -v sigstore >/dev/null 2>&1; then
-    echo "sigstore CLI not on PATH; install with: uv sync --extra lts" >&2
-    exit 2
-fi
-
-# Fetch the bundle from the GitHub Release attachments; PyPI hosts the wheel
-# but not the .sigstore bundle.
-whl_name="$(basename "${TMP}"/custos_runner-*.whl)"
-bundle_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/${whl_name}.sigstore"
-curl -fsSL "${bundle_url}" -o "${TMP}/${whl_name}.sigstore"
-
-sigstore verify identity \
-    --bundle "${TMP}/${whl_name}.sigstore" \
-    --cert-identity "${CERT_IDENTITY}" \
-    --cert-oidc-issuer "${CERT_OIDC_ISSUER}" \
-    "${TMP}/${whl_name}"
 
 echo "== Layer 3: pull + verify image signature =="
 docker pull "${IMAGE_NAME}:v${VERSION}"

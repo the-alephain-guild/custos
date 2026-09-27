@@ -90,8 +90,7 @@ clean:  ## Remove pycache / pytest cache / ruff cache
 
 # --- Plan 12 release engineering ---------------------------------------------
 # `make dist` produces the signed-artifact input; `docker-build` consumes it.
-# `verify-release` is the post-publish smoke gate the CI job invokes after
-# uploading to PyPI + GHCR.
+# `verify-release` is the post-publish smoke gate for the image on GHCR.
 
 LOCAL_IMAGE ?= custos-runner:v0.3.0
 SOURCE_REVISION := $(shell git rev-parse HEAD)
@@ -165,11 +164,11 @@ verify-local-v030: docker-build-local-v030  ## Build and gate the local downstre
 	docker image inspect $(LOCAL_IMAGE) \
 		--format '{{.Id}} {{index .Config.Labels "org.opencontainers.image.revision"}}'
 
-verify-release:  ## Post-publish smoke: pull wheel + verify sig, pull image + verify sig + smoke run
+verify-release:  ## Post-publish smoke: pull image + verify sig + smoke run
 	@bash .github/workflows/scripts/verify-release.sh $(VERSION)
 
 release: dist sign docker-build docker-sign  ## Full local release rehearsal (real publish still lives in CI)
-	@echo "Local release rehearsal complete. Publish to PyPI + GHCR runs in CI." >&2
+	@echo "Local release rehearsal complete. Publish to GHCR runs in CI." >&2
 
 toolkit-sync-check:  ## Diff vendored toolkit against upstream ps shared/ (+ optional pandas_ta) for drift
 	@if [ -z "$$PS_ROOT" ]; then \

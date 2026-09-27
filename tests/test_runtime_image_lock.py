@@ -62,13 +62,9 @@ def test_runtime_image_installs_only_locked_dependencies_and_exact_local_wheels(
     assert "pip check" in text
 
 
-def test_release_builds_all_runtime_wheels_but_publishes_only_runner_to_pypi() -> None:
+def test_release_builds_all_runtime_wheels() -> None:
     workflow = yaml.safe_load(RELEASE_WORKFLOW.read_text())
     build_steps = workflow["jobs"]["build-docker"]["steps"]
-    publish_steps = workflow["jobs"]["publish-pypi"]["steps"]
     build_script = "\n".join(str(step.get("run", "")) for step in build_steps)
-    publish_script = "\n".join(str(step.get("run", "")) for step in publish_steps)
 
     assert "make dist" in build_script
-    assert "custos_strategy_toolkit-*.whl" in publish_script
-    assert "custos_strategy_toolkit_nautilus-*.whl" in publish_script
