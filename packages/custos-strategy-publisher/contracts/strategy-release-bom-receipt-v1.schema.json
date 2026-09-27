@@ -1,0 +1,67 @@
+{
+  "$id": "https://philosophers-stone.the-alephain-guild/contracts/strategy-release-bom-receipt-v1.schema.json",
+  "additionalProperties": false,
+  "description": "Detached attestation/publication binding emitted after canonical BOM finalization.",
+  "properties": {
+    "attestation_bundle_coordinate": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "attestation_bundle_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "attestation_trust_policy_coordinate": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "attestation_trust_policy_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "bom_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "producer_commit": {
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "producer_repository": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "alephain.strategy-release-bom-receipt.v1",
+      "minLength": 1,
+      "type": "string"
+    },
+    "strategy_artifact_coordinate": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "strategy_artifact_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "strategy_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "producer_repository",
+    "producer_commit",
+    "strategy_artifact_coordinate",
+    "bom_sha256",
+    "strategy_artifact_sha256",
+    "strategy_manifest_sha256",
+    "attestation_bundle_coordinate",
+    "attestation_bundle_sha256",
+    "attestation_trust_policy_coordinate",
+    "attestation_trust_policy_sha256"
+  ],
+  "title": "StrategyReleaseBomReceiptV1",
+  "type": "object"
+}

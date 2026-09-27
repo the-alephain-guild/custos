@@ -3,7 +3,7 @@
 # Standalone open-source repository entrypoint. Standardized validation targets
 # keep shell execution deterministic and avoid permission drift from ad-hoc commands.
 
-.PHONY: help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication verify-runner-fact-publication-network clean toolkit-sync-check strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
+.PHONY: test-publisher help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication verify-runner-fact-publication-network clean toolkit-sync-check strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
 
 # Default target: help
 .DEFAULT_GOAL := help
@@ -74,14 +74,20 @@ check-public-surface:  ## Refuse tracked private working notes (runs first in ve
 	python3 scripts/check-public-surface.py --self-test
 	python3 scripts/check-public-surface.py
 
-verify: check-public-surface check test-baseline  ## Base release gate: public surface + check + green test-baseline
+# The strategy release publisher is its own project with its own lock: it signs with a
+# sigstore release the runner's verifier pin does not accept.
+test-publisher:  ## Run the strategy release publisher's lint and tests in its own environment
+	cd packages/custos-strategy-publisher && uv run --frozen ruff check src tests && \
+	  uv run --frozen ruff format --check src tests && uv run --frozen pytest -q
+
+verify: check-public-surface check test-baseline test-publisher  ## Base release gate: public surface + check + green test-baseline + publisher
 	@echo "✅ make verify passed"
 
 verify-base-clean:  ## Clean dev-only sync followed by the base release gate
 	uv sync --package custos-runner --extra dev
 	$(MAKE) verify
 
-verify-nt: check test-nt  ## NT release gate (requires py3.12+): check + green test-nt
+verify-nt: check test-nt test-publisher  ## NT release gate (requires py3.12+): check + green test-nt + publisher
 	@echo "✅ make verify-nt passed"
 
 clean:  ## Remove pycache / pytest cache / ruff cache

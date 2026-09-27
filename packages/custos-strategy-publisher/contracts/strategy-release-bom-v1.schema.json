@@ -1,0 +1,216 @@
+{
+  "$defs": {
+    "BomMemberV1": {
+      "additionalProperties": false,
+      "properties": {
+        "coordinate": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "media_type": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "base_contracts_wheel",
+            "nautilus_wheel",
+            "strategy_wheel",
+            "strategy_manifest",
+            "runtime_artifact",
+            "attestation_bundle",
+            "toolkit_sbom",
+            "strategy_sbom",
+            "contract_schema",
+            "source_tree"
+          ],
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "size_bytes": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "role",
+        "coordinate",
+        "name",
+        "media_type",
+        "size_bytes",
+        "sha256"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://philosophers-stone.the-alephain-guild/contracts/strategy-release-bom-v1.schema.json",
+  "additionalProperties": false,
+  "description": "Canonical PS build/provenance BOM, not a StrategyRelease lifecycle record.",
+  "properties": {
+    "build_lock_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "canonicalization": {
+      "const": "sha256-canonical-json-v1",
+      "minLength": 1,
+      "type": "string"
+    },
+    "contract_asset_index_coordinate": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "contract_asset_index_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "engine": {
+      "const": "nautilus",
+      "minLength": 1,
+      "type": "string"
+    },
+    "engine_version": {
+      "const": "2.0.0rc5+sodex.1",
+      "minLength": 1,
+      "type": "string"
+    },
+    "entry_point_group": {
+      "const": "alephain.strategy_runtime.v1",
+      "minLength": 1,
+      "type": "string"
+    },
+    "entry_point_name": {
+      "pattern": "^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*$",
+      "type": "string"
+    },
+    "execution_abi_golden_coordinate": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "execution_abi_golden_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "execution_abi_schema_coordinate": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "execution_abi_schema_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "members": {
+      "items": {
+        "$ref": "#/$defs/BomMemberV1"
+      },
+      "minItems": 9,
+      "type": "array"
+    },
+    "producer_commit": {
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "producer_repository": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "python_requires": {
+      "const": ">=3.12,<3.13",
+      "minLength": 1,
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "alephain.strategy-release-bom.v1",
+      "minLength": 1,
+      "type": "string"
+    },
+    "strategy_artifact_coordinate": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "strategy_artifact_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "strategy_coordinate": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "strategy_manifest_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "strategy_sbom_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "strategy_source_commit": {
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+      "type": "string"
+    },
+    "strategy_source_tree_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "toolkit_coordinate": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "toolkit_sbom_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "toolkit_wheel_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "zero_rewrite_characterization_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "zero_rewrite_semantic_diff_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "canonicalization",
+    "producer_repository",
+    "producer_commit",
+    "strategy_coordinate",
+    "engine",
+    "engine_version",
+    "python_requires",
+    "entry_point_group",
+    "entry_point_name",
+    "execution_abi_schema_coordinate",
+    "execution_abi_schema_sha256",
+    "execution_abi_golden_coordinate",
+    "execution_abi_golden_sha256",
+    "contract_asset_index_coordinate",
+    "contract_asset_index_sha256",
+    "toolkit_coordinate",
+    "toolkit_wheel_sha256",
+    "toolkit_sbom_sha256",
+    "strategy_sbom_sha256",
+    "strategy_source_commit",
+    "strategy_source_tree_sha256",
+    "strategy_artifact_coordinate",
+    "strategy_artifact_sha256",
+    "strategy_manifest_sha256",
+    "build_lock_sha256",
+    "zero_rewrite_semantic_diff_sha256",
+    "zero_rewrite_characterization_sha256",
+    "members"
+  ],
+  "title": "StrategyReleaseBomV1",
+  "type": "object"
+}
