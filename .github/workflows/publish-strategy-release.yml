@@ -1,0 +1,247 @@
+# Build, sign and publish one strategy release for the repository that calls this.
+#
+# A strategy repository calls it from its own workflow:
+#
+#   on: workflow_dispatch
+#   permissions: {contents: read, packages: write, id-token: write, actions: read}
+#   jobs:
+#     release:
+#       uses: the-alephain-guild/custos/.github/workflows/publish-strategy-release.yml@v0.4.0
+#       with:
+#         strategy: strategies/trend/supertrend
+#
+# The release is signed keylessly through Sigstore's public-good instance. The
+# certificate names this workflow at the ref it was called with as the signer and
+# the calling repository as the workflow repository; that pair is what a runner
+# and Crucible list as a trusted producer. The public transparency log records
+# that pair, the commit and the statement digest. The release itself goes to the
+# caller's GHCR package, which stays private.
+#
+# Three jobs, each with only what it needs:
+#   identity  reads the signing identity from this job's OIDC token
+#   candidate builds twice without any write credential and freezes one candidate
+#   publish   signs exactly that candidate and pushes it to GHCR
+name: Publish a strategy release
+
+on:
+  workflow_call:
+    inputs:
+      strategy:
+        description: The strategy directory, strategies/<category>/<name>
+        required: true
+        type: string
+      ghcr-repository:
+        description: Where to publish; defaults to ghcr.io/<owner>/<repo>/strategy-releases
+        required: false
+        type: string
+        default: ""
+    outputs:
+      receipt-artifact:
+        description: The workflow artifact holding the publication receipt
+        value: ${{ jobs.publish.outputs.receipt-artifact }}
+
+permissions: {}
+
+jobs:
+  identity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+    outputs:
+      workflow-identity: ${{ steps.claims.outputs.workflow-identity }}
+      publisher-repository: ${{ steps.claims.outputs.publisher-repository }}
+      publisher-sha: ${{ steps.claims.outputs.publisher-sha }}
+    steps:
+      # Nothing is checked out yet: which publisher commit to check out is itself
+      # read from the token, so this step uses the standard library only.
+      - name: Read the signing identity from the OIDC token
+        id: claims
+        shell: python
+        run: |
+          import base64, json, os, re, urllib.request
+
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=sigstore"
+          request = urllib.request.Request(
+              url,
+              headers={"Authorization": "bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              token = json.load(response)["value"]
+          payload = token.split(".")[1]
+          claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+          ref, sha = claims["job_workflow_ref"], claims["job_workflow_sha"]
+          if re.fullmatch(r"[0-9a-f]{40}", sha) is None:
+              raise SystemExit("job_workflow_sha is not a commit")
+          repository = ref.split("/.github/workflows/")[0]
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"workflow-identity=https://github.com/{ref}\n")
+              output.write(f"publisher-repository={repository}\n")
+              output.write(f"publisher-sha={sha}\n")
+
+  candidate:
+    needs: identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      artifact-name: ${{ steps.names.outputs.artifact-name }}
+      artifact-digest: ${{ steps.upload.outputs.artifact-digest }}
+    env:
+      PUBLISHER: ${{ github.workspace }}/publisher/packages/custos-strategy-publisher
+      STRATEGY: ${{ inputs.strategy }}
+      GHCR_REPOSITORY: ${{ inputs.ghcr-repository }}
+      WORKFLOW_IDENTITY: ${{ needs.identity.outputs.workflow-identity }}
+      # The toolkit package is public; any token reads it.
+      TOOLKIT_REGISTRY_ACTOR: ${{ github.actor }}
+      TOOLKIT_REGISTRY_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out the strategy repository at the commit being released
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: producer
+          persist-credentials: false
+
+      - name: Check out the publisher at the commit this workflow runs from
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: ${{ needs.identity.outputs.publisher-repository }}
+          ref: ${{ needs.identity.outputs.publisher-sha }}
+          path: publisher
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Install the locked build toolchain
+        working-directory: ${{ env.PUBLISHER }}
+        run: uv sync --frozen --extra build
+
+      - name: Name the candidate
+        id: names
+        run: |
+          echo "artifact-name=strategy-release-candidate-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Build twice, in separate directories
+        working-directory: ${{ env.PUBLISHER }}
+        run: |
+          for build in a b; do
+            uv run --frozen --extra build custos-strategy-release build \
+              --repo-root "$GITHUB_WORKSPACE/producer" \
+              --custos-root "$GITHUB_WORKSPACE/publisher" \
+              --strategy "$STRATEGY" \
+              ${GHCR_REPOSITORY:+--ghcr-repository "$GHCR_REPOSITORY"} \
+              --workflow-identity "$WORKFLOW_IDENTITY" \
+              --output "$RUNNER_TEMP/build-$build"
+          done
+
+      - name: Compare the builds and freeze one candidate
+        working-directory: ${{ env.PUBLISHER }}
+        env:
+          ARTIFACT_NAME: ${{ steps.names.outputs.artifact-name }}
+        run: |
+          uv run --frozen custos-strategy-release candidate \
+            --repo-root "$GITHUB_WORKSPACE/producer" \
+            ${GHCR_REPOSITORY:+--ghcr-repository "$GHCR_REPOSITORY"} \
+            --first-build "$RUNNER_TEMP/build-a" \
+            --second-build "$RUNNER_TEMP/build-b" \
+            --output "$RUNNER_TEMP/candidate" \
+            --artifact-name "$ARTIFACT_NAME"
+
+      - name: Upload the candidate
+        id: upload
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.names.outputs.artifact-name }}
+          path: ${{ runner.temp }}/candidate
+          if-no-files-found: error
+          overwrite: false
+          retention-days: 30
+
+  publish:
+    needs: [identity, candidate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: write
+    outputs:
+      receipt-artifact: ${{ steps.receipt.outputs.name }}
+    env:
+      PUBLISHER: ${{ github.workspace }}/publisher/packages/custos-strategy-publisher
+      GHCR_REPOSITORY: ${{ inputs.ghcr-repository }}
+    steps:
+      - name: Check out the strategy repository at the commit being released
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          path: producer
+          persist-credentials: false
+
+      - name: Check out the publisher at the commit this workflow runs from
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: ${{ needs.identity.outputs.publisher-repository }}
+          ref: ${{ needs.identity.outputs.publisher-sha }}
+          path: publisher
+          persist-credentials: false
+
+      - name: Download exactly the candidate this run built
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.candidate.outputs.artifact-name }}
+          path: ${{ runner.temp }}/candidate
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Install the locked signing toolchain
+        working-directory: ${{ env.PUBLISHER }}
+        run: uv sync --frozen --extra sign
+
+      - name: Sign the candidate's statement and assemble the release
+        working-directory: ${{ env.PUBLISHER }}
+        env:
+          ARTIFACT_NAME: ${{ needs.candidate.outputs.artifact-name }}
+          ARTIFACT_DIGEST: ${{ needs.candidate.outputs.artifact-digest }}
+        run: |
+          uv run --frozen --extra sign custos-strategy-release assemble \
+            --repo-root "$GITHUB_WORKSPACE/producer" \
+            ${GHCR_REPOSITORY:+--ghcr-repository "$GHCR_REPOSITORY"} \
+            --unsigned-input "$RUNNER_TEMP/candidate/unsigned-candidate-v1.json" \
+            --output "$RUNNER_TEMP/assembled" \
+            --candidate-artifact-name "$ARTIFACT_NAME" \
+            --candidate-artifact-digest "sha256:${ARTIFACT_DIGEST#sha256:}"
+          uv run --frozen --extra sign custos-strategy-release preflight \
+            ${GHCR_REPOSITORY:+--ghcr-repository "$GHCR_REPOSITORY"} \
+            --input "$RUNNER_TEMP/assembled/publish-input-v1.json"
+
+      - name: Publish and read back by digest
+        working-directory: ${{ env.PUBLISHER }}
+        env:
+          GHCR_ACTOR: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          uv run --frozen --extra sign custos-strategy-release publish \
+            ${GHCR_REPOSITORY:+--ghcr-repository "$GHCR_REPOSITORY"} \
+            --input "$RUNNER_TEMP/assembled/publish-input-v1.json" \
+            --artifact-ref-output "$RUNNER_TEMP/receipt/strategy-oci-artifact-ref-v1.json" \
+            --receipt-output "$RUNNER_TEMP/receipt/strategy-release-publication-receipt-v1.json"
+          cp "$RUNNER_TEMP/assembled/publication-signing-provenance-v1.json" "$RUNNER_TEMP/receipt/"
+          cp "$RUNNER_TEMP/candidate/unsigned-candidate-v1.json" "$RUNNER_TEMP/receipt/"
+
+      - name: Name the receipt
+        id: receipt
+        run: echo "name=strategy-release-receipt-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the receipt
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.receipt.outputs.name }}
+          path: ${{ runner.temp }}/receipt
+          if-no-files-found: error
+          retention-days: 90
+          compression-level: 0
