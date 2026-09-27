@@ -1,0 +1,178 @@
+{
+  "$defs": {
+    "StatementSubjectV1": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "additionalProperties": false,
+          "properties": {
+            "sha256": {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "sha256"
+          ],
+          "type": "object"
+        },
+        "name": {
+          "enum": [
+            "strategy-release-bom-v1",
+            "strategy-artifact",
+            "strategy-manifest-v1",
+            "strategy-artifact-ref-v1"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "digest"
+      ],
+      "type": "object"
+    },
+    "StrategyReleasePredicateV1": {
+      "additionalProperties": false,
+      "properties": {
+        "build_lock_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "contract_asset_index_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "engine": {
+          "const": "nautilus",
+          "minLength": 1,
+          "type": "string"
+        },
+        "engine_version": {
+          "const": "2.0.0rc5+sodex.1",
+          "minLength": 1,
+          "type": "string"
+        },
+        "entry_point_group": {
+          "const": "alephain.strategy_runtime.v1",
+          "minLength": 1,
+          "type": "string"
+        },
+        "entry_point_name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*$",
+          "type": "string"
+        },
+        "execution_abi_schema_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "producer_commit": {
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$",
+          "type": "string"
+        },
+        "producer_repository": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "python_requires": {
+          "const": ">=3.12,<3.13",
+          "minLength": 1,
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "alephain.strategy-release-statement-predicate.v1",
+          "minLength": 1,
+          "type": "string"
+        },
+        "source_date_epoch": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "strategy_sbom_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "strategy_source_tree_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "toolkit_sbom_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "toolkit_wheel_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "workflow_identity": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "zero_rewrite_characterization_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "zero_rewrite_semantic_diff_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "producer_repository",
+        "producer_commit",
+        "workflow_identity",
+        "source_date_epoch",
+        "strategy_source_tree_sha256",
+        "execution_abi_schema_sha256",
+        "contract_asset_index_sha256",
+        "toolkit_wheel_sha256",
+        "toolkit_sbom_sha256",
+        "strategy_sbom_sha256",
+        "build_lock_sha256",
+        "zero_rewrite_semantic_diff_sha256",
+        "zero_rewrite_characterization_sha256",
+        "engine",
+        "engine_version",
+        "python_requires",
+        "entry_point_group",
+        "entry_point_name"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://philosophers-stone.the-alephain-guild/contracts/strategy-release-statement-v1.schema.json",
+  "additionalProperties": false,
+  "properties": {
+    "_type": {
+      "const": "https://in-toto.io/Statement/v1",
+      "minLength": 1,
+      "type": "string"
+    },
+    "predicate": {
+      "$ref": "#/$defs/StrategyReleasePredicateV1"
+    },
+    "predicateType": {
+      "const": "https://the-alephain-guild.dev/attestation/strategy-release/v1",
+      "minLength": 1,
+      "type": "string"
+    },
+    "subject": {
+      "items": {
+        "$ref": "#/$defs/StatementSubjectV1"
+      },
+      "maxItems": 4,
+      "minItems": 4,
+      "type": "array"
+    }
+  },
+  "required": [
+    "_type",
+    "subject",
+    "predicateType",
+    "predicate"
+  ],
+  "title": "StrategyReleaseStatementV1",
+  "type": "object",
+  "x-dsse-payloadType": "application/vnd.in-toto+json"
+}
