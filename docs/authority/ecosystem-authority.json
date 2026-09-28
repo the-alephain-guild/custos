@@ -483,15 +483,15 @@
   "runner_fact_contract_v1": {
     "owner": "custos",
     "status": "LOCAL_PRODUCTION_SERVICE_PHASE_B_ACCEPTED_RUNTIME_OPEN",
-    "producer_commit": "42781c8d87e882607a7974c10fe1d0455305bd5d",
+    "producer_commit": "199bb6475eae87b78d2e1db27eff319a5a3ebe6b",
     "asset_index": "docs/authority/runner-fact-contract-assets-v1.json",
     "receipt": "docs/authority/receipts/custos-runner-fact-v1-producer-receipt.json",
     "consumer_receipt": {
       "repository": "tesseract-trading/crucible-rust",
-      "commit": "aa43a3887822a79cd44aa20d398e9ab2eb305421",
+      "commit": "61733e5f1f2387ca58a728c9b2f26c8a01f92c8d",
       "path": "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json",
-      "sha256": "ea9a056a2ff09c84a8767facefeab8d9864de9c47d75d91f7fa1bdd316c1b101",
-      "size_bytes": 13593
+      "sha256": "e900e3babdbb43b3e74e956c8461a77662bf8ef30bb4dc22aa49de4874248c35",
+      "size_bytes": 14597
     },
     "local_publication_receipt": {
       "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",

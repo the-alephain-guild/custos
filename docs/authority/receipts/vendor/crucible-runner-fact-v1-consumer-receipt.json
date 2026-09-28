@@ -4,20 +4,20 @@
   "status": "EXACT_CUSTOS_RUNNER_FACT_V1_ACCEPTED_RUNTIME_OPEN",
   "producer": {
     "repository": "tesseract-trading/custos",
-    "asset_commit": "42781c8d87e882607a7974c10fe1d0455305bd5d",
+    "asset_commit": "199bb6475eae87b78d2e1db27eff319a5a3ebe6b",
     "authority_coordinate": "custos.runner-fact.v1",
     "asset_index": {
       "producer_path": "docs/authority/runner-fact-contract-assets-v1.json",
       "local_path": "docs/authority/custos-runner-fact-contract-assets-v1.json",
-      "sha256": "034cce64a5d10b42235bc979b5a4d4e5b0f05e6f082bc3b343a07fd3dce354eb",
+      "sha256": "3d5704bd1ee1945efbb38ad8babc4fadac0987b33c6200e4707b6f5fc333544f",
       "size_bytes": 3713
     },
     "assets": {
       "runner_fact_batch_schema": {
         "producer_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
         "local_path": "docs/authority/custos-runner-fact-batch-v1.schema.json",
-        "sha256": "22f1041f482167286443563a75a4048190457a1c8cdebeb1553e69ed6bd85e4f",
-        "size_bytes": 54479
+        "sha256": "17c86bd09da8ec7940896dede2b84016c8e9a04ab28671b0e3ce1a4daa37ce0c",
+        "size_bytes": 54580
       },
       "runner_fact_batch_golden": {
         "producer_path": "docs/authority/runner-fact-golden-v1.json",
@@ -53,7 +53,7 @@
   },
   "consumer": {
     "repository": "tesseract-trading/crucible-rust",
-    "code_commit": "26fa5ee3a0b2c3f6ad50c03e8fbe1e1dcd7cf1aa",
+    "code_commit": "a11418964c87b6f29db9472aab4f75a068e36e2e",
     "closed_fact_union": true,
     "compatibility_fallback": false,
     "top_level_venue_snapshot_supported": false,
@@ -76,8 +76,8 @@
     "sources": {
       "domain_union": {
         "path": "crates/domain/src/execution/runner_fact_batch.rs",
-        "sha256": "69367d3bc6a06620ff7cd131bdb8e835c30f37feb4d6531c48b301285e2728dd",
-        "size_bytes": 22247
+        "sha256": "381256d40da14bde4f65246b9556493d885f3538297f11047e2ac4b4047b6cf2",
+        "size_bytes": 23453
       },
       "capability_publication": {
         "path": "crates/store/src/runner_capability_publication.rs",
@@ -112,6 +112,23 @@
     }
   },
   "verification": {
+    "venue_cash_flow_review_fixes_acceptance": {
+      "verified_at": "2026-09-28",
+      "producer_asset_commit": "199bb6475eae87b78d2e1db27eff319a5a3ebe6b",
+      "consumer_code_commit": "a11418964c87b6f29db9472aab4f75a068e36e2e",
+      "source": "tabularium .forge/fixes/2026-09/runner-fact-cash-flows-09-114-fixes.md",
+      "contract_command": "cargo test -p domain --test runner_fact_contract_v1",
+      "contract_result": "7 passed; 0 failed",
+      "crate_command": "cargo test -p domain -p store --lib --tests --no-fail-fast",
+      "crate_result": "520 passed; 0 failed",
+      "transport_command": "cargo test -p server-http --test runner_fact_transport_pg",
+      "transport_result": "2 passed; 0 failed; 2 ignored",
+      "cash_flow_currency_bound_to_contract": true,
+      "cash_flow_decimals_require_canonical_spelling": true,
+      "workspace_suite_rerun": false,
+      "full_chain_reconciliation_with_cash_flows_exercised": false,
+      "launched_custos_runtime_exercised": false
+    },
     "venue_cash_flow_contract_acceptance": {
       "verified_at": "2026-09-28",
       "producer_asset_commit": "42781c8d87e882607a7974c10fe1d0455305bd5d",

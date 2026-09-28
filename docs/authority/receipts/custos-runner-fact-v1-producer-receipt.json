@@ -3,20 +3,20 @@
   "canonical_name": "Custos RunnerFact V1 producer receipt",
   "status": "PHASE_A_CONSUMER_ACCEPTED_RUNTIME_OPEN",
   "authority_coordinate": "custos.runner-fact.v1",
-  "producer_commit": "42781c8d87e882607a7974c10fe1d0455305bd5d",
+  "producer_commit": "199bb6475eae87b78d2e1db27eff319a5a3ebe6b",
   "asset_index": {
     "path": "docs/authority/runner-fact-contract-assets-v1.json",
-    "sha256": "034cce64a5d10b42235bc979b5a4d4e5b0f05e6f082bc3b343a07fd3dce354eb",
+    "sha256": "3d5704bd1ee1945efbb38ad8babc4fadac0987b33c6200e4707b6f5fc333544f",
     "size_bytes": 3713
   },
   "consumer_receipts": {
     "crucible_rust": {
       "repository": "tesseract-trading/crucible-rust",
-      "commit": "aa43a3887822a79cd44aa20d398e9ab2eb305421",
+      "commit": "61733e5f1f2387ca58a728c9b2f26c8a01f92c8d",
       "producer_path": "docs/authority/receipts/crucible-runner-fact-v1-consumer-receipt.json",
       "local_path": "docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json",
-      "sha256": "ea9a056a2ff09c84a8767facefeab8d9864de9c47d75d91f7fa1bdd316c1b101",
-      "size_bytes": 13593,
+      "sha256": "e900e3babdbb43b3e74e956c8461a77662bf8ef30bb4dc22aa49de4874248c35",
+      "size_bytes": 14597,
       "status": "EXACT_CUSTOS_RUNNER_FACT_V1_ACCEPTED_RUNTIME_OPEN"
     }
   },

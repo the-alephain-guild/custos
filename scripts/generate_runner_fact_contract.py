@@ -44,14 +44,14 @@ from custos.core.runner_fact import (
 
 ROOT = Path(__file__).resolve().parents[1]
 AUTHORITY_COORDINATE = "custos.runner-fact.v1"
-PRODUCER_ASSET_COMMIT = "42781c8d87e882607a7974c10fe1d0455305bd5d"
+PRODUCER_ASSET_COMMIT = "199bb6475eae87b78d2e1db27eff319a5a3ebe6b"
 CRUCIBLE_CONSUMER_RECEIPT = {
     "repository": "tesseract-trading/crucible-rust",
-    "commit": "aa43a3887822a79cd44aa20d398e9ab2eb305421",
+    "commit": "61733e5f1f2387ca58a728c9b2f26c8a01f92c8d",
     "producer_path": ("docs/authority/receipts/crucible-runner-fact-v1-consumer-receipt.json"),
     "local_path": ("docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json"),
-    "sha256": "ea9a056a2ff09c84a8767facefeab8d9864de9c47d75d91f7fa1bdd316c1b101",
-    "size_bytes": 13593,
+    "sha256": "e900e3babdbb43b3e74e956c8461a77662bf8ef30bb4dc22aa49de4874248c35",
+    "size_bytes": 14597,
     "status": "EXACT_CUSTOS_RUNNER_FACT_V1_ACCEPTED_RUNTIME_OPEN",
 }
 TENANT_ID = "acme"
