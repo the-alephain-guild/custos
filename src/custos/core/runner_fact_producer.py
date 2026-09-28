@@ -85,6 +85,8 @@ class VenueLedgerEvidence:
     venue_wallet_balances: Mapping[str, str] | None = None
     valuation_positions: Sequence[Mapping[str, Any]] | None = None
     cash_inventory: Sequence[Mapping[str, Any]] | None = None
+    sub_account: str | None = None
+    cash_flows: Sequence[Mapping[str, Any]] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -949,6 +951,7 @@ class RunnerFactProductionLoop:
             snapshot_facts = venue_ledger_snapshot_facts(
                 snapshot_id=snapshot_id,
                 venue=evidence.venue,
+                sub_account=evidence.sub_account,
                 source=evidence.source,
                 watermark=evidence.watermark,
                 coverage_from=evidence.coverage_from,
@@ -958,6 +961,7 @@ class RunnerFactProductionLoop:
                 positions=evidence.positions,
                 fills=evidence.fills,
                 fees=evidence.fees,
+                cash_flows=evidence.cash_flows,
             )
             batches = [(fact,) for fact in snapshot_facts]
             if evidence.cash_inventory is not None and not getattr(

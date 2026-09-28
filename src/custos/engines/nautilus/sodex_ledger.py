@@ -189,6 +189,8 @@ class SodexVenueLedgerSource:
                 free = total - decimal(row["locked"], "locked balance")
             balances.append(
                 {
+                    "wallet_type": "perps" if self._perpetual else "spot",
+                    "sub_account": None,
                     "asset": currency,
                     "currency": currency,
                     "total": str(total),
@@ -353,7 +355,10 @@ class SodexVenueLedgerSource:
                     "fills_complete",
                     "fees_complete",
                 )
-            },
+            }
+            # Transfer and deposit history is not collected yet, so the
+            # snapshot must not claim its cash flows are complete.
+            | {"cash_flows_complete": False},
             balances=balances,
             positions=positions,
             fills=fills,

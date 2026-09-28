@@ -142,11 +142,28 @@ def _schema() -> dict[str, Any]:
     }
     digest = {"type": "string", "pattern": r"^[0-9a-f]{64}$"}
     side = {"enum": ["buy", "sell"]}
+    wallet_type = {"type": "string", "pattern": r"^[a-z][a-z0-9_]{0,63}$"}
+    sub_account = {
+        "oneOf": [
+            {
+                "type": "string",
+                "pattern": r"^[^\s\x00-\x1f\x7f](?:[^\x00-\x1f\x7f]{0,126}[^\s\x00-\x1f\x7f])?$",
+            },
+            {"type": "null"},
+        ]
+    }
+    optional_non_empty = {"oneOf": [non_empty, {"type": "null"}]}
+    positive_decimal = {
+        "type": "string",
+        "pattern": r"^(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])$",
+    }
     balance = {
         "type": "object",
         "additionalProperties": False,
-        "required": ["asset", "currency", "total", "available"],
+        "required": ["wallet_type", "sub_account", "asset", "currency", "total", "available"],
         "properties": {
+            "wallet_type": wallet_type,
+            "sub_account": sub_account,
             "asset": non_empty,
             "currency": currency,
             "total": unsigned_decimal,
@@ -211,24 +228,111 @@ def _schema() -> dict[str, Any]:
             "occurred_at": timestamp,
         },
     }
+    completeness_fields = (
+        "balances_complete",
+        "positions_complete",
+        "fills_complete",
+        "fees_complete",
+        "cash_flows_complete",
+    )
     completeness = {
         "type": "object",
         "additionalProperties": False,
+        "required": list(completeness_fields),
+        "properties": {name: {"type": "boolean"} for name in completeness_fields},
+    }
+    cash_flow_endpoint = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["wallet_type", "sub_account"],
+        "properties": {"wallet_type": wallet_type, "sub_account": sub_account},
+    }
+    endpoint_or_null = {"oneOf": [cash_flow_endpoint, {"type": "null"}]}
+    destination = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["address", "network", "memo"],
+        "properties": {
+            "address": non_empty,
+            "network": optional_non_empty,
+            "memo": optional_non_empty,
+        },
+    }
+
+    def cash_flow_rule(
+        kinds: list[str], *, source: bool, target: bool, uid: bool, withdrawal: bool
+    ) -> dict[str, Any]:
+        present = cash_flow_endpoint
+        absent = {"type": "null"}
+        return {
+            "if": {"properties": {"kind": {"enum": kinds}}},
+            "then": {
+                "properties": {
+                    "from": present if source else absent,
+                    "to": present if target else absent,
+                    "counterparty_uid": non_empty if uid else absent,
+                    **({} if withdrawal else {"destination": absent}),
+                }
+            },
+        }
+
+    ledger_cash_flow = {
+        "type": "object",
+        "additionalProperties": False,
         "required": [
-            "balances_complete",
-            "positions_complete",
-            "fills_complete",
-            "fees_complete",
+            "cash_flow_id",
+            "kind",
+            "from",
+            "to",
+            "counterparty_uid",
+            "currency",
+            "amount",
+            "fee",
+            "fee_currency",
+            "occurred_at",
+            "external_reference",
+            "destination",
         ],
         "properties": {
-            name: {"type": "boolean"}
-            for name in (
-                "balances_complete",
-                "positions_complete",
-                "fills_complete",
-                "fees_complete",
-            )
+            "cash_flow_id": non_empty,
+            "kind": {
+                "enum": [
+                    "internal_transfer",
+                    "sub_account_transfer",
+                    "uid_transfer_out",
+                    "uid_transfer_in",
+                    "deposit",
+                    "withdrawal",
+                ]
+            },
+            "from": endpoint_or_null,
+            "to": endpoint_or_null,
+            "counterparty_uid": optional_non_empty,
+            "currency": currency,
+            "amount": positive_decimal,
+            "fee": unsigned_decimal,
+            "fee_currency": currency,
+            "occurred_at": timestamp,
+            "external_reference": optional_non_empty,
+            "destination": {"oneOf": [destination, {"type": "null"}]},
         },
+        "allOf": [
+            cash_flow_rule(
+                ["internal_transfer", "sub_account_transfer"],
+                source=True,
+                target=True,
+                uid=False,
+                withdrawal=False,
+            ),
+            cash_flow_rule(
+                ["uid_transfer_out"], source=True, target=False, uid=True, withdrawal=False
+            ),
+            cash_flow_rule(
+                ["uid_transfer_in"], source=False, target=True, uid=True, withdrawal=False
+            ),
+            cash_flow_rule(["deposit"], source=False, target=True, uid=False, withdrawal=False),
+            cash_flow_rule(["withdrawal"], source=True, target=False, uid=False, withdrawal=True),
+        ],
     }
     position_row = {
         "type": "object",
@@ -318,6 +422,7 @@ def _schema() -> dict[str, Any]:
             {
                 "snapshot_id": uuid,
                 "venue": non_empty,
+                "sub_account": sub_account,
                 "source": {"enum": ["venue_api", "drop_copy"]},
                 "watermark": non_empty,
                 "coverage_from": timestamp,
@@ -327,6 +432,7 @@ def _schema() -> dict[str, Any]:
                 "positions_count": {"type": "integer", "minimum": 0},
                 "fills_count": {"type": "integer", "minimum": 0},
                 "fees_count": {"type": "integer", "minimum": 0},
+                "cash_flows_count": {"type": "integer", "minimum": 0},
                 "chunk_count": {"type": "integer", "minimum": 1, "maximum": 4096},
                 "content_digest": digest,
             },
@@ -341,6 +447,7 @@ def _schema() -> dict[str, Any]:
                 "positions": {"type": "array", "items": ledger_position},
                 "fills": {"type": "array", "items": ledger_fill},
                 "fees": {"type": "array", "items": ledger_fee},
+                "cash_flows": {"type": "array", "items": ledger_cash_flow},
                 "chunk_digest": digest,
             },
         ),
@@ -741,6 +848,7 @@ def _facts() -> list[dict[str, Any]]:
     ledger = venue_ledger_snapshot_facts(
         snapshot_id=snapshot_id,
         venue="BINANCE",
+        sub_account=None,
         source="venue_api",
         watermark="ledger-1",
         coverage_from="2026-07-15T07:00:00Z",
@@ -750,11 +858,77 @@ def _facts() -> list[dict[str, Any]]:
             "positions_complete": True,
             "fills_complete": True,
             "fees_complete": True,
+            "cash_flows_complete": True,
         },
-        balances=[{"asset": "USDT", "currency": "USDT", "total": "10012.5", "available": "9412.5"}],
+        balances=[
+            {
+                "wallet_type": "spot",
+                "sub_account": None,
+                "asset": "USDT",
+                "currency": "USDT",
+                "total": "10012.5",
+                "available": "9412.5",
+            },
+            {
+                "wallet_type": "spot",
+                "sub_account": "payout",
+                "asset": "USDT",
+                "currency": "USDT",
+                "total": "250",
+                "available": "250",
+            },
+        ],
         positions=[],
         fills=[],
         fees=[],
+        cash_flows=[
+            {
+                "cash_flow_id": "transfer-1",
+                "kind": "sub_account_transfer",
+                "from": {"wallet_type": "spot", "sub_account": None},
+                "to": {"wallet_type": "spot", "sub_account": "payout"},
+                "counterparty_uid": None,
+                "currency": "USDT",
+                "amount": "300",
+                "fee": "0",
+                "fee_currency": "USDT",
+                "occurred_at": "2026-07-15T07:20:00Z",
+                "external_reference": None,
+                "destination": None,
+            },
+            {
+                "cash_flow_id": "uid-out-1",
+                "kind": "uid_transfer_out",
+                "from": {"wallet_type": "spot", "sub_account": "payout"},
+                "to": None,
+                "counterparty_uid": "100200300",
+                "currency": "USDT",
+                "amount": "20",
+                "fee": "0",
+                "fee_currency": "USDT",
+                "occurred_at": "2026-07-15T07:30:00Z",
+                "external_reference": None,
+                "destination": None,
+            },
+            {
+                "cash_flow_id": "withdraw-1",
+                "kind": "withdrawal",
+                "from": {"wallet_type": "spot", "sub_account": "payout"},
+                "to": None,
+                "counterparty_uid": None,
+                "currency": "USDT",
+                "amount": "30",
+                "fee": "1",
+                "fee_currency": "USDT",
+                "occurred_at": "2026-07-15T07:40:00Z",
+                "external_reference": "0x5f1e0000000000000000000000000000000000000000000000000000000000aa",
+                "destination": {
+                    "address": "0x00000000000000000000000000000000000000b1",
+                    "network": "ETH",
+                    "memo": None,
+                },
+            },
+        ],
     )
     facts.extend(ledger)
     facts.append(

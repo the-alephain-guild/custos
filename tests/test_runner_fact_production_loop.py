@@ -75,9 +75,12 @@ class _CoverageHost:
                 "positions_complete": True,
                 "fills_complete": True,
                 "fees_complete": True,
+                "cash_flows_complete": False,
             },
             balances=(
                 {
+                    "wallet_type": "spot",
+                    "sub_account": None,
                     "asset": "USDT",
                     "currency": "USDT",
                     "total": "100",

@@ -163,6 +163,9 @@ class BinanceVenueLedgerSource:
                 "positions_complete": True,
                 "fills_complete": True,
                 "fees_complete": True,
+                # Transfer and deposit history is not collected yet, so the
+                # snapshot must not claim its cash flows are complete.
+                "cash_flows_complete": False,
             },
             balances=balances,
             positions=positions,
@@ -271,6 +274,8 @@ class BinanceVenueLedgerSource:
                     continue
                 balances.append(
                     {
+                        "wallet_type": "usdm_futures",
+                        "sub_account": None,
                         "asset": asset,
                         "currency": asset,
                         "total": self._decimal(row.get("marginBalance"), "marginBalance"),
@@ -318,6 +323,8 @@ class BinanceVenueLedgerSource:
                 locked = Decimal(self._decimal(row.get("locked"), "locked"))
                 balances.append(
                     {
+                        "wallet_type": "spot",
+                        "sub_account": None,
                         "asset": asset,
                         "currency": asset,
                         "total": self._render(free + locked),

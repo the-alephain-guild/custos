@@ -107,6 +107,40 @@ MAX_BATCH_BYTES: Final = 768 * 1024
 MAX_VENUE_LEDGER_CHUNKS: Final = 4096
 MAX_VENUE_LEDGER_ITEMS_PER_CHUNK: Final = 512
 MAX_VENUE_LEDGER_CHUNK_BYTES: Final = 262_144
+VENUE_LEDGER_SECTIONS: Final = ("balances", "positions", "fills", "fees", "cash_flows")
+VENUE_LEDGER_COMPLETENESS_FIELDS: Final = (
+    "balances_complete",
+    "positions_complete",
+    "fills_complete",
+    "fees_complete",
+    "cash_flows_complete",
+)
+VENUE_CASH_FLOW_KINDS: Final = frozenset(
+    {
+        "internal_transfer",
+        "sub_account_transfer",
+        "uid_transfer_out",
+        "uid_transfer_in",
+        "deposit",
+        "withdrawal",
+    }
+)
+# Which side of a cash flow is inside this account: the other side is either
+# another user (identified by counterparty_uid) or the outside world.
+_CASH_FLOW_ENDPOINTS: Final[Mapping[str, tuple[bool, bool]]] = MappingProxyType(
+    {
+        "internal_transfer": (True, True),
+        "sub_account_transfer": (True, True),
+        "uid_transfer_out": (True, False),
+        "uid_transfer_in": (False, True),
+        "deposit": (False, True),
+        "withdrawal": (True, False),
+    }
+)
+_WALLET_TYPE_PATTERN: Final = re.compile(r"[a-z][a-z0-9_]{0,63}")
+_SUB_ACCOUNT_PATTERN: Final = re.compile(
+    r"[^\s\x00-\x1f\x7f](?:[^\x00-\x1f\x7f]{0,126}[^\s\x00-\x1f\x7f])?"
+)
 RUNNER_STATE_SCHEMA_VERSION: Final = 1
 RUNNER_FACT_KIND_PROJECTORS: Final[Mapping[str, str]] = MappingProxyType(
     {
@@ -1012,6 +1046,7 @@ def venue_ledger_snapshot_facts(
     *,
     snapshot_id: UUID | str,
     venue: str,
+    sub_account: str | None,
     source: str,
     watermark: str,
     coverage_from: datetime | str,
@@ -1021,9 +1056,11 @@ def venue_ledger_snapshot_facts(
     positions: Sequence[Mapping[str, Any]],
     fills: Sequence[Mapping[str, Any]],
     fees: Sequence[Mapping[str, Any]],
+    cash_flows: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     snapshot = _uuid(snapshot_id, "snapshot_id")
     venue_value = _non_empty(venue, "venue")
+    sub_account_value = _sub_account(sub_account, "sub_account")
     source_value = _non_empty(source, "source")
     if source_value not in {"venue_api", "drop_copy"}:
         raise RunnerFactContractError("venue ledger source must be venue_api or drop_copy")
@@ -1036,6 +1073,8 @@ def venue_ledger_snapshot_facts(
         raise RunnerFactContractError("coverage_from must not follow observed_through")
     normalized_balances = [
         {
+            "wallet_type": _wallet_type(row.get("wallet_type"), "balances.wallet_type"),
+            "sub_account": _sub_account(row.get("sub_account"), "balances.sub_account"),
             "asset": _non_empty(row.get("asset"), "balances.asset"),
             "currency": _currency(row.get("currency")),
             "total": _decimal(row.get("total"), "balances.total"),
@@ -1089,7 +1128,17 @@ def venue_ledger_snapshot_facts(
         }
         for row in fees
     ]
-    normalized_balances.sort(key=lambda row: (str(row["asset"]), str(row["currency"])))
+    normalized_cash_flows = [_cash_flow(row) for row in cash_flows]
+
+    def balance_key(row: Mapping[str, Any]) -> tuple[str, str, str, str]:
+        return (
+            str(row["wallet_type"]),
+            row["sub_account"] or "",
+            str(row["asset"]),
+            str(row["currency"]),
+        )
+
+    normalized_balances.sort(key=balance_key)
     normalized_positions.sort(
         key=lambda row: (str(row["instrument"]), str(row["side"]), str(row["venue_position_id"]))
     )
@@ -1104,33 +1153,34 @@ def venue_ledger_snapshot_facts(
     normalized_fees.sort(
         key=lambda row: (str(row["occurred_at"]), str(row["kind"]), str(row["fee_id"]))
     )
-    balance_keys = [(str(row["asset"]), str(row["currency"])) for row in normalized_balances]
+    normalized_cash_flows.sort(key=lambda row: (str(row["occurred_at"]), str(row["cash_flow_id"])))
+    balance_keys = [balance_key(row) for row in normalized_balances]
     if len(balance_keys) != len(set(balance_keys)):
-        raise RunnerFactContractError("balances contains duplicate asset/currency")
+        raise RunnerFactContractError(
+            "balances contains duplicate wallet_type/sub_account/asset/currency"
+        )
     _require_unique(normalized_positions, "venue_position_id", "positions")
     fill_keys = [(str(row["instrument"]), str(row["venue_trade_id"])) for row in normalized_fills]
     if len(fill_keys) != len(set(fill_keys)):
         raise RunnerFactContractError("fills contains duplicate instrument/venue_trade_id")
     _require_unique(normalized_fees, "fee_id", "fees")
+    _require_unique(normalized_cash_flows, "cash_flow_id", "cash_flows")
     completeness_value = {
         field: _required_bool(completeness.get(field), f"completeness.{field}")
-        for field in (
-            "balances_complete",
-            "positions_complete",
-            "fills_complete",
-            "fees_complete",
-        )
+        for field in VENUE_LEDGER_COMPLETENESS_FIELDS
+    }
+    sections: dict[str, list[dict[str, Any]]] = {
+        "balances": normalized_balances,
+        "positions": normalized_positions,
+        "fills": normalized_fills,
+        "fees": normalized_fees,
+        "cash_flows": normalized_cash_flows,
     }
     ordered_items: list[tuple[str, dict[str, Any]]] = []
-    for label, rows in (
-        ("balances", normalized_balances),
-        ("positions", normalized_positions),
-        ("fills", normalized_fills),
-        ("fees", normalized_fees),
-    ):
-        ordered_items.extend((label, row) for row in rows)
+    for label in VENUE_LEDGER_SECTIONS:
+        ordered_items.extend((label, row) for row in sections[label])
     chunk_rows: list[dict[str, list[dict[str, Any]]]] = []
-    current = {"balances": [], "positions": [], "fills": [], "fees": []}
+    current: dict[str, list[dict[str, Any]]] = {label: [] for label in VENUE_LEDGER_SECTIONS}
     for label, row in ordered_items:
         candidate = {key: list(values) for key, values in current.items()}
         candidate[label].append(row)
@@ -1148,7 +1198,7 @@ def venue_ledger_snapshot_facts(
             if not any(current.values()):
                 raise RunnerFactContractError("one venue ledger item exceeds the chunk byte limit")
             chunk_rows.append(current)
-            current = {"balances": [], "positions": [], "fills": [], "fees": []}
+            current = {label: [] for label in VENUE_LEDGER_SECTIONS}
             current[label].append(row)
         else:
             current = candidate
@@ -1179,16 +1229,12 @@ def venue_ledger_snapshot_facts(
                 "chunk_digest": chunk_digest,
             }
         )
-    counts = {
-        "balances": len(normalized_balances),
-        "positions": len(normalized_positions),
-        "fills": len(normalized_fills),
-        "fees": len(normalized_fees),
-    }
+    counts = {label: len(sections[label]) for label in VENUE_LEDGER_SECTIONS}
     digest_payload = {
         "schema_version": 1,
         "snapshot_id": snapshot,
         "venue": venue_value,
+        "sub_account": sub_account_value,
         "source": source_value,
         "watermark": watermark_value,
         "coverage_from": coverage,
@@ -1203,6 +1249,7 @@ def venue_ledger_snapshot_facts(
         "event_id": str(runner_fact_event_id("venue_manifest", snapshot)),
         "snapshot_id": snapshot,
         "venue": venue_value,
+        "sub_account": sub_account_value,
         "source": source_value,
         "watermark": watermark_value,
         "coverage_from": coverage,
@@ -1212,6 +1259,7 @@ def venue_ledger_snapshot_facts(
         "positions_count": counts["positions"],
         "fills_count": counts["fills"],
         "fees_count": counts["fees"],
+        "cash_flows_count": counts["cash_flows"],
         "chunk_count": chunk_count,
         "content_digest": _sha256_hex(_canonical_json_bytes(digest_payload)),
     }
@@ -1264,6 +1312,101 @@ def _require_unique(rows: Sequence[Mapping[str, Any]], field: str, label: str) -
     values = [str(row[field]) for row in rows]
     if len(values) != len(set(values)):
         raise RunnerFactContractError(f"{label} contains duplicate {field}")
+
+
+def _wallet_type(value: Any, field: str) -> str:
+    if not isinstance(value, str) or _WALLET_TYPE_PATTERN.fullmatch(value) is None:
+        raise RunnerFactContractError(f"{field} must be a lowercase wallet token")
+    return value
+
+
+def _sub_account(value: Any, field: str) -> str | None:
+    """Return a sub-account name, or None for the venue's main account.
+
+    An empty name is forbidden so that None can sort as the empty string
+    without colliding with a real sub-account.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str) or _SUB_ACCOUNT_PATTERN.fullmatch(value) is None:
+        raise RunnerFactContractError(f"{field} must be null or a trimmed printable name")
+    return value
+
+
+def _optional_non_empty(value: Any, field: str) -> str | None:
+    return None if value is None else _non_empty(value, field)
+
+
+def _cash_flow_endpoint(value: Any, field: str) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if not isinstance(value, Mapping) or set(value) != {"wallet_type", "sub_account"}:
+        raise RunnerFactContractError(f"{field} must hold exactly wallet_type and sub_account")
+    return {
+        "wallet_type": _wallet_type(value["wallet_type"], f"{field}.wallet_type"),
+        "sub_account": _sub_account(value["sub_account"], f"{field}.sub_account"),
+    }
+
+
+def _cash_flow(row: Mapping[str, Any]) -> dict[str, Any]:
+    kind = _non_empty(row.get("kind"), "cash_flows.kind")
+    if kind not in VENUE_CASH_FLOW_KINDS:
+        raise RunnerFactContractError("cash_flows.kind is not a supported cash flow kind")
+    source = _cash_flow_endpoint(row.get("from"), "cash_flows.from")
+    target = _cash_flow_endpoint(row.get("to"), "cash_flows.to")
+    has_source, has_target = _CASH_FLOW_ENDPOINTS[kind]
+    if (source is not None) != has_source:
+        raise RunnerFactContractError(
+            f"cash_flows.from is {'required' if has_source else 'forbidden'} for {kind}"
+        )
+    if (target is not None) != has_target:
+        raise RunnerFactContractError(
+            f"cash_flows.to is {'required' if has_target else 'forbidden'} for {kind}"
+        )
+    if source is not None and target is not None:
+        same_account = source["sub_account"] == target["sub_account"]
+        if kind == "internal_transfer" and not same_account:
+            raise RunnerFactContractError("internal_transfer must stay in the same sub_account")
+        if kind == "sub_account_transfer" and same_account:
+            raise RunnerFactContractError("sub_account_transfer must reach a different sub_account")
+    counterparty = _optional_non_empty(row.get("counterparty_uid"), "cash_flows.counterparty_uid")
+    if (counterparty is not None) != kind.startswith("uid_transfer_"):
+        raise RunnerFactContractError("cash_flows.counterparty_uid belongs to uid transfers only")
+    destination = row.get("destination")
+    if destination is not None:
+        if kind != "withdrawal":
+            raise RunnerFactContractError("cash_flows.destination belongs to withdrawals only")
+        if not isinstance(destination, Mapping) or set(destination) != {
+            "address",
+            "network",
+            "memo",
+        }:
+            raise RunnerFactContractError(
+                "cash_flows.destination must hold exactly address, network and memo"
+            )
+        destination = {
+            "address": _non_empty(destination["address"], "cash_flows.destination.address"),
+            "network": _optional_non_empty(
+                destination["network"], "cash_flows.destination.network"
+            ),
+            "memo": _optional_non_empty(destination["memo"], "cash_flows.destination.memo"),
+        }
+    return {
+        "cash_flow_id": _non_empty(row.get("cash_flow_id"), "cash_flows.cash_flow_id"),
+        "kind": kind,
+        "from": source,
+        "to": target,
+        "counterparty_uid": counterparty,
+        "currency": _currency(row.get("currency")),
+        "amount": _decimal(row.get("amount"), "cash_flows.amount", positive=True),
+        "fee": _decimal(row.get("fee"), "cash_flows.fee"),
+        "fee_currency": _currency(row.get("fee_currency")),
+        "occurred_at": _timestamp(row.get("occurred_at"), "cash_flows.occurred_at"),
+        "external_reference": _optional_non_empty(
+            row.get("external_reference"), "cash_flows.external_reference"
+        ),
+        "destination": destination,
+    }
 
 
 @dataclass(frozen=True, slots=True)

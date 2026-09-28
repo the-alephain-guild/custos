@@ -650,6 +650,7 @@
         "seq",
         "snapshot_id",
         "venue",
+        "sub_account",
         "source",
         "watermark",
         "coverage_from",
@@ -659,6 +660,7 @@
         "positions_count",
         "fills_count",
         "fees_count",
+        "cash_flows_count",
         "chunk_count",
         "content_digest"
       ],
@@ -680,6 +682,17 @@
         "venue": {
           "type": "string",
           "minLength": 1
+        },
+        "sub_account": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[^\\s\\x00-\\x1f\\x7f](?:[^\\x00-\\x1f\\x7f]{0,126}[^\\s\\x00-\\x1f\\x7f])?$"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "source": {
           "enum": [
@@ -706,7 +719,8 @@
             "balances_complete",
             "positions_complete",
             "fills_complete",
-            "fees_complete"
+            "fees_complete",
+            "cash_flows_complete"
           ],
           "properties": {
             "balances_complete": {
@@ -719,6 +733,9 @@
               "type": "boolean"
             },
             "fees_complete": {
+              "type": "boolean"
+            },
+            "cash_flows_complete": {
               "type": "boolean"
             }
           }
@@ -736,6 +753,10 @@
           "minimum": 0
         },
         "fees_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cash_flows_count": {
           "type": "integer",
           "minimum": 0
         },
@@ -764,6 +785,7 @@
         "positions",
         "fills",
         "fees",
+        "cash_flows",
         "chunk_digest"
       ],
       "properties": {
@@ -796,12 +818,29 @@
             "type": "object",
             "additionalProperties": false,
             "required": [
+              "wallet_type",
+              "sub_account",
               "asset",
               "currency",
               "total",
               "available"
             ],
             "properties": {
+              "wallet_type": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,63}$"
+              },
+              "sub_account": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[^\\s\\x00-\\x1f\\x7f](?:[^\\x00-\\x1f\\x7f]{0,126}[^\\s\\x00-\\x1f\\x7f])?$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "asset": {
                 "type": "string",
                 "minLength": 1
@@ -1007,6 +1046,478 @@
                 "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$"
               }
             }
+          }
+        },
+        "cash_flows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cash_flow_id",
+              "kind",
+              "from",
+              "to",
+              "counterparty_uid",
+              "currency",
+              "amount",
+              "fee",
+              "fee_currency",
+              "occurred_at",
+              "external_reference",
+              "destination"
+            ],
+            "properties": {
+              "cash_flow_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "enum": [
+                  "internal_transfer",
+                  "sub_account_transfer",
+                  "uid_transfer_out",
+                  "uid_transfer_in",
+                  "deposit",
+                  "withdrawal"
+                ]
+              },
+              "from": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "wallet_type",
+                      "sub_account"
+                    ],
+                    "properties": {
+                      "wallet_type": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                      },
+                      "sub_account": {
+                        "oneOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[^\\s\\x00-\\x1f\\x7f](?:[^\\x00-\\x1f\\x7f]{0,126}[^\\s\\x00-\\x1f\\x7f])?$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "to": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "wallet_type",
+                      "sub_account"
+                    ],
+                    "properties": {
+                      "wallet_type": {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                      },
+                      "sub_account": {
+                        "oneOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[^\\s\\x00-\\x1f\\x7f](?:[^\\x00-\\x1f\\x7f]{0,126}[^\\s\\x00-\\x1f\\x7f])?$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "counterparty_uid": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "currency": {
+                "enum": [
+                  "USD",
+                  "USDT",
+                  "USDC",
+                  "BTC",
+                  "ETH",
+                  "VUSDC",
+                  "VBTC",
+                  "VETH"
+                ]
+              },
+              "amount": {
+                "type": "string",
+                "pattern": "^(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"
+              },
+              "fee": {
+                "type": "string",
+                "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+              },
+              "fee_currency": {
+                "enum": [
+                  "USD",
+                  "USDT",
+                  "USDC",
+                  "BTC",
+                  "ETH",
+                  "VUSDC",
+                  "VBTC",
+                  "VETH"
+                ]
+              },
+              "occurred_at": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$"
+              },
+              "external_reference": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "destination": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "address",
+                      "network",
+                      "memo"
+                    ],
+                    "properties": {
+                      "address": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "network": {
+                        "oneOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "memo": {
+                        "oneOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "internal_transfer",
+                        "sub_account_transfer"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "from": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "wallet_type",
+                        "sub_account"
+                      ],
+                      "properties": {
+                        "wallet_type": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                        },
+                        "sub_account": {
+                          "oneOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[^\\s\\x00-\\x1f\\x7f](?:[^\\x00-\\x1f\\x7f]{0,126}[^\\s\\x00-\\x1f\\x7f])?$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "to": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "wallet_type",
+                        "sub_account"
+                      ],
+                      "properties": {
+                        "wallet_type": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                        },
+                        "sub_account": {
+                          "oneOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[^\\s\\x00-\\x1f\\x7f](?:[^\\x00-\\x1f\\x7f]{0,126}[^\\s\\x00-\\x1f\\x7f])?$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "counterparty_uid": {
+                      "type": "null"
+                    },
+                    "destination": {
+                      "type": "null"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "uid_transfer_out"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "from": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "wallet_type",
+                        "sub_account"
+                      ],
+                      "properties": {
+                        "wallet_type": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                        },
+                        "sub_account": {
+                          "oneOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[^\\s\\x00-\\x1f\\x7f](?:[^\\x00-\\x1f\\x7f]{0,126}[^\\s\\x00-\\x1f\\x7f])?$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "to": {
+                      "type": "null"
+                    },
+                    "counterparty_uid": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "destination": {
+                      "type": "null"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "uid_transfer_in"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "from": {
+                      "type": "null"
+                    },
+                    "to": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "wallet_type",
+                        "sub_account"
+                      ],
+                      "properties": {
+                        "wallet_type": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                        },
+                        "sub_account": {
+                          "oneOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[^\\s\\x00-\\x1f\\x7f](?:[^\\x00-\\x1f\\x7f]{0,126}[^\\s\\x00-\\x1f\\x7f])?$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "counterparty_uid": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "destination": {
+                      "type": "null"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "deposit"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "from": {
+                      "type": "null"
+                    },
+                    "to": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "wallet_type",
+                        "sub_account"
+                      ],
+                      "properties": {
+                        "wallet_type": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                        },
+                        "sub_account": {
+                          "oneOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[^\\s\\x00-\\x1f\\x7f](?:[^\\x00-\\x1f\\x7f]{0,126}[^\\s\\x00-\\x1f\\x7f])?$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "counterparty_uid": {
+                      "type": "null"
+                    },
+                    "destination": {
+                      "type": "null"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "withdrawal"
+                      ]
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "from": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "wallet_type",
+                        "sub_account"
+                      ],
+                      "properties": {
+                        "wallet_type": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+                        },
+                        "sub_account": {
+                          "oneOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^[^\\s\\x00-\\x1f\\x7f](?:[^\\x00-\\x1f\\x7f]{0,126}[^\\s\\x00-\\x1f\\x7f])?$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "to": {
+                      "type": "null"
+                    },
+                    "counterparty_uid": {
+                      "type": "null"
+                    }
+                  }
+                }
+              }
+            ]
           }
         },
         "chunk_digest": {

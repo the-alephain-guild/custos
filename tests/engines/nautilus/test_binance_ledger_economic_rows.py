@@ -142,6 +142,8 @@ def test_perpetual_account_balances_only_include_settlement_currencies() -> None
 
     assert balances == [
         {
+            "wallet_type": "usdm_futures",
+            "sub_account": None,
             "asset": "USDT",
             "currency": "USDT",
             "total": "4462.00816174",
@@ -332,6 +334,7 @@ def test_the_fee_currency_survives_venue_snapshot_serialization() -> None:
     chunks = venue_ledger_snapshot_facts(
         snapshot_id="90000000-0000-4000-8000-000000000001",
         venue="BINANCE",
+        sub_account=None,
         source="venue_api",
         watermark="w-1",
         coverage_from=observed,
@@ -341,11 +344,13 @@ def test_the_fee_currency_survives_venue_snapshot_serialization() -> None:
             "positions_complete": True,
             "fills_complete": True,
             "fees_complete": True,
+            "cash_flows_complete": False,
         },
         balances=[],
         positions=[],
         fills=fills,
         fees=fees,
+        cash_flows=[],
     )
 
     wire_fills = [row for chunk in chunks for row in chunk.get("fills", [])]

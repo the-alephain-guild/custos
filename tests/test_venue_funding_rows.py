@@ -139,6 +139,7 @@ def test_funding_rows_travel_in_the_signed_snapshot_chunks():
     facts = venue_ledger_snapshot_facts(
         snapshot_id=uuid4(),
         venue="BINANCE",
+        sub_account=None,
         source="venue_api",
         watermark="w",
         coverage_from=datetime(2026, 8, 1, tzinfo=UTC),
@@ -148,11 +149,13 @@ def test_funding_rows_travel_in_the_signed_snapshot_chunks():
             "positions_complete": True,
             "fills_complete": True,
             "fees_complete": True,
+            "cash_flows_complete": False,
         },
         balances=[],
         positions=[],
         fills=[],
         fees=fees,
+        cash_flows=[],
     )
 
     manifest = next(f for f in facts if f["kind"] == "venue_ledger_snapshot_manifest")

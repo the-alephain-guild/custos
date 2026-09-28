@@ -16,7 +16,7 @@
   "emitted_at": "2026-07-15T08:00:00Z",
   "source_seq_start": 1,
   "source_seq_end": 14,
-  "payload_digest": "ff59dc85309d900e58705c7cfacfa3802119416d1fff99c78db683832aa031de",
+  "payload_digest": "1adb33b9605be461084b0e73d29265ed8bb7abc1d21ed688e3c4253e95bc1180",
   "facts": [
     {
       "kind": "execution_fill",
@@ -121,6 +121,7 @@
       "event_id": "da7817c4-a6cc-5521-9ce7-c0773821c032",
       "snapshot_id": "71000000-0000-4000-8000-000000000007",
       "venue": "BINANCE",
+      "sub_account": null,
       "source": "venue_api",
       "watermark": "ledger-1",
       "coverage_from": "2026-07-15T07:00:00Z",
@@ -129,14 +130,16 @@
         "balances_complete": true,
         "positions_complete": true,
         "fills_complete": true,
-        "fees_complete": true
+        "fees_complete": true,
+        "cash_flows_complete": true
       },
-      "balances_count": 1,
+      "balances_count": 2,
       "positions_count": 0,
       "fills_count": 0,
       "fees_count": 0,
+      "cash_flows_count": 3,
       "chunk_count": 1,
-      "content_digest": "e1df4227f78d40511c5e853801afd8d4b0623ee3f566ef6b54a280d0daa2f148",
+      "content_digest": "83d9f72640c8e91e641c7b7d39b2d1d552e866f1b346f146b78868c862b61c01",
       "seq": 10
     },
     {
@@ -147,16 +150,86 @@
       "chunk_count": 1,
       "balances": [
         {
+          "wallet_type": "spot",
+          "sub_account": null,
           "asset": "USDT",
           "currency": "USDT",
           "total": "10012.5",
           "available": "9412.5"
+        },
+        {
+          "wallet_type": "spot",
+          "sub_account": "payout",
+          "asset": "USDT",
+          "currency": "USDT",
+          "total": "250",
+          "available": "250"
         }
       ],
       "positions": [],
       "fills": [],
       "fees": [],
-      "chunk_digest": "314b9088655bc9de49f546a526ef276fc87315e9cf6e23dea701cb7a46ecce9e",
+      "cash_flows": [
+        {
+          "cash_flow_id": "transfer-1",
+          "kind": "sub_account_transfer",
+          "from": {
+            "wallet_type": "spot",
+            "sub_account": null
+          },
+          "to": {
+            "wallet_type": "spot",
+            "sub_account": "payout"
+          },
+          "counterparty_uid": null,
+          "currency": "USDT",
+          "amount": "300",
+          "fee": "0",
+          "fee_currency": "USDT",
+          "occurred_at": "2026-07-15T07:20:00Z",
+          "external_reference": null,
+          "destination": null
+        },
+        {
+          "cash_flow_id": "uid-out-1",
+          "kind": "uid_transfer_out",
+          "from": {
+            "wallet_type": "spot",
+            "sub_account": "payout"
+          },
+          "to": null,
+          "counterparty_uid": "100200300",
+          "currency": "USDT",
+          "amount": "20",
+          "fee": "0",
+          "fee_currency": "USDT",
+          "occurred_at": "2026-07-15T07:30:00Z",
+          "external_reference": null,
+          "destination": null
+        },
+        {
+          "cash_flow_id": "withdraw-1",
+          "kind": "withdrawal",
+          "from": {
+            "wallet_type": "spot",
+            "sub_account": "payout"
+          },
+          "to": null,
+          "counterparty_uid": null,
+          "currency": "USDT",
+          "amount": "30",
+          "fee": "1",
+          "fee_currency": "USDT",
+          "occurred_at": "2026-07-15T07:40:00Z",
+          "external_reference": "0x5f1e0000000000000000000000000000000000000000000000000000000000aa",
+          "destination": {
+            "address": "0x00000000000000000000000000000000000000b1",
+            "network": "ETH",
+            "memo": null
+          }
+        }
+      ],
+      "chunk_digest": "2b97405f23ba58c09e812c31e9e4a616fa5ab9c808970512c6e9d2fae917586d",
       "seq": 11
     },
     {
@@ -207,5 +280,5 @@
       "seq": 14
     }
   ],
-  "signature": "UZmjv0cC0W2QGVwByXQs8NwF2XiAxySc-tvTLh_w1ChEhe7JcfkV9z3zo_1WH_7lo4iBHrl9kNfdPpmMOuVcAQ"
+  "signature": "2LlsVCPcWEKUgbFvdIwp8c952_pBVpWn2apvBWIievBu-9sGQCm8zaO0yRTWpyUJcGcK9p3rfl2Y3ywpmsL8Bw"
 }

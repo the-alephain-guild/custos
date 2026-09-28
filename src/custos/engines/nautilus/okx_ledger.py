@@ -227,6 +227,8 @@ class OkxVenueLedgerSource:
             available = decimal(row.get("availBal") or row.get("availEq"), "available balance")
             balances.append(
                 {
+                    "wallet_type": "trading",
+                    "sub_account": None,
                     "asset": currency,
                     "currency": currency,
                     "total": str(total),
@@ -381,7 +383,10 @@ class OkxVenueLedgerSource:
                     "fills_complete",
                     "fees_complete",
                 )
-            },
+            }
+            # Transfer and deposit history is not collected yet, so the
+            # snapshot must not claim its cash flows are complete.
+            | {"cash_flows_complete": False},
             balances=balances,
             positions=positions,
             fills=fills,
