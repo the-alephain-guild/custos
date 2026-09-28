@@ -13,6 +13,24 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Changed
+
+- **RunnerFact V1 venue ledger snapshots carry cash flows and wallet scope.**
+  The contract changes in place; a consumer must take the new schema and golden
+  together with this release.
+  - A chunk has a fifth section, `cash_flows`: internal and sub-account
+    transfers, transfers to and from another user of the venue, deposits and
+    withdrawals. Amounts and fees are never negative; `kind` gives the
+    direction. A withdrawal carries its receiving `destination` when the venue
+    reports one.
+  - Every balance names its `wallet_type` and `sub_account`; the manifest
+    carries the snapshot's `sub_account` and a `cash_flows_count`.
+  - `completeness` gains `cash_flows_complete`, reported separately from the
+    other four flags. Collectors report cash flows as empty and incomplete
+    until transfer history is collected.
+  - Valuation reads one declared wallet; evidence that supplies valuation
+    balances without naming their wallet is refused.
+
 ## [0.4.2] - 2026-09-27
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.4.2`
