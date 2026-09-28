@@ -154,6 +154,7 @@ class _ValuationHost(_CoverageHost):
             },
             valuation_collection_started_at=closed_at - timedelta(seconds=1),
             venue_wallet_balances={"USDT": "1000"},
+            valuation_wallet_type="spot",
             valuation_positions=(
                 {
                     "instrument": "BTCUSDT-PERP.BINANCE",
@@ -614,6 +615,7 @@ async def test_cash_checkpoint_compares_account_inventory_without_strategy_cost(
                 evidence,
                 valuation_collection_started_at=evidence.observed_through,
                 venue_wallet_balances={"USDT": "100"},
+                valuation_wallet_type="spot",
                 valuation_positions=(),
                 cash_inventory=(
                     {"asset": "BTC", "quantity": "1", "mark_price": "100"},

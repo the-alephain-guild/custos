@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from custos.core.runner_fact import SUPPORTED_CURRENCIES
 from custos.core.runner_fact_producer import VenueLedgerEvidence
-from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory
+from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory, scoped_balances
 from custos.engines.nautilus.ledger_http import (
     ReadOnlyVenueHttp,
     VenueLedgerError,
@@ -51,6 +51,8 @@ class OkxVenueLedgerSource:
         self._margin = options.get("margin_mode", "cross")
         self._demo = mode == "testnet"
         self._perpetual = spec["connector"] == "okx_perpetual"
+        # The account balance endpoint reads the unified trading account.
+        self._wallet_type = "trading"
         self._kind = "SWAP" if self._perpetual else "SPOT"
         self._symbols = tuple(
             value.removesuffix(".OKX") for value in build_instrument_id_strings(spec)
@@ -227,7 +229,7 @@ class OkxVenueLedgerSource:
             available = decimal(row.get("availBal") or row.get("availEq"), "available balance")
             balances.append(
                 {
-                    "wallet_type": "trading",
+                    "wallet_type": self._wallet_type,
                     "sub_account": None,
                     "asset": currency,
                     "currency": currency,
@@ -352,7 +354,9 @@ class OkxVenueLedgerSource:
                 prices[symbol.split("-")[0]] = book_mid(
                     ticker[0].get("bidPx"), ticker[0].get("askPx")
                 )
-            inventory = cash_inventory(balances, quote, prices)
+            inventory = cash_inventory(
+                scoped_balances(balances, self._wallet_type, None), quote, prices
+            )
         observed = timestamp_ms(rows(self._get("/api/v5/public/time", {}, private=False))[0]["ts"])
         watermark = hashlib.sha256(
             json.dumps(
@@ -392,7 +396,11 @@ class OkxVenueLedgerSource:
             fills=fills,
             fees=fees,
             valuation_collection_started_at=collection_started,
-            venue_wallet_balances={row["currency"]: row["total"] for row in balances},
+            venue_wallet_balances={
+                row["currency"]: row["total"]
+                for row in scoped_balances(balances, self._wallet_type, None)
+            },
+            valuation_wallet_type=self._wallet_type,
             valuation_positions=valuation_positions,
             cash_inventory=inventory,
         )

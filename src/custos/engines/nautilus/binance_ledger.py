@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import padding
 from custos.core.runner_fact import SUPPORTED_CURRENCIES
 from custos.core.runner_fact_producer import VenueLedgerEvidence
 from custos.core.venue_proxy import VenueProxy
-from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory
+from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory, scoped_balances
 
 _SPOT_LIVE = "https://api.binance.com"
 _SPOT_TESTNET = "https://testnet.binance.vision"
@@ -45,6 +45,7 @@ class BinanceVenueLedgerSource:
         "_key_type",
         "_base_url",
         "_futures",
+        "_wallet_type",
         "_opener",
         "_pairs",
         "_symbols",
@@ -68,6 +69,7 @@ class BinanceVenueLedgerSource:
         if connector not in {"binance", "binance_perpetual"}:
             raise BinanceVenueLedgerError(f"unsupported Binance ledger connector {connector!r}")
         self._futures = connector == "binance_perpetual"
+        self._wallet_type = "usdm_futures" if self._futures else "spot"
         # An explicit, possibly empty, proxy table: urllib would otherwise route
         # through whatever HTTPS_PROXY the process inherited, which is not the
         # route the engine's own clients to this venue take.
@@ -134,13 +136,20 @@ class BinanceVenueLedgerSource:
                 if not isinstance(ticker, dict) or ticker.get("symbol") != base + quote:
                     raise BinanceVenueLedgerError("Binance spot quote is missing or ambiguous")
                 prices[base] = book_mid(ticker.get("bidPrice"), ticker.get("askPrice"))
-            inventory = cash_inventory(balances, next(iter(self._settlement_currencies)), prices)
+            inventory = cash_inventory(
+                scoped_balances(balances, self._wallet_type, None),
+                next(iter(self._settlement_currencies)),
+                prices,
+            )
         observed_ms = self._server_time_ms()
         observed_through = datetime.fromtimestamp(observed_ms / 1000, UTC)
         venue_wallet_balances = (
             self._wallet_balances(account)
             if self._futures
-            else {row["currency"]: row["total"] for row in balances}
+            else {
+                row["currency"]: row["total"]
+                for row in scoped_balances(balances, self._wallet_type, None)
+            }
         )
         valuation_positions = self._valuation_positions(futures_positions or ())
         source_state = {
@@ -175,6 +184,7 @@ class BinanceVenueLedgerSource:
                 collection_started_ms / 1000, UTC
             ),
             venue_wallet_balances=venue_wallet_balances,
+            valuation_wallet_type=self._wallet_type,
             valuation_positions=valuation_positions,
             cash_inventory=inventory,
         )
@@ -274,7 +284,7 @@ class BinanceVenueLedgerSource:
                     continue
                 balances.append(
                     {
-                        "wallet_type": "usdm_futures",
+                        "wallet_type": self._wallet_type,
                         "sub_account": None,
                         "asset": asset,
                         "currency": asset,
@@ -323,7 +333,7 @@ class BinanceVenueLedgerSource:
                 locked = Decimal(self._decimal(row.get("locked"), "locked"))
                 balances.append(
                     {
-                        "wallet_type": "spot",
+                        "wallet_type": self._wallet_type,
                         "sub_account": None,
                         "asset": asset,
                         "currency": asset,

@@ -12,6 +12,19 @@ def book_mid(bid, ask) -> Decimal:
     return (bid + ask) / 2
 
 
+def scoped_balances(balances, wallet_type, sub_account):
+    """Keep the balances of the one wallet that valuation reads.
+
+    The same currency held in two wallets is two balances; valuing them
+    together would count one wallet's money as another's.
+    """
+    return [
+        row
+        for row in balances
+        if row["wallet_type"] == wallet_type and row["sub_account"] == sub_account
+    ]
+
+
 def cash_inventory(balances, currency, prices):
     inventory = []
     seen = set()

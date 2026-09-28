@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 
 from custos.core.runner_fact import SUPPORTED_CURRENCIES
 from custos.core.runner_fact_producer import VenueLedgerEvidence
-from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory
+from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory, scoped_balances
 from custos.engines.nautilus.ledger_http import (
     ReadOnlyVenueHttp,
     VenueLedgerError,
@@ -40,6 +40,7 @@ class SodexVenueLedgerSource:
         if spec["connector"] not in {"sodex", "sodex_perpetual"}:
             raise VenueLedgerError("SoDEX connector is invalid")
         self._perpetual = spec["connector"] == "sodex_perpetual"
+        self._wallet_type = "perps" if self._perpetual else "spot"
         self._venue = "SODEX_PERPS" if self._perpetual else "SODEX_SPOT"
         network, market = (
             ("testnet" if mode == "testnet" else "mainnet"),
@@ -189,7 +190,7 @@ class SodexVenueLedgerSource:
                 free = total - decimal(row["locked"], "locked balance")
             balances.append(
                 {
-                    "wallet_type": "perps" if self._perpetual else "spot",
+                    "wallet_type": self._wallet_type,
                     "sub_account": None,
                     "asset": currency,
                     "currency": currency,
@@ -323,7 +324,9 @@ class SodexVenueLedgerSource:
                 if len(ticker) != 1 or ticker[0].get("symbol") != symbol:
                     raise VenueLedgerError("SoDEX spot quote is missing or ambiguous")
                 prices[base.upper()] = book_mid(ticker[0].get("bidPx"), ticker[0].get("askPx"))
-            inventory = cash_inventory(balances, self._settlement, prices)
+            inventory = cash_inventory(
+                scoped_balances(balances, self._wallet_type, None), self._settlement, prices
+            )
         observed = max(observed, datetime.now(UTC))
         watermark = hashlib.sha256(
             json.dumps(
@@ -364,7 +367,11 @@ class SodexVenueLedgerSource:
             fills=fills,
             fees=fees,
             valuation_collection_started_at=collection_started,
-            venue_wallet_balances={row["currency"]: row["total"] for row in balances},
+            venue_wallet_balances={
+                row["currency"]: row["total"]
+                for row in scoped_balances(balances, self._wallet_type, None)
+            },
+            valuation_wallet_type=self._wallet_type,
             valuation_positions=valuation_positions,
             cash_inventory=inventory,
         )

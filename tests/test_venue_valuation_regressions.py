@@ -226,3 +226,119 @@ def test_perpetual_balances_share_the_deployment_settlement_scope(venue):
     currency = "USDT" if venue == "OKX" else "VUSDC"
     assert {row["currency"] for row in evidence.balances} == {currency}
     assert evidence.venue_wallet_balances == {currency: "100"}
+
+
+def _wallet_row(currency, total, wallet_type="spot", sub_account=None):
+    return {
+        "wallet_type": wallet_type,
+        "sub_account": sub_account,
+        "asset": currency,
+        "currency": currency,
+        "total": total,
+        "available": total,
+    }
+
+
+def test_cash_inventory_counts_only_the_declared_wallet_scope():
+    """The same currency in two wallets is two balances, not one repeated asset.
+
+    Valuation reads one wallet; mixing wallets would either be refused as a
+    repeated asset or, worse, count another wallet's money as this one's.
+    """
+    from custos.engines.nautilus.cash_inventory import cash_inventory, scoped_balances
+    from custos.engines.nautilus.ledger_http import VenueLedgerError
+
+    balances = [
+        _wallet_row("USDT", "100"),
+        _wallet_row("USDT", "50", sub_account="payout"),
+        _wallet_row("USDT", "7", wallet_type="funding"),
+        _wallet_row("BTC", "1"),
+    ]
+    with pytest.raises(VenueLedgerError, match="repeats an asset"):
+        cash_inventory(balances, "USDT", {"BTC": 100})
+
+    main = scoped_balances(balances, "spot", None)
+    assert [(row["currency"], row["total"]) for row in main] == [("USDT", "100"), ("BTC", "1")]
+    inventory = {
+        row["asset"]: row["quantity"] for row in cash_inventory(main, "USDT", {"BTC": 100})
+    }
+    assert inventory == {"USDT": "100", "BTC": "1"}
+
+    payout = scoped_balances(balances, "spot", "payout")
+    assert [(row["currency"], row["total"]) for row in payout] == [("USDT", "50")]
+
+
+def test_valuation_balances_must_name_the_wallet_they_come_from():
+    from custos.core.runner_fact import RunnerFactContractError
+    from custos.core.runner_fact_producer import VenueLedgerEvidence
+
+    fields = {
+        "venue": "OKX",
+        "source": "venue_api",
+        "watermark": "w",
+        "coverage_from": START,
+        "observed_through": END,
+        "completeness": {},
+        "balances": (),
+        "positions": (),
+        "fills": (),
+        "fees": (),
+    }
+    with pytest.raises(RunnerFactContractError, match="valuation wallet"):
+        VenueLedgerEvidence(**fields, venue_wallet_balances={"USDT": "1"})
+    evidence = VenueLedgerEvidence(
+        **fields, venue_wallet_balances={"USDT": "1"}, valuation_wallet_type="trading"
+    )
+    assert evidence.valuation_sub_account is None
+
+
+@pytest.mark.parametrize("venue", ["OKX", "SODEX"])
+@pytest.mark.parametrize("perpetual", [True, False])
+def test_collectors_value_the_wallet_their_balances_come_from(venue, perpetual):
+    ledger = source(venue, perpetual)
+    if not perpetual:
+        if venue == "OKX":
+            original = ledger._get
+
+            def get(path, *args, **kwargs):
+                if path.endswith("/ticker"):
+                    return [{"instId": "BTC-USDT", "bidPx": "99", "askPx": "101"}]
+                return original(path, *args, **kwargs)
+
+            ledger._get = get
+        else:
+            ledger._http.get = lambda *args: [
+                {"symbol": "vBTC_vUSDC", "bidPx": "99", "askPx": "101"}
+            ]
+    evidence = ledger._collect(START, END)
+    scopes = {(row["wallet_type"], row["sub_account"]) for row in evidence.balances}
+    assert scopes == {(evidence.valuation_wallet_type, evidence.valuation_sub_account)}
+
+
+def test_binance_values_the_wallet_its_balances_come_from(monkeypatch):
+    from custos.engines.nautilus.binance_ledger import BinanceVenueLedgerSource
+
+    monkeypatch.setattr(BinanceVenueLedgerSource, "_server_time_ms", lambda self: STAMP)
+    monkeypatch.setattr(
+        BinanceVenueLedgerSource,
+        "_public_get",
+        lambda *args: {"symbol": "BTCUSDT", "bidPrice": "99", "askPrice": "101"},
+    )
+    monkeypatch.setattr(
+        BinanceVenueLedgerSource,
+        "_signed_get",
+        lambda self, path, params: (
+            {"balances": [{"asset": "USDT", "free": "90", "locked": "10"}]}
+            if path.endswith("/account")
+            else []
+        ),
+    )
+    ledger = BinanceVenueLedgerSource(
+        spec={"trading_mode": "testnet", "connector": "binance", "pairs": ["BTC-USDT"]},
+        credential={"api_key": "fixture", "api_secret": "fixture"},
+    )
+    evidence = ledger._collect(START, END)
+    assert (evidence.valuation_wallet_type, evidence.valuation_sub_account) == ("spot", None)
+    assert {(row["wallet_type"], row["sub_account"]) for row in evidence.balances} == {
+        ("spot", None)
+    }

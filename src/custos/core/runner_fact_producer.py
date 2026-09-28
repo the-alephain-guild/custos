@@ -87,6 +87,14 @@ class VenueLedgerEvidence:
     cash_inventory: Sequence[Mapping[str, Any]] | None = None
     sub_account: str | None = None
     cash_flows: Sequence[Mapping[str, Any]] = ()
+    valuation_wallet_type: str | None = None
+    valuation_sub_account: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.venue_wallet_balances is not None and self.valuation_wallet_type is None:
+            raise RunnerFactContractError(
+                "valuation wallet balances must name the valuation wallet they come from"
+            )
 
 
 @dataclass(frozen=True, slots=True)
