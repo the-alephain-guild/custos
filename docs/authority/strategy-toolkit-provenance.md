@@ -38,6 +38,12 @@ The private vendor license is shipped at `custos_toolkit_nautilus/_vendor/pandas
 
 ## Upstream sync procedure
 
+The upstream research copy `philosophers-stone/shared/` was retired on 2026-09-28
+(philosophers-stone plan 64): the toolkit is the only implementation, and there is no
+longer a tree to compare it against. `make toolkit-sync-check`, which diffed the
+vendored subset against that tree, is removed with its tests; shared behaviour changes
+start in this repository and reach strategies through a new toolkit release candidate.
+
 A future upstream change requires a new versioned inventory and extraction manifest. It must not mutate v1 evidence. The change must:
 
 1. pin the new upstream and source commits;

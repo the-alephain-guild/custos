@@ -3,7 +3,7 @@
 # Standalone open-source repository entrypoint. Standardized validation targets
 # keep shell execution deterministic and avoid permission drift from ad-hoc commands.
 
-.PHONY: test-publisher help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication verify-runner-fact-publication-network clean toolkit-sync-check strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
+.PHONY: test-publisher help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication verify-runner-fact-publication-network clean strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
 
 # Default target: help
 .DEFAULT_GOAL := help
@@ -175,49 +175,6 @@ verify-release:  ## Post-publish smoke: pull image + verify sig + smoke run
 
 release: dist sign docker-build docker-sign  ## Full local release rehearsal (real publish still lives in CI)
 	@echo "Local release rehearsal complete. Publish to GHCR runs in CI." >&2
-
-toolkit-sync-check:  ## Diff vendored toolkit against upstream ps shared/ (+ optional pandas_ta) for drift
-	@if [ -z "$$PS_ROOT" ]; then \
-		echo "❌ PS_ROOT is required (path to a local philosophers-stone checkout)" >&2; \
-		echo "   usage: PS_ROOT=/path/to/philosophers-stone make toolkit-sync-check" >&2; \
-		exit 1; \
-	fi; \
-	PROVENANCE=docs/authority/strategy-toolkit-provenance.md; \
-	PS_PINNED=$${PINNED_PS_SHA:-$$(awk -F'`' '/\*\*Upstream commit\*\*/{print $$2; exit}' "$$PROVENANCE")}; \
-	if [ -z "$$PS_PINNED" ]; then \
-		echo "❌ ps upstream commit not recorded in $$PROVENANCE" >&2; \
-		exit 1; \
-	fi; \
-	echo "- **Upstream commit**: \`$$PS_PINNED\`"; \
-	PS_HEAD=$$(git -C "$$PS_ROOT" rev-parse HEAD); \
-	echo "ps upstream HEAD: $$PS_HEAD"; \
-	PS_COMMITS=$$(git -C "$$PS_ROOT" log --oneline "$$PS_PINNED..$$PS_HEAD" -- shared/ 2>/dev/null); \
-	PS_DIFFSTAT=$$(git -C "$$PS_ROOT" diff --stat "$$PS_PINNED..$$PS_HEAD" -- shared/ 2>/dev/null); \
-	if [ -z "$$PS_DIFFSTAT" ]; then \
-		echo "ps drift: no"; \
-	else \
-		echo "ps drift: yes"; \
-		echo "-- new commits under shared/ --"; \
-		echo "$$PS_COMMITS"; \
-		echo "-- diff-stat --"; \
-		echo "$$PS_DIFFSTAT"; \
-	fi; \
-	if [ -n "$$PANDAS_TA_ROOT" ]; then \
-		PT_PINNED=$$(awk -F'`' '/\*\*Upstream commit\*\*/{print $$2}' "$$PROVENANCE" | sed -n '2p'); \
-		PT_HEAD=$$(git -C "$$PANDAS_TA_ROOT" rev-parse HEAD); \
-		echo "- **Upstream commit**: \`$$PT_PINNED\`"; \
-		echo "pandas_ta upstream HEAD: $$PT_HEAD"; \
-		PT_DIFFSTAT=$$(git -C "$$PANDAS_TA_ROOT" diff --stat "$$PT_PINNED..$$PT_HEAD" 2>/dev/null); \
-		if [ -z "$$PT_DIFFSTAT" ]; then \
-			echo "pandas_ta drift: no"; \
-		else \
-			echo "pandas_ta drift: yes"; \
-			echo "$$PT_DIFFSTAT"; \
-		fi; \
-	else \
-		echo "pandas_ta drift: N/A (PANDAS_TA_ROOT unset — manual check required)"; \
-	fi; \
-	if [ -n "$$PS_DIFFSTAT" ]; then exit 1; else exit 0; fi
 
 strategy-contract-assets:  ## Generate strategy execution schemas, inventory, and lifecycle golden
 	uv run python scripts/generate_strategy_contract_assets.py
