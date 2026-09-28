@@ -313,6 +313,10 @@ def test_collectors_value_the_wallet_their_balances_come_from(venue, perpetual):
     evidence = ledger._collect(START, END)
     scopes = {(row["wallet_type"], row["sub_account"]) for row in evidence.balances}
     assert scopes == {(evidence.valuation_wallet_type, evidence.valuation_sub_account)}
+    # Transfer history is not collected yet: the collector must say so rather
+    # than claim an empty but complete window.
+    assert tuple(evidence.cash_flows) == ()
+    assert evidence.completeness["cash_flows_complete"] is False
 
 
 def test_binance_values_the_wallet_its_balances_come_from(monkeypatch):
@@ -342,3 +346,5 @@ def test_binance_values_the_wallet_its_balances_come_from(monkeypatch):
     assert {(row["wallet_type"], row["sub_account"]) for row in evidence.balances} == {
         ("spot", None)
     }
+    assert tuple(evidence.cash_flows) == ()
+    assert evidence.completeness["cash_flows_complete"] is False
