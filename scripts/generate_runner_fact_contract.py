@@ -294,7 +294,14 @@ def _schema() -> dict[str, Any]:
             "destination",
         ],
         "properties": {
-            "cash_flow_id": non_empty,
+            # The byte limit is exact in the assembler; JSON Schema counts
+            # characters, so this bound is only a first check.
+            "cash_flow_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": r"^[^\u0000-\u001f\u007f-\u009f]+$",
+            },
             "kind": {
                 "enum": [
                     "internal_transfer",

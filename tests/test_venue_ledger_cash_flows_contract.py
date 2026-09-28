@@ -345,3 +345,60 @@ def test_normalized_bytes_are_fixed_for_fractions_zeros_and_unicode() -> None:
         json.dumps(unsigned, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
     ).hexdigest()
     assert digest == chunk["chunk_digest"]
+
+
+# --- boundaries the consumer enforces ---------------------------------------
+
+
+@pytest.mark.parametrize(
+    "cash_flow_id",
+    [
+        pytest.param("a" * 257, id="257-ascii-bytes"),
+        pytest.param(chr(0x6D41) * 86, id="258-utf8-bytes"),  # 3 UTF-8 bytes each
+        pytest.param("a\u0000b", id="c0-control"),
+        pytest.param("a\u0085b", id="c1-control"),
+    ],
+)
+def test_cash_flow_ids_the_consumer_would_refuse_are_refused_here(cash_flow_id: str) -> None:
+    with pytest.raises(RunnerFactContractError, match="cash_flow_id"):
+        _snapshot(cash_flows=[_flow(cash_flow_id)])
+
+
+def test_a_256_byte_cash_flow_id_is_accepted() -> None:
+    manifest = _manifest(_snapshot(cash_flows=[_flow("a" * 256)]))
+    assert manifest["cash_flows_count"] == 1
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda c: c["cash_flows"][0].update(cash_flow_id="a" * 257), id="too-long"),
+        pytest.param(lambda c: c["cash_flows"][0].update(cash_flow_id="a\u0000b"), id="control"),
+    ],
+)
+def test_schema_bounds_the_cash_flow_id(mutate: Any) -> None:
+    validator = Draft202012Validator(_json(SCHEMA_PATH))
+    assert not validator.is_valid(_mutated_golden(mutate))
+
+
+def test_negative_zero_is_written_as_zero() -> None:
+    row = _chunks(_snapshot(cash_flows=[_flow(fee="-0.0")]))[0]["cash_flows"][0]
+    assert row["fee"] == "0"
+
+
+@pytest.mark.parametrize(
+    "amount",
+    [
+        pytest.param("1e100", id="beyond-96-bit-mantissa"),
+        pytest.param("79228162514264337593543950336", id="one-past-the-maximum"),
+        pytest.param("0." + "0" * 28 + "1", id="scale-29"),
+    ],
+)
+def test_amounts_the_consumer_cannot_represent_are_refused(amount: str) -> None:
+    with pytest.raises(RunnerFactContractError, match="amount"):
+        _snapshot(cash_flows=[_flow(amount=amount)])
+
+
+def test_the_largest_representable_amount_is_accepted() -> None:
+    row = _chunks(_snapshot(cash_flows=[_flow(amount="79228162514264337593543950335")]))[0]
+    assert row["cash_flows"][0]["amount"] == "79228162514264337593543950335"

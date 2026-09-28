@@ -1070,7 +1070,9 @@
             "properties": {
               "cash_flow_id": {
                 "type": "string",
-                "minLength": 1
+                "minLength": 1,
+                "maxLength": 256,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
               },
               "kind": {
                 "enum": [

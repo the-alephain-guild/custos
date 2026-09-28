@@ -16,6 +16,7 @@ import re
 import shutil
 import sqlite3
 import time
+import unicodedata
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -137,6 +138,11 @@ _CASH_FLOW_ENDPOINTS: Final[Mapping[str, tuple[bool, bool]]] = MappingProxyType(
         "withdrawal": (True, False),
     }
 )
+# The consumer's decimal type: a 96-bit integer mantissa and at most 28
+# fractional digits.
+_MAX_DECIMAL_MANTISSA: Final = 2**96 - 1
+_MAX_DECIMAL_SCALE: Final = 28
+_MAX_CASH_FLOW_ID_BYTES: Final = 256
 _WALLET_TYPE_PATTERN: Final = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _SUB_ACCOUNT_PATTERN: Final = re.compile(
     r"[^\s\x00-\x1f\x7f](?:[^\x00-\x1f\x7f]{0,126}[^\s\x00-\x1f\x7f])?"
@@ -399,10 +405,34 @@ def _decimal(value: Decimal | str | int, field: str, *, positive: bool = False) 
         raise RunnerFactContractError(f"{field} must be greater than zero")
     if not positive and parsed < 0:
         raise RunnerFactContractError(f"{field} must not be negative")
+    return _render_decimal(parsed, field)
+
+
+def _render_decimal(parsed: Decimal, field: str) -> str:
+    """Render a finite decimal the way every consumer can read back exactly.
+
+    Consumers hold amounts as a 96-bit integer mantissa with at most 28
+    fractional digits; a value outside that is refused here rather than
+    signed and then rejected downstream. Zero is written without a sign.
+    """
+    if parsed.is_zero():
+        return "0"
+    # Integer arithmetic only: Decimal.normalize() rounds to the context
+    # precision and would misjudge a 29-digit mantissa.
+    _, digits, exponent = parsed.as_tuple()
+    assert isinstance(exponent, int)
+    mantissa = int("".join(map(str, digits)))
+    while exponent < 0 and mantissa % 10 == 0:
+        mantissa //= 10
+        exponent += 1
+    if exponent > 0:
+        mantissa *= 10**exponent
+    if -min(exponent, 0) > _MAX_DECIMAL_SCALE or mantissa > _MAX_DECIMAL_MANTISSA:
+        raise RunnerFactContractError(f"{field} is outside the representable decimal range")
     rendered = format(parsed, "f")
     if "." in rendered:
         rendered = rendered.rstrip("0").rstrip(".")
-    return rendered or "0"
+    return rendered
 
 
 def _signed_decimal(value: Decimal | str | int, field: str) -> str:
@@ -414,10 +444,7 @@ def _signed_decimal(value: Decimal | str | int, field: str) -> str:
         raise RunnerFactContractError(f"{field} must be a decimal") from exc
     if not parsed.is_finite():
         raise RunnerFactContractError(f"{field} must be finite")
-    rendered = format(parsed, "f")
-    if "." in rendered:
-        rendered = rendered.rstrip("0").rstrip(".")
-    return rendered or "0"
+    return _render_decimal(parsed, field)
 
 
 def _timestamp(value: datetime | str, field: str) -> str:
@@ -1348,6 +1375,17 @@ def _cash_flow_endpoint(value: Any, field: str) -> dict[str, Any] | None:
     }
 
 
+def _cash_flow_id(value: Any) -> str:
+    identifier = _non_empty(value, "cash_flows.cash_flow_id")
+    if len(identifier.encode("utf-8")) > _MAX_CASH_FLOW_ID_BYTES or any(
+        unicodedata.category(character) == "Cc" for character in identifier
+    ):
+        raise RunnerFactContractError(
+            "cash_flows.cash_flow_id must be at most 256 UTF-8 bytes without control characters"
+        )
+    return identifier
+
+
 def _cash_flow(row: Mapping[str, Any]) -> dict[str, Any]:
     kind = _non_empty(row.get("kind"), "cash_flows.kind")
     if kind not in VENUE_CASH_FLOW_KINDS:
@@ -1392,7 +1430,7 @@ def _cash_flow(row: Mapping[str, Any]) -> dict[str, Any]:
             "memo": _optional_non_empty(destination["memo"], "cash_flows.destination.memo"),
         }
     return {
-        "cash_flow_id": _non_empty(row.get("cash_flow_id"), "cash_flows.cash_flow_id"),
+        "cash_flow_id": _cash_flow_id(row.get("cash_flow_id")),
         "kind": kind,
         "from": source,
         "to": target,
