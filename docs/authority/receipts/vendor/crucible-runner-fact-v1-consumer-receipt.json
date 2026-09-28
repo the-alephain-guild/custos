@@ -4,56 +4,56 @@
   "status": "EXACT_CUSTOS_RUNNER_FACT_V1_ACCEPTED_RUNTIME_OPEN",
   "producer": {
     "repository": "tesseract-trading/custos",
-    "asset_commit": "cce76931884de36c9606db02d94cf4124e7164b5",
+    "asset_commit": "42781c8d87e882607a7974c10fe1d0455305bd5d",
     "authority_coordinate": "custos.runner-fact.v1",
     "asset_index": {
       "producer_path": "docs/authority/runner-fact-contract-assets-v1.json",
       "local_path": "docs/authority/custos-runner-fact-contract-assets-v1.json",
-      "sha256": "3f0df2b480d983ded6d16d1b2a83f51875c84402e9e5fd247929cad4a9355f1b",
-      "size_bytes": 3655
+      "sha256": "034cce64a5d10b42235bc979b5a4d4e5b0f05e6f082bc3b343a07fd3dce354eb",
+      "size_bytes": 3713
     },
     "assets": {
       "runner_fact_batch_schema": {
         "producer_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
         "local_path": "docs/authority/custos-runner-fact-batch-v1.schema.json",
-        "sha256": "e835034a5aa30f6d03899e1294eb91ad379e89d2757b98dd0f95e1a3dc913e2e",
-        "size_bytes": 31214
+        "sha256": "22f1041f482167286443563a75a4048190457a1c8cdebeb1553e69ed6bd85e4f",
+        "size_bytes": 54479
       },
       "runner_fact_batch_golden": {
         "producer_path": "docs/authority/runner-fact-golden-v1.json",
         "local_path": "docs/authority/custos-runner-fact-golden-v1.json",
-        "sha256": "eef9594d7b068efc5056cdf360661639764460a0d32e9dff9d91a9a787c7a2cf",
-        "size_bytes": 6435
+        "sha256": "721100c9635a694139f5ec782c5a0500d5a9cf3a6a52c81811d6ad37df8317ff",
+        "size_bytes": 9222
       },
       "runner_fact_capability_manifest": {
         "producer_path": "docs/authority/runner-fact-capability-manifest-v1.json",
         "local_path": "docs/authority/custos-runner-fact-capability-manifest-v1.json",
-        "sha256": "97d67a9a9bcc1eb4192022d33ae4fde27bd9d33222d69dbfa029caf2b061d0b4",
-        "size_bytes": 3776
+        "sha256": "04affc9024e9494c45211410b5b55ffa4a004d258d1a1bebc0d932abb9a920cc",
+        "size_bytes": 3870
       },
       "runner_fact_capability_receipt_golden": {
         "producer_path": "docs/authority/runner-fact-capability-receipt-golden-v1.json",
         "local_path": "docs/authority/custos-runner-fact-capability-receipt-golden-v1.json",
-        "sha256": "9a1c07bd6aa8daf5056c04e883b5baefd0a1e372c5a39bfeaba430c9ad0b3770",
-        "size_bytes": 7034
+        "sha256": "c8be46588724358dd3a828ebc2e2d4a4733448f02109c68d1e49fcaa67162d45",
+        "size_bytes": 7132
       },
       "runtime_event_fact_parity_matrix": {
         "producer_path": "docs/authority/runner-fact-parity-matrix-v1.json",
         "local_path": "docs/authority/custos-runner-fact-parity-matrix-v1.json",
-        "sha256": "db18533d76d05c87214b71438e41b78e6abbf0e4fcd673ccc3870361b5f9dd65",
-        "size_bytes": 3784
+        "sha256": "714e8a3424ff34210e51b5abf9d788dff2f485f6dcdb9e9a0a4458068897409b",
+        "size_bytes": 4065
       },
       "runner_fact_signing_preimage_golden": {
         "producer_path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
         "local_path": "docs/authority/custos-runner-fact-signing-preimage-golden-v1.json",
-        "sha256": "f5938b01e70923a236ba9d8e150eefa0ab4e8f3ee84471d3453fdc156b8424d2",
+        "sha256": "1d3ff33ca99825464583d5c4c8535a27a10093f7403312aca6eabbc23ea604fb",
         "size_bytes": 5434
       }
     }
   },
   "consumer": {
     "repository": "tesseract-trading/crucible-rust",
-    "code_commit": "506afcdcc6b5342f84810668b0367e983f406857",
+    "code_commit": "26fa5ee3a0b2c3f6ad50c03e8fbe1e1dcd7cf1aa",
     "closed_fact_union": true,
     "compatibility_fallback": false,
     "top_level_venue_snapshot_supported": false,
@@ -70,47 +70,67 @@
       "venue_ledger_snapshot_manifest": "reconciliation",
       "venue_ledger_snapshot_chunk": "reconciliation",
       "reconciliation_period_closed": "reconciliation",
+      "RunnerValuationCheckpointFact.v1": "reconciliation",
       "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle"
     },
     "sources": {
       "domain_union": {
         "path": "crates/domain/src/execution/runner_fact_batch.rs",
-        "sha256": "797b6f80858b047958b0a43c1456ceb3755520cb55cde1158ed60146ae00e1e8",
-        "size_bytes": 12459
+        "sha256": "69367d3bc6a06620ff7cd131bdb8e835c30f37feb4d6531c48b301285e2728dd",
+        "size_bytes": 22247
       },
       "capability_publication": {
         "path": "crates/store/src/runner_capability_publication.rs",
-        "sha256": "cbe6dcf768a402f3986b91509a615a22e5b717fbb8eb1ab532d9e4cf03e91267",
-        "size_bytes": 59521
+        "sha256": "8250d8bac935cb0ffd27ff87291e520df925b3b1c46609d0ae7863c3deb93815",
+        "size_bytes": 68004
       },
       "inbox": {
         "path": "crates/store/src/runner_fact_inbox.rs",
-        "sha256": "636fb9a6793add10931d43e7b4d7241cb268528eccfc5f0bb4e26b2d3e6a8bad",
-        "size_bytes": 91814
+        "sha256": "fb467bd1c73a538872ad598a7dac11ae16d9fe649e58994d270d22fe1ca1cdab",
+        "size_bytes": 102572
       },
       "reconciliation_projector": {
         "path": "crates/store/src/runner_fact_reconciliation_projector.rs",
-        "sha256": "b2dd34a213568adf1649155560be5e37acda0619ae15a15824f69d8b5fcefc98",
-        "size_bytes": 92285
+        "sha256": "723d836e78741a7be07518a74ce18309a5a498b29c596dd0bcdb3174dde47d49",
+        "size_bytes": 142681
       },
       "risk_projector": {
         "path": "crates/risk/src/runner_fact_projector.rs",
-        "sha256": "bd40fea44be2db0099afe1c0776326ba25c915222a446a8980e4a4548b8bd37e",
-        "size_bytes": 12793
+        "sha256": "7ae0a45b339ac3842f2422b3f4b4faa5d1d7788cfee1710073b472ef53bffb6c",
+        "size_bytes": 19251
       },
       "transport_consumer": {
         "path": "crates/server-http/src/runner_fact_consumer.rs",
-        "sha256": "f8c3f5c85ad0dc9cea87a3ba20795fe898589701e933a4d17e5378fdf5a142a0",
-        "size_bytes": 17783
+        "sha256": "8cc883daec45441a246dce682b65c9698b9a3d300f064a31535b0431cab1104c",
+        "size_bytes": 15962
       },
       "transport_postgresql_acceptance": {
         "path": "crates/server-http/tests/runner_fact_transport_pg.rs",
-        "sha256": "83f66358c4fe2996aef55bb077eac8638f049f3fea153736aad6de3551229bcf",
-        "size_bytes": 30887
+        "sha256": "4494629642ae649db293e9b64138d0d683cc7865a9399e58f6ff7a141e302de3",
+        "size_bytes": 32285
       }
     }
   },
   "verification": {
+    "venue_cash_flow_contract_acceptance": {
+      "verified_at": "2026-09-28",
+      "producer_asset_commit": "42781c8d87e882607a7974c10fe1d0455305bd5d",
+      "consumer_code_commit": "26fa5ee3a0b2c3f6ad50c03e8fbe1e1dcd7cf1aa",
+      "contract_command": "cargo test -p domain --test runner_fact_contract_v1",
+      "contract_result": "6 passed; 0 failed",
+      "projector_command": "cargo test -p store --lib venue_cash_flow_tests",
+      "projector_result": "6 passed; 0 failed; golden chunk and manifest digests recomputed exactly",
+      "migration_command": "cargo test -p store --test venue_snapshot_cash_flows_pg",
+      "migration_result": "2 passed; 0 failed",
+      "transport_command": "cargo test -p server-http --test runner_fact_transport_pg",
+      "transport_result": "2 passed; 0 failed; 2 ignored",
+      "workspace_command": "cargo test --workspace --no-fail-fast",
+      "workspace_result": "1375 passed; 1 failed before the transport fixture read its capability digest from the golden batch",
+      "real_postgresql": true,
+      "cash_flows_complete_gates_reconciliation": false,
+      "full_chain_reconciliation_with_cash_flows_exercised": false,
+      "launched_custos_runtime_exercised": false
+    },
     "cross_language_contract_tests_passed": 1,
     "domain_unit_tests_passed": 144,
     "store_unit_tests_passed": 29,
@@ -120,7 +140,7 @@
     "poison_transport_postgresql_receipt": {
       "test": "cargo test -p server-http --test runner_fact_transport_pg",
       "result": "2 passed; poison assertion passed",
-      "verified_at": "2026-07-26",
+      "verified_at": "2026-08-01",
       "real_nats_jetstream": true,
       "real_postgresql": true,
       "durable_rejection_before_consumer_ack": true,
@@ -131,9 +151,9 @@
     "signed_transport_postgresql_acceptance": {
       "test": "cargo test -p server-http --test runner_fact_transport_pg",
       "result": "2 passed; signed positive assertion passed",
-      "verified_at": "2026-07-26",
+      "verified_at": "2026-08-01",
       "producer_asset_commit": "cce76931884de36c9606db02d94cf4124e7164b5",
-      "consumer_code_commit": "506afcdcc6b5342f84810668b0367e983f406857",
+      "consumer_code_commit": "87a3b4650c7d6fbcdfc55b6fe938d3265995addb",
       "real_nats_jetstream": true,
       "real_postgresql": true,
       "exact_signed_golden": true,
@@ -142,6 +162,17 @@
       "projector_work_count": 5,
       "producer_is_custos_runtime": false,
       "authenticated_transport": false
+    },
+    "source_pin_refresh": {
+      "verified_at": "2026-08-01",
+      "consumer_code_commit": "87a3b4650c7d6fbcdfc55b6fe938d3265995addb",
+      "transport_command": "cargo test -p server-http --test runner_fact_transport_pg -- --nocapture",
+      "transport_result": "2 passed; 0 failed; 2 ignored",
+      "risk_command": "cargo test -p server-http --test risk_runtime_projection_pg -- --nocapture",
+      "risk_result": "1 passed; 0 failed",
+      "compile_command": "cargo check -p server-http --all-targets",
+      "compile_result": "passed",
+      "launched_custos_runtime_exercised": false
     },
     "raw_envelope_cryptographic_regression": {
       "test": "cargo test -p store cryptographic_digest_preserves_the_original_timestamp_lexeme",
