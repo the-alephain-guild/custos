@@ -30,6 +30,9 @@ protocol — is published at
     until transfer history is collected.
   - Valuation reads one declared wallet; evidence that supplies valuation
     balances without naming their wallet is refused.
+  - A `cash_flow_id` is at most 256 UTF-8 bytes with no control characters,
+    and a cash-flow `amount` or `fee` must fit a 96-bit mantissa with at most
+    28 fractional digits. Zero is always written as `0`, never `-0`.
 
 ## [0.4.2] - 2026-09-27
 
