@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -402,3 +403,14 @@ def test_amounts_the_consumer_cannot_represent_are_refused(amount: str) -> None:
 def test_the_largest_representable_amount_is_accepted() -> None:
     row = _chunks(_snapshot(cash_flows=[_flow(amount="79228162514264337593543950335")]))[0]
     assert row["cash_flows"][0]["amount"] == "79228162514264337593543950335"
+
+
+def test_the_range_bound_stays_on_cash_flows() -> None:
+    """Conversion rates divide (1 / 60000 has 32 fractional digits) and feed
+    balances, equity and valuation; bounding every amount would stop the
+    producer from signing facts it signs today. Only cash flows are bounded.
+    """
+    rate = str(Decimal(1) / Decimal(60000))
+    assert len(rate.split(".")[1]) > 28
+    row = _chunks(_snapshot(balances=[_balance(total=rate)]))[0]["balances"][0]
+    assert row["total"] == rate

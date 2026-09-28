@@ -392,7 +392,9 @@ def _settlement_period(value: Any) -> str:
     return period
 
 
-def _decimal(value: Decimal | str | int, field: str, *, positive: bool = False) -> str:
+def _decimal(
+    value: Decimal | str | int, field: str, *, positive: bool = False, bounded: bool = False
+) -> str:
     if isinstance(value, float):
         raise RunnerFactContractError(f"{field} must not be a binary float")
     try:
@@ -405,18 +407,22 @@ def _decimal(value: Decimal | str | int, field: str, *, positive: bool = False) 
         raise RunnerFactContractError(f"{field} must be greater than zero")
     if not positive and parsed < 0:
         raise RunnerFactContractError(f"{field} must not be negative")
-    return _render_decimal(parsed, field)
+    return _render_decimal(parsed, field, bounded=bounded)
 
 
-def _render_decimal(parsed: Decimal, field: str) -> str:
-    """Render a finite decimal the way every consumer can read back exactly.
+def _render_decimal(parsed: Decimal, field: str, *, bounded: bool) -> str:
+    """Render a finite decimal; zero is written without a sign.
 
-    Consumers hold amounts as a 96-bit integer mantissa with at most 28
-    fractional digits; a value outside that is refused here rather than
-    signed and then rejected downstream. Zero is written without a sign.
+    With ``bounded`` the value must also fit the consumer's decimal type, a
+    96-bit integer mantissa with at most 28 fractional digits, so it is
+    refused here rather than signed and rejected downstream. Only cash flows
+    are bounded: conversion rates divide (1 / 60000 has 32 fractional digits)
+    and reach balances, equity and valuation, which are signed unbounded.
     """
     if parsed.is_zero():
         return "0"
+    if not bounded:
+        return _plain_decimal(parsed)
     # Integer arithmetic only: Decimal.normalize() rounds to the context
     # precision and would misjudge a 29-digit mantissa.
     _, digits, exponent = parsed.as_tuple()
@@ -429,6 +435,10 @@ def _render_decimal(parsed: Decimal, field: str) -> str:
         mantissa *= 10**exponent
     if -min(exponent, 0) > _MAX_DECIMAL_SCALE or mantissa > _MAX_DECIMAL_MANTISSA:
         raise RunnerFactContractError(f"{field} is outside the representable decimal range")
+    return _plain_decimal(parsed)
+
+
+def _plain_decimal(parsed: Decimal) -> str:
     rendered = format(parsed, "f")
     if "." in rendered:
         rendered = rendered.rstrip("0").rstrip(".")
@@ -444,7 +454,7 @@ def _signed_decimal(value: Decimal | str | int, field: str) -> str:
         raise RunnerFactContractError(f"{field} must be a decimal") from exc
     if not parsed.is_finite():
         raise RunnerFactContractError(f"{field} must be finite")
-    return _render_decimal(parsed, field)
+    return _render_decimal(parsed, field, bounded=False)
 
 
 def _timestamp(value: datetime | str, field: str) -> str:
@@ -1436,8 +1446,8 @@ def _cash_flow(row: Mapping[str, Any]) -> dict[str, Any]:
         "to": target,
         "counterparty_uid": counterparty,
         "currency": _currency(row.get("currency")),
-        "amount": _decimal(row.get("amount"), "cash_flows.amount", positive=True),
-        "fee": _decimal(row.get("fee"), "cash_flows.fee"),
+        "amount": _decimal(row.get("amount"), "cash_flows.amount", positive=True, bounded=True),
+        "fee": _decimal(row.get("fee"), "cash_flows.fee", bounded=True),
         "fee_currency": _currency(row.get("fee_currency")),
         "occurred_at": _timestamp(row.get("occurred_at"), "cash_flows.occurred_at"),
         "external_reference": _optional_non_empty(
