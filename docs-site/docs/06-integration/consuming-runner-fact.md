@@ -56,6 +56,29 @@ A `heartbeat` reports `online` only while the deployment's engine is ready and i
 
 A lifecycle event id includes stable command/apply identity and excludes observation time. Redelivery of the same apply therefore remains idempotent.
 
+## Venue ledger snapshots
+
+A venue ledger snapshot is one manifest followed by its chunks. Each chunk holds five sections: `balances`, `positions`, `fills`, `fees` and `cash_flows`. A chunk holds at most 512 items across all five sections and at most 262144 canonical bytes.
+
+Every balance names the wallet it belongs to. `wallet_type` is the venue's own wallet name as a lowercase token, such as `spot`. `sub_account` is null for the venue's main account and otherwise a non-empty name. The manifest carries the snapshot's own `sub_account` and one count per section, including `cash_flows_count`.
+
+A cash flow records money moving into, out of or within the account:
+
+| `kind` | `from` | `to` | `counterparty_uid` | `destination` |
+|---|---|---|---|---|
+| `internal_transfer` | wallet | wallet in the same sub-account | null | null |
+| `sub_account_transfer` | wallet | wallet in another sub-account | null | null |
+| `uid_transfer_out` | wallet | null | required | null |
+| `uid_transfer_in` | null | wallet | required | null |
+| `deposit` | null | wallet | null | null |
+| `withdrawal` | wallet | null | null | object or null |
+
+`amount` is greater than zero and `fee` is not negative; the direction comes from `kind`, never from a sign. `destination` holds the receiving `address`, and its `network` and `memo` when the venue reports them. `external_reference` is the transaction hash or external reference when the venue reports one. `cash_flow_id` is the venue's own record id and is unique within a snapshot.
+
+`completeness` reports each section separately. `cash_flows_complete` does not affect the other four flags. A snapshot with no cash flows and `cash_flows_complete: true` states that the covered window had no money movement. The same empty list with `cash_flows_complete: false` states only that cash flows were not collected. A consumer that needs every transfer and withdrawal must require `cash_flows_complete: true`.
+
+Balances sort by wallet, sub-account, asset and currency, where a null sub-account sorts first. Cash flows sort by `occurred_at`, then `cash_flow_id`. Verify each `chunk_digest` over the canonical chunk and the manifest `content_digest` over the snapshot identity, completeness, counts and chunk digests. The contract golden contains a reference snapshot for both digests.
+
 ## Strategy signals
 
 Subject: `crucible.runner.strategy-signal.v1.{tenant_id}.{runner_id}.{trading_mode}`. <!-- disclosure-ok: exact public strategy-signal subject -->

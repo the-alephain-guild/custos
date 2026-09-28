@@ -56,6 +56,29 @@ signed bytes = DOMAIN || canonical_json(header)
 
 生命周期事件 id 包含稳定指令/应用身份，不包含观测时间。同一应用的重投递因此保持幂等。
 
+## 交易所账本快照
+
+一份交易所账本快照由一个清单（manifest）和若干分块（chunk）组成。每个分块有五个部分：`balances`、`positions`、`fills`、`fees` 与 `cash_flows`。一个分块五部分合计最多 512 条，规范化后最多 262144 字节。
+
+每条余额都写明所属钱包。`wallet_type` 是交易所自己的钱包名，写成小写标识，例如 `spot`。`sub_account` 为 null 表示交易所主账户，否则是非空的子账户名。清单带有快照自身的 `sub_account`，并为每个部分给出条数，其中包括 `cash_flows_count`。
+
+资金变动记录资金进入、离开账户或在账户内部移动：
+
+| `kind` | `from` | `to` | `counterparty_uid` | `destination` |
+|---|---|---|---|---|
+| `internal_transfer` | 钱包 | 同一子账户内的钱包 | null | null |
+| `sub_account_transfer` | 钱包 | 另一子账户的钱包 | null | null |
+| `uid_transfer_out` | 钱包 | null | 必填 | null |
+| `uid_transfer_in` | null | 钱包 | 必填 | null |
+| `deposit` | null | 钱包 | null | null |
+| `withdrawal` | 钱包 | null | null | 对象或 null |
+
+`amount` 大于零，`fee` 不为负；方向由 `kind` 表达，不用正负号。`destination` 记录收款 `address`，交易所提供时还有 `network` 与 `memo`。`external_reference` 是交易所提供的交易哈希或外部流水号。`cash_flow_id` 是交易所自己的记录编号，在同一快照内唯一。
+
+`completeness` 按部分分别报告。`cash_flows_complete` 不影响其余四个标志。没有资金变动且 `cash_flows_complete: true` 的快照，表示所覆盖的时间窗内没有资金移动；同样是空列表但 `cash_flows_complete: false`，只表示资金变动没有采集。需要完整划转与提币记录的消费方，必须要求 `cash_flows_complete: true`。
+
+余额按钱包、子账户、资产、币种排序，子账户为 null 的排在最前。资金变动按 `occurred_at` 排序，相同时再按 `cash_flow_id` 排序。对每个分块的规范化内容校验 `chunk_digest`，对快照身份、完整性、条数与各分块摘要校验清单的 `content_digest`。契约 golden 中有一份可用于核对这两种摘要的参考快照。
+
 ## 策略信号
 
 Subject：`crucible.runner.strategy-signal.v1.{tenant_id}.{runner_id}.{trading_mode}`。 <!-- disclosure-ok: exact public strategy-signal subject -->
