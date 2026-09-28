@@ -76,7 +76,11 @@ def test_changelog_documents_the_published_v040() -> None:
     assert "## [0.4.0] - 2026-09-27" in text
     assert REMOTE_IMAGE_V040 in v040
     assert "there is no PyPI package" in v040
-    for breaking in ("--development-producer-repository", "trading_scope", "custos-strategy-release"):
+    for breaking in (
+        "--development-producer-repository",
+        "trading_scope",
+        "custos-strategy-release",
+    ):
         assert breaking in v040
 
 
