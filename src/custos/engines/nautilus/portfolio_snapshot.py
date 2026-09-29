@@ -108,8 +108,40 @@ class NautilusPortfolioSnapshot:
 class NautilusPortfolioSnapshotProvider:
     """Translate live Nautilus portfolio state without proxy calculations."""
 
-    def __init__(self, *, price_type_mid: object | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        price_type_mid: object | None = None,
+        price_type_last: object | None = None,
+    ) -> None:
         self._price_type_mid = price_type_mid
+        self._price_type_last = price_type_last
+
+    def _price(self, cache: Any, instrument_id: object) -> object | None:
+        """The trusted price of one instrument: mark, then mid, then last trade.
+
+        The mark is what a perpetual's unrealised PnL and liquidation are marked
+        against, so it comes first. A spot venue publishes none, and one that also
+        publishes no order book (SoDEX spot) has no mid either; its last trade is
+        then the only price there is. Without that last step every valuation on
+        such a venue ended unpriced, and the fallback breaker stopped the
+        deployment on its first fill.
+
+        ``Cache.mark_price`` returns a ``MarkPriceUpdate`` -- the price with its
+        timestamps -- while ``Cache.price`` returns the ``Price`` itself;
+        everything downstream wants the price.
+        """
+        mark = cache.mark_price(instrument_id)
+        mark = getattr(mark, "value", mark)
+        if mark is not None:
+            return mark
+        for price_type in (self._price_type_mid, self._price_type_last):
+            if price_type is None:
+                continue
+            price = cache.price(instrument_id, price_type)
+            if price is not None:
+                return price
+        return None
 
     def snapshot(
         self,
@@ -170,19 +202,7 @@ class NautilusPortfolioSnapshotProvider:
             converted: list[NautilusPortfolioPosition] = []
             for position in positions:
                 instrument_id = position.instrument_id
-                # The two sources do not return the same thing. ``mark_price`` returns a
-                # ``MarkPriceUpdate`` -- an event carrying the price alongside its
-                # timestamps -- while ``price`` returns the ``Price`` itself. Everything
-                # downstream wants the price, and ``Position.unrealized_pnl`` refuses
-                # anything else.
-                #
-                # This only became reachable when mark prices were first subscribed:
-                # before that the call always returned None and the fallback below,
-                # which does return a ``Price``, was the only branch that ever ran.
-                mark = cache.mark_price(instrument_id)
-                mark = getattr(mark, "value", mark)
-                if mark is None and self._price_type_mid is not None:
-                    mark = cache.price(instrument_id, self._price_type_mid)
+                mark = self._price(cache, instrument_id)
                 if mark is None:
                     return NautilusPortfolioSnapshot.unreliable(
                         f"mark_price_unavailable:{instrument_id}"
@@ -276,10 +296,7 @@ class NautilusPortfolioSnapshotProvider:
                 )
                 if (base, quote) not in {(source, target), (target, source)}:
                     continue
-                mark = cache.mark_price(instrument_id)
-                mark = getattr(mark, "value", mark)
-                if mark is None and self._price_type_mid is not None:
-                    mark = cache.price(instrument_id, self._price_type_mid)
+                mark = self._price(cache, instrument_id)
                 if mark is None:
                     continue
                 rate = _decimal(mark)

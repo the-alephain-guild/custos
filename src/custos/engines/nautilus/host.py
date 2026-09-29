@@ -591,7 +591,10 @@ class NtTradingNodeHost:
             tuple[Callable[[str, Any], None], Callable[[str, Any], None]] | None
         ) = None
         self._portfolio_snapshot_provider = portfolio_snapshot_provider or (
-            NautilusPortfolioSnapshotProvider(price_type_mid=PriceType.MID if PriceType else None)
+            NautilusPortfolioSnapshotProvider(
+                price_type_mid=PriceType.MID if PriceType else None,
+                price_type_last=PriceType.LAST if PriceType else None,
+            )
         )
 
     @staticmethod

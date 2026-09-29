@@ -35,16 +35,22 @@ pytest.importorskip("nautilus_trader")
 from custos_toolkit_nautilus.adapter.coordinators import PairContextCoordinator
 
 
-def _strategy_with(instrument_ids: list[str]) -> SimpleNamespace:
+def _strategy_with(
+    instrument_ids: list[str], connector: str = "binance_perpetual"
+) -> SimpleNamespace:
     subscribed: list = []
+    trades: list = []
     contexts = {
         f"pair-{i}": SimpleNamespace(instrument_id=iid, pair=f"pair-{i}")
         for i, iid in enumerate(instrument_ids)
     }
     return SimpleNamespace(
+        config=SimpleNamespace(trading=SimpleNamespace(connector=connector)),
         _contexts=contexts,
         subscribed_mark_prices=subscribed,
+        subscribed_trades=trades,
         subscribe_mark_prices=lambda instrument_id: subscribed.append(instrument_id),
+        subscribe_trades=lambda instrument_id: trades.append(instrument_id),
         log=SimpleNamespace(info=lambda *a, **k: None, warning=lambda *a, **k: None),
     )
 
@@ -87,3 +93,33 @@ def test_on_start_subscribes_mark_prices() -> None:
 
     source = inspect.getsource(NautilusTradingStrategy.on_start)
     assert "subscribe_mark_prices()" in source
+
+
+@pytest.mark.parametrize("connector", ["sodex", "binance", "okx"])
+def test_a_spot_pair_is_priced_from_its_trades_not_a_mark_it_never_gets(connector) -> None:
+    """Spot venues publish no mark price.
+
+    Measured on runner 0.5.1, 2026-09-29: SoDEX spot answered the mark subscription
+    with an error every five seconds, and the first fill tripped the fallback breaker
+    because nothing could value the position. The runner values it at the last trade
+    when there is no mark and no mid, and that needs the trades subscribed whatever
+    the tick-monitoring config says.
+    """
+    strat = _strategy_with(["vBTC_vUSDC.SODEX_SPOT"], connector=connector)
+    coord = PairContextCoordinator(strat)
+
+    coord.subscribe_mark_prices()
+
+    assert strat.subscribed_mark_prices == []
+    assert strat.subscribed_trades == ["vBTC_vUSDC.SODEX_SPOT"]
+
+
+@pytest.mark.parametrize("connector", ["binance_perpetual", "okx_perpetual", "sodex_perpetual"])
+def test_a_perpetual_pair_keeps_its_mark_price(connector) -> None:
+    strat = _strategy_with(["BTC-USD.SODEX_PERPS"], connector=connector)
+    coord = PairContextCoordinator(strat)
+
+    coord.subscribe_mark_prices()
+
+    assert strat.subscribed_mark_prices == ["BTC-USD.SODEX_PERPS"]
+    assert strat.subscribed_trades == []

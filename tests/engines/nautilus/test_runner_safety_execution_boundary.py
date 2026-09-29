@@ -9,6 +9,8 @@ import pytest
 
 pytest.importorskip("nautilus_trader")
 
+from nautilus_trader.model import PriceType  # noqa: E402
+
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig  # noqa: E402
 from custos.core.order_reservation_boundary import RunnerReservationBoundary  # noqa: E402
 from custos.core.runner_fact import RunnerStateAuthorityError  # noqa: E402
@@ -1047,3 +1049,34 @@ def test_an_order_missing_from_the_cache_reports_an_unknown_remainder() -> None:
     semantics = NautilusCachedOrderSemantics(Cache())
 
     assert semantics.fill_leaves_quantity(SimpleNamespace(client_order_id="gone")) is None
+
+
+class _CacheWithLastTradeOnly(_CacheWithPrice):
+    """A spot venue with trades but no mark price and no book (SoDEX spot)."""
+
+    def price(self, _instrument_id, price_type):
+        return self._price if price_type == PriceType.LAST else None
+
+
+def _market_order(client_order_id: str):
+    return SimpleNamespace(
+        client_order_id=client_order_id,
+        instrument_id="vBTC_vUSDC.SODEX_SPOT",
+        quantity="1",
+        is_quote_quantity=False,
+        is_reduce_only=False,
+    )
+
+
+def test_a_market_order_on_a_venue_without_mark_or_book_is_valued_at_its_last_trade() -> None:
+    """Without the last trade a market order there has no price at all and is refused."""
+    semantics = NautilusCachedOrderSemantics(_CacheWithLastTradeOnly(price="30"))
+
+    assert semantics.order_notional(_market_order("O-4")) == Decimal("60")
+
+
+def test_a_market_order_with_no_price_of_any_kind_is_still_refused() -> None:
+    semantics = NautilusCachedOrderSemantics(_CacheWithLastTradeOnly(price=None))
+
+    with pytest.raises(RuntimeError, match="no reliable price"):
+        semantics.order_notional(_market_order("O-5"))

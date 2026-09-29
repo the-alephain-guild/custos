@@ -31,6 +31,7 @@ from custos_toolkit_nautilus.adapter.orders import (
 )
 from custos_toolkit_nautilus.adapter.pair_context import PairContext
 from custos_toolkit_nautilus.adapter.tick_monitor import TickMonitorManager
+from custos_toolkit_nautilus.adapter.utils import is_futures_connector
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
@@ -110,26 +111,33 @@ class PairContextCoordinator:
             s.log.info(f"Initialized context for {pair}: instrument={ctx.instrument_id}")
 
     def subscribe_mark_prices(self) -> None:
-        """Subscribe the mark price for every pair, unconditionally.
+        """Subscribe the price every pair's open position is valued at, unconditionally.
 
-        The portfolio snapshot prices each open position from the mark price, and the
-        notional cap, the snapshot publisher and the fallback breaker all read that
-        snapshot. Nothing else subscribes it, and its fallback (MID) needs quote ticks
-        that this deployment does not take -- so without this the snapshot is unreliable
-        whenever a position is open, and the breaker can only fail closed.
+        The portfolio snapshot values each open position, and the notional cap, the
+        snapshot publisher and the fallback breaker all read that snapshot. Without a
+        price the snapshot is unreliable whenever a position is open, and the breaker
+        can only fail closed.
+
+        A perpetual gets its mark price: that is what its unrealised PnL and
+        liquidation are marked against. A spot market publishes no mark, and some
+        (SoDEX spot) publish no order book either, so there is no mid; the snapshot
+        then values the position at the last trade, and the trades are subscribed
+        here for that reason. Subscribing a mark on spot only drew an error from the
+        venue every few seconds.
 
         Unconditional on purpose: tick subscriptions are gated on the exit mode and the
         tick-monitoring config, and neither has anything to do with whether the guards
-        need a price. Hanging this off that config is what left the breaker depending on
-        data nobody had asked for.
-
-        Mark price rather than last trade because that is what a perpetual's unrealised
-        PnL and liquidation are marked against.
+        need a price.
         """
         s = self._strategy
+        perpetual = is_futures_connector(str(s.config.trading.connector))
         for ctx in s._contexts.values():
-            s.subscribe_mark_prices(ctx.instrument_id)
-        s.log.info(f"Mark price subscribed for {len(s._contexts)} pairs (position pricing)")
+            if perpetual:
+                s.subscribe_mark_prices(ctx.instrument_id)
+            else:
+                s.subscribe_trades(ctx.instrument_id)
+        source = "Mark price" if perpetual else "Trades (spot has no mark price)"
+        s.log.info(f"{source} subscribed for {len(s._contexts)} pairs (position pricing)")
 
     def subscribe_ticks(self) -> None:
         """Subscribe to tick data for all pairs if enabled."""

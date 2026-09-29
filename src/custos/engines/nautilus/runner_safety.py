@@ -330,9 +330,15 @@ class NautilusCachedOrderSemantics:
         if marked is not None:
             return _positive_decimal(marked, field="order mark price")
 
+        # A spot venue publishes no mark, and one without an order book (SoDEX spot)
+        # has no mid either; its last trade is then the only price there is, and a
+        # market order valued off nothing would be refused on every submission.
         mid = self._cache.price(order.instrument_id, PriceType.MID)
         if mid is None:
-            raise RuntimeError("order has no reliable price")
+            last = self._cache.price(order.instrument_id, PriceType.LAST)
+            if last is None:
+                raise RuntimeError("order has no reliable price")
+            return _positive_decimal(last, field="order last trade price")
         return _positive_decimal(mid, field="order mid price")
 
     def _instrument_notional(

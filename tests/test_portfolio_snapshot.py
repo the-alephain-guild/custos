@@ -713,3 +713,116 @@ def test_native_cash_portfolio_balances_are_converted_to_nav():
         assert snapshot.equity == Decimal("10000")
     finally:
         engine.dispose()
+
+
+class _LastOnlyCache(_Cache):
+    """A spot venue that publishes trades but no mark price and no book."""
+
+    def __init__(self, *, last: object | None) -> None:
+        super().__init__(mark_price=None)
+        self._last = last
+
+    def price(self, instrument_id, price_type):
+        return self._last if price_type == "LAST" else None
+
+
+def test_a_position_on_a_venue_without_mark_or_book_is_priced_from_its_last_trade() -> None:
+    """SoDEX spot publishes neither a mark price nor an order book.
+
+    Measured on runner 0.5.1, 2026-09-29: the first fill on a SoDEX spot profile
+    tripped the fallback breaker within four seconds and the runner stopped the
+    deployment, because every valuation path ended at mark or mid and neither
+    ever arrives there. The last trade does.
+    """
+    runtime = _Runtime(mark_price=None)
+    runtime.cache = _LastOnlyCache(last=_DecimalValue("100"))
+
+    snapshot = NautilusPortfolioSnapshotProvider(
+        price_type_mid="MID", price_type_last="LAST"
+    ).snapshot(runtime, currency="USDT")
+
+    assert snapshot.reliable is True, snapshot.unreliable_reason
+    assert snapshot.positions[0].mark_price == Decimal("100")
+
+
+def test_a_position_with_no_price_of_any_kind_still_fails_closed() -> None:
+    runtime = _Runtime(mark_price=None)
+    runtime.cache = _LastOnlyCache(last=None)
+
+    snapshot = NautilusPortfolioSnapshotProvider(
+        price_type_mid="MID", price_type_last="LAST"
+    ).snapshot(runtime, currency="USDT")
+
+    assert snapshot.reliable is False
+    assert snapshot.unreliable_reason.startswith("mark_price_unavailable:")
+
+
+def test_native_cash_portfolio_is_valued_from_trades_when_the_venue_quotes_nothing():
+    """The SoDEX spot shape on a real engine: a cash account, trades, no quotes."""
+    import pytest
+
+    pytest.importorskip("nautilus_trader")
+    from nautilus_trader.backtest import BacktestEngine, BacktestEngineConfig
+    from nautilus_trader.model import (
+        AccountType,
+        AggressorSide,
+        Currency,
+        CurrencyPair,
+        InstrumentId,
+        Money,
+        OmsType,
+        Price,
+        PriceType,
+        Quantity,
+        Symbol,
+        TradeId,
+        TradeTick,
+        Venue,
+    )
+
+    engine = BacktestEngine(BacktestEngineConfig(bypass_logging=True, run_analysis=False))
+    instrument = CurrencyPair(
+        InstrumentId.from_str("BTC-USDT.OKX"),
+        Symbol("BTC-USDT"),
+        Currency.from_str("BTC"),
+        Currency.from_str("USDT"),
+        2,
+        6,
+        Price.from_str("0.01"),
+        Quantity.from_str("0.000001"),
+        0,
+        0,
+    )
+    try:
+        engine.add_venue(
+            Venue("OKX"),
+            OmsType.NETTING,
+            AccountType.CASH,
+            [Money.from_str("1000 USDT"), Money.from_str("1 BTC")],
+        )
+        engine.add_instrument(instrument)
+        engine.add_data(
+            [
+                TradeTick(
+                    instrument.id,
+                    Price.from_str("9000.00"),
+                    Quantity.from_str("0.010000"),
+                    AggressorSide.BUY,
+                    TradeId("1"),
+                    1,
+                    1,
+                )
+            ]
+        )
+        engine.run()
+        without_last = NautilusPortfolioSnapshotProvider(price_type_mid=PriceType.MID).snapshot(
+            engine, "USDT"
+        )
+        assert not without_last.reliable, "the scenario must reproduce the unpriced balance"
+        snapshot = NautilusPortfolioSnapshotProvider(
+            price_type_mid=PriceType.MID, price_type_last=PriceType.LAST
+        ).snapshot(engine, "USDT")
+        assert snapshot.reliable, snapshot.unreliable_reason
+        assert snapshot.equity == Decimal("10000")
+    finally:
+        engine.dispose()
