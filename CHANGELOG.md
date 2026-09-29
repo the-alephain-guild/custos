@@ -13,6 +13,16 @@ protocol — is published at
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-29
+
+It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.5.0`
+and as source; there is no PyPI package. Call the reusable publishing workflow at
+`@v0.5.0`; a runner or deployment service that trusts releases published through
+it lists that tag as the workflow identity. The strategy toolkit that matches it is
+`0.1.0rc9`, built from the same engine; a strategy repository moves to both
+together, since a release built on `0.1.0rc8` names the previous engine and is
+refused.
+
 ### Changed
 
 - **The engine is NautilusTrader `2.0.0rc5+sodex.2`.** The runner image, the

@@ -98,7 +98,7 @@ clean:  ## Remove pycache / pytest cache / ruff cache
 # `make dist` produces the signed-artifact input; `docker-build` consumes it.
 # `verify-release` is the post-publish smoke gate for the image on GHCR.
 
-LOCAL_IMAGE ?= custos-runner:v0.4.2
+LOCAL_IMAGE ?= custos-runner:v0.5.0
 SOURCE_REVISION := $(shell git rev-parse HEAD)
 
 # NautilusTrader resolves from released, platform-specific wheel URLs. uv.lock

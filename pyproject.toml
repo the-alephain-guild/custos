@@ -1,6 +1,6 @@
 [project]
 name = "custos-runner"
-version = "0.4.2"
+version = "0.5.0"
 description = "Custos: non-custodial runner with signed Crucible commands, local execution, and signed RunnerFacts"
 requires-python = ">=3.11"
 dependencies = [
