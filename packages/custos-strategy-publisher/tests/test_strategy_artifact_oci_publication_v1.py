@@ -169,7 +169,7 @@ def _release_layers() -> tuple[OciBlobV1, ...]:
                     "contract_schema_sha256": "3" * 64,
                     "engine": "nautilus",
                     "engine_toolkit_version": "1.0.0rc1",
-                    "engine_version": "2.0.0rc5+sodex.2",
+                    "engine_version": "2.0.0rc5+sodex.1",
                     "manifest_sha256": "4" * 64,
                     "manifest_size_bytes": 19,
                     "normalized_source_tree_sha256": "5" * 64,

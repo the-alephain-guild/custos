@@ -107,9 +107,9 @@ dependencies = [
 build = [
     { name = "msgspec" },
     { name = "mypy" },
-    { name = "nautilus-trader", version = "2.0.0rc5+sodex.2", source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-macosx_11_0_arm64.whl" }, marker = "sys_platform != 'linux'" },
-    { name = "nautilus-trader", version = "2.0.0rc5+sodex.2", source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_aarch64.whl" }, marker = "platform_machine != 'x86_64' and sys_platform == 'linux'" },
-    { name = "nautilus-trader", version = "2.0.0rc5+sodex.2", source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_x86_64.whl" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+    { name = "nautilus-trader", version = "2.0.0rc5+sodex.1", source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-macosx_11_0_arm64.whl" }, marker = "sys_platform != 'linux'" },
+    { name = "nautilus-trader", version = "2.0.0rc5+sodex.1", source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_aarch64.whl" }, marker = "platform_machine != 'x86_64' and sys_platform == 'linux'" },
+    { name = "nautilus-trader", version = "2.0.0rc5+sodex.1", source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_x86_64.whl" }, marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
 sign = [
     { name = "sigstore" },
@@ -126,9 +126,9 @@ dev = [
 requires-dist = [
     { name = "msgspec", marker = "extra == 'build'", specifier = ">=0.18,<1" },
     { name = "mypy", marker = "extra == 'build'", specifier = "==1.19.1" },
-    { name = "nautilus-trader", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'build'", url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-macosx_11_0_arm64.whl" },
-    { name = "nautilus-trader", marker = "platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'build'", url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_aarch64.whl" },
-    { name = "nautilus-trader", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'build'", url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_x86_64.whl" },
+    { name = "nautilus-trader", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'build'", url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-macosx_11_0_arm64.whl" },
+    { name = "nautilus-trader", marker = "platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'build'", url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_aarch64.whl" },
+    { name = "nautilus-trader", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'build'", url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_x86_64.whl" },
     { name = "packaging", specifier = ">=24" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "sigstore", marker = "extra == 'sign'", specifier = "==4.4.0" },
@@ -271,13 +271,13 @@ wheels = [
 
 [[package]]
 name = "nautilus-trader"
-version = "2.0.0rc5+sodex.2"
-source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-macosx_11_0_arm64.whl" }
+version = "2.0.0rc5+sodex.1"
+source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-macosx_11_0_arm64.whl" }
 resolution-markers = [
     "platform_machine == 'arm64' and sys_platform == 'darwin'",
 ]
 wheels = [
-    { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:86619ef578ae2444eee49dccdf1def7fdc2c92c3f77751e4c1c05b440ea63f87" },
+    { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:0a06c389f63e4c7d9825c2b68e8a225db2db6e92561bcf623eb6d81b2693af97" },
 ]
 
 [package.metadata]
@@ -291,13 +291,13 @@ provides-extras = ["visualization"]
 
 [[package]]
 name = "nautilus-trader"
-version = "2.0.0rc5+sodex.2"
-source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_aarch64.whl" }
+version = "2.0.0rc5+sodex.1"
+source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_aarch64.whl" }
 resolution-markers = [
     "platform_machine == 'aarch64' and sys_platform == 'linux'",
 ]
 wheels = [
-    { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_aarch64.whl", hash = "sha256:e8ef7826068eb7a5ef81d8f6613da24ff138f758a1bf9c41cbfc6d380b36a248" },
+    { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_aarch64.whl", hash = "sha256:d1e56ae74547712441eea7d3a46783655a59489a5c4f9dbd297db7b9f1aff754" },
 ]
 
 [package.metadata]
@@ -311,13 +311,13 @@ provides-extras = ["visualization"]
 
 [[package]]
 name = "nautilus-trader"
-version = "2.0.0rc5+sodex.2"
-source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_x86_64.whl" }
+version = "2.0.0rc5+sodex.1"
+source = { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_x86_64.whl" }
 resolution-markers = [
     "platform_machine == 'x86_64' and sys_platform == 'linux'",
 ]
 wheels = [
-    { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_x86_64.whl", hash = "sha256:2b9fc62beb3e888c754d88ad80d3228ba25260f3fde7cf48333398f802f0a79e" },
+    { url = "https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_x86_64.whl", hash = "sha256:b5d0f1e483c534e39dfa8215a6816381baf3b873cfb686dea141dc3fbc9849d5" },
 ]
 
 [package.metadata]
