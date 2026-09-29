@@ -4,19 +4,19 @@
   "consumers": {
     "crucible_rust": {
       "receipt": {
-        "commit": "8e38becf270c55f3676e6467015c2a3fbfd64588",
-        "path": "docs/authority/receipts/crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json",
-        "sha256": "cf5abd8913870846f67ded0f0330ad72d956896e04ee9af94124180cbfbb5ee3",
-        "vendored_path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+        "commit": "8b147a2c00f2baa0c1d7f9e26a8eb4d04d63eeb0",
+        "path": "docs/authority/receipts/crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json",
+        "sha256": "8024890d72e955ba917e1a85e3ebb22e44f472ab50c276fdcddf79b707811743",
+        "vendored_path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
       },
       "repository": "tesseract-trading/crucible-rust"
     },
     "philosophers_stone": {
       "receipt": {
-        "commit": "c89ce7bd5187ad1c0b148b8554eeb234f63c1deb",
-        "path": "docs/authority/receipts/ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json",
-        "sha256": "9527b5329b08796c2231d2f831c25aeebc249d85b72ad115ffa7c59e7bc62baa",
-        "vendored_path": "docs/authority/receipts/vendor/ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+        "commit": "9544dc75ed942cd1033eadce96127ab0b10f86ca",
+        "path": "docs/authority/receipts/ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json",
+        "sha256": "14a32d11bb8f44b82773907c2b9715b9c6a101069212ffeaee694a6cb21d4188",
+        "vendored_path": "docs/authority/receipts/vendor/ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
       },
       "repository": "alchymia-labs/philosophers-stone"
     }
@@ -27,10 +27,7 @@
     "size_bytes": 2828
   },
   "contract_consumer_ready": true,
-  "open_blockers": [
-    "philosophers-stone accepts the engine 2.0.0rc5+sodex.2 contract revision",
-    "crucible-rust accepts the engine 2.0.0rc5+sodex.2 contract revision"
-  ],
+  "open_blockers": [],
   "policy_boundary": {
     "crucible_local_policy_decision_reused": false,
     "runner_local_policy_decision_required": true

@@ -1,0 +1,32 @@
+{
+  "canonical_name": "Philosophers Stone Custos strategy contract engine sodex.2 V1 consumer receipt",
+  "consumer": {
+    "accepted_at_commit": "7d9118201f1090e37a7d27c94b78d85bca71dd00",
+    "repository": "alchymia-labs/philosophers-stone"
+  },
+  "consumer_assets": [
+    "docs/authority/strategy-release-bom-v1.schema.json",
+    "docs/authority/strategy-release-bom-v1.golden.json",
+    "docs/authority/strategy-release-statement-v1.schema.json",
+    "docs/authority/strategy-release-statement-v1.golden.json"
+  ],
+  "custos_toolkit_authority": {
+    "commit": "a3905828c0ffb17b460d10214a550b60d45f7476",
+    "manifest_digest": "sha256:04189c67a255a4e186bd4200a75bdf813d2e94b93de66a5774528e3072c9cee7",
+    "release_candidate": "0.1.0rc9"
+  },
+  "engine_version": "2.0.0rc5+sodex.2",
+  "producer": {
+    "commit": "3bb6886f9151384541b79c7214eedbd106e87c29",
+    "repository": "tesseract-trading/custos"
+  },
+  "production_ready": false,
+  "receipt_schema_version": 1,
+  "runtime_ready": false,
+  "status": "CUSTOS_ENGINE_SODEX_2_V1_CONTRACT_ACCEPTED",
+  "supersedes_receipt": "docs/authority/receipts/ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json",
+  "verification": {
+    "make_verify": "903 passed",
+    "producer_revision_governed_by": "git"
+  }
+}

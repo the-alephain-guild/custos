@@ -1,0 +1,35 @@
+{
+  "canonical_name": "Crucible Custos strategy contract engine sodex.2 V1 consumer receipt",
+  "consumer": {
+    "accepted_at_commit": "fbb2e84a97483b604f6f6ac3d425eb523d4af262",
+    "repository": "tesseract-trading/crucible-rust"
+  },
+  "contract": {
+    "artifact_ref": "StrategyArtifactRefV1",
+    "manifest": "StrategyManifestV1",
+    "manifest_change": "engine_version is 2.0.0rc5+sodex.2 in the manifest, artifact ref and pre-import receipt; no field is added or removed",
+    "engine_version": "2.0.0rc5+sodex.2",
+    "pre_import_receipt": "StrategyArtifactPreImportVerificationReceiptV1"
+  },
+  "producer": {
+    "accepted_paths": [
+      "docs/gateway-contract/v1/strategy_manifest_v1.schema.json",
+      "docs/authority/strategy-contract-assets-v1.json",
+      "docs/authority/strategy-artifact-ref-v1.golden.json",
+      "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json",
+      "docs/gateway-contract/v1/strategy_artifact_pre_import_verification_receipt_v1.schema.json"
+    ],
+    "commit": "3bb6886f9151384541b79c7214eedbd106e87c29",
+    "repository": "tesseract-trading/custos"
+  },
+  "supersedes_receipt": "docs/authority/receipts/crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json",
+  "production_ready": false,
+  "receipt_schema_version": 1,
+  "runtime_ready": false,
+  "status": "CUSTOS_ENGINE_SODEX_2_V1_CONTRACT_ACCEPTED",
+  "verification": {
+    "authority_gate": "passed",
+    "consumer_contract_tests": "passed for the Custos documents; exact_producer_v1_documents_parse_without_crucible_owned_fields still fails on the vendored PS release BOM, which names sodex.1 until PS re-issues it",
+    "producer_revision_governed_by": "git"
+  }
+}

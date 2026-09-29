@@ -26,11 +26,11 @@ RECEIPT = (
 )
 CRUCIBLE_RECEIPT = (
     ROOT / "docs/authority/receipts/vendor/"
-    "crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+    "crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
 )
 PS_RECEIPT = (
     ROOT / "docs/authority/receipts/vendor/"
-    "ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+    "ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
 )
 
 
@@ -85,9 +85,9 @@ def test_schema_golden_and_index_are_the_same_v1_contract() -> None:
     assert claims["artifact_ref_digest"] == receipt["artifact_ref_digest"]
     assert claims["release_bom_digest"] == receipt["release_bom_digest"]
     crucible_receipt = json.loads(CRUCIBLE_RECEIPT.read_text(encoding="utf-8"))
-    assert crucible_receipt["producer"]["commit"] == "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220"
+    assert crucible_receipt["producer"]["commit"] == "3bb6886f9151384541b79c7214eedbd106e87c29"
     assert crucible_receipt["consumer"] == {
-        "accepted_at_commit": "1a2e250e6a7d1fad290302b456b6f098a12dad24",
+        "accepted_at_commit": "fbb2e84a97483b604f6f6ac3d425eb523d4af262",
         "repository": "tesseract-trading/crucible-rust",
     }
     assert crucible_receipt["runtime_ready"] is False
@@ -247,8 +247,8 @@ def test_contract_receipt_records_both_nautilus_2_consumers() -> None:
     assert receipt["runtime_ready"] is False
     assert receipt["production_ready"] is False
     ps_pin = receipt["consumers"]["philosophers_stone"]["receipt"]
-    assert ps_pin["commit"] == "c89ce7bd5187ad1c0b148b8554eeb234f63c1deb"
+    assert ps_pin["commit"] == "9544dc75ed942cd1033eadce96127ab0b10f86ca"
     assert ps_pin["sha256"] == hashlib.sha256(PS_RECEIPT.read_bytes()).hexdigest()
     crucible_pin = receipt["consumers"]["crucible_rust"]["receipt"]
-    assert crucible_pin["commit"] == "8e38becf270c55f3676e6467015c2a3fbfd64588"
+    assert crucible_pin["commit"] == "8b147a2c00f2baa0c1d7f9e26a8eb4d04d63eeb0"
     assert crucible_pin["sha256"] == hashlib.sha256(CRUCIBLE_RECEIPT.read_bytes()).hexdigest()

@@ -19,32 +19,32 @@ from custos_strategy_publisher.toolkit_authority import (
 )
 
 CUSTOS_ROOT = Path(__file__).resolve().parents[3]
-RC8_AUTHORITY_COMMIT = "4c5112da29d19ade016e8630cf576678e2e484d2"
+RC9_AUTHORITY_COMMIT = "a3905828c0ffb17b460d10214a550b60d45f7476"
 
 
 def _load(root: Path = CUSTOS_ROOT, **overrides: str):
-    arguments = {"candidate_version": "0.1.0rc8", "authority_commit": RC8_AUTHORITY_COMMIT}
+    arguments = {"candidate_version": "0.1.0rc9", "authority_commit": RC9_AUTHORITY_COMMIT}
     arguments.update(overrides)
     return load_toolkit_authority(root, **arguments)
 
 
-def test_rc8_binds_the_toolkit_the_first_producer_locked() -> None:
+def test_rc9_binds_the_toolkit_the_producer_locks() -> None:
     authority = _load()
 
-    assert authority.candidate_version == "0.1.0rc8"
+    assert authority.candidate_version == "0.1.0rc9"
     assert authority.registry == "ghcr.io"
     assert authority.repository == "the-alephain-guild/custos-strategy-toolkit"
     assert authority.manifest_digest == (
-        "sha256:94e8a3ecfca41f610061217b811cedf3d3e0a82e0e70fb3d3a53dd11124c2be5"
+        "sha256:04189c67a255a4e186bd4200a75bdf813d2e94b93de66a5774528e3072c9cee7"
     )
-    assert authority.manifest_size_bytes == 7593
-    assert authority.source_commit == "6b41727c26d51f686ada2186fad35373854a35d1"
-    assert authority.authority_commit == RC8_AUTHORITY_COMMIT
+    assert authority.manifest_size_bytes == 7592
+    assert authority.source_commit == "8ce29584aa0d7b72eea6bb8cfd5031e201c2970e"
+    assert authority.authority_commit == RC9_AUTHORITY_COMMIT
     assert authority.authority_receipt.sha256 == (
-        "d22dbe5d16a59edac1f2996cf5836039e4648f407a38d4cb3acee0e96c324768"
+        "ed9d0597a181b9073f6ff4b6996ef2f59fb4fd9c74c72704272c968d6d0f20c6"
     )
     assert authority.base_contracts_wheel.title == (
-        "custos_strategy_toolkit-0.1.0rc8-py3-none-any.whl"
+        "custos_strategy_toolkit-0.1.0rc9-py3-none-any.whl"
     )
 
 
@@ -64,7 +64,7 @@ def test_an_authority_commit_that_is_not_a_commit_is_refused() -> None:
 
 
 def test_a_receipt_that_differs_from_its_sidecar_is_refused(tmp_path: Path) -> None:
-    receipt = AUTHORITY_RECEIPT_PATH.format(release="rc8")
+    receipt = AUTHORITY_RECEIPT_PATH.format(release="rc9")
     target = tmp_path / receipt
     target.parent.mkdir(parents=True)
     shutil.copy(CUSTOS_ROOT / f"{receipt}.sha256", tmp_path / f"{receipt}.sha256")

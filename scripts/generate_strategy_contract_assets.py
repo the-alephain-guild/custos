@@ -49,20 +49,16 @@ HISTORICAL_CONTRACT_EVIDENCE_PATHS = {
 }
 CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/vendor/"
-    "crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+    "crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
 )
-CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "8e38becf270c55f3676e6467015c2a3fbfd64588"
+CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "8b147a2c00f2baa0c1d7f9e26a8eb4d04d63eeb0"
 PS_STRATEGY_CONSUMER_RECEIPT_PATH = (
-    "docs/authority/receipts/vendor/"
-    "ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+    "docs/authority/receipts/vendor/ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
 )
-PS_STRATEGY_CONSUMER_COMMIT = "c89ce7bd5187ad1c0b148b8554eeb234f63c1deb"
-STRATEGY_CONTRACT_PRODUCER_COMMIT = "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220"
-STRATEGY_CONTRACT_ACCEPTED_STATUS = "CUSTOS_TRADING_SCOPE_V1_CONTRACT_ACCEPTED"
-# Both consumers accepted the trading-scope revision, which named the previous
-# engine. Neither has accepted the revision that moves the engine yet; the
-# handoff receipt lists that as an open blocker until each re-issues its receipt.
-STRATEGY_CONTRACT_ACCEPTED_ENGINE_VERSION = "2.0.0rc5+sodex.1"
+PS_STRATEGY_CONSUMER_COMMIT = "9544dc75ed942cd1033eadce96127ab0b10f86ca"
+STRATEGY_CONTRACT_PRODUCER_COMMIT = "3bb6886f9151384541b79c7214eedbd106e87c29"
+STRATEGY_CONTRACT_ACCEPTED_STATUS = "CUSTOS_ENGINE_SODEX_2_V1_CONTRACT_ACCEPTED"
+STRATEGY_CONTRACT_ACCEPTED_ENGINE_VERSION = "2.0.0rc5+sodex.2"
 RUNNER_COMMAND_CONSUMER_INDEX_PATH = (
     "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json"
 )
@@ -511,7 +507,7 @@ def build_v1_contract_assets() -> dict[str, bytes]:
                 local_path=PS_STRATEGY_CONSUMER_RECEIPT_PATH,
                 producer_path=(
                     "docs/authority/receipts/"
-                    "ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+                    "ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
                 ),
                 repository="alchymia-labs/philosophers-stone",
                 commit=PS_STRATEGY_CONSUMER_COMMIT,
@@ -523,7 +519,7 @@ def build_v1_contract_assets() -> dict[str, bytes]:
                 local_path=CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH,
                 producer_path=(
                     "docs/authority/receipts/"
-                    "crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+                    "crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
                 ),
                 repository="tesseract-trading/crucible-rust",
                 commit=CRUCIBLE_STRATEGY_CONSUMER_COMMIT,
@@ -555,10 +551,7 @@ def build_v1_contract_assets() -> dict[str, bytes]:
             "command_consumer_ready": True,
             "runtime_ready": False,
             "production_ready": False,
-            "open_blockers": [
-                "philosophers-stone accepts the engine 2.0.0rc5+sodex.2 contract revision",
-                "crucible-rust accepts the engine 2.0.0rc5+sodex.2 contract revision",
-            ],
+            "open_blockers": [],
         }
     )
     return generated

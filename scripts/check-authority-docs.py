@@ -17,14 +17,13 @@ STRATEGY_CONTRACT_RECEIPT_PATH = (
 )
 CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/vendor/"
-    "crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+    "crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
 )
-CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "8e38becf270c55f3676e6467015c2a3fbfd64588"
+CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "8b147a2c00f2baa0c1d7f9e26a8eb4d04d63eeb0"
 PS_STRATEGY_CONSUMER_RECEIPT_PATH = (
-    "docs/authority/receipts/vendor/"
-    "ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+    "docs/authority/receipts/vendor/ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
 )
-PS_STRATEGY_CONSUMER_COMMIT = "c89ce7bd5187ad1c0b148b8554eeb234f63c1deb"
+PS_STRATEGY_CONSUMER_COMMIT = "9544dc75ed942cd1033eadce96127ab0b10f86ca"
 CANONICAL_INDEX_PATH = "docs/authority/strategy-contract-assets-v1.json"
 CANONICAL_ARTIFACT_REF_SCHEMA_PATH = "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json"
 CANONICAL_ARTIFACT_REF_GOLDEN_PATH = "docs/authority/strategy-artifact-ref-v1.golden.json"
@@ -539,7 +538,7 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
                 "commit": PS_STRATEGY_CONSUMER_COMMIT,
                 "path": (
                     "docs/authority/receipts/"
-                    "ps-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+                    "ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
                 ),
                 "vendored_path": PS_STRATEGY_CONSUMER_RECEIPT_PATH,
                 "sha256": hashlib.sha256(
@@ -553,7 +552,7 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
                 "commit": CRUCIBLE_STRATEGY_CONSUMER_COMMIT,
                 "path": (
                     "docs/authority/receipts/"
-                    "crucible-custos-strategy-contract-trading-scope-v1-consumer-receipt.json"
+                    "crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
                 ),
                 "vendored_path": CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH,
                 "sha256": hashlib.sha256(
@@ -572,13 +571,11 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
             "engine_version", document.get("contract", {}).get("engine_version")
         )
         if (
-            document.get("status") != "CUSTOS_TRADING_SCOPE_V1_CONTRACT_ACCEPTED"
+            document.get("status") != "CUSTOS_ENGINE_SODEX_2_V1_CONTRACT_ACCEPTED"
             or document.get("consumer", {}).get("repository") != repository
             or document.get("producer", {}).get("commit")
-            != "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220"
-            # The revision each consumer accepted named the previous engine; the
-            # handoff receipt's open blockers carry the move to the current one.
-            or engine_version != "2.0.0rc5+sodex.1"
+            != "3bb6886f9151384541b79c7214eedbd106e87c29"
+            or engine_version != "2.0.0rc5+sodex.2"
         ):
             errors.append(f"{repository} strategy consumer receipt semantics differ")
 

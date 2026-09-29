@@ -25,7 +25,7 @@ from custos_strategy_publisher.toolkit_registry import (
 
 # The publisher lives in the Custos repository, whose checkout holds the receipts.
 CUSTOS_ROOT = Path(__file__).resolve().parents[3]
-RC8_AUTHORITY_COMMIT = "4c5112da29d19ade016e8630cf576678e2e484d2"
+RC9_AUTHORITY_COMMIT = "a3905828c0ffb17b460d10214a550b60d45f7476"
 
 
 def _descriptor(artifact: RegistryArtifactV1) -> dict[str, object]:
@@ -49,7 +49,7 @@ def _registry_fixture() -> tuple[
     dict[str, bytes],
 ]:
     authority = load_toolkit_authority(
-        CUSTOS_ROOT, candidate_version="0.1.0rc8", authority_commit=RC8_AUTHORITY_COMMIT
+        CUSTOS_ROOT, candidate_version="0.1.0rc9", authority_commit=RC9_AUTHORITY_COMMIT
     )
     fetched_roles = {
         authority.contract_asset_index.role,
