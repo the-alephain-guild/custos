@@ -13,6 +13,28 @@ protocol — is published at
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-29
+
+It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.5.2`
+and as source; there is no PyPI package. Call the reusable publishing workflow at
+`@v0.5.2`; a runner or deployment service that trusts releases published through
+it lists that tag as the workflow identity.
+
+### Fixed
+
+- **A spot deployment is no longer stopped on its first fill.** A spot venue
+  publishes no mark price, and SoDEX spot publishes no order book either, so
+  the runner had no price for a spot position or balance: on 0.5.1 a SoDEX spot
+  deployment's first fill tripped the fallback breaker within seconds, and the
+  runner flattened the position and stopped the deployment. The portfolio
+  snapshot, the cash account's balance conversion and the order valuation now
+  take the mark, then the mid, then the last trade; with none of the three the
+  snapshot still fails closed and the order is still refused.
+- **The strategy toolkit subscribes a spot pair's trades rather than its mark
+  price.** A perpetual keeps its mark price. SoDEX spot answered the mark
+  subscription with an error every five seconds, and the last trade the runner
+  now values at is only there when the trades are subscribed.
+
 ## [0.5.1] - 2026-09-29
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.5.1`
