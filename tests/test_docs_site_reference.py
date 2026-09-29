@@ -154,7 +154,7 @@ def test_private_build_suffix_is_not_generated(isolated_checker: ModuleType) -> 
     checker = isolated_checker
     path = checker.ROOT / "packages/custos-strategy-toolkit-nautilus/pyproject.toml"
     before = checker.version_text(False)
-    path.write_text(path.read_text().replace("+sodex.1", "+private.engine.99"))
+    path.write_text(path.read_text().replace("+sodex.2", "+private.engine.99"))
     assert checker.version_text(False) == before
     assert "private" not in checker.version_text(False)
     assert "rc5" not in before

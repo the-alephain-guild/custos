@@ -784,7 +784,7 @@ def assemble_toolkit_rc_publication_inputs(
                     ">=3.11" if role is ToolkitRcMemberRole.BASE_CONTRACTS_WHEEL else ">=3.12,<3.13"
                 ),
                 nautilus_version=(
-                    None if role is ToolkitRcMemberRole.BASE_CONTRACTS_WHEEL else "2.0.0rc5+sodex.1"
+                    None if role is ToolkitRcMemberRole.BASE_CONTRACTS_WHEEL else "2.0.0rc5+sodex.2"
                 ),
                 top_level_modules=wheel.top_level_modules,
                 dependencies=tuple(dependencies),

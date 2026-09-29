@@ -167,7 +167,7 @@ def consumer_receipt_pin(
         or producer.get("repository") != "tesseract-trading/custos"
         or producer.get("commit") != STRATEGY_CONTRACT_PRODUCER_COMMIT
         or consumer.get("repository") != repository
-        or engine_version != "2.0.0rc5+sodex.1"
+        or engine_version != "2.0.0rc5+sodex.2"
         or document.get("runtime_ready") is not False
         or document.get("production_ready") is not False
     ):
@@ -220,7 +220,7 @@ def _build_artifact_ref_assets() -> dict[str, bytes]:
         normalized_source_tree_sha256="3" * 64,
         python_version="3.12.4",
         engine="nautilus",
-        engine_version="2.0.0rc5+sodex.1",
+        engine_version="2.0.0rc5+sodex.2",
         base_contracts_version="1.0.0rc1",
         engine_toolkit_version="1.0.0rc1",
         build_inputs=(DigestBindingV1(name="uv.lock", sha256="9" * 64),),
@@ -618,7 +618,7 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
         or resolution_receipt.get("consumer") != "custos"
         or resolution_receipt.get("status") != "CURRENT_ENGINE_CONTRACT_READY"
         or resolution_receipt.get("engine") != "nautilus"
-        or resolution_receipt.get("engine_version") != "2.0.0rc5+sodex.1"
+        or resolution_receipt.get("engine_version") != "2.0.0rc5+sodex.2"
         or resolution_receipt.get("producer_commit") != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
         or resolution_receipt.get("runtime_code_commit")
         != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT

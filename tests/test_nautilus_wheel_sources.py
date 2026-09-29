@@ -6,11 +6,11 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "2.0.0rc5+sodex.1"
+VERSION = "2.0.0rc5+sodex.2"
 EXPECTED_HASHES = {
-    "0a06c389f63e4c7d9825c2b68e8a225db2db6e92561bcf623eb6d81b2693af97",
-    "d1e56ae74547712441eea7d3a46783655a59489a5c4f9dbd297db7b9f1aff754",
-    "b5d0f1e483c534e39dfa8215a6816381baf3b873cfb686dea141dc3fbc9849d5",
+    "86619ef578ae2444eee49dccdf1def7fdc2c92c3f77751e4c1c05b440ea63f87",
+    "e8ef7826068eb7a5ef81d8f6613da24ff138f758a1bf9c41cbfc6d380b36a248",
+    "2b9fc62beb3e888c754d88ad80d3228ba25260f3fde7cf48333398f802f0a79e",
 }
 
 

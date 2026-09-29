@@ -107,7 +107,7 @@ def _candidate_inputs(root: Path, version: str) -> CandidateInputs:
             if is_base
             else [
                 f"custos-strategy-toolkit=={version}",
-                "nautilus-trader==2.0.0rc5+sodex.1",
+                "nautilus-trader==2.0.0rc5+sodex.2",
             ]
         )
         wheel_documents[distribution] = {
@@ -139,8 +139,8 @@ def _candidate_inputs(root: Path, version: str) -> CandidateInputs:
                 ),
                 LockedToolkitDependencyV1(
                     name="nautilus-trader",
-                    version="2.0.0rc5+sodex.1",
-                    requirement="nautilus-trader==2.0.0rc5+sodex.1",
+                    version="2.0.0rc5+sodex.2",
+                    requirement="nautilus-trader==2.0.0rc5+sodex.2",
                 ),
             )
         )
@@ -150,7 +150,7 @@ def _candidate_inputs(root: Path, version: str) -> CandidateInputs:
                 distribution_name=distribution,
                 version=version,
                 python_requires=">=3.11" if is_base else ">=3.12,<3.13",
-                nautilus_version=None if is_base else "2.0.0rc5+sodex.1",
+                nautilus_version=None if is_base else "2.0.0rc5+sodex.2",
                 top_level_modules=("custos_toolkit" if is_base else "custos_toolkit_nautilus",),
                 dependencies=dependencies,
                 source_repository="https://github.com/the-alephain-guild/custos",

@@ -150,7 +150,7 @@ def _manifest(**overrides: object) -> dict[str, object]:
         "entry_point_group": "alephain.strategy_runtime.v1",
         "entry_point": "alephain_strategy.supertrend.runtime:SuperTrendRuntimeAdapterV1",
         "engine": "nautilus",
-        "engine_version": "2.0.0rc5+sodex.1",
+        "engine_version": "2.0.0rc5+sodex.2",
         "requires_python": ">=3.12,<3.13",
         "base_contracts_version": "0.1.0rc8",
         "engine_toolkit_version": "0.1.0rc8",

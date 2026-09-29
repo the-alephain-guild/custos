@@ -15,6 +15,17 @@ protocol — is published at
 
 ### Changed
 
+- **The engine is NautilusTrader `2.0.0rc5+sodex.2`.** The runner image, the
+  `custos-strategy-toolkit-nautilus` distribution and the publisher's build
+  environment install the fork release `guild-v2.0.0rc5+sodex.2`, pinned by the
+  sha256 of each platform wheel. The V1 strategy contracts change the
+  `engine_version` constant in place; a strategy release, a consumer receipt
+  or a golden that still names `2.0.0rc5+sodex.1` is refused. What changed in
+  the engine: SoDEX historical bars carry the venue's real timestamps and the
+  forming bar is dropped, so a strategy's warmup request on SoDEX no longer
+  comes back empty; amendments go through the venue's replace route; the
+  execution client proves at startup that the wallet lists the key it signs
+  with; commission is charged at the account's own rates.
 - **RunnerFact V1 venue ledger snapshots carry cash flows and wallet scope.**
   The contract changes in place; a consumer must take the new schema and golden
   together with this release.

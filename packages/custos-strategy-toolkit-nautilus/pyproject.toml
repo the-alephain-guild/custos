@@ -5,7 +5,7 @@ description = "NautilusTrader adapter distribution for the Custos strategy toolk
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "custos-strategy-toolkit==0.1.0",
-    "nautilus-trader==2.0.0rc5+sodex.1",
+    "nautilus-trader==2.0.0rc5+sodex.2",
     # The fork declares no core dependencies, so everything this package used to
     # inherit from the earlier NautilusTrader line has to be named here. Of the nine
     # packages the switch dropped, exactly two are used by our own code: pandas

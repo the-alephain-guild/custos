@@ -15,7 +15,7 @@ RECEIPT_SCHEMA_VERSION = "alephain.strategy-release-bom-receipt.v1"
 CANONICALIZATION = "sha256-canonical-json-v1"
 EXECUTION_ABI = "alephain.strategy_runtime.v1"
 ENGINE = "nautilus"
-ENGINE_VERSION = "2.0.0rc5+sodex.1"
+ENGINE_VERSION = "2.0.0rc5+sodex.2"
 PYTHON_REQUIRES = ">=3.12,<3.13"
 DSSE_PAYLOAD_TYPE = "application/vnd.in-toto+json"
 IN_TOTO_STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
@@ -221,7 +221,7 @@ class StrategyReleaseBomV1:
         if self.canonicalization != CANONICALIZATION:
             raise ValueError(f"canonicalization must be {CANONICALIZATION}")
         if self.engine != ENGINE or self.engine_version != ENGINE_VERSION:
-            raise ValueError("engine contract must be nautilus 2.0.0rc5+sodex.1")
+            raise ValueError("engine contract must be nautilus 2.0.0rc5+sodex.2")
         if self.python_requires != PYTHON_REQUIRES:
             raise ValueError(f"python_requires must be {PYTHON_REQUIRES}")
         if self.entry_point_group != EXECUTION_ABI:

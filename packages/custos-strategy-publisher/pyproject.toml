@@ -20,9 +20,9 @@ build = [
     "mypy==1.19.1",
     # A release declares this dependency, and strategies import it; typing needs it.
     "msgspec>=0.18,<1",
-    "nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-macosx_11_0_arm64.whl ; sys_platform == 'darwin' and platform_machine == 'arm64'",
-    "nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_aarch64.whl ; sys_platform == 'linux' and platform_machine == 'aarch64'",
-    "nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.1/nautilus_trader-2.0.0rc5%2Bsodex.1-cp312-cp312-manylinux_2_39_x86_64.whl ; sys_platform == 'linux' and platform_machine == 'x86_64'",
+    "nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-macosx_11_0_arm64.whl ; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_aarch64.whl ; sys_platform == 'linux' and platform_machine == 'aarch64'",
+    "nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_x86_64.whl ; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
 
 [project.scripts]

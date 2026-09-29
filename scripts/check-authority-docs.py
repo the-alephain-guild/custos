@@ -576,7 +576,7 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
             or document.get("consumer", {}).get("repository") != repository
             or document.get("producer", {}).get("commit")
             != "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220"
-            or engine_version != "2.0.0rc5+sodex.1"
+            or engine_version != "2.0.0rc5+sodex.2"
         ):
             errors.append(f"{repository} strategy consumer receipt semantics differ")
 
@@ -751,7 +751,7 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
                 != "crucible.runner-strategy-resolution.v1"
                 or resolution_receipt.get("status") != "CURRENT_ENGINE_CONTRACT_READY"
                 or resolution_receipt.get("engine") != "nautilus"
-                or resolution_receipt.get("engine_version") != "2.0.0rc5+sodex.1"
+                or resolution_receipt.get("engine_version") != "2.0.0rc5+sodex.2"
                 or resolution_receipt.get("producer_commit")
                 != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
                 or resolution_receipt.get("runtime_code_commit")
