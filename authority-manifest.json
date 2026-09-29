@@ -296,10 +296,10 @@
     },
     {
       "role": "crucible_runner_strategy_resolution_producer_receipt_v1",
-      "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-trading-scope-v1.json",
-      "producer_commit": "1a2e250e6a7d1fad290302b456b6f098a12dad24",
-      "producer_contract_commit": "1a2e250e6a7d1fad290302b456b6f098a12dad24",
-      "producer_receipt_commit": "8e38becf270c55f3676e6467015c2a3fbfd64588",
+      "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-sodex-2-v1.json",
+      "producer_commit": "fbb2e84a97483b604f6f6ac3d425eb523d4af262",
+      "producer_contract_commit": "fbb2e84a97483b604f6f6ac3d425eb523d4af262",
+      "producer_receipt_commit": "b8159e33886710d0ca9d152e450ac035cdb9e7a5",
       "runtime_ready": false,
       "production_ready": false
     },
@@ -438,7 +438,7 @@
       "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
       "docs/authority/receipts/custos-crucible-runner-command-nautilus-2-v1-consumer-receipt.json",
       "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-nautilus-2-v1-corrected.json",
-      "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-trading-scope-v1.json",
+      "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-sodex-2-v1.json",
       "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
       "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json.sha256",
       "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",

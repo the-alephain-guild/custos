@@ -106,11 +106,11 @@ RUNNER_COMMAND_CONTRACT_ASSETS = (
     ),
 )
 RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
-    "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-trading-scope-v1.json"
+    "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-sodex-2-v1.json"
 )
-RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "1a2e250e6a7d1fad290302b456b6f098a12dad24"
+RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "fbb2e84a97483b604f6f6ac3d425eb523d4af262"
 RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT = RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
-RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "8e38becf270c55f3676e6467015c2a3fbfd64588"
+RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "b8159e33886710d0ca9d152e450ac035cdb9e7a5"
 RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS = (
     (
         "docs/authority/runner-strategy-release-resolution-v1.schema.json",
@@ -576,7 +576,9 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
             or document.get("consumer", {}).get("repository") != repository
             or document.get("producer", {}).get("commit")
             != "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220"
-            or engine_version != "2.0.0rc5+sodex.2"
+            # The revision each consumer accepted named the previous engine; the
+            # handoff receipt's open blockers carry the move to the current one.
+            or engine_version != "2.0.0rc5+sodex.1"
         ):
             errors.append(f"{repository} strategy consumer receipt semantics differ")
 
@@ -746,7 +748,7 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
                 errors.append("runner strategy resolution producer receipt pin differs")
             if (
                 resolution_receipt.get("receipt_id")
-                != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-TRADING-SCOPE-V1"
+                != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-SODEX-2-V1"
                 or resolution_receipt.get("authority_coordinate")
                 != "crucible.runner-strategy-resolution.v1"
                 or resolution_receipt.get("status") != "CURRENT_ENGINE_CONTRACT_READY"

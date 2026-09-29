@@ -59,6 +59,10 @@ PS_STRATEGY_CONSUMER_RECEIPT_PATH = (
 PS_STRATEGY_CONSUMER_COMMIT = "c89ce7bd5187ad1c0b148b8554eeb234f63c1deb"
 STRATEGY_CONTRACT_PRODUCER_COMMIT = "ffdc693f6180ded18b1c0c1c3bc708ea53cd2220"
 STRATEGY_CONTRACT_ACCEPTED_STATUS = "CUSTOS_TRADING_SCOPE_V1_CONTRACT_ACCEPTED"
+# Both consumers accepted the trading-scope revision, which named the previous
+# engine. Neither has accepted the revision that moves the engine yet; the
+# handoff receipt lists that as an open blocker until each re-issues its receipt.
+STRATEGY_CONTRACT_ACCEPTED_ENGINE_VERSION = "2.0.0rc5+sodex.1"
 RUNNER_COMMAND_CONSUMER_INDEX_PATH = (
     "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json"
 )
@@ -105,11 +109,11 @@ RUNNER_COMMAND_CONTRACT_ASSETS = (
 )
 RUNNER_COMMAND_SUBJECT_TEMPLATE = "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
 RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
-    "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-trading-scope-v1.json"
+    "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-sodex-2-v1.json"
 )
-RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "1a2e250e6a7d1fad290302b456b6f098a12dad24"
+RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "fbb2e84a97483b604f6f6ac3d425eb523d4af262"
 RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT = RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
-RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "8e38becf270c55f3676e6467015c2a3fbfd64588"
+RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "b8159e33886710d0ca9d152e450ac035cdb9e7a5"
 RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS = (
     (
         "docs/authority/runner-strategy-release-resolution-v1.schema.json",
@@ -167,7 +171,7 @@ def consumer_receipt_pin(
         or producer.get("repository") != "tesseract-trading/custos"
         or producer.get("commit") != STRATEGY_CONTRACT_PRODUCER_COMMIT
         or consumer.get("repository") != repository
-        or engine_version != "2.0.0rc5+sodex.2"
+        or engine_version != STRATEGY_CONTRACT_ACCEPTED_ENGINE_VERSION
         or document.get("runtime_ready") is not False
         or document.get("production_ready") is not False
     ):
@@ -551,7 +555,10 @@ def build_v1_contract_assets() -> dict[str, bytes]:
             "command_consumer_ready": True,
             "runtime_ready": False,
             "production_ready": False,
-            "open_blockers": [],
+            "open_blockers": [
+                "philosophers-stone accepts the engine 2.0.0rc5+sodex.2 contract revision",
+                "crucible-rust accepts the engine 2.0.0rc5+sodex.2 contract revision",
+            ],
         }
     )
     return generated
@@ -612,8 +619,7 @@ def build_runner_command_consumer_assets() -> dict[str, bytes]:
         )
         producer_contract_assets.append({"path": producer_path, **pin})
     if (
-        resolution_receipt.get("receipt_id")
-        != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-TRADING-SCOPE-V1"
+        resolution_receipt.get("receipt_id") != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-SODEX-2-V1"
         or resolution_receipt.get("owner") != "crucible-rust"
         or resolution_receipt.get("consumer") != "custos"
         or resolution_receipt.get("status") != "CURRENT_ENGINE_CONTRACT_READY"

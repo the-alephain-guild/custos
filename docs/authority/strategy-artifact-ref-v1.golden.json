@@ -14,7 +14,7 @@
     "contract_schema_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
     "engine": "nautilus",
     "engine_toolkit_version": "1.0.0rc1",
-    "engine_version": "2.0.0rc5+sodex.1",
+    "engine_version": "2.0.0rc5+sodex.2",
     "manifest_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
     "manifest_size_bytes": 1024,
     "normalized_source_tree_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
@@ -33,7 +33,7 @@
     "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "source_repository": "https://github.com/alchymia-labs/philosophers-stone"
   },
-  "artifact_ref_digest": "ee94f6a5467e1e13cb39d4a44f2428b74bfc1500dd4e05cb6bc8f511c73e254e",
+  "artifact_ref_digest": "c8f289b92afbc8b4557a39a6bd527561b9ca40fa3d8c65f03b0ee1c2b3617c68",
   "candidate_status": "PRE_SIGN_ABI_ONLY",
   "canonical_name": "Custos StrategyArtifactRefV1 pre-sign golden",
   "canonicalization": "sha256-canonical-json-v1",

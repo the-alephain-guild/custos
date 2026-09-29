@@ -23,11 +23,14 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/strategy-contract-assets-v1.json",
-    "sha256": "f27961f03147b424f6934cb78cae90cd5b52bbde610f7c3e6f335e91a6791922",
+    "sha256": "298a262b26fedc2544602b6496e512bb048ea22705f024ee5dea4b032e98ffde",
     "size_bytes": 2828
   },
   "contract_consumer_ready": true,
-  "open_blockers": [],
+  "open_blockers": [
+    "philosophers-stone accepts the engine 2.0.0rc5+sodex.2 contract revision",
+    "crucible-rust accepts the engine 2.0.0rc5+sodex.2 contract revision"
+  ],
   "policy_boundary": {
     "crucible_local_policy_decision_reused": false,
     "runner_local_policy_decision_required": true
@@ -35,7 +38,7 @@
   "producer": {
     "repository": "tesseract-trading/custos",
     "source_path": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
-    "source_sha256": "34dd24c3158c46daefedc713f90dd7cccda1dda0ef0c0b373dd430bd426c60f4"
+    "source_sha256": "ee3faa757bf2bb31eb117c111811570d188624a5b24c2995df8c4b4d620e7cda"
   },
   "production_ready": false,
   "receipt_schema_version": 1,

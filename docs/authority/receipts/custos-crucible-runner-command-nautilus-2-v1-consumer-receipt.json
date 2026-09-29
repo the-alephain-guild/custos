@@ -10,8 +10,8 @@
   },
   "contract_asset_index": {
     "path": "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json",
-    "sha256": "cf5a5134b40251cf08587ea1a64b4a3680e735c5cff0412be918094f8d26dfc0",
-    "size_bytes": 7595
+    "sha256": "8702cb7c2b487dcd473fa68563601c4db93e660d6ee544c9ccec7bf5f34155ed",
+    "size_bytes": 7583
   },
   "contract_guards": {
     "command_selected_root_policy_issuer_workflow": false,
@@ -69,22 +69,22 @@
         {
           "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",
           "producer_path": "docs/authority/runner-strategy-release-resolution-v1.golden.json",
-          "sha256": "3ad085c148dd7899028603110acb577e14e5217f3cce44e4ce715d94466c9fb3",
+          "sha256": "6aa465d46c9adb859bc6f36cef1250fbd5c0253ad531c628baaeda7d316c5e51",
           "size_bytes": 31367
         },
         {
           "path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json.sha256",
           "producer_path": "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
-          "sha256": "491441d553688758c2d7c51e733b145ef3f824eda2d5b82a6c9e26a3c7cc5860",
+          "sha256": "71fcd856b5062234ed830af33a93a2fa382a5e230b26e4fd28b4b7331bef0bd6",
           "size_bytes": 116
         }
       ],
-      "contract_commit": "1a2e250e6a7d1fad290302b456b6f098a12dad24",
-      "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-trading-scope-v1.json",
-      "producer_commit": "1a2e250e6a7d1fad290302b456b6f098a12dad24",
-      "receipt_commit": "8e38becf270c55f3676e6467015c2a3fbfd64588",
-      "sha256": "b50fb78b56a161ab535565dd4d62e5ea956d72e7ce507598af9f598875abb828",
-      "size_bytes": 3214,
+      "contract_commit": "fbb2e84a97483b604f6f6ac3d425eb523d4af262",
+      "path": "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-sodex-2-v1.json",
+      "producer_commit": "fbb2e84a97483b604f6f6ac3d425eb523d4af262",
+      "receipt_commit": "b8159e33886710d0ca9d152e450ac035cdb9e7a5",
+      "sha256": "3e23c7c419baf93f5c671b66c22fc5fc348720ee5f8a7f2af03df89a1b45e78a",
+      "size_bytes": 3460,
       "status": "CURRENT_ENGINE_CONTRACT_READY"
     },
     "subject_template": "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
