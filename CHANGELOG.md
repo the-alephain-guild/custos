@@ -13,6 +13,23 @@ protocol — is published at
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-09-29
+
+It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.5.1`
+and as source; there is no PyPI package. Call the reusable publishing workflow at
+`@v0.5.1`; a runner or deployment service that trusts releases published through
+it lists that tag as the workflow identity. It is the first published release on
+the 0.5 line: the `v0.5.0` tag exists, but its release run stopped at the runtime
+contract gate and published no image, no signature and no release notes. The
+engine, the toolkit match (`0.1.0rc9`) and the contracts are those described
+under 0.5.0.
+
+### Fixed
+
+- The support policy lists the 0.5 line (first release 2026-09-29, EOL
+  2027-09-29). The release gate refuses a released line without a support
+  window, and the table had no row for it.
+
 ## [0.5.0] - 2026-09-29
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.5.0`
