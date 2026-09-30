@@ -45,9 +45,21 @@ RUN set -eux; \
       "${runner_wheel}"; \
     pip check
 
+# A local development build can replace the engine with exact reviewed bytes.
+# The release dependency lock and its version constraints remain authoritative.
+ARG LOCAL_NAUTILUS_WHEEL=
+ARG LOCAL_NAUTILUS_WHEEL_SHA256=
+COPY docker/install-local-nautilus-wheel.py /tmp/install-local-nautilus-wheel.py
+RUN python /tmp/install-local-nautilus-wheel.py /tmp/wheels \
+    "${LOCAL_NAUTILUS_WHEEL}" "${LOCAL_NAUTILUS_WHEEL_SHA256}"
+
 FROM ${PYTHON_BASE_IMAGE} AS runtime
 
 ARG SOURCE_REVISION=unversioned
+ARG LOCAL_NAUTILUS_REVISION=
+ARG LOCAL_NAUTILUS_WHEEL_SHA256=
+LABEL com.alephain.nautilus.revision="${LOCAL_NAUTILUS_REVISION}" \
+      com.alephain.nautilus.wheel.sha256="${LOCAL_NAUTILUS_WHEEL_SHA256}"
 RUN mkdir -p /usr/local/share/custos \
     && printf '%s\n' "$SOURCE_REVISION" > /usr/local/share/custos/source-revision \
     && chmod 0444 /usr/local/share/custos/source-revision

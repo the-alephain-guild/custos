@@ -139,8 +139,16 @@ docker-build-local-v030: dist  ## Build the local consumer image with source pro
 			echo "$$dirty" >&2; \
 			exit 1; \
 		fi
+	@if [ -n "$(LOCAL_NAUTILUS_WHEEL)" ]; then \
+		test -n "$(LOCAL_NAUTILUS_WHEEL_SHA256)" && test -n "$(LOCAL_NAUTILUS_REVISION)" || \
+			{ echo "local engine requires a wheel digest and source revision" >&2; exit 1; }; \
+		cp "$(LOCAL_NAUTILUS_WHEEL)" dist/; \
+	fi
 	docker build \
 		--build-arg SOURCE_REVISION=$(SOURCE_REVISION) \
+		--build-arg LOCAL_NAUTILUS_WHEEL=$(notdir $(LOCAL_NAUTILUS_WHEEL)) \
+		--build-arg LOCAL_NAUTILUS_WHEEL_SHA256=$(LOCAL_NAUTILUS_WHEEL_SHA256) \
+		--build-arg LOCAL_NAUTILUS_REVISION=$(LOCAL_NAUTILUS_REVISION) \
 		--label org.opencontainers.image.revision=$(SOURCE_REVISION) \
 		--tag $(LOCAL_IMAGE) \
 		.
