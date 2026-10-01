@@ -1,0 +1,117 @@
+[
+  {
+    "schema_version": 1,
+    "batch_id": "60000000-0000-4000-8000-000000000007",
+    "tenant_id": "acme",
+    "trading_mode": "sandbox",
+    "runner_id": "10000000-0000-4000-8000-000000000001",
+    "deployment_instance_id": "20000000-0000-4000-8000-000000000002",
+    "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+    "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "generation": 7,
+    "strategy_id": "40000000-0000-4000-8000-000000000004",
+    "capability_version_id": "50000000-0000-4000-8000-000000000005",
+    "capability_version": 1,
+    "capability_manifest_digest": "776c7ad7d4d47b401ee3043e66d4b98b8a1a6a604964157d61bcb127778e9a22",
+    "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
+    "emitted_at": "2026-08-14T10:00:00Z",
+    "source_seq_start": 15,
+    "source_seq_end": 15,
+    "payload_digest": "6bd4fb74b9eed7c43307cb3ab91bbd4b3f6710b8b52e4299d653ff0358626e6c",
+    "facts": [
+      {
+        "kind": "equity_snapshot",
+        "event_id": "81000000-0000-4000-8000-000000000001",
+        "amount": "10050",
+        "currency": "USDT",
+        "observed_at": "2026-08-14T09:59:30Z",
+        "seq": 15
+      }
+    ],
+    "signature": "OrGG_20OGeBDwTgbpQ7Wsq6IFjwbf8HF4GvPhVDBVkbELXpsHqJyx_B38mlJPYXqmnARfmsX-RLE6ldSDrYsAg"
+  },
+  {
+    "schema_version": 1,
+    "batch_id": "60000000-0000-4000-8000-000000000008",
+    "tenant_id": "acme",
+    "trading_mode": "sandbox",
+    "runner_id": "10000000-0000-4000-8000-000000000001",
+    "deployment_instance_id": "20000000-0000-4000-8000-000000000002",
+    "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+    "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "generation": 8,
+    "strategy_id": "40000000-0000-4000-8000-000000000004",
+    "capability_version_id": "50000000-0000-4000-8000-000000000005",
+    "capability_version": 1,
+    "capability_manifest_digest": "776c7ad7d4d47b401ee3043e66d4b98b8a1a6a604964157d61bcb127778e9a22",
+    "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
+    "emitted_at": "2026-08-14T10:05:02Z",
+    "source_seq_start": 16,
+    "source_seq_end": 17,
+    "payload_digest": "bda7855dc42ba7ba57426b6bcea0122f501de5a206659af83d2fbe852d799aa3",
+    "facts": [
+      {
+        "kind": "RunnerDeploymentLifecycleFact.v1",
+        "event_id": "f8994f9a-5a8a-52c8-a2a1-c79c6834eac1",
+        "occurred_at": "2026-08-14T10:05:01Z",
+        "tenant_id": "acme",
+        "mode": "sandbox",
+        "runner_id": "10000000-0000-4000-8000-000000000001",
+        "deployment_instance_id": "20000000-0000-4000-8000-000000000002",
+        "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+        "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "generation": 8,
+        "lifecycle_state": "stopped",
+        "command_fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "outcome": "applied",
+        "observed_at": "2026-08-14T10:05:01Z",
+        "seq": 16
+      },
+      {
+        "kind": "RunnerInstanceTerminalValuationFact.v1",
+        "event_id": "13cd6691-6f7b-5524-a5b6-b4928abbee9e",
+        "tenant_id": "acme",
+        "mode": "sandbox",
+        "runner_id": "10000000-0000-4000-8000-000000000001",
+        "deployment_instance_id": "20000000-0000-4000-8000-000000000002",
+        "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+        "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "generation": 8,
+        "issuer_key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
+        "command_fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "closes_generation": 7,
+        "outcome": "confirmed",
+        "reason_code": null,
+        "account_scope": {
+          "venue": "BINANCE",
+          "credential_scope_id": "91000000-0000-4000-8000-000000000011",
+          "credential_scope_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sub_account": null,
+          "wallet_type": "spot"
+        },
+        "valuation_source": "simulated_account",
+        "position_policy": "flatten",
+        "period": "2026-08",
+        "stop_requested_at": "2026-08-14T10:05:00Z",
+        "valuation_observed_at": "2026-08-14T10:05:00.500Z",
+        "marks_oldest_at": null,
+        "stop_effective_at": "2026-08-14T10:05:00.800Z",
+        "equity": {
+          "amount": "10060",
+          "currency": "USDT"
+        },
+        "open_positions": [],
+        "prior_equity": {
+          "event_id": "81000000-0000-4000-8000-000000000001",
+          "seq": 15,
+          "amount": "10050",
+          "currency": "USDT",
+          "observed_at": "2026-08-14T09:59:30Z"
+        },
+        "valuation_digest": "89e566518e3baea3dd0ff718b42e111b4cb7cd420e3f337e86a8960aa2028d49",
+        "seq": 17
+      }
+    ],
+    "signature": "jfVzC_vye1mW86gfTPCUaitHKn5k5l6-7OgU4H26Odi9hz5llCGfqRiEleFaJJmScR5my056efuf3ZRoFoSZDA"
+  }
+]

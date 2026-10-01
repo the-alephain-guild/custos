@@ -164,6 +164,7 @@ RUNNER_FACT_KIND_PROJECTORS: Final[Mapping[str, str]] = MappingProxyType(
         "reconciliation_period_closed": "reconciliation",
         "RunnerValuationCheckpointFact.v1": "reconciliation",
         "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle",
+        "RunnerInstanceTerminalValuationFact.v1": "settlement",
     }
 )
 RUNNER_FACT_PROJECTOR_CONTRACTS: Final[Mapping[str, Mapping[str, object]]] = MappingProxyType(
@@ -183,6 +184,7 @@ RUNNER_FACT_PROJECTOR_CONTRACTS: Final[Mapping[str, Mapping[str, object]]] = Map
                 "position_closed": "v1",
                 "fee": "v1",
                 "period_closed": "v1",
+                "terminal_valuation": "v1",
             }
         ),
         "reconciliation": MappingProxyType(
@@ -207,6 +209,63 @@ RUNNER_FACT_PROJECTOR_CONTRACTS: Final[Mapping[str, Mapping[str, object]]] = Map
                 "deployment_lifecycle": "v1",
             }
         ),
+    }
+)
+TERMINAL_VALUATION_KIND: Final = "RunnerInstanceTerminalValuationFact.v1"
+# A terminal valuation is only "same boundary" when its prices and the stop it
+# values are this close to the moment the portfolio was read.
+MAX_TERMINAL_VALUATION_GAP_SECONDS: Final = 60
+# Ordered by precedence: when several hold, the first one is the reason, so the
+# fact bytes and the consumer's rejection text are both unique.
+TERMINAL_VALUATION_REASON_CODES: Final[tuple[str, ...]] = (
+    "no_prior_running_generation",
+    "engine_not_running_at_stop",
+    "process_exit_before_confirmation",
+    "stop_timeout",
+    "engine_task_failed",
+    "capture_persist_failed",
+    "valuation_unavailable",
+    "no_prior_signed_equity",
+    "valuation_unreliable",
+    "state_changed_after_valuation",
+    "valuation_gap_exceeded",
+    "valuation_out_of_contract",
+)
+_TERMINAL_ACCOUNT_SCOPE_FIELDS: Final = frozenset(
+    {"venue", "credential_scope_id", "credential_scope_digest", "sub_account", "wallet_type"}
+)
+_TERMINAL_PRIOR_EQUITY_FIELDS: Final = frozenset(
+    {"event_id", "seq", "amount", "currency", "observed_at"}
+)
+_TERMINAL_POSITION_FIELDS: Final = frozenset({"instrument", "quantity", "mark_price", "currency"})
+_TERMINAL_VALUATION_FIELDS: Final = frozenset(
+    {
+        "kind",
+        "event_id",
+        "tenant_id",
+        "mode",
+        "runner_id",
+        "deployment_instance_id",
+        "deployment_spec_id",
+        "deployment_spec_digest",
+        "generation",
+        "issuer_key_id",
+        "command_fingerprint",
+        "closes_generation",
+        "outcome",
+        "reason_code",
+        "account_scope",
+        "valuation_source",
+        "position_policy",
+        "period",
+        "stop_requested_at",
+        "valuation_observed_at",
+        "marks_oldest_at",
+        "stop_effective_at",
+        "equity",
+        "open_positions",
+        "prior_equity",
+        "valuation_digest",
     }
 )
 _NATS_TOKEN = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -1077,6 +1136,361 @@ def settlement_period_closed(
         "period": _settlement_period(period),
         "closed_at": _timestamp(closed_at, "closed_at"),
     }
+
+
+def terminal_valuation_reason_code(candidates: Collection[str]) -> str:
+    """Return the one reason a terminal valuation carries when several hold."""
+
+    reasons = set(candidates)
+    unknown = reasons - set(TERMINAL_VALUATION_REASON_CODES)
+    if not reasons or unknown:
+        raise RunnerFactContractError(
+            "terminal valuation reason candidates must be a non-empty set of known reasons"
+        )
+    return next(code for code in TERMINAL_VALUATION_REASON_CODES if code in reasons)
+
+
+def terminal_valuation_event_id(authority: RunnerFactAuthority, command_fingerprint: str) -> UUID:
+    """One stop command has one terminal valuation identity, whatever it says."""
+
+    return runner_fact_event_id(
+        authority.stream_key,
+        "terminal_valuation",
+        authority.generation,
+        _terminal_digest(command_fingerprint, "command_fingerprint"),
+    )
+
+
+def _terminal_digest(value: Any, field: str) -> str:
+    if not isinstance(value, str) or not _LOWER_HEX_64.fullmatch(value):
+        raise RunnerFactContractError(f"{field} must be 64 lowercase hexadecimal characters")
+    return value
+
+
+def _terminal_instant(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _optional_terminal_timestamp(value: datetime | str | None, field: str) -> str | None:
+    return None if value is None else _timestamp(value, field)
+
+
+def _terminal_mapping(value: Any, fields: frozenset[str], field: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping) or set(value) != fields:
+        raise RunnerFactContractError(f"{field} must hold exactly {', '.join(sorted(fields))}")
+    return value
+
+
+def _terminal_wire_decimal(value: Any, field: str, *, signed: bool) -> str:
+    """A decimal the consumer can hold exactly; a source float is refused, never rounded."""
+
+    if not signed:
+        return _decimal(value, field, bounded=True)
+    _signed_decimal(value, field)
+    return _render_decimal(Decimal(str(value)), field, bounded=True)
+
+
+def _terminal_account_scope(value: Any) -> dict[str, Any]:
+    scope = _terminal_mapping(value, _TERMINAL_ACCOUNT_SCOPE_FIELDS, "account_scope")
+    wallet_type = scope["wallet_type"]
+    return {
+        "venue": _non_empty(scope["venue"], "account_scope.venue"),
+        "credential_scope_id": _uuid(
+            scope["credential_scope_id"], "account_scope.credential_scope_id"
+        ),
+        "credential_scope_digest": _terminal_digest(
+            scope["credential_scope_digest"], "account_scope.credential_scope_digest"
+        ),
+        "sub_account": _sub_account(scope["sub_account"], "account_scope.sub_account"),
+        "wallet_type": (
+            None if wallet_type is None else _wallet_type(wallet_type, "account_scope.wallet_type")
+        ),
+    }
+
+
+def _terminal_equity(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    equity = _terminal_mapping(value, frozenset({"amount", "currency"}), "equity")
+    return {
+        "amount": _terminal_wire_decimal(equity["amount"], "equity.amount", signed=True),
+        "currency": _currency(equity["currency"]),
+    }
+
+
+def _terminal_positions(value: Any) -> list[dict[str, Any]] | None:
+    if value is None:
+        return None
+    if isinstance(value, (str, bytes, Mapping)) or not isinstance(value, Sequence):
+        raise RunnerFactContractError("open_positions must be an array or null")
+    positions = []
+    for row in value:
+        position = _terminal_mapping(row, _TERMINAL_POSITION_FIELDS, "open_positions[]")
+        positions.append(
+            {
+                "instrument": _non_empty(position["instrument"], "open_positions.instrument"),
+                "quantity": _terminal_wire_decimal(
+                    position["quantity"], "open_positions.quantity", signed=True
+                ),
+                "mark_price": _terminal_wire_decimal(
+                    position["mark_price"], "open_positions.mark_price", signed=False
+                ),
+                "currency": _currency(position["currency"]),
+            }
+        )
+    positions.sort(key=lambda row: str(row["instrument"]))
+    _require_unique(positions, "instrument", "open_positions")
+    return positions
+
+
+def _terminal_prior_equity(value: Any) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    prior = _terminal_mapping(value, _TERMINAL_PRIOR_EQUITY_FIELDS, "prior_equity")
+    seq = prior["seq"]
+    if type(seq) is not int or seq < 1:
+        raise RunnerFactContractError("prior_equity.seq must be a positive integer")
+    return {
+        "event_id": _uuid(prior["event_id"], "prior_equity.event_id"),
+        "seq": seq,
+        # A copy of an already signed equity snapshot, so it keeps that fact's rule.
+        "amount": _signed_decimal(prior["amount"], "prior_equity.amount"),
+        "currency": _currency(prior["currency"]),
+        "observed_at": _timestamp(prior["observed_at"], "prior_equity.observed_at"),
+    }
+
+
+def terminal_valuation(
+    *,
+    authority: RunnerFactAuthority,
+    issuer_key_id: str,
+    command_fingerprint: str,
+    closes_generation: int | None,
+    outcome: Literal["confirmed", "valuation_unconfirmed"],
+    reason_code: str | None,
+    account_scope: Mapping[str, Any],
+    valuation_source: Literal["venue_account", "simulated_account"],
+    position_policy: Literal["flatten", "preserve"],
+    stop_requested_at: datetime | str,
+    valuation_observed_at: datetime | str | None,
+    marks_oldest_at: datetime | str | None,
+    stop_effective_at: datetime | str | None,
+    equity: Mapping[str, Any] | None,
+    open_positions: Sequence[Mapping[str, Any]] | None,
+    prior_equity: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Build the fact that a signed stop left the instance not running.
+
+    ``confirmed`` also asserts a reliable valuation read at that same boundary.
+    ``valuation_unconfirmed`` seals the stream without one, carrying the single
+    reason chosen by :func:`terminal_valuation_reason_code`. The fact is built
+    only once the node is known not to be running; it is never a substitute for
+    the local stop. Every value is checked against the consumer's wire range
+    here, so a fact that would be refused downstream is never signed.
+    """
+
+    if not isinstance(authority, RunnerFactAuthority):
+        raise RunnerFactContractError("terminal valuation authority must be a RunnerFactAuthority")
+    if outcome not in {"confirmed", "valuation_unconfirmed"}:
+        raise RunnerFactContractError("outcome must be confirmed or valuation_unconfirmed")
+    confirmed = outcome == "confirmed"
+    if confirmed and reason_code is not None:
+        raise RunnerFactContractError("a confirmed terminal valuation has no reason_code")
+    if not confirmed and reason_code not in TERMINAL_VALUATION_REASON_CODES:
+        raise RunnerFactContractError("an unconfirmed terminal valuation needs a known reason_code")
+    if valuation_source not in {"venue_account", "simulated_account"}:
+        raise RunnerFactContractError("valuation_source must be venue_account or simulated_account")
+    if valuation_source == "simulated_account" and authority.trading_mode != "sandbox":
+        raise RunnerFactContractError("simulated_account valuation is accepted only in sandbox")
+    if position_policy not in {"flatten", "preserve"}:
+        raise RunnerFactContractError("position_policy must be flatten or preserve")
+    if closes_generation is not None and (
+        type(closes_generation) is not int or not 1 <= closes_generation < authority.generation
+    ):
+        raise RunnerFactContractError(
+            "closes_generation must be a positive generation before the stop generation"
+        )
+    if confirmed and closes_generation is None:
+        raise RunnerFactContractError("a confirmed terminal valuation needs closes_generation")
+    if reason_code == "no_prior_running_generation" and closes_generation is not None:
+        raise RunnerFactContractError(
+            "closes_generation must be null when there was no running generation"
+        )
+
+    requested = _timestamp(stop_requested_at, "stop_requested_at")
+    observed = _optional_terminal_timestamp(valuation_observed_at, "valuation_observed_at")
+    oldest_mark = _optional_terminal_timestamp(marks_oldest_at, "marks_oldest_at")
+    effective = _optional_terminal_timestamp(stop_effective_at, "stop_effective_at")
+    equity_value = _terminal_equity(equity)
+    positions = _terminal_positions(open_positions)
+    prior = _terminal_prior_equity(prior_equity)
+
+    if effective is not None and _terminal_instant(effective) < _terminal_instant(requested):
+        raise RunnerFactContractError("stop_effective_at must not precede stop_requested_at")
+    if confirmed:
+        if observed is None or effective is None:
+            raise RunnerFactContractError(
+                "a confirmed terminal valuation needs valuation_observed_at and stop_effective_at"
+            )
+        if equity_value is None:
+            raise RunnerFactContractError("a confirmed terminal valuation needs equity")
+        if positions is None:
+            raise RunnerFactContractError("a confirmed terminal valuation needs open_positions")
+        if prior is None:
+            raise RunnerFactContractError("a confirmed terminal valuation needs prior_equity")
+        _require_terminal_time_order(requested, observed, oldest_mark, effective, prior)
+        if position_policy == "flatten" and positions:
+            raise RunnerFactContractError("a flatten stop cannot leave open positions")
+        if oldest_mark is None and positions:
+            raise RunnerFactContractError(
+                "marks_oldest_at must be the oldest mark when positions are open"
+            )
+    else:
+        for field, value in (
+            ("valuation_observed_at", observed),
+            ("marks_oldest_at", oldest_mark),
+            ("equity", equity_value),
+            ("open_positions", positions),
+        ):
+            if value is not None:
+                raise RunnerFactContractError(f"{field} must be null without a confirmed valuation")
+        if reason_code == "no_prior_signed_equity" and prior is not None:
+            raise RunnerFactContractError(
+                "prior_equity must be null when no equity snapshot was signed"
+            )
+
+    body: dict[str, Any] = {
+        "tenant_id": authority.tenant_id,
+        "mode": authority.trading_mode,
+        "runner_id": _uuid(authority.runner_id, "runner_id"),
+        "deployment_instance_id": _uuid(authority.deployment_instance_id, "deployment_instance_id"),
+        "deployment_spec_id": _uuid(authority.deployment_spec_id, "deployment_spec_id"),
+        "deployment_spec_digest": authority.deployment_spec_digest,
+        "generation": authority.generation,
+        "issuer_key_id": _non_empty(issuer_key_id, "issuer_key_id"),
+        "command_fingerprint": _terminal_digest(command_fingerprint, "command_fingerprint"),
+        "closes_generation": closes_generation,
+        "outcome": outcome,
+        "reason_code": reason_code,
+        "account_scope": _terminal_account_scope(account_scope),
+        "valuation_source": valuation_source,
+        "position_policy": position_policy,
+        "period": (
+            _terminal_instant(effective).strftime("%Y-%m")
+            if confirmed and effective is not None
+            else None
+        ),
+        "stop_requested_at": requested,
+        "valuation_observed_at": observed,
+        "marks_oldest_at": oldest_mark,
+        "stop_effective_at": effective,
+        "equity": equity_value,
+        "open_positions": positions,
+        "prior_equity": prior,
+    }
+    return {
+        "kind": TERMINAL_VALUATION_KIND,
+        "event_id": str(terminal_valuation_event_id(authority, command_fingerprint)),
+        **body,
+        "valuation_digest": _sha256_hex(_canonical_json_bytes(body)),
+    }
+
+
+def _require_terminal_time_order(
+    requested: str,
+    observed: str,
+    oldest_mark: str | None,
+    effective: str,
+    prior: Mapping[str, Any],
+) -> None:
+    limit = MAX_TERMINAL_VALUATION_GAP_SECONDS
+    observed_at = _terminal_instant(observed)
+    if _terminal_instant(requested) > observed_at:
+        raise RunnerFactContractError("stop_requested_at must not follow valuation_observed_at")
+    effective_at = _terminal_instant(effective)
+    if effective_at < observed_at or (effective_at - observed_at).total_seconds() > limit:
+        raise RunnerFactContractError(
+            "stop_effective_at must be within the valuation gap after valuation_observed_at"
+        )
+    if oldest_mark is not None:
+        mark_at = _terminal_instant(oldest_mark)
+        if mark_at > observed_at or (observed_at - mark_at).total_seconds() > limit:
+            raise RunnerFactContractError(
+                "marks_oldest_at must be within the valuation gap before valuation_observed_at"
+            )
+    if _terminal_instant(str(prior["observed_at"])) > observed_at:
+        raise RunnerFactContractError("prior_equity must not follow the terminal valuation")
+
+
+def _require_terminal_valuation_batch(
+    authority: RunnerFactAuthority,
+    identity: RunnerFactIdentity,
+    facts: Sequence[Mapping[str, Any]],
+) -> None:
+    """Refuse a terminal valuation the consumer would refuse, before it is signed."""
+
+    positions = [
+        index for index, fact in enumerate(facts) if fact.get("kind") == TERMINAL_VALUATION_KIND
+    ]
+    if not positions:
+        return
+    if positions != [len(facts) - 1]:
+        raise RunnerFactContractError(
+            "a terminal valuation must be the single last fact of its batch"
+        )
+    terminal = facts[-1]
+    lifecycle = facts[-2] if len(facts) > 1 else {}
+    if (
+        lifecycle.get("kind") != "RunnerDeploymentLifecycleFact.v1"
+        or lifecycle.get("lifecycle_state") != "stopped"
+        or lifecycle.get("outcome") != "applied"
+    ):
+        raise RunnerFactContractError(
+            "a terminal valuation must follow its lifecycle fact stopped and applied"
+        )
+    if lifecycle.get("command_fingerprint") != terminal.get("command_fingerprint"):
+        raise RunnerFactContractError(
+            "terminal valuation command_fingerprint differs from its lifecycle fact"
+        )
+    expected_identity = {
+        "tenant_id": authority.tenant_id,
+        "mode": authority.trading_mode,
+        "runner_id": str(authority.runner_id),
+        "deployment_instance_id": str(authority.deployment_instance_id),
+        "deployment_spec_id": str(authority.deployment_spec_id),
+        "deployment_spec_digest": authority.deployment_spec_digest,
+        "generation": authority.generation,
+        "issuer_key_id": identity.key_id,
+    }
+    for field, expected in expected_identity.items():
+        if terminal.get(field) != expected:
+            raise RunnerFactContractError(f"terminal valuation {field} differs from the batch")
+    if set(terminal) != _TERMINAL_VALUATION_FIELDS:
+        raise RunnerFactContractError("terminal valuation fields differ from the v1 contract")
+    rebuilt = terminal_valuation(
+        authority=authority,
+        issuer_key_id=terminal["issuer_key_id"],
+        command_fingerprint=terminal["command_fingerprint"],
+        closes_generation=terminal["closes_generation"],
+        outcome=terminal["outcome"],
+        reason_code=terminal["reason_code"],
+        account_scope=terminal["account_scope"],
+        valuation_source=terminal["valuation_source"],
+        position_policy=terminal["position_policy"],
+        stop_requested_at=terminal["stop_requested_at"],
+        valuation_observed_at=terminal["valuation_observed_at"],
+        marks_oldest_at=terminal["marks_oldest_at"],
+        stop_effective_at=terminal["stop_effective_at"],
+        equity=terminal["equity"],
+        open_positions=terminal["open_positions"],
+        prior_equity=terminal["prior_equity"],
+    )
+    if terminal["event_id"] != rebuilt["event_id"]:
+        raise RunnerFactContractError("terminal valuation event_id differs from its stop command")
+    if terminal["valuation_digest"] != rebuilt["valuation_digest"]:
+        raise RunnerFactContractError("terminal valuation valuation_digest differs from its body")
+    if dict(terminal) != rebuilt:
+        raise RunnerFactContractError("terminal valuation is not in canonical wire form")
 
 
 def venue_ledger_snapshot_facts(
@@ -2119,6 +2533,7 @@ class RunnerFactOutbox:
             event_ids.add(event_id)
             fact["event_id"] = event_id
             candidates.append(fact)
+        _require_terminal_valuation_batch(authority, identity, candidates)
         placeholders = ",".join("?" for _ in event_ids)
         seen = {
             row[0]
@@ -7022,18 +7437,28 @@ class RunnerCapabilityReceipt:
             projector: dict(contract)
             for projector, contract in RUNNER_FACT_PROJECTOR_CONTRACTS.items()
         }
-        legacy_projectors = dict(current_projectors)
+        # The terminal valuation flag is optional: a receipt published before it
+        # existed stays valid, and the kind is declared exactly when the flag is.
+        without_terminal_projectors = dict(current_projectors)
+        without_terminal_projectors.pop(TERMINAL_VALUATION_KIND)
+        without_terminal_contracts = {
+            projector: dict(contract) for projector, contract in current_contracts.items()
+        }
+        without_terminal_contracts["settlement"].pop("terminal_valuation")
+        legacy_projectors = dict(without_terminal_projectors)
         legacy_projectors.pop("RunnerValuationCheckpointFact.v1")
         legacy_contracts = {
-            projector: dict(contract) for projector, contract in current_contracts.items()
+            projector: dict(contract) for projector, contract in without_terminal_contracts.items()
         }
         legacy_contracts["reconciliation"].pop("valuation_checkpoint")
         declared_contract = (
             manifest.get("fact_kind_projectors"),
             manifest.get("runner_fact_contracts"),
         )
-        known_contract = declared_contract == (current_projectors, current_contracts) or (
-            declared_contract == (legacy_projectors, legacy_contracts)
+        known_contract = declared_contract in (
+            (current_projectors, current_contracts),
+            (without_terminal_projectors, without_terminal_contracts),
+            (legacy_projectors, legacy_contracts),
         )
         if (
             manifest.get("closed_fact_union") is not True

@@ -62,8 +62,13 @@
     "venue_ledger_snapshot_chunk": "reconciliation",
     "reconciliation_period_closed": "reconciliation",
     "RunnerValuationCheckpointFact.v1": "reconciliation",
-    "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle"
+    "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle",
+    "RunnerInstanceTerminalValuationFact.v1": "settlement"
   },
+  "closed_fact_union_assets": [
+    "docs/authority/runner-fact-golden-v1.json",
+    "docs/authority/runner-fact-terminal-boundary-golden-v1.json"
+  ],
   "synthetic_signature": {
     "algorithm": "ed25519",
     "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
@@ -74,38 +79,44 @@
     {
       "role": "runner_fact_batch_schema",
       "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-      "sha256": "17c86bd09da8ec7940896dede2b84016c8e9a04ab28671b0e3ce1a4daa37ce0c",
-      "size_bytes": 54580
+      "sha256": "dd8db2b420c5506b8f003bbf54a8a8beda67c595ebdbdb87a5a2845a4a58de32",
+      "size_bytes": 71898
     },
     {
       "role": "runner_fact_batch_golden",
       "path": "docs/authority/runner-fact-golden-v1.json",
-      "sha256": "721100c9635a694139f5ec782c5a0500d5a9cf3a6a52c81811d6ad37df8317ff",
+      "sha256": "43cbdc4c3b90057ebd4d73f2d8d5a2972e7eb8635aec95c57c3889ccfdd96a13",
       "size_bytes": 9222
     },
     {
       "role": "runner_fact_capability_manifest",
       "path": "docs/authority/runner-fact-capability-manifest-v1.json",
-      "sha256": "04affc9024e9494c45211410b5b55ffa4a004d258d1a1bebc0d932abb9a920cc",
-      "size_bytes": 3870
+      "sha256": "27178bc71bc4717b3508556870bfb683eb011d7e077d9adc924d1a8d0f52f762",
+      "size_bytes": 3964
     },
     {
       "role": "runner_fact_capability_receipt_golden",
       "path": "docs/authority/runner-fact-capability-receipt-golden-v1.json",
-      "sha256": "c8be46588724358dd3a828ebc2e2d4a4733448f02109c68d1e49fcaa67162d45",
-      "size_bytes": 7132
+      "sha256": "1e138895fc9e10e84bb388752b093d8d4693174253cdb7d54b55d0f438608ce7",
+      "size_bytes": 7230
     },
     {
       "role": "runtime_event_fact_parity_matrix",
       "path": "docs/authority/runner-fact-parity-matrix-v1.json",
-      "sha256": "714e8a3424ff34210e51b5abf9d788dff2f485f6dcdb9e9a0a4458068897409b",
-      "size_bytes": 4065
+      "sha256": "5b6d1f1ae0d04330e403e094b1856293455a1d8e742cc073d9e77d390d6e28de",
+      "size_bytes": 4357
     },
     {
       "role": "runner_fact_signing_preimage_golden",
       "path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
-      "sha256": "1d3ff33ca99825464583d5c4c8535a27a10093f7403312aca6eabbc23ea604fb",
+      "sha256": "75ea9ae22aad0e0487d5f2bb7493b25f4415f52fd9da8c85acd90f51f3c0e3ea",
       "size_bytes": 5434
+    },
+    {
+      "role": "runner_fact_terminal_boundary_golden",
+      "path": "docs/authority/runner-fact-terminal-boundary-golden-v1.json",
+      "sha256": "e6ef1a8d6d601a6fb4f05e35c77aabb48b5884651b4e1a07c49113806d9c9b4c",
+      "size_bytes": 5080
     }
   ]
 }
