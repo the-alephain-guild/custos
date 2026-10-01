@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
 from custos.artifacts.runtime import ArtifactRuntimeCapabilityV1
@@ -15,12 +16,17 @@ from custos.core.engine_protocol import (
     EngineDeploymentRefused,
     EngineLifecycleAuthority,
     EngineReadyReceipt,
+    EngineStopBoundary,
     EngineTerminalEvent,
     ExecutionEngineProtocol,
 )
 from custos.core.log import get_logger
 from custos.core.runner_command_intake import VerifiedRunnerCommand
-from custos.core.runner_fact import CommandOutcomeCommitResult, EngineLifecycleDurableState
+from custos.core.runner_fact import (
+    CommandOutcomeCommitResult,
+    EngineLifecycleDurableState,
+    PendingStopReap,
+)
 from custos.core.runtime_log_fact import RuntimeLogFactError, RuntimeLogRedactor
 
 log = get_logger("custos.engine-lifecycle")
@@ -117,6 +123,25 @@ class EngineLifecycleStateStore(Protocol):
         artifact_policy_id: str | None = None,
     ) -> CommandOutcomeCommitResult: ...
 
+    async def commit_stop_applied_and_enqueue_terminal(
+        self,
+        *,
+        delivery_id: str,
+        verified: VerifiedRunnerCommand,
+        boundary: EngineStopBoundary,
+        causes: frozenset[str],
+    ) -> CommandOutcomeCommitResult: ...
+
+    async def record_stop_pending_reap(
+        self,
+        *,
+        delivery_id: str,
+        verified: VerifiedRunnerCommand,
+        stop_requested_at: datetime,
+    ) -> None: ...
+
+    async def list_pending_stop_reaps(self) -> tuple[PendingStopReap, ...]: ...
+
 
 class EngineLifecycleSupervisor:
     """Apply one verified command without bypassing RunnerFact atomic lifecycle durability.
@@ -141,6 +166,13 @@ class EngineLifecycleSupervisor:
         self._config = config or EngineLifecycleConfig()
         self._sleep = sleep
         self._clock_ns = clock_ns
+        # (instance, generation, fingerprint) -> a stop whose node already stopped
+        # but whose commit failed. A redelivery commits it without stopping again.
+        self._uncommitted_stops: dict[
+            tuple[str, int, str], tuple[EngineStopBoundary, frozenset[str]]
+        ] = {}
+        # Background commits for stops whose node outlived its cancellation.
+        self._reaps: set[asyncio.Task[None]] = set()
 
     async def apply(
         self,
@@ -227,6 +259,9 @@ class EngineLifecycleSupervisor:
         authority = EngineLifecycleAuthority.from_verified_command(verified)
         if not self._engine.supports_trading_mode(authority.trading_mode):
             raise EngineLifecycleBlocked("engine does not support the signed trading mode")
+        if lifecycle_state == "stopped":
+            await self._apply_stop(delivery_id=delivery_id, verified=verified, authority=authority)
+            return
         await self._store.load_engine_lifecycle_state(verified)
         await self._store.record_in_progress_lease(
             delivery_id=delivery_id,
@@ -242,6 +277,171 @@ class EngineLifecycleSupervisor:
             artifact_activation_id=None,
             artifact_policy_id=None,
         )
+
+    async def _apply_stop(
+        self,
+        *,
+        delivery_id: str,
+        verified: Any,
+        authority: EngineLifecycleAuthority,
+    ) -> None:
+        """Apply a signed stop only once its node is known not to be running.
+
+        Before the engine is stopped nothing durable is touched beyond the
+        lifecycle read and the in-progress lease that every lifecycle operation
+        already takes; the boundary capture, its persistence and the terminal fact
+        all come after the local stop. A stop whose node outlives its cancellation
+        commits nothing and returns, so the delivery is acknowledged rather than
+        retried into exhaustion; its outcome is committed when the node is reaped,
+        or after a restart by :meth:`recover_pending_stops`.
+        """
+        instance_id = str(authority.deployment_instance_id)
+        key = (instance_id, verified.command.generation, verified.command_fingerprint)
+        state = await self._store.load_engine_lifecycle_state(verified)
+        if state.stop_reap_pending:
+            log.info(
+                "engine_stop_reap_pending_redelivery",
+                deployment_instance_id=instance_id,
+                generation=verified.command.generation,
+            )
+            return
+        await self._store.record_in_progress_lease(
+            delivery_id=delivery_id,
+            verified=verified,
+            lease_until_ns=self._lease_deadline_ns(),
+        )
+        remembered = self._uncommitted_stops.get(key)
+        if remembered is not None:
+            boundary, causes = remembered
+        else:
+            boundary = await self._stop_at_boundary(instance_id)
+            causes = boundary.stop_causes()
+            if not boundary.node_was_running and state.in_progress_before:
+                # An earlier attempt of this command took its lease and never
+                # committed; with nothing running now, its process ended first.
+                causes = frozenset({"process_exit_before_confirmation"})
+        if not boundary.reaped:
+            await self._store.record_stop_pending_reap(
+                delivery_id=delivery_id,
+                verified=verified,
+                stop_requested_at=boundary.stop_requested_at,
+            )
+            log.error(
+                "engine_stop_awaiting_reap",
+                deployment_instance_id=instance_id,
+                generation=verified.command.generation,
+            )
+            self._commit_when_reaped(delivery_id, verified, boundary)
+            return
+        try:
+            await self._store.commit_stop_applied_and_enqueue_terminal(
+                delivery_id=delivery_id,
+                verified=verified,
+                boundary=boundary,
+                causes=causes,
+            )
+        except Exception:
+            # The node is stopped and its capture is lost with this attempt; the
+            # redelivery commits the stop without the valuation, never stops again.
+            self._uncommitted_stops[key] = (
+                replace(boundary, valuation=None, valuation_failure=None),
+                causes | {"capture_persist_failed"},
+            )
+            raise
+        self._uncommitted_stops.pop(key, None)
+
+    async def _stop_at_boundary(self, instance_id: str) -> EngineStopBoundary:
+        stop_at_boundary = getattr(self._engine, "stop_at_boundary", None)
+        if callable(stop_at_boundary):
+            return await stop_at_boundary(instance_id)
+        # An engine that cannot report its stop boundary offers no valuation of it.
+        requested_at = datetime.now(UTC)
+        await self._engine.stop(instance_id)
+        return EngineStopBoundary(
+            stop_requested_at=requested_at,
+            node_was_running=True,
+            stopped_gracefully=True,
+            run_task_failed=False,
+            reaped=True,
+            stop_effective_at=datetime.now(UTC),
+            valuation=None,
+            valuation_failure="valuation_unavailable",
+        )
+
+    def _commit_when_reaped(
+        self, delivery_id: str, verified: Any, boundary: EngineStopBoundary
+    ) -> None:
+        reap = boundary.reap
+        if reap is None:
+            raise EngineLifecycleError("an unreaped stop has no reap to wait for")
+
+        async def commit_after_reap() -> None:
+            try:
+                reaped_at = await reap
+                await self._store.commit_stop_applied_and_enqueue_terminal(
+                    delivery_id=delivery_id,
+                    verified=verified,
+                    boundary=replace(
+                        boundary,
+                        stopped_gracefully=False,
+                        reaped=True,
+                        reap=None,
+                        stop_effective_at=reaped_at,
+                        valuation=None,
+                        valuation_failure=None,
+                    ),
+                    causes=frozenset({"stop_timeout"}),
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - the durable record recovers it on restart
+                log.error(
+                    "engine_stop_reap_commit_failed",
+                    deployment_instance_id=str(verified.command.deployment_instance_id),
+                    generation=verified.command.generation,
+                    error_type=type(exc).__name__,
+                )
+
+        task = asyncio.create_task(
+            commit_after_reap(),
+            name=f"engine-stop-reap:{verified.command.deployment_instance_id}",
+        )
+        self._reaps.add(task)
+        task.add_done_callback(self._reaps.discard)
+
+    async def reaps_settled(self) -> None:
+        """Wait for every stop that is committing after its node was reaped."""
+        await asyncio.gather(*tuple(self._reaps), return_exceptions=True)
+
+    async def recover_pending_stops(self) -> None:
+        """Commit every stop whose node was still being reaped when the process ended.
+
+        One node lives and dies with its runner process, so after a restart the
+        node is known not to be running; when it stopped is not known. Nothing is
+        stopped again and no shutdown policy runs.
+        """
+        for pending in await self._store.list_pending_stop_reaps():
+            try:
+                await self._store.commit_stop_applied_and_enqueue_terminal(
+                    delivery_id=pending.delivery_id,
+                    verified=pending.verified,
+                    boundary=EngineStopBoundary(
+                        stop_requested_at=pending.stop_requested_at,
+                        node_was_running=False,
+                        stopped_gracefully=False,
+                        run_task_failed=False,
+                        reaped=True,
+                        stop_effective_at=None,
+                    ),
+                    causes=frozenset({"process_exit_before_confirmation"}),
+                )
+            except Exception as exc:  # noqa: BLE001 - one stop must not block the others
+                log.error(
+                    "engine_pending_stop_recovery_failed",
+                    deployment_instance_id=str(pending.verified.command.deployment_instance_id),
+                    generation=pending.verified.command.generation,
+                    error_type=type(exc).__name__,
+                )
 
     async def supervise_once(
         self,

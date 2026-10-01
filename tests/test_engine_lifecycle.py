@@ -694,3 +694,127 @@ async def test_sodex_is_admitted_for_sandbox_and_testnet() -> None:
     for mode in ("sandbox", "testnet"):
         for connector in ("sodex", "sodex_perpetual"):
             assert real.supports_venue(connector, mode) is True
+
+
+class _StopBoundaryStore(_Store):
+    """Counts every durable call, so the stop path's pre-safety SQLite use is visible."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stop_commits: list[dict] = []
+
+    async def commit_stop_applied_and_enqueue_terminal(self, **kwargs):
+        self.events.append("commit_stop")
+        self.stop_commits.append(kwargs)
+
+
+class _StopBoundaryEngine(_Engine):
+    def __init__(self, boundary) -> None:
+        super().__init__([])
+        self._boundary = boundary
+
+    async def stop_at_boundary(self, deployment_instance_id: str):
+        self.events.append("stop_at_boundary")
+        self.stop_calls += 1
+        return self._boundary
+
+
+async def test_a_stop_adds_no_durable_call_before_the_engine_stops() -> None:
+    from datetime import UTC, datetime
+
+    from custos.core.engine_protocol import EngineStopBoundary
+
+    now = datetime(2026, 10, 14, tzinfo=UTC)
+    store = _StopBoundaryStore()
+    engine = _StopBoundaryEngine(
+        EngineStopBoundary(
+            stop_requested_at=now,
+            node_was_running=True,
+            stopped_gracefully=True,
+            run_task_failed=False,
+            reaped=True,
+            stop_effective_at=now,
+            valuation=None,
+            valuation_failure="valuation_unavailable",
+        )
+    )
+    verified = _verified(generation=2, lifecycle_state="stopped")
+    timeline: list[str] = []
+    store.events = timeline
+    engine.events = timeline
+
+    await _supervisor(store, engine).apply_non_running(delivery_id="stop", verified=verified)
+
+    # The lifecycle read and the in-progress lease predate this contract; nothing
+    # else may touch SQLite before the node is stopped (local stop stays available).
+    assert timeline == ["load_state", "lease", "stop_at_boundary", "commit_stop"]
+    assert store.stop_commits[0]["causes"] == {"valuation_unavailable"}
+
+
+async def test_an_engine_without_a_boundary_report_is_valued_as_unavailable() -> None:
+    store = _StopBoundaryStore()
+    engine = _Engine([])
+    verified = _verified(generation=2, lifecycle_state="stopped")
+
+    await _supervisor(store, engine).apply_non_running(delivery_id="stop", verified=verified)
+
+    assert engine.events == ["stop"]
+    commit = store.stop_commits[0]
+    assert commit["causes"] == {"valuation_unavailable"}
+    assert commit["boundary"].reaped is True and commit["boundary"].valuation is None
+
+
+async def test_pause_and_archive_keep_the_plain_applied_commit() -> None:
+    store = _StopBoundaryStore()
+    engine = _Engine([])
+
+    await _supervisor(store, engine).apply_non_running(
+        delivery_id="archive",
+        verified=_verified(generation=2, lifecycle_state="archived"),
+    )
+
+    assert store.events == ["load_state", "lease", "commit_ready"]
+    assert store.stop_commits == []
+
+
+async def test_replacement_restart_and_quarantine_never_produce_a_terminal_stop() -> None:
+    """Only a signed stop ends an instance: other stops keep the plain engine stop."""
+    from datetime import UTC, datetime
+
+    from custos.core.engine_protocol import EngineStopBoundary
+
+    prior = _verified()
+    verified = _verified(generation=2)
+    store = _StopBoundaryStore()
+    store.state = EngineLifecycleDurableState(
+        desired_status="pending",
+        applied_generation=1,
+        applied_command_fingerprint=prior.command_fingerprint,
+        engine_handle="old-handle",
+        observed_status="ready",
+        restart_count=0,
+        quarantine_reason=None,
+    )
+    now = datetime(2026, 10, 14, tzinfo=UTC)
+    engine = _StopBoundaryEngine(
+        EngineStopBoundary(
+            stop_requested_at=now,
+            node_was_running=True,
+            stopped_gracefully=True,
+            run_task_failed=False,
+            reaped=True,
+            stop_effective_at=now,
+        )
+    )
+    engine.ready_results = [_ready(verified)]
+
+    await _supervisor(store, engine).apply(
+        delivery_id="replacement",
+        verified=verified,
+        runtime_spec={"trading_mode": "sandbox", "connector": "binance"},
+        credential={},
+        artifact=_Artifact(),
+    )
+
+    assert "stop" in engine.events and "stop_at_boundary" not in engine.events
+    assert store.stop_commits == []

@@ -71,6 +71,9 @@ class FakeLiveNode:
         self.cache = FakeCache()
         self.portfolio = FakePortfolio()
         self.stop_hangs = False
+        # A run that ignores cancellation as well: the reap bound is what ends it.
+        self.cancel_hangs = False
+        self.released = asyncio.Event()
         self._handle = FakeHandle(self)
         self._stop = asyncio.Event()
         FakeLiveNode.instances.append(self)
@@ -85,6 +88,10 @@ class FakeLiveNode:
         self._handle.state = NodeState.RUNNING
         try:
             await self._stop.wait()
+        except asyncio.CancelledError:
+            if not self.cancel_hangs:
+                raise
+            await self.released.wait()
         finally:
             self._handle.state = NodeState.STOPPED
 

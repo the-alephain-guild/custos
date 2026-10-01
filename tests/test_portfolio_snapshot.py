@@ -826,3 +826,60 @@ def test_native_cash_portfolio_is_valued_from_trades_when_the_venue_quotes_nothi
         assert snapshot.equity == Decimal("10000")
     finally:
         engine.dispose()
+
+
+def test_a_snapshot_keeps_the_oldest_price_watermark_it_valued_with() -> None:
+    """A stop boundary needs the time of every price it used, not only the price."""
+    import pytest
+
+    pytest.importorskip("nautilus_trader")
+    from nautilus_trader.model import InstrumentId, MarkPriceUpdate, Price
+
+    update = MarkPriceUpdate(
+        instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+        value=Price.from_str("100.00"),
+        ts_event=1_790_000_000_000_000_000,
+        ts_init=1_790_000_000_500_000_000,
+    )
+
+    snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
+        _Runtime(mark_price=update), currency="USDT"
+    )
+
+    assert snapshot.reliable is True, snapshot.unreliable_reason
+    assert snapshot.marks_oldest_ns == 1_790_000_000_000_000_000
+    assert snapshot.price_watermarks_complete is True
+
+
+def test_a_price_without_a_timestamp_leaves_the_watermark_incomplete() -> None:
+    snapshot = NautilusPortfolioSnapshotProvider(price_type_mid="MID").snapshot(
+        _Runtime(mark_price=_DecimalValue("100")), currency="USDT"
+    )
+
+    assert snapshot.reliable is True
+    assert snapshot.price_watermarks_complete is False
+
+
+def test_a_snapshot_with_no_price_inputs_has_no_watermark() -> None:
+    runtime = _Runtime(mark_price=None)
+    runtime.cache.positions_open = lambda: []  # type: ignore[method-assign]
+
+    snapshot = NautilusPortfolioSnapshotProvider().snapshot(runtime, currency="USDT")
+
+    assert snapshot.reliable is True, snapshot.unreliable_reason
+    assert snapshot.marks_oldest_ns is None
+    assert snapshot.price_watermarks_complete is True
+
+
+def test_a_boundary_read_refuses_a_binary_float_at_its_source() -> None:
+    runtime = _Runtime(
+        mark_price=_DecimalValue("100"), portfolio=_Portfolio(equities={"USDT": 1000.1})
+    )
+    provider = NautilusPortfolioSnapshotProvider()
+
+    lenient = provider.snapshot(runtime, currency="USDT")
+    strict = provider.snapshot(runtime, currency="USDT", refuse_float=True)
+
+    assert lenient.reliable is True
+    assert strict.reliable is False
+    assert strict.unreliable_reason == "portfolio_float_source"

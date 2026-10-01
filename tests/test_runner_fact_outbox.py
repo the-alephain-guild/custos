@@ -334,3 +334,143 @@ async def test_atomic_group_replay_is_bound_to_capture_bytes(tmp_path):
     with pytest.raises(RunnerFactContractError, match="replay conflicts"):
         await outbox.enqueue_group(authority, identity, ((changed,),))
     assert len(await outbox.pending()) == 1
+
+
+def _terminal_boundary_input() -> tuple[RunnerFactAuthority, RunnerFactIdentity, list]:
+    from tests.test_runner_fact_contract_v1 import (
+        GOLDEN_PATH,
+        _json,
+        _stop_authority,
+        _stop_input,
+    )
+
+    golden = _json(GOLDEN_PATH)
+    identity = RunnerFactIdentity.from_private_bytes(bytes(range(1, 33)), golden["key_id"])
+    return _stop_authority(), identity, _stop_input()
+
+
+@pytest.mark.asyncio
+async def test_a_terminal_fact_replayed_with_other_bytes_is_a_conflict(tmp_path: Path) -> None:
+    from custos.core.runner_fact import RunnerFactContractError, terminal_valuation
+
+    authority, identity, facts = _terminal_boundary_input()
+    outbox = RunnerFactOutbox(tmp_path / "runner-facts.sqlite3")
+    await outbox.enqueue(authority, identity, facts)
+    stored = [batch.payload for batch in await outbox.pending()]
+
+    # The same bytes again are the stored fact: nothing new is signed.
+    assert await outbox.enqueue(authority, identity, facts) is None
+
+    lifecycle, terminal = facts
+    other = terminal_valuation(
+        authority=authority,
+        issuer_key_id=terminal["issuer_key_id"],
+        command_fingerprint=terminal["command_fingerprint"],
+        closes_generation=terminal["closes_generation"],
+        outcome="valuation_unconfirmed",
+        reason_code="stop_timeout",
+        account_scope=terminal["account_scope"],
+        valuation_source=terminal["valuation_source"],
+        position_policy=terminal["position_policy"],
+        stop_requested_at=terminal["stop_requested_at"],
+        valuation_observed_at=None,
+        marks_oldest_at=None,
+        stop_effective_at=terminal["stop_effective_at"],
+        equity=None,
+        open_positions=None,
+        prior_equity=terminal["prior_equity"],
+    )
+    assert other["event_id"] == terminal["event_id"]
+    with pytest.raises(RunnerFactContractError, match="conflicts with the stored"):
+        await outbox.enqueue(authority, identity, [lifecycle, other])
+
+    reopened = RunnerFactOutbox(tmp_path / "runner-facts.sqlite3")
+    with pytest.raises(RunnerFactContractError, match="conflicts with the stored"):
+        await reopened.enqueue(authority, identity, [lifecycle, other])
+    assert [batch.payload for batch in await reopened.pending()] == stored
+
+
+@pytest.mark.asyncio
+async def test_a_sealed_stream_accepts_only_its_archive(tmp_path: Path) -> None:
+    from custos.core.runner_fact import RunnerFactContractError
+
+    authority, identity, facts = _terminal_boundary_input()
+    outbox = RunnerFactOutbox(tmp_path / "runner-facts.sqlite3")
+    await outbox.enqueue(authority, identity, facts)
+
+    heartbeat = {
+        "kind": "heartbeat",
+        "event_id": "90000000-0000-4000-8000-000000000021",
+        "status": "online",
+        "observed_at": "2026-08-14T10:06:00Z",
+    }
+    with pytest.raises(RunnerFactContractError, match="sealed"):
+        await outbox.enqueue(authority, identity, [heartbeat])
+
+    archived = RunnerDeploymentLifecycleFact.observed(
+        replace(authority, generation=authority.generation + 1),
+        generation=authority.generation + 1,
+        lifecycle_state="archived",
+        command_fingerprint="e" * 64,
+        outcome="applied",
+    ).to_wire()
+    assert (
+        await outbox.enqueue(
+            replace(authority, generation=authority.generation + 1), identity, [archived]
+        )
+        is not None
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_outbox_remembers_the_last_equity_and_clears_a_closed_month(
+    tmp_path: Path,
+) -> None:
+    import sqlite3
+
+    from custos.core.runner_fact import equity_snapshot, settlement_period_closed
+
+    authority = _authority()
+    identity = _identity()
+    database = tmp_path / "runner-facts.sqlite3"
+    outbox = RunnerFactOutbox(database)
+    for index, amount in enumerate(("100", "110")):
+        await outbox.enqueue(
+            authority,
+            identity,
+            [
+                equity_snapshot(
+                    event_id=f"91000000-0000-4000-8000-00000000000{index}",
+                    amount=amount,
+                    currency="USDT",
+                    observed_at=f"2026-09-30T23:5{index}:00Z",
+                )
+            ],
+        )
+    await outbox.owe_month_close(authority, "2026-09", "2026-10-01T00:00:00Z")
+
+    with sqlite3.connect(database) as connection:
+        last = connection.execute(
+            "SELECT event_id, seq, amount FROM runner_fact_last_equity WHERE stream_key = ?",
+            (authority.stream_key,),
+        ).fetchone()
+        owed = connection.execute("SELECT period FROM runner_fact_owed_month_close").fetchall()
+    assert last == ("91000000-0000-4000-8000-000000000001", 2, "110")
+    assert owed == [("2026-09",)]
+
+    await outbox.enqueue(
+        authority,
+        identity,
+        [
+            settlement_period_closed(
+                event_id="92000000-0000-4000-8000-000000000001",
+                period="2026-09",
+                closed_at="2026-10-01T00:00:00Z",
+            )
+        ],
+    )
+    with sqlite3.connect(database) as connection:
+        assert (
+            connection.execute("SELECT count(*) FROM runner_fact_owed_month_close").fetchone()[0]
+            == 0
+        )
