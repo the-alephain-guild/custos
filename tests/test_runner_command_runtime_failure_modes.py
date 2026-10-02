@@ -741,6 +741,9 @@ class _OneNodeEngineLifecycle(_Lifecycle):
     async def apply(self, **kwargs):
         instance = kwargs["verified"].command.deployment_instance_id
         self.events.append(f"apply:{instance.int}")
+        # A real start waits for the venue before the node holds the runner; a
+        # recovery running concurrently would pass the capacity check meanwhile.
+        await asyncio.sleep(0.01)
         self.holder = _holder(instance)
         return SimpleNamespace(deployment_instance_id=instance)
 
