@@ -80,6 +80,29 @@ schema, golden set, asset index, and authority entry. Superseded pre-production
 shapes are deleted rather than accepted as aliases or fallbacks. Git history
 and immutable OCI digests retain audit evidence; runtime code does not.
 
+## Strategy registration scope
+
+A strategy package registers itself by name when it is imported
+(`register_strategy`), and the adapter builds it by name (`create_strategy`).
+Outside any scope the registry is one per process and refuses a second
+registration of a name from a different source; backtesting and the offline lane
+use it that way, unchanged.
+
+`custos_toolkit_nautilus.adapter.strategy_registration_scope()` makes
+registration and lookup private to the code it wraps: inside it,
+`register_strategy`, `unregister_strategy`, `create_strategy`,
+`get_strategy_info`, `list_strategies` and `is_registered` act on a registry
+that starts empty and is discarded when the scope ends, whether normally or by
+an exception, and never reaches the process registry. Discovery does not run
+inside a scope, and scopes do not nest.
+
+The runner loads every verified artifact inside its own scope: the import, the
+adapter's `build_config` and `build_strategy`, and every later rebuild of the
+strategy for an engine restart. Two artifacts whose packages register the same
+name from different sources therefore load one after the other in one process.
+Within one artifact, one name registered from two sources is still refused, and
+that load failure quarantines the activation as an artifact defect.
+
 ## Python and inventory
 
 The `custos-strategy-toolkit` base/contracts distribution supports Python

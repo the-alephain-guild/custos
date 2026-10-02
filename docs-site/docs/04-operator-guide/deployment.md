@@ -55,6 +55,26 @@ Persist identity metadata, machine/venue vaults, age identity, capability, trans
 
 Do not share a state root between runner processes. The offline lane uses its own SQLite database through `--offline-state`; it does not use that database as signed business authority.
 
+## One instance per runner process
+
+A runner process runs one strategy instance at a time: the Nautilus engine supports one trading node per process, and the runner holds it for the instance it started. To run several instances, run several runner processes, each with its own identity and state root.
+
+Within one process, instances can follow each other. Stop the running instance, and the runner can start another, including a new version of the same strategy or a different strategy with the same name. Each verified artifact is loaded with a strategy registry of its own, so a name registered by an earlier artifact does not block a later one.
+
+What the runner does with a start it cannot carry out:
+
+| Situation | What the runner does | What you see |
+|---|---|---|
+| Another instance is running in this process | Refuses the start before loading the new artifact | A signed lifecycle outcome `retry_exhausted` with state `stopped`; the running instance is untouched |
+| The running instance is being stopped | Waits and retries the start | The start goes ahead once the stop completes |
+| The runner's capability does not cover the new instance | Acknowledges and keeps the command; loads and starts nothing | Log event `runner_command_awaiting_capability_binding`; no lifecycle outcome yet |
+
+Later commands, including a stop for the running instance, are processed normally in every case.
+
+The capability receipt is read once, when the runner starts. A deployment created after that is not covered until a capability covering it is issued and the runner is restarted. On restart, the runner starts or refuses the commands it kept and reports the signed outcome; a command still not covered stays kept, and the runner logs `durable_command_recovery_skipped`. A stop for an instance the capability does not cover is kept the same way: such an instance was never started by this process, so there is nothing to stop.
+
+After a restart with more than one instance to recover, the runner recovers them one at a time, the instance that was running before the restart first. The others are refused as occupied and reported.
+
 ## Containers and verification
 
 `make verify-local-v030` builds and checks the local image contract. Mount the runner state at `/home/custos/.arx` and provide the age identity at runtime. A full signed deployment still requires issued identity, transport and release inputs. Confirm the image revision before attributing results to current source.
