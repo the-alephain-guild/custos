@@ -194,6 +194,7 @@ def _coordinator(
         credential_resolver=_CredentialResolver(),
         engine_lifecycle=lifecycle or _Lifecycle(events),
         delivery_policy=policy,
+        capability_binding=lambda verified: None,
     )
 
 

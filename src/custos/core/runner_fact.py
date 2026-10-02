@@ -24,7 +24,7 @@ from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Final, Literal
+from typing import Any, Final, Literal, Protocol
 from uuid import UUID, uuid4, uuid5
 
 from cryptography.hazmat.primitives import serialization
@@ -6752,6 +6752,82 @@ class RunnerFactEmitter:
             trace_id=trace_id,
             client_order_id=client_order_id,
         )
+
+
+def runner_instance_projectors(trading_mode: str) -> tuple[str, ...]:
+    """Every projector one deployment instance must have bound before this runner
+    may start it or sign anything for it.
+
+    The lifecycle projector signs the instance's command outcomes, including a
+    refusal; the others sign what a running instance produces. A real venue adds
+    independent reconciliation.
+    """
+
+    projectors = ["deployment_lifecycle", "settlement", "risk", "health"]
+    if trading_mode in {"testnet", "live"}:
+        projectors.append("reconciliation")
+    return tuple(projectors)
+
+
+class _InstanceScopeAuthority(Protocol):
+    def require_scope_bindings(
+        self,
+        *,
+        projectors: Iterable[str],
+        trading_mode: str,
+        deployment_instance_id: UUID | str,
+        deployment_spec_id: UUID | str,
+        deployment_spec_digest: str,
+        strategy_id: UUID | str,
+    ) -> None: ...
+
+
+def runner_instance_binding_gap(
+    capability: _InstanceScopeAuthority,
+    *,
+    trading_mode: str,
+    deployment_instance_id: UUID | str,
+    deployment_spec_id: UUID | str,
+    deployment_spec_digest: str,
+    strategy_id: UUID | str,
+) -> str | None:
+    """Why the runner's capability cannot yet sign for this instance, or None.
+
+    This is the one criterion for both a fresh command and a startup recovery.
+    The capability is loaded once at startup, so an instance that is not bound
+    now was never started by this process; it stays unbound until the runner
+    restarts with a capability that binds it.
+    """
+
+    try:
+        capability.require_scope_bindings(
+            projectors=runner_instance_projectors(trading_mode),
+            trading_mode=trading_mode,
+            deployment_instance_id=deployment_instance_id,
+            deployment_spec_id=deployment_spec_id,
+            deployment_spec_digest=deployment_spec_digest,
+            strategy_id=strategy_id,
+        )
+    except RunnerFactContractError as error:
+        return str(error)
+    return None
+
+
+def runner_command_binding_gap(
+    capability: _InstanceScopeAuthority,
+    verified: VerifiedRunnerCommand,
+) -> str | None:
+    """``runner_instance_binding_gap`` for the instance a verified command addresses."""
+
+    command = verified.command
+    return runner_instance_binding_gap(
+        capability,
+        trading_mode=command.trading_mode,
+        deployment_instance_id=command.deployment_instance_id,
+        deployment_spec_id=command.deployment_spec_id,
+        deployment_spec_digest=command.deployment_spec_digest,
+        strategy_id=command.strategy_id,
+    )
 
 
 @dataclass(frozen=True, slots=True)

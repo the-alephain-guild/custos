@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
@@ -45,6 +46,7 @@ from custos.core.runner_command_intake import (
     InboundCommandDelivery,
     VerifiedRunnerCommand,
 )
+from custos.core.runner_fact import RunnerFactContractError
 
 logger = logging.getLogger(__name__)
 _slog = get_logger("custos.runner_command_runtime")
@@ -101,6 +103,10 @@ class RunnerCommandRuntimeStatus(StrEnum):
     RETRY_SCHEDULED = "retry_scheduled"
     TERMINAL_REJECTED = "terminal_rejected"
     TERMINAL_QUARANTINED = "terminal_quarantined"
+    # Acknowledged and durably recorded, but neither applied nor refused: the
+    # runner cannot sign for the instance until it restarts with a capability
+    # that binds it, and then recovers and reports it.
+    DEFERRED_AWAITING_BINDING = "deferred_awaiting_binding"
 
 
 @dataclass(frozen=True, slots=True)
@@ -127,6 +133,7 @@ class RunnerCommandRuntimeCoordinator:
         credential_resolver: RunnerCredentialResolverV1,
         engine_lifecycle: EngineLifecycleSupervisor,
         delivery_policy: CommandDeliveryPolicy,
+        capability_binding: Callable[[VerifiedRunnerCommand], str | None],
         node_capacity: EngineNodeCapacity | None = None,
     ) -> None:
         self._intake = intake
@@ -144,6 +151,8 @@ class RunnerCommandRuntimeCoordinator:
         if not callable(supervise_once):
             raise TypeError("engine lifecycle supervise_once must be callable")
         self._policy = delivery_policy
+        # Why the capability cannot yet sign for a command's instance, or None.
+        self._capability_binding = capability_binding
         # The engine's one-node limit, or None for an engine without one.
         self._node_capacity = node_capacity
         self._engine_supervisions: dict[object, asyncio.Task[None]] = {}
@@ -182,6 +191,9 @@ class RunnerCommandRuntimeCoordinator:
     ) -> RunnerCommandRuntimeResult:
         activated: ActivatedStrategyArtifact | ActivatedDevelopmentStrategyArtifact | None
         ready: EngineReadyReceipt | None
+        binding_gap = self._capability_binding(verified)
+        if binding_gap is not None:
+            return await self._defer_awaiting_binding(delivery, intake, verified, binding_gap)
         try:
             if verified.command.lifecycle_state == "running":
                 _prepared, activated, ready = await self._with_heartbeat(
@@ -599,6 +611,17 @@ class RunnerCommandRuntimeCoordinator:
                 outcome="retry_exhausted",
                 reason_code=reason_code,
             )
+        except RunnerFactContractError as error:
+            # The refusal cannot be signed for this instance. Redelivering it
+            # cannot change that before a restart and would hold every later
+            # command behind it, so it waits durably like an unbound command.
+            return await self._defer_awaiting_binding(
+                delivery,
+                intake,
+                verified,
+                str(error),
+                refused_reason_code=reason_code,
+            )
         except Exception as error:
             logger.exception(
                 "durable runner command rejection failed",
@@ -619,6 +642,40 @@ class RunnerCommandRuntimeCoordinator:
             status=RunnerCommandRuntimeStatus.TERMINAL_REJECTED,
             intake=intake,
             reason_code=reason_code,
+        )
+
+    async def _defer_awaiting_binding(
+        self,
+        delivery: InboundCommandDelivery,
+        intake: CommandIntakeResult,
+        verified: VerifiedRunnerCommand,
+        binding_gap: str,
+        *,
+        refused_reason_code: str | None = None,
+    ) -> RunnerCommandRuntimeResult:
+        """Acknowledge a command this runner cannot yet sign for, and keep it.
+
+        Intake has already recorded the command durably as the desired state,
+        and nothing has been activated or started for it: an instance the
+        capability does not bind was never started by this process. After a
+        restart with a capability that binds it, startup recovery applies or
+        refuses it and signs the outcome.
+        """
+
+        _slog.warning(
+            "runner_command_awaiting_capability_binding",
+            delivery_id=delivery.delivery_id,
+            deployment_instance_id=str(verified.command.deployment_instance_id),
+            generation=verified.command.generation,
+            lifecycle_state=str(verified.command.lifecycle_state),
+            binding_gap=binding_gap,
+            refused_reason_code=refused_reason_code,
+        )
+        await delivery.ack()
+        return RunnerCommandRuntimeResult(
+            status=RunnerCommandRuntimeStatus.DEFERRED_AWAITING_BINDING,
+            intake=intake,
+            reason_code="awaiting_capability_binding",
         )
 
     async def _retry_or_exhaust(

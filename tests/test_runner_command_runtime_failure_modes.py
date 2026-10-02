@@ -13,6 +13,7 @@ Three ways a valid command used to end in the wrong place:
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 from uuid import UUID
 
@@ -97,6 +98,7 @@ def _subject(
         credential_resolver=_CredentialResolver(),
         engine_lifecycle=lifecycle or _Lifecycle(events),
         delivery_policy=CommandDeliveryPolicy(in_progress_interval_seconds=0.01),
+        capability_binding=lambda verified: binding_gap,
         node_capacity=capacity,
     )
 
@@ -279,3 +281,354 @@ def _lifecycle_facts(database) -> list[dict]:
     for payload in payloads:
         facts.extend(walk(json.loads(payload)))
     return facts
+
+
+class _SequencedIntake:
+    """Hand the coordinator one verified command per delivery, in order."""
+
+    def __init__(self, *verified: object) -> None:
+        self.remaining = list(verified)
+
+    async def process(self, delivery):
+        return await _Intake(verified=self.remaining.pop(0)).process(delivery)
+
+
+def _other_instance_command() -> SimpleNamespace:
+    from tests.test_runner_command_runtime import _Command
+
+    class OtherCommand(_Command):
+        deployment_instance_id = OTHER_INSTANCE
+
+    return SimpleNamespace(command=OtherCommand(), command_fingerprint="9" * 64)
+
+
+async def _recorded(store, verified) -> None:
+    """What intake has done for every command that reaches the coordinator."""
+    await store.record_desired_command(
+        command=verified.command,
+        command_fingerprint=verified.command_fingerprint,
+        verification_receipt=verified.verification_receipt,
+    )
+
+
+def _command_outcome_count(database) -> int:
+    import sqlite3
+
+    with sqlite3.connect(database) as connection:
+        return connection.execute("SELECT count(*) FROM command_outcomes").fetchone()[0]
+
+
+@pytest.mark.asyncio
+async def test_an_unbound_start_stays_recorded_and_nothing_starts(tmp_path) -> None:
+    from tests.test_runner_fact_store import _runner_fact_store, _verified_command
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    _, _, verified = _verified_command()
+    await _recorded(store, verified)
+    events: list[str] = []
+    delivery = _Delivery()
+
+    result = await _subject(
+        events,
+        durability=store,
+        intake=_Intake(verified=verified),
+        binding_gap="capability has no unique settlement binding for DeploymentInstance",
+    ).process(delivery)
+
+    assert result.status is RunnerCommandRuntimeStatus.DEFERRED_AWAITING_BINDING
+    assert delivery.events == ["ack"]
+    assert events == []
+    state = await store.load_engine_lifecycle_state(verified)
+    assert state.desired_status == "recorded"
+    assert _command_outcome_count(database) == 0
+    assert _lifecycle_facts(database) == []
+
+
+@pytest.mark.asyncio
+async def test_an_unbound_command_does_not_hold_the_next_one() -> None:
+    events: list[str] = []
+    other = _other_instance_command()
+    gaps = {INSTANCE: "capability has no unique settlement binding for DeploymentInstance"}
+    subject = RunnerCommandRuntimeCoordinator(
+        intake=_SequencedIntake(VERIFIED, other),
+        durability=_Durability(events),
+        release_resolver=_RecordingResolver(events),
+        artifact_runtime=_RecordingArtifactRuntime(events),
+        entry_point_loader=object(),
+        credential_resolver=_CredentialResolver(),
+        engine_lifecycle=_Lifecycle(events),
+        delivery_policy=CommandDeliveryPolicy(in_progress_interval_seconds=0.01),
+        capability_binding=lambda verified: gaps.get(verified.command.deployment_instance_id),
+    )
+    unbound, bound = _Delivery(delivery_id="unbound"), _Delivery(delivery_id="bound")
+
+    first = await subject.process(unbound)
+    second = await subject.process(bound)
+
+    assert first.status is RunnerCommandRuntimeStatus.DEFERRED_AWAITING_BINDING
+    assert second.status is RunnerCommandRuntimeStatus.APPLIED_ACKED
+    assert unbound.events == ["ack"]
+    assert bound.events == ["ack"]
+    assert events == ["resolve", "prepare", "activate", "apply"]
+
+
+@pytest.mark.asyncio
+async def test_an_unbound_stop_is_acknowledged_and_leaves_the_engine_alone() -> None:
+    events: list[str] = []
+    stop = SimpleNamespace(
+        command=SimpleNamespace(
+            deployment_instance_id=INSTANCE,
+            generation=2,
+            trading_mode="sandbox",
+            lifecycle_state="stopped",
+            is_development_source=False,
+        ),
+        command_fingerprint="c" * 64,
+    )
+    delivery = _Delivery()
+
+    result = await _subject(
+        events,
+        intake=_Intake(verified=stop),
+        binding_gap="capability has no unique deployment_lifecycle binding for DeploymentInstance",
+    ).process(delivery)
+
+    assert result.status is RunnerCommandRuntimeStatus.DEFERRED_AWAITING_BINDING
+    assert delivery.events == ["ack"]
+    assert events == [], "an unbound instance was never started here, so nothing is stopped"
+
+
+@pytest.mark.asyncio
+async def test_an_unsignable_refusal_keeps_the_command_recorded(tmp_path) -> None:
+    from custos.core.runner_fact import RunnerStateStore
+    from tests.test_runner_fact_store import _runner_fact_store, _verified_command
+
+    database = tmp_path / "runner-state.sqlite3"
+    outbox, signing_store = _runner_fact_store(database)
+    _, _, verified = _verified_command()
+    await _recorded(signing_store, verified)
+
+    def unbound(_verified):
+        raise RunnerFactContractError(
+            "capability has no unique deployment_lifecycle binding for DeploymentInstance"
+        )
+
+    store = RunnerStateStore(
+        outbox=outbox,
+        identity=signing_store._identity,
+        tenant_id="acme",
+        runner_id=verified.command.runner_id,
+        authority_resolver=unbound,
+    )
+    events: list[str] = []
+    delivery = _Delivery()
+
+    result = await _subject(
+        events,
+        durability=store,
+        intake=_Intake(verified=verified),
+        capacity=_Capacity(_holder(OTHER_INSTANCE)),
+    ).process(delivery)
+
+    assert result.status is RunnerCommandRuntimeStatus.DEFERRED_AWAITING_BINDING
+    assert delivery.events == ["ack"]
+    state = await store.load_engine_lifecycle_state(verified)
+    assert state.desired_status == "recorded"
+    assert _command_outcome_count(database) == 0
+
+
+class _SandboxEngine:
+    """A sandbox engine that stays running until stopped."""
+
+    def __init__(self) -> None:
+        from tests.test_engine_recovery_persistence import Engine
+
+        self._engine = Engine("recovered")
+
+    def __getattr__(self, name):
+        return getattr(self._engine, name)
+
+    def supports_venue(self, venue, mode):
+        return mode == "sandbox"
+
+    async def wait_terminal(self, authority):
+        await asyncio.Event().wait()
+
+
+class _ActivatingArtifactRuntime(_RecordingArtifactRuntime):
+    def __init__(self, events: list[str], store, verified) -> None:
+        super().__init__(events)
+        self.store = store
+        self.verified = verified
+
+    async def activate(self, prepared, *, loader):
+        await self.store.record_artifact_activation(
+            verified=self.verified,
+            activation_id="activation-1",
+            artifact_identity_digest="c" * 64,
+            artifact_authority_digest="d" * 64,
+        )
+        return await super().activate(prepared, loader=loader)
+
+
+class _BindingCapability:
+    def __init__(self, gap: str | None) -> None:
+        self.gap = gap
+
+    def require_scope_bindings(self, **kwargs) -> None:
+        if self.gap is not None:
+            raise RunnerFactContractError(self.gap)
+
+
+async def _restart_and_recover(store, verified, capability, events):
+    from custos.cli._daemon import _recover_durable_running_commands
+    from tests.test_engine_recovery_persistence import supervisor
+
+    restarted = RunnerCommandRuntimeCoordinator(
+        intake=_Intake(),
+        durability=store,
+        release_resolver=_RecordingResolver(events),
+        artifact_runtime=_ActivatingArtifactRuntime(events, store, verified),
+        entry_point_loader=object(),
+        credential_resolver=_CredentialResolver(),
+        engine_lifecycle=supervisor(store, _SandboxEngine()),
+        delivery_policy=CommandDeliveryPolicy(in_progress_interval_seconds=0.01),
+        capability_binding=lambda verified: None,
+    )
+    await _recover_durable_running_commands(
+        state_store=store,
+        command_runtime=restarted,
+        capability=capability,
+    )
+    await asyncio.wait_for(restarted.recoveries_settled(), timeout=5)
+    stop = asyncio.Event()
+    stop.set()
+    await restarted.run_engine_supervision(stop)
+
+
+@pytest.mark.asyncio
+async def test_a_kept_start_is_applied_and_reported_after_a_restart_that_binds_it(
+    tmp_path,
+) -> None:
+    from tests.test_runner_fact_store import _runner_fact_store, _verified_command
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    _, _, verified = _verified_command()
+    await _recorded(store, verified)
+    deferred = await _subject(
+        [],
+        durability=store,
+        intake=_Intake(verified=verified),
+        binding_gap="capability has no unique settlement binding for DeploymentInstance",
+    ).process(_Delivery())
+    assert deferred.status is RunnerCommandRuntimeStatus.DEFERRED_AWAITING_BINDING
+
+    events: list[str] = []
+    await _restart_and_recover(store, verified, _BindingCapability(None), events)
+
+    assert events == ["resolve", "prepare", "activate"]
+    state = await store.load_engine_lifecycle_state(verified)
+    assert state.desired_status == "applied"
+    assert [(fact["lifecycle_state"], fact["outcome"]) for fact in _lifecycle_facts(database)] == [
+        ("running", "applied")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_kept_start_still_unbound_after_a_restart_is_skipped_and_logged(
+    tmp_path,
+) -> None:
+    from tests.test_runner_fact_store import _runner_fact_store, _verified_command
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    _, _, verified = _verified_command()
+    await _recorded(store, verified)
+
+    events: list[str] = []
+    with capture_logs() as logs:
+        await _restart_and_recover(
+            store,
+            verified,
+            _BindingCapability(
+                "capability has no unique settlement binding for DeploymentInstance"
+            ),
+            events,
+        )
+
+    assert events == []
+    assert (await store.load_engine_lifecycle_state(verified)).desired_status == "recorded"
+    skipped = [log for log in logs if log["event"] == "durable_command_recovery_skipped"]
+    assert len(skipped) == 1
+    assert skipped[0]["deployment_instance_id"] == str(verified.command.deployment_instance_id)
+    assert _lifecycle_facts(database) == []
+
+
+class _ProjectorCapability:
+    """Binds exactly the projectors it is given, for every instance."""
+
+    def __init__(self, bound: set[str]) -> None:
+        self.bound = bound
+        self.asked: list[tuple[str, ...]] = []
+
+    def require_scope_bindings(self, *, projectors, **kwargs) -> None:
+        requested = tuple(projectors)
+        self.asked.append(requested)
+        missing = [projector for projector in requested if projector not in self.bound]
+        if missing:
+            raise RunnerFactContractError(
+                f"capability has no unique {missing[0]} binding for DeploymentInstance"
+            )
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
+    [
+        ("sandbox", ("deployment_lifecycle", "settlement", "risk", "health")),
+        ("testnet", ("deployment_lifecycle", "settlement", "risk", "health", "reconciliation")),
+        ("live", ("deployment_lifecycle", "settlement", "risk", "health", "reconciliation")),
+    ],
+)
+def test_a_command_and_a_recovery_need_the_same_projectors(mode, expected) -> None:
+    from custos.core.runner_fact import runner_instance_binding_gap
+
+    capability = _ProjectorCapability(set(expected))
+
+    gap = runner_instance_binding_gap(
+        capability,
+        trading_mode=mode,
+        deployment_instance_id=INSTANCE,
+        deployment_spec_id=UUID(int=3),
+        deployment_spec_digest="d" * 64,
+        strategy_id=UUID(int=4),
+    )
+
+    assert gap is None
+    assert capability.asked == [expected]
+
+
+@pytest.mark.asyncio
+async def test_recovery_skips_an_instance_whose_outcomes_it_could_not_sign(tmp_path) -> None:
+    from tests.test_runner_fact_store import _runner_fact_store, _verified_command
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    _, _, verified = _verified_command()
+    await _recorded(store, verified)
+    events: list[str] = []
+
+    with capture_logs() as logs:
+        await _restart_and_recover(
+            store,
+            verified,
+            _ProjectorCapability({"settlement", "risk", "health"}),
+            events,
+        )
+
+    assert events == []
+    skipped = [log for log in logs if log["event"] == "durable_command_recovery_skipped"]
+    assert [log["binding_gap"] for log in skipped] == [
+        "capability has no unique deployment_lifecycle binding for DeploymentInstance"
+    ]

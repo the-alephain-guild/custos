@@ -175,6 +175,7 @@ async def test_interrupted_recovery_persists_the_new_handle_and_keeps_supervisio
         credential_resolver=None,
         engine_lifecycle=replacement,
         delivery_policy=CommandDeliveryPolicy(),
+        capability_binding=lambda verified: None,
     )
     runtime._start_engine_supervision(**kwargs, artifact_policy_id=None)
     watcher = runtime._engine_supervisions[verified.command.deployment_instance_id]

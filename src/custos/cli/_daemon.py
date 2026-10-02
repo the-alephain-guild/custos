@@ -99,6 +99,8 @@ from custos.core.runner_fact import (
     RunnerFactOutbox,
     RunnerRuntimeEnvironmentMetricsV1,
     RunnerStateStore,
+    runner_command_binding_gap,
+    runner_instance_binding_gap,
 )
 from custos.core.runner_fact_producer import RunnerFactHost, RunnerFactProductionLoop
 from custos.core.runner_material_authority import RunnerMaterialAuthorityClient
@@ -392,26 +394,24 @@ async def _recover_durable_running_commands(
 ) -> None:
     identities = await state_store.list_recoverable_desired_command_identities()
     for identity in identities:
-        projectors = ["settlement", "risk", "health"]
-        if identity.trading_mode in {"testnet", "live"}:
-            projectors.append("reconciliation")
-        try:
-            capability.require_scope_bindings(
-                projectors=projectors,
-                trading_mode=identity.trading_mode,
-                deployment_instance_id=identity.deployment_instance_id,
-                deployment_spec_id=identity.deployment_spec_id,
-                deployment_spec_digest=identity.deployment_spec_digest,
-                strategy_id=identity.strategy_id,
-            )
-        except Exception as exc:  # noqa: BLE001 - stale local state is not current authority
-            log.info(
+        # The same criterion a fresh command meets before anything is activated:
+        # a command acknowledged while unbound waits here for a capability that
+        # binds it, and is applied or refused, and reported, once it does.
+        binding_gap = runner_instance_binding_gap(
+            capability,
+            trading_mode=identity.trading_mode,
+            deployment_instance_id=identity.deployment_instance_id,
+            deployment_spec_id=identity.deployment_spec_id,
+            deployment_spec_digest=identity.deployment_spec_digest,
+            strategy_id=identity.strategy_id,
+        )
+        if binding_gap is not None:
+            _slog.info(
                 "durable_command_recovery_skipped",
-                extra={
-                    "deployment_instance_id": str(identity.deployment_instance_id),
-                    "reason": "not_bound_by_current_capability",
-                    "error_type": type(exc).__name__,
-                },
+                deployment_instance_id=str(identity.deployment_instance_id),
+                generation=identity.generation,
+                reason="not_bound_by_current_capability",
+                binding_gap=binding_gap,
             )
             continue
         durable = await state_store.load_durable_desired_command(identity.deployment_instance_id)
@@ -1198,6 +1198,9 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 credential_resolver=VaultRunnerCredentialResolverV1(_build_vault(args)),
                 engine_lifecycle=lifecycle,
                 delivery_policy=delivery_policy,
+                capability_binding=lambda verified: runner_command_binding_gap(
+                    capability, verified
+                ),
                 node_capacity=_engine_node_capacity(getattr(args, "engine", "nautilus"), host),
             )
             fact_production = RunnerFactProductionLoop(
