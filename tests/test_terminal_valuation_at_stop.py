@@ -939,3 +939,49 @@ async def test_a_stop_awaiting_its_reap_is_settled_by_the_stop_recovery_alone(
     assert engine.boundary_calls == 0
     assert _outcomes(database, 2) == [("applied", "applied")]
     assert _terminal(database)["reason_code"] == "process_exit_before_confirmation"
+
+
+@pytest.mark.asyncio
+async def test_a_kept_stop_of_an_instance_that_ran_in_an_earlier_process_is_not_a_process_exit(
+    tmp_path: Path,
+) -> None:
+    """What the terminal fact says when the node ended with an earlier process.
+
+    The instance ran in an earlier process. After a restart whose capability did
+    not bind it, it was not started again, and its stop was kept (acknowledged,
+    nothing applied). A later restart that binds it applies the kept stop through
+    the real host. No lease was taken for the stop before, so the stop does not
+    count as interrupted: the host finds no node, and the cause is
+    ``engine_not_running_at_stop``, which also precedes
+    ``process_exit_before_confirmation`` in the contract's precedence. Its
+    ``stop_effective_at`` is the moment the kept stop was applied, not the
+    unknown moment the node ended. This test fixes that behaviour as found; the
+    plan 11 deviation log carries it for a ruling.
+    """
+    pytest.importorskip("nautilus_trader")
+    from custos.engines.nautilus.host import NtTradingNodeHost
+    from tests.test_runner_command_runtime_failure_modes import _bound, _deferred, _restart
+
+    database = tmp_path / "runner-state.sqlite3"
+    _, earlier = _store(database)
+    await _apply(earlier, _command(1, "running"), delivery_id="run-in-an-earlier-process")
+
+    _, unbound = _store(database)
+    stop = _command(2, "stopped")
+    await _deferred(unbound, stop)
+    assert _outcomes(database, 2) == []
+
+    _, bound = _store(database)
+    host = NtTradingNodeHost()
+    before = datetime.now(UTC)
+    restarted = await _restart(bound, _bound(stop), engine=host)
+
+    assert [log["event"] for log in restarted.logs] == ["durable_command_recovered"]
+    assert _outcomes(database, 2) == [("applied", "applied")]
+    terminal = _terminal(database)
+    assert terminal["outcome"] == "valuation_unconfirmed"
+    assert terminal["reason_code"] == "engine_not_running_at_stop"
+    assert terminal["closes_generation"] == 1
+    assert terminal["stop_effective_at"] is not None
+    assert datetime.fromisoformat(terminal["stop_effective_at"].replace("Z", "+00:00")) >= before
+    assert await bound.list_recoverable_desired_command_identities() == ()
