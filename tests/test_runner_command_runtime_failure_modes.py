@@ -931,7 +931,7 @@ async def _restart(
     return SimpleNamespace(
         engine=engine,
         events=events,
-        logs=[log for log in logs if log["event"].startswith("durable_command_recovery")],
+        logs=[log for log in logs if log["event"].startswith("durable_command_recover")],
         all_logs=logs,
     )
 

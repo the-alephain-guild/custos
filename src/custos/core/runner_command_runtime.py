@@ -46,7 +46,7 @@ from custos.core.runner_command_intake import (
     InboundCommandDelivery,
     VerifiedRunnerCommand,
 )
-from custos.core.runner_fact import RunnerFactContractError
+from custos.core.runner_fact import RunnerFactContractError, RunnerStateSupersededError
 
 logger = logging.getLogger(__name__)
 _slog = get_logger("custos.runner_command_runtime")
@@ -249,7 +249,7 @@ class RunnerCommandRuntimeCoordinator:
         *,
         after: asyncio.Task[None] | None = None,
     ) -> asyncio.Task[None]:
-        """Recover one durable running command in the background.
+        """Recover one durable command in the background.
 
         Recovery waits for the engine, which waits for the venue. Running it here
         instead of inline lets a restarted runner become ready, report and take
@@ -339,6 +339,7 @@ class RunnerCommandRuntimeCoordinator:
             "durable_command_recovered",
             deployment_instance_id=str(instance),
             generation=verified.command.generation,
+            lifecycle_state=str(verified.command.lifecycle_state),
         )
 
     async def _report_recovery_failure(
@@ -355,6 +356,29 @@ class RunnerCommandRuntimeCoordinator:
         """
 
         instance = str(verified.command.deployment_instance_id)
+        lifecycle_state = str(verified.command.lifecycle_state)
+        if isinstance(error, RunnerStateSupersededError):
+            # A newer command for the instance arrived after this one was listed
+            # for recovery; the newer one owns the instance and this one has no
+            # outcome to report. Nothing was done to the engine.
+            _slog.warning(
+                "durable_command_recovery_superseded",
+                deployment_instance_id=instance,
+                generation=verified.command.generation,
+                lifecycle_state=lifecycle_state,
+            )
+            return
+        if isinstance(error, RunnerFactContractError):
+            # The outcome cannot be signed for the instance. It stays recorded and
+            # is recovered again by the next restart.
+            _slog.error(
+                "durable_command_recovery_unsigned",
+                deployment_instance_id=instance,
+                generation=verified.command.generation,
+                lifecycle_state=lifecycle_state,
+                binding_gap=str(error),
+            )
+            return
         failure = _classify_failure(error)
         if failure.kind is _FailureKind.REFUSED:
             try:
@@ -387,11 +411,24 @@ class RunnerCommandRuntimeCoordinator:
             reason_code=str(error) if failure.kind is _FailureKind.QUARANTINED else None,
         )
 
-    async def recover(self, verified: VerifiedRunnerCommand) -> EngineReadyReceipt:
-        """Restore one durable running command without an inbound ACK boundary."""
+    async def recover(self, verified: VerifiedRunnerCommand) -> EngineReadyReceipt | None:
+        """Restore one durable command without an inbound ACK boundary.
+
+        A running command restores its engine and returns the ready receipt. A
+        command that stops, pauses or archives the instance is applied as it
+        would have been on delivery and returns None; one kept while its
+        instance was unbound was never started by this process, so the stop is
+        a no-op and the outcome is committed and signed. Supervision is left
+        alone: if a newer generation owns the instance, the lease refuses this
+        command before the engine is touched.
+        """
 
         if verified.command.lifecycle_state != "running":
-            raise RuntimeError("only a running durable command may recover an engine")
+            await self._engine_lifecycle.apply_non_running(
+                delivery_id=_recovery_delivery_id(verified),
+                verified=verified,
+            )
+            return None
         _prepared, _activated, ready = await self._resolve_activate_apply(
             _recovery_delivery_id(verified),
             verified,

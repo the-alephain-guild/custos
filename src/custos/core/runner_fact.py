@@ -259,6 +259,10 @@ class RunnerStateDurabilityError(RunnerFactError):
     """A command state transition cannot satisfy the single-store invariant."""
 
 
+class RunnerStateSupersededError(RunnerStateDurabilityError):
+    """A newer durable command has replaced the one being applied."""
+
+
 @dataclass(frozen=True, slots=True)
 class OrderReservationSnapshot:
     deployment_instance_id: UUID
@@ -3115,6 +3119,7 @@ class DurableDesiredCommandIdentity:
     generation: int
     trading_mode: str
     strategy_id: UUID
+    lifecycle_state: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -3899,11 +3904,15 @@ class RunnerStateStore:
                 "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?",
                 (str(verified.command.deployment_instance_id),),
             ).fetchone()
-            if desired is None or (
+            if desired is None:
+                raise RunnerStateDurabilityError(
+                    "in-progress lease requires the current durable desired command"
+                )
+            if (
                 int(desired["generation"]) != verified.command.generation
                 or desired["command_fingerprint"] != verified.command_fingerprint
             ):
-                raise RunnerStateDurabilityError(
+                raise RunnerStateSupersededError(
                     "in-progress lease requires the current durable desired command"
                 )
             applied = connection.execute(
@@ -5974,7 +5983,16 @@ class RunnerStateStore:
                 raise RunnerStateDurabilityError(
                     "recoverable desired command identity is corrupt"
                 ) from error
-            if lifecycle_state != "running":
+            if lifecycle_state not in {"running", "paused", "stopped", "archived"}:
+                raise RunnerStateDurabilityError(
+                    "recoverable desired command lifecycle state is invalid"
+                )
+            # A running command is recovered whether or not it was applied before
+            # the restart. A command that stops the instance is recovered only
+            # while it is still recorded: one acknowledged while the instance was
+            # unbound is applied and reported once a capability binds it, and
+            # applying it marks it applied, so it is reported once.
+            if lifecycle_state != "running" and row["desired_status"] != "recorded":
                 continue
             if (
                 str(document.get("deployment_instance_id")) != row["deployment_instance_id"]
@@ -5993,6 +6011,7 @@ class RunnerStateStore:
                     generation=int(row["generation"]),
                     trading_mode=row["trading_mode"],
                     strategy_id=strategy_id,
+                    lifecycle_state=lifecycle_state,
                 )
             )
         return tuple(identities)
