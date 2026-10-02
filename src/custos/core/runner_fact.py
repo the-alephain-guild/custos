@@ -3917,6 +3917,9 @@ class EngineLifecycleDurableState:
     stop_reap_pending: bool = False
     # An earlier attempt of this exact command recorded its lease and never committed.
     in_progress_before: bool = False
+    # The instance's latest applied command is its last running generation: no
+    # pause, archive or stop has been applied since it last ran.
+    last_applied_is_running: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -5155,6 +5158,13 @@ class RunnerStateStore:
                 "SELECT * FROM command_in_progress_lease WHERE deployment_instance_id = ?",
                 (str(command.deployment_instance_id),),
             ).fetchone()
+            last_running = connection.execute(
+                """
+                SELECT generation, command_fingerprint FROM runner_last_running_generation
+                WHERE deployment_instance_id = ?
+                """,
+                (str(command.deployment_instance_id),),
+            ).fetchone()
             pending_reap = connection.execute(
                 """
                 SELECT 1 FROM runner_stop_pending_reap
@@ -5194,6 +5204,12 @@ class RunnerStateStore:
             restart_count=restart_count,
             stop_reap_pending=pending_reap is not None,
             in_progress_before=lease_matches,
+            last_applied_is_running=(
+                applied is not None
+                and last_running is not None
+                and int(applied["generation"]) == int(last_running["generation"])
+                and applied["command_fingerprint"] == last_running["command_fingerprint"]
+            ),
             quarantine_reason=(
                 str(desired["quarantine_reason"])
                 if desired["quarantine_reason"] is not None

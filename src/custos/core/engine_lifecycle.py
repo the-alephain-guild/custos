@@ -173,6 +173,10 @@ class EngineLifecycleSupervisor:
         ] = {}
         # Background commits for stops whose node outlived its cancellation.
         self._reaps: set[asyncio.Task[None]] = set()
+        # Instances whose node this process has started. A node lives and dies with
+        # its process, so one that is absent at a stop and was never started here
+        # ended when an earlier process did.
+        self._started_here: set[str] = set()
 
     async def apply(
         self,
@@ -316,9 +320,14 @@ class EngineLifecycleSupervisor:
         else:
             boundary = await self._stop_at_boundary(instance_id)
             causes = boundary.stop_causes()
-            if not boundary.node_was_running and state.in_progress_before:
-                # An earlier attempt of this command took its lease and never
-                # committed; with nothing running now, its process ended first.
+            if not boundary.node_was_running and (
+                state.in_progress_before
+                or (state.last_applied_is_running and instance_id not in self._started_here)
+            ):
+                # Either an earlier attempt of this command took its lease and never
+                # committed, or the instance was last applied running and this
+                # process never started its node. With nothing running now, the node
+                # ended with an earlier process, at a moment nobody observed.
                 causes = frozenset({"process_exit_before_confirmation"})
         if not boundary.reaped:
             await self._store.record_stop_pending_reap(
@@ -522,6 +531,7 @@ class EngineLifecycleSupervisor:
                 lease_until_ns=self._lease_deadline_ns(),
             )
             handle: str | None = None
+            self._started_here.add(str(authority.deployment_instance_id))
             try:
                 handle = await self._engine.deploy(runtime_spec, credential, artifact)
                 receipt = await self._await_ready(authority)

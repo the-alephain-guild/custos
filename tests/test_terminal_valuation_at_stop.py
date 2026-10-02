@@ -941,22 +941,27 @@ async def test_a_stop_awaiting_its_reap_is_settled_by_the_stop_recovery_alone(
     assert _terminal(database)["reason_code"] == "process_exit_before_confirmation"
 
 
+def _ended_with_an_earlier_process(terminal: dict[str, Any]) -> None:
+    assert terminal["outcome"] == "valuation_unconfirmed"
+    assert terminal["reason_code"] == "process_exit_before_confirmation"
+    assert terminal["closes_generation"] == 1
+    # The node ended with the earlier process, at a moment nobody observed.
+    assert terminal["stop_effective_at"] is None
+    assert terminal["period"] is None
+
+
 @pytest.mark.asyncio
-async def test_a_kept_stop_of_an_instance_that_ran_in_an_earlier_process_is_not_a_process_exit(
+async def test_a_kept_stop_of_an_instance_that_ran_in_an_earlier_process_is_a_process_exit(
     tmp_path: Path,
 ) -> None:
-    """What the terminal fact says when the node ended with an earlier process.
+    """The node ended with the process that ran it, not at this stop.
 
     The instance ran in an earlier process. After a restart whose capability did
     not bind it, it was not started again, and its stop was kept (acknowledged,
-    nothing applied). A later restart that binds it applies the kept stop through
-    the real host. No lease was taken for the stop before, so the stop does not
-    count as interrupted: the host finds no node, and the cause is
-    ``engine_not_running_at_stop``, which also precedes
-    ``process_exit_before_confirmation`` in the contract's precedence. Its
-    ``stop_effective_at`` is the moment the kept stop was applied, not the
-    unknown moment the node ended. This test fixes that behaviour as found; the
-    plan 11 deviation log carries it for a ruling.
+    nothing applied). A later restart that binds it applies the kept stop
+    through the real host, which finds no node. The last running generation is
+    still the instance's latest applied command and this process never started
+    it, so the node ended when the earlier process did.
     """
     pytest.importorskip("nautilus_trader")
     from custos.engines.nautilus.host import NtTradingNodeHost
@@ -972,16 +977,160 @@ async def test_a_kept_stop_of_an_instance_that_ran_in_an_earlier_process_is_not_
     assert _outcomes(database, 2) == []
 
     _, bound = _store(database)
-    host = NtTradingNodeHost()
-    before = datetime.now(UTC)
-    restarted = await _restart(bound, _bound(stop), engine=host)
+    restarted = await _restart(bound, _bound(stop), engine=NtTradingNodeHost())
 
     assert [log["event"] for log in restarted.logs] == ["durable_command_recovered"]
     assert _outcomes(database, 2) == [("applied", "applied")]
+    _ended_with_an_earlier_process(_terminal(database))
+    assert await bound.list_recoverable_desired_command_identities() == ()
+
+
+@pytest.mark.asyncio
+async def test_a_stop_after_a_restart_refused_the_instance_is_a_process_exit(
+    tmp_path: Path,
+) -> None:
+    """The instance ran in an earlier process; this one refused to start it again.
+
+    On a one-node engine a restart recovers one running instance and refuses the
+    other as occupied, committing that refusal. The refused instance's node
+    ended with the earlier process, so its later stop finds no node here.
+    """
+    pytest.importorskip("nautilus_trader")
+    from custos.engines.nautilus.host import NtTradingNodeHost
+
+    database = tmp_path / "runner-state.sqlite3"
+    _, earlier = _store(database)
+    running = _command(1, "running")
+    await _apply(earlier, running, delivery_id="run-in-an-earlier-process")
+
+    _, restarted = _store(database)
+    host = NtTradingNodeHost()
+    supervisor = _supervisor(host, restarted)
+    await supervisor.commit_refusal(
+        delivery_id="startup-recovery",
+        verified=running,
+        reason_code="runtime_capacity_rejected:runner_engine_occupied",
+    )
+    stop = _command(2, "stopped")
+    await restarted.record_desired_command(
+        command=stop.command,
+        command_fingerprint=stop.command_fingerprint,
+        verification_receipt=stop.verification_receipt,
+    )
+
+    await supervisor.apply_non_running(delivery_id="stop-delivery", verified=stop)
+
+    assert _outcomes(database, 2) == [("applied", "applied")]
+    _ended_with_an_earlier_process(_terminal(database))
+
+
+@pytest.mark.asyncio
+async def test_a_stop_after_a_pause_in_an_earlier_process_is_still_not_running_at_stop(
+    tmp_path: Path,
+) -> None:
+    """A pause stopped the node at a known boundary; the restart changes nothing."""
+    pytest.importorskip("nautilus_trader")
+    from custos.engines.nautilus.host import NtTradingNodeHost
+
+    database = tmp_path / "runner-state.sqlite3"
+    _, earlier = _store(database)
+    await _apply(earlier, _command(1, "running"), delivery_id="run")
+    await _apply(earlier, _command(2, "paused"), delivery_id="pause")
+
+    _, restarted = _store(database)
+    stop = _command(3, "stopped")
+    await restarted.record_desired_command(
+        command=stop.command,
+        command_fingerprint=stop.command_fingerprint,
+        verification_receipt=stop.verification_receipt,
+    )
+    await _supervisor(NtTradingNodeHost(), restarted).apply_non_running(
+        delivery_id="stop-delivery", verified=stop
+    )
+
     terminal = _terminal(database)
-    assert terminal["outcome"] == "valuation_unconfirmed"
     assert terminal["reason_code"] == "engine_not_running_at_stop"
     assert terminal["closes_generation"] == 1
     assert terminal["stop_effective_at"] is not None
-    assert datetime.fromisoformat(terminal["stop_effective_at"].replace("Z", "+00:00")) >= before
-    assert await bound.list_recoverable_desired_command_identities() == ()
+
+
+class _NodeEngine:
+    """A sandbox engine whose node can end on its own while this process runs."""
+
+    def __init__(self) -> None:
+        self.handle: str | None = None
+
+    def supports_trading_mode(self, mode: str) -> bool:
+        return mode == "sandbox"
+
+    def supports_venue(self, venue: str, mode: str) -> bool:
+        return mode == "sandbox"
+
+    async def deploy(self, spec, credential, artifact) -> str:
+        self.handle = "node"
+        return self.handle
+
+    async def wait_ready(self, authority, *, timeout_secs):
+        from custos.core.engine_protocol import EngineReadinessChecks, EngineReadyReceipt
+
+        return EngineReadyReceipt.from_authority(
+            authority, checks=EngineReadinessChecks.all_ready(), ready_at_ns=1
+        )
+
+    async def stop_at_boundary(self, deployment_instance_id: str) -> EngineStopBoundary:
+        running = self.handle is not None
+        self.handle = None
+        now = datetime.now(UTC)
+        return _boundary(
+            stop_requested_at=now,
+            node_was_running=running,
+            stop_effective_at=now,
+            valuation=None,
+            valuation_failure="valuation_unavailable",
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_stop_of_a_node_that_ended_in_this_process_is_not_running_at_stop(
+    tmp_path: Path,
+) -> None:
+    """This process started the node and saw it end; that is not a process exit."""
+    from types import SimpleNamespace
+
+    database = tmp_path / "runner-state.sqlite3"
+    _, store = _store(database)
+    running = _command(1, "running")
+    await store.record_desired_command(
+        command=running.command,
+        command_fingerprint=running.command_fingerprint,
+        verification_receipt=running.verification_receipt,
+    )
+    await store.record_artifact_activation(
+        verified=running,
+        activation_id="activation-1",
+        artifact_identity_digest="c" * 64,
+        artifact_authority_digest="d" * 64,
+    )
+    engine = _NodeEngine()
+    supervisor = _supervisor(engine, store)
+    await supervisor.apply(
+        delivery_id="run",
+        verified=running,
+        runtime_spec=running.command.to_runtime_spec().model_dump(mode="json"),
+        credential={},
+        artifact=SimpleNamespace(activation_id="activation-1", strategy=object()),
+    )
+    engine.handle = None  # the node ends on its own, inside this process
+    stop = _command(2, "stopped")
+    await store.record_desired_command(
+        command=stop.command,
+        command_fingerprint=stop.command_fingerprint,
+        verification_receipt=stop.verification_receipt,
+    )
+
+    await supervisor.apply_non_running(delivery_id="stop-delivery", verified=stop)
+
+    terminal = _terminal(database)
+    assert terminal["reason_code"] == "engine_not_running_at_stop"
+    assert terminal["closes_generation"] == 1
+    assert terminal["stop_effective_at"] is not None
