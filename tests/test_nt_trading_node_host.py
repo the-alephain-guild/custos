@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from uuid import NAMESPACE_URL, uuid5
+from types import SimpleNamespace
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import pytest
 import structlog
@@ -708,6 +709,96 @@ async def test_an_occupied_runner_refuses_a_second_instance_finally_before_its_s
         assert len(FakeLiveNode.instances) == 1
     finally:
         await host.stop(first)
+
+
+@pytest.mark.asyncio
+async def test_the_node_holder_is_named_and_marked_releasing_while_it_stops(monkeypatch) -> None:
+    from custos.core.engine_protocol import EngineNodeCapacity, EngineNodeHolder
+
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    assert isinstance(host, EngineNodeCapacity)
+    assert host.node_holder() is None
+    holder = _deployment_instance_id("holder")
+    await host.deploy(_spec("holder"), _credential(), _Artifact())
+    assert host.node_holder() == EngineNodeHolder(deployment_instance_id=holder, releasing=False)
+
+    shutdown_entered = asyncio.Event()
+    shutdown_may_finish = asyncio.Event()
+    original = host._apply_shutdown_policy
+
+    async def held_shutdown(*args, **kwargs):
+        shutdown_entered.set()
+        await shutdown_may_finish.wait()
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(host, "_apply_shutdown_policy", held_shutdown)
+    stopping = asyncio.create_task(host.stop(holder))
+    await asyncio.wait_for(shutdown_entered.wait(), timeout=1)
+
+    assert host.node_holder() == EngineNodeHolder(deployment_instance_id=holder, releasing=True)
+    shutdown_may_finish.set()
+    await asyncio.wait_for(stopping, timeout=5)
+    assert host.node_holder() is None
+
+
+@pytest.mark.asyncio
+async def test_an_occupied_refusal_from_the_host_is_final_and_spends_no_restart(
+    monkeypatch,
+) -> None:
+    """A node started between the coordinator's check and the deploy is still
+    refused once, with no restart recorded and no backoff."""
+    from custos.core.engine_lifecycle import (
+        EngineLifecycleConfig,
+        EngineLifecycleQuarantined,
+        EngineLifecycleSupervisor,
+    )
+    from tests.test_engine_lifecycle import _capability, _Store
+
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    occupant = _deployment_instance_id("budget-occupant")
+    await host.deploy(_spec("budget-occupant"), _credential(), _Artifact())
+    contender_spec = _spec("budget-contender")
+    verified = SimpleNamespace(
+        command=SimpleNamespace(
+            deployment_instance_id=UUID(contender_spec["deployment_instance_id"]),
+            deployment_spec_id=UUID(contender_spec["deployment_spec_id"]),
+            deployment_spec_digest=contender_spec["deployment_spec_digest"],
+            generation=1,
+            trading_mode="sandbox",
+            lifecycle_state="running",
+        ),
+        command_fingerprint="b" * 64,
+    )
+    store = _Store()
+    slept: list[float] = []
+
+    async def record_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    supervisor = EngineLifecycleSupervisor(
+        engine=host,
+        state_store=store,
+        artifact_capability=_capability(),
+        config=EngineLifecycleConfig(restart_budget=3),
+        sleep=record_sleep,
+    )
+    try:
+        with pytest.raises(EngineLifecycleQuarantined, match="runner_engine_occupied"):
+            await supervisor.apply(
+                delivery_id="delivery-contender",
+                verified=verified,
+                runtime_spec=contender_spec,
+                credential=_credential(),
+                artifact=_RenewableArtifact(),
+            )
+        assert "restart" not in store.events
+        assert slept == []
+        assert store.terminal == [("retry_exhausted", "runner_engine_occupied")]
+        assert list(host._active_nodes) == [occupant]
+    finally:
+        await host.stop(occupant)
 
 
 @pytest.mark.asyncio

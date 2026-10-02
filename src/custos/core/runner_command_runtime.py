@@ -34,7 +34,7 @@ from custos.core.engine_lifecycle import (
     EngineLifecycleQuarantined,
     EngineLifecycleSupervisor,
 )
-from custos.core.engine_protocol import EngineReadyReceipt
+from custos.core.engine_protocol import EngineNodeCapacity, EngineReadyReceipt
 from custos.core.log import get_logger
 from custos.core.runner_command_intake import (
     CommandDeliveryPolicy,
@@ -60,6 +60,31 @@ class RunnerCredentialResolutionUnavailable(RunnerCredentialResolutionError):
 
 class RunnerCredentialResolutionRejected(RunnerCredentialResolutionError):
     """The signed scope does not resolve to an authorized local credential."""
+
+
+class RunnerEngineCapacityError(RuntimeError):
+    """The runner's one engine node is held by another deployment instance."""
+
+    reason_code: str
+
+    def __init__(self, holder_instance_id: str) -> None:
+        super().__init__(
+            f"{self.reason_code}: deployment instance {holder_instance_id!r} holds the "
+            "runner's engine node"
+        )
+        self.holder_instance_id = holder_instance_id
+
+
+class RunnerEngineOccupied(RunnerEngineCapacityError):
+    """Another instance holds the node; this command cannot start here."""
+
+    reason_code = "runner_engine_occupied"
+
+
+class RunnerEngineReleasing(RunnerEngineCapacityError):
+    """The instance holding the node is being stopped; the node will be free."""
+
+    reason_code = "runner_engine_releasing"
 
 
 class RunnerCredentialResolverV1(Protocol):
@@ -102,6 +127,7 @@ class RunnerCommandRuntimeCoordinator:
         credential_resolver: RunnerCredentialResolverV1,
         engine_lifecycle: EngineLifecycleSupervisor,
         delivery_policy: CommandDeliveryPolicy,
+        node_capacity: EngineNodeCapacity | None = None,
     ) -> None:
         self._intake = intake
         self._durability = durability
@@ -118,6 +144,8 @@ class RunnerCommandRuntimeCoordinator:
         if not callable(supervise_once):
             raise TypeError("engine lifecycle supervise_once must be callable")
         self._policy = delivery_policy
+        # The engine's one-node limit, or None for an engine without one.
+        self._node_capacity = node_capacity
         self._engine_supervisions: dict[object, asyncio.Task[None]] = {}
         self._engine_supervision_failures: asyncio.Queue[BaseException] = asyncio.Queue()
         # One lifecycle operation per deployment at a time, and the background
@@ -181,6 +209,12 @@ class RunnerCommandRuntimeCoordinator:
         except (RunnerCredentialResolutionRejected, ArtifactRuntimeActivationError) as error:
             reason = self._reason_code("runtime_authority_rejected", error)
             return await self._terminal_rejection(delivery, intake, verified, reason)
+        except RunnerEngineOccupied as error:
+            reason = f"runtime_capacity_rejected:{error.reason_code}"
+            return await self._terminal_rejection(delivery, intake, verified, reason)
+        except RunnerEngineReleasing as error:
+            reason = f"runtime_capacity_unavailable:{error.reason_code}"
+            return await self._retry_or_exhaust(delivery, intake, verified, reason)
         except EngineLifecycleQuarantined as error:
             await delivery.term()
             return RunnerCommandRuntimeResult(
@@ -327,6 +361,7 @@ class RunnerCommandRuntimeCoordinator:
         ActivatedStrategyArtifact | ActivatedDevelopmentStrategyArtifact,
         EngineReadyReceipt,
     ]:
+        self._require_node_capacity(verified)
         if verified.command.is_development_source:
             development_artifact_runtime = self._development_artifact_runtime
             if development_artifact_runtime is None:
@@ -392,6 +427,34 @@ class RunnerCommandRuntimeCoordinator:
             artifact_policy_id=artifact_policy_id,
         )
         return prepared, activated, ready
+
+    def _require_node_capacity(self, verified: VerifiedRunnerCommand) -> None:
+        """Refuse before anything is resolved, activated or imported.
+
+        A runner whose engine runs one node at a time cannot take a second
+        instance while the first is held: the refusal is final for the command.
+        A holder that is already being stopped frees the node shortly, so that
+        command is retried. A new generation of the holding instance itself is
+        the ordinary replacement path and proceeds.
+        """
+
+        capacity = self._node_capacity
+        if capacity is None:
+            return
+        holder = capacity.node_holder()
+        instance = str(verified.command.deployment_instance_id)
+        if holder is None or holder.deployment_instance_id == instance:
+            return
+        _slog.warning(
+            "runner_command_engine_node_held",
+            deployment_instance_id=instance,
+            generation=verified.command.generation,
+            holder_deployment_instance_id=holder.deployment_instance_id,
+            holder_releasing=holder.releasing,
+        )
+        if holder.releasing:
+            raise RunnerEngineReleasing(holder.deployment_instance_id)
+        raise RunnerEngineOccupied(holder.deployment_instance_id)
 
     def _start_engine_supervision(
         self,
@@ -588,6 +651,9 @@ class RunnerCommandRuntimeCoordinator:
 
 
 __all__ = [
+    "RunnerEngineCapacityError",
+    "RunnerEngineOccupied",
+    "RunnerEngineReleasing",
     "RunnerCommandRuntimeCoordinator",
     "RunnerCommandRuntimeResult",
     "RunnerCommandRuntimeStatus",

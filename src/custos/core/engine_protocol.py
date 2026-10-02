@@ -398,3 +398,25 @@ class ExecutionEngineProtocol(Protocol):
         self,
         authority: EngineLifecycleAuthority,
     ) -> EngineTerminalEvent: ...
+
+
+@dataclass(frozen=True, slots=True)
+class EngineNodeHolder:
+    """The deployment instance that holds an engine's only node, and whether it
+    is already being stopped."""
+
+    deployment_instance_id: str
+    releasing: bool
+
+
+@runtime_checkable
+class EngineNodeCapacity(Protocol):
+    """An engine that runs at most one deployment instance per runner process.
+
+    The command coordinator asks it, before anything is activated or imported,
+    whether another instance holds the node: a held node refuses the command
+    outright, a node being released is retried. An engine without this limit
+    does not implement the protocol.
+    """
+
+    def node_holder(self) -> EngineNodeHolder | None: ...

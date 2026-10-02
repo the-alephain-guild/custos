@@ -276,3 +276,21 @@ def test_strategy_release_runtime_composes_only_with_complete_local_trust(
     assert isinstance(resolver, CrucibleStrategyReleaseArtifactResolverV1)
     assert runtime is not None
     assert runtime.capability_ready is True
+
+
+def test_the_nautilus_engine_composes_only_with_a_host_that_names_its_node_holder() -> None:
+    from custos.cli._daemon import _engine_node_capacity
+    from custos.engines.nautilus.host import NtTradingNodeHost
+
+    host = NtTradingNodeHost()
+
+    assert _engine_node_capacity("nautilus", host) is host
+    with pytest.raises(RuntimeError, match="does not report which instance holds its node"):
+        _engine_node_capacity("nautilus", object())
+
+
+def test_the_sandbox_simulator_has_no_one_node_limit() -> None:
+    from custos.cli._daemon import _engine_node_capacity
+    from custos.engines.nautilus.host import SandboxSimulationHost
+
+    assert _engine_node_capacity("sandbox-sim", SandboxSimulationHost()) is None

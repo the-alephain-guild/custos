@@ -31,6 +31,7 @@ from custos.core.engine_protocol import (
     ConnectivityState,
     EngineDeploymentRefused,
     EngineLifecycleAuthority,
+    EngineNodeHolder,
     EngineReadinessChecks,
     EngineReadyReceipt,
     EngineStatus,
@@ -564,6 +565,9 @@ class NtTradingNodeHost:
         # without this they go unreliable on any real account and fail closed.
         self._settlement_currencies: dict[str, str] = {}
         self._shutdown_policies: dict[str, _ShutdownPolicy] = {}
+        # Instances whose node is being stopped. Such a node still holds the
+        # runner, but only until its stop completes.
+        self._stopping: set[str] = set()
         self._stop_timeout_secs = _STOP_TIMEOUT_SECS
         self._shutdown_poll_secs = 0.2
         self._shutdown_stable_polls = 3
@@ -657,6 +661,20 @@ class NtTradingNodeHost:
     def _release_execution_account_partition(self, deployment_instance_id: str) -> None:
         self._execution_account_partitions.pop(deployment_instance_id, None)
 
+    def node_holder(self) -> EngineNodeHolder | None:
+        """The instance whose node holds this runner, if any (see EngineNodeCapacity).
+
+        A node whose run has already ended no longer holds the runner, even before
+        its done-callback has removed it from the registry.
+        """
+        for instance, runtime in self._active_nodes.items():
+            if not runtime.task.done():
+                return EngineNodeHolder(
+                    deployment_instance_id=instance,
+                    releasing=instance in self._stopping,
+                )
+        return None
+
     def _require_the_only_node(self, deployment_instance_id: str) -> None:
         """Refuse a second node in this runner process.
 
@@ -668,18 +686,21 @@ class NtTradingNodeHost:
         also why ``run_async`` refuses a second hosted node. Nautilus's guidance is
         one node per process; a runner therefore hosts one deployment instance, and
         more instances run as more runner processes. Refusing here names the
-        instance that already holds the runner, before a node is built and has to be
-        disposed again.
+        instance that already holds the runner, before the contender's strategy is
+        built or a node is built and has to be disposed again.
+
+        The refusal is final for this command: retrying cannot free the node, so it
+        must not spend the restart budget. The command coordinator normally refuses
+        earlier, before the artifact is activated; this is the guard for a node that
+        started in between.
         """
-        held = [
-            instance for instance, runtime in self._active_nodes.items() if not runtime.task.done()
-        ]
-        if held:
-            raise RuntimeError(
-                f"deployment instance {held[0]!r} already holds this runner's event loop; "
-                "nautilus runs one live node per process, so stop it or run another "
-                "runner process before deploying "
-                f"{deployment_instance_id!r}"
+        holder = self.node_holder()
+        if holder is not None:
+            raise EngineDeploymentRefused(
+                "runner_engine_occupied",
+                f"deployment instance {holder.deployment_instance_id!r} already holds this "
+                "runner's event loop; nautilus runs one live node per process, so stop it "
+                f"or run another runner process before deploying {deployment_instance_id!r}",
             )
 
     async def deploy(
@@ -703,6 +724,13 @@ class NtTradingNodeHost:
 
         if not artifact.activation_id.strip():
             raise RuntimeError("verified artifact activation identity is required")
+        # The runner and the message bus are both thread-local in 2.0, so two hosted
+        # nodes on one event loop would cross-wire each other's events rather than
+        # fail. Nautilus refuses the second run for that reason; this refuses it
+        # first, where the message can say which deployment already holds the loop
+        # and before anything of the contender is built. Running more than one
+        # deployment per runner needs a thread or a process per node.
+        self._require_the_only_node(deployment_instance_id)
         create_strategy = getattr(artifact, "create_strategy", None)
         strategy = create_strategy() if callable(create_strategy) else artifact.strategy
 
@@ -719,14 +747,6 @@ class NtTradingNodeHost:
             trading_mode, spec, credential, venue
         )
         runner_safety_boundary = await self._build_runner_safety_boundary(spec)
-
-        # The runner and the message bus are both thread-local in 2.0, so two hosted
-        # nodes on one event loop would cross-wire each other's events rather than
-        # fail. Nautilus refuses the second run for that reason; this refuses it here,
-        # where the message can say which deployment already holds the loop instead of
-        # naming a generic nautilus constraint. Running more than one deployment per
-        # runner needs a thread or a process per node, which is not this change.
-        self._require_the_only_node(deployment_instance_id)
 
         # ps runner.py._create_node_config exposes the NT startup timeouts and the
         # reconciliation lookback to strategy authors; custos accepts the same
@@ -1172,9 +1192,14 @@ class NtTradingNodeHost:
             deployment_instance_id,
             _ShutdownPolicy(position_policy="preserve", confirmation_timeout_secs=30.0),
         )
-        # Before the node is asked to stop, while the strategy is still Running and
-        # therefore still receiving the events these bridges depend on.
-        await self._apply_shutdown_policy(deployment_instance_id, runtime, policy)
+        self._stopping.add(deployment_instance_id)
+        try:
+            # Before the node is asked to stop, while the strategy is still Running
+            # and therefore still receiving the events these bridges depend on.
+            await self._apply_shutdown_policy(deployment_instance_id, runtime, policy)
+        except BaseException:
+            self._stopping.discard(deployment_instance_id)
+            raise
         try:
             # The handle is how a hosted run is stopped: run_async owns the node, so
             # calling stop on the node itself would be refused. Awaiting the task is
@@ -1212,6 +1237,7 @@ class NtTradingNodeHost:
             self._containment_confirmed.discard(deployment_instance_id)
             self._lifecycle_authorities.pop(deployment_instance_id, None)
             self._shutdown_policies.pop(deployment_instance_id, None)
+            self._stopping.discard(deployment_instance_id)
         _log.info("nt_stop_completed", deployment_instance_id=deployment_instance_id)
 
     def _dispose_node(self, deployment_instance_id: str, node: object) -> None:

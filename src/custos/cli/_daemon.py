@@ -55,7 +55,11 @@ from custos.contracts.crucible_runner_safety_policy import (
 )
 from custos.core.credential_resolver import VaultRunnerCredentialResolverV1
 from custos.core.engine_lifecycle import EngineLifecycleConfig, EngineLifecycleSupervisor
-from custos.core.engine_protocol import EngineDependencyUnavailable, ExecutionEngineProtocol
+from custos.core.engine_protocol import (
+    EngineDependencyUnavailable,
+    EngineNodeCapacity,
+    ExecutionEngineProtocol,
+)
 from custos.core.engine_safety import EngineSafetySupervisor
 from custos.core.fallback_breaker import FallbackBreaker
 from custos.core.log import get_logger
@@ -362,6 +366,22 @@ def _build_host(
             capability_receipt=capability_receipt,
         )
     raise SystemExit(f"unhandled engine {engine!r}")
+
+
+def _engine_node_capacity(engine: str, host: object) -> EngineNodeCapacity | None:
+    """The one-node limit the command coordinator must check before activation.
+
+    The nautilus engine runs one node per runner process, so its host has to say
+    which instance holds it; a host that cannot say so is refused at startup
+    rather than discovered at the second deployment. The sandbox simulator has no
+    such limit.
+    """
+
+    if engine != "nautilus":
+        return None
+    if not isinstance(host, EngineNodeCapacity):
+        raise RuntimeError("the nautilus engine host does not report which instance holds its node")
+    return host
 
 
 async def _recover_durable_running_commands(
@@ -1178,6 +1198,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 credential_resolver=VaultRunnerCredentialResolverV1(_build_vault(args)),
                 engine_lifecycle=lifecycle,
                 delivery_policy=delivery_policy,
+                node_capacity=_engine_node_capacity(getattr(args, "engine", "nautilus"), host),
             )
             fact_production = RunnerFactProductionLoop(
                 host=host,
