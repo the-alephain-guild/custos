@@ -1260,6 +1260,42 @@ async def test_a_reap_timeout_keeps_the_node_and_never_reruns_the_shutdown_polic
 
 
 @pytest.mark.asyncio
+async def test_a_node_awaiting_its_reap_holds_the_runner_as_releasing(monkeypatch) -> None:
+    """A start meanwhile is retryable: the node is on its way out, not occupying."""
+    from custos.core.engine_protocol import EngineNodeHolder
+
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    strategy = _ShutdownAwareStrategy()
+    host = NtTradingNodeHost(portfolio_snapshot_provider=_BoundaryReadingProvider())
+    host._stop_timeout_secs = 0.05
+    host._reap_timeout_secs = 0.05
+    host._shutdown_poll_secs = 0
+    host._shutdown_stable_polls = 1
+    spec = _spec("boundary-reap-holder")
+    deployment_instance_id = spec["deployment_instance_id"]
+    await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
+    node = host._active_nodes[deployment_instance_id].node
+    strategy.node = node
+    node.stop_hangs = True
+    node.cancel_hangs = True
+
+    try:
+        boundary = await host.stop_at_boundary(deployment_instance_id)
+    finally:
+        asyncio.get_running_loop().call_later(5, node.released.set)
+
+    assert boundary.reaped is False
+    assert host.node_holder() == EngineNodeHolder(
+        deployment_instance_id=deployment_instance_id, releasing=True
+    )
+
+    node.released.set()
+    await boundary.reap
+    assert host.node_holder() is None
+    assert deployment_instance_id not in host._stopping
+
+
+@pytest.mark.asyncio
 async def test_a_stop_boundary_for_an_unknown_instance_reports_nothing_running() -> None:
     host = NtTradingNodeHost()
 
