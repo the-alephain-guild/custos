@@ -888,6 +888,12 @@ class _CommitRecordingStore:
         self.commits.append(result)
         return result
 
+    async def commit_stop_applied_and_enqueue_terminal(self, **kwargs):
+        # A stop commits through its own path, which also seals the stream.
+        result = await self._store.commit_stop_applied_and_enqueue_terminal(**kwargs)
+        self.commits.append(result)
+        return result
+
 
 async def _restart(
     store,
