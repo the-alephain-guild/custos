@@ -1114,6 +1114,7 @@ async def test_a_stale_recovery_does_not_stop_the_newer_generation_it_lost_to(tm
     started = await restarted.process(_Delivery())
     assert started.status is RunnerCommandRuntimeStatus.APPLIED_ACKED
     assert engine.handle is not None
+    watcher = restarted._engine_supervisions[newer.command.deployment_instance_id]
 
     with capture_logs() as logs:
         restarted.schedule_recoveries([kept])
@@ -1121,6 +1122,8 @@ async def test_a_stale_recovery_does_not_stop_the_newer_generation_it_lost_to(tm
 
     assert engine.stop_calls == 0, "the stale stop must not touch the newer engine"
     assert engine.handle is not None
+    assert restarted._engine_supervisions.get(newer.command.deployment_instance_id) is watcher
+    assert not watcher.done(), "the newer generation is still supervised"
     superseded = [log for log in logs if log["event"] == "durable_command_recovery_superseded"]
     assert [(log["generation"], log["log_level"]) for log in superseded] == [(2, "warning")]
     facts = _lifecycle_facts(database)
