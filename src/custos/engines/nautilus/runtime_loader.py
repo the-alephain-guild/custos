@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import sys
 from collections.abc import Mapping
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
 from custos_toolkit.contracts.strategy_execution import (
@@ -15,6 +16,26 @@ from custos_toolkit.contracts.strategy_execution import (
 
 class NautilusRuntimeEntryPointError(RuntimeError):
     """A verified artifact could not satisfy the Nautilus runtime ABI."""
+
+
+def _strategy_registration_scope() -> AbstractContextManager[None]:
+    """A strategy registry private to one load.
+
+    A runner process loads one verified artifact after another, and two of them
+    may register the same strategy name from different sources: a new version of
+    a strategy, or two producers' strategies that share a name. Each load
+    therefore registers into, and builds from, a registry of its own. Without
+    the Nautilus toolkit installed no artifact can register a strategy, so there
+    is no registry to scope.
+    """
+
+    try:
+        from custos_toolkit_nautilus.adapter.registry import strategy_registration_scope
+    except ModuleNotFoundError as error:
+        if error.name != "custos_toolkit_nautilus":
+            raise
+        return nullcontext()
+    return strategy_registration_scope()
 
 
 class NautilusRuntimeEntryPointLoaderV1:
@@ -52,36 +73,14 @@ class NautilusRuntimeEntryPointLoaderV1:
         try:
             sys.path.insert(0, str(root))
             importlib.invalidate_caches()
-            module = importlib.import_module(module_name)
-            module_file = getattr(module, "__file__", None)
-            if module_file is None:
-                raise NautilusRuntimeEntryPointError("runtime adapter module has no file origin")
-            try:
-                Path(module_file).resolve(strict=True).relative_to(root)
-            except (OSError, ValueError) as error:
-                raise NautilusRuntimeEntryPointError(
-                    "runtime adapter module did not resolve from the immutable activation"
-                ) from error
-
-            try:
-                exported = getattr(module, attribute_name)
-            except AttributeError as error:
-                raise NautilusRuntimeEntryPointError(
-                    "verified runtime adapter attribute is absent"
-                ) from error
-            adapter = exported() if isinstance(exported, type) else exported
-            build_config = getattr(adapter, "build_config", None)
-            build_strategy = getattr(adapter, "build_strategy", None)
-            if not callable(build_config) or not callable(build_strategy):
-                raise NautilusRuntimeEntryPointError(
-                    "runtime entry point does not implement StrategyRuntimeAdapterV1"
+            with _strategy_registration_scope():
+                strategy = self._import_and_build(
+                    root=root,
+                    module_name=module_name,
+                    attribute_name=attribute_name,
+                    effective_config=effective_config,
+                    execution_context=execution_context,
                 )
-            if not isinstance(effective_config, Mapping):
-                raise NautilusRuntimeEntryPointError("effective strategy config is not an object")
-            config = build_config(effective_config, execution_context)
-            strategy = build_strategy(config)
-            if strategy is None:
-                raise NautilusRuntimeEntryPointError("runtime adapter returned no strategy")
             loaded = True
             return strategy
         finally:
@@ -91,6 +90,47 @@ class NautilusRuntimeEntryPointLoaderV1:
                     if name == top_level_package or name.startswith(f"{top_level_package}."):
                         sys.modules.pop(name, None)
                 sys.modules.update(previous_modules)
+
+    @staticmethod
+    def _import_and_build(
+        *,
+        root: Path,
+        module_name: str,
+        attribute_name: str,
+        effective_config: FrozenJsonObject,
+        execution_context: StrategyExecutionContextV1,
+    ) -> object:
+        module = importlib.import_module(module_name)
+        module_file = getattr(module, "__file__", None)
+        if module_file is None:
+            raise NautilusRuntimeEntryPointError("runtime adapter module has no file origin")
+        try:
+            Path(module_file).resolve(strict=True).relative_to(root)
+        except (OSError, ValueError) as error:
+            raise NautilusRuntimeEntryPointError(
+                "runtime adapter module did not resolve from the immutable activation"
+            ) from error
+
+        try:
+            exported = getattr(module, attribute_name)
+        except AttributeError as error:
+            raise NautilusRuntimeEntryPointError(
+                "verified runtime adapter attribute is absent"
+            ) from error
+        adapter = exported() if isinstance(exported, type) else exported
+        build_config = getattr(adapter, "build_config", None)
+        build_strategy = getattr(adapter, "build_strategy", None)
+        if not callable(build_config) or not callable(build_strategy):
+            raise NautilusRuntimeEntryPointError(
+                "runtime entry point does not implement StrategyRuntimeAdapterV1"
+            )
+        if not isinstance(effective_config, Mapping):
+            raise NautilusRuntimeEntryPointError("effective strategy config is not an object")
+        config = build_config(effective_config, execution_context)
+        strategy = build_strategy(config)
+        if strategy is None:
+            raise NautilusRuntimeEntryPointError("runtime adapter returned no strategy")
+        return strategy
 
 
 __all__ = [

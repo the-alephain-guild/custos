@@ -10,12 +10,22 @@ Strategies register themselves and can be instantiated via:
 Auto-discovery:
 When this module is imported, it automatically scans for strategy modules
 in known locations and imports them to trigger registration.
+
+Registration scope:
+Inside ``strategy_registration_scope()`` every registration and lookup uses a
+registry private to that scope, and discovery is never triggered. A process
+that loads one verified artifact after another (the Custos runner) wraps each
+load in a scope, so two artifacts that register the same name from different
+sources do not collide. Outside a scope the process-wide registry and its
+behaviour are unchanged.
 """
 
 import logging
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from hashlib import sha256
 from inspect import getsourcefile
 from pathlib import Path
@@ -34,15 +44,48 @@ from custos_toolkit_nautilus.adapter.trading_config import (
 # Note: Uses NautilusStrategyCore (minimal interface) to support both:
 #   - NautilusBaseStrategy subclasses (feature-rich)
 #   - Custom strategies extending NautilusStrategyCore directly (maximum flexibility)
-_STRATEGY_REGISTRY: dict[
-    str,
-    tuple[
-        type[NautilusStrategyCore],
-        type[NautilusTradingStrategyConfig],
-        Callable[[ConfigWrapper], object],  # parameters_builder
-        tuple[str, str, str],
-    ],
-] = {}
+_RegistryEntry = tuple[
+    type[NautilusStrategyCore],
+    type[NautilusTradingStrategyConfig],
+    Callable[[ConfigWrapper], object],  # parameters_builder
+    tuple[str, str, str],
+]
+_STRATEGY_REGISTRY: dict[str, _RegistryEntry] = {}
+
+# The registry of the innermost active ``strategy_registration_scope()``, if any.
+_SCOPED_REGISTRY: ContextVar[dict[str, _RegistryEntry] | None] = ContextVar(
+    "custos_toolkit_nautilus_scoped_strategy_registry",
+    default=None,
+)
+
+
+@contextmanager
+def strategy_registration_scope() -> Iterator[None]:
+    """Register and look up strategies in a registry private to this scope.
+
+    Inside the scope, ``register_strategy``, ``unregister_strategy``,
+    ``create_strategy``, ``get_strategy_info``, ``list_strategies`` and
+    ``is_registered`` act on a fresh registry that starts empty and is discarded
+    when the scope ends, whether it ends normally or by an exception; nothing
+    registered inside reaches the process-wide registry. Discovery is never
+    triggered inside a scope. A name registered twice inside one scope from
+    different sources is still refused.
+
+    Scopes do not nest: opening one inside another raises ``RuntimeError``.
+    """
+
+    if _SCOPED_REGISTRY.get() is not None:
+        raise RuntimeError("strategy registration scopes cannot be nested")
+    token = _SCOPED_REGISTRY.set({})
+    try:
+        yield
+    finally:
+        _SCOPED_REGISTRY.reset(token)
+
+
+def _active_registry() -> dict[str, _RegistryEntry]:
+    scoped = _SCOPED_REGISTRY.get()
+    return _STRATEGY_REGISTRY if scoped is None else scoped
 
 
 class _RegisteredConfigFactory(Protocol):
@@ -181,7 +224,9 @@ def discover_strategies() -> int:
 
 
 def _ensure_discovery() -> None:
-    """Ensure strategies have been discovered. Called lazily."""
+    """Ensure strategies have been discovered. Called lazily, never inside a scope."""
+    if _SCOPED_REGISTRY.get() is not None:
+        return
     if not _DISCOVERY_DONE:
         discover_strategies()
 
@@ -215,9 +260,10 @@ def register_strategy(
         _component_fingerprint(config_class),
         _component_fingerprint(parameters_builder),
     )
-    if name in _STRATEGY_REGISTRY:
-        if _STRATEGY_REGISTRY[name][3] == fingerprint:
-            _STRATEGY_REGISTRY[name] = (
+    registry = _active_registry()
+    if name in registry:
+        if registry[name][3] == fingerprint:
+            registry[name] = (
                 strategy_class,
                 config_class,
                 parameters_builder,
@@ -225,7 +271,7 @@ def register_strategy(
             )
             return
         raise ValueError(f"Strategy '{name}' is already registered")
-    _STRATEGY_REGISTRY[name] = (
+    registry[name] = (
         strategy_class,
         config_class,
         parameters_builder,
@@ -257,9 +303,10 @@ def unregister_strategy(name: str) -> None:
     Raises:
         KeyError: If strategy is not registered
     """
-    if name not in _STRATEGY_REGISTRY:
+    registry = _active_registry()
+    if name not in registry:
         raise KeyError(f"Strategy '{name}' is not registered")
-    del _STRATEGY_REGISTRY[name]
+    del registry[name]
 
 
 def create_strategy(
@@ -305,11 +352,12 @@ def create_strategy(
     # Lazy discovery on first call
     _ensure_discovery()
 
-    if name not in _STRATEGY_REGISTRY:
-        available = list(_STRATEGY_REGISTRY.keys())
+    registry = _active_registry()
+    if name not in registry:
+        available = list(registry.keys())
         raise ValueError(f"Unknown strategy: '{name}'. Available: {available}")
 
-    strategy_class, config_class, parameters_builder, _fingerprint = _STRATEGY_REGISTRY[name]
+    strategy_class, config_class, parameters_builder, _fingerprint = registry[name]
 
     # Option 1: Pre-built config - use directly
     if config is not None:
@@ -345,10 +393,11 @@ def get_strategy_info(name: str) -> dict[str, object]:
     Raises:
         KeyError: If strategy is not registered
     """
-    if name not in _STRATEGY_REGISTRY:
+    registry = _active_registry()
+    if name not in registry:
         raise KeyError(f"Strategy '{name}' is not registered")
 
-    strategy_class, config_class, parameters_builder, _fingerprint = _STRATEGY_REGISTRY[name]
+    strategy_class, config_class, parameters_builder, _fingerprint = registry[name]
     return {
         "name": name,
         "strategy_class": strategy_class,
@@ -365,7 +414,7 @@ def list_strategies() -> list[str]:
         List of strategy names
     """
     _ensure_discovery()
-    return list(_STRATEGY_REGISTRY.keys())
+    return list(_active_registry().keys())
 
 
 def is_registered(name: str) -> bool:
@@ -379,4 +428,4 @@ def is_registered(name: str) -> bool:
         True if registered
     """
     _ensure_discovery()
-    return name in _STRATEGY_REGISTRY
+    return name in _active_registry()

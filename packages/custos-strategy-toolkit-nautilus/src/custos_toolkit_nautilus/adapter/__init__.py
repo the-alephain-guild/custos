@@ -70,6 +70,7 @@ from .registry import (
     is_registered,
     list_strategies,
     register_strategy,
+    strategy_registration_scope,
     unregister_strategy,
 )
 from .signal_processor import SignalProcessorConfig, SignalProcessorStrategy
@@ -139,6 +140,7 @@ __all__ = [
     "list_strategies",
     "get_strategy_info",
     "is_registered",
+    "strategy_registration_scope",
     # Utils
     "deep_asdict",
     "derive_instrument_id",
