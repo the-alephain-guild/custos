@@ -192,3 +192,88 @@ async def test_the_daemon_schedules_recoveries_instead_of_waiting_for_them() -> 
     )
 
     assert runtime.scheduled == [UUID(int=2)]
+
+
+@pytest.mark.asyncio
+async def test_a_foreign_tenant_row_stops_every_kept_stop_from_being_reported(tmp_path) -> None:
+    import sqlite3
+
+    from custos.core.runner_fact import RunnerStateAuthorityError
+    from tests.test_runner_command_runtime_failure_modes import (
+        SECOND_INSTANCE,
+        _bound,
+        _deferred,
+        _lifecycle_command,
+        _lifecycle_facts,
+        _restart,
+    )
+    from tests.test_runner_fact_store import _runner_fact_store
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    kept = _lifecycle_command("stopped", 2)
+    await _deferred(store, kept)
+    with sqlite3.connect(database) as connection:
+        connection.row_factory = sqlite3.Row
+        row = dict(connection.execute("SELECT * FROM desired_deployments").fetchone())
+        row["deployment_instance_id"] = str(SECOND_INSTANCE)
+        row["tenant_id"] = "globex"
+        columns = ", ".join(row)
+        placeholders = ", ".join("?" for _ in row)
+        connection.execute(
+            f"INSERT INTO desired_deployments ({columns}) VALUES ({placeholders})",
+            tuple(row.values()),
+        )
+
+    with pytest.raises(RunnerStateAuthorityError):
+        await _restart(store, _bound(kept))
+
+    assert _lifecycle_facts(database) == []
+    assert (await store.load_engine_lifecycle_state(kept)).desired_status == "recorded"
+
+
+@pytest.mark.parametrize("bound_digest", ["matching", "different"])
+@pytest.mark.asyncio
+async def test_only_a_kept_stop_bound_for_its_own_instance_and_spec_is_reported(
+    tmp_path, bound_digest
+) -> None:
+    from tests.test_runner_command_runtime_failure_modes import (
+        SECOND_INSTANCE,
+        _deferred,
+        _InstanceCapability,
+        _lifecycle_command,
+        _lifecycle_facts,
+        _restart,
+    )
+    from tests.test_runner_fact_store import _runner_fact_store
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    bound = _lifecycle_command("stopped", 2)
+    unbound = _lifecycle_command("stopped", 2, instance=SECOND_INSTANCE)
+    await _deferred(store, bound)
+    await _deferred(store, unbound)
+    digest = bound.command.deployment_spec_digest if bound_digest == "matching" else "e" * 64
+
+    restarted = await _restart(
+        store, _InstanceCapability({bound.command.deployment_instance_id: digest})
+    )
+
+    reported = [fact["deployment_instance_id"] for fact in _lifecycle_facts(database)]
+    skipped = [
+        log["deployment_instance_id"]
+        for log in restarted.logs
+        if log["event"] == "durable_command_recovery_skipped"
+    ]
+    assert (await store.load_engine_lifecycle_state(unbound)).desired_status == "recorded"
+    if bound_digest == "matching":
+        assert reported == [str(bound.command.deployment_instance_id)]
+        assert skipped == [str(SECOND_INSTANCE)]
+        assert restarted.engine.stop_calls == 1
+    else:
+        assert reported == []
+        assert sorted(skipped) == sorted(
+            [str(bound.command.deployment_instance_id), str(SECOND_INSTANCE)]
+        )
+        assert restarted.engine.stop_calls == 0
+        assert (await store.load_engine_lifecycle_state(bound)).desired_status == "recorded"

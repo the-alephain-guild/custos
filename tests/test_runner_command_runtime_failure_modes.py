@@ -816,3 +816,460 @@ async def test_two_running_instances_recover_in_turn_and_the_recorded_one_is_ref
         f"apply:{OTHER_INSTANCE.int}",
         f"refusal:{INSTANCE.int}:runtime_capacity_rejected:runner_engine_occupied",
     ]
+
+
+# A stop, pause or archive acknowledged while its instance was unbound is reported
+# once a restart brings a capability that binds it: exactly once, with the same
+# signed lifecycle fact a bound runner would have produced at the time.
+
+UNBOUND_LIFECYCLE = "capability has no unique deployment_lifecycle binding for DeploymentInstance"
+SECOND_INSTANCE = UUID("20000000-0000-4000-8000-0000000000b2")
+
+
+def _lifecycle_command(lifecycle_state: str, generation: int, *, instance: UUID | None = None):
+    """A command for the fixture's instance (or another one), signed and verified."""
+    from uuid import NAMESPACE_URL, uuid5
+
+    from tests.test_runner_fact_store import _verified_command
+
+    def mutate(event) -> None:
+        payload = event["payload"]
+        payload["lifecycle_state"] = lifecycle_state
+        payload["generation"] = generation
+        event["aggregate_version"] = generation
+        if instance is not None:
+            payload["deployment_instance_id"] = str(instance)
+            event["aggregate_id"] = str(instance)
+            event["event_type"] = f"{event['event_type'].rsplit('.', 1)[0]}.{instance}"
+        event["event_id"] = str(
+            uuid5(NAMESPACE_URL, f"{event['aggregate_id']}:{generation}:{lifecycle_state}")
+        )
+
+    _, _, verified = _verified_command(mutate_event=mutate)
+    return verified
+
+
+async def _deferred(store, verified) -> None:
+    """Intake records the command; the unbound runner acknowledges and keeps it."""
+    await _recorded(store, verified)
+    result = await _subject(
+        [],
+        durability=store,
+        intake=_Intake(verified=verified),
+        binding_gap=UNBOUND_LIFECYCLE,
+    ).process(_Delivery())
+    assert result.status is RunnerCommandRuntimeStatus.DEFERRED_AWAITING_BINDING
+
+
+class _InstanceCapability:
+    """Binds the instances it names, each for one spec digest."""
+
+    def __init__(self, bound: dict[UUID, str]) -> None:
+        self.bound = bound
+
+    def require_scope_bindings(self, *, deployment_instance_id, deployment_spec_digest, **kwargs):
+        if self.bound.get(UUID(str(deployment_instance_id))) != deployment_spec_digest:
+            raise RunnerFactContractError(UNBOUND_LIFECYCLE)
+
+
+class _CommitRecordingStore:
+    """The real store, with every applied-outcome commit result kept for the test."""
+
+    def __init__(self, store) -> None:
+        self._store = store
+        self.commits: list = []
+
+    def __getattr__(self, name):
+        return getattr(self._store, name)
+
+    async def commit_applied_and_enqueue_lifecycle(self, **kwargs):
+        result = await self._store.commit_applied_and_enqueue_lifecycle(**kwargs)
+        self.commits.append(result)
+        return result
+
+
+async def _restart(
+    store,
+    capability,
+    *,
+    state_store=None,
+    lifecycle_store=None,
+    activating=None,
+    engine=None,
+):
+    """Restart a runner on ``store`` and let every startup recovery finish."""
+    from custos.cli._daemon import _recover_durable_running_commands
+    from tests.test_engine_recovery_persistence import supervisor
+
+    events: list[str] = []
+    engine = engine or _SandboxEngine()
+    restarted = RunnerCommandRuntimeCoordinator(
+        intake=_Intake(),
+        durability=store,
+        release_resolver=_RecordingResolver(events),
+        artifact_runtime=(
+            _ActivatingArtifactRuntime(events, store, activating)
+            if activating is not None
+            else _RecordingArtifactRuntime(events)
+        ),
+        entry_point_loader=object(),
+        credential_resolver=_CredentialResolver(),
+        engine_lifecycle=supervisor(lifecycle_store or store, engine),
+        delivery_policy=CommandDeliveryPolicy(in_progress_interval_seconds=0.01),
+        capability_binding=lambda verified: None,
+    )
+    with capture_logs() as logs:
+        await _recover_durable_running_commands(
+            state_store=state_store or store,
+            command_runtime=restarted,
+            capability=capability,
+        )
+        await asyncio.wait_for(restarted.recoveries_settled(), timeout=5)
+        stop = asyncio.Event()
+        stop.set()
+        await restarted.run_engine_supervision(stop)
+    return SimpleNamespace(
+        engine=engine,
+        events=events,
+        logs=[log for log in logs if log["event"].startswith("durable_command_recovery")],
+        all_logs=logs,
+    )
+
+
+def _bound(verified) -> _InstanceCapability:
+    return _InstanceCapability(
+        {verified.command.deployment_instance_id: verified.command.deployment_spec_digest}
+    )
+
+
+@pytest.mark.parametrize("lifecycle_state", ["stopped", "paused", "archived"])
+@pytest.mark.asyncio
+async def test_a_kept_non_running_command_is_reported_after_a_restart_that_binds_it(
+    tmp_path, lifecycle_state
+) -> None:
+    from tests.test_runner_fact_store import _runner_fact_store
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    kept = _lifecycle_command(lifecycle_state, 2)
+    await _deferred(store, kept)
+    assert _lifecycle_facts(database) == []
+
+    restarted = await _restart(store, _bound(kept))
+
+    assert restarted.engine.stop_calls == 1, "the instance is stopped once, a no-op here"
+    assert restarted.engine.deploy_calls == 0
+    assert restarted.events == [], "nothing is resolved or imported for a stop"
+    state = await store.load_engine_lifecycle_state(kept)
+    assert state.desired_status == "applied"
+    assert [(fact["lifecycle_state"], fact["outcome"]) for fact in _lifecycle_facts(database)] == [
+        (lifecycle_state, "applied")
+    ]
+    assert _command_outcome_count(database) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_kept_stop_is_reported_once_across_repeated_restarts(tmp_path) -> None:
+    from tests.test_runner_fact_store import _runner_fact_store
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    kept = _lifecycle_command("stopped", 2)
+    await _deferred(store, kept)
+
+    stops = []
+    for _restart_number in range(3):
+        restarted = await _restart(store, _bound(kept))
+        stops.append(restarted.engine.stop_calls)
+        listed = await store.list_recoverable_desired_command_identities()
+        assert kept.command.deployment_instance_id not in {
+            identity.deployment_instance_id for identity in listed
+        }, "a reported stop is no longer recoverable"
+
+    assert stops == [1, 0, 0]
+    assert [(fact["lifecycle_state"], fact["outcome"]) for fact in _lifecycle_facts(database)] == [
+        ("stopped", "applied")
+    ]
+    assert _command_outcome_count(database) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_reported_stop_listed_again_is_not_reported_twice(tmp_path) -> None:
+    from tests.test_runner_fact_store import _runner_fact_store
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    kept = _lifecycle_command("stopped", 2)
+    await _deferred(store, kept)
+    await _restart(store, _bound(kept))
+    assert len(_lifecycle_facts(database)) == 1
+
+    command = kept.command
+
+    class _ListsTheReportedStop:
+        """A listing that no longer filters the applied stop out."""
+
+        async def list_recoverable_desired_command_identities(self):
+            return (
+                SimpleNamespace(
+                    deployment_instance_id=command.deployment_instance_id,
+                    deployment_spec_id=command.deployment_spec_id,
+                    deployment_spec_digest=command.deployment_spec_digest,
+                    generation=command.generation,
+                    trading_mode=command.trading_mode,
+                    strategy_id=command.strategy_id,
+                    lifecycle_state=command.lifecycle_state,
+                ),
+            )
+
+        def __getattr__(self, name):
+            return getattr(store, name)
+
+    recording = _CommitRecordingStore(store)
+    again = await _restart(
+        store,
+        _bound(kept),
+        state_store=_ListsTheReportedStop(),
+        lifecycle_store=recording,
+    )
+
+    assert [result.committed for result in recording.commits] == [False]
+    assert [log["event"] for log in again.logs] == ["durable_command_recovered"]
+    assert len(_lifecycle_facts(database)) == 1
+    assert _command_outcome_count(database) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_kept_stop_still_unbound_after_a_restart_is_kept_and_logged(tmp_path) -> None:
+    from tests.test_runner_fact_store import _runner_fact_store
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    kept = _lifecycle_command("stopped", 2)
+    await _deferred(store, kept)
+
+    restarted = await _restart(store, _InstanceCapability({}))
+
+    assert restarted.engine.stop_calls == 0
+    assert (await store.load_engine_lifecycle_state(kept)).desired_status == "recorded"
+    skipped = [log for log in restarted.logs if log["event"] == "durable_command_recovery_skipped"]
+    assert [
+        (log["deployment_instance_id"], log["generation"], log["lifecycle_state"])
+        for log in skipped
+    ] == [(str(kept.command.deployment_instance_id), 2, "stopped")]
+    assert skipped[0]["binding_gap"] == UNBOUND_LIFECYCLE
+    assert _lifecycle_facts(database) == []
+    assert _command_outcome_count(database) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_kept_stop_superseded_while_unbound_is_never_reported(tmp_path) -> None:
+    from tests.test_runner_fact_store import _runner_fact_store
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    kept = _lifecycle_command("stopped", 2)
+    newer = _lifecycle_command("running", 3)
+    await _deferred(store, kept)
+    await _deferred(store, newer)
+
+    restarted = await _restart(store, _bound(newer), activating=newer)
+
+    assert restarted.engine.deploy_calls == 1
+    assert restarted.engine.stop_calls == 0
+    assert (await store.load_engine_lifecycle_state(newer)).desired_status == "applied"
+    facts = _lifecycle_facts(database)
+    assert [(fact["generation"], fact["lifecycle_state"], fact["outcome"]) for fact in facts] == [
+        (3, "running", "applied")
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_stale_recovery_does_not_stop_the_newer_generation_it_lost_to(tmp_path) -> None:
+    from tests.test_engine_recovery_persistence import supervisor
+    from tests.test_runner_fact_store import _runner_fact_store
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    kept = _lifecycle_command("stopped", 2)
+    newer = _lifecycle_command("running", 3)
+    await _deferred(store, kept)
+    # The restarted runner listed the kept stop, and before its recovery ran the
+    # newer start arrived, was recorded by intake and started the engine.
+    await _recorded(store, newer)
+    events: list[str] = []
+    engine = _SandboxEngine()
+    restarted = RunnerCommandRuntimeCoordinator(
+        intake=_Intake(verified=newer),
+        durability=store,
+        release_resolver=_RecordingResolver(events),
+        artifact_runtime=_ActivatingArtifactRuntime(events, store, newer),
+        entry_point_loader=object(),
+        credential_resolver=_CredentialResolver(),
+        engine_lifecycle=supervisor(store, engine),
+        delivery_policy=CommandDeliveryPolicy(in_progress_interval_seconds=0.01),
+        capability_binding=lambda verified: None,
+    )
+    started = await restarted.process(_Delivery())
+    assert started.status is RunnerCommandRuntimeStatus.APPLIED_ACKED
+    assert engine.handle is not None
+
+    with capture_logs() as logs:
+        restarted.schedule_recoveries([kept])
+        await asyncio.wait_for(restarted.recoveries_settled(), timeout=5)
+
+    assert engine.stop_calls == 0, "the stale stop must not touch the newer engine"
+    assert engine.handle is not None
+    superseded = [log for log in logs if log["event"] == "durable_command_recovery_superseded"]
+    assert [(log["generation"], log["log_level"]) for log in superseded] == [(2, "warning")]
+    facts = _lifecycle_facts(database)
+    assert [(fact["generation"], fact["lifecycle_state"]) for fact in facts] == [(3, "running")]
+    stop = asyncio.Event()
+    stop.set()
+    await restarted.run_engine_supervision(stop)
+
+
+class _GatedStopLifecycle(_OneNodeEngineLifecycle):
+    """A one-node engine whose stop of a never-started instance waits for the test."""
+
+    def __init__(self, events: list[str]) -> None:
+        super().__init__(events)
+        self.stop_gate = asyncio.Event()
+
+    async def apply_non_running(self, **kwargs):
+        instance = kwargs["verified"].command.deployment_instance_id
+        self.events.append(f"stop_begin:{instance.int}")
+        await self.stop_gate.wait()
+        self.events.append(f"stop_end:{instance.int}")
+
+
+@pytest.mark.asyncio
+async def test_a_kept_stop_does_not_hold_the_one_node_recovery_chain() -> None:
+    from custos.cli._daemon import _recover_durable_running_commands
+
+    stop_verified = SimpleNamespace(
+        command=SimpleNamespace(
+            deployment_instance_id=INSTANCE,
+            generation=2,
+            trading_mode="sandbox",
+            lifecycle_state="stopped",
+            is_development_source=False,
+        ),
+        command_fingerprint="c" * 64,
+    )
+    running_verified = _other_instance_command()
+    by_instance = {INSTANCE: stop_verified, OTHER_INSTANCE: running_verified}
+    status = {INSTANCE: "recorded", OTHER_INSTANCE: "applied"}
+
+    class StateStore:
+        async def list_recoverable_desired_command_identities(self):
+            return tuple(
+                SimpleNamespace(
+                    trading_mode="sandbox",
+                    deployment_instance_id=instance,
+                    deployment_spec_id=UUID(int=4),
+                    deployment_spec_digest="a" * 64,
+                    generation=by_instance[instance].command.generation,
+                    strategy_id=UUID(int=5),
+                    lifecycle_state=by_instance[instance].command.lifecycle_state,
+                )
+                for instance in (INSTANCE, OTHER_INSTANCE)
+            )
+
+        async def load_durable_desired_command(self, instance):
+            verified = by_instance[instance]
+            return SimpleNamespace(
+                command=verified.command,
+                command_fingerprint=verified.command_fingerprint,
+                verification_receipt=object(),
+            )
+
+        async def load_engine_lifecycle_state(self, verified):
+            return SimpleNamespace(desired_status=status[verified.command.deployment_instance_id])
+
+    events: list[str] = []
+    lifecycle = _GatedStopLifecycle(events)
+    subject = RunnerCommandRuntimeCoordinator(
+        intake=_Intake(),
+        durability=_Durability(events),
+        release_resolver=_Resolver(),
+        artifact_runtime=_ArtifactRuntime(),
+        entry_point_loader=object(),
+        credential_resolver=_CredentialResolver(),
+        engine_lifecycle=lifecycle,
+        delivery_policy=CommandDeliveryPolicy(in_progress_interval_seconds=0.01),
+        capability_binding=lambda verified: None,
+        node_capacity=lifecycle,
+    )
+
+    await _recover_durable_running_commands(
+        state_store=StateStore(),
+        command_runtime=subject,
+        capability=_BindingCapability(None),
+    )
+
+    async def running_applied() -> None:
+        while f"apply:{OTHER_INSTANCE.int}" not in events:
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(running_applied(), timeout=1)
+    assert f"stop_begin:{INSTANCE.int}" in events, "the stop runs alongside, not after"
+    assert f"stop_end:{INSTANCE.int}" not in events
+    lifecycle.stop_gate.set()
+    await asyncio.wait_for(subject.recoveries_settled(), timeout=5)
+    stop = asyncio.Event()
+    stop.set()
+    await subject.run_engine_supervision(stop)
+
+    assert f"stop_end:{INSTANCE.int}" in events
+    assert not [event for event in events if event.startswith("refusal:")]
+
+
+@pytest.mark.asyncio
+async def test_a_kept_stop_whose_report_cannot_be_signed_stays_kept(tmp_path) -> None:
+    from custos.core.runner_fact import RunnerStateStore
+    from tests.test_runner_fact_store import _runner_authority, _runner_fact_store
+
+    database = tmp_path / "runner-state.sqlite3"
+    outbox, signing_store = _runner_fact_store(database)
+    unsignable = _lifecycle_command("stopped", 2)
+    signable = _lifecycle_command("stopped", 2, instance=SECOND_INSTANCE)
+    await _deferred(signing_store, unsignable)
+    await _deferred(signing_store, signable)
+
+    def authority(verified):
+        # The binding the startup check saw is gone by the time the outcome is signed.
+        if verified.command.deployment_instance_id == unsignable.command.deployment_instance_id:
+            raise RunnerFactContractError(UNBOUND_LIFECYCLE)
+        return _runner_authority(verified)
+
+    store = RunnerStateStore(
+        outbox=outbox,
+        identity=signing_store._identity,
+        tenant_id="acme",
+        runner_id=unsignable.command.runner_id,
+        authority_resolver=authority,
+    )
+    capability = _InstanceCapability(
+        {
+            unsignable.command.deployment_instance_id: unsignable.command.deployment_spec_digest,
+            SECOND_INSTANCE: signable.command.deployment_spec_digest,
+        }
+    )
+
+    restarted = await _restart(store, capability)
+
+    assert (await store.load_engine_lifecycle_state(unsignable)).desired_status == "recorded"
+    assert (await store.load_engine_lifecycle_state(signable)).desired_status == "applied"
+    facts = _lifecycle_facts(database)
+    assert [(fact["deployment_instance_id"], fact["outcome"]) for fact in facts] == [
+        (str(SECOND_INSTANCE), "applied")
+    ]
+    assert _command_outcome_count(database) == 1
+    unsigned = [
+        log for log in restarted.logs if log["event"] == "durable_command_recovery_unsigned"
+    ]
+    assert [
+        (log["deployment_instance_id"], log["lifecycle_state"], log["log_level"])
+        for log in unsigned
+    ] == [(str(unsignable.command.deployment_instance_id), "stopped", "error")]

@@ -815,3 +815,103 @@ async def test_supervised_restart_marks_degraded_until_recovered_ready(tmp_path:
     assert recovered.observed_status == "ready"
     assert recovered.engine_handle == "replacement-handle"
     assert recovered.restart_count == 1
+
+
+@pytest.mark.asyncio
+async def test_a_reported_kept_stop_is_the_fact_a_bound_runner_would_have_signed(
+    tmp_path: Path,
+) -> None:
+    import base64
+
+    from custos.core.runner_command_intake import CommandDeliveryPolicy
+    from custos.core.runner_command_runtime import RunnerCommandRuntimeCoordinator
+    from custos.core.runner_fact import command_lifecycle_event_id, runner_fact_signing_preimage
+    from tests.test_engine_recovery_persistence import supervisor
+    from tests.test_runner_command_runtime import _CredentialResolver, _Delivery, _Intake
+    from tests.test_runner_command_runtime_failure_modes import (
+        _bound,
+        _deferred,
+        _lifecycle_command,
+        _RecordingArtifactRuntime,
+        _RecordingResolver,
+        _restart,
+        _SandboxEngine,
+    )
+
+    def batches(database: Path) -> list[dict]:
+        with sqlite3.connect(database) as connection:
+            return [
+                json.loads(row[0])
+                for row in connection.execute("SELECT payload FROM runner_fact_outbox")
+            ]
+
+    kept = _lifecycle_command("stopped", 2)
+    command = kept.command
+
+    reported_database = tmp_path / "reported.sqlite3"
+    _, reported_store = _runner_fact_store(reported_database)
+    await _deferred(reported_store, kept)
+    await _restart(reported_store, _bound(kept))
+
+    bound_database = tmp_path / "bound.sqlite3"
+    _, bound_store = _runner_fact_store(bound_database)
+    await bound_store.record_desired_command(
+        command=command,
+        command_fingerprint=kept.command_fingerprint,
+        verification_receipt=kept.verification_receipt,
+    )
+    events: list[str] = []
+    applied = await RunnerCommandRuntimeCoordinator(
+        intake=_Intake(verified=kept),
+        durability=bound_store,
+        release_resolver=_RecordingResolver(events),
+        artifact_runtime=_RecordingArtifactRuntime(events),
+        entry_point_loader=object(),
+        credential_resolver=_CredentialResolver(),
+        engine_lifecycle=supervisor(bound_store, _SandboxEngine()),
+        delivery_policy=CommandDeliveryPolicy(in_progress_interval_seconds=0.01),
+        capability_binding=lambda verified: None,
+    ).process(_Delivery())
+    assert applied.status.value == "applied_acked"
+
+    [reported_batch] = batches(reported_database)
+    [bound_batch] = batches(bound_database)
+    [reported] = reported_batch["facts"]
+    [normal] = bound_batch["facts"]
+    assert reported["event_id"] == normal["event_id"]
+    assert reported["event_id"] == str(
+        command_lifecycle_event_id(
+            tenant_id=command.tenant_id,
+            trading_mode=command.trading_mode,
+            runner_id=command.runner_id,
+            deployment_instance_id=command.deployment_instance_id,
+            deployment_spec_id=command.deployment_spec_id,
+            deployment_spec_digest=command.deployment_spec_digest,
+            generation=command.generation,
+            lifecycle_state="stopped",
+            command_fingerprint=kept.command_fingerprint,
+            outcome="applied",
+        )
+    )
+    timing = {"occurred_at", "observed_at", "seq"}
+    assert {key: value for key, value in reported.items() if key not in timing} == {
+        key: value for key, value in normal.items() if key not in timing
+    }
+    with sqlite3.connect(reported_database) as connection:
+        connection.row_factory = sqlite3.Row
+        desired = connection.execute(
+            "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?",
+            (str(command.deployment_instance_id),),
+        ).fetchone()
+    assert reported["deployment_spec_id"] == desired["deployment_spec_id"]
+    assert reported["deployment_spec_digest"] == desired["deployment_spec_digest"]
+    assert reported["generation"] == desired["generation"] == 2
+    assert reported["command_fingerprint"] == desired["command_fingerprint"]
+    assert (reported["lifecycle_state"], reported["outcome"]) == ("stopped", "applied")
+
+    public_key = Ed25519PrivateKey.from_private_bytes(bytes(range(65, 97))).public_key()
+    signature = reported_batch["signature"]
+    public_key.verify(
+        base64.urlsafe_b64decode(signature + "=" * (-len(signature) % 4)),
+        runner_fact_signing_preimage(reported_batch),
+    )
