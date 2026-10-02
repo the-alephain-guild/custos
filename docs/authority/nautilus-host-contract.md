@@ -99,6 +99,27 @@ watchdog remain engine-neutral modules. They consume `ExecutionEngineProtocol`
 Tier-2 methods and must be composed around the new command runtime coordinator;
 they never restore the removed DeploymentReconciler path.
 
+## Stop boundary
+
+A signed stop runs the shutdown policy, asks the node to stop and waits for its
+run to end. The account is read once after the run has ended and before the node
+is disposed: nothing trades after the run ends, and disposal empties the captured
+portfolio. That read, with the source time of every price it used, is the stop's
+boundary valuation; a read that is unreliable, takes a price without a source
+time, or receives a binary float is not one.
+
+A run that ignores the graceful stop is cancelled. A run that outlasts the
+cancellation as well may still be running, so nothing is committed: the stop is
+recorded as awaiting its reap, the delivery is acknowledged, and the outcome is
+committed once the run ends, or after a restart, without the shutdown policy
+running again. `applied` for a stop therefore always means the node is no longer
+running, and a stop ends once: applied and retry-exhausted exclude each other.
+
+A runner that declares `settlement.terminal_valuation = "v1"` commits the stop
+together with `RunnerInstanceTerminalValuationFact.v1` in one batch, after any
+settlement month close it owed, and seals the instance stream; afterwards only
+the instance's archive may be enqueued.
+
 ## Credential boundary
 
 Credential material is decrypted only through

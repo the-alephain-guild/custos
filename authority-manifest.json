@@ -161,6 +161,12 @@
       "runtime_evidence": false
     },
     {
+      "role": "runner_fact_terminal_boundary_golden_v1",
+      "path": "docs/authority/runner-fact-terminal-boundary-golden-v1.json",
+      "contract_only": true,
+      "runtime_evidence": false
+    },
+    {
       "role": "local_nats_contract",
       "path": "docs/authority/nats-transport-contract.md"
     },

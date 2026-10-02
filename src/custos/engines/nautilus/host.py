@@ -35,9 +35,11 @@ from custos.core.engine_protocol import (
     EngineReadinessChecks,
     EngineReadyReceipt,
     EngineStatus,
+    EngineStopBoundary,
     EngineTerminalEvent,
     OrderSnapshot,
     PositionSnapshot,
+    StopBoundaryValuation,
 )
 from custos.core.log import get_logger
 from custos.core.order_reservation_boundary import RunnerReservationBoundary
@@ -84,6 +86,9 @@ _log = get_logger("custos.nautilus_host")
 
 _DEFAULT_STARTING_BALANCES = ["10_000 USDT"]
 _STOP_TIMEOUT_SECS = 30.0
+# After the graceful stop times out the run task is cancelled; a run that does not
+# end within this bound either may still be running, and is reaped in the background.
+_REAP_TIMEOUT_SECS = 10.0
 
 # Venues this runner can execute, per trading mode. Kept NT-free so admission can
 # query capability on a base install, and kept in sync with the venue-config modules'
@@ -430,6 +435,26 @@ class SandboxSimulationHost:
             deployment_instance_id=deployment_instance_id,
         )
 
+    async def stop_at_boundary(self, deployment_instance_id: str) -> EngineStopBoundary:
+        """Stop the simulation; it has no account to value at the boundary.
+
+        The simulator publishes its configured starting capital rather than a
+        valuation of anything, so a stop never confirms an equity.
+        """
+        requested_at = datetime.now(UTC)
+        was_running = deployment_instance_id in self._lifecycle_authorities
+        await self.stop(deployment_instance_id)
+        return EngineStopBoundary(
+            stop_requested_at=requested_at,
+            node_was_running=was_running,
+            stopped_gracefully=True,
+            run_task_failed=False,
+            reaped=True,
+            stop_effective_at=datetime.now(UTC),
+            valuation=None,
+            valuation_failure="valuation_unavailable",
+        )
+
     def attached(self, deployment_instance_id: str) -> bool:
         # The simulation lives in this process, so what it is holding is exactly
         # what this process deployed and has not stopped.
@@ -569,6 +594,10 @@ class NtTradingNodeHost:
         # runner, but only until its stop completes.
         self._stopping: set[str] = set()
         self._stop_timeout_secs = _STOP_TIMEOUT_SECS
+        self._reap_timeout_secs = _REAP_TIMEOUT_SECS
+        # deployment_instance_id -> the background reap of a run that outlived its
+        # cancellation. Present only while the node may still be running.
+        self._pending_reaps: dict[str, asyncio.Future[datetime]] = {}
         self._shutdown_poll_secs = 0.2
         self._shutdown_stable_polls = 3
         self._shutdown_close_retry_secs = 2.0
@@ -1178,6 +1207,39 @@ class NtTradingNodeHost:
         return currency
 
     async def stop(self, deployment_instance_id: str) -> None:
+        boundary = await self.stop_at_boundary(deployment_instance_id)
+        if boundary.reap is not None:
+            # Callers of a plain stop need the node gone before they continue, as
+            # they always have; only the signed stop command acts before the reap.
+            await boundary.reap
+
+    async def stop_at_boundary(self, deployment_instance_id: str) -> EngineStopBoundary:
+        """Stop the node and report how the stop ended, valuing it at the boundary.
+
+        The shutdown policy runs first, while the strategy still receives events.
+        The node is then asked to stop; once its run task has ended, and before the
+        kernel is disposed, the account is read once. Nothing can trade after the
+        run has ended, and disposal empties the captured portfolio, so that read is
+        the only one that values the stop itself.
+
+        A run that ignores the graceful stop is cancelled. A run that outlasts the
+        cancellation as well may still be running: it is left registered and
+        undisposed, reaped in the background, and reported with ``reaped=False``.
+        A second stop while that reap is pending reports the same reap and does
+        not run the shutdown policy again.
+        """
+        requested_at = datetime.now(UTC)
+        pending = self._pending_reaps.get(deployment_instance_id)
+        if pending is not None:
+            return EngineStopBoundary(
+                stop_requested_at=requested_at,
+                node_was_running=True,
+                stopped_gracefully=False,
+                run_task_failed=False,
+                reaped=False,
+                stop_effective_at=None,
+                reap=pending,
+            )
         runtime = self._active_nodes.get(deployment_instance_id)
         if runtime is None:
             # Idempotent: stopping an unknown / already-stopped spec is a no-op.
@@ -1185,13 +1247,21 @@ class NtTradingNodeHost:
                 "nt_stop_noop_unknown_instance",
                 deployment_instance_id=deployment_instance_id,
             )
-            return
+            return EngineStopBoundary(
+                stop_requested_at=requested_at,
+                node_was_running=False,
+                stopped_gracefully=True,
+                run_task_failed=False,
+                reaped=True,
+                stop_effective_at=requested_at,
+            )
 
         task = runtime.task
         policy = self._shutdown_policies.get(
             deployment_instance_id,
             _ShutdownPolicy(position_policy="preserve", confirmation_timeout_secs=30.0),
         )
+        currency = self._settlement_currencies.get(deployment_instance_id)
         self._stopping.add(deployment_instance_id)
         try:
             # Before the node is asked to stop, while the strategy is still Running
@@ -1200,44 +1270,170 @@ class NtTradingNodeHost:
         except BaseException:
             self._stopping.discard(deployment_instance_id)
             raise
+        stopped_gracefully = True
+        run_task_failed = False
         try:
             # The handle is how a hosted run is stopped: run_async owns the node, so
             # calling stop on the node itself would be refused. Awaiting the task is
             # what waits for the shutdown sequence to finish.
             runtime.handle.stop()
             await asyncio.wait_for(asyncio.shield(task), timeout=self._stop_timeout_secs)
+        except asyncio.CancelledError:
+            if task.done():
+                # The run itself was cancelled by someone else: it has ended, but
+                # not by the stop it was asked for.
+                run_task_failed = True
+            else:
+                await self._reap_after_caller_cancelled(deployment_instance_id, runtime)
+                raise
         except TimeoutError:
+            stopped_gracefully = False
             _log.error(
                 "nt_stop_timeout",
                 deployment_instance_id=deployment_instance_id,
                 timeout_secs=self._stop_timeout_secs,
             )
         except Exception as exc:  # noqa: BLE001 — a node that died on its own is still stopped
+            run_task_failed = True
             _log.warning(
                 "nt_stop_run_task_error",
                 deployment_instance_id=deployment_instance_id,
                 **_sanitize_exception(exc),
             )
-        finally:
+        valuation = None
+        valuation_failure = None
+        if stopped_gracefully and not run_task_failed and task.done():
+            valuation, valuation_failure = self._value_stop_boundary(
+                deployment_instance_id, runtime, currency
+            )
+        if not task.done():
             task.cancel()
             try:
-                await task
+                await asyncio.wait_for(asyncio.shield(task), timeout=self._reap_timeout_secs)
+            except TimeoutError:
+                # The run outlived its cancellation too, so the node may still be
+                # running. Nothing is disposed or forgotten and no stop is claimed;
+                # the reap continues in the background and finishes the cleanup.
+                _log.error(
+                    "nt_stop_reap_timeout",
+                    deployment_instance_id=deployment_instance_id,
+                    timeout_secs=self._reap_timeout_secs,
+                )
+                reap = asyncio.ensure_future(
+                    self._reap_in_background(deployment_instance_id, runtime)
+                )
+                self._pending_reaps[deployment_instance_id] = reap
+                return EngineStopBoundary(
+                    stop_requested_at=requested_at,
+                    node_was_running=True,
+                    stopped_gracefully=False,
+                    run_task_failed=run_task_failed,
+                    reaped=False,
+                    stop_effective_at=None,
+                    reap=reap,
+                )
             except (asyncio.CancelledError, Exception):  # noqa: BLE001 — reaping the run task
-                pass
-            # Only once the run has ended: run_async holds the node until then, and
-            # 2.0 disposal releases the kernel without touching the runner's loop.
-            self._dispose_node(deployment_instance_id, runtime.node)
-            self._peak_equity.pop(deployment_instance_id, None)
-            self._settlement_currencies.pop(deployment_instance_id, None)
-            self._runner_fact_contexts.pop(deployment_instance_id, None)
-            self._runner_safety_boundaries.pop(deployment_instance_id, None)
-            self._event_forwarding_failures.pop(deployment_instance_id, None)
-            self._release_execution_account_partition(deployment_instance_id)
+                if not task.done():
+                    raise
+        self._release_stopped_node(deployment_instance_id, runtime)
+        return EngineStopBoundary(
+            stop_requested_at=requested_at,
+            node_was_running=True,
+            stopped_gracefully=stopped_gracefully,
+            run_task_failed=run_task_failed,
+            reaped=True,
+            # Placed after the boundary read: the node was already stopped when the
+            # account was read, so the stop is in effect no later than this.
+            stop_effective_at=datetime.now(UTC),
+            valuation=valuation,
+            valuation_failure=valuation_failure,
+        )
+
+    async def _reap_after_caller_cancelled(
+        self, deployment_instance_id: str, runtime: _NodeRuntime
+    ) -> None:
+        """Whoever awaited the stop was cancelled, not the run: still end the run."""
+        runtime.task.cancel()
+        try:
+            await asyncio.wait_for(asyncio.shield(runtime.task), timeout=self._reap_timeout_secs)
+        except (asyncio.CancelledError, Exception):  # noqa: BLE001 — reaping the run task
+            pass
+        if runtime.task.done():
+            self._release_stopped_node(deployment_instance_id, runtime)
+
+    def _value_stop_boundary(
+        self,
+        deployment_instance_id: str,
+        runtime: _NodeRuntime,
+        currency: str | None,
+    ) -> tuple[StopBoundaryValuation | None, str | None]:
+        """Read the account of a node whose run has ended, before it is disposed."""
+        observed_at = datetime.now(UTC)
+        snapshot = self._portfolio_snapshot_provider.snapshot(
+            runtime, currency=currency, refuse_float=True
+        )
+        if (
+            not snapshot.reliable
+            or currency is None
+            or snapshot.currency != currency
+            or not snapshot.price_watermarks_complete
+        ):
+            _log.warning(
+                "nt_stop_boundary_valuation_unreliable",
+                deployment_instance_id=deployment_instance_id,
+                reason=snapshot.unreliable_reason
+                or ("price_watermark_missing" if snapshot.reliable else None),
+            )
+            return None, "valuation_unreliable"
+        marks_oldest_at = None
+        if snapshot.marks_oldest_ns is not None:
+            # Truncated to microseconds, so the watermark is never later than the price.
+            seconds, nanos = divmod(snapshot.marks_oldest_ns, 1_000_000_000)
+            marks_oldest_at = datetime.fromtimestamp(seconds, UTC).replace(
+                microsecond=nanos // 1000
+            )
+        return (
+            StopBoundaryValuation(
+                currency=currency,
+                equity=snapshot.equity,
+                open_positions=tuple(snapshot.runner_fact_rows()),
+                observed_at=observed_at,
+                marks_oldest_at=marks_oldest_at,
+            ),
+            None,
+        )
+
+    async def _reap_in_background(self, deployment_instance_id: str, runtime: _NodeRuntime):
+        """Wait for a run that outlived its cancellation, then release it."""
+        try:
+            try:
+                await asyncio.shield(runtime.task)
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001 — reaping the run task
+                if not runtime.task.done():
+                    raise
+            reaped_at = datetime.now(UTC)
+            self._release_stopped_node(deployment_instance_id, runtime)
+            _log.info("nt_stop_reaped", deployment_instance_id=deployment_instance_id)
+            return reaped_at
+        finally:
+            self._pending_reaps.pop(deployment_instance_id, None)
+
+    def _release_stopped_node(self, deployment_instance_id: str, runtime: _NodeRuntime) -> None:
+        # Only once the run has ended: run_async holds the node until then, and
+        # 2.0 disposal releases the kernel without touching the runner's loop.
+        self._dispose_node(deployment_instance_id, runtime.node)
+        self._peak_equity.pop(deployment_instance_id, None)
+        self._settlement_currencies.pop(deployment_instance_id, None)
+        self._runner_fact_contexts.pop(deployment_instance_id, None)
+        self._runner_safety_boundaries.pop(deployment_instance_id, None)
+        self._event_forwarding_failures.pop(deployment_instance_id, None)
+        self._release_execution_account_partition(deployment_instance_id)
+        if self._active_nodes.get(deployment_instance_id) is runtime:
             self._active_nodes.pop(deployment_instance_id, None)
-            self._containment_confirmed.discard(deployment_instance_id)
-            self._lifecycle_authorities.pop(deployment_instance_id, None)
-            self._shutdown_policies.pop(deployment_instance_id, None)
-            self._stopping.discard(deployment_instance_id)
+        self._containment_confirmed.discard(deployment_instance_id)
+        self._lifecycle_authorities.pop(deployment_instance_id, None)
+        self._shutdown_policies.pop(deployment_instance_id, None)
+        self._stopping.discard(deployment_instance_id)
         _log.info("nt_stop_completed", deployment_instance_id=deployment_instance_id)
 
     def _dispose_node(self, deployment_instance_id: str, node: object) -> None:

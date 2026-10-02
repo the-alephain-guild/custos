@@ -118,3 +118,36 @@ def test_the_month_close_identity_is_stable_for_its_stream_and_period() -> None:
     again = producer._scoped_event_id(authority, "settlement_period", "2026-08")
     other = producer._scoped_event_id(authority, "settlement_period", "2026-09")
     assert first == again and first != other
+
+
+def test_a_crossed_month_is_owed_durably_before_its_close_is_emitted(monkeypatch) -> None:
+    """The owed close must survive the instance stopping before the next tick."""
+    start = datetime(2026, 8, 31, 23, 59, tzinfo=UTC)
+    facts, emitter = asyncio.run(
+        _run_periods(
+            start,
+            [start + timedelta(seconds=20), start + timedelta(seconds=61)],
+            monkeypatch,
+        )
+    )
+    assert len(emitter.owed_month_closes) == 1
+    _stream, period, closed_at = emitter.owed_month_closes[0]
+    assert period == "2026-08"
+    assert closed_at == datetime(2026, 9, 1, tzinfo=UTC)
+
+
+def test_an_owed_close_that_cannot_be_recorded_is_still_emitted(monkeypatch) -> None:
+    class FailingOwe(_fixtures._CapturingEmitter):
+        async def owe_month_close(self, authority, period, closed_at):
+            raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(_fixtures, "_CapturingEmitter", FailingOwe)
+    start = datetime(2026, 8, 31, 23, 59, tzinfo=UTC)
+    facts, _ = asyncio.run(
+        _run_periods(
+            start,
+            [start + timedelta(seconds=20), start + timedelta(seconds=61)],
+            monkeypatch,
+        )
+    )
+    assert [fact["period"] for fact in facts if fact["kind"] == "period_closed"] == ["2026-08"]

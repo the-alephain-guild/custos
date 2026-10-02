@@ -48,6 +48,10 @@ async def test_unavailable_reconciliation_does_not_emit_settlement_close() -> No
 class _CapturingEmitter:
     def __init__(self) -> None:
         self.emissions = []
+        self.owed_month_closes = []
+
+    async def owe_month_close(self, authority, period, closed_at):
+        self.owed_month_closes.append((authority.stream_key, period, closed_at))
 
     async def emit(self, authority, facts):
         json.dumps(facts, allow_nan=False, separators=(",", ":"), sort_keys=True)

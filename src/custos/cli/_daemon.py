@@ -99,6 +99,7 @@ from custos.core.runner_fact import (
     RunnerFactOutbox,
     RunnerRuntimeEnvironmentMetricsV1,
     RunnerStateStore,
+    TerminalValuationSettings,
     runner_command_binding_gap,
     runner_instance_binding_gap,
 )
@@ -204,6 +205,22 @@ def _build_strategy_release_runtime(
         sigstore_verifier=ProductionSigstoreVerifier(),
     )
     return resolver, runtime
+
+
+def _terminal_valuation_settings(
+    capability: RunnerCapabilityReceipt,
+) -> TerminalValuationSettings | None:
+    """Terminal valuation is produced only by a runner whose capability declares it.
+
+    The consumer refuses the fact from a runner that did not declare it, so a
+    runner without the flag stops instances with the lifecycle fact alone.
+    """
+    contracts = capability.capability_manifest.get("runner_fact_contracts", {})
+    if contracts.get("settlement", {}).get("terminal_valuation") != "v1":
+        return None
+    from custos.engines.nautilus.venues import venue_for_connector
+
+    return TerminalValuationSettings(venue_for_connector=venue_for_connector)
 
 
 def _runner_fact_authority(
@@ -1137,6 +1154,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 tenant_id=args.tenant_id,
                 runner_id=runner_id,
                 authority_resolver=lambda verified: _runner_fact_authority(capability, verified),
+                terminal_valuation=_terminal_valuation_settings(capability),
             )
             policy_authenticator = CrucibleRunnerSafetyPolicyAuthenticator(
                 expected_tenant_id=args.tenant_id,
@@ -1182,6 +1200,9 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 artifact_capability=artifact_capability,
                 config=EngineLifecycleConfig(live_execution_enabled=runtime_admission is not None),
             )
+            # A stop whose node was still being reaped when the last process ended
+            # is settled before any command is taken: that node ended with its process.
+            await lifecycle.recover_pending_stops()
             material_authority = RunnerMaterialAuthorityClient(
                 metadata.backend_url,
                 machine_credential,

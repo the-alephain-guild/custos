@@ -1136,3 +1136,195 @@ async def test_the_mode_is_validated_once_and_everything_downstream_reads_that(
             _Artifact(),
         )
     assert len(FakeLiveNode.instances) == before
+
+
+class _BoundaryReadingProvider:
+    """Records what the host could see when it valued the stop boundary."""
+
+    def __init__(self, *, marks_oldest_ns: int | None = None) -> None:
+        self.reads: list[dict] = []
+        self._marks_oldest_ns = marks_oldest_ns
+
+    def snapshot(self, runtime, currency=None, *, refuse_float=False):
+        from decimal import Decimal
+
+        from custos.engines.nautilus.portfolio_snapshot import NautilusPortfolioSnapshot
+
+        self.reads.append(
+            {
+                "task_done": runtime.task.done(),
+                "disposed": runtime.node.disposed,
+                "currency": currency,
+                "refuse_float": refuse_float,
+            }
+        )
+        return NautilusPortfolioSnapshot(
+            venue="BINANCE",
+            currency=currency,
+            equity=Decimal("10060.5"),
+            positions=(),
+            reliable=True,
+            marks_oldest_ns=self._marks_oldest_ns,
+        )
+
+
+@pytest.mark.asyncio
+async def test_the_stop_boundary_is_valued_after_the_run_ends_and_before_disposal(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    provider = _BoundaryReadingProvider()
+    host = NtTradingNodeHost(portfolio_snapshot_provider=provider)
+    deployment_instance_id = _deployment_instance_id("boundary-read")
+    await host.deploy(_spec("boundary-read"), _credential(), _Artifact())
+    node = host._active_nodes[deployment_instance_id].node
+
+    boundary = await host.stop_at_boundary(deployment_instance_id)
+
+    assert boundary.node_was_running and boundary.stopped_gracefully and boundary.reaped
+    assert not boundary.run_task_failed
+    # The read happened once the run had ended, and before the kernel was released.
+    assert provider.reads == [
+        {"task_done": True, "disposed": False, "currency": "USDT", "refuse_float": True}
+    ]
+    assert node.disposed is True
+    valuation = boundary.valuation
+    assert valuation is not None and str(valuation.equity) == "10060.5"
+    assert valuation.marks_oldest_at is None and valuation.open_positions == ()
+    assert boundary.stop_requested_at <= valuation.observed_at <= boundary.stop_effective_at
+    assert boundary.stop_causes() == frozenset()
+
+
+@pytest.mark.asyncio
+async def test_a_graceful_timeout_reaped_in_bound_is_a_stop_timeout_without_valuation(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    provider = _BoundaryReadingProvider()
+    host = NtTradingNodeHost(portfolio_snapshot_provider=provider)
+    host._stop_timeout_secs = 0.05
+    deployment_instance_id = _deployment_instance_id("boundary-timeout")
+    await host.deploy(_spec("boundary-timeout"), _credential(), _Artifact())
+    node = host._active_nodes[deployment_instance_id].node
+    node.stop_hangs = True
+
+    boundary = await host.stop_at_boundary(deployment_instance_id)
+
+    assert boundary.reaped is True and boundary.stopped_gracefully is False
+    assert boundary.valuation is None and provider.reads == []
+    assert boundary.stop_causes() == {"stop_timeout"}
+    assert node.disposed is True
+
+
+@pytest.mark.asyncio
+async def test_a_reap_timeout_keeps_the_node_and_never_reruns_the_shutdown_policy(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    strategy = _ShutdownAwareStrategy()
+    host = NtTradingNodeHost(portfolio_snapshot_provider=_BoundaryReadingProvider())
+    host._stop_timeout_secs = 0.05
+    host._reap_timeout_secs = 0.05
+    host._shutdown_poll_secs = 0
+    host._shutdown_stable_polls = 1
+    spec = _spec("boundary-reap")
+    deployment_instance_id = spec["deployment_instance_id"]
+    await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
+    node = host._active_nodes[deployment_instance_id].node
+    strategy.node = node
+    node.stop_hangs = True
+    node.cancel_hangs = True
+
+    try:
+        with structlog.testing.capture_logs() as logs:
+            boundary = await host.stop_at_boundary(deployment_instance_id)
+    finally:
+        # Whatever the outcome, a test must not leave a run nobody can end.
+        asyncio.get_running_loop().call_later(5, node.released.set)
+
+    assert boundary.reaped is False and boundary.stop_effective_at is None
+    assert boundary.reap is not None
+    assert "nt_stop_reap_timeout" in [entry.get("event") for entry in logs]
+    # The node may still be running: it is neither disposed nor forgotten.
+    assert node.disposed is False
+    assert host.attached(deployment_instance_id)
+    again = await host.stop_at_boundary(deployment_instance_id)
+    assert again.reaped is False and again.reap is boundary.reap
+    assert strategy.prepared == ["preserve"], "the shutdown policy ran exactly once"
+
+    node.released.set()
+    reaped_at = await boundary.reap
+    assert reaped_at.tzinfo is not None
+    assert node.disposed is True
+    assert not host.attached(deployment_instance_id)
+
+
+@pytest.mark.asyncio
+async def test_a_stop_boundary_for_an_unknown_instance_reports_nothing_running() -> None:
+    host = NtTradingNodeHost()
+
+    boundary = await host.stop_at_boundary(_deployment_instance_id("never-deployed"))
+
+    assert boundary.node_was_running is False and boundary.reaped is True
+    assert boundary.stop_causes() == {"engine_not_running_at_stop"}
+
+
+@pytest.mark.asyncio
+async def test_an_unreliable_boundary_read_names_why(monkeypatch) -> None:
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    # The fake cache has no portfolio surface: the real provider reports it unreliable.
+    host = NtTradingNodeHost()
+    deployment_instance_id = _deployment_instance_id("boundary-unreliable")
+    await host.deploy(_spec("boundary-unreliable"), _credential(), _Artifact())
+
+    boundary = await host.stop_at_boundary(deployment_instance_id)
+
+    assert boundary.valuation is None
+    assert boundary.stop_causes() == {"valuation_unreliable"}
+
+
+def test_a_real_node_portfolio_stays_readable_after_its_run_until_disposal() -> None:
+    """The feasibility gate for valuing a stop: read after the run, before disposal.
+
+    A real 2.0 node with only a locally simulated execution client and no data
+    feed. After its run task has ended the captured portfolio still answers; once
+    the node is disposed it answers with nothing, so the boundary read must come
+    in between.
+    """
+    from nautilus_trader.live import LiveNode, NodeState
+    from nautilus_trader.model import TraderId, Venue
+
+    from custos.engines.nautilus import venue_binance
+
+    async def scenario() -> tuple[dict, dict, object]:
+        builder = LiveNode.builder("gate", TraderId("CUSTOS-GATE"), Environment.SANDBOX)
+        builder = builder.with_reconciliation(False)
+        builder = builder.with_delay_post_stop_secs(0).with_delay_shutdown_secs(0)
+        config = venue_binance.build_exec_client_config_sandbox(
+            {"connector": "binance"}, {}, ["10000 USDT"]
+        )
+        builder = builder.add_simulated_exec_client(
+            "BINANCE", SandboxExecutionClientFactory(), config
+        )
+        node = builder.build()
+        handle, portfolio = node.handle(), node.portfolio
+        task = asyncio.create_task(node.run_async())
+        for _ in range(100):
+            await asyncio.sleep(0.05)
+            if handle.state == NodeState.RUNNING:
+                break
+        handle.stop()
+        await asyncio.wait_for(asyncio.shield(task), timeout=30)
+        assert task.done() and task.exception() is None
+        after_stop = dict(portfolio.equity(Venue("BINANCE")))
+        node.dispose()
+        after_dispose = dict(portfolio.equity(Venue("BINANCE")))
+        return after_stop, after_dispose, handle.state == NodeState.STOPPED
+
+    after_stop, after_dispose, stopped = asyncio.run(scenario())
+
+    assert stopped
+    assert {str(currency.code): str(money) for currency, money in after_stop.items()} == {
+        "USDT": "10000.00000000 USDT"
+    }
+    assert after_dispose == {}

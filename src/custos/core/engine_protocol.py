@@ -17,7 +17,9 @@ money fields at construction time.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Mapping
 from dataclasses import dataclass, fields
+from datetime import datetime
 from decimal import Decimal
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
@@ -341,6 +343,91 @@ class EngineTerminalEvent:
             reason_code=reason_code,
             retryable=retryable,
         )
+
+
+# The reasons a stop boundary itself can give for not confirming a valuation.
+# They are a subset of the terminal valuation reason codes, which order them.
+STOP_BOUNDARY_VALUATION_FAILURES = frozenset({"valuation_unavailable", "valuation_unreliable"})
+
+
+def _aware(value: datetime | None, field: str) -> None:
+    if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+        raise ValueError(f"{field} must be timezone-aware")
+
+
+@dataclass(frozen=True, slots=True)
+class StopBoundaryValuation:
+    """What the account held once the node's run had ended, read before disposal.
+
+    ``marks_oldest_at`` is the oldest source time of every price the valuation
+    used, or ``None`` when it used no price at all (no position and nothing to
+    convert). A price whose source time is unknown never reaches this type: the
+    host reports such a read as unreliable instead.
+    """
+
+    currency: str
+    equity: Decimal
+    open_positions: tuple[Mapping[str, str], ...]
+    observed_at: datetime
+    marks_oldest_at: datetime | None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.equity, Decimal):
+            raise TypeError("stop boundary equity must be a Decimal")
+        _aware(self.observed_at, "observed_at")
+        _aware(self.marks_oldest_at, "marks_oldest_at")
+
+
+@dataclass(frozen=True, slots=True)
+class EngineStopBoundary:
+    """How a stop ended, as the host observed it.
+
+    ``reaped`` is the only claim that the node is no longer running. When the
+    run ignored both the graceful stop and the cancellation within their bounds
+    it is ``False``: the node may still be running, nothing may be committed as
+    applied, and ``reap`` resolves with the moment the run finally ended.
+    """
+
+    stop_requested_at: datetime
+    node_was_running: bool
+    stopped_gracefully: bool
+    run_task_failed: bool
+    reaped: bool
+    stop_effective_at: datetime | None
+    valuation: StopBoundaryValuation | None = None
+    valuation_failure: str | None = None
+    reap: Awaitable[datetime] | None = None
+
+    def __post_init__(self) -> None:
+        _aware(self.stop_requested_at, "stop_requested_at")
+        _aware(self.stop_effective_at, "stop_effective_at")
+        if not self.reaped and self.reap is None:
+            raise ValueError("an unreaped stop must carry the awaitable that reaps it")
+        if self.reaped and self.reap is not None:
+            raise ValueError("a reaped stop has nothing left to await")
+        if self.valuation_failure is not None and (
+            self.valuation_failure not in STOP_BOUNDARY_VALUATION_FAILURES
+        ):
+            raise ValueError("stop boundary valuation failure is not a known reason")
+        if self.valuation is not None and self.valuation_failure is not None:
+            raise ValueError("a stop boundary has a valuation or a reason it has none")
+
+    def stop_causes(self) -> frozenset[str]:
+        """Every reason this stop cannot confirm a same-boundary valuation."""
+
+        if not self.node_was_running:
+            return frozenset({"engine_not_running_at_stop"})
+        causes: set[str] = set()
+        if not self.stopped_gracefully:
+            causes.add("stop_timeout")
+        if self.run_task_failed:
+            causes.add("engine_task_failed")
+        if self.valuation is None:
+            if self.valuation_failure is not None:
+                causes.add(self.valuation_failure)
+            elif not causes:
+                causes.add("valuation_unreliable")
+        return frozenset(causes)
 
 
 @runtime_checkable

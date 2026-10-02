@@ -21,6 +21,9 @@ from custos.core.runner_fact import (
     RUNNER_FACT_SCHEMA_VERSION,
     RUNNER_FACT_SIGNING_DOMAIN,
     RUNNER_FACT_SIGNING_HEADER_FIELDS,
+    TERMINAL_VALUATION_KIND,
+    TERMINAL_VALUATION_REASON_CODES,
+    RunnerFactAuthority,
     RunnerFactIdentity,
     capability_binding_evidence_digest,
     capability_scope_binding_values,
@@ -38,6 +41,7 @@ from custos.core.runner_fact import (
     settlement_fee,
     settlement_fill,
     settlement_period_closed,
+    terminal_valuation,
     valuation_checkpoint,
     venue_ledger_snapshot_facts,
 )
@@ -67,6 +71,13 @@ COMMAND_FINGERPRINT = "e" * 64
 BATCH_ID = UUID("60000000-0000-4000-8000-000000000006")
 EMITTED_AT = "2026-07-15T08:00:00Z"
 PRIVATE_KEY_BYTES = bytes(range(1, 33))
+# The stop-boundary vector continues the golden stream: one more batch in the
+# running generation, then the stop generation's lifecycle and terminal facts.
+STOP_COMMAND_FINGERPRINT = "d" * 64
+TERMINAL_RUN_BATCH_ID = UUID("60000000-0000-4000-8000-000000000007")
+TERMINAL_STOP_BATCH_ID = UUID("60000000-0000-4000-8000-000000000008")
+CREDENTIAL_SCOPE_ID = "91000000-0000-4000-8000-000000000011"
+CREDENTIAL_SCOPE_DIGEST = "a" * 64
 
 SCHEMA_PATH = Path("docs/gateway-contract/v1/runner_fact_batch_v1.schema.json")
 GOLDEN_PATH = Path("docs/authority/runner-fact-golden-v1.json")
@@ -74,6 +85,7 @@ CAPABILITY_MANIFEST_PATH = Path("docs/authority/runner-fact-capability-manifest-
 CAPABILITY_RECEIPT_PATH = Path("docs/authority/runner-fact-capability-receipt-golden-v1.json")
 PARITY_PATH = Path("docs/authority/runner-fact-parity-matrix-v1.json")
 SIGNING_PREIMAGE_PATH = Path("docs/authority/runner-fact-signing-preimage-golden-v1.json")
+TERMINAL_BOUNDARY_PATH = Path("docs/authority/runner-fact-terminal-boundary-golden-v1.json")
 INDEX_PATH = Path("docs/authority/runner-fact-contract-assets-v1.json")
 RECEIPT_PATH = Path("docs/authority/receipts/custos-runner-fact-v1-producer-receipt.json")
 
@@ -577,6 +589,18 @@ def _schema() -> dict[str, Any]:
         },
     }
     definitions["fact_RunnerValuationCheckpointFact.v1"] = facts["RunnerValuationCheckpointFact.v1"]
+    definitions[f"fact_{TERMINAL_VALUATION_KIND}"] = _terminal_valuation_schema(
+        non_empty=non_empty,
+        uuid=uuid,
+        digest=digest,
+        timestamp=timestamp,
+        decimal=decimal,
+        currency=currency,
+        settlement_period=settlement_period,
+        sub_account=sub_account,
+        wallet_type=wallet_type,
+        position_row=position_row,
+    )
     facts["execution_fill"]["properties"]["fee_currency"] = currency
     facts["execution_fill"]["properties"]["fee"] = decimal
     facts["fee"]["properties"]["amount"] = decimal
@@ -682,6 +706,133 @@ def _schema() -> dict[str, Any]:
             },
         },
     }
+
+
+def _terminal_valuation_schema(
+    *,
+    non_empty: dict[str, Any],
+    uuid: dict[str, Any],
+    digest: dict[str, Any],
+    timestamp: dict[str, Any],
+    decimal: dict[str, Any],
+    currency: dict[str, Any],
+    settlement_period: dict[str, Any],
+    sub_account: dict[str, Any],
+    wallet_type: dict[str, Any],
+    position_row: dict[str, Any],
+) -> dict[str, Any]:
+    null = {"type": "null"}
+    generation = {"type": "integer", "minimum": 1}
+    reason = {"enum": list(TERMINAL_VALUATION_REASON_CODES)}
+    account_scope = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "venue",
+            "credential_scope_id",
+            "credential_scope_digest",
+            "sub_account",
+            "wallet_type",
+        ],
+        "properties": {
+            "venue": non_empty,
+            "credential_scope_id": uuid,
+            "credential_scope_digest": digest,
+            "sub_account": sub_account,
+            "wallet_type": {"oneOf": [wallet_type, null]},
+        },
+    }
+    equity = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["amount", "currency"],
+        "properties": {"amount": decimal, "currency": currency},
+    }
+    prior_equity = {
+        "type": "object",
+        "additionalProperties": False,
+        "required": ["event_id", "seq", "amount", "currency", "observed_at"],
+        "properties": {
+            "event_id": uuid,
+            "seq": generation,
+            "amount": decimal,
+            "currency": currency,
+            "observed_at": timestamp,
+        },
+    }
+    positions = {"type": "array", "items": position_row}
+    schema = _object_schema(
+        TERMINAL_VALUATION_KIND,
+        {
+            "tenant_id": {"type": "string", "pattern": r"^[A-Za-z0-9_-]+$"},
+            "mode": {"enum": ["live", "sandbox", "testnet"]},
+            "runner_id": uuid,
+            "deployment_instance_id": uuid,
+            "deployment_spec_id": uuid,
+            "deployment_spec_digest": digest,
+            "generation": generation,
+            "issuer_key_id": non_empty,
+            "command_fingerprint": digest,
+            "closes_generation": {"oneOf": [generation, null]},
+            "outcome": {"enum": ["confirmed", "valuation_unconfirmed"]},
+            "reason_code": {"oneOf": [reason, null]},
+            "account_scope": account_scope,
+            "valuation_source": {"enum": ["venue_account", "simulated_account"]},
+            "position_policy": {"enum": ["flatten", "preserve"]},
+            "period": {"oneOf": [settlement_period, null]},
+            "stop_requested_at": timestamp,
+            "valuation_observed_at": {"oneOf": [timestamp, null]},
+            "marks_oldest_at": {"oneOf": [timestamp, null]},
+            "stop_effective_at": {"oneOf": [timestamp, null]},
+            "equity": {"oneOf": [equity, null]},
+            "open_positions": {"oneOf": [positions, null]},
+            "prior_equity": {"oneOf": [prior_equity, null]},
+            "valuation_digest": digest,
+        },
+    )
+
+    def when(condition: dict[str, Any], then: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "if": {"required": list(condition), "properties": condition},
+            "then": {"properties": then},
+        }
+
+    confirmed = {"outcome": {"const": "confirmed"}}
+    no_open_positions = {"open_positions": {"maxItems": 0}}
+    schema["allOf"] = [
+        when(
+            confirmed,
+            {
+                "reason_code": null,
+                "closes_generation": generation,
+                "period": settlement_period,
+                "valuation_observed_at": timestamp,
+                "stop_effective_at": timestamp,
+                "equity": equity,
+                "open_positions": positions,
+                "prior_equity": prior_equity,
+            },
+        ),
+        when(
+            {"outcome": {"const": "valuation_unconfirmed"}},
+            {
+                "reason_code": reason,
+                "period": null,
+                "valuation_observed_at": null,
+                "marks_oldest_at": null,
+                "equity": null,
+                "open_positions": null,
+            },
+        ),
+        when({**confirmed, "position_policy": {"const": "flatten"}}, no_open_positions),
+        # Without any price read there is no mark watermark, and so no position.
+        when({**confirmed, "marks_oldest_at": null}, no_open_positions),
+        when(
+            {"reason_code": {"const": "no_prior_running_generation"}},
+            {"closes_generation": null},
+        ),
+    ]
+    return schema
 
 
 def _scope(spec_id: UUID, spec_digest: str) -> dict[str, Any]:
@@ -948,35 +1099,12 @@ def _facts() -> list[dict[str, Any]]:
         )
     )
     facts.append(
-        {
-            "kind": "RunnerDeploymentLifecycleFact.v1",
-            "event_id": str(
-                command_lifecycle_event_id(
-                    tenant_id=TENANT_ID,
-                    trading_mode=MODE,
-                    runner_id=RUNNER_ID,
-                    deployment_instance_id=INSTANCE_ID,
-                    deployment_spec_id=SPEC_ID,
-                    deployment_spec_digest=SPEC_DIGEST,
-                    generation=7,
-                    lifecycle_state="running",
-                    command_fingerprint=COMMAND_FINGERPRINT,
-                    outcome="applied",
-                )
-            ),
-            "occurred_at": timestamp,
-            "tenant_id": TENANT_ID,
-            "mode": MODE,
-            "runner_id": str(RUNNER_ID),
-            "deployment_instance_id": str(INSTANCE_ID),
-            "deployment_spec_id": str(SPEC_ID),
-            "deployment_spec_digest": SPEC_DIGEST,
-            "generation": 7,
-            "lifecycle_state": "running",
-            "command_fingerprint": COMMAND_FINGERPRINT,
-            "outcome": "applied",
-            "observed_at": timestamp,
-        }
+        _lifecycle_fact(
+            generation=7,
+            lifecycle_state="running",
+            command_fingerprint=COMMAND_FINGERPRINT,
+            observed_at=timestamp,
+        )
     )
     facts.append(
         valuation_checkpoint(
@@ -993,9 +1121,142 @@ def _facts() -> list[dict[str, Any]]:
             positions=[],
         )
     )
-    if set(RUNNER_FACT_KIND_PROJECTORS) != {fact["kind"] for fact in facts}:
-        raise RuntimeError("golden does not contain the closed RunnerFact kind union")
+    # The terminal valuation must close its own stop batch; the stop-boundary
+    # asset carries it, and the closed union is asserted across both assets.
+    if set(RUNNER_FACT_KIND_PROJECTORS) - {TERMINAL_VALUATION_KIND} != {
+        fact["kind"] for fact in facts
+    }:
+        raise RuntimeError("golden does not contain the single-batch RunnerFact kind union")
     return facts
+
+
+def _lifecycle_fact(
+    *, generation: int, lifecycle_state: str, command_fingerprint: str, observed_at: str
+) -> dict[str, Any]:
+    return {
+        "kind": "RunnerDeploymentLifecycleFact.v1",
+        "event_id": str(
+            command_lifecycle_event_id(
+                tenant_id=TENANT_ID,
+                trading_mode=MODE,
+                runner_id=RUNNER_ID,
+                deployment_instance_id=INSTANCE_ID,
+                deployment_spec_id=SPEC_ID,
+                deployment_spec_digest=SPEC_DIGEST,
+                generation=generation,
+                lifecycle_state=lifecycle_state,
+                command_fingerprint=command_fingerprint,
+                outcome="applied",
+            )
+        ),
+        "occurred_at": observed_at,
+        "tenant_id": TENANT_ID,
+        "mode": MODE,
+        "runner_id": str(RUNNER_ID),
+        "deployment_instance_id": str(INSTANCE_ID),
+        "deployment_spec_id": str(SPEC_ID),
+        "deployment_spec_digest": SPEC_DIGEST,
+        "generation": generation,
+        "lifecycle_state": lifecycle_state,
+        "command_fingerprint": command_fingerprint,
+        "outcome": "applied",
+        "observed_at": observed_at,
+    }
+
+
+def _terminal_boundary(
+    golden: dict[str, Any],
+    *,
+    capability_manifest_digest: str,
+    identity: RunnerFactIdentity,
+) -> list[dict[str, Any]]:
+    """A flatten stop in the month after the golden's close, valued at the boundary."""
+
+    running_generation = golden["generation"]
+    stop_generation = running_generation + 1
+    run_batch = _batch(
+        facts=[
+            equity_snapshot(
+                event_id=UUID("81000000-0000-4000-8000-000000000001"),
+                amount="10050",
+                currency="USDT",
+                observed_at="2026-08-14T09:59:30Z",
+            )
+        ],
+        batch_id=TERMINAL_RUN_BATCH_ID,
+        emitted_at="2026-08-14T10:00:00Z",
+        source_seq_start=golden["source_seq_end"] + 1,
+        spec_id=SPEC_ID,
+        spec_digest=SPEC_DIGEST,
+        generation=running_generation,
+        capability_id=CAPABILITY_ID,
+        capability_manifest_digest=capability_manifest_digest,
+        identity=identity,
+    )
+    prior = run_batch["facts"][-1]
+    stop_authority = RunnerFactAuthority(
+        tenant_id=TENANT_ID,
+        trading_mode=MODE,
+        runner_id=RUNNER_ID,
+        deployment_instance_id=INSTANCE_ID,
+        deployment_spec_id=SPEC_ID,
+        deployment_spec_digest=SPEC_DIGEST,
+        generation=stop_generation,
+        strategy_id=STRATEGY_ID,
+        capability_version_id=CAPABILITY_ID,
+        capability_version=1,
+        capability_manifest_digest=capability_manifest_digest,
+    )
+    stop_batch = _batch(
+        facts=[
+            _lifecycle_fact(
+                generation=stop_generation,
+                lifecycle_state="stopped",
+                command_fingerprint=STOP_COMMAND_FINGERPRINT,
+                observed_at="2026-08-14T10:05:01Z",
+            ),
+            terminal_valuation(
+                authority=stop_authority,
+                issuer_key_id=identity.key_id,
+                command_fingerprint=STOP_COMMAND_FINGERPRINT,
+                closes_generation=running_generation,
+                outcome="confirmed",
+                reason_code=None,
+                account_scope={
+                    "venue": "BINANCE",
+                    "credential_scope_id": CREDENTIAL_SCOPE_ID,
+                    "credential_scope_digest": CREDENTIAL_SCOPE_DIGEST,
+                    "sub_account": None,
+                    "wallet_type": "spot",
+                },
+                valuation_source="simulated_account",
+                position_policy="flatten",
+                stop_requested_at="2026-08-14T10:05:00Z",
+                valuation_observed_at="2026-08-14T10:05:00.500Z",
+                marks_oldest_at=None,
+                stop_effective_at="2026-08-14T10:05:00.800Z",
+                equity={"amount": "10060", "currency": "USDT"},
+                open_positions=[],
+                prior_equity={
+                    "event_id": prior["event_id"],
+                    "seq": prior["seq"],
+                    "amount": prior["amount"],
+                    "currency": prior["currency"],
+                    "observed_at": prior["observed_at"],
+                },
+            ),
+        ],
+        batch_id=TERMINAL_STOP_BATCH_ID,
+        emitted_at="2026-08-14T10:05:02Z",
+        source_seq_start=run_batch["source_seq_end"] + 1,
+        spec_id=SPEC_ID,
+        spec_digest=SPEC_DIGEST,
+        generation=stop_generation,
+        capability_id=CAPABILITY_ID,
+        capability_manifest_digest=capability_manifest_digest,
+        identity=identity,
+    )
+    return [run_batch, stop_batch]
 
 
 def _batch(
@@ -1058,6 +1319,7 @@ def _parity() -> dict[str, Any]:
         "venue_ledger_snapshot_chunk": "bounded authoritative venue ledger chunk",
         "reconciliation_period_closed": "completed reconciliation evidence period",
         "RunnerDeploymentLifecycleFact.v1": "local engine lifecycle observation",
+        TERMINAL_VALUATION_KIND: "same-boundary valuation at a signed instance stop",
     }
     return {
         "schema_version": 1,
@@ -1104,6 +1366,14 @@ def build_assets() -> dict[Path, bytes]:
         capability_manifest_digest=manifest_digest,
         identity=identity,
     )
+    terminal_boundary = _terminal_boundary(
+        golden, capability_manifest_digest=manifest_digest, identity=identity
+    )
+    union_kinds = {fact["kind"] for fact in golden["facts"]} | {
+        fact["kind"] for batch in terminal_boundary for fact in batch["facts"]
+    }
+    if union_kinds != set(RUNNER_FACT_KIND_PROJECTORS):
+        raise RuntimeError("assets do not contain the closed RunnerFact kind union")
     signing_header = runner_fact_signing_header(golden)
     canonical_header = _canonical(signing_header)
     signing_preimage = runner_fact_signing_preimage(golden)
@@ -1161,6 +1431,7 @@ def build_assets() -> dict[Path, bytes]:
         CAPABILITY_RECEIPT_PATH: capability_receipt,
         PARITY_PATH: parity,
         SIGNING_PREIMAGE_PATH: signing_vector,
+        TERMINAL_BOUNDARY_PATH: terminal_boundary,
     }
     assets: dict[Path, bytes] = {path: _pretty(value) for path, value in objects.items()}
     roles = {
@@ -1170,6 +1441,7 @@ def build_assets() -> dict[Path, bytes]:
         CAPABILITY_RECEIPT_PATH: "runner_fact_capability_receipt_golden",
         PARITY_PATH: "runtime_event_fact_parity_matrix",
         SIGNING_PREIMAGE_PATH: "runner_fact_signing_preimage_golden",
+        TERMINAL_BOUNDARY_PATH: "runner_fact_terminal_boundary_golden",
     }
     index = {
         "asset_index_schema_version": 1,
@@ -1203,6 +1475,7 @@ def build_assets() -> dict[Path, bytes]:
             "generation",
         ],
         "fact_kind_projectors": dict(RUNNER_FACT_KIND_PROJECTORS),
+        "closed_fact_union_assets": [str(GOLDEN_PATH), str(TERMINAL_BOUNDARY_PATH)],
         "synthetic_signature": {
             "algorithm": "ed25519",
             "key_id": key_id,

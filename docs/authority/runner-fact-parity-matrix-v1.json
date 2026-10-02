@@ -105,6 +105,13 @@
       "capability_projector": "deployment_lifecycle",
       "signed_batch": "RunnerFactBatchV1",
       "canonical_owner_after_ingest": "crucible-rust"
+    },
+    {
+      "runtime_source": "same-boundary valuation at a signed instance stop",
+      "fact_kind": "RunnerInstanceTerminalValuationFact.v1",
+      "capability_projector": "settlement",
+      "signed_batch": "RunnerFactBatchV1",
+      "canonical_owner_after_ingest": "crucible-rust"
     }
   ]
 }

@@ -18,7 +18,8 @@
     "venue_ledger_snapshot_chunk": "reconciliation",
     "reconciliation_period_closed": "reconciliation",
     "RunnerValuationCheckpointFact.v1": "reconciliation",
-    "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle"
+    "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle",
+    "RunnerInstanceTerminalValuationFact.v1": "settlement"
   },
   "runner_fact_contracts": {
     "risk": {
@@ -32,7 +33,8 @@
       "fill": "v1",
       "position_closed": "v1",
       "fee": "v1",
-      "period_closed": "v1"
+      "period_closed": "v1",
+      "terminal_valuation": "v1"
     },
     "reconciliation": {
       "schema_version": 1,

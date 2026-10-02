@@ -8,11 +8,20 @@ equity, marks, or unrealized PnL.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
 from custos.core.engine_protocol import PositionSnapshot
+
+# Set only while a stop boundary is read: there a value that arrives as a binary
+# float cannot prove it never passed through one, so the read is unreliable.
+_REFUSE_FLOAT: ContextVar[bool] = ContextVar("portfolio_refuse_float", default=False)
+
+
+class _FloatSource(ValueError):
+    """A portfolio input arrived as a binary float while floats are refused."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +77,10 @@ class NautilusPortfolioSnapshot:
     reliable: bool
     unreliable_reason: str | None = None
     cash_inventory: tuple[dict[str, str], ...] | None = None
+    # The oldest source time, in nanoseconds, of every price this valuation used;
+    # None when it used none. Complete is False when some price had no source time.
+    marks_oldest_ns: int | None = None
+    price_watermarks_complete: bool = True
 
     def __post_init__(self) -> None:
         if self.reliable:
@@ -131,30 +144,57 @@ class NautilusPortfolioSnapshotProvider:
         timestamps -- while ``Cache.price`` returns the ``Price`` itself;
         everything downstream wants the price.
         """
-        mark = cache.mark_price(instrument_id)
-        mark = getattr(mark, "value", mark)
+        return self._priced(cache, instrument_id)[0]
+
+    def _priced(self, cache: Any, instrument_id: object) -> tuple[object | None, int | None]:
+        """The trusted price and the source time it carries, when it carries one.
+
+        A mark keeps its own ``ts_event``. ``Cache.price`` returns a bare
+        ``Price``, so a mid or last price takes its time from the quote or the
+        trade it was derived from; when that cannot be read the time is unknown.
+        """
+        update = cache.mark_price(instrument_id)
+        mark = getattr(update, "value", update)
         if mark is not None:
-            return mark
-        for price_type in (self._price_type_mid, self._price_type_last):
+            return mark, _source_time(update)
+        sources = ((self._price_type_mid, "quote"), (self._price_type_last, "trade"))
+        for price_type, source in sources:
             if price_type is None:
                 continue
             price = cache.price(instrument_id, price_type)
             if price is not None:
-                return price
-        return None
+                reader = getattr(cache, source, None)
+                tick = reader(instrument_id) if callable(reader) else None
+                return price, _source_time(tick)
+        return None, None
 
     def snapshot(
         self,
         runtime: Any,
         currency: str | None = None,
+        *,
+        refuse_float: bool = False,
     ) -> NautilusPortfolioSnapshot:
         """Read equity, trusted marks, and PnL as one coherent snapshot.
 
         Takes the host's captured runtime rather than the node: 2.0's ``run_async``
         owns the node while it runs, so the cache and the portfolio have to be the
         ones captured before the run started.
+
+        ``refuse_float`` makes any input that arrives as a binary float an
+        unreliable read rather than a converted one.
         """
 
+        token = _REFUSE_FLOAT.set(refuse_float)
+        try:
+            return self._snapshot(runtime, currency)
+        except _FloatSource:
+            return NautilusPortfolioSnapshot.unreliable("portfolio_float_source")
+        finally:
+            _REFUSE_FLOAT.reset(token)
+
+    def _snapshot(self, runtime: Any, currency: str | None) -> NautilusPortfolioSnapshot:
+        watermarks: list[int | None] = []
         try:
             cache = runtime.cache
             portfolio = runtime.portfolio
@@ -189,7 +229,7 @@ class NautilusPortfolioSnapshotProvider:
                 return NautilusPortfolioSnapshot.unreliable(f"portfolio_prices_missing:{named}")
 
             resolved_currency, equity, cash_inventory = self._equity_in_currency(
-                cache, venue, equity_by_currency, currency
+                cache, venue, equity_by_currency, currency, watermarks
             )
             if resolved_currency is None or equity is None:
                 reason = (
@@ -202,7 +242,8 @@ class NautilusPortfolioSnapshotProvider:
             converted: list[NautilusPortfolioPosition] = []
             for position in positions:
                 instrument_id = position.instrument_id
-                mark = self._price(cache, instrument_id)
+                mark, mark_time = self._priced(cache, instrument_id)
+                watermarks.append(mark_time)
                 if mark is None:
                     return NautilusPortfolioSnapshot.unreliable(
                         f"mark_price_unavailable:{instrument_id}"
@@ -233,6 +274,7 @@ class NautilusPortfolioSnapshotProvider:
                     )
                 )
 
+            known = [watermark for watermark in watermarks if watermark is not None]
             return NautilusPortfolioSnapshot(
                 venue=str(venue),
                 currency=resolved_currency,
@@ -240,7 +282,11 @@ class NautilusPortfolioSnapshotProvider:
                 positions=tuple(converted),
                 reliable=True,
                 cash_inventory=cash_inventory,
+                marks_oldest_ns=min(known) if known else None,
+                price_watermarks_complete=len(known) == len(watermarks),
             )
+        except _FloatSource:
+            raise
         except (ArithmeticError, AttributeError, InvalidOperation, TypeError, ValueError) as exc:
             return NautilusPortfolioSnapshot.unreliable(
                 f"portfolio_snapshot_invalid:{type(exc).__name__}"
@@ -258,7 +304,7 @@ class NautilusPortfolioSnapshotProvider:
         first = min(instrument_ids, key=str)
         return getattr(first, "venue", None)
 
-    def _equity_in_currency(self, cache, venue, values, requested_currency):
+    def _equity_in_currency(self, cache, venue, values, requested_currency, watermarks):
         if requested_currency is None or not hasattr(values, "items") or not values:
             return (*self._resolve_equity(values, requested_currency), None)
         target = requested_currency.upper()
@@ -296,9 +342,10 @@ class NautilusPortfolioSnapshotProvider:
                 )
                 if (base, quote) not in {(source, target), (target, source)}:
                     continue
-                mark = self._price(cache, instrument_id)
+                mark, mark_time = self._priced(cache, instrument_id)
                 if mark is None:
                     continue
+                watermarks.append(mark_time)
                 rate = _decimal(mark)
                 if not rate.is_finite() or rate <= 0:
                     raise ValueError("invalid asset conversion price")
@@ -347,9 +394,20 @@ def _position_average_price(position: object) -> Decimal:
     return Decimal("0")
 
 
+def _source_time(value: object) -> int | None:
+    """The source time a Nautilus market-data object carries, in nanoseconds."""
+
+    ts_event = getattr(value, "ts_event", None)
+    if type(ts_event) is not int or ts_event <= 0:
+        return None
+    return ts_event
+
+
 def _decimal(value: object) -> Decimal:
     if isinstance(value, Decimal):
         return value
+    if isinstance(value, float) and _REFUSE_FLOAT.get():
+        raise _FloatSource("portfolio input arrived as a binary float")
     as_decimal = getattr(value, "as_decimal", None)
     if callable(as_decimal):
         return _decimal(as_decimal())

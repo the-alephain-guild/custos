@@ -885,19 +885,41 @@ class RunnerFactProductionLoop:
                 ):
                     self._period_starts[key] = closed_at
                     self._period_coverage_starts[key] = closed_at
-                    self._note_month_boundary(key, start, closed_at)
+                    if self._note_month_boundary(key, start, closed_at):
+                        await self._owe_month_close(deployment)
             for deployment in active:
                 await self._close_pending_month(deployment)
             await self._wait(stop, self._period_retry_secs)
 
-    def _note_month_boundary(self, key: str, started_at: datetime, closed_at: datetime) -> None:
+    def _note_month_boundary(self, key: str, started_at: datetime, closed_at: datetime) -> bool:
         month_start = closed_at.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         if started_at >= month_start:
-            return
+            return False
         period = f"{started_at:%Y-%m}"
         if self._emitted_month_closes.get(key) == period:
-            return
+            return False
         self._pending_month_closes[key] = (period, month_start)
+        return True
+
+    async def _owe_month_close(self, deployment: RunnerFactDeployment) -> None:
+        """Record the owed close durably, so a stop before the next tick still emits it.
+
+        The in-memory record below is dropped as soon as the instance stops; the
+        durable one is what the stop's terminal commit reads. Failing to record it
+        does not hold the close back: it is still emitted on the next tick.
+        """
+        authority = deployment.authority
+        period, month_start = self._pending_month_closes[authority.stream_key]
+        try:
+            await self._emitter.owe_month_close(authority, period, month_start)
+        except Exception as exc:
+            _log.error(
+                "runner_fact_owed_month_close_unrecorded",
+                deployment_instance_id=deployment.deployment_instance_id,
+                deployment_spec_id=str(authority.deployment_spec_id),
+                period=period,
+                error=str(exc),
+            )
 
     async def _close_pending_month(self, deployment: RunnerFactDeployment) -> None:
         """Emit the settlement close for a month a reconciliation period has
