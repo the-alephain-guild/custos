@@ -13,6 +13,113 @@ protocol — is published at
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-02
+
+It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.6.0`
+and as source; there is no PyPI package. Call the reusable publishing workflow at
+`@v0.6.0`; a runner or deployment service that trusts releases published through
+it lists that tag as the workflow identity. The engine (`2.0.0rc5+sodex.2`) and
+the matching strategy toolkit (`0.1.0rc9`) are unchanged; strategy repositories
+do not need to move.
+
+Minor, not patch: RunnerFact V1 gains a fact kind, and lifecycle outcomes for a
+start that could not be carried out change their reported state. A deployment
+service that consumes RunnerFact must take this release's contract assets
+before it issues a runner a capability that declares terminal valuation, and
+must accept `stopped` on the outcomes described under Changed.
+
+### Added
+
+- **A signed stop carries the instance's terminal valuation.** RunnerFact V1
+  gains `RunnerInstanceTerminalValuationFact.v1`, a settlement fact committed in
+  the same batch as, and directly after, the lifecycle fact of an applied stop.
+  It is either `confirmed`, with equity, open positions and the oldest price time
+  read at the stop boundary (after the node's run ended and before it was
+  disposed), or `valuation_unconfirmed`, with the valuation nulled and one
+  `reason_code` chosen by a fixed precedence. A month close the stream still owed
+  is committed first, and the instance's fact stream is sealed afterwards: only
+  its archive may follow. Before this, an instance stopped mid-month received no
+  settlement close, and the last periodic equity snapshot missed whatever changed
+  before the stop.
+- **The fact is opt-in through the capability.** The runner produces it only
+  when its capability receipt declares the settlement flag
+  `terminal_valuation: "v1"` together with the new kind; a capability without it
+  keeps committing the lifecycle fact alone, and a receipt issued before the flag
+  still loads. A manifest that declares the kind without the flag, or the flag
+  without the kind, is refused.
+- **Contract assets.** The RunnerFact batch schema, the capability manifest and
+  its receipt golden, the parity matrix, the asset index and a new
+  `runner-fact-terminal-boundary-golden-v1.json` change or are added. The
+  single-batch golden keeps its shape and fact content, but its header digest
+  and signature and the signing preimage change with the capability manifest; a
+  consumer that pins these assets takes them together with this release.
+  Historical receipts are unchanged.
+- **The strategy toolkit gains `strategy_registration_scope()`**, a registry
+  private to the code it wraps. The runner loads every verified artifact inside
+  its own scope, so two artifacts that register the same strategy name from
+  different sources, such as a new version of a strategy, load one after the
+  other in one process instead of the second being quarantined. Within one
+  artifact, one name registered from two sources is still refused. Outside a
+  scope (backtesting, the offline lane) nothing changes.
+- **A local image can be built on a reviewed engine wheel.**
+  `make docker-build-local-v030` accepts `LOCAL_NAUTILUS_WHEEL`, with its
+  SHA-256 and engine source revision, checks the wheel's digest, name and version
+  before installing it over the locked runtime, and labels the image with both.
+  It is for local development only; the release lock and the published image are
+  unchanged.
+
+### Changed
+
+- **A start the runner cannot carry out is refused and reported, not
+  quarantined.** A runner process runs one instance at a time. A start for a
+  second instance is now refused before its artifact is loaded, with
+  `runtime_capacity_rejected:runner_engine_occupied`, and signed as a
+  `retry_exhausted` lifecycle outcome; the running instance is untouched. A start
+  that arrives while the running instance is being stopped, including while its
+  node is still being reaped, is retried and goes ahead once the node is
+  released.
+- **A command the runner cannot yet sign for is kept and acknowledged.** The
+  capability receipt is read once at startup; a command for an instance it does
+  not cover used to be loaded anyway, and its refusal, which could not be signed,
+  was negatively acknowledged again and again, holding every later command
+  (including a stop) behind it. The command is now acknowledged, kept as the
+  desired state and logged as `runner_command_awaiting_capability_binding`;
+  nothing is loaded or started. Acknowledgement now has three outcomes: applied,
+  refused, and kept awaiting a binding.
+- **Terminal lifecycle outcomes report `lifecycle_state: "stopped"`.** Every
+  terminal outcome the lifecycle supervisor commits, including a refused or
+  failed start, reports the state the runner observes after it stopped the
+  engine or never started it, rather than the state the command asked for.
+- **Stop timeouts change meaning.** A run that ignores the graceful stop is
+  cancelled; one that also outlasts the cancellation may still be running, so
+  nothing is committed: the stop is recorded as awaiting its reap and the
+  delivery is acknowledged rather than retried into exhaustion. When the node is
+  reaped the stop commits with `stop_timeout`. An applied stop therefore always
+  means the node is no longer running, and one stop command ends once.
+
+### Fixed
+
+- **A restart reports what it cannot start.** A runner restarting with several
+  instances to recover used to recover them concurrently, racing for the one
+  engine node, and a final failure was only logged locally while the control
+  plane kept seeing the instance as running. Recovery now runs one instance at a
+  time, the instance that was running first; a final refusal (an artifact or
+  authority rejection, a quarantined activation, an occupied runner) is
+  committed as `retry_exhausted` and signed.
+- **A kept stop, pause or archive is reported once a restart covers its
+  instance.** After a restart whose capability covers the instance, the kept
+  command is applied and its signed lifecycle outcome reported exactly once. A
+  kept command that a newer command for the same instance has replaced is not
+  reported, and recovering it never stops the newer generation.
+- **A stop whose node outlived the process is signed as a process exit.** A
+  stop still awaiting its reap when the process ended is settled after the
+  restart with `process_exit_before_confirmation`. The same reason, with
+  `stop_effective_at` null, now applies to a stop that finds no node for an
+  instance last applied running in an earlier process and never started in this
+  one: that node ended with the earlier process, at a moment nobody observed. A
+  stop after a pause, or after a node that ended inside this process, keeps
+  `engine_not_running_at_stop`.
+
 ## [0.5.2] - 2026-09-29
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.5.2`

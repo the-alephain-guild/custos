@@ -155,7 +155,7 @@ def test_official_image_contains_v030_distribution() -> None:
         "official image must contain the custos-runner distribution; "
         f"stdout={proc.stdout!r}; stderr={proc.stderr!r}"
     )
-    assert proc.stdout.strip() == "0.5.2"
+    assert proc.stdout.strip() == "0.6.0"
 
 
 @pytest.mark.docker

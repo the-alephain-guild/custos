@@ -36,7 +36,7 @@ def test_project_scripts_single_entry_arx_runner():
 
 def test_project_version_is_0_3_0():
     data = _load()
-    assert data["project"]["version"] == "0.5.2"
+    assert data["project"]["version"] == "0.6.0"
 
 
 def test_project_runtime_declares_sigstore_and_lts_declares_pytest_docker():

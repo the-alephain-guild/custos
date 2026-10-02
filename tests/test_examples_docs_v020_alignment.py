@@ -29,8 +29,9 @@ ACTIVE_RUNTIME_DOCS = (
     SANDBOX_DIR / "README.md",
     TESTNET_DIR / "README.md",
 )
-LOCAL_IMAGE = "custos-runner:v0.5.2"
-REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.5.2"
+LOCAL_IMAGE = "custos-runner:v0.6.0"
+REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.6.0"
+REMOTE_IMAGE_V052 = "ghcr.io/the-alephain-guild/custos:v0.5.2"
 REMOTE_IMAGE_V051 = "ghcr.io/the-alephain-guild/custos:v0.5.1"
 REMOTE_IMAGE_V050 = "ghcr.io/the-alephain-guild/custos:v0.5.0"
 REMOTE_IMAGE_V042 = "ghcr.io/the-alephain-guild/custos:v0.4.2"
@@ -41,15 +42,25 @@ MAKEFILE = REPO_ROOT / "Makefile"
 OPERATOR_DEPLOYMENT = REPO_ROOT / "docs-site" / "docs" / "04-operator-guide" / "deployment.md"
 
 
-def test_project_and_lock_are_versioned_v052() -> None:
+def test_project_and_lock_are_versioned_v060() -> None:
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     locked_project = next(
         package for package in lock["package"] if package["name"] == "custos-runner"
     )
 
-    assert project["project"]["version"] == "0.5.2"
-    assert locked_project["version"] == "0.5.2"
+    assert project["project"]["version"] == "0.6.0"
+    assert locked_project["version"] == "0.6.0"
+
+
+def test_changelog_documents_the_published_v060() -> None:
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    v060 = " ".join(text[text.index("## [0.6.0]") : text.index("## [0.5.2]")].split())
+
+    assert "## [0.6.0] - 2026-10-02" in text
+    assert REMOTE_IMAGE in v060
+    assert "@v0.6.0" in v060
+    assert "RunnerInstanceTerminalValuationFact.v1" in v060
 
 
 def test_changelog_documents_the_published_v052() -> None:
@@ -57,7 +68,7 @@ def test_changelog_documents_the_published_v052() -> None:
     v052 = " ".join(text[text.index("## [0.5.2]") : text.index("## [0.5.1]")].split())
 
     assert "## [0.5.2] - 2026-09-29" in text
-    assert REMOTE_IMAGE in v052
+    assert REMOTE_IMAGE_V052 in v052
     assert "@v0.5.2" in v052
 
 
