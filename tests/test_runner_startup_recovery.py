@@ -146,7 +146,7 @@ async def test_closing_cancels_recoveries_still_in_flight() -> None:
 
 @pytest.mark.asyncio
 async def test_the_daemon_schedules_recoveries_instead_of_waiting_for_them() -> None:
-    from custos.cli._daemon import _recover_durable_running_commands
+    from custos.cli._daemon import _recover_durable_commands
 
     identity = SimpleNamespace(
         trading_mode="sandbox",
@@ -154,6 +154,7 @@ async def test_the_daemon_schedules_recoveries_instead_of_waiting_for_them() -> 
         deployment_spec_id=UUID(int=4),
         deployment_spec_digest="a" * 64,
         strategy_id=UUID(int=5),
+        lifecycle_state="running",
     )
 
     class StateStore:
@@ -187,7 +188,7 @@ async def test_the_daemon_schedules_recoveries_instead_of_waiting_for_them() -> 
             raise AssertionError("startup must not wait for an engine to recover")
 
     runtime = Runtime()
-    await _recover_durable_running_commands(
+    await _recover_durable_commands(
         state_store=StateStore(), command_runtime=runtime, capability=Capability()
     )
 

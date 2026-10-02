@@ -386,18 +386,20 @@ def _engine_node_capacity(engine: str, host: object) -> EngineNodeCapacity | Non
     return host
 
 
-async def _recover_durable_running_commands(
+async def _recover_durable_commands(
     *,
     state_store,
     command_runtime,
     capability,
 ) -> None:
     identities = await state_store.list_recoverable_desired_command_identities()
-    recoverable: list[tuple[bool, VerifiedRunnerCommand]] = []
+    recoverable: list[tuple[int, VerifiedRunnerCommand]] = []
     for identity in identities:
         # The same criterion a fresh command meets before anything is activated:
         # a command acknowledged while unbound waits here for a capability that
-        # binds it, and is applied or refused, and reported, once it does.
+        # binds it, and is applied or refused, and reported, once it does. That
+        # holds for a stop, pause or archive as much as for a start; one that is
+        # never bound is kept and logged at every startup.
         binding_gap = runner_instance_binding_gap(
             capability,
             trading_mode=identity.trading_mode,
@@ -411,6 +413,7 @@ async def _recover_durable_running_commands(
                 "durable_command_recovery_skipped",
                 deployment_instance_id=str(identity.deployment_instance_id),
                 generation=identity.generation,
+                lifecycle_state=identity.lifecycle_state,
                 reason="not_bound_by_current_capability",
                 binding_gap=binding_gap,
             )
@@ -422,12 +425,17 @@ async def _recover_durable_running_commands(
             command_fingerprint=durable.command_fingerprint,
             verification_receipt=durable.verification_receipt,
         )
+        if command.lifecycle_state != "running":
+            recoverable.append((0, verified))
+            continue
         state = await state_store.load_engine_lifecycle_state(verified)
-        recoverable.append((state.desired_status != "applied", verified))
-    # Instances that were running before the restart come first: on an engine that
-    # runs one node per process the first recovery holds it, and a command that
-    # was only recorded is the one refused as occupied. The sort is stable, so
-    # each group keeps the store's order.
+        recoverable.append((1 if state.desired_status == "applied" else 2, verified))
+    # Commands that stop an instance come first and hold nothing: the instance was
+    # never started by this process, so they neither need nor take the engine
+    # node. Among running commands, instances that were running before the
+    # restart come next: on an engine that runs one node per process the first
+    # recovery holds it, and a command that was only recorded is the one refused
+    # as occupied. The sort is stable, so each group keeps the store's order.
     recoverable.sort(key=lambda item: item[0])
     # Recovery waits for the engine and therefore for the venue; it runs in the
     # background so the runner is ready, reporting and taking commands meanwhile,
@@ -1266,7 +1274,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
                         name=f"crucible-runner-control-{mode}",
                     )
                 )
-            await _recover_durable_running_commands(
+            await _recover_durable_commands(
                 state_store=state_store,
                 command_runtime=command_runtime,
                 capability=capability,

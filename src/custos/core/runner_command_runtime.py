@@ -271,18 +271,23 @@ class RunnerCommandRuntimeCoordinator:
         return task
 
     def schedule_recoveries(self, verified_commands: Sequence[VerifiedRunnerCommand]) -> None:
-        """Recover durable running commands, one after another on a one-node engine.
+        """Recover durable commands, running ones in turn on a one-node engine.
 
         An engine that runs one node per process can recover only one instance;
-        recovering them concurrently makes the outcome a race. They are recovered
-        in the order given (the daemon puts applied instances before recorded
-        ones), so the first that starts holds the node and each later one is
-        refused as occupied and reported. Without that limit they recover
-        concurrently, as before.
+        recovering running commands concurrently makes the outcome a race. They
+        are recovered in the order given (the daemon puts applied instances
+        before recorded ones), so the first that starts holds the node and each
+        later one is refused as occupied and reported. Without that limit they
+        recover concurrently, as before. A command that stops, pauses or
+        archives an instance takes no node, so it neither waits for a running
+        recovery nor holds one back.
         """
 
         previous: asyncio.Task[None] | None = None
         for verified in verified_commands:
+            if verified.command.lifecycle_state != "running":
+                self.schedule_recovery(verified)
+                continue
             after = previous if self._node_capacity is not None else None
             previous = self.schedule_recovery(verified, after=after)
 

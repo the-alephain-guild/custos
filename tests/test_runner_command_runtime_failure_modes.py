@@ -482,7 +482,7 @@ class _BindingCapability:
 
 
 async def _restart_and_recover(store, verified, capability, events):
-    from custos.cli._daemon import _recover_durable_running_commands
+    from custos.cli._daemon import _recover_durable_commands
     from tests.test_engine_recovery_persistence import supervisor
 
     restarted = RunnerCommandRuntimeCoordinator(
@@ -496,7 +496,7 @@ async def _restart_and_recover(store, verified, capability, events):
         delivery_policy=CommandDeliveryPolicy(in_progress_interval_seconds=0.01),
         capability_binding=lambda verified: None,
     )
-    await _recover_durable_running_commands(
+    await _recover_durable_commands(
         state_store=store,
         command_runtime=restarted,
         capability=capability,
@@ -754,7 +754,7 @@ class _OneNodeEngineLifecycle(_Lifecycle):
 
 @pytest.mark.asyncio
 async def test_two_running_instances_recover_in_turn_and_the_recorded_one_is_refused() -> None:
-    from custos.cli._daemon import _recover_durable_running_commands
+    from custos.cli._daemon import _recover_durable_commands
 
     recorded_verified = VERIFIED
     applied_verified = _other_instance_command()
@@ -772,6 +772,7 @@ async def test_two_running_instances_recover_in_turn_and_the_recorded_one_is_ref
                     deployment_spec_digest="a" * 64,
                     generation=1,
                     strategy_id=UUID(int=5),
+                    lifecycle_state="running",
                 )
                 for instance in (INSTANCE, OTHER_INSTANCE)
             )
@@ -802,7 +803,7 @@ async def test_two_running_instances_recover_in_turn_and_the_recorded_one_is_ref
         node_capacity=lifecycle,
     )
 
-    await _recover_durable_running_commands(
+    await _recover_durable_commands(
         state_store=StateStore(),
         command_runtime=subject,
         capability=_BindingCapability(None),
@@ -898,7 +899,7 @@ async def _restart(
     engine=None,
 ):
     """Restart a runner on ``store`` and let every startup recovery finish."""
-    from custos.cli._daemon import _recover_durable_running_commands
+    from custos.cli._daemon import _recover_durable_commands
     from tests.test_engine_recovery_persistence import supervisor
 
     events: list[str] = []
@@ -919,7 +920,7 @@ async def _restart(
         capability_binding=lambda verified: None,
     )
     with capture_logs() as logs:
-        await _recover_durable_running_commands(
+        await _recover_durable_commands(
             state_store=state_store or store,
             command_runtime=restarted,
             capability=capability,
@@ -1145,7 +1146,7 @@ class _GatedStopLifecycle(_OneNodeEngineLifecycle):
 
 @pytest.mark.asyncio
 async def test_a_kept_stop_does_not_hold_the_one_node_recovery_chain() -> None:
-    from custos.cli._daemon import _recover_durable_running_commands
+    from custos.cli._daemon import _recover_durable_commands
 
     stop_verified = SimpleNamespace(
         command=SimpleNamespace(
@@ -1202,7 +1203,7 @@ async def test_a_kept_stop_does_not_hold_the_one_node_recovery_chain() -> None:
         node_capacity=lifecycle,
     )
 
-    await _recover_durable_running_commands(
+    await _recover_durable_commands(
         state_store=StateStore(),
         command_runtime=subject,
         capability=_BindingCapability(None),
