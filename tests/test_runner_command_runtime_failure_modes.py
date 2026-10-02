@@ -786,7 +786,10 @@ async def test_two_running_instances_recover_in_turn_and_the_recorded_one_is_ref
             )
 
         async def load_engine_lifecycle_state(self, verified):
-            return SimpleNamespace(desired_status=status[verified.command.deployment_instance_id])
+            return SimpleNamespace(
+                desired_status=status[verified.command.deployment_instance_id],
+                stop_reap_pending=False,
+            )
 
     events: list[str] = []
     lifecycle = _OneNodeEngineLifecycle(events)
@@ -1195,7 +1198,10 @@ async def test_a_kept_stop_does_not_hold_the_one_node_recovery_chain() -> None:
             )
 
         async def load_engine_lifecycle_state(self, verified):
-            return SimpleNamespace(desired_status=status[verified.command.deployment_instance_id])
+            return SimpleNamespace(
+                desired_status=status[verified.command.deployment_instance_id],
+                stop_reap_pending=False,
+            )
 
     events: list[str] = []
     lifecycle = _GatedStopLifecycle(events)

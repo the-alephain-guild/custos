@@ -845,3 +845,97 @@ def test_the_daemon_produces_terminal_facts_only_under_its_capability_flag() -> 
     settings = _terminal_valuation_settings(declared)
     assert settings is not None and settings.venue_for_connector("binance_perpetual") == "BINANCE"
     assert _terminal_valuation_settings(undeclared) is None
+
+
+class _EveryInstanceBound:
+    def require_scope_bindings(self, **kwargs) -> None:
+        return None
+
+
+class _RecordingRecoveries:
+    def __init__(self) -> None:
+        self.scheduled: list[tuple[str, int]] = []
+
+    def schedule_recoveries(self, verified_commands) -> None:
+        self.scheduled.extend(
+            (str(verified.command.lifecycle_state), verified.command.generation)
+            for verified in verified_commands
+        )
+
+
+@pytest.mark.asyncio
+async def test_a_stop_awaiting_its_reap_is_settled_by_the_stop_recovery_alone(
+    tmp_path: Path,
+) -> None:
+    """The kept-command recovery leaves a stop with a pending reap to recover_pending_stops.
+
+    The daemon settles pending reaps before it recovers kept commands. A stop
+    still awaiting its reap at that point, because its settlement failed or its
+    reap timed out in this process, is the pending-stop recovery's to settle:
+    the kept-command recovery would only stop an empty node again and log a
+    recovery that committed nothing.
+    """
+    from structlog.testing import capture_logs
+
+    from custos.cli._daemon import _recover_durable_commands
+
+    database = tmp_path / "runner-state.sqlite3"
+    _, store = _store(database)
+    await _apply(store, _command(1, "running"), delivery_id="run")
+    stop = _command(2, "stopped")
+    await store.record_desired_command(
+        command=stop.command,
+        command_fingerprint=stop.command_fingerprint,
+        verification_receipt=stop.verification_receipt,
+    )
+    never: asyncio.Future[datetime] = asyncio.get_running_loop().create_future()
+    await _supervisor(
+        _BoundaryEngine(
+            [
+                _boundary(
+                    stopped_gracefully=False,
+                    reaped=False,
+                    stop_effective_at=None,
+                    valuation=None,
+                    reap=never,
+                )
+            ]
+        ),
+        store,
+    ).apply_non_running(delivery_id="stop-delivery", verified=stop)
+    never.cancel()
+
+    _, restarted_store = _store(database)
+    recoveries = _RecordingRecoveries()
+    with capture_logs() as logs:
+        await _recover_durable_commands(
+            state_store=restarted_store,
+            command_runtime=recoveries,
+            capability=_EveryInstanceBound(),
+        )
+
+    assert recoveries.scheduled == [], "a stop awaiting its reap is not recovered as kept"
+    assert [
+        (log["reason"], log["lifecycle_state"], log["generation"])
+        for log in logs
+        if log["event"] == "durable_command_recovery_skipped"
+    ] == [("stop_reap_pending", "stopped", 2)]
+    assert _outcomes(database, 2) == []
+
+    # In the daemon's order the pending-stop recovery settles it, and the
+    # kept-command recovery then has nothing left to skip or report.
+    engine = _BoundaryEngine([])
+    await _supervisor(engine, restarted_store).recover_pending_stops()
+    recoveries = _RecordingRecoveries()
+    with capture_logs() as logs:
+        await _recover_durable_commands(
+            state_store=restarted_store,
+            command_runtime=recoveries,
+            capability=_EveryInstanceBound(),
+        )
+
+    assert recoveries.scheduled == []
+    assert [log for log in logs if log["event"].startswith("durable_command_recovery")] == []
+    assert engine.boundary_calls == 0
+    assert _outcomes(database, 2) == [("applied", "applied")]
+    assert _terminal(database)["reason_code"] == "process_exit_before_confirmation"

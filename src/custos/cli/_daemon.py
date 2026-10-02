@@ -442,10 +442,22 @@ async def _recover_durable_commands(
             command_fingerprint=durable.command_fingerprint,
             verification_receipt=durable.verification_receipt,
         )
+        state = await state_store.load_engine_lifecycle_state(verified)
         if command.lifecycle_state != "running":
+            if state.stop_reap_pending:
+                # The stop's node was still being reaped and its settlement has not
+                # committed; recover_pending_stops owns it and runs first. Applying
+                # it here would commit nothing and claim a recovery.
+                _slog.warning(
+                    "durable_command_recovery_skipped",
+                    deployment_instance_id=str(identity.deployment_instance_id),
+                    generation=identity.generation,
+                    lifecycle_state=identity.lifecycle_state,
+                    reason="stop_reap_pending",
+                )
+                continue
             recoverable.append((0, verified))
             continue
-        state = await state_store.load_engine_lifecycle_state(verified)
         recoverable.append((1 if state.desired_status == "applied" else 2, verified))
     # Commands that stop an instance come first and hold nothing: the instance was
     # never started by this process, so they neither need nor take the engine
