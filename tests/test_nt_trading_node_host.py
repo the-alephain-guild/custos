@@ -682,6 +682,35 @@ async def test_a_second_deployment_is_refused_while_one_holds_the_loop(monkeypat
 
 
 @pytest.mark.asyncio
+async def test_an_occupied_runner_refuses_a_second_instance_finally_before_its_strategy(
+    monkeypatch,
+) -> None:
+    """Occupancy is a decision about the command, not an engine failure.
+
+    Retrying cannot free the node, so the refusal must be final and must not
+    spend the restart budget, and it comes before the contender's strategy is
+    built: nothing of the second artifact is constructed in this process.
+    """
+    from custos.core.engine_protocol import EngineDeploymentRefused
+
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    host = NtTradingNodeHost()
+    first = _deployment_instance_id("occupant")
+    await host.deploy(_spec("occupant"), _credential(), _Artifact())
+    contender = _RenewableArtifact()
+
+    try:
+        with pytest.raises(EngineDeploymentRefused) as refused:
+            await host.deploy(_spec("contender"), _credential(), contender)
+        assert refused.value.reason_code == "runner_engine_occupied"
+        assert first in str(refused.value)
+        assert contender.instances == []
+        assert len(FakeLiveNode.instances) == 1
+    finally:
+        await host.stop(first)
+
+
+@pytest.mark.asyncio
 async def test_the_loop_is_free_again_once_the_holder_stops(monkeypatch) -> None:
     """The guard tracks the running node, not a flag someone has to clear."""
     monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)

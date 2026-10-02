@@ -112,3 +112,108 @@ def test_loader_rejects_legacy_factory_shape(tmp_path: Path) -> None:
             execution_context=_context(),
         )
     sys.modules.pop("legacy", None)
+
+
+_SAME_NAME = "c1-same-name-strategy"
+
+
+def _write_activation(root: Path, *, marker: str) -> Path:
+    """One verified activation: the same package and registered name as every
+    other activation built by this helper, with its own strategy source."""
+
+    package = root / "strategy_same_name"
+    nautilus = package / "refinement" / "nautilus"
+    nautilus.mkdir(parents=True)
+    for directory in (package, package / "refinement", nautilus):
+        (directory / "__init__.py").write_text("", encoding="utf-8")
+    (nautilus / "strategy.py").write_text(
+        f"""
+from custos_toolkit_nautilus.adapter.registry import register_strategy
+
+MARKER = {marker!r}
+
+
+class Strategy:
+    def __init__(self, config):
+        self.config = config
+        self.marker = MARKER
+
+
+class Config:
+    pass
+
+
+def build_parameters(wrapper):
+    return MARKER
+
+
+register_strategy({_SAME_NAME!r}, Strategy, Config, build_parameters)
+""".lstrip(),
+        encoding="utf-8",
+    )
+    (package / "runtime.py").write_text(
+        f"""
+from custos_toolkit_nautilus.adapter.registry import create_strategy
+
+from .refinement.nautilus import strategy as _registration
+
+
+class Runtime:
+    def build_config(self, effective_config, execution_context):
+        return _registration.Config()
+
+    def build_strategy(self, config):
+        return create_strategy({_SAME_NAME!r}, config=config)
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _load_same_name(root: Path) -> object:
+    return NautilusRuntimeEntryPointLoaderV1().load(
+        activation_root=root,
+        entry_point="strategy_same_name.runtime:Runtime",
+        effective_config=deep_freeze_json({}),
+        execution_context=_context(),
+    )
+
+
+def _forget_same_name() -> None:
+    from custos_toolkit_nautilus.adapter import registry
+
+    registry._STRATEGY_REGISTRY.pop(_SAME_NAME, None)
+    for name in tuple(sys.modules):
+        if name == "strategy_same_name" or name.startswith("strategy_same_name."):
+            sys.modules.pop(name, None)
+
+
+def test_one_process_activates_two_sources_that_register_one_name(tmp_path: Path) -> None:
+    pytest.importorskip("custos_toolkit_nautilus")
+    first = _write_activation(tmp_path / "first", marker="first")
+    second = _write_activation(tmp_path / "second", marker="second")
+    try:
+        assert _load_same_name(first).marker == "first"
+        assert _load_same_name(second).marker == "second"
+        # The first activation's provider rebuilds its strategy on an engine
+        # restart, after the second activation has loaded.
+        assert _load_same_name(first).marker == "first"
+
+        from custos_toolkit_nautilus.adapter import registry
+
+        assert _SAME_NAME not in registry._STRATEGY_REGISTRY
+    finally:
+        _forget_same_name()
+
+
+def test_a_released_activation_does_not_block_its_successor(tmp_path: Path) -> None:
+    pytest.importorskip("custos_toolkit_nautilus")
+    first = _write_activation(tmp_path / "first", marker="first")
+    second = _write_activation(tmp_path / "second", marker="second")
+    try:
+        released = _load_same_name(first)
+        del released
+
+        assert _load_same_name(second).marker == "second"
+    finally:
+        _forget_same_name()
