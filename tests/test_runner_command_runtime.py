@@ -171,6 +171,9 @@ class _Lifecycle:
     async def apply_non_running(self, **kwargs):
         self.events.append("apply_non_running")
 
+    async def commit_refusal(self, **kwargs):
+        self.events.append(f"refusal:{kwargs['reason_code']}")
+
     async def supervise_once(self, **kwargs):
         raise EngineLifecycleQuarantined("fixture supervision complete")
 

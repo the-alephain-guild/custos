@@ -167,6 +167,9 @@ async def test_the_daemon_schedules_recoveries_instead_of_waiting_for_them() -> 
                 verification_receipt=object(),
             )
 
+        async def load_engine_lifecycle_state(self, verified):
+            return SimpleNamespace(desired_status="applied")
+
     class Capability:
         def require_scope_bindings(self, **kwargs) -> None:
             return None
@@ -175,8 +178,10 @@ async def test_the_daemon_schedules_recoveries_instead_of_waiting_for_them() -> 
         def __init__(self) -> None:
             self.scheduled: list[UUID] = []
 
-        def schedule_recovery(self, verified) -> None:
-            self.scheduled.append(verified.command.deployment_instance_id)
+        def schedule_recoveries(self, verified_commands) -> None:
+            self.scheduled.extend(
+                verified.command.deployment_instance_id for verified in verified_commands
+            )
 
         async def recover(self, verified):
             raise AssertionError("startup must not wait for an engine to recover")

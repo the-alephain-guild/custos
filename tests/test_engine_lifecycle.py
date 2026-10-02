@@ -694,3 +694,54 @@ async def test_sodex_is_admitted_for_sandbox_and_testnet() -> None:
     for mode in ("sandbox", "testnet"):
         for connector in ("sodex", "sodex_perpetual"):
             assert real.supports_venue(connector, mode) is True
+
+
+class _LifecycleStateStore(_Store):
+    """Remember the lifecycle state every terminal outcome is signed with."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.terminal_lifecycle_states: list[str] = []
+
+    async def commit_verified_command_outcome_and_enqueue_fact(self, **kwargs):
+        self.terminal_lifecycle_states.append(kwargs["lifecycle_state"])
+        return await super().commit_verified_command_outcome_and_enqueue_fact(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_a_start_that_ends_in_quarantine_is_reported_as_stopped() -> None:
+    # The command asked for running; what the runner observes after giving up is
+    # an instance that is not running, and that is what its lifecycle fact says.
+    verified = _verified()
+    store = _LifecycleStateStore()
+    engine = _Engine([TimeoutError(), TimeoutError()])
+
+    with pytest.raises(EngineLifecycleQuarantined, match="engine_ready_timeout"):
+        await _supervisor(store, engine, restart_budget=1).apply(
+            delivery_id="delivery-timeout",
+            verified=verified,
+            runtime_spec={"trading_mode": "sandbox", "connector": "binance"},
+            credential={},
+            artifact=_Artifact(),
+        )
+
+    assert store.terminal_lifecycle_states == ["stopped"]
+
+
+@pytest.mark.asyncio
+async def test_a_recovery_refusal_is_committed_as_stopped_without_touching_the_engine() -> None:
+    verified = _verified()
+    store = _LifecycleStateStore()
+    engine = _Engine([])
+
+    await _supervisor(store, engine).commit_refusal(
+        delivery_id="startup-recovery",
+        verified=verified,
+        reason_code="runtime_capacity_rejected:runner_engine_occupied",
+    )
+
+    assert store.terminal == [
+        ("retry_exhausted", "runtime_capacity_rejected:runner_engine_occupied")
+    ]
+    assert store.terminal_lifecycle_states == ["stopped"]
+    assert engine.events == []

@@ -452,11 +452,40 @@ class EngineLifecycleSupervisor:
             reason_code=reason_code,
             engine_handle=None,
             observed_status="quarantined",
-            lifecycle_state=str(verified.command.lifecycle_state),
+            # Every path here has stopped the engine or never started it, so the
+            # instance is observed stopped whatever the command asked for.
+            lifecycle_state="stopped",
             artifact_activation_id=artifact_activation_id,
             artifact_policy_id=artifact_policy_id,
         )
         raise EngineLifecycleQuarantined(reason_code)
+
+    async def commit_refusal(
+        self,
+        *,
+        delivery_id: str,
+        verified: Any,
+        reason_code: str,
+    ) -> None:
+        """Commit and sign a final refusal for a command the engine never started.
+
+        Used by startup recovery, which has no delivery to terminate. Unlike a
+        command's own refusal it may follow an earlier applied outcome of the same
+        command, recorded before the runner restarted: that engine ended with the
+        previous process, and this outcome says it was not started again.
+        """
+
+        await self._store.commit_verified_command_outcome_and_enqueue_fact(
+            delivery_id=delivery_id,
+            verified=verified,
+            outcome="retry_exhausted",
+            reason_code=reason_code,
+            engine_handle=None,
+            observed_status="quarantined",
+            lifecycle_state="stopped",
+            artifact_activation_id=None,
+            artifact_policy_id=None,
+        )
 
     async def _record_restart(
         self,

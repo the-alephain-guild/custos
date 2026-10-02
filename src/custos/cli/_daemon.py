@@ -393,6 +393,7 @@ async def _recover_durable_running_commands(
     capability,
 ) -> None:
     identities = await state_store.list_recoverable_desired_command_identities()
+    recoverable: list[tuple[bool, VerifiedRunnerCommand]] = []
     for identity in identities:
         # The same criterion a fresh command meets before anything is activated:
         # a command acknowledged while unbound waits here for a capability that
@@ -421,10 +422,17 @@ async def _recover_durable_running_commands(
             command_fingerprint=durable.command_fingerprint,
             verification_receipt=durable.verification_receipt,
         )
-        # Recovery waits for the engine and therefore for the venue; it runs in
-        # the background so the runner is ready, reporting and taking commands
-        # meanwhile, and one deployment that cannot recover leaves the rest alone.
-        command_runtime.schedule_recovery(verified)
+        state = await state_store.load_engine_lifecycle_state(verified)
+        recoverable.append((state.desired_status != "applied", verified))
+    # Instances that were running before the restart come first: on an engine that
+    # runs one node per process the first recovery holds it, and a command that
+    # was only recorded is the one refused as occupied. The sort is stable, so
+    # each group keeps the store's order.
+    recoverable.sort(key=lambda item: item[0])
+    # Recovery waits for the engine and therefore for the venue; it runs in the
+    # background so the runner is ready, reporting and taking commands meanwhile,
+    # and one deployment that cannot recover leaves the rest alone.
+    command_runtime.schedule_recoveries([verified for _recorded, verified in recoverable])
 
 
 def _build_policy_renewal_notifier(

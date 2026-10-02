@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any, Protocol
@@ -211,57 +211,29 @@ class RunnerCommandRuntimeCoordinator:
                         verified=verified,
                     ),
                 )
-        except (
-            StrategyReleaseResolutionRejected,
-            ArtifactVerificationError,
-            DevelopmentSourceVerificationError,
-        ) as error:
-            reason = self._reason_code("artifact_authority_rejected", error)
-            return await self._terminal_rejection(delivery, intake, verified, reason)
-        except (RunnerCredentialResolutionRejected, ArtifactRuntimeActivationError) as error:
-            reason = self._reason_code("runtime_authority_rejected", error)
-            return await self._terminal_rejection(delivery, intake, verified, reason)
-        except RunnerEngineOccupied as error:
-            reason = f"runtime_capacity_rejected:{error.reason_code}"
-            return await self._terminal_rejection(delivery, intake, verified, reason)
-        except RunnerEngineReleasing as error:
-            reason = f"runtime_capacity_unavailable:{error.reason_code}"
-            return await self._retry_or_exhaust(delivery, intake, verified, reason)
-        except EngineLifecycleQuarantined as error:
-            await delivery.term()
-            return RunnerCommandRuntimeResult(
-                status=RunnerCommandRuntimeStatus.TERMINAL_QUARANTINED,
-                intake=intake,
-                reason_code=self._reason_code("engine_lifecycle_quarantined", error),
-            )
-        except (
-            StrategyReleaseResolutionUnavailable,
-            DevelopmentArtifactRuntimeBlocked,
-            RunnerCredentialResolutionUnavailable,
-            ArtifactRuntimeBlocked,
-            EngineLifecycleBlocked,
-        ) as error:
-            return await self._retry_or_exhaust(
-                delivery,
-                intake,
-                verified,
-                self._reason_code("runtime_dependency_unavailable", error),
-            )
-        except Exception as error:  # noqa: BLE001 - bounded fail-closed retry
-            logger.exception(
-                "runner command apply failed",
-                extra={
-                    "delivery_id": delivery.delivery_id,
-                    "deployment_instance_id": str(verified.command.deployment_instance_id),
-                    "generation": verified.command.generation,
-                },
-            )
-            return await self._retry_or_exhaust(
-                delivery,
-                intake,
-                verified,
-                self._reason_code("runtime_apply_failed", error),
-            )
+        except Exception as error:  # noqa: BLE001 - classified below, never swallowed
+            failure = _classify_failure(error)
+            if failure.kind is _FailureKind.REFUSED:
+                return await self._terminal_rejection(
+                    delivery, intake, verified, failure.reason_code
+                )
+            if failure.kind is _FailureKind.QUARANTINED:
+                await delivery.term()
+                return RunnerCommandRuntimeResult(
+                    status=RunnerCommandRuntimeStatus.TERMINAL_QUARANTINED,
+                    intake=intake,
+                    reason_code=failure.reason_code,
+                )
+            if failure.kind is _FailureKind.UNEXPECTED:
+                logger.exception(
+                    "runner command apply failed",
+                    extra={
+                        "delivery_id": delivery.delivery_id,
+                        "deployment_instance_id": str(verified.command.deployment_instance_id),
+                        "generation": verified.command.generation,
+                    },
+                )
+            return await self._retry_or_exhaust(delivery, intake, verified, failure.reason_code)
 
         await delivery.ack()
         return RunnerCommandRuntimeResult(
@@ -271,13 +243,19 @@ class RunnerCommandRuntimeCoordinator:
             ready_receipt=ready,
         )
 
-    def schedule_recovery(self, verified: VerifiedRunnerCommand) -> None:
+    def schedule_recovery(
+        self,
+        verified: VerifiedRunnerCommand,
+        *,
+        after: asyncio.Task[None] | None = None,
+    ) -> asyncio.Task[None]:
         """Recover one durable running command in the background.
 
         Recovery waits for the engine, which waits for the venue. Running it here
         instead of inline lets a restarted runner become ready, report and take
         commands while a venue is unreachable, and keeps one deployment that
-        cannot recover from stopping the others.
+        cannot recover from stopping the others. With ``after`` it starts once
+        that recovery has finished, however it finished.
         """
 
         instance = verified.command.deployment_instance_id
@@ -285,11 +263,28 @@ class RunnerCommandRuntimeCoordinator:
         if existing is not None and not existing.done():
             existing.cancel()
         task = asyncio.create_task(
-            self._recover_in_background(verified),
+            self._recover_in_background(verified, after=after),
             name=f"runner-recovery-{instance}",
         )
         self._recoveries[instance] = task
         task.add_done_callback(lambda done: self._forget_recovery(instance, done))
+        return task
+
+    def schedule_recoveries(self, verified_commands: Sequence[VerifiedRunnerCommand]) -> None:
+        """Recover durable running commands, one after another on a one-node engine.
+
+        An engine that runs one node per process can recover only one instance;
+        recovering them concurrently makes the outcome a race. They are recovered
+        in the order given (the daemon puts applied instances before recorded
+        ones), so the first that starts holds the node and each later one is
+        refused as occupied and reported. Without that limit they recover
+        concurrently, as before.
+        """
+
+        previous: asyncio.Task[None] | None = None
+        for verified in verified_commands:
+            after = previous if self._node_capacity is not None else None
+            previous = self.schedule_recovery(verified, after=after)
 
     def recovery_in_progress(self, instance: object) -> bool:
         task = self._recoveries.get(instance)
@@ -321,7 +316,16 @@ class RunnerCommandRuntimeCoordinator:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
 
-    async def _recover_in_background(self, verified: VerifiedRunnerCommand) -> None:
+    async def _recover_in_background(
+        self,
+        verified: VerifiedRunnerCommand,
+        *,
+        after: asyncio.Task[None] | None = None,
+    ) -> None:
+        if after is not None:
+            # ``wait`` rather than ``gather``: cancelling this recovery must not
+            # cancel the one it is waiting for.
+            await asyncio.wait({after})
         instance = verified.command.deployment_instance_id
         async with self._lifecycle_lock(instance):
             try:
@@ -329,21 +333,58 @@ class RunnerCommandRuntimeCoordinator:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:  # noqa: BLE001 - one deployment must not end the runner
-                # A quarantine has already been made durable and reported as a
-                # lifecycle RunnerFact; what remains is to say so locally and
-                # leave the runner and its other deployments running.
-                _slog.warning(
-                    "durable_command_recovery_failed",
-                    deployment_instance_id=str(instance),
-                    generation=verified.command.generation,
-                    error_type=type(exc).__name__,
-                    reason_code=str(exc) if isinstance(exc, EngineLifecycleQuarantined) else None,
-                )
+                await self._report_recovery_failure(verified, exc)
                 return
         _slog.info(
             "durable_command_recovered",
             deployment_instance_id=str(instance),
             generation=verified.command.generation,
+        )
+
+    async def _report_recovery_failure(
+        self,
+        verified: VerifiedRunnerCommand,
+        error: Exception,
+    ) -> None:
+        """Say how a recovery ended, with the same classification as a command.
+
+        A refusal is committed as a final outcome and signed as a lifecycle
+        RunnerFact, as it would have been for the command itself; an engine
+        quarantine was already committed and signed by the lifecycle supervisor.
+        Anything else is logged and left for the next command or restart.
+        """
+
+        instance = str(verified.command.deployment_instance_id)
+        failure = _classify_failure(error)
+        if failure.kind is _FailureKind.REFUSED:
+            try:
+                await self._engine_lifecycle.commit_refusal(
+                    delivery_id=_recovery_delivery_id(verified),
+                    verified=verified,
+                    reason_code=failure.reason_code,
+                )
+            except Exception as commit_error:  # noqa: BLE001 - reported, runner continues
+                _slog.error(
+                    "durable_command_recovery_refusal_unrecorded",
+                    deployment_instance_id=instance,
+                    generation=verified.command.generation,
+                    reason_code=failure.reason_code,
+                    error_type=type(commit_error).__name__,
+                )
+                return
+            _slog.warning(
+                "durable_command_recovery_refused",
+                deployment_instance_id=instance,
+                generation=verified.command.generation,
+                reason_code=failure.reason_code,
+            )
+            return
+        _slog.warning(
+            "durable_command_recovery_failed",
+            deployment_instance_id=instance,
+            generation=verified.command.generation,
+            error_type=type(error).__name__,
+            reason_code=str(error) if failure.kind is _FailureKind.QUARANTINED else None,
         )
 
     async def recover(self, verified: VerifiedRunnerCommand) -> EngineReadyReceipt:
@@ -352,11 +393,7 @@ class RunnerCommandRuntimeCoordinator:
         if verified.command.lifecycle_state != "running":
             raise RuntimeError("only a running durable command may recover an engine")
         _prepared, _activated, ready = await self._resolve_activate_apply(
-            (
-                "startup-recovery:"
-                f"{verified.command.deployment_instance_id}:"
-                f"{verified.command.generation}"
-            ),
+            _recovery_delivery_id(verified),
             verified,
             initial_reconciliation_backfill=False,
         )
@@ -635,7 +672,7 @@ class RunnerCommandRuntimeCoordinator:
             return RunnerCommandRuntimeResult(
                 status=RunnerCommandRuntimeStatus.RETRY_SCHEDULED,
                 intake=intake,
-                reason_code=self._reason_code("durable_runtime_rejection_failed", error),
+                reason_code=_reason_code("durable_runtime_rejection_failed", error),
             )
         await delivery.term()
         return RunnerCommandRuntimeResult(
@@ -699,12 +736,73 @@ class RunnerCommandRuntimeCoordinator:
             reason_code=reason_code,
         )
 
-    @staticmethod
-    def _reason_code(prefix: str, error: BaseException) -> str:
-        code = getattr(error, "code", None)
-        value = getattr(code, "value", None)
-        suffix = str(value or type(error).__name__).lower()
-        return f"{prefix}:{suffix}"
+
+class _FailureKind(StrEnum):
+    # Final for this command: committed and signed as retry_exhausted.
+    REFUSED = "refused"
+    # Already committed and signed by the lifecycle supervisor.
+    QUARANTINED = "quarantined"
+    # A dependency that may become available: retried.
+    RETRYABLE = "retryable"
+    # Not anticipated: retried within the delivery budget, and logged loudly.
+    UNEXPECTED = "unexpected"
+
+
+@dataclass(frozen=True, slots=True)
+class _Failure:
+    kind: _FailureKind
+    reason_code: str
+
+
+def _reason_code(prefix: str, error: BaseException) -> str:
+    code = getattr(error, "code", None)
+    value = getattr(code, "value", None)
+    suffix = str(value or type(error).__name__).lower()
+    return f"{prefix}:{suffix}"
+
+
+def _classify_failure(error: Exception) -> _Failure:
+    """The one classification of a failed start, for a command and a recovery alike.
+
+    Only a defect of the artifact or a decision about the command is final; an
+    environment that may change (a dependency, a node being released) is retried.
+    """
+
+    if isinstance(
+        error,
+        StrategyReleaseResolutionRejected
+        | ArtifactVerificationError
+        | DevelopmentSourceVerificationError,
+    ):
+        return _Failure(_FailureKind.REFUSED, _reason_code("artifact_authority_rejected", error))
+    if isinstance(error, RunnerCredentialResolutionRejected | ArtifactRuntimeActivationError):
+        return _Failure(_FailureKind.REFUSED, _reason_code("runtime_authority_rejected", error))
+    if isinstance(error, RunnerEngineOccupied):
+        return _Failure(_FailureKind.REFUSED, f"runtime_capacity_rejected:{error.reason_code}")
+    if isinstance(error, RunnerEngineReleasing):
+        return _Failure(_FailureKind.RETRYABLE, f"runtime_capacity_unavailable:{error.reason_code}")
+    if isinstance(error, EngineLifecycleQuarantined):
+        return _Failure(
+            _FailureKind.QUARANTINED, _reason_code("engine_lifecycle_quarantined", error)
+        )
+    if isinstance(
+        error,
+        StrategyReleaseResolutionUnavailable
+        | DevelopmentArtifactRuntimeBlocked
+        | RunnerCredentialResolutionUnavailable
+        | ArtifactRuntimeBlocked
+        | EngineLifecycleBlocked,
+    ):
+        return _Failure(
+            _FailureKind.RETRYABLE, _reason_code("runtime_dependency_unavailable", error)
+        )
+    return _Failure(_FailureKind.UNEXPECTED, _reason_code("runtime_apply_failed", error))
+
+
+def _recovery_delivery_id(verified: VerifiedRunnerCommand) -> str:
+    return (
+        f"startup-recovery:{verified.command.deployment_instance_id}:{verified.command.generation}"
+    )
 
 
 __all__ = [

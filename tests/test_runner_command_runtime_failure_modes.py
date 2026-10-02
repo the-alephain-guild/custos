@@ -632,3 +632,184 @@ async def test_recovery_skips_an_instance_whose_outcomes_it_could_not_sign(tmp_p
     assert [log["binding_gap"] for log in skipped] == [
         "capability has no unique deployment_lifecycle binding for DeploymentInstance"
     ]
+
+
+async def _applied(store, verified) -> None:
+    """A command that was applied and running before the runner restarted."""
+    import time
+
+    await _recorded(store, verified)
+    await store.record_in_progress_lease(
+        delivery_id="delivery-applied",
+        verified=verified,
+        lease_until_ns=time.time_ns() + 60_000_000_000,
+    )
+    await store.commit_applied_and_enqueue_lifecycle(
+        delivery_id="delivery-applied",
+        verified=verified,
+        engine_handle="node-before-restart",
+        observed_status="ready",
+    )
+
+
+class _QuarantinedArtifactRuntime(_RecordingArtifactRuntime):
+    async def activate(self, prepared, *, loader):
+        from custos.artifacts.runtime import ArtifactRuntimeActivationError
+
+        self.events.append("activate")
+        raise ArtifactRuntimeActivationError("artifact activation is durably quarantined")
+
+
+async def _recover_once(store, verified, *, artifact_runtime, capacity=None) -> list[dict]:
+    from tests.test_engine_recovery_persistence import supervisor
+
+    events: list[str] = []
+    restarted = RunnerCommandRuntimeCoordinator(
+        intake=_Intake(),
+        durability=store,
+        release_resolver=_RecordingResolver(events),
+        artifact_runtime=artifact_runtime(events),
+        entry_point_loader=object(),
+        credential_resolver=_CredentialResolver(),
+        engine_lifecycle=supervisor(store, _SandboxEngine()),
+        delivery_policy=CommandDeliveryPolicy(in_progress_interval_seconds=0.01),
+        capability_binding=lambda verified: None,
+        node_capacity=capacity,
+    )
+    with capture_logs() as logs:
+        restarted.schedule_recoveries([verified])
+        await asyncio.wait_for(restarted.recoveries_settled(), timeout=5)
+    return [log for log in logs if log["event"].startswith("durable_command_recovery")]
+
+
+@pytest.mark.parametrize("before_restart", ["recorded", "applied"])
+@pytest.mark.parametrize(
+    ("cause", "reason_code"),
+    [
+        ("quarantined_activation", "runtime_authority_rejected:artifactruntimeactivationerror"),
+        ("occupied_runner", "runtime_capacity_rejected:runner_engine_occupied"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_a_recovery_that_cannot_start_is_refused_and_reported(
+    tmp_path, before_restart, cause, reason_code
+) -> None:
+    from tests.test_runner_fact_store import _runner_fact_store, _verified_command
+
+    database = tmp_path / "runner-state.sqlite3"
+    _outbox, store = _runner_fact_store(database)
+    _, _, verified = _verified_command()
+    if before_restart == "applied":
+        await _applied(store, verified)
+    else:
+        await _recorded(store, verified)
+    facts_before = _lifecycle_facts(database)
+
+    logs = await _recover_once(
+        store,
+        verified,
+        artifact_runtime=(
+            _QuarantinedArtifactRuntime
+            if cause == "quarantined_activation"
+            else _RecordingArtifactRuntime
+        ),
+        capacity=_Capacity(_holder(OTHER_INSTANCE)) if cause == "occupied_runner" else None,
+    )
+
+    assert [(log["event"], log["reason_code"]) for log in logs] == [
+        ("durable_command_recovery_refused", reason_code)
+    ]
+    state = await store.load_engine_lifecycle_state(verified)
+    assert state.desired_status == "quarantined"
+    assert state.quarantine_reason == reason_code
+    new_facts = _lifecycle_facts(database)[len(facts_before) :]
+    assert [(fact["lifecycle_state"], fact["outcome"]) for fact in new_facts] == [
+        ("stopped", "retry_exhausted")
+    ]
+
+
+class _OneNodeEngineLifecycle(_Lifecycle):
+    """A one-node engine: the first instance applied holds the node."""
+
+    def __init__(self, events: list[str]) -> None:
+        super().__init__(events)
+        self.holder: SimpleNamespace | None = None
+
+    def node_holder(self):
+        return self.holder
+
+    async def apply(self, **kwargs):
+        instance = kwargs["verified"].command.deployment_instance_id
+        self.events.append(f"apply:{instance.int}")
+        self.holder = _holder(instance)
+        return SimpleNamespace(deployment_instance_id=instance)
+
+    async def commit_refusal(self, **kwargs):
+        instance = kwargs["verified"].command.deployment_instance_id
+        self.events.append(f"refusal:{instance.int}:{kwargs['reason_code']}")
+
+
+@pytest.mark.asyncio
+async def test_two_running_instances_recover_in_turn_and_the_recorded_one_is_refused() -> None:
+    from custos.cli._daemon import _recover_durable_running_commands
+
+    recorded_verified = VERIFIED
+    applied_verified = _other_instance_command()
+    by_instance = {INSTANCE: recorded_verified, OTHER_INSTANCE: applied_verified}
+    status = {INSTANCE: "recorded", OTHER_INSTANCE: "applied"}
+
+    class StateStore:
+        async def list_recoverable_desired_command_identities(self):
+            # The store lists the recorded instance first.
+            return tuple(
+                SimpleNamespace(
+                    trading_mode="sandbox",
+                    deployment_instance_id=instance,
+                    deployment_spec_id=UUID(int=4),
+                    deployment_spec_digest="a" * 64,
+                    generation=1,
+                    strategy_id=UUID(int=5),
+                )
+                for instance in (INSTANCE, OTHER_INSTANCE)
+            )
+
+        async def load_durable_desired_command(self, instance):
+            verified = by_instance[instance]
+            return SimpleNamespace(
+                command=verified.command,
+                command_fingerprint=verified.command_fingerprint,
+                verification_receipt=object(),
+            )
+
+        async def load_engine_lifecycle_state(self, verified):
+            return SimpleNamespace(desired_status=status[verified.command.deployment_instance_id])
+
+    events: list[str] = []
+    lifecycle = _OneNodeEngineLifecycle(events)
+    subject = RunnerCommandRuntimeCoordinator(
+        intake=_Intake(),
+        durability=_Durability(events),
+        release_resolver=_Resolver(),
+        artifact_runtime=_ArtifactRuntime(),
+        entry_point_loader=object(),
+        credential_resolver=_CredentialResolver(),
+        engine_lifecycle=lifecycle,
+        delivery_policy=CommandDeliveryPolicy(in_progress_interval_seconds=0.01),
+        capability_binding=lambda verified: None,
+        node_capacity=lifecycle,
+    )
+
+    await _recover_durable_running_commands(
+        state_store=StateStore(),
+        command_runtime=subject,
+        capability=_BindingCapability(None),
+    )
+    await asyncio.wait_for(subject.recoveries_settled(), timeout=5)
+    stop = asyncio.Event()
+    stop.set()
+    await subject.run_engine_supervision(stop)
+
+    assert events == [
+        f"apply:{OTHER_INSTANCE.int}",
+        f"refusal:{INSTANCE.int}:runtime_capacity_rejected:runner_engine_occupied",
+    ]
