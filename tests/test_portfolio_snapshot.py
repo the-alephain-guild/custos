@@ -42,7 +42,8 @@ class _Position:
     def __init__(self) -> None:
         self.instrument_id = _InstrumentId()
         self.quantity = _DecimalValue("2")
-        self.avg_px_open = _DecimalValue("90")
+        # NautilusTrader reports the opening average only as a binary float.
+        self.avg_px_open = 90.0
         self.settlement_currency = "USDT"
         self.is_short = False
         self.mark_arguments: list[object] = []
@@ -883,3 +884,129 @@ def test_a_boundary_read_refuses_a_binary_float_at_its_source() -> None:
     assert lenient.reliable is True
     assert strict.reliable is False
     assert strict.unreliable_reason == "portfolio_float_source"
+
+
+def _type_class(value: object) -> str:
+    """What matters about a portfolio input's type: binary float, flag, or neither."""
+    if isinstance(value, bool):
+        return "bool"
+    if isinstance(value, float):
+        return "float"
+    return "other"
+
+
+def test_the_position_double_reports_each_input_with_the_engines_type_class() -> None:
+    """The stand-in position must not be more exact than the position it stands in for.
+
+    It once reported the opening average as a decimal while the engine reports a
+    binary float, so every test passed while every stop that held a position failed
+    its boundary read. This compares each input the double offers with the same input
+    on a real position built from a real fill.
+    """
+    import pytest
+
+    pytest.importorskip("nautilus_trader")
+    from nautilus_trader.core import UUID4
+    from nautilus_trader.model import (
+        AccountId,
+        ClientOrderId,
+        Currency,
+        LiquiditySide,
+        Money,
+        OrderFilled,
+        OrderSide,
+        OrderType,
+        Position,
+        PositionId,
+        Price,
+        Quantity,
+        StrategyId,
+        TradeId,
+        TraderId,
+        VenueOrderId,
+    )
+    from nautilus_trader.testkit.providers import TestInstrumentProvider
+
+    instrument = TestInstrumentProvider.btcusdt_perp_binance()
+    usdt = Currency.from_str("USDT")
+    real = Position(
+        instrument,
+        OrderFilled(
+            TraderId("TRADER-001"),
+            StrategyId("S-001"),
+            instrument.id,
+            ClientOrderId("O-1"),
+            VenueOrderId("V-1"),
+            AccountId("BINANCE-001"),
+            TradeId("E-1"),
+            OrderSide.BUY,
+            OrderType.MARKET,
+            Quantity.from_str("0.002"),
+            Price.from_str("90.0"),
+            usdt,
+            LiquiditySide.TAKER,
+            UUID4(),
+            1,
+            1,
+            False,
+            PositionId("P-1"),
+            Money.from_str("0 USDT"),
+        ),
+    )
+    double = _Position()
+    mark = Price.from_str("100.0")
+
+    offered = {
+        name: value
+        for name, value in vars(double).items()
+        if name not in {"instrument_id", "mark_arguments"}
+    }
+    assert "avg_px_open" in offered, "the double no longer offers the input this guards"
+    mismatched = {
+        name: (_type_class(value), _type_class(getattr(real, name)))
+        for name, value in offered.items()
+        if _type_class(value) != _type_class(getattr(real, name))
+    }
+    pnl = (_type_class(double.unrealized_pnl(mark)), _type_class(real.unrealized_pnl(mark)))
+    if pnl[0] != pnl[1]:
+        mismatched["unrealized_pnl()"] = pnl
+
+    assert mismatched == {}, f"double vs engine type class: {mismatched}"
+
+
+def test_a_boundary_read_leaves_out_the_average_the_engine_reports_as_a_float() -> None:
+    """The opening average is where the engine's float really is, and the boundary skips it.
+
+    The terminal valuation carries quantity, mark and equity; it has no use for the
+    average. A periodic read still converts it for the valuation checkpoint.
+    """
+    runtime = _Runtime(mark_price=_DecimalValue("100"))
+    position = runtime.cache.position
+    assert type(position.avg_px_open) is float
+
+    provider = NautilusPortfolioSnapshotProvider()
+    boundary = provider.snapshot(runtime, currency="USDT", refuse_float=True)
+
+    assert boundary.reliable is True, boundary.unreliable_reason
+    assert boundary.runner_fact_rows() == [
+        {"instrument": "BTC-USDT.BINANCE", "quantity": "2", "mark_price": "100", "currency": "USDT"}
+    ]
+    # Nor does it price the position's own PnL: that is computed from the same average.
+    assert position.mark_arguments == []
+
+    periodic = provider.snapshot(runtime, currency="USDT")
+    assert periodic.reliable is True, periodic.unreliable_reason
+    assert periodic.valuation_rows()[0]["avg_entry_price"] == "90.0"
+
+
+def test_a_boundary_read_still_refuses_a_float_in_what_it_does_read() -> None:
+    """Skipping the average is not a licence: a float where the boundary reads is refused."""
+    runtime = _Runtime(mark_price=_DecimalValue("100"))
+    runtime.cache.position.quantity = 2.0
+
+    boundary = NautilusPortfolioSnapshotProvider().snapshot(
+        runtime, currency="USDT", refuse_float=True
+    )
+
+    assert boundary.reliable is False
+    assert boundary.unreliable_reason == "portfolio_float_source"
