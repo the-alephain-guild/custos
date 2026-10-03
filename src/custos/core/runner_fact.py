@@ -2489,6 +2489,12 @@ class RunnerFactOutbox:
                     stop_requested_at TEXT NOT NULL,
                     recorded_at_ns INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS kept_command_unbound_notice (
+                    deployment_instance_id TEXT PRIMARY KEY,
+                    generation INTEGER NOT NULL CHECK (generation > 0),
+                    binding_gap TEXT NOT NULL,
+                    noticed_at_ns INTEGER NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS command_in_progress_lease (
                     deployment_instance_id TEXT PRIMARY KEY,
                     delivery_id TEXT NOT NULL,
@@ -7141,6 +7147,60 @@ class RunnerStateStore:
             self._load_durable_desired_command,
             deployment_instance_id,
         )
+
+    async def note_kept_command_unbound(
+        self,
+        identity: DurableDesiredCommandIdentity,
+        *,
+        binding_gap: str,
+    ) -> bool:
+        """Record that a kept command is still unbound; True the first time.
+
+        A kept stop, pause or archive for an instance no capability binds can
+        stay kept for good. The startup log says so once per command and
+        reason, not at every restart; this note is what remembers it. It holds
+        one row per instance, replaced by a newer generation or reason.
+        """
+
+        return await asyncio.to_thread(
+            self._note_kept_command_unbound,
+            identity,
+            _non_empty(binding_gap, "binding_gap"),
+        )
+
+    def _note_kept_command_unbound(
+        self,
+        identity: DurableDesiredCommandIdentity,
+        binding_gap: str,
+    ) -> bool:
+        instance = str(identity.deployment_instance_id)
+        with self._outbox._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT generation, binding_gap FROM kept_command_unbound_notice
+                WHERE deployment_instance_id = ?
+                """,
+                (instance,),
+            ).fetchone()
+            if (
+                row is not None
+                and int(row["generation"]) == identity.generation
+                and row["binding_gap"] == binding_gap
+            ):
+                return False
+            connection.execute(
+                """
+                INSERT INTO kept_command_unbound_notice (
+                    deployment_instance_id, generation, binding_gap, noticed_at_ns
+                ) VALUES (?, ?, ?, ?)
+                ON CONFLICT(deployment_instance_id) DO UPDATE SET
+                    generation = excluded.generation,
+                    binding_gap = excluded.binding_gap,
+                    noticed_at_ns = excluded.noticed_at_ns
+                """,
+                (instance, identity.generation, binding_gap, time.time_ns()),
+            )
+        return True
 
     async def list_recoverable_desired_command_identities(
         self,

@@ -27,6 +27,17 @@ protocol — is published at
   `retry_exhausted`; a stop, pause or archive still failing stays kept. A newer
   command for the instance cancels a recovery waiting to retry.
 
+### Changed
+
+- **An unbound kept stop is logged once, not at every restart.** A stop, pause
+  or archive kept for an instance the capability does not bind can stay kept
+  for good, for example when the instance was stopped before it was ever bound.
+  `durable_command_recovery_skipped` is now logged for it at the first restart
+  that finds it unbound, and again only for a newer generation or a changed
+  reason; a small table in the runner state database remembers which. A kept
+  start that is unbound is still logged at every restart. The command is kept
+  and reported as before.
+
 ## [0.6.0] - 2026-10-02
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.6.0`

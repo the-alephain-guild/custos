@@ -415,8 +415,11 @@ async def _recover_durable_commands(
         # The same criterion a fresh command meets before anything is activated:
         # a command acknowledged while unbound waits here for a capability that
         # binds it, and is applied or refused, and reported, once it does. That
-        # holds for a stop, pause or archive as much as for a start; one that is
-        # never bound is kept and logged at every startup.
+        # holds for a stop, pause or archive as much as for a start. One that is
+        # never bound stays kept: a start is logged at every startup, since an
+        # operator expects that instance to run; a stop, pause or archive (the
+        # instance was never started here) is logged at the first startup that
+        # finds it unbound, and again only when the command or the reason changes.
         binding_gap = runner_instance_binding_gap(
             capability,
             trading_mode=identity.trading_mode,
@@ -426,6 +429,10 @@ async def _recover_durable_commands(
             strategy_id=identity.strategy_id,
         )
         if binding_gap is not None:
+            if identity.lifecycle_state != "running" and not (
+                await state_store.note_kept_command_unbound(identity, binding_gap=binding_gap)
+            ):
+                continue
             _slog.info(
                 "durable_command_recovery_skipped",
                 deployment_instance_id=str(identity.deployment_instance_id),
