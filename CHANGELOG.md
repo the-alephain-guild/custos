@@ -13,6 +13,30 @@ protocol — is published at
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-03
+
+It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.6.1`
+and as source; there is no PyPI package. Call the reusable publishing workflow at
+`@v0.6.1`; a runner or deployment service that trusts releases published through
+it lists that tag as the workflow identity. The engine (`2.0.0rc5+sodex.2`), the
+matching strategy toolkit (`0.1.0rc9`) and the contract assets are those of
+0.6.0; deployment services and strategy repositories do not need to move.
+
+The runner state database gains one table, created at the first start. Its
+schema version is unchanged, and a 0.6.0 runner still opens a database that has
+it.
+
+### Changed
+
+- **An unbound kept stop is logged once, not at every restart.** A stop, pause
+  or archive kept for an instance the capability does not bind can stay kept
+  for good, for example when the instance was stopped before it was ever bound.
+  `durable_command_recovery_skipped` is now logged for it at the first restart
+  that finds it unbound, and again only for a newer generation or a changed
+  reason; a small table in the runner state database remembers which. A kept
+  start that is unbound is still logged at every restart. The command is kept
+  and reported as before.
+
 ### Fixed
 
 - **A restart recovery that meets an unavailable dependency is retried.** A
@@ -26,17 +50,6 @@ protocol — is published at
   start still failing after the last attempt is refused and reported as
   `retry_exhausted`; a stop, pause or archive still failing stays kept. A newer
   command for the instance cancels a recovery waiting to retry.
-
-### Changed
-
-- **An unbound kept stop is logged once, not at every restart.** A stop, pause
-  or archive kept for an instance the capability does not bind can stay kept
-  for good, for example when the instance was stopped before it was ever bound.
-  `durable_command_recovery_skipped` is now logged for it at the first restart
-  that finds it unbound, and again only for a newer generation or a changed
-  reason; a small table in the runner state database remembers which. A kept
-  start that is unbound is still logged at every restart. The command is kept
-  and reported as before.
 
 ## [0.6.0] - 2026-10-02
 
