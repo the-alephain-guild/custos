@@ -13,6 +13,18 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **A stop that still holds a position can confirm its terminal valuation.**
+  The stop-boundary read refuses inputs that arrive as binary floats, and it also
+  fetched each position's opening average, which NautilusTrader reports only as a
+  float. Every stop that held a position, on a margin or a cash account, was
+  therefore signed `valuation_unconfirmed` with `valuation_unreliable`. The
+  terminal valuation carries equity and, per position, quantity, mark price and
+  currency; the boundary read now reads only those and leaves the cost basis out.
+  Periodic reads, including the valuation checkpoint, still carry the average.
+  An input the boundary does read that arrives as a float is still refused.
+
 ## [0.6.1] - 2026-10-03
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.6.1`

@@ -108,6 +108,19 @@ portfolio. That read, with the source time of every price it used, is the stop's
 boundary valuation; a read that is unreliable, takes a price without a source
 time, or receives a binary float is not one.
 
+The read takes only what the terminal valuation carries: equity and, per open
+position, quantity, mark price and currency. It leaves the cost basis out, because
+NautilusTrader reports a position's opening average only as a binary float; the
+periodic reads that need the average still take it. "Receives a binary float" is
+a check on the types that cross into Custos: every input of this read arrives as
+one of the engine's exact types (`Money`, `Price`, `Quantity`, `Decimal`) and the
+read converts none from a float. On a margin account the engine computes unrealized PnL, and in
+its simulated account realized PnL, in binary floating point before rounding it to
+the settlement currency. The result can differ from the exactly computed value in
+the last places: by one unit of the settlement currency's smallest denomination at
+ordinary position sizes, growing with notional (measured on USDT at 8 decimal
+places: up to 10 units at a notional of about 10^8, up to 114 at about 10^9).
+
 A run that ignores the graceful stop is cancelled. A run that outlasts the
 cancellation as well may still be running, so nothing is committed: the stop is
 recorded as awaiting its reap, the delivery is acknowledged, and the outcome is

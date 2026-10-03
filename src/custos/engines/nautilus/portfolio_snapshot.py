@@ -15,8 +15,11 @@ from typing import Any, cast
 
 from custos.core.engine_protocol import PositionSnapshot
 
-# Set only while a stop boundary is read: there a value that arrives as a binary
-# float cannot prove it never passed through one, so the read is unreliable.
+# Set only while a stop boundary is read. Custos converts no input of that valuation
+# from a binary float: each one arrives as one of the engine's exact types (Money,
+# Price, Quantity, Decimal) or the read is unreliable. The engine's own arithmetic
+# behind a Money is outside this check; the terminal valuation contract states its
+# bound.
 _REFUSE_FLOAT: ContextVar[bool] = ContextVar("portfolio_refuse_float", default=False)
 
 
@@ -26,24 +29,35 @@ class _FloatSource(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class NautilusPortfolioPosition:
-    """A position valued from one trusted Nautilus mark."""
+    """A position valued from one trusted Nautilus mark.
+
+    ``avg_px`` and ``unrealized_pnl`` are the cost basis. A stop-boundary read leaves
+    them out (``None``): the terminal valuation does not carry them, and the engine
+    reports the opening average only as a binary float.
+    """
 
     instrument_id: str
     settlement_currency: str
     quantity: Decimal
-    avg_px: Decimal
+    avg_px: Decimal | None
     mark_price: Decimal
-    unrealized_pnl: Decimal
+    unrealized_pnl: Decimal | None
     notional: Decimal
+
+    def _cost_basis(self) -> tuple[Decimal, Decimal]:
+        if self.avg_px is None or self.unrealized_pnl is None:
+            raise ValueError(f"{self.instrument_id} was read without its cost basis")
+        return self.avg_px, self.unrealized_pnl
 
     def engine_snapshot(self) -> PositionSnapshot:
         """Return the engine-protocol representation of this position."""
 
+        avg_px, unrealized_pnl = self._cost_basis()
         return PositionSnapshot(
             instrument_id=self.instrument_id,
             quantity=self.quantity,
-            avg_px=self.avg_px,
-            unrealized_pnl=self.unrealized_pnl,
+            avg_px=avg_px,
+            unrealized_pnl=unrealized_pnl,
             notional=self.notional,
         )
 
@@ -60,9 +74,10 @@ class NautilusPortfolioPosition:
     def valuation_row(self) -> dict[str, str]:
         """Return cost basis and the original mark for common-mark revaluation."""
 
+        avg_px, _ = self._cost_basis()
         return {
             **self.runner_fact_row(),
-            "avg_entry_price": str(self.avg_px),
+            "avg_entry_price": str(avg_px),
         }
 
 
@@ -181,8 +196,11 @@ class NautilusPortfolioSnapshotProvider:
         owns the node while it runs, so the cache and the portfolio have to be the
         ones captured before the run started.
 
-        ``refuse_float`` makes any input that arrives as a binary float an
-        unreliable read rather than a converted one.
+        ``refuse_float`` is the stop-boundary read. It reads only what the terminal
+        valuation carries -- equity and, per position, quantity and mark -- and leaves
+        the cost basis out, since the engine offers the opening average only as a
+        binary float. Any input it does read that arrives as a binary float makes the
+        read unreliable rather than converted.
         """
 
         token = _REFUSE_FLOAT.set(refuse_float)
@@ -256,11 +274,14 @@ class NautilusPortfolioSnapshotProvider:
                     return NautilusPortfolioSnapshot.unreliable("inverse_position_not_supported")
                 if bool(getattr(position, "is_short", False)) and quantity > 0:
                     quantity = -quantity
-                average_price = _position_average_price(position)
                 settlement_currency = str(
                     getattr(position, "settlement_currency", resolved_currency)
                 ).upper()
-                unrealized_pnl = _decimal(position.unrealized_pnl(mark))
+                average_price: Decimal | None = None
+                unrealized_pnl: Decimal | None = None
+                if not _REFUSE_FLOAT.get():
+                    average_price = _position_average_price(position)
+                    unrealized_pnl = _decimal(position.unrealized_pnl(mark))
 
                 converted.append(
                     NautilusPortfolioPosition(
