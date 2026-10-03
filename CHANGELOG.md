@@ -13,6 +13,24 @@ protocol — is published at
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-03
+
+It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.6.2`
+and as source; there is no PyPI package. Call the reusable publishing workflow at
+`@v0.6.2`; a runner or deployment service that trusts releases published through
+it lists that tag as the workflow identity. The engine (`2.0.0rc5+sodex.2`), the
+matching strategy toolkit (`0.1.0rc9`) and the contract assets are those of
+0.6.1; deployment services and strategy repositories do not need to move. The
+runner state database is unchanged.
+
+A stop that holds a position now confirms its terminal valuation when the read
+is otherwise reliable. What a confirmed valuation promises is the type of what
+the read takes in: no input arrives as a binary float. On a margin account the
+equity includes unrealized PnL that NautilusTrader computes in binary floating
+point and rounds to the settlement currency, and in a simulated account the
+balance carries realized PnL computed the same way; no bound on that rounding
+is promised. See [Decimal money arithmetic](https://custos.alephain.com/trust-model/exact-money-arithmetic).
+
 ### Fixed
 
 - **A stop that still holds a position can confirm its terminal valuation.**

@@ -1,7 +1,7 @@
-# Custos 0.6.1 runner consuming Crucible-owned signed deployment commands.
+# Custos 0.6.2 runner consuming Crucible-owned signed deployment commands.
 services:
   runner:
-    image: custos-runner:v0.6.1
+    image: custos-runner:v0.6.2
     pull_policy: never
     environment:
       SOPS_AGE_KEY_FILE: /home/custos/.arx/age.key

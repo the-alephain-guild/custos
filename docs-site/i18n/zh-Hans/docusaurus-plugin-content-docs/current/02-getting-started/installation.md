@@ -42,7 +42,7 @@ make toolkit-typecheck
 make verify-local-v030
 ```
 
-该命令构建 `custos-runner:v0.6.1`，写入源码 revision 标签，检查镜像运行契约并输出 image id/revision。它不覆盖完整签名部署往返，也不证明生产就绪。修改后的派生镜像需要单独验证。
+该命令构建 `custos-runner:v0.6.2`，写入源码 revision 标签，检查镜像运行契约并输出 image id/revision。它不覆盖完整签名部署往返，也不证明生产就绪。修改后的派生镜像需要单独验证。
 
 支持范围与当前限制见[发布状态](/release-governance/release-status)。本地构建成功不代表生产就绪。
 
