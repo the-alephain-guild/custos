@@ -332,20 +332,73 @@ class RunnerCommandRuntimeCoordinator:
             # cancel the one it is waiting for.
             await asyncio.wait({after})
         instance = verified.command.deployment_instance_id
-        async with self._lifecycle_lock(instance):
-            try:
-                await self.recover(verified)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:  # noqa: BLE001 - one deployment must not end the runner
-                await self._report_recovery_failure(verified, exc)
-                return
+        attempt = 1
+        while True:
+            async with self._lifecycle_lock(instance):
+                try:
+                    await self.recover(verified)
+                    break
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - one deployment must not end the runner
+                    retry_in = self._recovery_retry_delay(verified, exc, attempt)
+                    if retry_in is None:
+                        await self._report_recovery_failure(verified, exc)
+                        return
+            # The back-off is waited outside the lock: a newer command for the
+            # instance cancels this recovery and must not queue behind it.
+            await asyncio.sleep(retry_in)
+            attempt += 1
         _slog.info(
             "durable_command_recovered",
             deployment_instance_id=str(instance),
             generation=verified.command.generation,
             lifecycle_state=str(verified.command.lifecycle_state),
+            attempt=attempt,
         )
+
+    def _recovery_retry_delay(
+        self,
+        verified: VerifiedRunnerCommand,
+        error: Exception,
+        attempt: int,
+    ) -> float | None:
+        """Seconds until a failed recovery is tried again, or None when it is not.
+
+        A recovery has no delivery that could be redelivered, so a failure that
+        may pass is retried in place on the schedule a delivered command gets:
+        as many attempts as deliveries, with the same back-off. A refusal, a
+        quarantine, a superseded or an unsignable outcome is final at once.
+        """
+
+        if isinstance(error, RunnerStateSupersededError | RunnerFactContractError):
+            return None
+        failure = _classify_failure(error)
+        if failure.kind not in _MAY_PASS:
+            return None
+        if attempt >= self._policy.max_deliver:
+            return None
+        retry_in = self._policy.backoff_for(attempt)
+        if failure.kind is _FailureKind.UNEXPECTED:
+            logger.exception(
+                "runner command recovery failed",
+                extra={
+                    "deployment_instance_id": str(verified.command.deployment_instance_id),
+                    "generation": verified.command.generation,
+                },
+            )
+        _slog.warning(
+            "durable_command_recovery_retry_scheduled",
+            deployment_instance_id=str(verified.command.deployment_instance_id),
+            generation=verified.command.generation,
+            lifecycle_state=str(verified.command.lifecycle_state),
+            attempt=attempt,
+            max_attempts=self._policy.max_deliver,
+            retry_in_seconds=retry_in,
+            reason_code=failure.reason_code,
+            **_failure_detail(error, failure),
+        )
+        return retry_in
 
     async def _report_recovery_failure(
         self,
@@ -357,7 +410,11 @@ class RunnerCommandRuntimeCoordinator:
         A refusal is committed as a final outcome and signed as a lifecycle
         RunnerFact, as it would have been for the command itself; an engine
         quarantine was already committed and signed by the lifecycle supervisor.
-        Anything else is logged and left for the next command or restart.
+        A start that was still failing for a reason that may pass after its last
+        attempt is refused as exhausted, as a delivered command is. A stop, pause
+        or archive in that state is logged and kept for the next restart: the
+        instance was not started by this process, and dropping the command would
+        lose the outcome it still owes.
         """
 
         instance = str(verified.command.deployment_instance_id)
@@ -386,34 +443,40 @@ class RunnerCommandRuntimeCoordinator:
             return
         failure = _classify_failure(error)
         if failure.kind is _FailureKind.REFUSED:
-            try:
-                await self._engine_lifecycle.commit_refusal(
-                    delivery_id=_recovery_delivery_id(verified),
-                    verified=verified,
-                    reason_code=failure.reason_code,
-                )
-            except Exception as commit_error:  # noqa: BLE001 - reported, runner continues
-                _slog.error(
-                    "durable_command_recovery_refusal_unrecorded",
-                    deployment_instance_id=instance,
-                    generation=verified.command.generation,
-                    reason_code=failure.reason_code,
-                    error_type=type(commit_error).__name__,
-                )
-                return
+            reason_code = failure.reason_code
+        elif failure.kind in _MAY_PASS and lifecycle_state == "running":
+            reason_code = f"retry_exhausted:{failure.reason_code}"
+        else:
             _slog.warning(
-                "durable_command_recovery_refused",
+                "durable_command_recovery_failed",
                 deployment_instance_id=instance,
                 generation=verified.command.generation,
-                reason_code=failure.reason_code,
+                lifecycle_state=lifecycle_state,
+                reason_code=str(error) if failure.kind is _FailureKind.QUARANTINED else None,
+                **_failure_detail(error, failure),
+            )
+            return
+        try:
+            await self._engine_lifecycle.commit_refusal(
+                delivery_id=_recovery_delivery_id(verified),
+                verified=verified,
+                reason_code=reason_code,
+            )
+        except Exception as commit_error:  # noqa: BLE001 - reported, runner continues
+            _slog.error(
+                "durable_command_recovery_refusal_unrecorded",
+                deployment_instance_id=instance,
+                generation=verified.command.generation,
+                reason_code=reason_code,
+                error_type=type(commit_error).__name__,
             )
             return
         _slog.warning(
-            "durable_command_recovery_failed",
+            "durable_command_recovery_refused",
             deployment_instance_id=instance,
             generation=verified.command.generation,
-            error_type=type(error).__name__,
-            reason_code=str(error) if failure.kind is _FailureKind.QUARANTINED else None,
+            reason_code=reason_code,
+            **_failure_detail(error, failure),
         )
 
     async def recover(self, verified: VerifiedRunnerCommand) -> EngineReadyReceipt | None:
@@ -839,6 +902,31 @@ def _classify_failure(error: Exception) -> _Failure:
             _FailureKind.RETRYABLE, _reason_code("runtime_dependency_unavailable", error)
         )
     return _Failure(_FailureKind.UNEXPECTED, _reason_code("runtime_apply_failed", error))
+
+
+# Failures retried while attempts remain: a dependency that may become
+# available, and anything not anticipated.
+_MAY_PASS = frozenset({_FailureKind.RETRYABLE, _FailureKind.UNEXPECTED})
+
+
+def _failure_detail(error: BaseException, failure: _Failure) -> dict[str, Any]:
+    """What a log line needs to tell which dependency failed and how.
+
+    The message is logged only for the dependency errors this runner raises
+    itself, whose messages are fixed text with no credential or payload in
+    them; the chain of causes is logged by type only, since a third-party
+    message may carry a URL, a header or a response body.
+    """
+
+    causes: list[str] = []
+    cause = error.__cause__ or error.__context__
+    while cause is not None and len(causes) < 5:
+        causes.append(type(cause).__name__)
+        cause = cause.__cause__ or cause.__context__
+    detail: dict[str, Any] = {"error_type": type(error).__name__, "error_cause_types": causes}
+    if failure.kind is _FailureKind.RETRYABLE:
+        detail["error_message"] = str(error)[:200]
+    return detail
 
 
 def _recovery_delivery_id(verified: VerifiedRunnerCommand) -> str:

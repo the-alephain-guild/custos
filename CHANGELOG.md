@@ -13,6 +13,20 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **A restart recovery that meets an unavailable dependency is retried.** A
+  kept command recovered after a restart has no delivery that could be
+  redelivered, so a start that failed for a reason that may pass (an artifact
+  registry dropping one blob request, a release service not answering yet) was
+  logged once and left until the next restart. It is now retried on the
+  schedule a delivered command gets, logging
+  `durable_command_recovery_retry_scheduled` with the reason code, the error
+  message of the runner's own dependency error and the types of its causes. A
+  start still failing after the last attempt is refused and reported as
+  `retry_exhausted`; a stop, pause or archive still failing stays kept. A newer
+  command for the instance cancels a recovery waiting to retry.
+
 ## [0.6.0] - 2026-10-02
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.6.0`

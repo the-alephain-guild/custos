@@ -75,6 +75,8 @@ The capability receipt is read once, when the runner starts. A deployment create
 
 After a restart with more than one instance to recover, the runner recovers them one at a time, the instance that was running before the restart first. The others are refused as occupied and reported.
 
+A recovery that fails for a reason that may pass, such as an artifact registry or strategy release service that does not answer, is retried on the schedule a delivered command gets: the same number of attempts and the same back-off. Each retry logs `durable_command_recovery_retry_scheduled` with the reason code and the cause. A start still failing after the last attempt is refused and reported as `retry_exhausted` with state `stopped`; a stop, pause or archive still failing stays kept for the next restart. A newer command for the instance cancels a recovery that is waiting to retry.
+
 ## Containers and verification
 
 `make verify-local-v030` builds and checks the local image contract. Mount the runner state at `/home/custos/.arx` and provide the age identity at runtime. A full signed deployment still requires issued identity, transport and release inputs. Confirm the image revision before attributing results to current source.
