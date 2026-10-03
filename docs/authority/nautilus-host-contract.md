@@ -111,15 +111,20 @@ time, or receives a binary float is not one.
 The read takes only what the terminal valuation carries: equity and, per open
 position, quantity, mark price and currency. It leaves the cost basis out, because
 NautilusTrader reports a position's opening average only as a binary float; the
-periodic reads that need the average still take it. "Receives a binary float" is
-a check on the types that cross into Custos: every input of this read arrives as
-one of the engine's exact types (`Money`, `Price`, `Quantity`, `Decimal`) and the
-read converts none from a float. On a margin account the engine computes unrealized PnL, and in
-its simulated account realized PnL, in binary floating point before rounding it to
-the settlement currency. The result can differ from the exactly computed value in
-the last places: by one unit of the settlement currency's smallest denomination at
-ordinary position sizes, growing with notional (measured on USDT at 8 decimal
-places: up to 10 units at a notional of about 10^8, up to 114 at about 10^9).
+periodic reads that need the average still take it. "Receives a binary float"
+means an input of this read arrived as a Python `float`; it is refused, not
+converted. Other inputs are unwrapped from the engine's types (`as_decimal()`,
+`.value`, then their decimal string); the read does not check a closed list of
+types or the canonical form of a string, which the fact wire enforces. The check
+is on what crosses into the read, not on the engine's own arithmetic: on a margin
+account the engine computes unrealized PnL, and in its simulated account realized
+PnL, in binary floating point before rounding it to the settlement currency. For a
+single position the result was observed to differ from the exactly computed value
+by at most one unit of the settlement currency's smallest denomination at ordinary
+sizes, and by more as notional and fill count grow (largest observed on USDT at 8
+decimal places: 10 units at a notional of about 10^8 with 3 fills, 21 with 30
+fills, 114 at about 10^9). These are sample maxima, not a bound, and account
+equity adds the error of every position.
 
 A run that ignores the graceful stop is cancelled. A run that outlasts the
 cancellation as well may still be running, so nothing is committed: the stop is

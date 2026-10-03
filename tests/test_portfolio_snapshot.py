@@ -1010,3 +1010,21 @@ def test_a_boundary_read_still_refuses_a_float_in_what_it_does_read() -> None:
 
     assert boundary.reliable is False
     assert boundary.unreliable_reason == "portfolio_float_source"
+
+
+def test_a_position_read_without_its_cost_basis_cannot_be_reported_with_one() -> None:
+    """A boundary read leaves the cost basis out; no consumer may turn that into zero."""
+    import pytest
+
+    runtime = _Runtime(mark_price=_DecimalValue("100"))
+    boundary = NautilusPortfolioSnapshotProvider().snapshot(
+        runtime, currency="USDT", refuse_float=True
+    )
+    assert boundary.reliable is True, boundary.unreliable_reason
+    (position,) = boundary.positions
+    assert position.avg_px is None and position.unrealized_pnl is None
+
+    with pytest.raises(ValueError, match="without its cost basis"):
+        boundary.engine_positions()
+    with pytest.raises(ValueError, match="without its cost basis"):
+        boundary.valuation_rows()

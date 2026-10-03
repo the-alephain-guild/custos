@@ -17,4 +17,4 @@ Custos 在类型化金额边界使用 `Decimal`，金额 wire 值使用规范十
 
 相关入口为 `src/custos/core/engine_protocol.py`、`src/custos/core/order_reservation_boundary.py`、`src/custos/core/fallback_breaker.py` 和 `src/custos/core/runner_fact.py`。测试包括 `tests/test_nt_risk_engine.py` 与 `tests/test_runner_fact_store.py`。
 
-审查时同时检查上游转换和计算。结果类型为 Decimal 不能证明输入精确。Custos 强制的边界是进入它的值的类型：NautilusTrader 以 `Money` 交出金额，但保证金账户的未实现盈亏、以及模拟账户的已实现盈亏，是引擎先用二进制浮点计算、再舍入到结算币种精度的，结果可能与精确计算值在末位不同：常规仓位规模下差一个最小单位，名义价值越大差得越多。所以停止边界估值只读权益、数量与标记价，从不读取引擎以 float 报告的开仓均价。正确表示也不能证明价格新鲜、估值可靠或策略盈利。
+审查时同时检查上游转换和计算。结果类型为 Decimal 不能证明输入精确。停止边界上，Custos 拒绝以二进制浮点到达的金额；这项检查针对进入读取的值，不针对引擎自身的运算。NautilusTrader 以 `Money` 交出金额，但保证金账户的未实现盈亏、以及模拟账户的已实现盈亏，是引擎先用二进制浮点计算、再舍入到结算币种精度的，结果可能与精确计算值在末位不同：在实测样本中，常规仓位规模下差一个最小单位，名义价值与成交笔数越大差得越多。所以停止边界估值只读权益、数量与标记价，从不读取引擎以 float 报告的开仓均价。正确表示也不能证明价格新鲜、估值可靠或策略盈利。
