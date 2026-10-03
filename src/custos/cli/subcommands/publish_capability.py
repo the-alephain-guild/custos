@@ -24,6 +24,7 @@ from custos.core.runner_fact import (
     normalize_capability_scope_bindings,
 )
 from custos.core.runner_toml import RunnerToml, require_attested
+from custos.core.runtime_identity import declare_runtime, observe_runtime_identity
 
 _PUBLICATION_PATH = "/api/v1/runner/capability-publications"
 
@@ -48,6 +49,7 @@ def register(subparsers: argparse._SubParsersAction) -> None:
 
 def run(args: argparse.Namespace) -> int:
     try:
+        observed_runtime = observe_runtime_identity(os.environ)
         runner = require_attested(
             RunnerToml.read(args.runner_toml), action="publish a capability receipt"
         )
@@ -57,6 +59,7 @@ def run(args: argparse.Namespace) -> int:
         document = json.loads(args.manifest.read_text(encoding="utf-8"))
         if not isinstance(document, dict):
             raise ValueError("manifest root must be an object")
+        document = declare_runtime(document, observed_runtime)
         scope_bindings = normalize_capability_scope_bindings(document)
         identity = RunnerFactIdentity.from_private_bytes(
             credential.private_key_bytes, credential.machine_key_id

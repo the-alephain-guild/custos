@@ -13,6 +13,29 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** a runner capability declares the runtime it runs, as a required
+  `runtime` object in the capability manifest: `distribution`, `image_digest`,
+  `source_revision`, `engine` and `engine_version`. `publish-capability` writes
+  it from what the publishing process observes and refuses a manifest that
+  already carries a different one. The signed lane starts only when its capability
+  receipt declares the runtime running now, so a receipt published by an earlier
+  release no longer starts a runner: publish the capability again, then restart.
+  After changing the image or the engine, publish again before restarting.
+- **Breaking:** a runner running from the container image must be given the
+  image's multi-platform index digest in `CUSTOS_RUNTIME_IMAGE_DIGEST`
+  (`sha256:` and 64 lowercase hexadecimal digits). The runner reads the image's
+  source revision and the installed NautilusTrader version itself, and refuses to
+  publish or start when the variable is set but the image was not built from a
+  commit. Without the variable, as when running from source, the runtime is
+  declared `development` with no digest and no revision; its facts never qualify
+  a runtime. The variable is not the live admission digest: live still requires
+  `--runtime-image-digest` with its promotion receipt, and the capability must
+  declare that same image.
+- Publishing a capability and starting the signed lane need the NautilusTrader
+  engine installed, since the runtime names the engine version.
+
 ## [0.6.2] - 2026-10-03
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.6.2`

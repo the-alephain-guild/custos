@@ -47,6 +47,7 @@ from custos.core.runner_command_intake import (
     classify_command_identity,
     compute_command_fingerprint,
 )
+from custos.core.runtime_identity import RuntimeIdentityError, validate_runtime_identity
 
 RUNNER_FACT_SCHEMA_VERSION: Final = 1
 RUNNER_FACT_SIGNING_DOMAIN: Final = b"CRUCIBLE-RUNNER-FACT-BATCH-V1\0"
@@ -8406,6 +8407,15 @@ class RunnerCapabilityReceipt:
             raise RunnerFactContractError(
                 "receipt capability_manifest differs from the closed fact projector contract"
             )
+        if "runtime" not in manifest:
+            raise RunnerFactContractError(
+                "runtime_identity_missing: receipt capability_manifest declares no runtime; "
+                "publish the capability again with this runtime, then restart the runner"
+            )
+        try:
+            validate_runtime_identity(manifest["runtime"])
+        except RuntimeIdentityError as exc:
+            raise RunnerFactContractError(f"receipt capability_manifest {exc}") from exc
         bindings = normalize_capability_scope_bindings(manifest)
         binding_values = capability_scope_binding_values(bindings)
         if (

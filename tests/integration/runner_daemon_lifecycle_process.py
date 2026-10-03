@@ -65,6 +65,7 @@ from custos.core.runner_fact import (
 )
 from custos.core.runner_nats_authority import RunnerNatsTransportAuthorityClient
 from custos.core.runner_toml import RunnerToml
+from custos.core.runtime_identity import observe_runtime_identity
 
 ROOT = Path(__file__).resolve().parents[2]
 CAPABILITY_RECEIPT = ROOT / "docs/authority/runner-fact-capability-receipt-golden-v1.json"
@@ -283,6 +284,8 @@ def _capability(
 ) -> RunnerCapabilityReceipt:
     canonical = RunnerCapabilityReceipt.load(CAPABILITY_RECEIPT)
     manifest = json.loads(json.dumps(canonical.capability_manifest))
+    # The daemon starts only with the runtime it runs, as a published capability would declare.
+    manifest["runtime"] = observe_runtime_identity(os.environ)
     for key in (
         "settlement_scope_bindings",
         "risk_scope_bindings",
