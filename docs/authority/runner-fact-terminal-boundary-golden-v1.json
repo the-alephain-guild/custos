@@ -12,7 +12,7 @@
     "strategy_id": "40000000-0000-4000-8000-000000000004",
     "capability_version_id": "50000000-0000-4000-8000-000000000005",
     "capability_version": 1,
-    "capability_manifest_digest": "776c7ad7d4d47b401ee3043e66d4b98b8a1a6a604964157d61bcb127778e9a22",
+    "capability_manifest_digest": "eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3",
     "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
     "emitted_at": "2026-08-14T10:00:00Z",
     "source_seq_start": 15,
@@ -28,7 +28,7 @@
         "seq": 15
       }
     ],
-    "signature": "OrGG_20OGeBDwTgbpQ7Wsq6IFjwbf8HF4GvPhVDBVkbELXpsHqJyx_B38mlJPYXqmnARfmsX-RLE6ldSDrYsAg"
+    "signature": "jt8VX61kgJOSF2B20sYfDtgyh28lV05yHuTO41ffibmntnjiZEklrnStm9AEZR7dp2K6W675l5wpNMyH8qtRBg"
   },
   {
     "schema_version": 1,
@@ -43,7 +43,7 @@
     "strategy_id": "40000000-0000-4000-8000-000000000004",
     "capability_version_id": "50000000-0000-4000-8000-000000000005",
     "capability_version": 1,
-    "capability_manifest_digest": "776c7ad7d4d47b401ee3043e66d4b98b8a1a6a604964157d61bcb127778e9a22",
+    "capability_manifest_digest": "eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3",
     "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
     "emitted_at": "2026-08-14T10:05:02Z",
     "source_seq_start": 16,
@@ -112,6 +112,6 @@
         "seq": 17
       }
     ],
-    "signature": "jfVzC_vye1mW86gfTPCUaitHKn5k5l6-7OgU4H26Odi9hz5llCGfqRiEleFaJJmScR5my056efuf3ZRoFoSZDA"
+    "signature": "HbLwjGljsnth5mdiflfPeuDPrz-L0MnQy-_lsSxHYYCsXdHrntwFH2oi_UQGMw22urjb-TDn4ajSn7fSlJHTDw"
   }
 ]

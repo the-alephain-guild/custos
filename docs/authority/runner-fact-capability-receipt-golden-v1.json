@@ -4,7 +4,7 @@
   "runner_id": "10000000-0000-4000-8000-000000000001",
   "capability_version_id": "50000000-0000-4000-8000-000000000005",
   "capability_version": 1,
-  "manifest_digest": "776c7ad7d4d47b401ee3043e66d4b98b8a1a6a604964157d61bcb127778e9a22",
+  "manifest_digest": "eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3",
   "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
   "key_version": 1,
   "algorithm": "ed25519",
@@ -14,6 +14,13 @@
   "capability_manifest": {
     "schema_version": 1,
     "agent_version": "fixture-v1",
+    "runtime": {
+      "distribution": "oci_image",
+      "image_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "source_revision": "8888888888888888888888888888888888888888",
+      "engine": "nautilus",
+      "engine_version": "2.0.0rc5+sodex.2"
+    },
     "contract": "custos.runner_fact.capability.v1",
     "closed_fact_union": true,
     "unknown_fact_kind": "terminal_unsupported_contract",

@@ -78,6 +78,15 @@ TERMINAL_RUN_BATCH_ID = UUID("60000000-0000-4000-8000-000000000007")
 TERMINAL_STOP_BATCH_ID = UUID("60000000-0000-4000-8000-000000000008")
 CREDENTIAL_SCOPE_ID = "91000000-0000-4000-8000-000000000011"
 CREDENTIAL_SCOPE_DIGEST = "a" * 64
+# A synthetic image runtime: a well-formed declaration, not a published image.
+# A runner writes its own observed runtime when it publishes; nothing copies this.
+RUNTIME = {
+    "distribution": "oci_image",
+    "image_digest": "sha256:" + "7" * 64,
+    "source_revision": "8" * 40,
+    "engine": "nautilus",
+    "engine_version": "2.0.0rc5+sodex.2",
+}
 
 SCHEMA_PATH = Path("docs/gateway-contract/v1/runner_fact_batch_v1.schema.json")
 GOLDEN_PATH = Path("docs/authority/runner-fact-golden-v1.json")
@@ -850,6 +859,7 @@ def _capability_manifest(spec_id: UUID, spec_digest: str) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "agent_version": "fixture-v1",
+        "runtime": dict(RUNTIME),
         "contract": "custos.runner_fact.capability.v1",
         "closed_fact_union": True,
         "unknown_fact_kind": "terminal_unsupported_contract",

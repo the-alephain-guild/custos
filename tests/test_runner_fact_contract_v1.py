@@ -5,7 +5,9 @@ from __future__ import annotations
 import base64
 import copy
 import hashlib
+import importlib.util
 import json
+import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -195,6 +197,49 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
         "sha256": crucible_receipt["producer"]["asset_index"]["sha256"],
         "size_bytes": crucible_receipt["producer"]["asset_index"]["size_bytes"],
     }
+
+
+def _generator() -> Any:
+    name = "generate_runner_fact_contract"
+    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / f"{name}.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(name, None)
+    return module
+
+
+def test_generator_reproduces_every_asset_and_keeps_the_historical_receipt() -> None:
+    generator = _generator()
+    expected = generator.build_assets()
+    drift = [
+        str(path) for path, payload in expected.items() if (ROOT / path).read_bytes() != payload
+    ]
+    assert drift == []
+    # The recorded producer acceptance is copied, never regenerated.
+    assert expected[generator.RECEIPT_PATH] == RECEIPT_PATH.read_bytes()
+
+
+def test_capability_manifest_declares_one_complete_runtime() -> None:
+    manifest = _json(CAPABILITY_MANIFEST_PATH)
+    runtime = manifest["runtime"]
+    assert set(runtime) == {
+        "distribution",
+        "image_digest",
+        "source_revision",
+        "engine",
+        "engine_version",
+    }
+    assert runtime["distribution"] == "oci_image"
+    assert runtime["engine"] == "nautilus"
+    assert _json(CAPABILITY_RECEIPT_PATH)["capability_manifest"] == manifest
+    batch = _json(GOLDEN_PATH)
+    assert batch["capability_manifest_digest"] == hashlib.sha256(_canonical(manifest)).hexdigest()
+    for terminal_batch in json.loads(TERMINAL_BOUNDARY_PATH.read_text(encoding="utf-8")):
+        assert terminal_batch["capability_manifest_digest"] == batch["capability_manifest_digest"]
 
 
 def test_schema_golden_capability_and_signature_are_one_exact_contract() -> None:
