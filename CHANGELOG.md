@@ -26,6 +26,13 @@ protocol — is published at
   times fell on a whole millisecond was refused with
   `runner NATS authority digest mismatch` and is now accepted. Wire values stay
   valid RFC 3339 and parse to the same instant.
+- **A strategy signal's `input_digest` commits to the `occurred_at` it is signed
+  with.** The digest input used the event time with a fixed nine-digit fraction,
+  while the signed `occurred_at` carries the form above at microsecond
+  precision. Both are now the same string. As a result, **the same signal has a
+  different `input_digest` than under 0.6**; a consumer that compares digests
+  across the upgrade must not treat that as a changed signal. Signal identity
+  (`fact_id`, `trace_id`) and every other field are unchanged.
 
 ## [0.6.2] - 2026-10-03
 
