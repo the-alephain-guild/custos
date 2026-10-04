@@ -1,0 +1,180 @@
+{
+  "receipt_schema_version": 1,
+  "canonical_name": "Crucible RunnerFact V1 position lifecycle identity consumer acceptance receipt",
+  "status": "CUSTOS_RUNNER_FACT_POSITION_LIFECYCLE_V1_CONSUMER_ACCEPTED_RUNTIME_OPEN",
+  "append_only": "A later acceptance is a new receipt file; this one is never rewritten. It does not replace docs/authority/receipts/crucible-runner-capability-runtime-v1-consumer-receipt.json, crucible-runner-fact-v1-consumer-receipt.json or the terminal valuation receipts, which stay the records of the revisions they accepted.",
+  "plans": {
+    "custos": {
+      "repository": "the-alephain-guild/tabularium",
+      "path": ".forge/projects/custos/dot-forge/plans/2026-10/03-capability-declares-runtime-image-and-engine.md",
+      "deviation": "DEV-03-9",
+      "commit": "05c43abc142781abaec291c11d55aed1dd002c0f",
+      "git_blob_oid": "e657ec60bb18673d034ea5bee0247bc387a134dc"
+    },
+    "custos_fix": {
+      "repository": "the-alephain-guild/tabularium",
+      "path": ".forge/projects/custos/dot-forge/fixes/2026-10/02-position-closed-identity-is-a-lifecycle.md",
+      "commit": "05c43abc142781abaec291c11d55aed1dd002c0f",
+      "git_blob_oid": "18d99f60a682bf75841eef7f8c57fccad4b5fd42"
+    },
+    "crucible_rust_fix": {
+      "path": ".forge/fixes/2026-10/t6-closed-position-identity-fixes.md",
+      "git_blob_oid_at_code_commit": "a19d6fd939fcf47e8f132e00814bddf103acc7f1"
+    }
+  },
+  "contract": {
+    "field": "position_closed.position_id",
+    "meaning": "identifies exactly one position lifecycle, from open to close; no two lifecycles share it",
+    "netting_derivation": "under a NETTING account the engine keeps one position id across every reopen of an instrument; the runner derives position_id from that position id, the order that opened the lifecycle and the instant it opened",
+    "wire_shape_changed": false,
+    "schema_change": "description only on position_closed.position_id; type and pattern unchanged; schema_version stays 1"
+  },
+  "producer": {
+    "repository": "tesseract-trading/custos",
+    "commit": "dc9d1be8fe77c769b39f61d3f410974726c417ef",
+    "parent_commit": "d1a4a70aa0fcff3d3e06a3cc9c7a6ada3b41bb19",
+    "identity_code_commit": "d2bf4b1964eac4d81c7f179db04e63723517ce18",
+    "identity_code_merge_commit": "fc54945033d39e27b44b360a2c3694cfecfbd061",
+    "branch": "plan-03-capability-runtime",
+    "merged_to_main": false,
+    "main_at_branch_point": "26d3a0f89c0ed05a2dd16fc379e905117bb12510",
+    "authority_coordinate": "custos.runner-fact.v1",
+    "asset_index": {
+      "producer_path": "docs/authority/runner-fact-contract-assets-v1.json",
+      "local_path": "docs/authority/custos-runner-fact-contract-assets-v1.json",
+      "git_blob_oid": "117210371c392b865b6de4a86147b7660aee0230",
+      "sha256": "260003a51fdb8cab40bc4842815b0f1908cad5872c20ab78e0d59d94a6e4a2d4",
+      "size_bytes": 4178,
+      "changed_by_this_revision": true
+    },
+    "assets": {
+      "runner_fact_batch_schema": {
+        "producer_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
+        "local_path": "docs/authority/custos-runner-fact-batch-v1.schema.json",
+        "git_blob_oid": "cef31606dfd3ad6b928b05c80e5604b8cd3219bb",
+        "sha256": "6ffad1f2f2dbfebb207a57422f90b022c15b643b2d9cf5fe022edd4258f9076a",
+        "size_bytes": 72219,
+        "changed_by_this_revision": true
+      },
+      "runner_fact_capability_manifest": {
+        "producer_path": "docs/authority/runner-fact-capability-manifest-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-capability-manifest-v1.json",
+        "git_blob_oid": "1a2a7f49306d4d184289a5be048be31482a3c065",
+        "sha256": "5ebcea0c968e619153cb3935fe649b3fde35ea060d602663444846398640cd0c",
+        "size_bytes": 4246,
+        "changed_by_this_revision": false
+      },
+      "runner_fact_capability_receipt_golden": {
+        "producer_path": "docs/authority/runner-fact-capability-receipt-golden-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-capability-receipt-golden-v1.json",
+        "git_blob_oid": "d6213893f994c37326b69fca558898a55265b609",
+        "sha256": "f7069369e7009eb0a0cd40619669d27715fe4f2f8685078a6c355b989fec8f69",
+        "size_bytes": 7526,
+        "changed_by_this_revision": false
+      },
+      "runner_fact_batch_golden": {
+        "producer_path": "docs/authority/runner-fact-golden-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-golden-v1.json",
+        "git_blob_oid": "faf62246e9e67b51ba8e6af3d2e552056872cf32",
+        "sha256": "77b07f92c7c52b3b57bc21002d937af3805fa144cd0a8729b15a76713e7cc86b",
+        "size_bytes": 9222,
+        "changed_by_this_revision": false
+      },
+      "runner_fact_terminal_boundary_golden": {
+        "producer_path": "docs/authority/runner-fact-terminal-boundary-golden-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-terminal-boundary-golden-v1.json",
+        "git_blob_oid": "31c1ff794202a464f68b741b2bd1ff5d29bb8a74",
+        "sha256": "ad0ce237c6d74a76902a3c72e17461fa290e76e77315d518242b72f271cb6c3f",
+        "size_bytes": 5080,
+        "changed_by_this_revision": false
+      },
+      "runner_fact_signing_preimage_golden": {
+        "producer_path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-signing-preimage-golden-v1.json",
+        "git_blob_oid": "7912615e32355f498d6a0b7a9d35a2bc8e66d8d1",
+        "sha256": "db7d9f3c2773fa30f33318088893d65394e40a071a083652cd29528609bd89ab",
+        "size_bytes": 5434,
+        "changed_by_this_revision": false
+      },
+      "runtime_event_fact_parity_matrix": {
+        "producer_path": "docs/authority/runner-fact-parity-matrix-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-parity-matrix-v1.json",
+        "git_blob_oid": "cd49e1520eb99d571653942dfa4ba592d6f11712",
+        "sha256": "5b6d1f1ae0d04330e403e094b1856293455a1d8e742cc073d9e77d390d6e28de",
+        "size_bytes": 4357,
+        "changed_by_this_revision": false
+      }
+    },
+    "byte_check": "each local file equals `git -C <custos> show dc9d1be8:<producer_path>` by SHA-256 and by Git blob OID",
+    "producer_vectors": "tests/test_position_lifecycle_identity.py: test_netting_round_trips_on_one_slot_close_distinct_positions, test_netting_round_trips_each_carry_only_their_own_realized_pnl, test_hedging_positions_keep_distinct_identities, test_lifecycles_opened_in_the_same_nanosecond_stay_distinct, test_a_replayed_close_derives_the_same_fact, test_a_close_without_its_opening_order_is_refused"
+  },
+  "consumer": {
+    "repository": "tesseract-trading/crucible-rust",
+    "code_commit": "3d6aab2138a00de1a778292ca2cdddfe6925aecd",
+    "code_commits": [
+      "f3f60a5a5b0914dc10e9f2733bd634d29a665883",
+      "6a109de43ea2577def739ffbd67bcbb2875dd0de",
+      "5ef536eda9ca79d204c416037a7de8a14a38e7ff",
+      "3d6aab2138a00de1a778292ca2cdddfe6925aecd"
+    ],
+    "branch": "plan-03-t3-capability-runtime",
+    "base_main": "9808d5f1f2727e7b6ab32789a79a02658c05a977",
+    "merged_to_main": false,
+    "migration": "none; settlement_closed_positions already keys one closed lifecycle by position_id",
+    "acceptance": "settlement_closed_positions keys a closed lifecycle by position_id; a replay of the same close meets the source-event arbiter and settles once; a different close under an identity already settled is refused as ProjectionConflict(\"closed position identity reused by another close\") and never settled twice or merged",
+    "sources": {
+      "closed_position_projection": {
+        "path": "crates/store/src/runner_fact_inbox.rs",
+        "git_blob_oid": "b3bb5911cf2d05eabe4c66020a90ea761b0e905f"
+      },
+      "closed_position_vectors_pg": {
+        "path": "crates/economic/src/settlement_closed_position_pg_tests.rs",
+        "git_blob_oid": "33a7aafba6038979622ca03001e255f88b855fd4"
+      }
+    },
+    "consumer_vectors": "crates/economic/src/settlement_closed_position_pg_tests.rs: two_lifecycles_of_one_slot_settle_as_two_closed_positions, a_replayed_close_settles_once, a_second_close_reusing_a_position_identity_is_a_typed_conflict, custos_signed_lifecycles_of_one_slot_settle_separately"
+  },
+  "verification": {
+    "verified_at": "2026-10-04",
+    "producer_bytes_accepted_unchanged": "the vendored batch schema and asset index equal the producer bytes at dc9d1be8; every other vendored RunnerFact asset is byte-identical to the revision accepted by crucible-runner-capability-runtime-v1-consumer-receipt.json, so no golden, signature or manifest digest moves",
+    "commands": [
+      [
+        "env -u all_proxy -u ALL_PROXY cargo test -p economic --lib",
+        "177 passed, 2 ignored (at cf65e6c, which holds the consumer code; 3d6aab2 changes vendored documents only)"
+      ],
+      [
+        "env -u all_proxy -u ALL_PROXY cargo test -p store --lib",
+        "89 passed (at cf65e6c)"
+      ],
+      [
+        "env -u all_proxy -u ALL_PROXY cargo test -p server-http --test runner_fact_projector_source_digest_pg --test runner_fact_transport_pg --test risk_runtime_projection_pg",
+        "2 passed; 2 passed 2 ignored; 1 passed (at cf65e6c)"
+      ],
+      [
+        "make check-authority",
+        "authority gate passed for crucible-rust with local artifact boundary"
+      ],
+      [
+        "custos: env -u all_proxy -u ALL_PROXY uv run --extra nautilus pytest tests/test_position_lifecycle_identity.py tests/test_runner_fact_contract_v1.py",
+        "passed at dc9d1be8; the generator reproduces every RunnerFact asset exactly"
+      ]
+    ],
+    "workspace_suite_rerun": false,
+    "launched_custos_runtime_exercised": false,
+    "real_venue_exercised": false,
+    "verified_at_commit": "3d6aab2138a00de1a778292ca2cdddfe6925aecd"
+  },
+  "authorization": {
+    "dispatch": "main session dispatch for custos plan 03 step 7 integration and contract close-out",
+    "evidence": "DEV-03-9 approved by the decision maker on 2026-10-04 (tabularium 05c43abc, custos plan 03 deviation log)"
+  },
+  "runtime_deployment_order": "Crucible consumer first, then Custos with the same release as the capability runtime (0.7.0); the description adds no wire change, so no runner needs to republish for it",
+  "runtime_ready": false,
+  "live_ready": false,
+  "production_ready": false,
+  "open_blockers": [
+    "Custos branch plan-03-capability-runtime and this branch are not on their mains",
+    "Custos registers this receipt after it is committed here",
+    "no published 0.7.0 image yet"
+  ]
+}

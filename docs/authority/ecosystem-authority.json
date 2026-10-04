@@ -502,6 +502,15 @@
       "size_bytes": 14357,
       "status": "CUSTOS_CAPABILITY_RUNTIME_V1_CONSUMER_ACCEPTED_RUNTIME_OPEN"
     },
+    "position_lifecycle_consumer_receipt": {
+      "repository": "tesseract-trading/crucible-rust",
+      "commit": "444e9291c9976e217c3c9e5ebe60489522f503a8",
+      "producer_path": "docs/authority/receipts/crucible-runner-fact-position-lifecycle-v1-consumer-receipt.json",
+      "path": "docs/authority/receipts/vendor/crucible-runner-fact-position-lifecycle-v1-consumer-receipt.json",
+      "sha256": "cc30501f13041929a8847b8fc3c1bbe6474f3bc73bdeda5fb7e3de20db9a0805",
+      "size_bytes": 10518,
+      "status": "CUSTOS_RUNNER_FACT_POSITION_LIFECYCLE_V1_CONSUMER_ACCEPTED_RUNTIME_OPEN"
+    },
     "local_publication_receipt": {
       "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
       "sha256": "78473e28cbc6db66cee96163749f4de21ac9387916fc108c4f6986cdff6542bf",

@@ -89,6 +89,16 @@ CAPABILITY_RUNTIME_CONSUMER_RECEIPT_COMMIT = "89f91858e28977aa1d1776f15c92c83b3f
 CAPABILITY_RUNTIME_CONSUMER_STATUS = "CUSTOS_CAPABILITY_RUNTIME_V1_CONSUMER_ACCEPTED_RUNTIME_OPEN"
 CAPABILITY_RUNTIME_PRODUCER_ASSET_COMMIT = "8cda48daeb09680a8148ea02fce68468b842abf3"
 CAPABILITY_RUNTIME_PRODUCER_CODE_COMMIT = "3abb7c2490445e0fc860ee844ed51f21e6432d97"
+POSITION_LIFECYCLE_CONSUMER_RECEIPT_PATH = (
+    "docs/authority/receipts/vendor/"
+    "crucible-runner-fact-position-lifecycle-v1-consumer-receipt.json"
+)
+POSITION_LIFECYCLE_CONSUMER_RECEIPT_COMMIT = "444e9291c9976e217c3c9e5ebe60489522f503a8"
+POSITION_LIFECYCLE_CONSUMER_STATUS = (
+    "CUSTOS_RUNNER_FACT_POSITION_LIFECYCLE_V1_CONSUMER_ACCEPTED_RUNTIME_OPEN"
+)
+POSITION_LIFECYCLE_PRODUCER_ASSET_COMMIT = "dc9d1be8fe77c769b39f61d3f410974726c417ef"
+POSITION_LIFECYCLE_PRODUCER_CODE_COMMIT = "d2bf4b1964eac4d81c7f179db04e63723517ce18"
 RUNNER_COMMAND_CONSUMER_SOURCE = "src/custos/contracts/crucible_runner_command.py"
 RUNNER_COMMAND_GOLDEN_PATH = "docs/authority/runner-deployment-command-golden-v1.json"
 RUNNER_COMMAND_PRODUCER_COMMIT = "8c2c4eff20ae1ba38bbab54cdf7844ef25e1187d"
@@ -2659,21 +2669,66 @@ def verify_runner_fact_authority(errors: list[str]) -> None:
 
 
 def verify_runner_capability_runtime_consumer(errors: list[str], *, root: Path = ROOT) -> None:
-    """Hold the vendored Crucible runtime receipt to the revisions it accepted.
+    """Hold the vendored Crucible runtime receipt to the revisions it accepted."""
+
+    _verify_vendored_runner_fact_consumer_receipt(
+        errors,
+        root=root,
+        subject="capability runtime",
+        path=CAPABILITY_RUNTIME_CONSUMER_RECEIPT_PATH,
+        receipt_commit=CAPABILITY_RUNTIME_CONSUMER_RECEIPT_COMMIT,
+        status=CAPABILITY_RUNTIME_CONSUMER_STATUS,
+        ecosystem_key="capability_runtime_consumer_receipt",
+        producer_asset_commit=CAPABILITY_RUNTIME_PRODUCER_ASSET_COMMIT,
+        code_field="runtime_code_commit",
+        code_commit=CAPABILITY_RUNTIME_PRODUCER_CODE_COMMIT,
+    )
+
+
+def verify_runner_fact_position_lifecycle_consumer(errors: list[str], *, root: Path = ROOT) -> None:
+    """Hold the vendored Crucible position lifecycle receipt to the revisions it accepted."""
+
+    _verify_vendored_runner_fact_consumer_receipt(
+        errors,
+        root=root,
+        subject="position lifecycle",
+        path=POSITION_LIFECYCLE_CONSUMER_RECEIPT_PATH,
+        receipt_commit=POSITION_LIFECYCLE_CONSUMER_RECEIPT_COMMIT,
+        status=POSITION_LIFECYCLE_CONSUMER_STATUS,
+        ecosystem_key="position_lifecycle_consumer_receipt",
+        producer_asset_commit=POSITION_LIFECYCLE_PRODUCER_ASSET_COMMIT,
+        code_field="identity_code_commit",
+        code_commit=POSITION_LIFECYCLE_PRODUCER_CODE_COMMIT,
+    )
+
+
+def _verify_vendored_runner_fact_consumer_receipt(
+    errors: list[str],
+    *,
+    root: Path,
+    subject: str,
+    path: str,
+    receipt_commit: str,
+    status: str,
+    ecosystem_key: str,
+    producer_asset_commit: str,
+    code_field: str,
+    code_commit: str,
+) -> None:
+    """Hold one vendored Crucible RunnerFact receipt to the revisions it accepted.
 
     The receipt records the producer revision Crucible accepted; it does not pin
     today's assets, which Git and review govern. Only the shape of each recorded
     asset is checked, and that it names an asset the RunnerFact V1 index publishes.
     """
 
-    receipt_path = root / CAPABILITY_RUNTIME_CONSUMER_RECEIPT_PATH
+    label = f"Crucible {subject} consumer receipt"
+    receipt_path = root / path
     if not receipt_path.is_file():
-        errors.append("Crucible capability runtime consumer receipt is missing")
+        errors.append(f"{label} is missing")
         return
     payload = receipt_path.read_bytes()
-    receipt = _load_gate_json(
-        receipt_path, label="Crucible capability runtime consumer receipt", errors=errors
-    )
+    receipt = _load_gate_json(receipt_path, label=label, errors=errors)
     ecosystem = _load_gate_json(
         root / "docs/authority/ecosystem-authority.json",
         label="ecosystem authority snapshot",
@@ -2686,20 +2741,17 @@ def verify_runner_capability_runtime_consumer(errors: list[str], *, root: Path =
         return
     expected_binding = {
         "repository": "tesseract-trading/crucible-rust",
-        "commit": CAPABILITY_RUNTIME_CONSUMER_RECEIPT_COMMIT,
-        "producer_path": (
-            "docs/authority/receipts/crucible-runner-capability-runtime-v1-consumer-receipt.json"
-        ),
-        "path": CAPABILITY_RUNTIME_CONSUMER_RECEIPT_PATH,
+        "commit": receipt_commit,
+        "producer_path": "docs/authority/receipts/" + Path(path).name,
+        "path": path,
         "sha256": hashlib.sha256(payload).hexdigest(),
         "size_bytes": len(payload),
-        "status": CAPABILITY_RUNTIME_CONSUMER_STATUS,
+        "status": status,
     }
-    binding = _nested(ecosystem, ("runner_fact_contract_v1", "capability_runtime_consumer_receipt"))
+    binding = _nested(ecosystem, ("runner_fact_contract_v1", ecosystem_key))
     if binding != expected_binding:
-        errors.append("ecosystem capability runtime consumer receipt binding differs")
-    label = "Crucible capability runtime consumer receipt"
-    if receipt.get("status") != CAPABILITY_RUNTIME_CONSUMER_STATUS:
+        errors.append(f"ecosystem {subject} consumer receipt binding differs")
+    if receipt.get("status") != status:
         errors.append(f"{label} status differs")
     producer = receipt.get("producer")
     consumer = receipt.get("consumer")
@@ -2708,10 +2760,11 @@ def verify_runner_capability_runtime_consumer(errors: list[str], *, root: Path =
         return
     if producer.get("repository") != "tesseract-trading/custos":
         errors.append(f"{label} producer repository differs")
-    if producer.get("commit") != CAPABILITY_RUNTIME_PRODUCER_ASSET_COMMIT:
+    if producer.get("commit") != producer_asset_commit:
         errors.append(f"{label} producer asset commit differs")
-    if producer.get("runtime_code_commit") != CAPABILITY_RUNTIME_PRODUCER_CODE_COMMIT:
-        errors.append(f"{label} producer runtime code commit differs")
+    if producer.get(code_field) != code_commit:
+        code_name = code_field.removesuffix("_commit").replace("_", " ")
+        errors.append(f"{label} producer {code_name} commit differs")
     if "producer_receipt" in producer:
         errors.append(f"{label} must not create a receipt cycle")
     if consumer.get("repository") != "tesseract-trading/crucible-rust":
@@ -2805,6 +2858,7 @@ def main() -> int:
     verify_offline_lane(manifest, errors)
     verify_runner_fact_authority(errors)
     verify_runner_capability_runtime_consumer(errors)
+    verify_runner_fact_position_lifecycle_consumer(errors)
     verify_strategy_contract_canonical_source(errors)
     for entry in manifest.get("external_optional_documents", []):
         path = resolve(entry["path"])
