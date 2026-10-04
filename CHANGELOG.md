@@ -13,6 +13,18 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Fixed
+
+- A strategy that closes and reopens a position on the same instrument under a
+  netting account now signs each closed lifecycle under its own `position_id`.
+  NautilusTrader keeps one position id per instrument and strategy under netting
+  and reuses it on every reopen, and the runner derived `position_id` from that
+  id alone, so every later close of the instrument repeated the first close's
+  identity and the deployment service refused to settle it. The identity now
+  also covers the order that opened the lifecycle and the instant it opened. The
+  wire shape of `position_closed` is unchanged; a replayed close still derives
+  the same fact.
+
 ## [0.6.2] - 2026-10-03
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.6.2`
