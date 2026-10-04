@@ -22,6 +22,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from custos.core import nats_transport
 from custos.core.runner_deployment_lifecycle_fact import RunnerDeploymentLifecycleFact
@@ -29,9 +30,21 @@ from custos.core.runner_fact import (
     RunnerCapabilityReceipt,
     RunnerFactAuthority,
     RunnerFactEmitter,
+    RunnerFactIdentity,
+    signed_strategy_signal_fact,
 )
-from custos.core.runner_fact_producer import RunnerCapitalBasisSnapshot, _capital_basis_fact
+from custos.core.runner_fact_producer import (
+    RunnerCapitalBasisSnapshot,
+    RunnerFactEventBridge,
+    _capital_basis_fact,
+)
 from custos.core.runtime_log_fact import RunnerRuntimeLogEmitter, RuntimeLogRedactor
+from tests.test_strategy_signal_bridge import (
+    OrderInitialized,
+    _deployment,
+    _Emitter,
+)
+from tests.test_strategy_signal_bridge import _authority as _signal_authority
 
 ROOT = Path(__file__).resolve().parents[1]
 SHA = "a" * 64
@@ -254,3 +267,53 @@ def test_sub_second_crucible_authority_times_reproduce_the_crucible_digest(
     document["authority_digest"] = _crucible_authority_digest(document)
 
     assert _custos_authority_digest(document) == document["authority_digest"]
+
+
+# Signed facts carry microsecond precision: the signer parses occurred_at and renders it
+# again, dropping any sub-microsecond digit. The input digest must commit to that same
+# string, so the expected values are chrono's rendering of the microsecond-truncated instant:
+#   0            whole second; the preimage used to read ".000000000Z"
+#   632_000_000  whole milliseconds; the preimage used to read ".632000000Z"
+#   123_456_000  whole microseconds; the preimage used to read ".123456000Z"
+#   632_100_001  a sub-microsecond digit; the signer writes ".632100Z", the preimage
+#                used to keep ".632100001Z"
+STRATEGY_SIGNAL_CASES: tuple[tuple[int, str], ...] = (
+    (0, f"{BASE}Z"),
+    (632_000_000, f"{BASE}.632Z"),
+    (123_456_000, f"{BASE}.123456Z"),
+    (632_100_001, f"{BASE}.632100Z"),
+)
+
+
+@pytest.mark.parametrize(("nanos", "expected"), STRATEGY_SIGNAL_CASES)
+def test_strategy_signal_input_digest_commits_to_the_signed_occurred_at(
+    nanos: int, expected: str
+) -> None:
+    emitter = _Emitter()
+    bridge = RunnerFactEventBridge(
+        emitter=cast(RunnerFactEmitter, emitter), deployment=_deployment()
+    )
+    event = OrderInitialized()
+    event.values["ts_event"] = EPOCH_SECONDS * 1_000_000_000 + nanos
+
+    bridge._on_order_event(event)  # noqa: SLF001
+    fact = signed_strategy_signal_fact(
+        _signal_authority(),
+        RunnerFactIdentity(Ed25519PrivateKey.generate(), "signal-key"),
+        source_sequence=1,
+        **cast(dict[str, Any], emitter.signals[0]),
+    )
+
+    preimage = {
+        "client_order_id": "supertrend-entry-1",
+        "direction": "long",
+        "event_id": "60000000-0000-4000-8000-000000000001",
+        "instrument": "BTCUSDT-PERP.BINANCE",
+        "occurred_at": expected,
+        "quantity": "0.007",
+        "strategy_version": "v2",
+        "timeframe": "1-MINUTE",
+    }
+    encoded = json.dumps(preimage, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+    assert fact["occurred_at"] == expected
+    assert fact["input_digest"] == hashlib.sha256(encoded.encode("utf-8")).hexdigest()
