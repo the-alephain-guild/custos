@@ -46,7 +46,8 @@ protocol — is published at
   identity and the deployment service refused to settle it. The identity now
   also covers the order that opened the lifecycle and the instant it opened. The
   wire shape of `position_closed` is unchanged; a replayed close still derives
-  the same fact.
+  the same fact. The RunnerFact batch schema now states this contract in the
+  description of `position_id`: it identifies exactly one position lifecycle.
 - **Every signed time is written in one RFC 3339 form.** Times in runtime log
   facts, capital-basis observations and deployment lifecycle facts were written
   with a fixed nine-digit fraction (`.632000000Z`) or with six digits

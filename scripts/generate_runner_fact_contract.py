@@ -411,7 +411,16 @@ def _schema() -> dict[str, Any]:
         "position_closed": _object_schema(
             "position_closed",
             {
-                "position_id": uuid,
+                "position_id": {
+                    **uuid,
+                    "description": (
+                        "Identifies exactly one position lifecycle, from open to close; "
+                        "no two lifecycles share it. Under a NETTING account, where the "
+                        "engine keeps one position id across every reopen of an instrument, "
+                        "it is derived from that position id, the order that opened the "
+                        "lifecycle and the instant it opened."
+                    ),
+                },
                 "realized_pnl": decimal,
                 "currency": currency,
                 "opened_at": timestamp,
