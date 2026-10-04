@@ -13,6 +13,20 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **Every signed time is written in one RFC 3339 form.** Times in runtime log
+  facts, capital-basis observations and deployment lifecycle facts were written
+  with a fixed nine-digit fraction (`.632000000Z`) or with six digits
+  (`.632000Z`), while the deployment service writes the same instant as
+  `.632Z`: no fraction for a whole second, otherwise the shortest of three, six
+  or nine digits that keeps every non-zero digit. They now use that form, as
+  every other signed fact already did. The same rendering applies when the
+  runner checks the digest of a NATS transport credential; a credential whose
+  times fell on a whole millisecond was refused with
+  `runner NATS authority digest mismatch` and is now accepted. Wire values stay
+  valid RFC 3339 and parse to the same instant.
+
 ## [0.6.2] - 2026-10-03
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.6.2`

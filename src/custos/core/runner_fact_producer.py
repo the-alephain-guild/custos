@@ -29,6 +29,7 @@ from custos.core.runner_fact import (
     valuation_checkpoint,
     venue_ledger_snapshot_facts,
 )
+from custos.core.utc_time import render_utc
 
 _log = get_logger("custos.runner_fact_producer")
 
@@ -211,7 +212,7 @@ def _capital_basis_fact(
     return {
         "kind": "RunnerRuntimeLogFact.v1",
         "event_id": str(_scoped_event_id(authority, "capital_basis", observed_at.isoformat())),
-        "occurred_at": observed_at.isoformat().replace("+00:00", "Z"),
+        "occurred_at": render_utc(observed_at),
         "level": "INFO",
         "component": "custos.capital_basis",
         "message": "runner_capital_basis_observed",

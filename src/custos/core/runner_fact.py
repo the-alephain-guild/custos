@@ -47,6 +47,7 @@ from custos.core.runner_command_intake import (
     classify_command_identity,
     compute_command_fingerprint,
 )
+from custos.core.utc_time import render_utc
 
 RUNNER_FACT_SCHEMA_VERSION: Final = 1
 RUNNER_FACT_SIGNING_DOMAIN: Final = b"CRUCIBLE-RUNNER-FACT-BATCH-V1\0"
@@ -407,19 +408,7 @@ def strategy_signal_signing_payload(value: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _utc_now() -> str:
-    return _render_utc(datetime.now(UTC))
-
-
-def _render_utc(value: datetime) -> str:
-    """Render like chrono's RFC3339 AutoSi serializer used by Crucible."""
-    value = value.astimezone(UTC)
-    base = value.strftime("%Y-%m-%dT%H:%M:%S")
-    micros = value.microsecond
-    if micros == 0:
-        return f"{base}Z"
-    if micros % 1000 == 0:
-        return f"{base}.{micros // 1000:03d}Z"
-    return f"{base}.{micros:06d}Z"
+    return render_utc(datetime.now(UTC))
 
 
 def _file_size(path: Path) -> int:
@@ -525,7 +514,7 @@ def _timestamp(value: datetime | str, field: str) -> str:
     if isinstance(value, datetime):
         if value.tzinfo is None:
             raise RunnerFactContractError(f"{field} must include a timezone")
-        return _render_utc(value)
+        return render_utc(value)
     text = _non_empty(value, field)
     try:
         parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
@@ -533,7 +522,7 @@ def _timestamp(value: datetime | str, field: str) -> str:
         raise RunnerFactContractError(f"{field} must be RFC3339") from exc
     if parsed.tzinfo is None:
         raise RunnerFactContractError(f"{field} must include a timezone")
-    return _render_utc(parsed)
+    return render_utc(parsed)
 
 
 def _currency(value: str) -> str:
