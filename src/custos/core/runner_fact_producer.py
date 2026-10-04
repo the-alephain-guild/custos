@@ -687,8 +687,11 @@ class RunnerFactEventBridge:
             authority = self._deployment.authority
             event_identity = str(data.get("event_id") or "").strip()
             position_identity = str(data.get("position_id") or "").strip()
-            if not event_identity or not position_identity:
-                raise RunnerFactContractError("PositionClosed lacks stable event/position identity")
+            opening_order = str(data.get("opening_order_id") or "").strip()
+            if not event_identity or not position_identity or not opening_order:
+                raise RunnerFactContractError(
+                    "PositionClosed lacks stable event/position lifecycle identity"
+                )
             pnl, pnl_currency = _money(data.get("realized_pnl", "0"), "realized_pnl")
             currency = (
                 pnl_currency or str(data.get("currency") or self._deployment.currency)
@@ -699,7 +702,16 @@ class RunnerFactEventBridge:
                 )
             fact = position_closed(
                 event_id=_scoped_event_id(authority, "position_closed", event_identity),
-                position_id=_scoped_event_id(authority, "position_identity", position_identity),
+                # A netting slot keeps its engine position id across every reopen, so
+                # the slot alone names all of its lifecycles alike. The order that opened
+                # this lifecycle and the instant it opened tell them apart.
+                position_id=_scoped_event_id(
+                    authority,
+                    "position_lifecycle",
+                    position_identity,
+                    opening_order,
+                    _nt_timestamp(data.get("ts_opened")),
+                ),
                 realized_pnl=pnl,
                 currency=currency,
                 opened_at=_nt_timestamp(data.get("ts_opened")),
@@ -723,6 +735,7 @@ class RunnerFactEventBridge:
                 "currency",
                 "event_id",
                 "instrument_id",
+                "opening_order_id",
                 "position_id",
                 "realized_pnl",
                 "ts_closed",
