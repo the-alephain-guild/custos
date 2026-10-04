@@ -62,6 +62,7 @@ def test_sodex_closed_position_retains_the_distinct_asset_code():
             return {
                 "event_id": str(uuid4()),
                 "position_id": "position-1",
+                "opening_order_id": "order-1",
                 "realized_pnl": "2.50 vUSDC",
                 "ts_opened": 1_000_000_000,
                 "ts_closed": 2_000_000_000,

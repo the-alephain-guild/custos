@@ -51,7 +51,7 @@ uv run arx-runner start \
 
 `--reconcile` 用于创建引擎并订阅部署指令。省略它时，进程仍可能通过健康检查，但没有部署消费者运行。
 
-`sandbox-sim` 不连接交易所。运行兼容策略、读取实时行情并在本地模拟成交时，应安装 Nautilus extra，再选择 `--engine nautilus`。
+`sandbox-sim` 不连接交易所。运行兼容策略、读取实时行情并在本地模拟成交时，选择 `--engine nautilus`。两种引擎都需要安装 Nautilus extra：签名通道会核对能力声明的引擎版本是否等于本进程已安装的版本，不一致即拒绝启动。
 
 ## 验证结果
 

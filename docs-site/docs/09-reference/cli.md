@@ -29,6 +29,12 @@ Offline operation requires `--reconcile-strategy-id`, an existing local identity
 
 See [signed sandbox](/getting-started/first-sandbox-run), [standalone sandbox](/getting-started/standalone-sandbox) and [configuration](/reference/configuration).
 
+## Publishing a capability
+
+`publish-capability` signs the manifest after adding the `runtime` the publishing process observes: `distribution`, `image_digest`, `source_revision`, `engine` and `engine_version`. Leave `runtime` out of the manifest; one that differs from the observed runtime is refused. In an image, set `CUSTOS_RUNTIME_IMAGE_DIGEST` to the release's index digest for both this command and `start`. From a source checkout, leave it unset: the runtime is `development`, which runs sandbox but never qualifies a runtime for live promotion. Both commands need the Nautilus extra installed, because the engine version comes from the installed package.
+
+`start` refuses the signed lane when the capability receipt declares a different runtime from the one running. After changing the image or the engine, publish the capability again from the new runtime and restart. See [runtime identity](/operator-guide/production-preparation#runtime-identity).
+
 ## Provisioning notes
 
 - `vault put` requires exactly one secret input method. Prefer `--api-secret-stdin`; command-line secrets can appear in process listings/history.

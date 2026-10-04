@@ -217,3 +217,12 @@ def test_offline_cannot_consume_runtime_promotion_flags(tmp_path: Path, capsys) 
         == 1
     )
     assert "only to the signed lane" in capsys.readouterr().err
+
+
+def test_declared_image_digest_alone_leaves_live_admission_closed(monkeypatch) -> None:
+    from custos.cli.subcommands import _build_parser
+
+    monkeypatch.setenv("CUSTOS_RUNTIME_IMAGE_DIGEST", "sha256:" + "a" * 64)
+    args = _build_parser().parse_args(["start", "--enabled-mode", "sandbox"])
+    assert args.runtime_image_digest is None
+    assert load_runtime_admission(args) is None

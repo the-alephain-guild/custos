@@ -13,6 +13,60 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking:** a runner capability declares the runtime it runs, as a required
+  `runtime` object in the capability manifest: `distribution`, `image_digest`,
+  `source_revision`, `engine` and `engine_version`. `publish-capability` writes
+  it from what the publishing process observes and refuses a manifest that
+  already carries a different one. The signed lane starts only when its capability
+  receipt declares the runtime running now, so a receipt published by an earlier
+  release no longer starts a runner: publish the capability again, then restart.
+  After changing the image or the engine, publish again before restarting.
+- **Breaking:** a runner running from the container image must be given the
+  image's multi-platform index digest in `CUSTOS_RUNTIME_IMAGE_DIGEST`
+  (`sha256:` and 64 lowercase hexadecimal digits). The runner reads the image's
+  source revision and the installed NautilusTrader version itself, and refuses to
+  publish or start when the variable is set but the image was not built from a
+  commit. Without the variable, as when running from source, the runtime is
+  declared `development` with no digest and no revision; its facts never qualify
+  a runtime. The variable is not the live admission digest: live still requires
+  `--runtime-image-digest` with its promotion receipt, and the capability must
+  declare that same image.
+- Publishing a capability and starting the signed lane need the NautilusTrader
+  engine installed, since the runtime names the engine version.
+
+### Fixed
+
+- A strategy that closes and reopens a position on the same instrument under a
+  netting account now signs each closed lifecycle under its own `position_id`.
+  NautilusTrader keeps one position id per instrument and strategy under netting
+  and reuses it on every reopen, and the runner derived `position_id` from that
+  id alone, so every later close of the instrument repeated the first close's
+  identity and the deployment service refused to settle it. The identity now
+  also covers the order that opened the lifecycle and the instant it opened. The
+  wire shape of `position_closed` is unchanged; a replayed close still derives
+  the same fact. The RunnerFact batch schema now states this contract in the
+  description of `position_id`: it identifies exactly one position lifecycle.
+- **Every signed time is written in one RFC 3339 form.** Times in runtime log
+  facts, capital-basis observations and deployment lifecycle facts were written
+  with a fixed nine-digit fraction (`.632000000Z`) or with six digits
+  (`.632000Z`), while the deployment service writes the same instant as
+  `.632Z`: no fraction for a whole second, otherwise the shortest of three, six
+  or nine digits that keeps every non-zero digit. They now use that form, as
+  every other signed fact already did. The same rendering applies when the
+  runner checks the digest of a NATS transport credential; a credential whose
+  times fell on a whole millisecond was refused with
+  `runner NATS authority digest mismatch` and is now accepted. Wire values stay
+  valid RFC 3339 and parse to the same instant.
+- **A strategy signal's `input_digest` commits to the `occurred_at` it is signed
+  with.** The digest input used the event time with a fixed nine-digit fraction,
+  while the signed `occurred_at` carries the form above at microsecond
+  precision. Both are now the same string. As a result, **the same signal has a
+  different `input_digest` than under 0.6**; a consumer that compares digests
+  across the upgrade must not treat that as a changed signal. Signal identity
+  (`fact_id`, `trace_id`) and every other field are unchanged.
+
 ## [0.6.2] - 2026-10-03
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.6.2`

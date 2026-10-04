@@ -493,6 +493,24 @@
       "sha256": "e900e3babdbb43b3e74e956c8461a77662bf8ef30bb4dc22aa49de4874248c35",
       "size_bytes": 14597
     },
+    "capability_runtime_consumer_receipt": {
+      "repository": "tesseract-trading/crucible-rust",
+      "commit": "89f91858e28977aa1d1776f15c92c83b3f39cee7",
+      "producer_path": "docs/authority/receipts/crucible-runner-capability-runtime-v1-consumer-receipt.json",
+      "path": "docs/authority/receipts/vendor/crucible-runner-capability-runtime-v1-consumer-receipt.json",
+      "sha256": "20c6d46dead38ed8802760857094e846b8b4948019f65a8f06fc12dc7aa64019",
+      "size_bytes": 14357,
+      "status": "CUSTOS_CAPABILITY_RUNTIME_V1_CONSUMER_ACCEPTED_RUNTIME_OPEN"
+    },
+    "position_lifecycle_consumer_receipt": {
+      "repository": "tesseract-trading/crucible-rust",
+      "commit": "444e9291c9976e217c3c9e5ebe60489522f503a8",
+      "producer_path": "docs/authority/receipts/crucible-runner-fact-position-lifecycle-v1-consumer-receipt.json",
+      "path": "docs/authority/receipts/vendor/crucible-runner-fact-position-lifecycle-v1-consumer-receipt.json",
+      "sha256": "cc30501f13041929a8847b8fc3c1bbe6474f3bc73bdeda5fb7e3de20db9a0805",
+      "size_bytes": 10518,
+      "status": "CUSTOS_RUNNER_FACT_POSITION_LIFECYCLE_V1_CONSUMER_ACCEPTED_RUNTIME_OPEN"
+    },
     "local_publication_receipt": {
       "path": "docs/authority/receipts/custos-runner-fact-local-publication-v1.json",
       "sha256": "78473e28cbc6db66cee96163749f4de21ac9387916fc108c4f6986cdff6542bf",

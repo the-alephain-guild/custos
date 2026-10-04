@@ -29,6 +29,7 @@ from custos.core.runner_fact import (
     valuation_checkpoint,
     venue_ledger_snapshot_facts,
 )
+from custos.core.utc_time import render_utc, render_utc_nanos
 
 _log = get_logger("custos.runner_fact_producer")
 
@@ -148,17 +149,20 @@ def _scoped_event_id(authority: RunnerFactAuthority, kind: str, *identity: objec
 
 
 def _nt_timestamp(value: Any) -> str:
+    """Render a Nautilus event time exactly as the signed fact will carry it.
+
+    Signed facts keep microsecond precision, so the sub-microsecond digits are dropped
+    here; a digest computed over this string then commits to the signed value.
+    """
     if isinstance(value, datetime):
-        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        return render_utc(value)
     try:
         nanoseconds = int(value)
     except (TypeError, ValueError) as exc:
         raise RunnerFactContractError(
             "Nautilus event timestamp must be integer nanoseconds"
         ) from exc
-    seconds, nanos = divmod(nanoseconds, 1_000_000_000)
-    base = datetime.fromtimestamp(seconds, UTC).strftime("%Y-%m-%dT%H:%M:%S")
-    return f"{base}.{nanos:09d}Z"
+    return render_utc_nanos(nanoseconds - nanoseconds % 1_000)
 
 
 def _money(value: Any, field: str) -> tuple[str, str | None]:
@@ -211,7 +215,7 @@ def _capital_basis_fact(
     return {
         "kind": "RunnerRuntimeLogFact.v1",
         "event_id": str(_scoped_event_id(authority, "capital_basis", observed_at.isoformat())),
-        "occurred_at": observed_at.isoformat().replace("+00:00", "Z"),
+        "occurred_at": render_utc(observed_at),
         "level": "INFO",
         "component": "custos.capital_basis",
         "message": "runner_capital_basis_observed",
@@ -687,8 +691,11 @@ class RunnerFactEventBridge:
             authority = self._deployment.authority
             event_identity = str(data.get("event_id") or "").strip()
             position_identity = str(data.get("position_id") or "").strip()
-            if not event_identity or not position_identity:
-                raise RunnerFactContractError("PositionClosed lacks stable event/position identity")
+            opening_order = str(data.get("opening_order_id") or "").strip()
+            if not event_identity or not position_identity or not opening_order:
+                raise RunnerFactContractError(
+                    "PositionClosed lacks stable event/position lifecycle identity"
+                )
             pnl, pnl_currency = _money(data.get("realized_pnl", "0"), "realized_pnl")
             currency = (
                 pnl_currency or str(data.get("currency") or self._deployment.currency)
@@ -699,7 +706,16 @@ class RunnerFactEventBridge:
                 )
             fact = position_closed(
                 event_id=_scoped_event_id(authority, "position_closed", event_identity),
-                position_id=_scoped_event_id(authority, "position_identity", position_identity),
+                # A netting slot keeps its engine position id across every reopen, so
+                # the slot alone names all of its lifecycles alike. The order that opened
+                # this lifecycle and the instant it opened tell them apart.
+                position_id=_scoped_event_id(
+                    authority,
+                    "position_lifecycle",
+                    position_identity,
+                    opening_order,
+                    _nt_timestamp(data.get("ts_opened")),
+                ),
                 realized_pnl=pnl,
                 currency=currency,
                 opened_at=_nt_timestamp(data.get("ts_opened")),
@@ -723,6 +739,7 @@ class RunnerFactEventBridge:
                 "currency",
                 "event_id",
                 "instrument_id",
+                "opening_order_id",
                 "position_id",
                 "realized_pnl",
                 "ts_closed",

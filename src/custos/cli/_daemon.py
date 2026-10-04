@@ -112,6 +112,7 @@ from custos.core.runner_safety_policy import (
 )
 from custos.core.runner_safety_policy_authority import RunnerSafetyPolicyAuthorityClient
 from custos.core.runner_toml import RunnerToml
+from custos.core.runtime_identity import observe_runtime_identity, require_declared_runtime
 from custos.core.venue_proxy import VenueProxyError, venue_proxy_from_environment
 from custos.engines.nautilus.runtime_loader import NautilusRuntimeEntryPointLoaderV1
 
@@ -1084,6 +1085,10 @@ async def run_daemon(args: argparse.Namespace) -> int:
         raise RuntimeError(
             "Runner capability bindings are not validated; restart after projection completes"
         )
+    observed_runtime = await asyncio.to_thread(observe_runtime_identity, os.environ)
+    require_declared_runtime(
+        capability.capability_manifest, observed_runtime, admission=runtime_admission
+    )
     fact_outbox = RunnerFactOutbox(args.runner_fact_outbox)
     fact_publisher = RunnerFactJetStreamPublisher(
         connection_profiles=transport_profiles,

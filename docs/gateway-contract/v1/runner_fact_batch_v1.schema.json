@@ -392,7 +392,8 @@
         },
         "position_id": {
           "type": "string",
-          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "description": "Identifies exactly one position lifecycle, from open to close; no two lifecycles share it. Under a NETTING account, where the engine keeps one position id across every reopen of an instrument, it is derived from that position id, the order that opened the lifecycle and the instant it opened."
         },
         "realized_pnl": {
           "type": "string",

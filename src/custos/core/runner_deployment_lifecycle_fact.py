@@ -5,7 +5,6 @@ from __future__ import annotations
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +14,7 @@ from custos.core.runner_fact import (
     RunnerFactEmitter,
     command_lifecycle_event_id,
 )
+from custos.core.utc_time import render_utc_nanos
 
 LIFECYCLE_FACT_KIND = "RunnerDeploymentLifecycleFact.v1"
 _LIFECYCLE_STATES = frozenset({"running", "paused", "stopped", "archived"})
@@ -23,10 +23,7 @@ _LOWER_SHA256 = frozenset("0123456789abcdef")
 
 
 def _now_rfc3339_nanos() -> str:
-    ns = time.time_ns()
-    seconds, remainder = divmod(ns, 1_000_000_000)
-    value = datetime.fromtimestamp(seconds, tz=UTC)
-    return value.strftime("%Y-%m-%dT%H:%M:%S") + f".{remainder:09d}Z"
+    return render_utc_nanos(time.time_ns())
 
 
 @dataclass(frozen=True, slots=True)

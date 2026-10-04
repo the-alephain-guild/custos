@@ -29,6 +29,12 @@ sidebar_position: 1
 
 详见[签名 sandbox](/getting-started/first-sandbox-run)、[独立 sandbox](/getting-started/standalone-sandbox)和[配置参考](/reference/configuration)。
 
+## 发布能力
+
+`publish-capability` 先把发布进程观测到的 `runtime`（`distribution`、`image_digest`、`source_revision`、`engine`、`engine_version`）加进清单，再签名。清单里不要写 `runtime`；与观测不一致的会被拒绝。在镜像中运行时，为该命令和 `start` 都设置 `CUSTOS_RUNTIME_IMAGE_DIGEST`，取值为发布版本的索引摘要。从源码仓库运行时不设置：运行时为 `development`，可以跑 sandbox，但永远不能作为实盘晋升的运行时依据。两个命令都需要安装 Nautilus extra，因为引擎版本取自已安装的包。
+
+能力回执声明的运行时与当前运行的不一致时，`start` 拒绝启动签名通道。更换镜像或引擎之后，在新的运行环境里重新发布能力并重启。详见[运行时身份](/operator-guide/production-preparation#runtime-identity)。
+
 ## 配置要点
 
 - `vault put` 要求选择一种秘密输入方式。优先使用 `--api-secret-stdin`，命令行秘密可能出现在进程列表和历史记录中。

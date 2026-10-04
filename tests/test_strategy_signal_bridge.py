@@ -365,6 +365,7 @@ def test_audit_failure_reaches_host_without_interrupting_strategy(kind) -> None:
             return {
                 "event_id": "80000000-0000-4000-8000-000000000001",
                 "position_id": "position-1",
+                "opening_order_id": "order-1",
                 "realized_pnl": "10 USDT",
                 "ts_opened": 1_000_000_000,
                 "ts_closed": 2_000_000_000,
