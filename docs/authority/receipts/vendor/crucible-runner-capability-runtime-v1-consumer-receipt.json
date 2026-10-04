@@ -1,0 +1,237 @@
+{
+  "receipt_schema_version": 1,
+  "canonical_name": "Crucible runner capability manifest V1 runtime consumer acceptance receipt",
+  "status": "CUSTOS_CAPABILITY_RUNTIME_V1_CONSUMER_ACCEPTED_RUNTIME_OPEN",
+  "append_only": "A later acceptance is a new receipt file; this one is never rewritten. It does not replace docs/authority/receipts/crucible-runner-fact-v1-consumer-receipt.json or the terminal valuation receipts, which stay the records of the revisions they accepted.",
+  "plans": {
+    "custos": {
+      "repository": "the-alephain-guild/tabularium",
+      "path": ".forge/projects/custos/dot-forge/plans/2026-10/03-capability-declares-runtime-image-and-engine.md",
+      "task": "T3",
+      "commit": "c025ea41265fa812533fb1631dc0e21679eed565",
+      "git_blob_oid": "1261f3503fcf5ecc6ad21789b7bf6c050b46db16"
+    },
+    "crucible_rust": {
+      "path": ".forge/plans/2026-10/128-live-promotion-chain-on-deployment-instances.md",
+      "decision": "D3",
+      "deviation": "DEV-128-15",
+      "git_blob_oid_at_code_commit": "2829a662503866c6b78058d4d918782e452d8588"
+    }
+  },
+  "producer": {
+    "repository": "tesseract-trading/custos",
+    "commit": "8cda48daeb09680a8148ea02fce68468b842abf3",
+    "parent_commit": "26d3a0f89c0ed05a2dd16fc379e905117bb12510",
+    "runtime_code_commit": "3abb7c2490445e0fc860ee844ed51f21e6432d97",
+    "branch": "plan-03-capability-runtime",
+    "merged_to_main": false,
+    "main_at_branch_point": "26d3a0f89c0ed05a2dd16fc379e905117bb12510",
+    "authority_coordinate": "custos.runner-fact.v1",
+    "asset_index": {
+      "producer_path": "docs/authority/runner-fact-contract-assets-v1.json",
+      "local_path": "docs/authority/custos-runner-fact-contract-assets-v1.json",
+      "git_blob_oid": "0cb32960c025ae81ef1c95bb09e4edad5fcc35ad",
+      "sha256": "2394da7c3da5501cd046c75a4f617661aff5548e0b29b585bce3083dd15082e7",
+      "size_bytes": 4178,
+      "changed_by_this_revision": true
+    },
+    "assets": {
+      "runner_fact_capability_manifest": {
+        "producer_path": "docs/authority/runner-fact-capability-manifest-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-capability-manifest-v1.json",
+        "git_blob_oid": "1a2a7f49306d4d184289a5be048be31482a3c065",
+        "sha256": "5ebcea0c968e619153cb3935fe649b3fde35ea060d602663444846398640cd0c",
+        "size_bytes": 4246,
+        "changed_by_this_revision": true
+      },
+      "runner_fact_capability_receipt_golden": {
+        "producer_path": "docs/authority/runner-fact-capability-receipt-golden-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-capability-receipt-golden-v1.json",
+        "git_blob_oid": "d6213893f994c37326b69fca558898a55265b609",
+        "sha256": "f7069369e7009eb0a0cd40619669d27715fe4f2f8685078a6c355b989fec8f69",
+        "size_bytes": 7526,
+        "changed_by_this_revision": true
+      },
+      "runner_fact_batch_golden": {
+        "producer_path": "docs/authority/runner-fact-golden-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-golden-v1.json",
+        "git_blob_oid": "faf62246e9e67b51ba8e6af3d2e552056872cf32",
+        "sha256": "77b07f92c7c52b3b57bc21002d937af3805fa144cd0a8729b15a76713e7cc86b",
+        "size_bytes": 9222,
+        "changed_by_this_revision": true
+      },
+      "runner_fact_terminal_boundary_golden": {
+        "producer_path": "docs/authority/runner-fact-terminal-boundary-golden-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-terminal-boundary-golden-v1.json",
+        "git_blob_oid": "31c1ff794202a464f68b741b2bd1ff5d29bb8a74",
+        "sha256": "ad0ce237c6d74a76902a3c72e17461fa290e76e77315d518242b72f271cb6c3f",
+        "size_bytes": 5080,
+        "changed_by_this_revision": true
+      },
+      "runner_fact_signing_preimage_golden": {
+        "producer_path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-signing-preimage-golden-v1.json",
+        "git_blob_oid": "7912615e32355f498d6a0b7a9d35a2bc8e66d8d1",
+        "sha256": "db7d9f3c2773fa30f33318088893d65394e40a071a083652cd29528609bd89ab",
+        "size_bytes": 5434,
+        "changed_by_this_revision": true
+      },
+      "runner_fact_batch_schema": {
+        "producer_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
+        "local_path": "docs/authority/custos-runner-fact-batch-v1.schema.json",
+        "git_blob_oid": "329ba757f6946286c2b7c161f6c7e6258532c924",
+        "sha256": "dd8db2b420c5506b8f003bbf54a8a8beda67c595ebdbdb87a5a2845a4a58de32",
+        "size_bytes": 71898,
+        "changed_by_this_revision": false
+      },
+      "runtime_event_fact_parity_matrix": {
+        "producer_path": "docs/authority/runner-fact-parity-matrix-v1.json",
+        "local_path": "docs/authority/custos-runner-fact-parity-matrix-v1.json",
+        "git_blob_oid": "cd49e1520eb99d571653942dfa4ba592d6f11712",
+        "sha256": "5b6d1f1ae0d04330e403e094b1856293455a1d8e742cc073d9e77d390d6e28de",
+        "size_bytes": 4357,
+        "changed_by_this_revision": false
+      }
+    },
+    "byte_check": "each local file equals `git -C <custos> show 8cda48da:<producer_path>` by SHA-256 and by Git blob OID",
+    "synthetic_runtime": "the producer generator declares sha256: followed by 64 sevens, revision of 40 eights, nautilus 2.0.0rc5+sodex.2; synthetic, not a published image"
+  },
+  "consumer": {
+    "repository": "tesseract-trading/crucible-rust",
+    "code_commit": "b8032d77777f9bb377bf854b3103a7676e05c0e0",
+    "code_commits": [
+      "30475108e8e5753d6aa3521cc4d6a715ed63a85f",
+      "b8032d77777f9bb377bf854b3103a7676e05c0e0"
+    ],
+    "branch": "plan-03-t3-capability-runtime",
+    "base_main": "a877d07ed16de3adeb0ae0e89757e5e919e6a3ab",
+    "merged_to_main": false,
+    "migration": "none; the runtime is stored with the manifest in the existing runner_capability_versions JSONB column",
+    "acceptance_domain": {
+      "object": "required; exactly distribution, image_digest, source_revision, engine, engine_version; a JSON object only",
+      "distribution": [
+        "oci_image",
+        "development"
+      ],
+      "oci_image": "image_digest sha256: plus 64 lowercase hex; source_revision 40 lowercase hex; whole value, no trailing newline",
+      "development": "image_digest and source_revision present and JSON null; a missing key is refused, not read as null",
+      "engine": "nautilus",
+      "engine_version": "1-64 ASCII characters of [0-9A-Za-z.+!_-]",
+      "vectors": "the 5 accepted and 29 refused shapes of custos tests/test_runtime_identity.py plus 10 consumer-side refusals (positional array, development without image_digest key, 65-digit digest, SHA256: prefix, trailing newline on digest and revision, sha512:, non-string engine, boolean digest, array revision)"
+    },
+    "reader": "store::load_runner_runtime_identity(control_pool, tenant_id, runner_id, capability_version_id) and PgRunnerCapabilityAuthorityRepository::runtime_identity; exact version, same strict manifest type",
+    "qualification": "a sandbox source is keyed by the runtime its runner's frozen capability declares; candidates are the tenant's testnet instances of the same release, each keyed by the runtime every capability version named in its current generation's RunnerFact batch headers declares; development, mixed or unsigned runs never match",
+    "legacy_manifest": "a stored manifest without runtime no longer decodes: health readiness reports `current manifest is invalid` and the reader returns InvalidManifest until the runner publishes its capability again",
+    "sources": {
+      "runtime_identity": {
+        "path": "crates/store/src/runner_runtime_identity.rs",
+        "git_blob_oid": "795304cef9989fdf1cd686e073747ce1ecd3afa7"
+      },
+      "runtime_identity_domain_vectors": {
+        "path": "crates/store/src/runner_runtime_identity_tests.rs",
+        "git_blob_oid": "2a0a50c6c12f103c65deab5ec97b063ac4452fb7"
+      },
+      "capability_publication": {
+        "path": "crates/store/src/runner_capability_publication.rs",
+        "git_blob_oid": "161ec9a5f44e582179d0e3b57ad8fea7ea4ca2ac"
+      },
+      "capability_authority_reader": {
+        "path": "crates/store/src/runner_capability_authority_repo.rs",
+        "git_blob_oid": "91dee8fa127e6ef5b8747f22b1d39751e8755a95"
+      },
+      "promotion_mode_evidence": {
+        "path": "crates/store/src/promotion_evidence_repo.rs",
+        "git_blob_oid": "a1d1b262d6eb83115496e1fcff527c518001def7"
+      },
+      "promotion_qualification_wiring": {
+        "path": "crates/governance/src/deployment_promotion_sources.rs",
+        "git_blob_oid": "c8fbd09ca40155940997da86f3be8401905c9aec"
+      },
+      "consumer_vectors_pg": {
+        "path": "crates/store/tests/runner_capability_publication_pg.rs",
+        "git_blob_oid": "4c1bcb436f0615858c59d6f70305782d4bad949e"
+      },
+      "promotion_vectors_pg": {
+        "path": "crates/server-http/tests/deployment_promotion_service_pg.rs",
+        "git_blob_oid": "6641c1d1f0c36c63453c4b9cb9d75952e8c73c38"
+      }
+    }
+  },
+  "verification": {
+    "verified_at": "2026-10-03",
+    "producer_bytes_accepted_unchanged": "the vendored manifest decodes and passes semantic validation; its canonical digest equals the manifest_digest of the vendored capability receipt golden (runner_capability_publication::tests::the_custos_manifest_asset_is_accepted_with_its_runtime_and_digest); the golden batch and both terminal boundary batches are ingested under the new manifest digest (runner_fact_transport_pg, economic settlement terminal scenarios)",
+    "commands": [
+      [
+        "env -u all_proxy -u ALL_PROXY cargo test -p store --lib",
+        "89 passed"
+      ],
+      [
+        "env -u all_proxy -u ALL_PROXY cargo test -p store --test runner_capability_publication_pg --test deployment_instance_promotion_evidence_pg --test deployment_promotion_decision_pg --test deployment_promotion_live_profile_pg --test deployment_runner_observation_pg --test live_deployment_profile_pg --test live_deployment_profile_request_pg",
+        "4 + 7 + 12 + 1 + 5 + 2 + 15 passed"
+      ],
+      [
+        "env -u all_proxy -u ALL_PROXY cargo test -p domain --test runner_fact_contract_v1",
+        "15 passed"
+      ],
+      [
+        "env -u all_proxy -u ALL_PROXY cargo test -p economic --lib",
+        "174 passed, 1 ignored"
+      ],
+      [
+        "env -u all_proxy -u ALL_PROXY cargo test -p governance --lib",
+        "32 passed"
+      ],
+      [
+        "env -u all_proxy -u ALL_PROXY cargo test -p server-http --test deployment_promotion_service_pg -- --test-threads=1",
+        "6 passed (at b8032d7)"
+      ],
+      [
+        "env -u all_proxy -u ALL_PROXY cargo test -p server-http --lib --test readiness_test --test strategy_attestation_runtime_capability --test deployment_promotion_http_contract --test deployment_promotion_materialization_pg --test live_deployment_profile_request_http --test live_promotion_governance_http_contract --test risk_cash_flow_dependency_pg --test risk_runtime_projection_pg --test runner_fact_transport_pg",
+        "139 passed 1 ignored; 3; 10; 5; 1; 5; 5; 10; 1; 2 passed 2 ignored (at 3047510; b8032d7 changes one test file only)"
+      ],
+      [
+        "env -u all_proxy -u ALL_PROXY cargo clippy -p store -p governance --all-targets -- -D warnings",
+        "passed"
+      ],
+      [
+        "env -u all_proxy -u ALL_PROXY cargo clippy -p server-http --lib --test deployment_promotion_service_pg -- -D warnings",
+        "passed"
+      ],
+      [
+        "env -u all_proxy -u ALL_PROXY cargo fmt --all -- --check",
+        "passed"
+      ],
+      [
+        "make check-authority",
+        "authority gate passed for crucible-rust with local artifact boundary"
+      ]
+    ],
+    "perturbations": [
+      "runtime field defaulted when absent: a_manifest_without_runtime_is_invalid, publication_refuses_a_runtime_outside_the_producer_domain (manifest without runtime) and a_stored_manifest_without_runtime_is_invalid_where_it_is_read turned red",
+      "deny_unknown_fields removed from the runtime document: runtime_shapes_the_producer_refuses_are_refused (extra key) and the publication refusal (runtime with an extra key) turned red",
+      "development digest and revision null check removed: the domain refusal (development with digest) and the publication refusal (development with a digest) turned red",
+      "a missing nullable key read as null: the domain refusal (development without revision key) and the publication refusal (development runtime without the image_digest key) turned red",
+      "source runtime forced unknown (the pre-change behaviour): a_sandbox_source_qualifies_only_through_a_testnet_run_on_its_released_runtime turned red with RuntimeIdentityUnavailable",
+      "testnet run runtime agreement check removed: the same test turned red on the runs signed under two released images",
+      "a capability without a released runtime skipped instead of making the run unknown: the same test turned red on the run signed under a development build and the image"
+    ],
+    "workspace_suite_rerun": false,
+    "launched_custos_runtime_exercised": false,
+    "real_venue_exercised": false,
+    "verified_at_commit": "b8032d77777f9bb377bf854b3103a7676e05c0e0"
+  },
+  "authorization": {
+    "dispatch": "main session dispatch for custos plan 03 T3 (crucible-rust segment), decisions D1-D8 and DEV-03-1 ruled 2026-10-03",
+    "evidence": "tabularium c025ea41, custos plan 03 decision record and Custos segment implementation record"
+  },
+  "runtime_deployment_order": "Crucible consumer first, then every runner publishes its capability again with Custos 0.7.0: an older runner's manifest has no runtime and is refused, and its stored capability reads as invalid for health readiness",
+  "runtime_ready": false,
+  "live_ready": false,
+  "production_ready": false,
+  "open_blockers": [
+    "Custos branch plan-03-capability-runtime and this branch are not on their mains",
+    "Custos T4 registers this receipt; ARX T5 onboarding publishes through the runner image and checks the runtime",
+    "the cross-repository Custos process acceptances (make verify-runner-full-daemon-local) were not run against the Custos branch; they need the nautilus extra (DEV-03-4)",
+    "no published 0.7.0 image yet; the runtime exercised here is the producer's synthetic value"
+  ]
+}
