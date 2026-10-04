@@ -329,6 +329,44 @@ def test_issued_credential_verifies_jwt_acl_durable_and_redacts_secrets() -> Non
     assert base64.b64encode(credential.user_seed).decode("ascii") not in rendered
 
 
+def test_authority_with_millisecond_times_from_crucible_is_accepted() -> None:
+    # Crucible stamps the authority from a microsecond timestamptz and digests chrono's
+    # rendering, which writes a millisecond-aligned instant with three digits (".632Z").
+    # The runner must reproduce that digest after parsing and rendering the times again.
+    user_seed, user_pair, user_public = _keypair(nkeys.PREFIX_BYTE_USER)
+    account_seed, account_pair, account_public = _keypair(nkeys.PREFIX_BYTE_ACCOUNT)
+    try:
+        authority = _issued(
+            user_seed=user_seed,
+            user_public_key=user_public,
+            account_pair=account_pair,
+            account_public_key=account_public,
+        )
+        authority["issued_at"] = "2026-07-19T08:00:00.632Z"
+        authority["not_before"] = "2026-07-19T08:00:00.632Z"
+        authority["expires_at"] = "2026-07-19T09:00:00.632Z"
+        del authority["authority_digest"]
+        authority["authority_digest"] = _digest(authority)
+
+        credential = RunnerNatsTransportCredential.from_authority_document(
+            authority,
+            user_seed=user_seed,
+            expected_tenant_id=_TENANT,
+            expected_runner_id=_RUNNER,
+            expected_trading_mode=_MODE,
+            expected_issuer_public_key=account_public,
+        )
+    finally:
+        user_pair.wipe()
+        account_pair.wipe()
+        del account_seed
+
+    document = credential.authority_document()
+    assert document["issued_at"] == "2026-07-19T08:00:00.632Z"
+    assert document["expires_at"] == "2026-07-19T09:00:00.632Z"
+    assert document["authority_digest"] == authority["authority_digest"]
+
+
 def test_supervisor_transport_set_keeps_exact_mode_authorities_independent(
     tmp_path: Path,
 ) -> None:

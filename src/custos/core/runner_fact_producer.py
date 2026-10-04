@@ -29,6 +29,7 @@ from custos.core.runner_fact import (
     valuation_checkpoint,
     venue_ledger_snapshot_facts,
 )
+from custos.core.utc_time import render_utc, render_utc_nanos
 
 _log = get_logger("custos.runner_fact_producer")
 
@@ -148,17 +149,20 @@ def _scoped_event_id(authority: RunnerFactAuthority, kind: str, *identity: objec
 
 
 def _nt_timestamp(value: Any) -> str:
+    """Render a Nautilus event time exactly as the signed fact will carry it.
+
+    Signed facts keep microsecond precision, so the sub-microsecond digits are dropped
+    here; a digest computed over this string then commits to the signed value.
+    """
     if isinstance(value, datetime):
-        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
+        return render_utc(value)
     try:
         nanoseconds = int(value)
     except (TypeError, ValueError) as exc:
         raise RunnerFactContractError(
             "Nautilus event timestamp must be integer nanoseconds"
         ) from exc
-    seconds, nanos = divmod(nanoseconds, 1_000_000_000)
-    base = datetime.fromtimestamp(seconds, UTC).strftime("%Y-%m-%dT%H:%M:%S")
-    return f"{base}.{nanos:09d}Z"
+    return render_utc_nanos(nanoseconds - nanoseconds % 1_000)
 
 
 def _money(value: Any, field: str) -> tuple[str, str | None]:
@@ -211,7 +215,7 @@ def _capital_basis_fact(
     return {
         "kind": "RunnerRuntimeLogFact.v1",
         "event_id": str(_scoped_event_id(authority, "capital_basis", observed_at.isoformat())),
-        "occurred_at": observed_at.isoformat().replace("+00:00", "Z"),
+        "occurred_at": render_utc(observed_at),
         "level": "INFO",
         "component": "custos.capital_basis",
         "message": "runner_capital_basis_observed",

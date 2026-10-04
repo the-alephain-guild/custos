@@ -33,6 +33,8 @@ from nacl.exceptions import BadSignatureError
 from nacl.signing import VerifyKey
 from nats import errors as nats_errors
 
+from custos.core.utc_time import render_utc
+
 RUNNER_NATS_TRANSPORT_SCHEMA_VERSION = 1
 RUNNER_NATS_TRANSPORT_AUTHORITY_COORDINATE = "crucible.runner-nats-transport.v1"
 RUNNER_CONTROL_STREAM_SIM = "CRUCIBLE_RUNNER_CONTROL_SIM_V1"
@@ -127,12 +129,7 @@ def _required_timestamp(value: object, field_name: str) -> datetime:
 
 
 def _timestamp_text(value: datetime) -> str:
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _timestamp_nanos(value: datetime) -> str:
-    value = value.astimezone(UTC)
-    return value.strftime("%Y-%m-%dT%H:%M:%S.") + f"{value.microsecond:06d}000Z"
+    return render_utc(value)
 
 
 def _required_mapping(value: object, field_name: str) -> dict[str, Any]:

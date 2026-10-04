@@ -47,6 +47,24 @@ protocol — is published at
   also covers the order that opened the lifecycle and the instant it opened. The
   wire shape of `position_closed` is unchanged; a replayed close still derives
   the same fact.
+- **Every signed time is written in one RFC 3339 form.** Times in runtime log
+  facts, capital-basis observations and deployment lifecycle facts were written
+  with a fixed nine-digit fraction (`.632000000Z`) or with six digits
+  (`.632000Z`), while the deployment service writes the same instant as
+  `.632Z`: no fraction for a whole second, otherwise the shortest of three, six
+  or nine digits that keeps every non-zero digit. They now use that form, as
+  every other signed fact already did. The same rendering applies when the
+  runner checks the digest of a NATS transport credential; a credential whose
+  times fell on a whole millisecond was refused with
+  `runner NATS authority digest mismatch` and is now accepted. Wire values stay
+  valid RFC 3339 and parse to the same instant.
+- **A strategy signal's `input_digest` commits to the `occurred_at` it is signed
+  with.** The digest input used the event time with a fixed nine-digit fraction,
+  while the signed `occurred_at` carries the form above at microsecond
+  precision. Both are now the same string. As a result, **the same signal has a
+  different `input_digest` than under 0.6**; a consumer that compares digests
+  across the upgrade must not treat that as a changed signal. Signal identity
+  (`fact_id`, `trace_id`) and every other field are unchanged.
 
 ## [0.6.2] - 2026-10-03
 

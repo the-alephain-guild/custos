@@ -30,6 +30,7 @@ from custos.core.runner_fact import (
     RunnerFactEmitter,
     runner_fact_event_id,
 )
+from custos.core.utc_time import render_utc_nanos
 
 RUNTIME_LOG_KIND = "RunnerRuntimeLogFact.v1"
 _LEVELS = frozenset({"DEBUG", "INFO", "WARN", "ERROR"})
@@ -385,11 +386,4 @@ def _required_uuid(value: object, field: str) -> UUID:
 
 
 def _now_rfc3339_nanos() -> str:
-    nanoseconds = time.time_ns()
-    seconds, remainder = divmod(nanoseconds, 1_000_000_000)
-    value = time.gmtime(seconds)
-    return (
-        f"{value.tm_year:04d}-{value.tm_mon:02d}-{value.tm_mday:02d}T"
-        f"{value.tm_hour:02d}:{value.tm_min:02d}:{value.tm_sec:02d}."
-        f"{remainder:09d}Z"
-    )
+    return render_utc_nanos(time.time_ns())
