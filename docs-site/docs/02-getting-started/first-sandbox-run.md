@@ -51,7 +51,7 @@ uv run arx-runner start \
 
 `--reconcile` is required to construct the engine and subscribe to deployment commands. Without it, the process can pass its health check while no deployment consumer is running.
 
-`sandbox-sim` makes no venue connection. To run a compatible strategy against live data with local fills, install the Nautilus extra and select `--engine nautilus`.
+`sandbox-sim` makes no venue connection. To run a compatible strategy against live data with local fills, select `--engine nautilus`. Either engine needs the Nautilus extra installed: the signed lane checks that its capability declares the engine version installed in this process, and refuses to start otherwise.
 
 ## Verify the result
 

@@ -55,6 +55,7 @@ sidebar_position: 2
 | `CUSTOS_DEVELOPMENT_PRODUCER_REPOSITORIES` | 接受其开发源码的仓库，逗号分隔的 `OWNER/REPOSITORY`；默认一个都不接受 |
 | `CUSTOS_DEVELOPMENT_LOCAL_NATS_URL` | 签名开发路径中显式的 loopback sandbox 传输例外 |
 | `CUSTOS_VENUE_PROXY_URL` | 所有交易所流量的出站代理，见下文 |
+| `CUSTOS_RUNTIME_IMAGE_DIGEST` | 本 runner 运行镜像的索引摘要，写入能力声明；只有从源码仓库运行时才不设置。见[运行时身份](/operator-guide/production-preparation#runtime-identity) |
 
 ### 交易所代理
 

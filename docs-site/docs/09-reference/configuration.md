@@ -55,6 +55,7 @@ Files holding identity or credentials use `0600`; private directories use `0700`
 | `CUSTOS_DEVELOPMENT_PRODUCER_REPOSITORIES` | Comma-separated `OWNER/REPOSITORY` list whose development sources are accepted; none by default |
 | `CUSTOS_DEVELOPMENT_LOCAL_NATS_URL` | Explicit loopback sandbox transport exception for the signed development path |
 | `CUSTOS_VENUE_PROXY_URL` | Forward proxy for all venue traffic; see below |
+| `CUSTOS_RUNTIME_IMAGE_DIGEST` | Index digest of the image this runner runs, declared in its capability; unset only from a source checkout. See [runtime identity](/operator-guide/production-preparation#runtime-identity) |
 
 ### Venue proxy
 
