@@ -13,6 +13,24 @@ protocol — is published at
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-05
+
+It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.7.0`
+and as source; there is no PyPI package. Call the reusable publishing workflow at
+`@v0.7.0`; a runner or deployment service that trusts releases published through
+it lists that tag as the workflow identity. The engine (`2.0.0rc5+sodex.2`) and
+the matching strategy toolkit (`0.1.0rc9`) are those of 0.6.2; strategy
+repositories do not need to move. The runner state database is unchanged.
+
+Minor, not patch, with two **Breaking** changes: the capability manifest gains a
+required `runtime` object, with new contract assets, and a capability receipt
+published by an earlier release no longer starts a runner. A runner run from the
+container image needs `CUSTOS_RUNTIME_IMAGE_DIGEST` to declare that image. A
+deployment service that consumes the capability manifest must take this
+release's contract assets; once it requires the `runtime` object, a runner on an
+earlier release can no longer publish its capability. Move runners to 0.7.0,
+publish the capability again, then restart.
+
 ### Changed
 
 - **Breaking:** a runner capability declares the runtime it runs, as a required
@@ -66,6 +84,26 @@ protocol — is published at
   different `input_digest` than under 0.6**; a consumer that compares digests
   across the upgrade must not treat that as a changed signal. Signal identity
   (`fact_id`, `trace_id`) and every other field are unchanged.
+
+### Known limitations
+
+- The description of `position_closed.position_id` in the RunnerFact batch
+  schema says the derivation applies under a netting account. The runner derives
+  `position_id` the same way under every account type, and the derivation also
+  covers the deployment's fact stream scope. The description will be corrected
+  in a later release.
+- `position_id` is unique only while the engine position id, the order that
+  opened the lifecycle and the instant it opened, at microsecond precision, are
+  unique together. If a partial fill of one order opens a lifecycle, another order
+  closes it, and the rest of the first order opens the next lifecycle within the
+  same microsecond, both lifecycles carry the same `position_id`. The deployment
+  service then refuses the second close as a reused identity: nothing is settled
+  twice, but settlement of that instance stops. Many venues stamp fills only to
+  the millisecond, so the window is narrow but not zero. A later release adds the
+  opening fill's trade id to the derivation, which changes `position_id` values
+  again.
+- A passing build, health probe or sandbox run does not establish production
+  readiness.
 
 ## [0.6.2] - 2026-10-03
 

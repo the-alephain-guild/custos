@@ -29,8 +29,9 @@ ACTIVE_RUNTIME_DOCS = (
     SANDBOX_DIR / "README.md",
     TESTNET_DIR / "README.md",
 )
-LOCAL_IMAGE = "custos-runner:v0.6.2"
-REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.6.2"
+LOCAL_IMAGE = "custos-runner:v0.7.0"
+REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.7.0"
+REMOTE_IMAGE_V062 = "ghcr.io/the-alephain-guild/custos:v0.6.2"
 REMOTE_IMAGE_V061 = "ghcr.io/the-alephain-guild/custos:v0.6.1"
 REMOTE_IMAGE_V060 = "ghcr.io/the-alephain-guild/custos:v0.6.0"
 REMOTE_IMAGE_V052 = "ghcr.io/the-alephain-guild/custos:v0.5.2"
@@ -44,15 +45,25 @@ MAKEFILE = REPO_ROOT / "Makefile"
 OPERATOR_DEPLOYMENT = REPO_ROOT / "docs-site" / "docs" / "04-operator-guide" / "deployment.md"
 
 
-def test_project_and_lock_are_versioned_v062() -> None:
+def test_project_and_lock_are_versioned_v070() -> None:
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     locked_project = next(
         package for package in lock["package"] if package["name"] == "custos-runner"
     )
 
-    assert project["project"]["version"] == "0.6.2"
-    assert locked_project["version"] == "0.6.2"
+    assert project["project"]["version"] == "0.7.0"
+    assert locked_project["version"] == "0.7.0"
+
+
+def test_changelog_documents_the_published_v070() -> None:
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    v070 = " ".join(text[text.index("## [0.7.0]") : text.index("## [0.6.2]")].split())
+
+    assert "## [0.7.0] - 2026-10-05" in text
+    assert REMOTE_IMAGE in v070
+    assert "@v0.7.0" in v070
+    assert "CUSTOS_RUNTIME_IMAGE_DIGEST" in v070
 
 
 def test_changelog_documents_the_published_v062() -> None:
@@ -60,7 +71,7 @@ def test_changelog_documents_the_published_v062() -> None:
     v062 = " ".join(text[text.index("## [0.6.2]") : text.index("## [0.6.1]")].split())
 
     assert "## [0.6.2] - 2026-10-03" in text
-    assert REMOTE_IMAGE in v062
+    assert REMOTE_IMAGE_V062 in v062
     assert "@v0.6.2" in v062
     assert "valuation_unreliable" in v062
 

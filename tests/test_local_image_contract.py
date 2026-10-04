@@ -8,7 +8,7 @@ MAKEFILE = Path(__file__).resolve().parents[1] / "Makefile"
 def test_makefile_defines_local_v030_image_contract() -> None:
     text = MAKEFILE.read_text()
 
-    assert "LOCAL_IMAGE ?= custos-runner:v0.6.2" in text
+    assert "LOCAL_IMAGE ?= custos-runner:v0.7.0" in text
     assert "docker-build-local-v030:" in text
     assert "verify-local-v030:" in text
     assert "org.opencontainers.image.revision" in text
