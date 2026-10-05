@@ -481,27 +481,17 @@ def runner_fact_vectors() -> list[dict[str, Any]]:
         }
     )
 
-    escaped = execution_fill(
-        venue="BINANCE",
-        venue_trade_id="T-2",
-        venue_order_id=STRING_ESCAPES,
-        instrument="BTCUSDT-PERP",
-        side="SELL",
-        quantity="1",
-        price="60001.5",
-        fee="0",
-        currency="USDT",
-        occurred_at="2026-10-04T13:50:00Z",
-        client_order_id="C-2",
-        event_id=UUID("92000000-0000-4000-8000-000000000006"),
-    )
+    # A free-text field: both sides keep control characters there, so the vector
+    # tests escaping alone. Identifier fields refuse control characters on the
+    # consumer side, which the vectors do not paper over.
+    escaped = runtime_log_fact(WHOLE_SECOND_NS, message=STRING_ESCAPES)
     batch = signed_batch("string-escapes", [escaped], emitted_at="2026-10-04T13:50:01Z")
     vectors.append(
         {
             "id": "string-escapes",
             "origin": "producer-canonical",
             "covers": ["control character, tab, quote, backslash, accented letter and emoji"],
-            "producer_input": {"venue_order_id": STRING_ESCAPES},
+            "producer_input": {"runtime_log_message": STRING_ESCAPES},
             "raw": raw(batch),
             "expected": accept(batch, typed_roundtrip_equal=True),
         }

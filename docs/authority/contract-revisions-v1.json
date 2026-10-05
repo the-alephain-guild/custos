@@ -9,7 +9,7 @@
       "revision_carrier": "schema",
       "schema_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
       "wire_sha256": "af3566a6df8dccb1a0fa781b7ae2780bdf9ddba0af6b799e4d0347e6d18d1653",
-      "vectors_sha256": "9113d6017273900b420b6e710789becfed1da1b48bdbf3493635d57c6be2a5ff",
+      "vectors_sha256": "637c3fabb6a7e9873ab0e01c497ae0993590c010614a0cc92646537e1ed0e428",
       "vectors_path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
       "assets": [
         {
@@ -54,12 +54,12 @@
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
-          "sha256": "9113d6017273900b420b6e710789becfed1da1b48bdbf3493635d57c6be2a5ff",
-          "size_bytes": 56924
+          "sha256": "637c3fabb6a7e9873ab0e01c497ae0993590c010614a0cc92646537e1ed0e428",
+          "size_bytes": 56897
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json.sha256",
-          "sha256": "88c088157c024976ad4674df9eb4e5f27117154d1df506ddd10fb09e4b6db1b1",
+          "sha256": "f025c1c66f7bf1d44b770065dd31f7046d25f2b476255447dda69308138aec02",
           "size_bytes": 100
         }
       ],
@@ -67,7 +67,7 @@
         {
           "revision": 1,
           "wire_sha256": "af3566a6df8dccb1a0fa781b7ae2780bdf9ddba0af6b799e4d0347e6d18d1653",
-          "vectors_sha256": "9113d6017273900b420b6e710789becfed1da1b48bdbf3493635d57c6be2a5ff",
+          "vectors_sha256": "637c3fabb6a7e9873ab0e01c497ae0993590c010614a0cc92646537e1ed0e428",
           "note": "first revision; earlier versions of the contract carried no revision"
         }
       ]
