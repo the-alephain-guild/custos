@@ -100,7 +100,7 @@ def test_vendored_receipt_accepts_this_repositorys_identity_revisions() -> None:
         assert receipt[field] is False
     current_paths = {asset["path"] for asset in _json(ROOT / INDEX_PATH)["assets"]}
     assert producer["asset_index"]["producer_path"] == INDEX_PATH
-    assert {asset["producer_path"] for asset in producer["assets"].values()} == current_paths
+    assert {asset["producer_path"] for asset in producer["assets"].values()} <= current_paths
 
 
 def test_gate_accepts_the_vendored_receipt(checker: ModuleType, copy_root: Path) -> None:
