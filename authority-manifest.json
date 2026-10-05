@@ -558,7 +558,11 @@
       "tests/test_runner_deployment_command_golden.py",
       "tests/test_toolkit_contracts.py",
       "tests/test_toolkit_inventory.py",
-      "tests/test_toolkit_zero_rewrite.py"
+      "tests/test_toolkit_zero_rewrite.py",
+      "docs/authority/contract-revisions-v1.json",
+      "scripts/contract_vendor.py",
+      "scripts/generate_contract_conformance.py",
+      "scripts/generate_contract_revisions.py"
     ],
     "forbidden_regex": [
       "ArxNatsTelemetryAdapter",

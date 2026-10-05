@@ -206,7 +206,15 @@ check-toolkit-extraction:
 check-runner-machine-request-consumer-assets:
 	uv run python scripts/generate_runner_machine_request_consumer_assets.py --check
 
-check-authority: check-strategy-contract-assets check-toolkit-extraction check-runner-machine-request-consumer-assets
+# Contracts other repositories vendor by revision: the vector files are what the
+# runner writes, the revision index follows its rule, and the vendoring script's
+# own tests pass under the system interpreter that consumers run it with.
+check-contract-revisions:
+	uv run python scripts/generate_contract_conformance.py --check
+	uv run python scripts/generate_contract_revisions.py --check
+	@/usr/bin/python3 -B scripts/tests/test_contract_vendor.py
+
+check-authority: check-strategy-contract-assets check-toolkit-extraction check-runner-machine-request-consumer-assets check-contract-revisions
 	@/usr/bin/python3 scripts/check-authority-docs.py
 
 verify: check-authority

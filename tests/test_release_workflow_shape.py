@@ -180,7 +180,8 @@ def test_verify_runtime_target_gates_the_image_contract() -> None:
 
 def test_every_makefile_test_path_exists() -> None:
     text = MAKEFILE.read_text()
-    referenced = set(re.findall(r"tests/[\w/]+\.py", text))
+    # Match the whole path, so scripts/tests/x.py is checked as itself, not as tests/x.py.
+    referenced = set(re.findall(r"(?<![\w/.-])((?:[\w.-]+/)*tests/[\w/]+\.py)", text))
     missing = sorted(path for path in referenced if not (ROOT / path).exists())
     assert referenced
     assert not missing
