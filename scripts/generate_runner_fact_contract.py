@@ -51,7 +51,7 @@ AUTHORITY_COORDINATE = "custos.runner-fact.v1"
 # Raised only when the wire shape or the meaning of a field changes; a change to
 # descriptive text alone keeps the revision.
 CONTRACT_ID = "alephain.custos.runner_fact_batch.v1"
-CONTRACT_REVISION = 1
+CONTRACT_REVISION = 2
 PRODUCER_ASSET_COMMIT = "199bb6475eae87b78d2e1db27eff319a5a3ebe6b"
 CRUCIBLE_CONSUMER_RECEIPT = {
     "repository": "tesseract-trading/crucible-rust",
@@ -146,7 +146,12 @@ def _object_schema(
 
 
 def _schema() -> dict[str, Any]:
-    decimal = {"type": "string", "pattern": r"^-?(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$"}
+    # Zero has no sign: the runner writes "0", and a consumer reading a decimal
+    # type cannot keep the sign of "-0".
+    decimal = {
+        "type": "string",
+        "pattern": r"^(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$",
+    }
     unsigned_decimal = {
         "type": "string",
         "pattern": r"^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$",

@@ -43,6 +43,12 @@ def _edit_schema(root: Path, edit) -> None:
     path.write_text(json.dumps(schema, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _revision(root: Path) -> int:
+    return json.loads((root / RUNNER_FACT_SCHEMA).read_text(encoding="utf-8"))[
+        "x-contract-revision"
+    ]
+
+
 def _rename_property(schema: dict) -> None:
     properties = schema["properties"]
     properties["batch_identifier"] = properties.pop("batch_id")
@@ -57,26 +63,27 @@ def test_a_renamed_property_without_a_raised_revision_fails(root: Path, capsys) 
     code, output = _run(root, "--check", capsys=capsys)
     assert code == 1
     assert f"{RUNNER_FACT}: the wire fingerprint or the conformance vectors changed" in output
-    assert "still 1" in output
+    assert f"still {_revision(root)}" in output
     # Regenerating does not launder the change into the index.
     assert _run(root, capsys=capsys)[0] == 1
 
 
 def test_a_renamed_property_with_a_raised_revision_is_recorded(root: Path, capsys) -> None:
+    current = _revision(root)
     _edit_schema(root, _rename_property)
-    _edit_schema(root, lambda schema: schema.update({"x-contract-revision": 2}))
+    _edit_schema(root, lambda schema: schema.update({"x-contract-revision": current + 1}))
     vectors_path = root / RUNNER_FACT_VECTORS
     vectors = json.loads(vectors_path.read_text(encoding="utf-8"))
-    vectors["contract_revision"] = 2
+    vectors["contract_revision"] = current + 1
     vectors_path.write_text(json.dumps(vectors, indent=2) + "\n", encoding="utf-8")
     assert _run(root, "--check", capsys=capsys)[0] == 1
     assert _run(root, capsys=capsys)[0] == 0
     assert _run(root, "--check", capsys=capsys)[0] == 0
     index = json.loads((root / GENERATOR["INDEX_PATH"]).read_text(encoding="utf-8"))
     entry = index["contracts"][RUNNER_FACT]
-    assert entry["revision"] == 2
-    assert [item["revision"] for item in entry["history"]] == [1, 2]
-    assert entry["history"][0]["wire_sha256"] != entry["history"][1]["wire_sha256"]
+    assert entry["revision"] == current + 1
+    assert [item["revision"] for item in entry["history"]] == list(range(1, current + 2))
+    assert entry["history"][-2]["wire_sha256"] != entry["history"][-1]["wire_sha256"]
 
 
 def test_descriptive_text_alone_keeps_the_revision(root: Path, capsys) -> None:
@@ -84,6 +91,7 @@ def test_descriptive_text_alone_keeps_the_revision(root: Path, capsys) -> None:
         schema["description"] = "Reworded for readers."
         schema["properties"]["batch_id"]["description"] = "Reworded too."
 
+    current = _revision(root)
     _edit_schema(root, describe)
     code, output = _run(root, "--check", capsys=capsys)
     assert code == 1
@@ -91,7 +99,7 @@ def test_descriptive_text_alone_keeps_the_revision(root: Path, capsys) -> None:
     assert _run(root, capsys=capsys)[0] == 0
     assert _run(root, "--check", capsys=capsys)[0] == 0
     index = json.loads((root / GENERATOR["INDEX_PATH"]).read_text(encoding="utf-8"))
-    assert index["contracts"][RUNNER_FACT]["revision"] == 1
+    assert index["contracts"][RUNNER_FACT]["revision"] == current
 
 
 def test_changed_vectors_without_a_raised_revision_fail(root: Path, capsys) -> None:
@@ -126,7 +134,8 @@ def test_a_skipped_or_lowered_revision_fails(root: Path, revision: int, capsys) 
 
 
 def test_vectors_naming_another_revision_fail(root: Path, capsys) -> None:
-    _edit_schema(root, lambda schema: schema.update({"x-contract-revision": 2}))
+    raised = _revision(root) + 1
+    _edit_schema(root, lambda schema: schema.update({"x-contract-revision": raised}))
     code, output = _run(root, "--check", capsys=capsys)
     assert code == 1
-    assert "not revision 2" in output
+    assert f"not revision {raised}" in output

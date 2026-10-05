@@ -45,7 +45,7 @@ from custos.core.utc_time import render_utc_nanos
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER_FACT_VECTORS_PATH = Path("docs/authority/conformance/runner-fact-batch-v1.vectors.json")
 STRATEGY_VECTORS_PATH = Path("docs/authority/conformance/strategy-canonical-json-v1.vectors.json")
-RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 1)
+RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 2)
 STRATEGY_CANONICAL_CONTRACT = ("alephain.custos.strategy_canonical_json.v1", 1)
 CAPABILITY_MANIFEST_PATH = Path("docs/authority/runner-fact-capability-manifest-v1.json")
 
@@ -403,6 +403,7 @@ def runner_fact_vectors() -> list[dict[str, Any]]:
     for vector_id, value, error_class, covers in (
         ("realized-pnl-scientific-string", "1e-8", "non_canonical_decimal", "exponent spelling"),
         ("decimal-trailing-zero", "1.50", "non_canonical_decimal", "trailing fractional zero"),
+        ("decimal-negative-zero", "-0", "non_canonical_decimal", "signed zero"),
         # 1.5 is exact in binary, so the JSON number reads the same in every parser.
         ("realized-pnl-binary-float", 1.5, "binary_float", "JSON number"),
     ):

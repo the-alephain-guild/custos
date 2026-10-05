@@ -1,7 +1,7 @@
 {
   "vector_set_version": 1,
   "contract_id": "alephain.custos.runner_fact_batch.v1",
-  "contract_revision": 1,
+  "contract_revision": 2,
   "canonicalization": "utf8-json-sort-keys-compact-v1",
   "digest": "sha256-hex",
   "error_classes": [
@@ -197,6 +197,19 @@
         "position_closed.realized_pnl trailing fractional zero"
       ],
       "raw": "{\"batch_id\":\"b2601a94-7a40-4bb1-baeb-dde2dec9d955\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:46:00Z\",\"facts\":[{\"closed_at\":\"2026-08-06T07:01:00Z\",\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000003\",\"kind\":\"position_closed\",\"opened_at\":\"2026-08-06T07:00:00Z\",\"position_id\":\"91000000-0000-4000-8000-000000000002\",\"realized_pnl\":\"1.50\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"84fe2c62dff21867a91ef03a2ea9b9185cf769528f8fa646a7da05bd2c722809\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"xS0VYQNC0DDtQXvo8VAyCzrFGgXJn1xJDgEhVEeG3_P9DHOWFe7cBzTQh2kSeIK4MgY8rdp5vtQftfRg9J04Ag\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "decimal-negative-zero",
+      "origin": "tolerance",
+      "covers": [
+        "position_closed.realized_pnl signed zero"
+      ],
+      "raw": "{\"batch_id\":\"1d7d045c-5af4-4cff-ad1c-fc18cb92679b\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:46:00Z\",\"facts\":[{\"closed_at\":\"2026-08-06T07:01:00Z\",\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000003\",\"kind\":\"position_closed\",\"opened_at\":\"2026-08-06T07:00:00Z\",\"position_id\":\"91000000-0000-4000-8000-000000000002\",\"realized_pnl\":\"-0\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"b4c003b39d9cc24398e2d5995b96b50625228fb761b7ad0beba72f1aed443ac1\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"kV_h30pZX8HmOGZB0mnFfLiaVAq0bTDq7ZfQCbHtlOrbeVDk_0Q-_szZodl8DEOEzt0-6R1K9WWgaBgkvXqADQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
       "expected": {
         "outcome": "reject",
         "error_class": "non_canonical_decimal",

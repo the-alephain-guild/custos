@@ -5,17 +5,17 @@
   "revision_rule": "raise a contract's revision by one when its wire fingerprint or its conformance vectors change; descriptive text alone keeps the revision",
   "contracts": {
     "alephain.custos.runner_fact_batch.v1": {
-      "revision": 1,
+      "revision": 2,
       "revision_carrier": "schema",
       "schema_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-      "wire_sha256": "af3566a6df8dccb1a0fa781b7ae2780bdf9ddba0af6b799e4d0347e6d18d1653",
-      "vectors_sha256": "637c3fabb6a7e9873ab0e01c497ae0993590c010614a0cc92646537e1ed0e428",
+      "wire_sha256": "6df17a70ab560566a931dc174e86356059641a9e131d0131cd53f29e005f5adf",
+      "vectors_sha256": "91b22e6b7ee3fd3fc40ded5b5c32cf963dbe4e2896264456a79314c6b30c7d11",
       "vectors_path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
       "assets": [
         {
           "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-          "sha256": "5ed2d7dd24851984f0fb79a6bd614fede75be9f28d88b8e6375cf1bda6673266",
-          "size_bytes": 72284
+          "sha256": "dd3a403474ad17e7741ea8804362161fe34e923c6c39cd55ce1350ae7282852a",
+          "size_bytes": 72624
         },
         {
           "path": "docs/authority/runner-fact-golden-v1.json",
@@ -49,17 +49,17 @@
         },
         {
           "path": "docs/authority/runner-fact-contract-assets-v1.json",
-          "sha256": "d42b1b0645d2275fa5d6d9148d3b4c08fab309f9a6e286915e2229d48ad1d21f",
+          "sha256": "caa23a719f05cd659a6a2c7f25b5a663b25d3f650edd4f4fcfc60e37b5a4778f",
           "size_bytes": 4178
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
-          "sha256": "637c3fabb6a7e9873ab0e01c497ae0993590c010614a0cc92646537e1ed0e428",
-          "size_bytes": 56897
+          "sha256": "91b22e6b7ee3fd3fc40ded5b5c32cf963dbe4e2896264456a79314c6b30c7d11",
+          "size_bytes": 58500
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json.sha256",
-          "sha256": "f025c1c66f7bf1d44b770065dd31f7046d25f2b476255447dda69308138aec02",
+          "sha256": "c16154eb0737d0502feba9314d56ad55ef7228cc9ff307aa050f03d8dbc5ec02",
           "size_bytes": 100
         }
       ],
@@ -69,6 +69,12 @@
           "wire_sha256": "af3566a6df8dccb1a0fa781b7ae2780bdf9ddba0af6b799e4d0347e6d18d1653",
           "vectors_sha256": "637c3fabb6a7e9873ab0e01c497ae0993590c010614a0cc92646537e1ed0e428",
           "note": "first revision; earlier versions of the contract carried no revision"
+        },
+        {
+          "revision": 2,
+          "wire_sha256": "6df17a70ab560566a931dc174e86356059641a9e131d0131cd53f29e005f5adf",
+          "vectors_sha256": "91b22e6b7ee3fd3fc40ded5b5c32cf963dbe4e2896264456a79314c6b30c7d11",
+          "note": "raised"
         }
       ]
     },

@@ -42,6 +42,12 @@ protocol — is published at
   descriptive text keeps it. JSON Schema validators ignore both keywords, so no
   document's validity changes. The schemas, the RunnerFact and strategy asset
   indexes and their sidecars change; historical receipts are unchanged.
+- **The RunnerFact batch schema refuses a signed zero (contract revision 2).**
+  Every signed decimal pattern accepted `"-0"`, which the runner never writes
+  (it renders zero as `"0"`) and which a consumer reading a decimal type cannot
+  keep. The pattern now excludes it, so the RunnerFact batch contract moves to
+  revision 2, and the conformance vectors gain `decimal-negative-zero`, refused
+  as a non-canonical decimal. A consumer syncs revision 2; no receipt is written.
 - **Consumers pin contract revisions instead of exchanging receipts.**
   `docs/authority/contract-revisions-v1.json` lists each contract other
   repositories vendor with its revision, wire fingerprint, assets and vectors.
