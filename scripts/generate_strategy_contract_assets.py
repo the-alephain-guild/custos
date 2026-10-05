@@ -46,6 +46,7 @@ CONTRACT_RECEIPT_PATH = (
 HISTORICAL_CONTRACT_EVIDENCE_PATHS = {
     "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
     "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json",
+    CONTRACT_RECEIPT_PATH,
 }
 CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/vendor/"
@@ -132,6 +133,11 @@ RUNNER_COMMAND_CONSUMER_STATUS = (
     "LOCAL_STRATEGY_RESOLUTION_CONTRACT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN"
 )
 
+# Contract revisions are raised only when the wire shape or the meaning of a field
+# changes; a change to descriptive text alone keeps the revision.
+ARTIFACT_REF_CONTRACT = ("alephain.custos.strategy_artifact_ref.v1", 1)
+PRE_IMPORT_CONTRACT = ("alephain.custos.strategy_artifact_pre_import_verification_receipt.v1", 1)
+
 TOOLKIT_RC_SCHEMA_PATH = "docs/gateway-contract/v1/toolkit_rc_receipt_manifest_v1.schema.json"
 TOOLKIT_RC_PENDING_SCHEMA_PATH = (
     "docs/gateway-contract/v1/toolkit_rc_pending_receipt_v1.schema.json"
@@ -192,6 +198,11 @@ def member(
     )
 
 
+def with_contract_revision(schema: dict, contract: tuple[str, int]) -> dict:
+    contract_id, revision = contract
+    return {**schema, "x-contract-id": contract_id, "x-contract-revision": revision}
+
+
 def _sidecar(path: str, content: bytes) -> bytes:
     return f"{sha256(content)}  {Path(path).name}\n".encode("ascii")
 
@@ -240,7 +251,11 @@ def _build_artifact_ref_assets() -> dict[str, bytes]:
             ),
         }
     )
-    schema = json_bytes(StrategyArtifactRefV1.model_json_schema(mode="validation"))
+    schema = json_bytes(
+        with_contract_revision(
+            StrategyArtifactRefV1.model_json_schema(mode="validation"), ARTIFACT_REF_CONTRACT
+        )
+    )
     return {
         ARTIFACT_REF_SCHEMA_PATH: schema,
         ARTIFACT_REF_GOLDEN_PATH: golden,
@@ -305,7 +320,7 @@ def build_v1_contract_assets() -> dict[str, bytes]:
     )
     schema = StrategyArtifactPreImportVerificationReceiptV1.model_json_schema(mode="validation")
     schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
-    schema_bytes = json_bytes(schema)
+    schema_bytes = json_bytes(with_contract_revision(schema, PRE_IMPORT_CONTRACT))
     golden = json_bytes(
         {
             "fixture_schema_version": 1,

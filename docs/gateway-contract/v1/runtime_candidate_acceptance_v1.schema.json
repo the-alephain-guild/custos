@@ -2,6 +2,8 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://custos.alchymia.dev/contracts/v1/runtime_candidate_acceptance_v1.schema.json",
   "title": "RuntimeCandidateAcceptanceV1",
+  "x-contract-id": "alephain.custos.runtime_candidate_acceptance.v1",
+  "x-contract-revision": 1,
   "type": "object",
   "additionalProperties": false,
   "required": [

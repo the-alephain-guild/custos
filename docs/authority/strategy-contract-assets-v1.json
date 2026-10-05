@@ -33,13 +33,13 @@
     },
     {
       "path": "docs/gateway-contract/v1/strategy_artifact_pre_import_verification_receipt_v1.schema.json",
-      "sha256": "2f972c7609d9ead2947227636db9d24232cd68de3f93e876b7d7308bf27dac3e",
-      "size_bytes": 10847
+      "sha256": "e70f58eba0143689a571afcc4e0c988d3f2032ba7135dbcb18ab04c9e39cfde3",
+      "size_bytes": 10966
     },
     {
       "path": "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json",
-      "sha256": "01a3044457892995ebbc9b2267cc7d789af8fce6936d8998ef44d8b48a4bfdc4",
-      "size_bytes": 4959
+      "sha256": "1e7fbde739d21451c069e014c9f2360f183dd5e38551f851884f8e59323d5ac5",
+      "size_bytes": 5050
     }
   ],
   "canonical_name": "Custos canonical first-production V1 strategy execution contracts",

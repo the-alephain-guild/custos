@@ -383,5 +383,7 @@
     "runner_local_policy_decision"
   ],
   "title": "StrategyArtifactPreImportVerificationReceiptV1",
-  "type": "object"
+  "type": "object",
+  "x-contract-id": "alephain.custos.strategy_artifact_pre_import_verification_receipt.v1",
+  "x-contract-revision": 1
 }

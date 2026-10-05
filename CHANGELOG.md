@@ -13,6 +13,17 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Changed
+
+- **Contract schemas carry a contract revision.** The RunnerFact batch,
+  `StrategyArtifactRefV1`, `StrategyArtifactPreImportVerificationReceiptV1` and
+  `RuntimeCandidateAcceptanceV1` schemas gain two top-level annotation keywords,
+  `x-contract-id` and `x-contract-revision` (all at revision 1). The revision is
+  raised only when the wire shape or the meaning of a field changes; a change to
+  descriptive text keeps it. JSON Schema validators ignore both keywords, so no
+  document's validity changes. The schemas, the RunnerFact and strategy asset
+  indexes and their sidecars change; historical receipts are unchanged.
+
 ### Fixed
 
 - **The RunnerFact batch schema names the subject a runner publishes on.** Its

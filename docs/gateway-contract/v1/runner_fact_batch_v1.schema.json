@@ -1,6 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "custos://gateway-contract/v1/runner_fact_batch_v1.schema.json",
+  "x-contract-id": "alephain.custos.runner_fact_batch.v1",
+  "x-contract-revision": 1,
   "title": "Custos RunnerFactBatchV1",
   "type": "object",
   "additionalProperties": false,

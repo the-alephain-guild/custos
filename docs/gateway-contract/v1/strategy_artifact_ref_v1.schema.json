@@ -202,5 +202,7 @@
     "build_inputs"
   ],
   "title": "StrategyArtifactRefV1",
-  "type": "object"
+  "type": "object",
+  "x-contract-id": "alephain.custos.strategy_artifact_ref.v1",
+  "x-contract-revision": 1
 }

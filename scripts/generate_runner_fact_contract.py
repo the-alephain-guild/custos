@@ -48,6 +48,10 @@ from custos.core.runner_fact import (
 
 ROOT = Path(__file__).resolve().parents[1]
 AUTHORITY_COORDINATE = "custos.runner-fact.v1"
+# Raised only when the wire shape or the meaning of a field changes; a change to
+# descriptive text alone keeps the revision.
+CONTRACT_ID = "alephain.custos.runner_fact_batch.v1"
+CONTRACT_REVISION = 1
 PRODUCER_ASSET_COMMIT = "199bb6475eae87b78d2e1db27eff319a5a3ebe6b"
 CRUCIBLE_CONSUMER_RECEIPT = {
     "repository": "tesseract-trading/crucible-rust",
@@ -628,6 +632,8 @@ def _schema() -> dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "custos://gateway-contract/v1/runner_fact_batch_v1.schema.json",
+        "x-contract-id": CONTRACT_ID,
+        "x-contract-revision": CONTRACT_REVISION,
         "title": "Custos RunnerFactBatchV1",
         "type": "object",
         "additionalProperties": False,

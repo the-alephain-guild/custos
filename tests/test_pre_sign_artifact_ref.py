@@ -90,6 +90,14 @@ def test_schema_and_index_publish_only_canonical_v1() -> None:
     schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
     index = json.loads(INDEX.read_text(encoding="utf-8"))
 
+    contract_keywords = {
+        "x-contract-id": schema.pop("x-contract-id"),
+        "x-contract-revision": schema.pop("x-contract-revision"),
+    }
+    assert contract_keywords == {
+        "x-contract-id": "alephain.custos.strategy_artifact_ref.v1",
+        "x-contract-revision": 1,
+    }
     assert schema == StrategyArtifactRefV1.model_json_schema(mode="validation")
     assert set(schema["properties"]) == ALLOWED_FIELDS
     assert schema["properties"]["schema_version"]["const"] == 1
