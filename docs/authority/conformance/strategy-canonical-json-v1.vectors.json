@@ -1,0 +1,123 @@
+{
+  "vector_set_version": 1,
+  "contract_id": "alephain.custos.strategy_canonical_json.v1",
+  "contract_revision": 1,
+  "canonicalization": "sha256-canonical-json-v1",
+  "input_tags": {
+    "$decimal": "a decimal.Decimal built from the string",
+    "$float": "a binary float built from the string"
+  },
+  "error_classes": [
+    "binary_float"
+  ],
+  "vectors": [
+    {
+      "id": "strategy-decimal-trailing-zero",
+      "origin": "producer-canonical",
+      "covers": [
+        "a decimal is normalised"
+      ],
+      "input": {
+        "price": {
+          "$decimal": "1.50"
+        }
+      },
+      "expected": {
+        "outcome": "accept",
+        "canonical_utf8": "{\"price\":1.5}",
+        "sha256": "1a0d24dc0306e62fe888138847a83f835ce78310bc1955d21030ead5eb31968a"
+      }
+    },
+    {
+      "id": "strategy-decimal-exponent",
+      "origin": "producer-canonical",
+      "covers": [
+        "an exponent decimal is written in plain notation"
+      ],
+      "input": {
+        "small": {
+          "$decimal": "1E-8"
+        },
+        "large": {
+          "$decimal": "1E+2"
+        },
+        "zero": {
+          "$decimal": "-0"
+        }
+      },
+      "expected": {
+        "outcome": "accept",
+        "canonical_utf8": "{\"large\":100,\"small\":0.00000001,\"zero\":0}",
+        "sha256": "a37b253aaaa8f4f66070e468d17a9bf4b7ae48885bb297a7d1d29a8773cfbbb6"
+      }
+    },
+    {
+      "id": "strategy-null-kept",
+      "origin": "producer-canonical",
+      "covers": [
+        "null members stay in the digest"
+      ],
+      "input": {
+        "a": null,
+        "b": 1
+      },
+      "expected": {
+        "outcome": "accept",
+        "canonical_utf8": "{\"a\":null,\"b\":1}",
+        "sha256": "c0bf82ad036cb0a5a03d6759c1b7b8b1f70a39b32dd96ed3977c7f2831ee3b56"
+      }
+    },
+    {
+      "id": "strategy-float-refused",
+      "origin": "producer-canonical",
+      "covers": [
+        "a binary float is refused"
+      ],
+      "input": {
+        "price": {
+          "$float": "1.5"
+        }
+      },
+      "expected": {
+        "outcome": "reject",
+        "error_class": "binary_float"
+      }
+    },
+    {
+      "id": "strategy-key-order-unicode",
+      "origin": "producer-canonical",
+      "covers": [
+        "members sort by code point"
+      ],
+      "input": {
+        "b": 1,
+        "a": 2,
+        "aa": 3,
+        "Z": 4,
+        "é": 5,
+        "😀": 6,
+        "éa": 7
+      },
+      "expected": {
+        "outcome": "accept",
+        "canonical_utf8": "{\"Z\":4,\"a\":2,\"aa\":3,\"b\":1,\"é\":5,\"éa\":7,\"😀\":6}",
+        "sha256": "bc0e64e863b35bcd307e85984309cef577bec2b64069319188aa62300215bcd3"
+      }
+    },
+    {
+      "id": "strategy-string-escapes",
+      "origin": "producer-canonical",
+      "covers": [
+        "string escaping"
+      ],
+      "input": {
+        "s": "ord-\u0001\t\"\\é😀"
+      },
+      "expected": {
+        "outcome": "accept",
+        "canonical_utf8": "{\"s\":\"ord-\\u0001\\t\\\"\\\\é😀\"}",
+        "sha256": "a9d37ec613974910d8cc7f04ceb1317f340b552e0c16613a38b16db3ef6d0ca9"
+      }
+    }
+  ]
+}

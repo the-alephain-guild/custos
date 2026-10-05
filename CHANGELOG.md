@@ -13,6 +13,25 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Added
+
+- **Conformance vectors for consumers.** `docs/authority/conformance/` publishes
+  `runner-fact-batch-v1.vectors.json` and `strategy-canonical-json-v1.vectors.json`,
+  each with a `.sha256` sidecar. Every vector carries the exact bytes of one
+  message as a JSON string and the outcome a consumer must reach: accepted with
+  the payload digest, envelope digest and signing preimage, or refused with an
+  error class. They cover whole-second and fractional instants, former
+  six- and nine-digit instant spellings, a NETTING slot reopened by another
+  order, a reused `position_id`, exponent, trailing-zero and binary-float
+  `realized_pnl` values, a null required member, an unknown member, string
+  escapes and the largest signed 64-bit sequence. The vectors are rendered by
+  the runner's own fact paths and `scripts/generate_contract_conformance.py
+  --check` regenerates them byte for byte; they are signed with a published
+  test-only key.
+- **`scripts/contract_vendor.py`** vendors another repository's contract assets
+  at a contract revision and checks the vendored bytes offline, without naming
+  any commit.
+
 ### Changed
 
 - **Contract schemas carry a contract revision.** The RunnerFact batch,
