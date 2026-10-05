@@ -1,0 +1,156 @@
+{
+  "contracts": {
+    "alephain.crucible.runner_deployment_command.v1": {
+      "assets": [
+        {
+          "local_path": "docs/authority/runner-deployment-command-golden-v1.json",
+          "producer_path": "docs/authority/runner-deployment-command-golden-v1.json",
+          "sha256": "126ee972334509ff59272b0145b1c237a582e522cf4ba9318bf1c28beaef83f7",
+          "size_bytes": 18598
+        },
+        {
+          "local_path": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
+          "producer_path": "docs/authority/runner-deployment-command-golden-v1.json.sha256",
+          "sha256": "d1cd8c60c725d41307453c91f5f01505dc71a82ddced42e3fa0f3e3ce6d94443",
+          "size_bytes": 107
+        }
+      ],
+      "producer_repository": "tesseract-trading/crucible-rust",
+      "revision": 1,
+      "revision_carrier": "index",
+      "schema_local_path": null,
+      "vectors_local_path": null,
+      "vectors_sha256": null,
+      "wire_sha256": null
+    },
+    "alephain.crucible.runner_machine_request.v1": {
+      "assets": [
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-machine-request-golden-v1.json",
+          "producer_path": "docs/authority/runner-machine-request-golden-v1.json",
+          "sha256": "16bc6cb389a22c1d66708a768db4d9bcf0a1b049d308f76731f13e6cde3d2ab1",
+          "size_bytes": 2126
+        },
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-machine-request-golden-v1.json.sha256",
+          "producer_path": "docs/authority/runner-machine-request-golden-v1.json.sha256",
+          "sha256": "1b9fd356276883e18bb5908772c40977330a451fdc98f2641068bf9905f6c6ae",
+          "size_bytes": 104
+        },
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-machine-request-golden-v1.schema.json",
+          "producer_path": "docs/authority/runner-machine-request-golden-v1.schema.json",
+          "sha256": "50b356c313349afdc5b14f0b55d88416a0a675262972d392101cd85bc6bddc07",
+          "size_bytes": 1887
+        },
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-machine-request-golden-v1.schema.json.sha256",
+          "producer_path": "docs/authority/runner-machine-request-golden-v1.schema.json.sha256",
+          "sha256": "716f15cf03cfd654faf613ad1ea1c9bed8f1a31e22895112c9b5e4ce8789c628",
+          "size_bytes": 111
+        }
+      ],
+      "producer_repository": "tesseract-trading/crucible-rust",
+      "revision": 1,
+      "revision_carrier": "schema",
+      "schema_local_path": "docs/authority/vendor/crucible-runner-machine-request-golden-v1.schema.json",
+      "vectors_local_path": null,
+      "vectors_sha256": null,
+      "wire_sha256": "97ddc02b164d499538c8ef6144891aa2e85e61a3114dec574123809d5e4d21cd"
+    },
+    "alephain.crucible.runner_nats_transport_authority.v1": {
+      "assets": [
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-nats-transport-authority-golden-v1.json",
+          "producer_path": "docs/authority/runner-nats-transport-authority-golden-v1.json",
+          "sha256": "838bfbac494865491e83acb7bee66f364a74e41e6981e56117a9d97b9f8783b8",
+          "size_bytes": 4010
+        },
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-nats-transport-authority-golden-v1.json.sha256",
+          "producer_path": "docs/authority/runner-nats-transport-authority-golden-v1.json.sha256",
+          "sha256": "5a952c548bbd13bbbe91f962a9e1749e223ce367746d71f6dd7023bc54503bf3",
+          "size_bytes": 113
+        },
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-nats-transport-authority-v1.schema.json",
+          "producer_path": "docs/authority/runner-nats-transport-authority-v1.schema.json",
+          "sha256": "a421fd383ba10ccc70c19c7aa044e3dfcb636316c1b0532d5c848bc6b51cfe77",
+          "size_bytes": 7030
+        }
+      ],
+      "producer_repository": "tesseract-trading/crucible-rust",
+      "revision": 1,
+      "revision_carrier": "schema",
+      "schema_local_path": "docs/authority/vendor/crucible-runner-nats-transport-authority-v1.schema.json",
+      "vectors_local_path": null,
+      "vectors_sha256": null,
+      "wire_sha256": "46e2d6d4734e7b38d34a693b91b5da349e6238ca6658bfa711e6bd9b46cf327b"
+    },
+    "alephain.crucible.runner_safety_policy.v1": {
+      "assets": [
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-safety-policy-golden-v1.json",
+          "producer_path": "docs/authority/runner-safety-policy-golden-v1.json",
+          "sha256": "ebd5c7679ff1182ea991fb72417ffa379180a4b8a50103552d06500842c7054a",
+          "size_bytes": 1276
+        },
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-safety-policy-golden-v1.json.sha256",
+          "producer_path": "docs/authority/runner-safety-policy-golden-v1.json.sha256",
+          "sha256": "16cb4ecce1744d7c2fe82fb80a34b9fdf49769512793615b62314804d286e2bf",
+          "size_bytes": 102
+        },
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-safety-policy-v1.schema.json",
+          "producer_path": "docs/authority/runner-safety-policy-v1.schema.json",
+          "sha256": "9dc6e00af79925d8641677bdf8237ea3fdf9881ee4e0372b2b4e838961e68846",
+          "size_bytes": 2632
+        }
+      ],
+      "producer_repository": "tesseract-trading/crucible-rust",
+      "revision": 1,
+      "revision_carrier": "schema",
+      "schema_local_path": "docs/authority/vendor/crucible-runner-safety-policy-v1.schema.json",
+      "vectors_local_path": null,
+      "vectors_sha256": null,
+      "wire_sha256": "1d2a3835776c547ef75d0e353ce966398f61e9b9e1bba89145e00a623c91f6aa"
+    },
+    "alephain.crucible.runner_strategy_release_resolution.v1": {
+      "assets": [
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",
+          "producer_path": "docs/authority/runner-strategy-release-resolution-v1.golden.json",
+          "sha256": "6aa465d46c9adb859bc6f36cef1250fbd5c0253ad531c628baaeda7d316c5e51",
+          "size_bytes": 31367
+        },
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json.sha256",
+          "producer_path": "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
+          "sha256": "71fcd856b5062234ed830af33a93a2fa382a5e230b26e4fd28b4b7331bef0bd6",
+          "size_bytes": 116
+        },
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
+          "producer_path": "docs/authority/runner-strategy-release-resolution-v1.schema.json",
+          "sha256": "0e9726a6771e70e7ba27248ac31ce1c19f11711e8fedd71e32195c79b4e43b3b",
+          "size_bytes": 9285
+        },
+        {
+          "local_path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json.sha256",
+          "producer_path": "docs/authority/runner-strategy-release-resolution-v1.schema.json.sha256",
+          "sha256": "4e6954b822539b88c0793c716a317e4ebd97ec257c75f6d5d213af2d10feb37d",
+          "size_bytes": 116
+        }
+      ],
+      "producer_repository": "tesseract-trading/crucible-rust",
+      "revision": 1,
+      "revision_carrier": "schema",
+      "schema_local_path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
+      "vectors_local_path": null,
+      "vectors_sha256": null,
+      "wire_sha256": "36aed5b99f11d502cf56acf41da88fdb5935b4baffc12275947e82578f29a83b"
+    }
+  },
+  "pins_schema_version": 1
+}

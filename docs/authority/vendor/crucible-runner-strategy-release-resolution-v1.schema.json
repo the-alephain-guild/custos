@@ -1,5 +1,7 @@
 {
   "$id": "https://schemas.alephain.guild/crucible/runner-strategy-release-resolution-v1.schema.json",
+  "x-contract-id": "alephain.crucible.runner_strategy_release_resolution.v1",
+  "x-contract-revision": 1,
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
     "artifact_evidence": {

@@ -105,6 +105,8 @@ def test_historical_v1_evidence_identifies_its_source_without_pinning_current_by
         "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-handoff-receipt.json",
         "docs/authority/crucible-runner-command-consumer-assets-v1.json",
         "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
+        "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json",
+        "docs/authority/receipts/custos-crucible-runner-command-nautilus-2-v1-consumer-receipt.json",
     }
 
     checker = runpy.run_path(

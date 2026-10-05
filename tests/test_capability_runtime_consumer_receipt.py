@@ -121,15 +121,17 @@ def test_gate_refuses_an_edited_copy(checker: ModuleType, copy_root: Path) -> No
 @pytest.mark.parametrize(
     ("label", "edit", "message"),
     [
+        # A historical receipt is held to its shape, not to constants: the
+        # commits it records must still be full commit ids.
         (
-            "another producer revision",
-            lambda r: r["producer"].update(commit="0" * 40),
-            "producer asset commit differs",
+            "an abbreviated producer revision",
+            lambda r: r["producer"].update(commit="8cda48da"),
+            "producer commit is not a full commit id",
         ),
         (
-            "another runtime code revision",
-            lambda r: r["producer"].update(runtime_code_commit="0" * 40),
-            "producer runtime code commit differs",
+            "an abbreviated runtime code revision",
+            lambda r: r["producer"].update(runtime_code_commit="3abb7c24"),
+            "producer runtime_code_commit is not a full commit id",
         ),
         (
             "a receipt cycle",

@@ -50,6 +50,20 @@ protocol — is published at
   handoff receipt; that receipt and the two vendored consumer receipts stay as
   historical evidence and are checked only for shape. A wire change now raises
   the contract revision and ships updated vectors, with no new receipt.
+- **The contracts Custos consumes are pinned by revision too.** The deployment
+  service's strategy release resolution, runner safety policy, runner machine
+  request, runner NATS transport authority and runner deployment command assets
+  are synced by `scripts/contract_vendor.py` at revision 1 and recorded in
+  `docs/authority/vendor/contract-pins-v1.json`; `make check-authority` and the
+  release workflow check them offline. This vendors the producer's current
+  bytes: the safety policy schema now lists the `VUSDC`, `VBTC` and `VETH`
+  settlement currencies, and the NATS transport authority golden grants the
+  strategy-signal publish subject. The runner command and machine-request
+  consumer indexes and receipts, and the receipts vendored from the deployment
+  service, stay as historical evidence checked only for shape; they no longer
+  pin current source or vendored bytes, so editing a consumer source file no
+  longer fails the authority gate. `scripts/generate_runner_machine_request_consumer_assets.py`
+  is removed.
 
 ### Fixed
 

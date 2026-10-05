@@ -54,73 +54,18 @@ RUNNER_COMMAND_CONSUMER_INDEX_PATH = (
 RUNNER_COMMAND_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/custos-crucible-runner-command-nautilus-2-v1-consumer-receipt.json"
 )
+# The runner command consumer index and receipt record what an earlier Custos
+# revision accepted from crucible-rust. Custos now pins crucible-rust contracts
+# by revision in docs/authority/vendor/contract-pins-v1.json, so they are
+# historical evidence and no longer regenerated.
 HISTORICAL_CONTRACT_EVIDENCE_PATHS.update(
     {
         "docs/authority/crucible-runner-command-consumer-assets-v1.json",
         "docs/authority/receipts/custos-crucible-runner-command-v1-consumer-receipt.json",
+        RUNNER_COMMAND_CONSUMER_INDEX_PATH,
+        RUNNER_COMMAND_CONSUMER_RECEIPT_PATH,
     }
 )
-RUNNER_COMMAND_CONSUMER_SOURCE = "src/custos/contracts/crucible_runner_command.py"
-RUNNER_COMMAND_CONSUMER_TEST = "tests/test_runner_deployment_command_golden.py"
-RUNNER_MATERIAL_AUTHORITY_SOURCE = "src/custos/core/runner_material_authority.py"
-RUNNER_MATERIAL_AUTHORITY_TEST = "tests/test_runner_material_authority.py"
-DEVELOPMENT_ARTIFACT_RUNTIME_SOURCE = "src/custos/artifacts/development_runtime.py"
-RUNNER_COMMAND_GOLDEN_PATH = "docs/authority/runner-deployment-command-golden-v1.json"
-RUNNER_COMMAND_GOLDEN_SIDECAR_PATH = (
-    "docs/authority/runner-deployment-command-golden-v1.json.sha256"
-)
-RUNNER_COMMAND_FINGERPRINT_VECTOR_PATH = (
-    "tests/fixtures/runner_command/runner_command_fingerprint_v1.json"
-)
-RUNNER_COMMAND_PRODUCER_COMMIT = "8c2c4eff20ae1ba38bbab54cdf7844ef25e1187d"
-RUNNER_COMMAND_PRODUCER_RECEIPT_COMMIT = "72c0ba90623e61641e14a3ede8168f3e379e6f4c"
-RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH = (
-    "docs/authority/receipts/vendor/crucible-runner-command-publication-v1.json"
-)
-RUNNER_COMMAND_PRODUCER_RECEIPT_STATUS = (
-    "LOCAL_AUTHENTICATED_PG_JETSTREAM_PUBACK_RECOVERY_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
-)
-RUNNER_COMMAND_CONTRACT_ASSETS = (
-    (
-        "runner_command_golden",
-        RUNNER_COMMAND_GOLDEN_PATH,
-        RUNNER_COMMAND_GOLDEN_PATH,
-    ),
-    (
-        "runner_command_golden_sha256",
-        RUNNER_COMMAND_GOLDEN_SIDECAR_PATH,
-        RUNNER_COMMAND_GOLDEN_SIDECAR_PATH,
-    ),
-)
-RUNNER_COMMAND_SUBJECT_TEMPLATE = "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
-RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
-    "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-sodex-2-v1.json"
-)
-RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "fbb2e84a97483b604f6f6ac3d425eb523d4af262"
-RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT = RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
-RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "b8159e33886710d0ca9d152e450ac035cdb9e7a5"
-RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS = (
-    (
-        "docs/authority/runner-strategy-release-resolution-v1.schema.json",
-        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
-    ),
-    (
-        "docs/authority/runner-strategy-release-resolution-v1.schema.json.sha256",
-        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json.sha256",
-    ),
-    (
-        "docs/authority/runner-strategy-release-resolution-v1.golden.json",
-        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",
-    ),
-    (
-        "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
-        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json.sha256",
-    ),
-)
-RUNNER_COMMAND_CONSUMER_STATUS = (
-    "LOCAL_STRATEGY_RESOLUTION_CONTRACT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN"
-)
-
 # Contract revisions are raised only when the wire shape or the meaning of a field
 # changes; a change to descriptive text alone keeps the revision.
 ARTIFACT_REF_CONTRACT = ("alephain.custos.strategy_artifact_ref.v1", 1)
@@ -475,235 +420,6 @@ def build_v1_contract_assets() -> dict[str, bytes]:
     return generated
 
 
-def build_runner_command_consumer_assets() -> dict[str, bytes]:
-    command_receipt_bytes = (ROOT / RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH).read_bytes()
-    command_receipt = json.loads(command_receipt_bytes)
-    command_contract_assets = []
-    producer_command_contract_assets = []
-    for role, producer_path, consumer_path in RUNNER_COMMAND_CONTRACT_ASSETS:
-        data = (ROOT / consumer_path).read_bytes()
-        pin = {"sha256": sha256(data), "size_bytes": len(data)}
-        command_contract_assets.append(
-            {
-                "role": role,
-                "producer_path": producer_path,
-                "path": consumer_path,
-                **pin,
-            }
-        )
-        producer_command_contract_assets.append({"role": role, "path": producer_path, **pin})
-    if (
-        command_receipt.get("receipt_id") != "CRUCIBLE-RUNNER-COMMAND-PUBLICATION-V1"
-        or command_receipt.get("owner") != "crucible-rust"
-        or command_receipt.get("status") != RUNNER_COMMAND_PRODUCER_RECEIPT_STATUS
-        or command_receipt.get("contract_assets") != producer_command_contract_assets
-        or command_receipt.get("contract_asset_authority", {}).get("contract_commit")
-        != RUNNER_COMMAND_PRODUCER_COMMIT
-        or command_receipt.get("contract_asset_authority", {}).get("risk_policy_owner")
-        != "crucible-rust"
-        or command_receipt.get("contract_asset_authority", {}).get(
-            "consumer_interpretation_allowed"
-        )
-        is not False
-        or command_receipt.get("contract_evolution")
-        != {
-            "current_production_version": 1,
-            "feature_changes": "IN_PLACE_V1",
-            "runtime_compatibility_layers_allowed": False,
-            "v2_requires_external_production_consumer": True,
-            "v2_requires_explicit_migration_window": True,
-        }
-        or command_receipt.get("runtime_ready") is not False
-        or command_receipt.get("production_ready") is not False
-    ):
-        raise ValueError("Crucible runner command receipt is not the canonical V1 pin")
-
-    resolution_receipt_bytes = (ROOT / RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH).read_bytes()
-    resolution_receipt = json.loads(resolution_receipt_bytes)
-    resolution_contract_assets = []
-    producer_contract_assets = []
-    for producer_path, vendor_path in RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS:
-        data = (ROOT / vendor_path).read_bytes()
-        pin = {"sha256": sha256(data), "size_bytes": len(data)}
-        resolution_contract_assets.append(
-            {"producer_path": producer_path, "path": vendor_path, **pin}
-        )
-        producer_contract_assets.append({"path": producer_path, **pin})
-    if (
-        resolution_receipt.get("receipt_id") != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-SODEX-2-V1"
-        or resolution_receipt.get("owner") != "crucible-rust"
-        or resolution_receipt.get("consumer") != "custos"
-        or resolution_receipt.get("status") != "CURRENT_ENGINE_CONTRACT_READY"
-        or resolution_receipt.get("engine") != "nautilus"
-        or resolution_receipt.get("engine_version") != "2.0.0rc5+sodex.2"
-        or resolution_receipt.get("producer_commit") != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
-        or resolution_receipt.get("runtime_code_commit")
-        != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
-        or resolution_receipt.get("contract_commit") != RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT
-        or resolution_receipt.get("contract_assets") != producer_contract_assets
-        or resolution_receipt.get("authority_coordinate")
-        != "crucible.runner-strategy-resolution.v1"
-        or resolution_receipt.get("strategy_release_binding", {}).get(
-            "request_accepts_strategy_release_id"
-        )
-        is not False
-        or resolution_receipt.get("strategy_release_binding", {}).get(
-            "release_derived_from_persisted_deployment_spec"
-        )
-        is not True
-        or resolution_receipt.get("runtime_ready") is not False
-        or resolution_receipt.get("production_ready") is not False
-    ):
-        raise ValueError("Crucible runner strategy resolution receipt is not the canonical V1 pin")
-    consumer_assets = []
-    for relative in (
-        RUNNER_COMMAND_CONSUMER_SOURCE,
-        RUNNER_COMMAND_CONSUMER_TEST,
-        RUNNER_MATERIAL_AUTHORITY_SOURCE,
-        RUNNER_MATERIAL_AUTHORITY_TEST,
-        DEVELOPMENT_ARTIFACT_RUNTIME_SOURCE,
-        RUNNER_COMMAND_GOLDEN_PATH,
-        RUNNER_COMMAND_GOLDEN_SIDECAR_PATH,
-        RUNNER_COMMAND_FINGERPRINT_VECTOR_PATH,
-        RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH,
-        RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
-        *(vendor_path for _, vendor_path in RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS),
-    ):
-        data = (ROOT / relative).read_bytes()
-        consumer_assets.append({"path": relative, "sha256": sha256(data), "size_bytes": len(data)})
-    index = json_bytes(
-        {
-            "asset_index_schema_version": 1,
-            "canonical_name": "Custos canonical V1 Crucible DeploymentSpec consumer assets",
-            "status": RUNNER_COMMAND_CONSUMER_STATUS,
-            "consumer_scope": [
-                "deployment_spec_command",
-                "durable_runner_intake",
-                "development_material_resolution",
-                "strategy_release_material_resolution",
-            ],
-            "producer_authority": {
-                "repository": "tesseract-trading/crucible-rust",
-                "contract": "CrucibleRunnerDeploymentCommandV1",
-                "producer_commit": RUNNER_COMMAND_PRODUCER_COMMIT,
-                "producer_receipt_commit": RUNNER_COMMAND_PRODUCER_RECEIPT_COMMIT,
-                "subject_template": RUNNER_COMMAND_SUBJECT_TEMPLATE,
-                "producer_receipt": {
-                    "path": RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH,
-                    "sha256": sha256(command_receipt_bytes),
-                    "size_bytes": len(command_receipt_bytes),
-                    "status": command_receipt["status"],
-                    "contract_assets": command_contract_assets,
-                },
-                "strategy_resolution_receipt": {
-                    "producer_commit": RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT,
-                    "contract_commit": RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT,
-                    "receipt_commit": RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT,
-                    "path": RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
-                    "sha256": sha256(resolution_receipt_bytes),
-                    "size_bytes": len(resolution_receipt_bytes),
-                    "status": resolution_receipt["status"],
-                    "contract_assets": resolution_contract_assets,
-                },
-                "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED",
-            },
-            "consumer_model": {
-                "path": RUNNER_COMMAND_CONSUMER_SOURCE,
-                "public_export": "CrucibleRunnerDeploymentCommandV1",
-                "sha256": consumer_assets[0]["sha256"],
-                "size_bytes": consumer_assets[0]["size_bytes"],
-            },
-            "consumer_assets": consumer_assets,
-            "custos_publishes_command_schema": False,
-            "exact_signed_event_bytes_retained": True,
-            "signature_bytes_in_fingerprint": False,
-            "exact_event_command_fingerprint_pinned": True,
-            "command_contains_deployment_spec_only": True,
-            "strategy_release_authority_resolution": (
-                "sole V1 schema, golden and local HTTP/PG producer receipt consumed; "
-                "daemon activation remains open"
-            ),
-            "consumer_code_ready": True,
-            "command_contract_consumer_ready": True,
-            "runner_command_producer_receipt_consumed": True,
-            "development_material_resolution_ready": True,
-            "strategy_release_resolution_contract_ready": True,
-            "runtime_ready": False,
-            "production_ready": False,
-        }
-    )
-    receipt = json_bytes(
-        {
-            "receipt_schema_version": 1,
-            "canonical_name": "Custos canonical V1 DeploymentSpec consumer receipt",
-            "receipt_status": RUNNER_COMMAND_CONSUMER_STATUS,
-            "contract_asset_index": {
-                "path": RUNNER_COMMAND_CONSUMER_INDEX_PATH,
-                "sha256": sha256(index),
-                "size_bytes": len(index),
-            },
-            "crucible_producer": {
-                "repository": "tesseract-trading/crucible-rust",
-                "contract": "CrucibleRunnerDeploymentCommandV1",
-                "producer_commit": RUNNER_COMMAND_PRODUCER_COMMIT,
-                "producer_receipt_commit": RUNNER_COMMAND_PRODUCER_RECEIPT_COMMIT,
-                "subject_template": RUNNER_COMMAND_SUBJECT_TEMPLATE,
-                "producer_receipt": {
-                    "path": RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH,
-                    "sha256": sha256(command_receipt_bytes),
-                    "size_bytes": len(command_receipt_bytes),
-                    "status": command_receipt["status"],
-                    "contract_assets": command_contract_assets,
-                },
-                "strategy_resolution_receipt": {
-                    "producer_commit": RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT,
-                    "contract_commit": RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT,
-                    "receipt_commit": RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT,
-                    "path": RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
-                    "sha256": sha256(resolution_receipt_bytes),
-                    "size_bytes": len(resolution_receipt_bytes),
-                    "status": resolution_receipt["status"],
-                    "contract_assets": resolution_contract_assets,
-                },
-                "status": "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED",
-            },
-            "consumer_model": {
-                "path": RUNNER_COMMAND_CONSUMER_SOURCE,
-                "public_export": "CrucibleRunnerDeploymentCommandV1",
-                "sha256": consumer_assets[0]["sha256"],
-                "size_bytes": consumer_assets[0]["size_bytes"],
-            },
-            "contract_guards": {
-                "deployment_spec_only": True,
-                "exact_signed_event_bytes_retained": True,
-                "signature_bytes_in_fingerprint": False,
-                "exact_event_command_fingerprint_pinned": True,
-                "compatibility_fallback": False,
-                "second_bom_authority_allowed": False,
-                "command_selected_root_policy_issuer_workflow": False,
-                "custos_command_schema_published": False,
-                "strategy_release_material_in_command": False,
-            },
-            "consumer_code_ready": True,
-            "command_contract_consumer_ready": True,
-            "runner_command_producer_receipt_consumed": True,
-            "development_material_resolution_ready": True,
-            "strategy_release_resolution_contract_ready": True,
-            "runtime_ready": False,
-            "production_ready": False,
-            "open_blockers": [
-                "protected PS OCI publication and immutable daemon materialization",
-                "same-event NATS command to engine to RunnerFact acceptance with StrategyRelease material",
-                "deployed testnet and live acceptance",
-            ],
-        }
-    )
-    return {
-        RUNNER_COMMAND_CONSUMER_INDEX_PATH: index,
-        RUNNER_COMMAND_CONSUMER_RECEIPT_PATH: receipt,
-    }
-
-
 def build_toolkit_rc_foundation_assets() -> dict[str, bytes]:
     return {
         TOOLKIT_RC_SCHEMA_PATH: json_bytes(
@@ -723,7 +439,6 @@ def main() -> int:
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     assets = build_v1_contract_assets()
-    assets.update(build_runner_command_consumer_assets())
     assets.update(build_toolkit_rc_foundation_assets())
     managed_assets = {
         relative: expected

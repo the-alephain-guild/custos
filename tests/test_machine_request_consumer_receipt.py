@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSET_INDEX = ROOT / "docs/authority/crucible-runner-machine-request-consumer-assets-v1.json"
 RECEIPT = ROOT / "docs/authority/receipts/custos-runner-machine-request-v1-consumer-receipt.json"
+PINS = ROOT / "docs/authority/vendor/contract-pins-v1.json"
 
 
 def _load(path: Path) -> dict[str, object]:
@@ -17,32 +19,28 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def test_machine_request_consumer_assets_are_exactly_pinned() -> None:
+def test_machine_request_consumer_index_is_historical_evidence() -> None:
     index = _load(ASSET_INDEX)
 
-    assert index["producer"] == {
-        "repository": "tesseract-trading/crucible-rust",
-        "plan": 100,
-        "commit": "d9df47501f7a871c5b0691b8daf6d83fc3cd82c0",
-        "status": "CONTRACT_READY_RUNTIME_PENDING",
-    }
-    assert index["consumer"] == {
-        "repository": "tesseract-trading/custos",
-        "plan": 19,
-        "commit": "71f3f8d5493e22d5ba8c4c0ff3d7c1c83106e592",
-        "status": "DIRECT_CREDENTIAL_CLIENT_READY_NATS_TRANSPORT_PENDING",
-    }
+    assert index["producer"]["repository"] == "tesseract-trading/crucible-rust"
+    assert index["consumer"]["repository"] == "tesseract-trading/custos"
+    for side in ("producer", "consumer"):
+        assert re.fullmatch(r"[0-9a-f]{40}", index[side]["commit"])
+    # The recorded digests prove the revision that was accepted; they do not pin
+    # today's consumer source or vendored bytes.
+    for asset in [*index["consumer_assets"], *index["producer_assets"]]:
+        assert isinstance(asset["path"], str)
+        assert re.fullmatch(r"[0-9a-f]{64}", asset["sha256"])
+        assert isinstance(asset["size_bytes"], int)
 
-    for asset in index["consumer_assets"]:
-        path = ROOT / asset["path"]
-        assert path.stat().st_size == asset["size_bytes"]
-        assert _sha256(path) == asset["sha256"]
 
-    producer_assets = {asset["path"]: asset for asset in index["producer_assets"]}
-    for relative_path, asset in producer_assets.items():
-        vendored = ROOT / "docs/authority/vendor" / f"crucible-{Path(relative_path).name}"
-        assert vendored.stat().st_size == asset["size_bytes"]
-        assert _sha256(vendored) == asset["sha256"]
+def test_machine_request_producer_assets_are_pinned_by_contract_revision() -> None:
+    pins = _load(PINS)["contracts"]["alephain.crucible.runner_machine_request.v1"]
+    pinned = {asset["local_path"] for asset in pins["assets"]}
+    for asset in _load(ASSET_INDEX)["producer_assets"]:
+        vendored = f"docs/authority/vendor/crucible-{Path(asset['path']).name}"
+        assert vendored in pinned
+        assert (ROOT / vendored).is_file()
 
 
 def test_machine_request_receipt_binds_index_and_keeps_runtime_claims_false() -> None:

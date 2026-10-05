@@ -83,70 +83,32 @@ RUNNER_FACT_CONTRACT_RECEIPT_PATH = (
 CAPABILITY_RUNTIME_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/vendor/crucible-runner-capability-runtime-v1-consumer-receipt.json"
 )
-CAPABILITY_RUNTIME_CONSUMER_RECEIPT_COMMIT = "89f91858e28977aa1d1776f15c92c83b3f39cee7"
 CAPABILITY_RUNTIME_CONSUMER_STATUS = "CUSTOS_CAPABILITY_RUNTIME_V1_CONSUMER_ACCEPTED_RUNTIME_OPEN"
-CAPABILITY_RUNTIME_PRODUCER_ASSET_COMMIT = "8cda48daeb09680a8148ea02fce68468b842abf3"
-CAPABILITY_RUNTIME_PRODUCER_CODE_COMMIT = "3abb7c2490445e0fc860ee844ed51f21e6432d97"
 POSITION_LIFECYCLE_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/vendor/"
     "crucible-runner-fact-position-lifecycle-v1-consumer-receipt.json"
 )
-POSITION_LIFECYCLE_CONSUMER_RECEIPT_COMMIT = "444e9291c9976e217c3c9e5ebe60489522f503a8"
 POSITION_LIFECYCLE_CONSUMER_STATUS = (
     "CUSTOS_RUNNER_FACT_POSITION_LIFECYCLE_V1_CONSUMER_ACCEPTED_RUNTIME_OPEN"
 )
-POSITION_LIFECYCLE_PRODUCER_ASSET_COMMIT = "dc9d1be8fe77c769b39f61d3f410974726c417ef"
-POSITION_LIFECYCLE_PRODUCER_CODE_COMMIT = "d2bf4b1964eac4d81c7f179db04e63723517ce18"
 RUNNER_COMMAND_CONSUMER_SOURCE = "src/custos/contracts/crucible_runner_command.py"
 RUNNER_COMMAND_GOLDEN_PATH = "docs/authority/runner-deployment-command-golden-v1.json"
-RUNNER_COMMAND_PRODUCER_COMMIT = "8c2c4eff20ae1ba38bbab54cdf7844ef25e1187d"
-RUNNER_COMMAND_PRODUCER_RECEIPT_COMMIT = "72c0ba90623e61641e14a3ede8168f3e379e6f4c"
 RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH = (
     "docs/authority/receipts/vendor/crucible-runner-command-publication-v1.json"
 )
-RUNNER_COMMAND_PRODUCER_RECEIPT_STATUS = (
-    "LOCAL_AUTHENTICATED_PG_JETSTREAM_PUBACK_RECOVERY_VERIFIED_DEPLOYED_ACCEPTANCE_OPEN"
-)
-RUNNER_COMMAND_CONTRACT_ASSETS = (
-    (
-        "runner_command_golden",
-        RUNNER_COMMAND_GOLDEN_PATH,
-        RUNNER_COMMAND_GOLDEN_PATH,
-    ),
-    (
-        "runner_command_golden_sha256",
-        f"{RUNNER_COMMAND_GOLDEN_PATH}.sha256",
-        f"{RUNNER_COMMAND_GOLDEN_PATH}.sha256",
-    ),
-)
 RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH = (
     "docs/authority/receipts/vendor/crucible-runner-strategy-resolution-sodex-2-v1.json"
-)
-RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT = "fbb2e84a97483b604f6f6ac3d425eb523d4af262"
-RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT = RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
-RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT = "b8159e33886710d0ca9d152e450ac035cdb9e7a5"
-RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS = (
-    (
-        "docs/authority/runner-strategy-release-resolution-v1.schema.json",
-        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
-    ),
-    (
-        "docs/authority/runner-strategy-release-resolution-v1.schema.json.sha256",
-        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json.sha256",
-    ),
-    (
-        "docs/authority/runner-strategy-release-resolution-v1.golden.json",
-        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",
-    ),
-    (
-        "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
-        "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json.sha256",
-    ),
 )
 RUNNER_COMMAND_CONSUMER_STATUS = (
     "LOCAL_STRATEGY_RESOLUTION_CONTRACT_CONSUMED_RUNTIME_ACCEPTANCE_OPEN"
 )
 REVIEW_VENDOR_ROOT = "docs/authority/receipts/vendor"
+CONTRACT_PINS_PATH = "docs/authority/vendor/contract-pins-v1.json"
+RUNNER_COMMAND_CONTRACT = "alephain.crucible.runner_deployment_command.v1"
+RUNNER_STRATEGY_RESOLUTION_CONTRACT = "alephain.crucible.runner_strategy_release_resolution.v1"
+RUNNER_SAFETY_POLICY_CONTRACT = "alephain.crucible.runner_safety_policy.v1"
+RUNNER_MACHINE_REQUEST_CONTRACT = "alephain.crucible.runner_machine_request.v1"
+RUNNER_NATS_AUTHORITY_CONTRACT = "alephain.crucible.runner_nats_transport_authority.v1"
 CURRENT_STRATEGY_CONTRACT_SOURCE = (
     "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py"
 )
@@ -551,7 +513,7 @@ def _commit_fields(value: Any, path: str = "$") -> list[tuple[str, Any]]:
     found: list[tuple[str, Any]] = []
     if isinstance(value, dict):
         for key, item in value.items():
-            if "commit" in key and not isinstance(item, (dict, list)):
+            if key.endswith("commit") and isinstance(item, str):
                 found.append((f"{path}.{key}", item))
             found.extend(_commit_fields(item, f"{path}.{key}"))
     elif isinstance(value, list):
@@ -566,7 +528,8 @@ def historical_receipt_shape_errors(document: Any, label: str) -> list[str]:
     if not isinstance(document, dict):
         return [f"{label} must be a JSON object"]
     errors = []
-    if not isinstance(document.get("status"), str) or not document["status"]:
+    status = document.get("status", document.get("receipt_status"))
+    if not isinstance(status, str) or not status:
         errors.append(f"{label} lacks a status")
     for path, value in _commit_fields(document):
         if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}", value):
@@ -574,12 +537,41 @@ def historical_receipt_shape_errors(document: Any, label: str) -> list[str]:
     return errors
 
 
+def pinned_local_paths(contract_id: str, errors: list[str]) -> set[str]:
+    """Return the local paths a contract revision pin covers; report a missing pin.
+
+    The bytes themselves are checked by scripts/contract_vendor.py check.
+    """
+
+    pins_path = resolve(CONTRACT_PINS_PATH)
+    if not pins_path.is_file():
+        errors.append(f"{CONTRACT_PINS_PATH} is missing")
+        return set()
+    pin = load_json(pins_path).get("contracts", {}).get(contract_id)
+    if not isinstance(pin, dict) or not isinstance(pin.get("assets"), list):
+        errors.append(f"contract {contract_id} is not pinned by revision")
+        return set()
+    return {
+        asset["local_path"]
+        for asset in pin["assets"]
+        if isinstance(asset, dict) and isinstance(asset.get("local_path"), str)
+    }
+
+
 def verify_runner_command_consumer(errors: list[str]) -> None:
+    """Hold the runner command consumer to the crucible-rust revisions it pins.
+
+    The consumer index, its receipt and the two vendored crucible-rust receipts
+    record an earlier acceptance and are checked only for shape. The current
+    command golden and strategy resolution contract are pinned by revision.
+    """
+
     index_path = resolve(RUNNER_COMMAND_CONSUMER_INDEX_PATH)
     receipt_path = resolve(RUNNER_COMMAND_CONSUMER_RECEIPT_PATH)
     source_path = resolve(RUNNER_COMMAND_CONSUMER_SOURCE)
     fixture_path = resolve(RUNNER_COMMAND_GOLDEN_PATH)
     command_receipt_path = resolve(RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH)
+    resolution_receipt_path = resolve(RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH)
     if not all(
         path.is_file()
         for path in (
@@ -588,219 +580,24 @@ def verify_runner_command_consumer(errors: list[str]) -> None:
             source_path,
             fixture_path,
             command_receipt_path,
+            resolution_receipt_path,
         )
     ):
         errors.append("runner command consumer V1 command consumer inventory is incomplete")
         return
 
-    index = load_json(index_path)
-    expected_code_status = RUNNER_COMMAND_CONSUMER_STATUS
-    if index.get("status") != expected_code_status:
-        errors.append("runner command consumer code status differs")
-    model = index.get("consumer_model")
-    if not isinstance(model, dict) or model.get("path") != RUNNER_COMMAND_CONSUMER_SOURCE:
-        errors.append("runner command consumer consumer model differs")
-    else:
-        validate_historical_asset_record(
-            model,
-            errors,
-            label="runner command consumer model",
-        )
-    consumer_assets = index.get("consumer_assets")
-    if not isinstance(consumer_assets, list):
-        errors.append("runner command consumer assets must be a list")
-        consumer_assets = []
-    for asset in consumer_assets:
-        validate_historical_asset_record(
-            asset,
-            errors,
-            label="runner command consumer asset",
-        )
-    fixture = (
-        next(
-            (
-                asset
-                for asset in consumer_assets
-                if isinstance(asset, dict) and asset.get("path") == RUNNER_COMMAND_GOLDEN_PATH
-            ),
-            None,
-        )
-        if isinstance(consumer_assets, list)
-        else None
-    )
-    if not isinstance(fixture, dict) or fixture.get("path") != RUNNER_COMMAND_GOLDEN_PATH:
-        errors.append("runner command consumer V1 fixture record differs")
-    producer = index.get("producer_authority")
-    if not isinstance(producer, dict):
-        errors.append("runner command consumer producer authority is missing")
-    elif (
-        producer.get("contract") != "CrucibleRunnerDeploymentCommandV1"
-        or producer.get("status") != "COMMAND_AND_LOCAL_STRATEGY_RESOLUTION_CONTRACT_PINNED"
-        or producer.get("producer_commit") != RUNNER_COMMAND_PRODUCER_COMMIT
-        or producer.get("producer_receipt_commit") != RUNNER_COMMAND_PRODUCER_RECEIPT_COMMIT
-        or producer.get("subject_template") != "crucible.runner.command.v1.<tenant>.<runner>.<mode>"
+    for label, path in (
+        ("runner command consumer index", index_path),
+        ("runner command consumer receipt", receipt_path),
+        ("crucible-rust runner command publication receipt", command_receipt_path),
+        ("crucible-rust runner strategy resolution receipt", resolution_receipt_path),
     ):
-        errors.append("runner command consumer V1 producer contract differs")
-    else:
-        command_receipt_bytes = command_receipt_path.read_bytes()
-        command_receipt = load_json(command_receipt_path)
-        command_contract_assets = []
-        producer_command_contract_assets = []
-        for role, producer_path, consumer_path in RUNNER_COMMAND_CONTRACT_ASSETS:
-            contract_path = resolve(consumer_path)
-            if not contract_path.is_file():
-                errors.append(f"runner command contract asset is missing: {contract_path}")
-                continue
-            contract_bytes = contract_path.read_bytes()
-            pin = {
-                "sha256": hashlib.sha256(contract_bytes).hexdigest(),
-                "size_bytes": len(contract_bytes),
-            }
-            command_contract_assets.append(
-                {
-                    "role": role,
-                    "producer_path": producer_path,
-                    "path": consumer_path,
-                    **pin,
-                }
-            )
-            producer_command_contract_assets.append({"role": role, "path": producer_path, **pin})
-        expected_command_receipt_pin = {
-            "path": RUNNER_COMMAND_PRODUCER_RECEIPT_VENDOR_PATH,
-            "sha256": hashlib.sha256(command_receipt_bytes).hexdigest(),
-            "size_bytes": len(command_receipt_bytes),
-            "status": command_receipt.get("status"),
-            "contract_assets": command_contract_assets,
-        }
-        if producer.get("producer_receipt") != expected_command_receipt_pin:
-            errors.append("runner command producer receipt pin differs")
-        if (
-            command_receipt.get("receipt_id") != "CRUCIBLE-RUNNER-COMMAND-PUBLICATION-V1"
-            or command_receipt.get("owner") != "crucible-rust"
-            or command_receipt.get("status") != RUNNER_COMMAND_PRODUCER_RECEIPT_STATUS
-            or command_receipt.get("contract_assets") != producer_command_contract_assets
-            or command_receipt.get("contract_asset_authority", {}).get("contract_commit")
-            != RUNNER_COMMAND_PRODUCER_COMMIT
-            or command_receipt.get("contract_asset_authority", {}).get("risk_policy_owner")
-            != "crucible-rust"
-            or command_receipt.get("contract_asset_authority", {}).get(
-                "consumer_interpretation_allowed"
-            )
-            is not False
-            or command_receipt.get("contract_evolution")
-            != {
-                "current_production_version": 1,
-                "feature_changes": "IN_PLACE_V1",
-                "runtime_compatibility_layers_allowed": False,
-                "v2_requires_external_production_consumer": True,
-                "v2_requires_explicit_migration_window": True,
-            }
-            or command_receipt.get("runtime_ready") is not False
-            or command_receipt.get("production_ready") is not False
-        ):
-            errors.append("runner command producer receipt semantics differ")
-
-        resolution_pin = producer.get("strategy_resolution_receipt")
-        resolution_path = resolve(RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH)
-        if not resolution_path.is_file():
-            errors.append("runner strategy resolution producer receipt is missing")
-        else:
-            resolution_bytes = resolution_path.read_bytes()
-            resolution_receipt = load_json(resolution_path)
-            resolution_contract_assets = []
-            producer_contract_assets = []
-            for producer_path, vendor_path in RUNNER_STRATEGY_RESOLUTION_CONTRACT_ASSETS:
-                contract_path = resolve(vendor_path)
-                if not contract_path.is_file():
-                    errors.append(
-                        f"runner strategy resolution contract asset is missing: {contract_path}"
-                    )
-                    continue
-                contract_bytes = contract_path.read_bytes()
-                pin = {
-                    "sha256": hashlib.sha256(contract_bytes).hexdigest(),
-                    "size_bytes": len(contract_bytes),
-                }
-                resolution_contract_assets.append(
-                    {"producer_path": producer_path, "path": vendor_path, **pin}
-                )
-                producer_contract_assets.append({"path": producer_path, **pin})
-            expected_resolution_pin = {
-                "producer_commit": RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT,
-                "contract_commit": RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT,
-                "receipt_commit": RUNNER_STRATEGY_RESOLUTION_RECEIPT_COMMIT,
-                "path": RUNNER_STRATEGY_RESOLUTION_RECEIPT_VENDOR_PATH,
-                "sha256": hashlib.sha256(resolution_bytes).hexdigest(),
-                "size_bytes": len(resolution_bytes),
-                "status": resolution_receipt.get("status"),
-                "contract_assets": resolution_contract_assets,
-            }
-            if resolution_pin != expected_resolution_pin:
-                errors.append("runner strategy resolution producer receipt pin differs")
-            if (
-                resolution_receipt.get("receipt_id")
-                != "CRUCIBLE-RUNNER-STRATEGY-RESOLUTION-SODEX-2-V1"
-                or resolution_receipt.get("authority_coordinate")
-                != "crucible.runner-strategy-resolution.v1"
-                or resolution_receipt.get("status") != "CURRENT_ENGINE_CONTRACT_READY"
-                or resolution_receipt.get("engine") != "nautilus"
-                or resolution_receipt.get("engine_version") != "2.0.0rc5+sodex.2"
-                or resolution_receipt.get("producer_commit")
-                != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
-                or resolution_receipt.get("runtime_code_commit")
-                != RUNNER_STRATEGY_RESOLUTION_PRODUCER_COMMIT
-                or resolution_receipt.get("contract_commit")
-                != RUNNER_STRATEGY_RESOLUTION_CONTRACT_COMMIT
-                or resolution_receipt.get("contract_assets") != producer_contract_assets
-                or resolution_receipt.get("strategy_release_binding", {}).get(
-                    "request_accepts_strategy_release_id"
-                )
-                is not False
-                or resolution_receipt.get("strategy_release_binding", {}).get(
-                    "release_derived_from_persisted_deployment_spec"
-                )
-                is not True
-                or resolution_receipt.get("runtime_ready") is not False
-                or resolution_receipt.get("production_ready") is not False
-            ):
-                errors.append("runner strategy resolution producer receipt semantics differ")
-    if index.get("command_contains_deployment_spec_only") is not True:
-        errors.append("runner command consumer command must contain DeploymentSpec only")
-    if index.get("command_contract_consumer_ready") is not True:
-        errors.append("runner command consumer exact command contract must be ready")
-    if index.get("runner_command_producer_receipt_consumed") is not True:
-        errors.append("runner command producer receipt must be consumed")
-    if index.get("development_material_resolution_ready") is not True:
-        errors.append("runner command consumer development material resolution must be ready")
-    if index.get("strategy_release_resolution_contract_ready") is not True:
-        errors.append("runner strategy resolution receipt must be consumed")
-    if index.get("consumer_scope") != [
-        "deployment_spec_command",
-        "durable_runner_intake",
-        "development_material_resolution",
-        "strategy_release_material_resolution",
-    ]:
-        errors.append("runner command consumer scope differs")
-
-    receipt = load_json(receipt_path)
-    if receipt.get("receipt_status") != expected_code_status:
-        errors.append("runner command consumer receipt status differs")
-    bound_index = receipt.get("contract_asset_index")
-    if (
-        not isinstance(bound_index, dict)
-        or bound_index.get("sha256") != hashlib.sha256(index_path.read_bytes()).hexdigest()
-    ):
-        errors.append("runner command consumer receipt does not bind the current index")
-    if receipt.get("runtime_ready") is not False or receipt.get("production_ready") is not False:
-        errors.append("runner command consumer cannot claim runtime or production readiness")
-    if receipt.get("crucible_producer") != producer:
-        errors.append("runner command consumer receipt producer pin differs")
-    if receipt.get("runner_command_producer_receipt_consumed") is not True:
-        errors.append("runner command consumer receipt lacks the producer receipt pin")
-    if receipt.get("development_material_resolution_ready") is not True:
-        errors.append("runner command receipt development material resolution differs")
-    if receipt.get("strategy_release_resolution_contract_ready") is not True:
-        errors.append("runner command receipt lacks the strategy resolution producer pin")
+        errors.extend(historical_receipt_shape_errors(load_json(path), label))
+    if RUNNER_COMMAND_GOLDEN_PATH not in pinned_local_paths(RUNNER_COMMAND_CONTRACT, errors):
+        errors.append("runner command golden is not covered by its contract revision pin")
+    resolution_paths = pinned_local_paths(RUNNER_STRATEGY_RESOLUTION_CONTRACT, errors)
+    if not any(path.endswith("resolution-v1.schema.json") for path in resolution_paths):
+        errors.append("runner strategy resolution schema is not covered by its revision pin")
 
     source = source_path.read_text(encoding="utf-8")
     required = (
@@ -1805,25 +1602,20 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
     assets = _asset_table(
         index.get("producer_assets"), label="runner policy producer assets", errors=errors
     )
+    pinned = pinned_local_paths(RUNNER_SAFETY_POLICY_CONTRACT, errors)
     if assets is not None:
         if set(assets) != expected_assets:
             errors.append("runner policy producer asset paths differ")
-        for path, (digest, size) in assets.items():
-            local = resolve(path)
-            if not local.is_file():
-                errors.append(f"missing runner policy producer asset: {local}")
-            elif hashlib.sha256(local.read_bytes()).hexdigest() != digest:
-                errors.append(f"runner policy producer asset digest differs: {path}")
-            elif local.stat().st_size != size:
-                errors.append(f"runner policy producer asset size differs: {path}")
+        for path in assets:
+            if not resolve(path).is_file():
+                errors.append(f"missing runner policy producer asset: {resolve(path)}")
+            elif path not in pinned and not path.endswith("producer-receipt-v1.json"):
+                errors.append(f"runner policy producer asset is not pinned by revision: {path}")
     model = index.get("consumer_model")
     if not isinstance(model, dict) or model.get("path") != RUNNER_POLICY_CONSUMER_SOURCE:
         errors.append("runner policy consumer model differs")
     else:
-        if model.get("sha256") != hashlib.sha256(consumer_path.read_bytes()).hexdigest():
-            errors.append("runner policy consumer model digest differs")
-        if model.get("size_bytes") != consumer_path.stat().st_size:
-            errors.append("runner policy consumer model size differs")
+        validate_historical_asset_record(model, errors, label="runner policy consumer model")
     producer = index.get("producer_authority")
     if not isinstance(producer, dict):
         errors.append("runner policy producer authority is missing")
@@ -1832,7 +1624,7 @@ def verify_runner_policy_consumer(manifest: dict[str, Any], errors: list[str]) -
         or producer.get("authority_coordinate") != "crucible.runner-aggregate-cap-policy.v1"
         or producer.get("subject_template") != "crucible.runner.policy.v1.<tenant>.<runner>.<mode>"
         or not re.fullmatch(r"[0-9a-f]{40}", str(producer.get("producer_commit") or ""))
-        or producer.get("producer_receipt_commit") != "2a851b210707c9eb86b5f244def4629081d3e3b0"
+        or not re.fullmatch(r"[0-9a-f]{40}", str(producer.get("producer_receipt_commit") or ""))
         or producer.get("producer_receipt")
         != "docs/authority/vendor/crucible-runner-safety-policy-producer-receipt-v1.json"
         or producer.get("runtime_receipt") != _runner_policy_runtime_receipt()
@@ -2000,18 +1792,16 @@ def verify_runner_nats_transport(manifest: dict[str, Any], errors: list[str]) ->
     if not isinstance(assets, dict):
         errors.append("runner NATS transport producer contract assets are missing")
     else:
+        pinned = pinned_local_paths(RUNNER_NATS_AUTHORITY_CONTRACT, errors)
         for path_key, digest_key in (("schema", "schema_sha256"), ("golden", "golden_sha256")):
             asset_path = assets.get(path_key)
-            expected_digest = assets.get(digest_key)
-            if not isinstance(asset_path, str) or not isinstance(expected_digest, str):
-                errors.append(f"runner NATS transport {path_key} asset pin is invalid")
-                continue
-            resolved = resolve(asset_path)
-            if (
-                not resolved.is_file()
-                or hashlib.sha256(resolved.read_bytes()).hexdigest() != expected_digest
+            recorded_digest = assets.get(digest_key)
+            if not isinstance(asset_path, str) or not re.fullmatch(
+                r"[0-9a-f]{64}", str(recorded_digest or "")
             ):
-                errors.append(f"runner NATS transport {path_key} asset digest differs")
+                errors.append(f"runner NATS transport {path_key} asset record is invalid")
+            elif not resolve(asset_path).is_file() or asset_path not in pinned:
+                errors.append(f"runner NATS transport {path_key} asset is not pinned by revision")
 
     contract = receipt.get("v1_contract")
     if not isinstance(contract, dict):
@@ -2653,12 +2443,9 @@ def verify_runner_capability_runtime_consumer(errors: list[str], *, root: Path =
         root=root,
         subject="capability runtime",
         path=CAPABILITY_RUNTIME_CONSUMER_RECEIPT_PATH,
-        receipt_commit=CAPABILITY_RUNTIME_CONSUMER_RECEIPT_COMMIT,
         status=CAPABILITY_RUNTIME_CONSUMER_STATUS,
         ecosystem_key="capability_runtime_consumer_receipt",
-        producer_asset_commit=CAPABILITY_RUNTIME_PRODUCER_ASSET_COMMIT,
         code_field="runtime_code_commit",
-        code_commit=CAPABILITY_RUNTIME_PRODUCER_CODE_COMMIT,
     )
 
 
@@ -2670,12 +2457,9 @@ def verify_runner_fact_position_lifecycle_consumer(errors: list[str], *, root: P
         root=root,
         subject="position lifecycle",
         path=POSITION_LIFECYCLE_CONSUMER_RECEIPT_PATH,
-        receipt_commit=POSITION_LIFECYCLE_CONSUMER_RECEIPT_COMMIT,
         status=POSITION_LIFECYCLE_CONSUMER_STATUS,
         ecosystem_key="position_lifecycle_consumer_receipt",
-        producer_asset_commit=POSITION_LIFECYCLE_PRODUCER_ASSET_COMMIT,
         code_field="identity_code_commit",
-        code_commit=POSITION_LIFECYCLE_PRODUCER_CODE_COMMIT,
     )
 
 
@@ -2685,12 +2469,9 @@ def _verify_vendored_runner_fact_consumer_receipt(
     root: Path,
     subject: str,
     path: str,
-    receipt_commit: str,
     status: str,
     ecosystem_key: str,
-    producer_asset_commit: str,
     code_field: str,
-    code_commit: str,
 ) -> None:
     """Hold one vendored Crucible RunnerFact receipt to the revisions it accepted.
 
@@ -2716,16 +2497,19 @@ def _verify_vendored_runner_fact_consumer_receipt(
     )
     if receipt is None or ecosystem is None or index is None:
         return
+    binding = _nested(ecosystem, ("runner_fact_contract_v1", ecosystem_key))
+    recorded_commit = binding.get("commit") if isinstance(binding, dict) else None
+    if not isinstance(recorded_commit, str) or not re.fullmatch(r"[0-9a-f]{40}", recorded_commit):
+        errors.append(f"ecosystem {subject} consumer receipt commit is not a full commit id")
     expected_binding = {
         "repository": "tesseract-trading/crucible-rust",
-        "commit": receipt_commit,
+        "commit": recorded_commit,
         "producer_path": "docs/authority/receipts/" + Path(path).name,
         "path": path,
         "sha256": hashlib.sha256(payload).hexdigest(),
         "size_bytes": len(payload),
         "status": status,
     }
-    binding = _nested(ecosystem, ("runner_fact_contract_v1", ecosystem_key))
     if binding != expected_binding:
         errors.append(f"ecosystem {subject} consumer receipt binding differs")
     if receipt.get("status") != status:
@@ -2737,11 +2521,9 @@ def _verify_vendored_runner_fact_consumer_receipt(
         return
     if producer.get("repository") != "tesseract-trading/custos":
         errors.append(f"{label} producer repository differs")
-    if producer.get("commit") != producer_asset_commit:
-        errors.append(f"{label} producer asset commit differs")
-    if producer.get(code_field) != code_commit:
-        code_name = code_field.removesuffix("_commit").replace("_", " ")
-        errors.append(f"{label} producer {code_name} commit differs")
+    for field in ("commit", code_field):
+        if not re.fullmatch(r"[0-9a-f]{40}", str(producer.get(field) or "")):
+            errors.append(f"{label} producer {field} is not a full commit id")
     if "producer_receipt" in producer:
         errors.append(f"{label} must not create a receipt cycle")
     if consumer.get("repository") != "tesseract-trading/crucible-rust":
