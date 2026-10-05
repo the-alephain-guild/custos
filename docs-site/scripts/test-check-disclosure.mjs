@@ -217,8 +217,13 @@ const CASES = [
   },
   {
     name: 'fact subject an integrator must subscribe to is exempt',
-    body: '```text\ncrucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}\n```\n',
+    body: '```text\ncrucible.runner.fact.v1.{tenant_id}.{runner_id}.{trading_mode}\n```\n',
     expect: (r) => r.code === 0,
+  },
+  {
+    name: 'superseded fact subject is no longer exempt',
+    body: '```text\ncrucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}\n```\n',
+    expect: (r) => r.code === 1,
   },
   {
     name: 'exemption does not cover ordinary prose about that system',

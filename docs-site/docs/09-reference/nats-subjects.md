@@ -26,7 +26,7 @@ ARX is the upstream product that issues signed intent and consumes signed observ
 RunnerFact batches:
 
 ```text
-crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
+crucible.runner.fact.v1.{tenant_id}.{runner_id}.{trading_mode}
 ```
 
 Strategy signals use a separate envelope and subject:

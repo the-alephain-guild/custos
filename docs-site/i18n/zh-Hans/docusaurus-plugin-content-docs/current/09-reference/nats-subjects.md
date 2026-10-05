@@ -26,7 +26,7 @@ ARX 是签发目标意图并消费签名观测的上游产品。身份注册是�
 RunnerFact 批次：
 
 ```text
-crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
+crucible.runner.fact.v1.{tenant_id}.{runner_id}.{trading_mode}
 ```
 
 策略信号使用独立 envelope 和 subject：

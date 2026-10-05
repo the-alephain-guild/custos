@@ -108,6 +108,13 @@ protocol — is published at
   refuses. It now reads `crucible.runner.fact.v1.{tenant_id}.{runner_id}.{trading_mode}`,
   the subject `RunnerFactAuthority.subject` builds. The schema, its sidecar and
   the RunnerFact asset index change; no wire field changes.
+- **The documentation site names the same RunnerFact subject.** The consumer
+  guide and the NATS subject reference, in English and Simplified Chinese,
+  still showed the superseded subject; they now show
+  `crucible.runner.fact.v1.{tenant_id}.{runner_id}.{trading_mode}` and say that
+  the deployment instance travels in the signed batch header. The disclosure
+  gate's exemption for the subject literal follows the new spelling, and its
+  self-test now refuses the superseded one.
 
 ## [0.7.0] - 2026-10-05
 
