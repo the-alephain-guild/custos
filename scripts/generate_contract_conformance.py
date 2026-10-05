@@ -33,8 +33,10 @@ from custos.core.runner_fact import (
     RUNNER_FACT_SCHEMA_VERSION,
     RunnerFactAuthority,
     RunnerFactIdentity,
+    equity_snapshot,
     execution_fill,
     position_closed,
+    position_snapshot,
     runner_fact_signing_header,
     runner_fact_signing_preimage,
 )
@@ -45,7 +47,7 @@ from custos.core.utc_time import render_utc_nanos
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER_FACT_VECTORS_PATH = Path("docs/authority/conformance/runner-fact-batch-v1.vectors.json")
 STRATEGY_VECTORS_PATH = Path("docs/authority/conformance/strategy-canonical-json-v1.vectors.json")
-RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 2)
+RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 3)
 STRATEGY_CANONICAL_CONTRACT = ("alephain.custos.strategy_canonical_json.v1", 1)
 CAPABILITY_MANIFEST_PATH = Path("docs/authority/runner-fact-capability-manifest-v1.json")
 
@@ -57,6 +59,7 @@ ERROR_CLASSES = (
     "digest_mismatch",
     "identity_conflict",
     "schema_violation",
+    "decimal_out_of_range",
 )
 # A test-only signing seed; it signs nothing outside these vectors.
 TEST_SIGNING_SEED = bytes(range(1, 33))
@@ -277,6 +280,12 @@ def reject(error_class: str, stage: str) -> dict[str, Any]:
     return {"outcome": "reject", "error_class": error_class, "stage": stage}
 
 
+# The schema states some bounds only approximately: maxLength counts characters
+# where the consumer counts UTF-8 bytes, and a pattern cannot compare a mantissa
+# with 2**96 - 1. A vector the consumer refuses but the schema admits says so.
+SCHEMA_COARSE = {"schema_outcome": "accept"}
+
+
 def _closed(position_id: str, realized_pnl: Any, event_id: str) -> dict[str, Any]:
     fact = position_closed(
         event_id=UUID(event_id),
@@ -317,6 +326,32 @@ NETTING_EVENTS = (
     },
 )
 STRING_ESCAPES = 'ord-\u0001\t"\\é😀'
+FILL_EVENT = "92000000-0000-4000-8000-000000000005"
+# venue_trade_id, bounded at 256 UTF-8 bytes; U+00E9 is two bytes, so 128 of them
+# sit exactly at the bound with half as many characters. Control characters sit
+# inside the value: the runner trims surrounding whitespace, and U+0085 is both a
+# control character and whitespace.
+IDENTIFIER_VECTORS: tuple[tuple[str, str, str, dict[str, Any] | None], ...] = (
+    ("identifier-at-byte-limit", "é" * 128, "accept", None),
+    ("identifier-over-byte-limit", "é" * 128 + "a", "reject", SCHEMA_COARSE),
+    ("identifier-over-character-limit", "a" * 257, "reject", None),
+    ("identifier-c0-control", "T-\u0001-1", "reject", None),
+    ("identifier-delete", "T-\u007f-1", "reject", None),
+    ("identifier-c1-control", "T-\u0085-1", "reject", None),
+)
+# Spellings the runner never writes, each tried in a decimal field of every
+# consumer decoding style: a plain field of an execution fill, a top-level
+# equity amount and a row inside a position snapshot.
+DECIMAL_SPELLINGS: tuple[tuple[str, Any, str], ...] = (
+    ("trailing-zero", "1.50", "non_canonical_decimal"),
+    ("exponent", "1e-8", "non_canonical_decimal"),
+    ("negative-zero", "-0", "non_canonical_decimal"),
+    ("leading-plus", "+1", "non_canonical_decimal"),
+    ("scale-29", "0." + "0" * 28 + "1", "decimal_out_of_range"),
+    # 1.5 is exact in binary, so the JSON number reads the same in every parser.
+    ("json-number", 1.5, "binary_float"),
+)
+LARGEST_DECIMAL = "79228162514264337593543950335"  # 2**96 - 1
 
 
 def _utc_vectors() -> list[dict[str, Any]]:
@@ -498,6 +533,11 @@ def runner_fact_vectors() -> list[dict[str, Any]]:
         }
     )
 
+    vectors.extend(_identifier_vectors())
+    vectors.extend(_decimal_spelling_vectors())
+    vectors.extend(_decimal_range_vectors())
+    vectors.extend(_omitted_nullable_vectors())
+
     largest = 9_223_372_036_854_775_807
     batch = signed_batch(
         "integer-i64-max",
@@ -518,6 +558,163 @@ def runner_fact_vectors() -> list[dict[str, Any]]:
     return vectors
 
 
+def _execution_fill(**overrides: Any) -> dict[str, Any]:
+    arguments: dict[str, Any] = {
+        "venue": "BINANCE",
+        "venue_trade_id": "T-1",
+        "venue_order_id": "V-1",
+        "instrument": "BTCUSDT-PERP",
+        "side": "BUY",
+        "quantity": "0.5",
+        "price": "60000",
+        "fee": "0.01",
+        "currency": "USDT",
+        "occurred_at": "2026-10-04T13:48:00Z",
+        "client_order_id": None,
+        "event_id": UUID(FILL_EVENT),
+    }
+    arguments.update(overrides)
+    return execution_fill(**arguments)
+
+
+def _equity(amount: Any) -> dict[str, Any]:
+    return equity_snapshot(
+        event_id=UUID("92000000-0000-4000-8000-000000000006"),
+        amount=amount,
+        currency="USDT",
+        observed_at="2026-10-04T13:52:00Z",
+    )
+
+
+def _position_snapshot() -> dict[str, Any]:
+    return position_snapshot(
+        event_id=UUID("92000000-0000-4000-8000-000000000007"),
+        positions=[
+            {"instrument": "BTCUSDT-PERP", "quantity": "1", "mark_price": "1", "currency": "USDT"}
+        ],
+        observed_at="2026-10-04T13:53:00Z",
+    )
+
+
+def _identifier_vectors() -> list[dict[str, Any]]:
+    vectors = []
+    for vector_id, value, outcome, extra in IDENTIFIER_VECTORS:
+        if outcome == "accept":
+            fact = _execution_fill(venue_trade_id=value)
+        else:
+            fact = _execution_fill()
+            fact["venue_trade_id"] = value
+        batch = signed_batch(vector_id, [fact], emitted_at="2026-10-04T13:48:02Z")
+        vector: dict[str, Any] = {
+            "id": vector_id,
+            "origin": "producer-canonical" if outcome == "accept" else "tolerance",
+            "covers": [
+                "execution_fill.venue_trade_id against the consumer's identifier bound: "
+                "256 UTF-8 bytes, no control character"
+            ],
+        }
+        if outcome == "accept":
+            vector["producer_input"] = {"venue_trade_id": value}
+        vector["raw"] = raw(batch)
+        vector["expected"] = (
+            accept(batch, typed_roundtrip_equal=True)
+            if outcome == "accept"
+            else {**reject("schema_violation", "decode"), **(extra or {})}
+        )
+        vectors.append(vector)
+    return vectors
+
+
+def _decimal_spelling_vectors() -> list[dict[str, Any]]:
+    vectors = []
+    fields: tuple[tuple[str, Callable[[], dict[str, Any]], Callable[[dict, Any], None]], ...] = (
+        ("execution-fill-price", _execution_fill, lambda fact, v: fact.update(price=v)),
+        ("equity-amount", lambda: _equity("100"), lambda fact, v: fact.update(amount=v)),
+        (
+            "position-mark-price",
+            _position_snapshot,
+            lambda fact, v: fact["positions"][0].update(mark_price=v),
+        ),
+    )
+    for field_id, build, place in fields:
+        for spelling_id, value, error_class in DECIMAL_SPELLINGS:
+            vector_id = f"{field_id}-{spelling_id}"
+            fact = build()
+            place(fact, value)
+            batch = signed_batch(vector_id, [fact], emitted_at="2026-10-04T13:54:00Z")
+            vectors.append(
+                {
+                    "id": vector_id,
+                    "origin": "tolerance",
+                    "covers": [f"a decimal spelling the runner never writes ({spelling_id})"],
+                    "raw": raw(batch),
+                    "expected": reject(error_class, "decode"),
+                }
+            )
+    return vectors
+
+
+def _decimal_range_vectors() -> list[dict[str, Any]]:
+    vectors = []
+    for vector_id, amount, covers in (
+        ("decimal-largest-mantissa", LARGEST_DECIMAL, "the largest mantissa, 2**96 - 1"),
+        ("decimal-scale-28", "0." + "0" * 27 + "1", "28 fractional digits"),
+    ):
+        batch = signed_batch(vector_id, [_equity(amount)], emitted_at="2026-10-04T13:55:00Z")
+        vectors.append(
+            {
+                "id": vector_id,
+                "origin": "producer-canonical",
+                "covers": [f"equity_snapshot.amount at the edge of the decimal type: {covers}"],
+                "producer_input": {"equity_amount": amount},
+                "raw": raw(batch),
+                "expected": accept(batch, typed_roundtrip_equal=True),
+            }
+        )
+    for vector_id, amount, covers, extra in (
+        ("decimal-mantissa-overflow", "79228162514264337593543950336", "2**96", SCHEMA_COARSE),
+        ("decimal-thirty-digits", "1" + "0" * 29, "30 digits", None),
+    ):
+        fact = _equity("1")
+        fact["amount"] = amount
+        batch = signed_batch(vector_id, [fact], emitted_at="2026-10-04T13:55:01Z")
+        vectors.append(
+            {
+                "id": vector_id,
+                "origin": "tolerance",
+                "covers": [f"equity_snapshot.amount past the decimal type: {covers}"],
+                "raw": raw(batch),
+                "expected": {**reject("decimal_out_of_range", "decode"), **(extra or {})},
+            }
+        )
+    return vectors
+
+
+def _omitted_nullable_vectors() -> list[dict[str, Any]]:
+    vectors = []
+    for vector_id, fact, member in (
+        ("required-nullable-omitted-client-order-id", _execution_fill(), "client_order_id"),
+        (
+            "required-nullable-omitted-causation-id",
+            runtime_log_fact(WHOLE_SECOND_NS),
+            "causation_id",
+        ),
+    ):
+        assert fact[member] is None
+        del fact[member]
+        batch = signed_batch(vector_id, [fact], emitted_at="2026-10-04T13:56:00Z")
+        vectors.append(
+            {
+                "id": vector_id,
+                "origin": "tolerance",
+                "covers": [f"{member} is required and may be null; leaving it out is refused"],
+                "raw": raw(batch),
+                "expected": reject("schema_violation", "decode"),
+            }
+        )
+    return vectors
+
+
 def runner_fact_vector_document() -> dict[str, Any]:
     signer = identity()
     contract_id, revision = RUNNER_FACT_CONTRACT
@@ -532,6 +729,11 @@ def runner_fact_vector_document() -> dict[str, Any]:
             "decode": "refused while parsing the envelope, before any state changes",
             "projection": "accepted into the inbox, then refused by a projector",
         },
+        "schema_outcome": (
+            "present only where the published schema admits a vector the consumer "
+            "refuses: maxLength counts characters where the consumer counts UTF-8 bytes, "
+            "and a pattern cannot compare a mantissa with 2**96 - 1"
+        ),
         "test_only": True,
         "test_signing_seed_hex": TEST_SIGNING_SEED.hex(),
         "test_public_key_hex": signer.public_key_bytes.hex(),

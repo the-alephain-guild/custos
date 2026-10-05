@@ -48,6 +48,22 @@ protocol — is published at
   keep. The pattern now excludes it, so the RunnerFact batch contract moves to
   revision 2, and the conformance vectors gain `decimal-negative-zero`, refused
   as a non-canonical decimal. A consumer syncs revision 2; no receipt is written.
+- **The RunnerFact batch schema states the consumer's acceptance domain
+  (contract revision 3).** Each identifier the consumer bounds now carries its
+  `maxLength` (64, 128, 256 or 512) and a pattern that refuses control
+  characters, and every decimal pattern stops at 28 fractional digits and 29
+  digits. JSON Schema counts characters and cannot compare a mantissa with
+  2**96 - 1, so the exact bounds stay in the fact builders; the two vectors the
+  schema admits but the consumer refuses say so with `"schema_outcome":
+  "accept"`. The terminal valuation's open-position instrument keeps its
+  non-empty rule. The vectors gain the identifier byte and character bounds and
+  three control characters, six decimal spellings the runner never writes
+  (trailing zero, exponent, signed zero, leading plus, 29 fractional digits and
+  a JSON number) in an execution fill price, an equity amount and a position
+  snapshot mark price, the edges of the decimal type, and the two required
+  nullable members (`client_order_id`, `causation_id`) left out; the error
+  classes gain `decimal_out_of_range`. Consumers sync revision 3; no receipt is
+  written.
 - **The runner refuses to sign identifiers and decimals its consumer refuses.**
   The consumer rejects an identifier (venue, venue trade, order and position
   ids, client order id, instrument, order type and category, balance asset, fee

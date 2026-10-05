@@ -51,7 +51,7 @@ AUTHORITY_COORDINATE = "custos.runner-fact.v1"
 # Raised only when the wire shape or the meaning of a field changes; a change to
 # descriptive text alone keeps the revision.
 CONTRACT_ID = "alephain.custos.runner_fact_batch.v1"
-CONTRACT_REVISION = 2
+CONTRACT_REVISION = 3
 TENANT_ID = "acme"
 MODE = "sandbox"
 RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
@@ -135,16 +135,37 @@ def _object_schema(
     }
 
 
+# The consumer holds a decimal in a 96-bit mantissa with at most 28 fractional
+# digits. A pattern can state the scale and a 29-digit ceiling; the exact
+# ceiling, 2**96 - 1, is enforced where the runner renders the value.
+_DECIMAL_SCALE_AND_DIGITS = r"(?![^.]*\.[0-9]{29})(?=-?(?:0\.0*)?(?:[0-9]\.?){1,29}$)"
+
+
+def _identifier(max_length: int) -> dict[str, Any]:
+    """An identifier the consumer bounds in UTF-8 bytes and keeps free of
+    control characters. JSON Schema counts characters, so maxLength is a first
+    check; the byte bound is exact where the runner builds the fact."""
+
+    return {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": max_length,
+        "pattern": r"^[^\u0000-\u001f\u007f-\u009f]+$",
+    }
+
+
 def _schema() -> dict[str, Any]:
     # Zero has no sign: the runner writes "0", and a consumer reading a decimal
     # type cannot keep the sign of "-0".
     decimal = {
         "type": "string",
-        "pattern": r"^(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$",
+        "pattern": "^"
+        + _DECIMAL_SCALE_AND_DIGITS
+        + r"(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$",
     }
     unsigned_decimal = {
         "type": "string",
-        "pattern": r"^(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$",
+        "pattern": "^" + _DECIMAL_SCALE_AND_DIGITS + r"(?:0|[1-9][0-9]*)(?:\.[0-9]*[1-9])?$",
     }
     currency = {"enum": ["USD", "USDT", "USDC", "BTC", "ETH", "VUSDC", "VBTC", "VETH"]}
     timestamp = {
@@ -175,7 +196,9 @@ def _schema() -> dict[str, Any]:
     optional_non_empty = {"oneOf": [non_empty, {"type": "null"}]}
     positive_decimal = {
         "type": "string",
-        "pattern": r"^(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])$",
+        "pattern": "^"
+        + _DECIMAL_SCALE_AND_DIGITS
+        + r"(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])$",
     }
     balance = {
         "type": "object",
@@ -184,7 +207,7 @@ def _schema() -> dict[str, Any]:
         "properties": {
             "wallet_type": wallet_type,
             "sub_account": sub_account,
-            "asset": non_empty,
+            "asset": _identifier(64),
             "currency": currency,
             "total": unsigned_decimal,
             "available": unsigned_decimal,
@@ -202,8 +225,8 @@ def _schema() -> dict[str, Any]:
             "currency",
         ],
         "properties": {
-            "venue_position_id": non_empty,
-            "instrument": non_empty,
+            "venue_position_id": _identifier(256),
+            "instrument": _identifier(128),
             "side": side,
             "quantity": unsigned_decimal,
             "avg_entry_price": {"oneOf": [unsigned_decimal, {"type": "null"}]},
@@ -225,9 +248,9 @@ def _schema() -> dict[str, Any]:
             "occurred_at",
         ],
         "properties": {
-            "venue_trade_id": non_empty,
-            "venue_order_id": non_empty,
-            "instrument": non_empty,
+            "venue_trade_id": _identifier(256),
+            "venue_order_id": _identifier(256),
+            "instrument": _identifier(128),
             "side": side,
             "quantity": unsigned_decimal,
             "price": unsigned_decimal,
@@ -241,8 +264,8 @@ def _schema() -> dict[str, Any]:
         "additionalProperties": False,
         "required": ["fee_id", "kind", "currency", "amount", "occurred_at"],
         "properties": {
-            "fee_id": non_empty,
-            "kind": non_empty,
+            "fee_id": _identifier(256),
+            "kind": _identifier(128),
             "currency": currency,
             "amount": unsigned_decimal,
             "occurred_at": timestamp,
@@ -314,14 +337,7 @@ def _schema() -> dict[str, Any]:
             "destination",
         ],
         "properties": {
-            # The byte limit is exact in the assembler; JSON Schema counts
-            # characters, so this bound is only a first check.
-            "cash_flow_id": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 256,
-                "pattern": r"^[^\u0000-\u001f\u007f-\u009f]+$",
-            },
+            "cash_flow_id": _identifier(256),
             "kind": {
                 "enum": [
                     "internal_transfer",
@@ -366,7 +382,7 @@ def _schema() -> dict[str, Any]:
         "additionalProperties": False,
         "required": ["instrument", "quantity", "mark_price", "currency"],
         "properties": {
-            "instrument": non_empty,
+            "instrument": _identifier(128),
             "quantity": decimal,
             "mark_price": unsigned_decimal,
             "currency": currency,
@@ -376,17 +392,17 @@ def _schema() -> dict[str, Any]:
         "type": "object",
         "additionalProperties": False,
         "required": ["venue", "snapshot_id"],
-        "properties": {"venue": non_empty, "snapshot_id": uuid},
+        "properties": {"venue": _identifier(128), "snapshot_id": uuid},
     }
     facts = {
         "execution_fill": _object_schema(
             "execution_fill",
             {
-                "venue": non_empty,
-                "venue_trade_id": non_empty,
-                "client_order_id": {"oneOf": [non_empty, {"type": "null"}]},
-                "venue_order_id": non_empty,
-                "instrument": non_empty,
+                "venue": _identifier(128),
+                "venue_trade_id": _identifier(256),
+                "client_order_id": {"oneOf": [_identifier(256), {"type": "null"}]},
+                "venue_order_id": _identifier(256),
+                "instrument": _identifier(128),
                 "side": side,
                 "quantity": unsigned_decimal,
                 "price": unsigned_decimal,
@@ -399,8 +415,8 @@ def _schema() -> dict[str, Any]:
             "fill",
             {
                 "fill_id": uuid,
-                "order_type": non_empty,
-                "category": non_empty,
+                "order_type": _identifier(64),
+                "category": _identifier(64),
                 "price": unsigned_decimal,
                 "avg_fill_price": unsigned_decimal,
                 "currency": currency,
@@ -457,10 +473,10 @@ def _schema() -> dict[str, Any]:
             "venue_ledger_snapshot_manifest",
             {
                 "snapshot_id": uuid,
-                "venue": non_empty,
+                "venue": _identifier(128),
                 "sub_account": sub_account,
                 "source": {"enum": ["venue_api", "drop_copy"]},
-                "watermark": non_empty,
+                "watermark": _identifier(512),
                 "coverage_from": timestamp,
                 "observed_through": timestamp,
                 "completeness": completeness,
@@ -490,7 +506,7 @@ def _schema() -> dict[str, Any]:
         "reconciliation_period_closed": _object_schema(
             "reconciliation_period_closed",
             {
-                "period": non_empty,
+                "period": _identifier(128),
                 "period_started_at": timestamp,
                 "closed_at": timestamp,
                 "venue_snapshots": {
@@ -555,7 +571,7 @@ def _schema() -> dict[str, Any]:
         **{f"fact_{name}": value for name, value in facts.items()},
     }
     valuation_position = {
-        "instrument": non_empty,
+        "instrument": _identifier(128),
         "currency": currency,
         "internal_quantity": decimal,
         "internal_avg_entry_price": unsigned_decimal,
@@ -569,9 +585,9 @@ def _schema() -> dict[str, Any]:
         {
             "checkpoint_id": uuid,
             "venue_snapshot_id": uuid,
-            "venue": non_empty,
+            "venue": _identifier(128),
             "currency": currency,
-            "venue_watermark": non_empty,
+            "venue_watermark": _identifier(512),
             "collection_started_at": timestamp,
             "observed_at": timestamp,
             "internal_equity": decimal,
@@ -616,7 +632,12 @@ def _schema() -> dict[str, Any]:
         settlement_period=settlement_period,
         sub_account=sub_account,
         wallet_type=wallet_type,
-        position_row=position_row,
+        # The terminal parser takes any non-empty instrument; only the snapshot
+        # row carries the identifier bound of the consumer's fact check.
+        position_row={
+            **position_row,
+            "properties": {**position_row["properties"], "instrument": non_empty},
+        },
     )
     facts["execution_fill"]["properties"]["fee_currency"] = currency
     facts["execution_fill"]["properties"]["fee"] = decimal

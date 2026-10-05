@@ -32,6 +32,9 @@ from custos.core import runtime_log_fact as runtime_log_module
 from custos.core.runner_deployment_lifecycle_fact import RunnerDeploymentLifecycleFact
 from custos.core.runner_fact import (
     RunnerFactAuthority,
+    RunnerFactContractError,
+    equity_snapshot,
+    execution_fill,
     position_closed,
     runner_fact_signing_preimage,
 )
@@ -122,7 +125,12 @@ def test_every_vector_meets_the_published_schema_as_expected(vector: dict[str, A
         validator.validate(json.loads(prior))
     batch = _batch(vector)
     expected = vector["expected"]
-    if expected["outcome"] == "reject" and expected["stage"] == "decode":
+    if expected.get("schema_outcome") == "accept":
+        # A bound the schema states only approximately; the producer test below
+        # shows the runner refuses the value before signing.
+        assert expected["outcome"] == "reject"
+        validator.validate(batch)
+    elif expected["outcome"] == "reject" and expected["stage"] == "decode":
         assert list(validator.iter_errors(batch)), "schema accepts a vector refused at decode"
     else:
         validator.validate(batch)
@@ -255,6 +263,77 @@ def test_a_required_nullable_member_enters_the_digest_as_null() -> None:
     assert "client_order_id" in fact and fact["client_order_id"] is None
     omitted = {key: value for key, value in fact.items() if key != "client_order_id"}
     assert _sha256(_canonical([fact])) != _sha256(_canonical([omitted]))
+
+
+IDENTIFIER_VECTORS = _vectors(lambda v: v["id"].startswith("identifier-"))
+
+
+def _rebuild_fill(fact: dict[str, Any], venue_trade_id: str) -> dict[str, Any]:
+    return execution_fill(
+        venue=fact["venue"],
+        venue_trade_id=venue_trade_id,
+        venue_order_id=fact["venue_order_id"],
+        instrument=fact["instrument"],
+        side=fact["side"],
+        quantity=fact["quantity"],
+        price=fact["price"],
+        fee=fact["fee"],
+        currency=fact["currency"],
+        occurred_at=fact["occurred_at"],
+        client_order_id=fact["client_order_id"],
+        event_id=UUID(fact["event_id"]),
+    )
+
+
+@pytest.mark.parametrize("vector", IDENTIFIER_VECTORS, ids=_ids(IDENTIFIER_VECTORS))
+def test_the_runner_signs_exactly_the_identifiers_the_consumer_accepts(
+    vector: dict[str, Any],
+) -> None:
+    """The same identifier inputs the consumer decodes, put through the runner's
+    fact builder: what the consumer accepts is signed byte for byte, what it
+    refuses is refused before signing."""
+
+    signed = _batch(vector)["facts"][0]
+    value = signed["venue_trade_id"]
+    if vector["expected"]["outcome"] == "accept":
+        assert vector["producer_input"]["venue_trade_id"] == value
+        rendered = _rebuild_fill(signed, value)
+        assert rendered == {key: item for key, item in signed.items() if key != "seq"}
+    else:
+        with pytest.raises(RunnerFactContractError, match="venue_trade_id"):
+            _rebuild_fill(signed, value)
+
+
+RANGE_VECTOR_IDS = {
+    "decimal-largest-mantissa",
+    "decimal-scale-28",
+    "decimal-mantissa-overflow",
+    "decimal-thirty-digits",
+}
+RANGE_VECTORS = _vectors(lambda v: v["id"] in RANGE_VECTOR_IDS)
+
+
+@pytest.mark.parametrize("vector", RANGE_VECTORS, ids=_ids(RANGE_VECTORS))
+def test_the_runner_signs_exactly_the_decimals_the_consumer_can_hold(
+    vector: dict[str, Any],
+) -> None:
+    signed = _batch(vector)["facts"][0]
+    assert signed["kind"] == "equity_snapshot"
+
+    def rebuild() -> dict[str, Any]:
+        return equity_snapshot(
+            event_id=UUID(signed["event_id"]),
+            amount=signed["amount"],
+            currency=signed["currency"],
+            observed_at=signed["observed_at"],
+        )
+
+    if vector["expected"]["outcome"] == "accept":
+        assert vector["producer_input"]["equity_amount"] == signed["amount"]
+        assert rebuild()["amount"] == signed["amount"]
+    else:
+        with pytest.raises(RunnerFactContractError, match="representable decimal range"):
+            rebuild()
 
 
 STRATEGY_DOCUMENT = _json(STRATEGY_VECTORS)

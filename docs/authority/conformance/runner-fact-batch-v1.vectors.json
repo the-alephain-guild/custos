@@ -1,7 +1,7 @@
 {
   "vector_set_version": 1,
   "contract_id": "alephain.custos.runner_fact_batch.v1",
-  "contract_revision": 2,
+  "contract_revision": 3,
   "canonicalization": "utf8-json-sort-keys-compact-v1",
   "digest": "sha256-hex",
   "error_classes": [
@@ -11,12 +11,14 @@
     "missing_timezone",
     "digest_mismatch",
     "identity_conflict",
-    "schema_violation"
+    "schema_violation",
+    "decimal_out_of_range"
   ],
   "stages": {
     "decode": "refused while parsing the envelope, before any state changes",
     "projection": "accepted into the inbox, then refused by a projector"
   },
+  "schema_outcome": "present only where the published schema admits a vector the consumer refuses: maxLength counts characters where the consumer counts UTF-8 bytes, and a pattern cannot compare a mantissa with 2**96 - 1",
   "test_only": true,
   "test_signing_seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
   "test_public_key_hex": "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
@@ -294,6 +296,413 @@
         "envelope_digest": "5419f423a4bb6fd215217026eb81e70bd899a45e19bd5f9bbc3c5c0c6a9fcd2b",
         "signing_preimage_hex": "4352554349424c452d52554e4e45522d464143542d42415443482d5631007b2262617463685f6964223a2233326338626539352d333135662d346535352d613963652d643766626563646436633364222c226361706162696c6974795f6d616e69666573745f646967657374223a2265656137663266356430353261386236646138666565393866336638323536626639336363323333643138346364643032393861373965356466396636326333222c226361706162696c6974795f76657273696f6e223a312c226361706162696c6974795f76657273696f6e5f6964223a2235303030303030302d303030302d343030302d383030302d303030303030303030303035222c226465706c6f796d656e745f696e7374616e63655f6964223a2232303030303030302d303030302d343030302d383030302d303030303030303030303032222c226465706c6f796d656e745f737065635f646967657374223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226465706c6f796d656e745f737065635f6964223a2233303030303030302d303030302d343030302d383030302d303030303030303030303033222c22656d69747465645f6174223a22323032362d31302d30345431333a35303a30315a222c2267656e65726174696f6e223a372c226b65795f6964223a22656432353531392d3635623630363733643665643838346266303163326332323264383261646130222c227061796c6f61645f646967657374223a2232363833313933633536613836643331626664373364613839303933376366313865303663626539653730646338323433623666623337313362383330616165222c2272756e6e65725f6964223a2231303030303030302d303030302d343030302d383030302d303030303030303030303031222c22736368656d615f76657273696f6e223a312c22736f757263655f7365715f656e64223a312c22736f757263655f7365715f7374617274223a312c2273747261746567795f6964223a2234303030303030302d303030302d343030302d383030302d303030303030303030303034222c2274656e616e745f6964223a2261636d65222c2274726164696e675f6d6f6465223a2273616e64626f78227d",
         "typed_roundtrip_equal": true
+      }
+    },
+    {
+      "id": "identifier-at-byte-limit",
+      "origin": "producer-canonical",
+      "covers": [
+        "execution_fill.venue_trade_id against the consumer's identifier bound: 256 UTF-8 bytes, no control character"
+      ],
+      "producer_input": {
+        "venue_trade_id": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+      },
+      "raw": "{\"batch_id\":\"3c16edc7-6f8d-4315-b005-b0e0725688d0\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:48:02Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"60000\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"c74d81d46904243c4cd13d2a36b7b502947274a1ec7cc84db0b576b7bf9addec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"T5hQJAYDJxhITWJYin7HP5piQXnXkpmXkJ46RBi1-nYD0UWidLFv3yNgar62Yx2ScGn1zjqUfqG12VIJh_QaDQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "accept",
+        "payload_digest": "c74d81d46904243c4cd13d2a36b7b502947274a1ec7cc84db0b576b7bf9addec",
+        "envelope_digest": "644ac1041b5ac2cb72491d6f1965a47f13d565b91439a06ee61b561784c19b74",
+        "signing_preimage_hex": "4352554349424c452d52554e4e45522d464143542d42415443482d5631007b2262617463685f6964223a2233633136656463372d366638642d343331352d623030352d623065303732353638386430222c226361706162696c6974795f6d616e69666573745f646967657374223a2265656137663266356430353261386236646138666565393866336638323536626639336363323333643138346364643032393861373965356466396636326333222c226361706162696c6974795f76657273696f6e223a312c226361706162696c6974795f76657273696f6e5f6964223a2235303030303030302d303030302d343030302d383030302d303030303030303030303035222c226465706c6f796d656e745f696e7374616e63655f6964223a2232303030303030302d303030302d343030302d383030302d303030303030303030303032222c226465706c6f796d656e745f737065635f646967657374223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226465706c6f796d656e745f737065635f6964223a2233303030303030302d303030302d343030302d383030302d303030303030303030303033222c22656d69747465645f6174223a22323032362d31302d30345431333a34383a30325a222c2267656e65726174696f6e223a372c226b65795f6964223a22656432353531392d3635623630363733643665643838346266303163326332323264383261646130222c227061796c6f61645f646967657374223a2263373464383164343639303432343363346364313364326133366237623530323934373237346131656337636338346462306235373662376266396164646563222c2272756e6e65725f6964223a2231303030303030302d303030302d343030302d383030302d303030303030303030303031222c22736368656d615f76657273696f6e223a312c22736f757263655f7365715f656e64223a312c22736f757263655f7365715f7374617274223a312c2273747261746567795f6964223a2234303030303030302d303030302d343030302d383030302d303030303030303030303034222c2274656e616e745f6964223a2261636d65222c2274726164696e675f6d6f6465223a2273616e64626f78227d",
+        "typed_roundtrip_equal": true
+      }
+    },
+    {
+      "id": "identifier-over-byte-limit",
+      "origin": "tolerance",
+      "covers": [
+        "execution_fill.venue_trade_id against the consumer's identifier bound: 256 UTF-8 bytes, no control character"
+      ],
+      "raw": "{\"batch_id\":\"610fd566-256e-4eb4-b3bc-bdf0588a07db\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:48:02Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"60000\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééa\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"aa6d9771229ae07952f9536e37f543d5aac274095eac4e4f11e021e1a60331ae\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"kaqqtQ9ainieoieMEMdOqda2PSYy8n2r6biiEIYq8TODn0SErBfnGMhHh4QG_hjqotgerYVx-SfAvNs4fAwzDQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode",
+        "schema_outcome": "accept"
+      }
+    },
+    {
+      "id": "identifier-over-character-limit",
+      "origin": "tolerance",
+      "covers": [
+        "execution_fill.venue_trade_id against the consumer's identifier bound: 256 UTF-8 bytes, no control character"
+      ],
+      "raw": "{\"batch_id\":\"c940c6a7-1820-4bba-9742-a43a503f7202\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:48:02Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"60000\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"83171c90d94c46938af54966919aa6cfe8a9a07226a39934c5a2c3fc87f6308e\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"nlIJ9Gyc_ptb1Dk-vKWzRCiN-veY_CTp2Y4KTKsytOKOfHfFkB8kylrGNsW_LC_Fuaxyicwzd5UYreIvjV1gCA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "identifier-c0-control",
+      "origin": "tolerance",
+      "covers": [
+        "execution_fill.venue_trade_id against the consumer's identifier bound: 256 UTF-8 bytes, no control character"
+      ],
+      "raw": "{\"batch_id\":\"86bafa7e-19b6-4837-af05-2eedfac98059\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:48:02Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"60000\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-\\u0001-1\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"dc55e1283a35624892a40a5e255deb8f8b233921a403ab68c18b13b2e83c8c8d\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"sN6FW7DlBqB3-dWvJTVG_Da0GL9jMBce8WGCbqhlE7Sw-89DN2vOBnHXMaTHiDRA9C1wnhJJZv0TPnq-OaM3DQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "identifier-delete",
+      "origin": "tolerance",
+      "covers": [
+        "execution_fill.venue_trade_id against the consumer's identifier bound: 256 UTF-8 bytes, no control character"
+      ],
+      "raw": "{\"batch_id\":\"9f2cdf73-50e7-41d5-85ee-c1c3154570de\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:48:02Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"60000\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T--1\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"091511ecebb8fa9e83ad2698603074b3e62582c64ba194ece6678200c816b4ee\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"xSJAyZi8sxp2QGDiNSQXKhMF5xf487s8y341WhthqZMIDvrTQSbzxtATMPS6WkSnH0MHJf1cZNsXkzVvzEY-CQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "identifier-c1-control",
+      "origin": "tolerance",
+      "covers": [
+        "execution_fill.venue_trade_id against the consumer's identifier bound: 256 UTF-8 bytes, no control character"
+      ],
+      "raw": "{\"batch_id\":\"449e4972-7f9d-468d-95dd-ead3a505f448\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:48:02Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"60000\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T--1\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"bf6126a39f35c7e23c9d401b77c33f05a1eeaa18175acf191d8e40ce84240ae1\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"6XocgYsmWbJODfneBRrpGihBQodFRI_l4bSyC8Pc1Nh2yqKd3qMMTjyiEeTzMGyttSEHg-YRwFhwOKYqsC7MDA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "execution-fill-price-trailing-zero",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (trailing-zero)"
+      ],
+      "raw": "{\"batch_id\":\"c3110f12-5012-446b-93c6-8c0e6140246b\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"1.50\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"7e6d8636dd66d7eaaac5ccbda7f53db8eeca35de72852b71bad913fd104c35dd\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"-pazEobMj0UeeL142lkRK4W_tOpV9TBdyk1Usq4iaCZtZBLW_ocpIW-aCIf73_QM0o0gs32X8F_kxBhn3KmeBQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "execution-fill-price-exponent",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (exponent)"
+      ],
+      "raw": "{\"batch_id\":\"c6cccb20-004a-435f-b9f6-489af9769995\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"1e-8\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"301b8b6e6fcf086c479bf1f4fd5277e25c01fc369c44042a3d2ac5327a83867e\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"5QGJDR4CxB7DA4Y0jXoozGJ3nhIZQy8kNi6v20M-SmcU2Wq4sYNr0QJvlqsIRrN8tYGpyHhpyOoa_lKtHAnfAw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "execution-fill-price-negative-zero",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (negative-zero)"
+      ],
+      "raw": "{\"batch_id\":\"eac09917-1943-4885-a059-3a72dc95e529\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"-0\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"ca1289e95ffdd7a6aeb377e284a2e1d7a13f1bd849b33ab3c145c61b597d2762\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"nqyqwuzxVMSAxqzZRjQj6SnMGknel0GbnN1bPFsydttLNIYk0k0qcKYuzfpNEDumfVUptrEpTIKCKh_x14gLCA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "execution-fill-price-leading-plus",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (leading-plus)"
+      ],
+      "raw": "{\"batch_id\":\"a1771e7d-3b08-4101-995a-e578b147da68\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"+1\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"0d45e1ae55d1b9f52d2154b0f6091106296e9c04e65545c807b26037536a2b39\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"uDCBFD4SkhoC3KiyDHY3SI_vaQzBuy6G7FgjMpuXXP9x_6qyJPZHdS7nxdfKiuYyrUpELDqjf-wuN5a5WMgDAA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "execution-fill-price-scale-29",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (scale-29)"
+      ],
+      "raw": "{\"batch_id\":\"d85952c0-b765-4a92-811b-1badf910e7fd\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"0.00000000000000000000000000001\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"0f3974ff866eb174ba57a1b4ae292e6b16851f48d76e0adb35e49e7d6d33ae8a\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"lf7gIQdsemxo6r38dljBfCHgGvik_YPI1mvw7sxIH1MRZTORDJ8HUCZGx5Y5zczqn1PDSxKtzhQJbdRBT8GoBw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "decimal_out_of_range",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "execution-fill-price-json-number",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (json-number)"
+      ],
+      "raw": "{\"batch_id\":\"1840df5a-e688-4203-99dd-837f081b4512\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"client_order_id\":null,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":1.5,\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"af3f18938675b571509c2b4dbc7de36d1bb2200f2f2030779eff81d869736a22\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"du6pg4tNbwxkTtsKr7pmEtMLqG1OKQLe2GcCmQZHpOtKu8zn3b2gnTEd-6Do1tLC60sgiQmbp5UbcSiwGEc2AA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "binary_float",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "equity-amount-trailing-zero",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (trailing-zero)"
+      ],
+      "raw": "{\"batch_id\":\"2187f2de-e08c-4672-af5d-a7a0ba6956a0\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"amount\":\"1.50\",\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000006\",\"kind\":\"equity_snapshot\",\"observed_at\":\"2026-10-04T13:52:00Z\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"ea8f42b08c336922b4bd8c9697b7a78c7f9cd71644509e492f943bade0cfbe88\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"QvH7aew3Xlc23WpZz3xPyXzIpxLlweSA3X9veFQTMrm9KEAy_6fqfKVZe2pp9W_CxGX1AWCDO_F4QFQirs_GAg\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "equity-amount-exponent",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (exponent)"
+      ],
+      "raw": "{\"batch_id\":\"857e6ba5-0fb2-46b6-ad39-50e08d230949\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"amount\":\"1e-8\",\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000006\",\"kind\":\"equity_snapshot\",\"observed_at\":\"2026-10-04T13:52:00Z\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"1708718630c7e6dd01aeb75aeaa6a9d940aeac46525159c28d2e5d20311da5da\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"JOtgYENe-xecIHUKzpTKijRZU9bvzTYtNZvpDXXVpGr4KX-jRDC4OJIROEge6JGOP5xSr1MiJXiFrVhVTdoOAA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "equity-amount-negative-zero",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (negative-zero)"
+      ],
+      "raw": "{\"batch_id\":\"f7383cca-a44d-425c-8765-c405ef588551\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"amount\":\"-0\",\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000006\",\"kind\":\"equity_snapshot\",\"observed_at\":\"2026-10-04T13:52:00Z\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"eeae7c0e827671f9eca01f90fb3fd394d2dbed4cb1ec622756ccdda9794175ff\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"iOJdogcNBqd0QSF7vp38cDoSZu_R2qDUiHCqxyyhsrbq1MnERD9lP58wxTi7YLpqMKf9zhncABWMAaiWlC_ECg\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "equity-amount-leading-plus",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (leading-plus)"
+      ],
+      "raw": "{\"batch_id\":\"aeaca66b-fec6-4ab2-ba7b-c8a691184ab5\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"amount\":\"+1\",\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000006\",\"kind\":\"equity_snapshot\",\"observed_at\":\"2026-10-04T13:52:00Z\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"9fd97e7edef279591984ac49f00f3457d0b986396d8a25c47b42f7bd53462c49\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"TO7MjtU1gRazLAbOfDwc2cYzSXjjcXZVN_MQP_mlMxcOmkpi98-LIZ6TLVyPvaNCRlHzhwfvnHCxuvq45YeVDA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "equity-amount-scale-29",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (scale-29)"
+      ],
+      "raw": "{\"batch_id\":\"59ac7a08-7161-46ed-984f-4fa5193421e3\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"amount\":\"0.00000000000000000000000000001\",\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000006\",\"kind\":\"equity_snapshot\",\"observed_at\":\"2026-10-04T13:52:00Z\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"1af7acaa385808ae68afaa4729d5481d764cf6cfdb68b529c10a3fb1f8221786\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"uAnjDs057e-XhptQcCU2sMa3xnFlExXTY7447lkphgBQRKx0EvF9kENSNZ7T_GhqImfBrHXKpqhssJmLa8sXDg\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "decimal_out_of_range",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "equity-amount-json-number",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (json-number)"
+      ],
+      "raw": "{\"batch_id\":\"a83bc107-c54c-40fa-a989-809fece82dce\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"amount\":1.5,\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000006\",\"kind\":\"equity_snapshot\",\"observed_at\":\"2026-10-04T13:52:00Z\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"be1c345e9a6d5b46f5c89d9057f0293b326ba0a866a76ac47b39ad2d60e2ef3f\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"evFQIyhJk2ArnzPWUGcVetVLmkZPJZ0qW6mZ9EexQfnKKM1ge-LEw_9Eoe6xO1wc2KfGR7CSGxkWn_s4dbZYAg\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "binary_float",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "position-mark-price-trailing-zero",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (trailing-zero)"
+      ],
+      "raw": "{\"batch_id\":\"81d93f96-3773-48bb-b2aa-2f3ae21a4016\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"event_id\":\"92000000-0000-4000-8000-000000000007\",\"kind\":\"position_snapshot\",\"observed_at\":\"2026-10-04T13:53:00Z\",\"positions\":[{\"currency\":\"USDT\",\"instrument\":\"BTCUSDT-PERP\",\"mark_price\":\"1.50\",\"quantity\":\"1\"}],\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"3295dc2ea5bd3574daeea063e7b7c0f8d312da829404ab94fd1942838549b5ee\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"GO4BTlrNH53_7HeXWBN1gTH6jqq7ol4jS_IHHTnq0Ha5eDqbXaO6D3kHlcZBFNsnSHq_axWzVoLjSMthVXaGCw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "position-mark-price-exponent",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (exponent)"
+      ],
+      "raw": "{\"batch_id\":\"9b99975c-572d-43e5-b23c-7ff086f81ab4\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"event_id\":\"92000000-0000-4000-8000-000000000007\",\"kind\":\"position_snapshot\",\"observed_at\":\"2026-10-04T13:53:00Z\",\"positions\":[{\"currency\":\"USDT\",\"instrument\":\"BTCUSDT-PERP\",\"mark_price\":\"1e-8\",\"quantity\":\"1\"}],\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"82121fdaee03c75f63d72c52857c84f8cf6fc9b2bcc035291d2f62477f423df3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"zVzUFiLB7tAXkpbHrnV6_XHP0CZySrI_Tany34tZEV692eZvw_lCmeifWDaY-dXRkTdmW7RVlcVRleKi_q-8BQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "position-mark-price-negative-zero",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (negative-zero)"
+      ],
+      "raw": "{\"batch_id\":\"2f7fc513-4e1c-473a-be62-24de1754bfb0\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"event_id\":\"92000000-0000-4000-8000-000000000007\",\"kind\":\"position_snapshot\",\"observed_at\":\"2026-10-04T13:53:00Z\",\"positions\":[{\"currency\":\"USDT\",\"instrument\":\"BTCUSDT-PERP\",\"mark_price\":\"-0\",\"quantity\":\"1\"}],\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"58781162c401f07284b0c02dd9818eae098605872ba3db4ad77c8ee2a912b549\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"ke0inq8J0tjtJmX6j120n19bu60bbPrUzMqMh9ikSYRRL1gXOt6gxSjpRv-iUCp2f7k2kUadpZvwByaC6k_dCA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "position-mark-price-leading-plus",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (leading-plus)"
+      ],
+      "raw": "{\"batch_id\":\"6c8a3fd8-721e-4c6d-93af-e80d91897362\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"event_id\":\"92000000-0000-4000-8000-000000000007\",\"kind\":\"position_snapshot\",\"observed_at\":\"2026-10-04T13:53:00Z\",\"positions\":[{\"currency\":\"USDT\",\"instrument\":\"BTCUSDT-PERP\",\"mark_price\":\"+1\",\"quantity\":\"1\"}],\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"860a56ddb0c72b12d814d41618bf88b72e7fad6c56284876c040c28833505a70\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"ec6bTu1s_xLVQ2i12cTxmv8PticLAtfk3TxaTNT51YSUJeWtonu0JxQ8Q5yFSm-rsANg8wB0DVDan2toN6TMBA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "non_canonical_decimal",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "position-mark-price-scale-29",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (scale-29)"
+      ],
+      "raw": "{\"batch_id\":\"27d5f820-1373-4288-8553-b63ea3b09f7c\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"event_id\":\"92000000-0000-4000-8000-000000000007\",\"kind\":\"position_snapshot\",\"observed_at\":\"2026-10-04T13:53:00Z\",\"positions\":[{\"currency\":\"USDT\",\"instrument\":\"BTCUSDT-PERP\",\"mark_price\":\"0.00000000000000000000000000001\",\"quantity\":\"1\"}],\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"14eee4d28bc0822b54bbf69344770898c34e58759e38343ec7608799cb63a2cb\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"j50p0sEb05Fz2EMqIhmDe0Mg0rd2hAf9W0llgE0NiHweVkM-_m0FpxtYn4f-vXSKxgiRsH1AIjDueL5DwPXhDQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "decimal_out_of_range",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "position-mark-price-json-number",
+      "origin": "tolerance",
+      "covers": [
+        "a decimal spelling the runner never writes (json-number)"
+      ],
+      "raw": "{\"batch_id\":\"37670fb1-7184-4d23-b805-46d5ba60dc16\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:54:00Z\",\"facts\":[{\"event_id\":\"92000000-0000-4000-8000-000000000007\",\"kind\":\"position_snapshot\",\"observed_at\":\"2026-10-04T13:53:00Z\",\"positions\":[{\"currency\":\"USDT\",\"instrument\":\"BTCUSDT-PERP\",\"mark_price\":1.5,\"quantity\":\"1\"}],\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4885ec8c3e717318bffd17e260fb14f7767afa4828b17fbbd11d1d44fee547f0\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"cO1Ak0yMB25slL6ZKMGrCyX9aKtndHhr5XrmwUAdChgfrbNvPjcvBQu0oGWTznB-bm3Nqi3Ca8m69T_xJnUzCA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "binary_float",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "decimal-largest-mantissa",
+      "origin": "producer-canonical",
+      "covers": [
+        "equity_snapshot.amount at the edge of the decimal type: the largest mantissa, 2**96 - 1"
+      ],
+      "producer_input": {
+        "equity_amount": "79228162514264337593543950335"
+      },
+      "raw": "{\"batch_id\":\"f49ab553-8002-4025-8606-c1e2117da338\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:55:00Z\",\"facts\":[{\"amount\":\"79228162514264337593543950335\",\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000006\",\"kind\":\"equity_snapshot\",\"observed_at\":\"2026-10-04T13:52:00Z\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"62fb27c1038683e4e8d166cbe8729f133ff0c975d78c642e15611c0f01d20d0a\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"Z2n9GysGnBZVXcQKk4bktThne6Md2KmJfX0B8IJudUlD_AW_t4LuhJvqwaWnHkIbTjhSgwDkGioMs1ReXC7JBw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "accept",
+        "payload_digest": "62fb27c1038683e4e8d166cbe8729f133ff0c975d78c642e15611c0f01d20d0a",
+        "envelope_digest": "11026bf5e7c14b8fa78cf1b2e4e0331d144745483e6124daea258d043ef669ae",
+        "signing_preimage_hex": "4352554349424c452d52554e4e45522d464143542d42415443482d5631007b2262617463685f6964223a2266343961623535332d383030322d343032352d383630362d633165323131376461333338222c226361706162696c6974795f6d616e69666573745f646967657374223a2265656137663266356430353261386236646138666565393866336638323536626639336363323333643138346364643032393861373965356466396636326333222c226361706162696c6974795f76657273696f6e223a312c226361706162696c6974795f76657273696f6e5f6964223a2235303030303030302d303030302d343030302d383030302d303030303030303030303035222c226465706c6f796d656e745f696e7374616e63655f6964223a2232303030303030302d303030302d343030302d383030302d303030303030303030303032222c226465706c6f796d656e745f737065635f646967657374223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226465706c6f796d656e745f737065635f6964223a2233303030303030302d303030302d343030302d383030302d303030303030303030303033222c22656d69747465645f6174223a22323032362d31302d30345431333a35353a30305a222c2267656e65726174696f6e223a372c226b65795f6964223a22656432353531392d3635623630363733643665643838346266303163326332323264383261646130222c227061796c6f61645f646967657374223a2236326662323763313033383638336534653864313636636265383732396631333366663063393735643738633634326531353631316330663031643230643061222c2272756e6e65725f6964223a2231303030303030302d303030302d343030302d383030302d303030303030303030303031222c22736368656d615f76657273696f6e223a312c22736f757263655f7365715f656e64223a312c22736f757263655f7365715f7374617274223a312c2273747261746567795f6964223a2234303030303030302d303030302d343030302d383030302d303030303030303030303034222c2274656e616e745f6964223a2261636d65222c2274726164696e675f6d6f6465223a2273616e64626f78227d",
+        "typed_roundtrip_equal": true
+      }
+    },
+    {
+      "id": "decimal-scale-28",
+      "origin": "producer-canonical",
+      "covers": [
+        "equity_snapshot.amount at the edge of the decimal type: 28 fractional digits"
+      ],
+      "producer_input": {
+        "equity_amount": "0.0000000000000000000000000001"
+      },
+      "raw": "{\"batch_id\":\"3d502150-e957-4330-a88c-c31893579731\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:55:00Z\",\"facts\":[{\"amount\":\"0.0000000000000000000000000001\",\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000006\",\"kind\":\"equity_snapshot\",\"observed_at\":\"2026-10-04T13:52:00Z\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"96df1db61e8796602a1f3b2636fe8b1ac29b50e18c705ecaba2ba2849b337d75\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"qTIsSs-6rF_oFeLbIB_86lZRHJqWwAfGL6KePDNG6mAMelX2xwRnnNyiykqbAZ8LzQnW4FKRhRC2o2u0Rq1DCg\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "accept",
+        "payload_digest": "96df1db61e8796602a1f3b2636fe8b1ac29b50e18c705ecaba2ba2849b337d75",
+        "envelope_digest": "243d1043f128932c84a71317a001d48f107866c006969dce0c8846cc062b8d68",
+        "signing_preimage_hex": "4352554349424c452d52554e4e45522d464143542d42415443482d5631007b2262617463685f6964223a2233643530323135302d653935372d343333302d613838632d633331383933353739373331222c226361706162696c6974795f6d616e69666573745f646967657374223a2265656137663266356430353261386236646138666565393866336638323536626639336363323333643138346364643032393861373965356466396636326333222c226361706162696c6974795f76657273696f6e223a312c226361706162696c6974795f76657273696f6e5f6964223a2235303030303030302d303030302d343030302d383030302d303030303030303030303035222c226465706c6f796d656e745f696e7374616e63655f6964223a2232303030303030302d303030302d343030302d383030302d303030303030303030303032222c226465706c6f796d656e745f737065635f646967657374223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226465706c6f796d656e745f737065635f6964223a2233303030303030302d303030302d343030302d383030302d303030303030303030303033222c22656d69747465645f6174223a22323032362d31302d30345431333a35353a30305a222c2267656e65726174696f6e223a372c226b65795f6964223a22656432353531392d3635623630363733643665643838346266303163326332323264383261646130222c227061796c6f61645f646967657374223a2239366466316462363165383739363630326131663362323633366665386231616332396235306531386337303565636162613262613238343962333337643735222c2272756e6e65725f6964223a2231303030303030302d303030302d343030302d383030302d303030303030303030303031222c22736368656d615f76657273696f6e223a312c22736f757263655f7365715f656e64223a312c22736f757263655f7365715f7374617274223a312c2273747261746567795f6964223a2234303030303030302d303030302d343030302d383030302d303030303030303030303034222c2274656e616e745f6964223a2261636d65222c2274726164696e675f6d6f6465223a2273616e64626f78227d",
+        "typed_roundtrip_equal": true
+      }
+    },
+    {
+      "id": "decimal-mantissa-overflow",
+      "origin": "tolerance",
+      "covers": [
+        "equity_snapshot.amount past the decimal type: 2**96"
+      ],
+      "raw": "{\"batch_id\":\"8299c98d-ac14-4914-8e7f-1bdc72d7955c\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:55:01Z\",\"facts\":[{\"amount\":\"79228162514264337593543950336\",\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000006\",\"kind\":\"equity_snapshot\",\"observed_at\":\"2026-10-04T13:52:00Z\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"d7bb72e3f8addb7ed95e7d7cc1f91412a7f3932d27883107b9c519134295abaf\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"_9dOdGBX8B9wpPgkdOIuVH84oLjvkRlbvBRY6sIed5rWk_MbX9fdwSrkUc5X5LFpYdcxm9Tm0MxgYqNVfRjhAg\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "decimal_out_of_range",
+        "stage": "decode",
+        "schema_outcome": "accept"
+      }
+    },
+    {
+      "id": "decimal-thirty-digits",
+      "origin": "tolerance",
+      "covers": [
+        "equity_snapshot.amount past the decimal type: 30 digits"
+      ],
+      "raw": "{\"batch_id\":\"ba997ba0-673f-4984-b4c4-f9a414b0ea64\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:55:01Z\",\"facts\":[{\"amount\":\"100000000000000000000000000000\",\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000006\",\"kind\":\"equity_snapshot\",\"observed_at\":\"2026-10-04T13:52:00Z\",\"seq\":1}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"aca36e40d9e58c78960750599817d0906762438727f22d389d7f34c921980973\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"uSnoRzJO2bgC8_3cnLhhX7fkUbvhF6SzTV4k3zN3Lpeu4NnPHJq-kKeFII6rcCBo8p_hXb0yptsx8OGBRn24BQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "decimal_out_of_range",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "required-nullable-omitted-client-order-id",
+      "origin": "tolerance",
+      "covers": [
+        "client_order_id is required and may be null; leaving it out is refused"
+      ],
+      "raw": "{\"batch_id\":\"1c0ef4ec-b542-49aa-94d3-72530139457f\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:56:00Z\",\"facts\":[{\"currency\":\"USDT\",\"event_id\":\"92000000-0000-4000-8000-000000000005\",\"fee\":\"0.01\",\"instrument\":\"BTCUSDT-PERP\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-04T13:48:00Z\",\"price\":\"60000\",\"quantity\":\"0.5\",\"seq\":1,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"d3c10b1a5093c2bc5d65e898c97b23d9e2fd053a15fc2d60f2944a2ddb122a26\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"NHhRrHR0E_iN9tbFo85KqJD7MSdSO7m8nD6HRCW0pjmnu08IObBQ0dNmg30f76X-Sz30yl0Mu2t1yFFIs2XrBw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "required-nullable-omitted-causation-id",
+      "origin": "tolerance",
+      "covers": [
+        "causation_id is required and may be null; leaving it out is refused"
+      ],
+      "raw": "{\"batch_id\":\"18108916-127e-4abe-9e0f-a47511f0d9f7\",\"capability_manifest_digest\":\"eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-04T13:56:00Z\",\"facts\":[{\"component\":\"engine\",\"correlation_id\":\"70000000-0000-4000-8000-000000000007\",\"event_id\":\"44277cac-72c5-50ac-a6c8-ecbabb718289\",\"kind\":\"RunnerRuntimeLogFact.v1\",\"level\":\"INFO\",\"message\":\"strategy started\",\"occurred_at\":\"2026-10-04T01:02:03Z\",\"seq\":1,\"structured_fields\":{\"phase\":\"start\"}}],\"generation\":7,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"92bc4ac88a4a36ea79e0f0b3767f40f3455487a0a9085832ae0b57e19d368b7d\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"UBiLkJ6PY2jpGyfGtObvVcP6cDLJXrZZhzivlmZZ0pWEnkJvU5FuQKXrbNaINlM38bXy68IFt4PTb1jhmKaxCw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode"
       }
     },
     {
