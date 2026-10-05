@@ -146,6 +146,15 @@ _CASH_FLOW_ENDPOINTS: Final[Mapping[str, tuple[bool, bool]]] = MappingProxyType(
 _MAX_DECIMAL_MANTISSA: Final = 2**96 - 1
 _MAX_DECIMAL_SCALE: Final = 28
 _MAX_CASH_FLOW_ID_BYTES: Final = 256
+# The consumer's identifier bounds, in UTF-8 bytes, by field.
+_MAX_ORDER_LABEL_BYTES: Final = 64
+_MAX_ASSET_BYTES: Final = 64
+_MAX_VENUE_BYTES: Final = 128
+_MAX_INSTRUMENT_BYTES: Final = 128
+_MAX_FEE_KIND_BYTES: Final = 128
+_MAX_PERIOD_BYTES: Final = 128
+_MAX_VENUE_ID_BYTES: Final = 256
+_MAX_WATERMARK_BYTES: Final = 512
 _WALLET_TYPE_PATTERN: Final = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _SUB_ACCOUNT_PATTERN: Final = re.compile(
     r"[^\s\x00-\x1f\x7f](?:[^\x00-\x1f\x7f]{0,126}[^\s\x00-\x1f\x7f])?"
@@ -435,6 +444,20 @@ def _non_empty(value: Any, field: str) -> str:
     return value.strip()
 
 
+def _identifier(value: Any, field: str, max_bytes: int) -> str:
+    """An identifier the consumer accepts: non-blank, at most ``max_bytes`` UTF-8
+    bytes, and free of Unicode control characters (category Cc)."""
+
+    text = _non_empty(value, field)
+    if len(text.encode("utf-8")) > max_bytes or any(
+        unicodedata.category(character) == "Cc" for character in text
+    ):
+        raise RunnerFactContractError(
+            f"{field} must be at most {max_bytes} UTF-8 bytes without control characters"
+        )
+    return text
+
+
 def _settlement_period(value: Any) -> str:
     period = _non_empty(value, "period")
     try:
@@ -469,9 +492,10 @@ def _render_decimal(parsed: Decimal, field: str, *, bounded: bool) -> str:
 
     With ``bounded`` the value must also fit the consumer's decimal type, a
     96-bit integer mantissa with at most 28 fractional digits, so it is
-    refused here rather than signed and rejected downstream. Only cash flows
-    are bounded: conversion rates divide (1 / 60000 has 32 fractional digits)
-    and reach balances, equity and valuation, which are signed unbounded.
+    refused here rather than signed and rejected downstream. Every wire field
+    is bounded. Off the wire the runner keeps exact arithmetic: a conversion
+    rate divides (1 / 60000 has 32 fractional digits), so a value derived from
+    one is refused when it reaches a fact rather than rounded.
     """
     if parsed.is_zero():
         return "0"
@@ -499,7 +523,7 @@ def _plain_decimal(parsed: Decimal) -> str:
     return rendered
 
 
-def _signed_decimal(value: Decimal | str | int, field: str) -> str:
+def _signed_decimal(value: Decimal | str | int, field: str, *, bounded: bool = False) -> str:
     if isinstance(value, float):
         raise RunnerFactContractError(f"{field} must not be a binary float")
     try:
@@ -508,7 +532,7 @@ def _signed_decimal(value: Decimal | str | int, field: str) -> str:
         raise RunnerFactContractError(f"{field} must be a decimal") from exc
     if not parsed.is_finite():
         raise RunnerFactContractError(f"{field} must be finite")
-    return _render_decimal(parsed, field, bounded=False)
+    return _render_decimal(parsed, field, bounded=bounded)
 
 
 def _timestamp(value: datetime | str, field: str) -> str:
@@ -800,17 +824,19 @@ def execution_fill(
     result = {
         "kind": "execution_fill",
         "event_id": _uuid(event_id, "event_id"),
-        "venue": _non_empty(venue, "venue"),
-        "venue_trade_id": _non_empty(venue_trade_id, "venue_trade_id"),
+        "venue": _identifier(venue, "venue", _MAX_VENUE_BYTES),
+        "venue_trade_id": _identifier(venue_trade_id, "venue_trade_id", _MAX_VENUE_ID_BYTES),
         "client_order_id": (
-            _non_empty(client_order_id, "client_order_id") if client_order_id else None
+            _identifier(client_order_id, "client_order_id", _MAX_VENUE_ID_BYTES)
+            if client_order_id
+            else None
         ),
-        "venue_order_id": _non_empty(venue_order_id, "venue_order_id"),
-        "instrument": _non_empty(instrument, "instrument"),
+        "venue_order_id": _identifier(venue_order_id, "venue_order_id", _MAX_VENUE_ID_BYTES),
+        "instrument": _identifier(instrument, "instrument", _MAX_INSTRUMENT_BYTES),
         "side": _side(side),
-        "quantity": _decimal(quantity, "quantity", positive=True),
-        "price": _decimal(price, "price"),
-        "fee": _signed_decimal(fee, "fee"),
+        "quantity": _decimal(quantity, "quantity", positive=True, bounded=True),
+        "price": _decimal(price, "price", bounded=True),
+        "fee": _signed_decimal(fee, "fee", bounded=True),
         "currency": _currency(currency),
         "occurred_at": _timestamp(occurred_at, "occurred_at"),
     }
@@ -922,10 +948,10 @@ def settlement_fill(
         "kind": "fill",
         "event_id": _uuid(event_id, "event_id"),
         "fill_id": _uuid(fill_id, "fill_id"),
-        "order_type": _non_empty(order_type, "order_type"),
-        "category": _non_empty(category, "category"),
-        "price": _decimal(price, "price"),
-        "avg_fill_price": _decimal(avg_fill_price, "avg_fill_price"),
+        "order_type": _identifier(order_type, "order_type", _MAX_ORDER_LABEL_BYTES),
+        "category": _identifier(category, "category", _MAX_ORDER_LABEL_BYTES),
+        "price": _decimal(price, "price", bounded=True),
+        "avg_fill_price": _decimal(avg_fill_price, "avg_fill_price", bounded=True),
         "currency": _currency(currency),
         "filled_at": _timestamp(filled_at, "filled_at"),
     }
@@ -950,7 +976,7 @@ def position_closed(
         "kind": "position_closed",
         "event_id": _uuid(event_id, "event_id"),
         "position_id": _uuid(position_id, "position_id"),
-        "realized_pnl": _signed_decimal(realized_pnl, "realized_pnl"),
+        "realized_pnl": _signed_decimal(realized_pnl, "realized_pnl", bounded=True),
         "currency": _currency(currency),
         "opened_at": opened,
         "closed_at": closed,
@@ -969,7 +995,7 @@ def settlement_fee(
         "kind": "fee",
         "event_id": _uuid(event_id, "event_id"),
         "fill_id": _uuid(fill_id, "fill_id"),
-        "amount": _signed_decimal(amount, "amount"),
+        "amount": _signed_decimal(amount, "amount", bounded=True),
         "currency": _currency(currency),
         "assessed_at": _timestamp(assessed_at, "assessed_at"),
     }
@@ -985,7 +1011,7 @@ def equity_snapshot(
     return {
         "kind": "equity_snapshot",
         "event_id": _uuid(event_id, "event_id"),
-        "amount": _signed_decimal(amount, "amount"),
+        "amount": _signed_decimal(amount, "amount", bounded=True),
         "currency": _currency(currency),
         "observed_at": _timestamp(observed_at, "observed_at"),
     }
@@ -999,9 +1025,11 @@ def position_snapshot(
 ) -> dict[str, Any]:
     normalized = [
         {
-            "instrument": _non_empty(row.get("instrument"), "positions.instrument"),
-            "quantity": _signed_decimal(row.get("quantity"), "positions.quantity"),
-            "mark_price": _decimal(row.get("mark_price"), "positions.mark_price"),
+            "instrument": _identifier(
+                row.get("instrument"), "positions.instrument", _MAX_INSTRUMENT_BYTES
+            ),
+            "quantity": _signed_decimal(row.get("quantity"), "positions.quantity", bounded=True),
+            "mark_price": _decimal(row.get("mark_price"), "positions.mark_price", bounded=True),
             "currency": _currency(row.get("currency")),
         }
         for row in positions
@@ -1042,25 +1070,35 @@ def valuation_checkpoint(
         raise RunnerFactContractError("collection_started_at must not follow observed_at")
     normalized_positions = [
         {
-            "instrument": _non_empty(row.get("instrument"), "positions.instrument"),
+            "instrument": _identifier(
+                row.get("instrument"), "positions.instrument", _MAX_INSTRUMENT_BYTES
+            ),
             "currency": _currency(row.get("currency")),
             "internal_quantity": _signed_decimal(
-                row.get("internal_quantity"), "positions.internal_quantity"
+                row.get("internal_quantity"), "positions.internal_quantity", bounded=True
             ),
             "internal_avg_entry_price": _decimal(
-                row.get("internal_avg_entry_price"), "positions.internal_avg_entry_price"
+                row.get("internal_avg_entry_price"),
+                "positions.internal_avg_entry_price",
+                bounded=True,
             ),
             "internal_mark_price": _decimal(
-                row.get("internal_mark_price"), "positions.internal_mark_price", positive=True
+                row.get("internal_mark_price"),
+                "positions.internal_mark_price",
+                positive=True,
+                bounded=True,
             ),
             "venue_quantity": _signed_decimal(
-                row.get("venue_quantity"), "positions.venue_quantity"
+                row.get("venue_quantity"), "positions.venue_quantity", bounded=True
             ),
             "venue_avg_entry_price": _decimal(
-                row.get("venue_avg_entry_price"), "positions.venue_avg_entry_price"
+                row.get("venue_avg_entry_price"), "positions.venue_avg_entry_price", bounded=True
             ),
             "common_mark_price": _decimal(
-                row.get("common_mark_price"), "positions.common_mark_price", positive=True
+                row.get("common_mark_price"),
+                "positions.common_mark_price",
+                positive=True,
+                bounded=True,
             ),
         }
         for row in positions
@@ -1075,13 +1113,15 @@ def valuation_checkpoint(
     digest_payload = {
         "checkpoint_id": _uuid(checkpoint_id, "checkpoint_id"),
         "venue_snapshot_id": _uuid(venue_snapshot_id, "venue_snapshot_id"),
-        "venue": _non_empty(venue, "venue"),
+        "venue": _identifier(venue, "venue", _MAX_VENUE_BYTES),
         "currency": checkpoint_currency,
-        "venue_watermark": _non_empty(venue_watermark, "venue_watermark"),
+        "venue_watermark": _identifier(venue_watermark, "venue_watermark", _MAX_WATERMARK_BYTES),
         "collection_started_at": started,
         "observed_at": observed,
-        "internal_equity": _signed_decimal(internal_equity, "internal_equity"),
-        "venue_wallet_balance": _signed_decimal(venue_wallet_balance, "venue_wallet_balance"),
+        "internal_equity": _signed_decimal(internal_equity, "internal_equity", bounded=True),
+        "venue_wallet_balance": _signed_decimal(
+            venue_wallet_balance, "venue_wallet_balance", bounded=True
+        ),
         "positions": normalized_positions,
     }
     if cash_inventory is not None:
@@ -1091,14 +1131,22 @@ def valuation_checkpoint(
             {
                 "asset": _currency(row.get("asset")),
                 "internal_quantity": _decimal(
-                    row.get("internal_quantity"), "inventory.internal_quantity"
+                    row.get("internal_quantity"), "inventory.internal_quantity", bounded=True
                 ),
-                "venue_quantity": _decimal(row.get("venue_quantity"), "inventory.venue_quantity"),
+                "venue_quantity": _decimal(
+                    row.get("venue_quantity"), "inventory.venue_quantity", bounded=True
+                ),
                 "internal_mark_price": _decimal(
-                    row.get("internal_mark_price"), "inventory.internal_mark_price", positive=True
+                    row.get("internal_mark_price"),
+                    "inventory.internal_mark_price",
+                    positive=True,
+                    bounded=True,
                 ),
                 "common_mark_price": _decimal(
-                    row.get("common_mark_price"), "inventory.common_mark_price", positive=True
+                    row.get("common_mark_price"),
+                    "inventory.common_mark_price",
+                    positive=True,
+                    bounded=True,
                 ),
             }
             for row in cash_inventory
@@ -1281,7 +1329,7 @@ def _terminal_prior_equity(value: Any) -> dict[str, Any] | None:
         "event_id": _uuid(prior["event_id"], "prior_equity.event_id"),
         "seq": seq,
         # A copy of an already signed equity snapshot, so it keeps that fact's rule.
-        "amount": _signed_decimal(prior["amount"], "prior_equity.amount"),
+        "amount": _signed_decimal(prior["amount"], "prior_equity.amount", bounded=True),
         "currency": _currency(prior["currency"]),
         "observed_at": _timestamp(prior["observed_at"], "prior_equity.observed_at"),
     }
@@ -1652,12 +1700,12 @@ def venue_ledger_snapshot_facts(
     cash_flows: Sequence[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
     snapshot = _uuid(snapshot_id, "snapshot_id")
-    venue_value = _non_empty(venue, "venue")
+    venue_value = _identifier(venue, "venue", _MAX_VENUE_BYTES)
     sub_account_value = _sub_account(sub_account, "sub_account")
     source_value = _non_empty(source, "source")
     if source_value not in {"venue_api", "drop_copy"}:
         raise RunnerFactContractError("venue ledger source must be venue_api or drop_copy")
-    watermark_value = _non_empty(watermark, "watermark")
+    watermark_value = _identifier(watermark, "watermark", _MAX_WATERMARK_BYTES)
     coverage = _timestamp(coverage_from, "coverage_from")
     observed = _timestamp(observed_through, "observed_through")
     if datetime.fromisoformat(coverage.replace("Z", "+00:00")) > datetime.fromisoformat(
@@ -1668,23 +1716,25 @@ def venue_ledger_snapshot_facts(
         {
             "wallet_type": _wallet_type(row.get("wallet_type"), "balances.wallet_type"),
             "sub_account": _sub_account(row.get("sub_account"), "balances.sub_account"),
-            "asset": _non_empty(row.get("asset"), "balances.asset"),
+            "asset": _identifier(row.get("asset"), "balances.asset", _MAX_ASSET_BYTES),
             "currency": _currency(row.get("currency")),
-            "total": _decimal(row.get("total"), "balances.total"),
-            "available": _decimal(row.get("available"), "balances.available"),
+            "total": _decimal(row.get("total"), "balances.total", bounded=True),
+            "available": _decimal(row.get("available"), "balances.available", bounded=True),
         }
         for row in balances
     ]
     normalized_positions = [
         {
-            "venue_position_id": _non_empty(
-                row.get("venue_position_id"), "positions.venue_position_id"
+            "venue_position_id": _identifier(
+                row.get("venue_position_id"), "positions.venue_position_id", _MAX_VENUE_ID_BYTES
             ),
-            "instrument": _non_empty(row.get("instrument"), "positions.instrument"),
+            "instrument": _identifier(
+                row.get("instrument"), "positions.instrument", _MAX_INSTRUMENT_BYTES
+            ),
             "side": _side(row.get("side", "")),
-            "quantity": _decimal(row.get("quantity"), "positions.quantity"),
+            "quantity": _decimal(row.get("quantity"), "positions.quantity", bounded=True),
             "avg_entry_price": (
-                _decimal(row["avg_entry_price"], "positions.avg_entry_price")
+                _decimal(row["avg_entry_price"], "positions.avg_entry_price", bounded=True)
                 if row.get("avg_entry_price") is not None
                 else None
             ),
@@ -1694,13 +1744,21 @@ def venue_ledger_snapshot_facts(
     ]
     normalized_fills = [
         {
-            "venue_trade_id": _non_empty(row.get("venue_trade_id"), "fills.venue_trade_id"),
-            "venue_order_id": _non_empty(row.get("venue_order_id"), "fills.venue_order_id"),
-            "instrument": _non_empty(row.get("instrument"), "fills.instrument"),
+            "venue_trade_id": _identifier(
+                row.get("venue_trade_id"), "fills.venue_trade_id", _MAX_VENUE_ID_BYTES
+            ),
+            "venue_order_id": _identifier(
+                row.get("venue_order_id"), "fills.venue_order_id", _MAX_VENUE_ID_BYTES
+            ),
+            "instrument": _identifier(
+                row.get("instrument"), "fills.instrument", _MAX_INSTRUMENT_BYTES
+            ),
             "side": _side(row.get("side", "")),
-            "quantity": _decimal(row.get("quantity"), "fills.quantity", positive=True),
-            "price": _decimal(row.get("price"), "fills.price"),
-            "fee": _signed_decimal(row.get("fee"), "fills.fee"),
+            "quantity": _decimal(
+                row.get("quantity"), "fills.quantity", positive=True, bounded=True
+            ),
+            "price": _decimal(row.get("price"), "fills.price", bounded=True),
+            "fee": _signed_decimal(row.get("fee"), "fills.fee", bounded=True),
             **(
                 {"fee_currency": _currency(row["fee_currency"])}
                 if row.get("fee_currency") is not None
@@ -1713,10 +1771,10 @@ def venue_ledger_snapshot_facts(
     ]
     normalized_fees = [
         {
-            "fee_id": _non_empty(row.get("fee_id"), "fees.fee_id"),
-            "kind": _non_empty(row.get("kind"), "fees.kind"),
+            "fee_id": _identifier(row.get("fee_id"), "fees.fee_id", _MAX_VENUE_ID_BYTES),
+            "kind": _identifier(row.get("kind"), "fees.kind", _MAX_FEE_KIND_BYTES),
             "currency": _currency(row.get("currency")),
-            "amount": _signed_decimal(row.get("amount"), "fees.amount"),
+            "amount": _signed_decimal(row.get("amount"), "fees.amount", bounded=True),
             "occurred_at": _timestamp(row.get("occurred_at"), "fees.occurred_at"),
         }
         for row in fees
@@ -1875,7 +1933,7 @@ def reconciliation_period_closed(
         raise RunnerFactContractError("reconciliation period must have positive duration")
     references = [
         {
-            "venue": _non_empty(row.get("venue"), "venue_snapshots.venue"),
+            "venue": _identifier(row.get("venue"), "venue_snapshots.venue", _MAX_VENUE_BYTES),
             "snapshot_id": _uuid(row.get("snapshot_id"), "venue_snapshots.snapshot_id"),
         }
         for row in venue_snapshots
@@ -1888,7 +1946,7 @@ def reconciliation_period_closed(
     return {
         "kind": "reconciliation_period_closed",
         "event_id": _uuid(event_id, "event_id"),
-        "period": _non_empty(period, "period"),
+        "period": _identifier(period, "period", _MAX_PERIOD_BYTES),
         "period_started_at": started,
         "closed_at": closed,
         "venue_snapshots": references,
@@ -1942,14 +2000,7 @@ def _cash_flow_endpoint(value: Any, field: str) -> dict[str, Any] | None:
 
 
 def _cash_flow_id(value: Any) -> str:
-    identifier = _non_empty(value, "cash_flows.cash_flow_id")
-    if len(identifier.encode("utf-8")) > _MAX_CASH_FLOW_ID_BYTES or any(
-        unicodedata.category(character) == "Cc" for character in identifier
-    ):
-        raise RunnerFactContractError(
-            "cash_flows.cash_flow_id must be at most 256 UTF-8 bytes without control characters"
-        )
-    return identifier
+    return _identifier(value, "cash_flows.cash_flow_id", _MAX_CASH_FLOW_ID_BYTES)
 
 
 def _cash_flow(row: Mapping[str, Any]) -> dict[str, Any]:

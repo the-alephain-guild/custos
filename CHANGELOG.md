@@ -48,6 +48,18 @@ protocol — is published at
   keep. The pattern now excludes it, so the RunnerFact batch contract moves to
   revision 2, and the conformance vectors gain `decimal-negative-zero`, refused
   as a non-canonical decimal. A consumer syncs revision 2; no receipt is written.
+- **The runner refuses to sign identifiers and decimals its consumer refuses.**
+  The consumer rejects an identifier (venue, venue trade, order and position
+  ids, client order id, instrument, order type and category, balance asset, fee
+  id and kind, watermark, reconciliation period) that is blank, longer than its
+  bound in UTF-8 bytes (64, 128, 256 or 512 by field), or carries a control
+  character, and it holds decimals in a type with a 96-bit mantissa and at most
+  28 fractional digits. A fact carrying such a value was signed and then
+  refused at ingest together with its whole batch. Every wire identifier and
+  every wire decimal is now checked against those bounds before signing; until
+  now only cash flows were. A value derived from a conversion rate with more
+  than 28 fractional digits (1 / 60000 has 32) is now refused when it reaches a
+  fact instead of being signed; arithmetic off the wire is unchanged.
 - **Consumers pin contract revisions instead of exchanging receipts.**
   `docs/authority/contract-revisions-v1.json` lists each contract other
   repositories vendor with its revision, wire fingerprint, assets and vectors.
