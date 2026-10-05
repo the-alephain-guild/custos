@@ -52,16 +52,6 @@ AUTHORITY_COORDINATE = "custos.runner-fact.v1"
 # descriptive text alone keeps the revision.
 CONTRACT_ID = "alephain.custos.runner_fact_batch.v1"
 CONTRACT_REVISION = 2
-PRODUCER_ASSET_COMMIT = "199bb6475eae87b78d2e1db27eff319a5a3ebe6b"
-CRUCIBLE_CONSUMER_RECEIPT = {
-    "repository": "tesseract-trading/crucible-rust",
-    "commit": "61733e5f1f2387ca58a728c9b2f26c8a01f92c8d",
-    "producer_path": ("docs/authority/receipts/crucible-runner-fact-v1-consumer-receipt.json"),
-    "local_path": ("docs/authority/receipts/vendor/crucible-runner-fact-v1-consumer-receipt.json"),
-    "sha256": "e900e3babdbb43b3e74e956c8461a77662bf8ef30bb4dc22aa49de4874248c35",
-    "size_bytes": 14597,
-    "status": "EXACT_CUSTOS_RUNNER_FACT_V1_ACCEPTED_RUNTIME_OPEN",
-}
 TENANT_ID = "acme"
 MODE = "sandbox"
 RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
