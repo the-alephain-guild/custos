@@ -42,6 +42,14 @@ protocol — is published at
   descriptive text keeps it. JSON Schema validators ignore both keywords, so no
   document's validity changes. The schemas, the RunnerFact and strategy asset
   indexes and their sidecars change; historical receipts are unchanged.
+- **Consumers pin contract revisions instead of exchanging receipts.**
+  `docs/authority/contract-revisions-v1.json` lists each contract other
+  repositories vendor with its revision, wire fingerprint, assets and vectors.
+  The strategy contract generator no longer requires the two consumers'
+  acceptance receipts or names their commits, and no longer writes the strategy
+  handoff receipt; that receipt and the two vendored consumer receipts stay as
+  historical evidence and are checked only for shape. A wire change now raises
+  the contract revision and ships updated vectors, with no new receipt.
 
 ### Fixed
 

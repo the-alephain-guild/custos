@@ -77,6 +77,7 @@
     "nautilus_distribution_python": ">=3.12,<3.13",
     "nautilus_trader": "2.0.0rc5+sodex.2",
     "asset_index": "docs/authority/strategy-contract-assets-v1.json",
+    "contract_revision_index": "docs/authority/contract-revisions-v1.json",
     "strategy_contract_producer_receipt": "docs/authority/receipts/custos-strategy-contract-v1-producer-receipt.json",
     "legacy_python_lane": "independently supported, non-gating, and never a v1.team fallback",
     "toolkit_extraction_receipt": "docs/authority/receipts/strategy-toolkit-extraction-receipt-v1.json",

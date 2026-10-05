@@ -212,15 +212,19 @@
     },
     {
       "path": "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-handoff-receipt.json",
-      "role": "strategy_contract_receipt_v1"
+      "role": "historical_strategy_contract_handoff_receipt_v1"
     },
     {
       "path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json",
-      "role": "crucible_strategy_contract_consumer_receipt_v1"
+      "role": "historical_crucible_strategy_contract_consumer_receipt_v1"
     },
     {
       "path": "docs/authority/receipts/vendor/ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json",
-      "role": "philosophers_stone_strategy_contract_consumer_receipt_v1"
+      "role": "historical_philosophers_stone_strategy_contract_consumer_receipt_v1"
+    },
+    {
+      "path": "docs/authority/contract-revisions-v1.json",
+      "role": "contract_revision_index_v1"
     },
     {
       "role": "runner_policy_consumer_asset_index_v1",

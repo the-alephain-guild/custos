@@ -19,11 +19,9 @@ CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/vendor/"
     "crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
 )
-CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "8b147a2c00f2baa0c1d7f9e26a8eb4d04d63eeb0"
 PS_STRATEGY_CONSUMER_RECEIPT_PATH = (
     "docs/authority/receipts/vendor/ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
 )
-PS_STRATEGY_CONSUMER_COMMIT = "9544dc75ed942cd1033eadce96127ab0b10f86ca"
 CANONICAL_INDEX_PATH = "docs/authority/strategy-contract-assets-v1.json"
 CANONICAL_ARTIFACT_REF_SCHEMA_PATH = "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json"
 CANONICAL_ARTIFACT_REF_GOLDEN_PATH = "docs/authority/strategy-artifact-ref-v1.golden.json"
@@ -537,64 +535,43 @@ def verify_strategy_contract_authority(errors: list[str]) -> None:
             "StrategyArtifactPreImportVerificationReceiptV1 schema_version must be const 1"
         )
 
-    if receipt.get("status") != "CANONICAL_V1_CONSUMER_HANDOFF_COMPLETE":
-        errors.append("canonical V1 contract receipt must record complete consumer handoff")
-    if (
-        receipt.get("contract_consumer_ready") is not True
-        or receipt.get("command_consumer_ready") is not True
-        or receipt.get("runtime_ready") is not False
-        or receipt.get("production_ready") is not False
+    # The handoff receipt and the two vendored consumer receipts are historical:
+    # they prove the revisions they record, so only their shape is checked and
+    # nothing in them is compared with current sources or constants. Consumers
+    # now pin contract revisions (docs/authority/contract-revisions-v1.json).
+    for label, document in (
+        ("strategy contract handoff receipt", receipt),
+        ("Crucible strategy consumer receipt", crucible_consumer_receipt),
+        ("philosophers-stone strategy consumer receipt", ps_consumer_receipt),
     ):
-        errors.append("canonical V1 contract handoff readiness fields differ")
+        errors.extend(historical_receipt_shape_errors(document, label))
 
-    receipt_consumers = receipt.get("consumers", {})
-    expected_consumers = {
-        "philosophers_stone": {
-            "repository": "alchymia-labs/philosophers-stone",
-            "receipt": {
-                "commit": PS_STRATEGY_CONSUMER_COMMIT,
-                "path": (
-                    "docs/authority/receipts/"
-                    "ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
-                ),
-                "vendored_path": PS_STRATEGY_CONSUMER_RECEIPT_PATH,
-                "sha256": hashlib.sha256(
-                    required_paths["ps_consumer_receipt"].read_bytes()
-                ).hexdigest(),
-            },
-        },
-        "crucible_rust": {
-            "repository": "tesseract-trading/crucible-rust",
-            "receipt": {
-                "commit": CRUCIBLE_STRATEGY_CONSUMER_COMMIT,
-                "path": (
-                    "docs/authority/receipts/"
-                    "crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
-                ),
-                "vendored_path": CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH,
-                "sha256": hashlib.sha256(
-                    required_paths["crucible_consumer_receipt"].read_bytes()
-                ).hexdigest(),
-            },
-        },
-    }
-    if receipt_consumers != expected_consumers:
-        errors.append("Custos receipt consumer Git revisions or vendored evidence differ")
-    for document, repository in (
-        (ps_consumer_receipt, "alchymia-labs/philosophers-stone"),
-        (crucible_consumer_receipt, "tesseract-trading/crucible-rust"),
-    ):
-        engine_version = document.get(
-            "engine_version", document.get("contract", {}).get("engine_version")
-        )
-        if (
-            document.get("status") != "CUSTOS_ENGINE_SODEX_2_V1_CONTRACT_ACCEPTED"
-            or document.get("consumer", {}).get("repository") != repository
-            or document.get("producer", {}).get("commit")
-            != "3bb6886f9151384541b79c7214eedbd106e87c29"
-            or engine_version != "2.0.0rc5+sodex.2"
-        ):
-            errors.append(f"{repository} strategy consumer receipt semantics differ")
+
+def _commit_fields(value: Any, path: str = "$") -> list[tuple[str, Any]]:
+    found: list[tuple[str, Any]] = []
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if "commit" in key and not isinstance(item, (dict, list)):
+                found.append((f"{path}.{key}", item))
+            found.extend(_commit_fields(item, f"{path}.{key}"))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            found.extend(_commit_fields(item, f"{path}[{index}]"))
+    return found
+
+
+def historical_receipt_shape_errors(document: Any, label: str) -> list[str]:
+    """Check that a historical receipt stays readable without pinning its values."""
+
+    if not isinstance(document, dict):
+        return [f"{label} must be a JSON object"]
+    errors = []
+    if not isinstance(document.get("status"), str) or not document["status"]:
+        errors.append(f"{label} lacks a status")
+    for path, value in _commit_fields(document):
+        if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{40}", value):
+            errors.append(f"{label} {path} is not a full commit id")
+    return errors
 
 
 def verify_runner_command_consumer(errors: list[str]) -> None:

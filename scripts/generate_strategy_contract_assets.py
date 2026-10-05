@@ -48,18 +48,6 @@ HISTORICAL_CONTRACT_EVIDENCE_PATHS = {
     "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-producer-receipt.json",
     CONTRACT_RECEIPT_PATH,
 }
-CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH = (
-    "docs/authority/receipts/vendor/"
-    "crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
-)
-CRUCIBLE_STRATEGY_CONSUMER_COMMIT = "8b147a2c00f2baa0c1d7f9e26a8eb4d04d63eeb0"
-PS_STRATEGY_CONSUMER_RECEIPT_PATH = (
-    "docs/authority/receipts/vendor/ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
-)
-PS_STRATEGY_CONSUMER_COMMIT = "9544dc75ed942cd1033eadce96127ab0b10f86ca"
-STRATEGY_CONTRACT_PRODUCER_COMMIT = "3bb6886f9151384541b79c7214eedbd106e87c29"
-STRATEGY_CONTRACT_ACCEPTED_STATUS = "CUSTOS_ENGINE_SODEX_2_V1_CONTRACT_ACCEPTED"
-STRATEGY_CONTRACT_ACCEPTED_ENGINE_VERSION = "2.0.0rc5+sodex.2"
 RUNNER_COMMAND_CONSUMER_INDEX_PATH = (
     "docs/authority/crucible-runner-command-consumer-assets-nautilus-2-v1.json"
 )
@@ -153,37 +141,6 @@ def json_bytes(value: object) -> bytes:
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
-
-
-def consumer_receipt_pin(
-    *,
-    local_path: str,
-    producer_path: str,
-    repository: str,
-    commit: str,
-) -> dict[str, str]:
-    content = (ROOT / local_path).read_bytes()
-    document = json.loads(content)
-    producer = document.get("producer", {})
-    consumer = document.get("consumer", {})
-    contract = document.get("contract", {})
-    engine_version = document.get("engine_version", contract.get("engine_version"))
-    if (
-        document.get("status") != STRATEGY_CONTRACT_ACCEPTED_STATUS
-        or producer.get("repository") != "tesseract-trading/custos"
-        or producer.get("commit") != STRATEGY_CONTRACT_PRODUCER_COMMIT
-        or consumer.get("repository") != repository
-        or engine_version != STRATEGY_CONTRACT_ACCEPTED_ENGINE_VERSION
-        or document.get("runtime_ready") is not False
-        or document.get("production_ready") is not False
-    ):
-        raise ValueError(f"consumer receipt semantics differ: {local_path}")
-    return {
-        "commit": commit,
-        "path": producer_path,
-        "vendored_path": local_path,
-        "sha256": sha256(content),
-    }
 
 
 def member(
@@ -514,60 +471,6 @@ def build_v1_contract_assets() -> dict[str, bytes]:
     generated[INDEX_PATH] = index
     generated[STRATEGY_MANIFEST_SCHEMA_PATH] = json_bytes(
         StrategyManifestV1.model_json_schema(mode="validation")
-    )
-    consumer_receipts = {
-        "philosophers_stone": {
-            "repository": "alchymia-labs/philosophers-stone",
-            "receipt": consumer_receipt_pin(
-                local_path=PS_STRATEGY_CONSUMER_RECEIPT_PATH,
-                producer_path=(
-                    "docs/authority/receipts/"
-                    "ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
-                ),
-                repository="alchymia-labs/philosophers-stone",
-                commit=PS_STRATEGY_CONSUMER_COMMIT,
-            ),
-        },
-        "crucible_rust": {
-            "repository": "tesseract-trading/crucible-rust",
-            "receipt": consumer_receipt_pin(
-                local_path=CRUCIBLE_STRATEGY_CONSUMER_RECEIPT_PATH,
-                producer_path=(
-                    "docs/authority/receipts/"
-                    "crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json"
-                ),
-                repository="tesseract-trading/crucible-rust",
-                commit=CRUCIBLE_STRATEGY_CONSUMER_COMMIT,
-            ),
-        },
-    }
-    generated[CONTRACT_RECEIPT_PATH] = json_bytes(
-        {
-            "receipt_schema_version": 1,
-            "canonical_name": "Custos strategy contract V1 receipt",
-            "status": "CANONICAL_V1_CONSUMER_HANDOFF_COMPLETE",
-            "producer": {
-                "repository": "tesseract-trading/custos",
-                "source_path": str(SOURCE_MODEL.relative_to(ROOT)),
-                "source_sha256": sha256(SOURCE_MODEL.read_bytes()),
-            },
-            "contract_asset_index": {
-                "path": INDEX_PATH,
-                "sha256": sha256(index),
-                "size_bytes": len(index),
-            },
-            "consumers": consumer_receipts,
-            "policy_boundary": {
-                "crucible_local_policy_decision_reused": False,
-                "runner_local_policy_decision_required": True,
-            },
-            "strategy_artifact_pre_import_verification_receipt_v1_published": True,
-            "contract_consumer_ready": True,
-            "command_consumer_ready": True,
-            "runtime_ready": False,
-            "production_ready": False,
-            "open_blockers": [],
-        }
     )
     return generated
 
