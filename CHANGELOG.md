@@ -13,6 +13,16 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **The RunnerFact batch schema names the subject a runner publishes on.** Its
+  `x-custos-invariants.subject` read
+  `crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}`,
+  a superseded shape the runner never publishes on and the deployment service
+  refuses. It now reads `crucible.runner.fact.v1.{tenant_id}.{runner_id}.{trading_mode}`,
+  the subject `RunnerFactAuthority.subject` builds. The schema, its sidecar and
+  the RunnerFact asset index change; no wire field changes.
+
 ## [0.7.0] - 2026-10-05
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.7.0`

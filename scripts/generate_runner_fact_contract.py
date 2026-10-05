@@ -686,7 +686,7 @@ def _schema() -> dict[str, Any]:
         },
         "$defs": definitions,
         "x-custos-invariants": {
-            "subject": "crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}",
+            "subject": "crucible.runner.fact.v1.{tenant_id}.{runner_id}.{trading_mode}",
             "stream_identity_fields": [
                 "tenant_id",
                 "trading_mode",

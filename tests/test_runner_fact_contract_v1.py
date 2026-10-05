@@ -294,6 +294,8 @@ def test_schema_golden_capability_and_signature_are_one_exact_contract() -> None
     )
     assert {fact["kind"] for fact in facts} == SINGLE_BATCH_GOLDEN_KINDS
     assert _authority(batch).subject == index["golden_subject"]
+    subject_template = schema["x-custos-invariants"]["subject"]
+    assert subject_template.format(**batch) == _authority(batch).subject
 
     preimage = runner_fact_module.runner_fact_signing_preimage(batch)
     public_key = Ed25519PublicKey.from_public_bytes(
