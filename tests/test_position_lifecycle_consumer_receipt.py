@@ -100,7 +100,7 @@ def test_vendored_receipt_accepts_this_repositorys_identity_revisions() -> None:
         assert receipt[field] is False
     current_paths = {asset["path"] for asset in _json(ROOT / INDEX_PATH)["assets"]}
     assert producer["asset_index"]["producer_path"] == INDEX_PATH
-    assert {asset["producer_path"] for asset in producer["assets"].values()} == current_paths
+    assert {asset["producer_path"] for asset in producer["assets"].values()} <= current_paths
 
 
 def test_gate_accepts_the_vendored_receipt(checker: ModuleType, copy_root: Path) -> None:
@@ -127,15 +127,17 @@ def test_gate_refuses_an_edited_copy(checker: ModuleType, copy_root: Path) -> No
 @pytest.mark.parametrize(
     ("label", "edit", "message"),
     [
+        # A historical receipt is held to its shape, not to constants: the
+        # commits it records must still be full commit ids.
         (
-            "another producer revision",
-            lambda r: r["producer"].update(commit="0" * 40),
-            "producer asset commit differs",
+            "an abbreviated producer revision",
+            lambda r: r["producer"].update(commit="8cda48da"),
+            "producer commit is not a full commit id",
         ),
         (
-            "another identity code revision",
-            lambda r: r["producer"].update(identity_code_commit="0" * 40),
-            "producer identity code commit differs",
+            "an abbreviated identity code revision",
+            lambda r: r["producer"].update(identity_code_commit="3abb7c24"),
+            "producer identity_code_commit is not a full commit id",
         ),
         (
             "claims live readiness",

@@ -1,6 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.alephain.com/crucible/runner-safety-policy-v1.schema.json",
+  "x-contract-id": "alephain.crucible.runner_safety_policy.v1",
+  "x-contract-revision": 1,
   "title": "Runner Aggregate Cap Policy V1",
   "type": "object",
   "additionalProperties": false,
@@ -37,7 +39,7 @@
     "runner_id": { "type": "string", "format": "uuid" },
     "trading_mode": { "enum": ["sandbox", "testnet", "live"] },
     "revision": { "type": "integer", "minimum": 1 },
-    "settlement_currency": { "enum": ["USD", "USDT", "USDC", "BTC", "ETH"] },
+    "settlement_currency": { "enum": ["USD", "USDT", "USDC", "BTC", "ETH", "VUSDC", "VBTC", "VETH"] },
     "max_order_notional": {
       "type": "string",
       "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]*[1-9])?$",

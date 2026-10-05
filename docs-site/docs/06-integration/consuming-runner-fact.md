@@ -8,10 +8,10 @@ The signed lane publishes RunnerFact batches and separate strategy signal envelo
 ## RunnerFact subject
 
 ```text
-crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
+crucible.runner.fact.v1.{tenant_id}.{runner_id}.{trading_mode}
 ```
 
-The stream identity is tenant + mode + runner + deployment instance. A spec or generation change does not reset its sequence.
+The subject names the tenant, runner and mode; the deployment instance is in the signed batch header, not the subject. The sequence stream is tenant + mode + runner + deployment instance, so several instances of one runner share the subject with independent sequences. A spec or generation change does not reset a sequence.
 
 ## Batch signing
 

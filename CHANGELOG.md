@@ -13,6 +13,109 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Added
+
+- **Conformance vectors for consumers.** `docs/authority/conformance/` publishes
+  `runner-fact-batch-v1.vectors.json` and `strategy-canonical-json-v1.vectors.json`,
+  each with a `.sha256` sidecar. Every vector carries the exact bytes of one
+  message as a JSON string and the outcome a consumer must reach: accepted with
+  the payload digest, envelope digest and signing preimage, or refused with an
+  error class. They cover whole-second and fractional instants, former
+  six- and nine-digit instant spellings, a NETTING slot reopened by another
+  order, a reused `position_id`, exponent, trailing-zero and binary-float
+  `realized_pnl` values, a null required member, an unknown member, string
+  escapes and the largest signed 64-bit sequence. The vectors are rendered by
+  the runner's own fact paths and `scripts/generate_contract_conformance.py
+  --check` regenerates them byte for byte; they are signed with a published
+  test-only key.
+- **`scripts/contract_vendor.py`** vendors another repository's contract assets
+  at a contract revision and checks the vendored bytes offline, without naming
+  any commit.
+
+### Changed
+
+- **Contract schemas carry a contract revision.** The RunnerFact batch,
+  `StrategyArtifactRefV1`, `StrategyArtifactPreImportVerificationReceiptV1` and
+  `RuntimeCandidateAcceptanceV1` schemas gain two top-level annotation keywords,
+  `x-contract-id` and `x-contract-revision` (all at revision 1). The revision is
+  raised only when the wire shape or the meaning of a field changes; a change to
+  descriptive text keeps it. JSON Schema validators ignore both keywords, so no
+  document's validity changes. The schemas, the RunnerFact and strategy asset
+  indexes and their sidecars change; historical receipts are unchanged.
+- **The RunnerFact batch schema refuses a signed zero (contract revision 2).**
+  Every signed decimal pattern accepted `"-0"`, which the runner never writes
+  (it renders zero as `"0"`) and which a consumer reading a decimal type cannot
+  keep. The pattern now excludes it, so the RunnerFact batch contract moves to
+  revision 2, and the conformance vectors gain `decimal-negative-zero`, refused
+  as a non-canonical decimal. A consumer syncs revision 2; no receipt is written.
+- **The RunnerFact batch schema states the consumer's acceptance domain
+  (contract revision 3).** Each identifier the consumer bounds now carries its
+  `maxLength` (64, 128, 256 or 512) and a pattern that refuses control
+  characters, and every decimal pattern stops at 28 fractional digits and 29
+  digits. JSON Schema counts characters and cannot compare a mantissa with
+  2**96 - 1, so the exact bounds stay in the fact builders; the two vectors the
+  schema admits but the consumer refuses say so with `"schema_outcome":
+  "accept"`. The terminal valuation's open-position instrument keeps its
+  non-empty rule. The vectors gain the identifier byte and character bounds and
+  three control characters, six decimal spellings the runner never writes
+  (trailing zero, exponent, signed zero, leading plus, 29 fractional digits and
+  a JSON number) in an execution fill price, an equity amount and a position
+  snapshot mark price, the edges of the decimal type, and the two required
+  nullable members (`client_order_id`, `causation_id`) left out; the error
+  classes gain `decimal_out_of_range`. Consumers sync revision 3; no receipt is
+  written.
+- **The runner refuses to sign identifiers and decimals its consumer refuses.**
+  The consumer rejects an identifier (venue, venue trade, order and position
+  ids, client order id, instrument, order type and category, balance asset, fee
+  id and kind, watermark, reconciliation period) that is blank, longer than its
+  bound in UTF-8 bytes (64, 128, 256 or 512 by field), or carries a control
+  character, and it holds decimals in a type with a 96-bit mantissa and at most
+  28 fractional digits. A fact carrying such a value was signed and then
+  refused at ingest together with its whole batch. Every wire identifier and
+  every wire decimal is now checked against those bounds before signing; until
+  now only cash flows were. A value derived from a conversion rate with more
+  than 28 fractional digits (1 / 60000 has 32) is now refused when it reaches a
+  fact instead of being signed; arithmetic off the wire is unchanged.
+- **Consumers pin contract revisions instead of exchanging receipts.**
+  `docs/authority/contract-revisions-v1.json` lists each contract other
+  repositories vendor with its revision, wire fingerprint, assets and vectors.
+  The strategy contract generator no longer requires the two consumers'
+  acceptance receipts or names their commits, and no longer writes the strategy
+  handoff receipt; that receipt and the two vendored consumer receipts stay as
+  historical evidence and are checked only for shape. A wire change now raises
+  the contract revision and ships updated vectors, with no new receipt.
+- **The contracts Custos consumes are pinned by revision too.** The deployment
+  service's strategy release resolution, runner safety policy, runner machine
+  request, runner NATS transport authority and runner deployment command assets
+  are synced by `scripts/contract_vendor.py` at revision 1 and recorded in
+  `docs/authority/vendor/contract-pins-v1.json`; `make check-authority` and the
+  release workflow check them offline. This vendors the producer's current
+  bytes: the safety policy schema now lists the `VUSDC`, `VBTC` and `VETH`
+  settlement currencies, and the NATS transport authority golden grants the
+  strategy-signal publish subject. The runner command and machine-request
+  consumer indexes and receipts, and the receipts vendored from the deployment
+  service, stay as historical evidence checked only for shape; they no longer
+  pin current source or vendored bytes, so editing a consumer source file no
+  longer fails the authority gate. `scripts/generate_runner_machine_request_consumer_assets.py`
+  is removed.
+
+### Fixed
+
+- **The RunnerFact batch schema names the subject a runner publishes on.** Its
+  `x-custos-invariants.subject` read
+  `crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}`,
+  a superseded shape the runner never publishes on and the deployment service
+  refuses. It now reads `crucible.runner.fact.v1.{tenant_id}.{runner_id}.{trading_mode}`,
+  the subject `RunnerFactAuthority.subject` builds. The schema, its sidecar and
+  the RunnerFact asset index change; no wire field changes.
+- **The documentation site names the same RunnerFact subject.** The consumer
+  guide and the NATS subject reference, in English and Simplified Chinese,
+  still showed the superseded subject; they now show
+  `crucible.runner.fact.v1.{tenant_id}.{runner_id}.{trading_mode}` and say that
+  the deployment instance travels in the signed batch header. The disclosure
+  gate's exemption for the subject literal follows the new spelling, and its
+  self-test now refuses the superseded one.
+
 ## [0.7.0] - 2026-10-05
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.7.0`

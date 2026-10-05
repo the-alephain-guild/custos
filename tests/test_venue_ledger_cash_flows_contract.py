@@ -405,12 +405,14 @@ def test_the_largest_representable_amount_is_accepted() -> None:
     assert row["cash_flows"][0]["amount"] == "79228162514264337593543950335"
 
 
-def test_the_range_bound_stays_on_cash_flows() -> None:
-    """Conversion rates divide (1 / 60000 has 32 fractional digits) and feed
-    balances, equity and valuation; bounding every amount would stop the
-    producer from signing facts it signs today. Only cash flows are bounded.
+def test_a_conversion_tail_is_refused_on_the_wire_rather_than_rounded() -> None:
+    """A conversion rate divides (1 / 60000 has 32 fractional digits). The
+    consumer's decimal type holds 28, so such a value reaching a fact is refused
+    here instead of being signed and refused, or silently rounded, downstream.
+    The shared helper still takes the value off the wire
+    (tests/test_runner_fact_acceptance_domain.py).
     """
     rate = str(Decimal(1) / Decimal(60000))
     assert len(rate.split(".")[1]) > 28
-    row = _chunks(_snapshot(balances=[_balance(total=rate)]))[0]["balances"][0]
-    assert row["total"] == rate
+    with pytest.raises(RunnerFactContractError, match="balances.total"):
+        _snapshot(balances=[_balance(total=rate)])

@@ -1,6 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.alephain.com/crucible/runner-nats-transport-authority-v1.schema.json",
+  "x-contract-id": "alephain.crucible.runner_nats_transport_authority.v1",
+  "x-contract-revision": 1,
   "title": "Runner NATS Transport Authority V1",
   "type": "object",
   "additionalProperties": false,

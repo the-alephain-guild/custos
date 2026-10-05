@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import runpy
 from pathlib import Path
 
 import pytest
@@ -85,11 +86,7 @@ def test_schema_golden_and_index_are_the_same_v1_contract() -> None:
     assert claims["artifact_ref_digest"] == receipt["artifact_ref_digest"]
     assert claims["release_bom_digest"] == receipt["release_bom_digest"]
     crucible_receipt = json.loads(CRUCIBLE_RECEIPT.read_text(encoding="utf-8"))
-    assert crucible_receipt["producer"]["commit"] == "3bb6886f9151384541b79c7214eedbd106e87c29"
-    assert crucible_receipt["consumer"] == {
-        "accepted_at_commit": "fbb2e84a97483b604f6f6ac3d425eb523d4af262",
-        "repository": "tesseract-trading/crucible-rust",
-    }
+    assert crucible_receipt["consumer"]["repository"] == "tesseract-trading/crucible-rust"
     assert crucible_receipt["runtime_ready"] is False
     assert crucible_receipt["production_ready"] is False
 
@@ -238,17 +235,20 @@ def test_pre_import_receipt_accepts_digest_bound_github_oidc_proof_wrapper() -> 
     _validate(receipt)
 
 
-def test_contract_receipt_records_both_nautilus_2_consumers() -> None:
-    receipt = json.loads(RECEIPT.read_text(encoding="utf-8"))
-
-    assert receipt["status"] == "CANONICAL_V1_CONSUMER_HANDOFF_COMPLETE"
-    assert receipt["contract_consumer_ready"] is True
-    assert receipt["command_consumer_ready"] is True
-    assert receipt["runtime_ready"] is False
-    assert receipt["production_ready"] is False
-    ps_pin = receipt["consumers"]["philosophers_stone"]["receipt"]
-    assert ps_pin["commit"] == "9544dc75ed942cd1033eadce96127ab0b10f86ca"
-    assert ps_pin["sha256"] == hashlib.sha256(PS_RECEIPT.read_bytes()).hexdigest()
-    crucible_pin = receipt["consumers"]["crucible_rust"]["receipt"]
-    assert crucible_pin["commit"] == "8b147a2c00f2baa0c1d7f9e26a8eb4d04d63eeb0"
-    assert crucible_pin["sha256"] == hashlib.sha256(CRUCIBLE_RECEIPT.read_bytes()).hexdigest()
+def test_historical_handoff_receipts_are_checked_only_for_shape() -> None:
+    generator = runpy.run_path(
+        str(ROOT / "scripts/generate_strategy_contract_assets.py"), run_name="handoff_test"
+    )
+    assert str(RECEIPT.relative_to(ROOT)) in generator["HISTORICAL_CONTRACT_EVIDENCE_PATHS"]
+    assert str(RECEIPT.relative_to(ROOT)) not in generator["build_v1_contract_assets"]()
+    checker = runpy.run_path(str(ROOT / "scripts/check-authority-docs.py"), run_name="shape_test")
+    shape_errors = checker["historical_receipt_shape_errors"]
+    for path in (RECEIPT, PS_RECEIPT, CRUCIBLE_RECEIPT):
+        document = json.loads(path.read_text(encoding="utf-8"))
+        assert shape_errors(document, path.name) == []
+    damaged = json.loads(RECEIPT.read_text(encoding="utf-8"))
+    damaged["consumers"]["crucible_rust"]["receipt"]["commit"] = "8b147a2c"
+    assert shape_errors(damaged, "handoff") == [
+        "handoff $.consumers.crucible_rust.receipt.commit is not a full commit id"
+    ]
+    assert shape_errors([], "handoff") == ["handoff must be a JSON object"]

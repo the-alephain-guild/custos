@@ -3,7 +3,7 @@
 # Standalone open-source repository entrypoint. Standardized validation targets
 # keep shell execution deterministic and avoid permission drift from ad-hoc commands.
 
-.PHONY: test-publisher help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication verify-runner-fact-publication-network clean strategy-contract-assets check-strategy-contract-assets check-runner-machine-request-consumer-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
+.PHONY: test-publisher help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication verify-runner-fact-publication-network clean strategy-contract-assets check-strategy-contract-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
 
 # Default target: help
 .DEFAULT_GOAL := help
@@ -203,10 +203,19 @@ check-toolkit-extraction:
 	uv run python scripts/check-toolkit-extraction.py
 	uv run --package custos-runner --extra dev --extra nautilus python scripts/check-toolkit-typing-closure.py
 
-check-runner-machine-request-consumer-assets:
-	uv run python scripts/generate_runner_machine_request_consumer_assets.py --check
+# Contracts other repositories vendor by revision: the vector files are what the
+# runner writes, the revision index follows its rule, and the vendoring script's
+# own tests pass under the system interpreter that consumers run it with. The
+# crucible-rust contracts Custos consumes are checked against their revision pins
+# offline; the canonical copy of the script lives in crucible-rust.
+check-contract-revisions:
+	uv run python scripts/generate_contract_conformance.py --check
+	uv run python scripts/generate_contract_revisions.py --check
+	@/usr/bin/python3 -B scripts/tests/test_contract_vendor.py
+	@/usr/bin/python3 -B scripts/contract_vendor.py check \
+		--sibling-copy ../crucible-rust/scripts/contract_vendor.py
 
-check-authority: check-strategy-contract-assets check-toolkit-extraction check-runner-machine-request-consumer-assets
+check-authority: check-strategy-contract-assets check-toolkit-extraction check-contract-revisions
 	@/usr/bin/python3 scripts/check-authority-docs.py
 
 verify: check-authority

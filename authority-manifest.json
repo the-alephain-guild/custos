@@ -212,15 +212,19 @@
     },
     {
       "path": "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-handoff-receipt.json",
-      "role": "strategy_contract_receipt_v1"
+      "role": "historical_strategy_contract_handoff_receipt_v1"
     },
     {
       "path": "docs/authority/receipts/vendor/crucible-custos-strategy-contract-sodex-2-v1-consumer-receipt.json",
-      "role": "crucible_strategy_contract_consumer_receipt_v1"
+      "role": "historical_crucible_strategy_contract_consumer_receipt_v1"
     },
     {
       "path": "docs/authority/receipts/vendor/ps-custos-strategy-contract-sodex-2-v1-consumer-receipt.json",
-      "role": "philosophers_stone_strategy_contract_consumer_receipt_v1"
+      "role": "historical_philosophers_stone_strategy_contract_consumer_receipt_v1"
+    },
+    {
+      "path": "docs/authority/contract-revisions-v1.json",
+      "role": "contract_revision_index_v1"
     },
     {
       "role": "runner_policy_consumer_asset_index_v1",
@@ -505,7 +509,6 @@
       "scripts/check-toolkit-extraction.py",
       "scripts/check-toolkit-typing-baseline.py",
       "scripts/check-toolkit-typing-closure.py",
-      "scripts/generate_runner_machine_request_consumer_assets.py",
       "scripts/generate_strategy_contract_assets.py",
       "scripts/generate_runner_fact_contract.py",
       "scripts/toolkit_rc_oci.py",
@@ -558,7 +561,11 @@
       "tests/test_runner_deployment_command_golden.py",
       "tests/test_toolkit_contracts.py",
       "tests/test_toolkit_inventory.py",
-      "tests/test_toolkit_zero_rewrite.py"
+      "tests/test_toolkit_zero_rewrite.py",
+      "docs/authority/contract-revisions-v1.json",
+      "scripts/contract_vendor.py",
+      "scripts/generate_contract_conformance.py",
+      "scripts/generate_contract_revisions.py"
     ],
     "forbidden_regex": [
       "ArxNatsTelemetryAdapter",

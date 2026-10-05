@@ -90,7 +90,10 @@ jobs:
           uv run python scripts/check-toolkit-extraction.py
           uv run --package custos-runner --extra dev --extra nautilus \
             python scripts/check-toolkit-typing-closure.py
-          uv run python scripts/generate_runner_machine_request_consumer_assets.py --check
+          uv run python scripts/generate_contract_conformance.py --check
+          uv run python scripts/generate_contract_revisions.py --check
+          /usr/bin/python3 -B scripts/tests/test_contract_vendor.py
+          /usr/bin/python3 -B scripts/contract_vendor.py check
           /usr/bin/python3 scripts/check-authority-docs.py
           uv run --package custos-runner --extra dev mypy \
             --config-file packages/custos-strategy-toolkit/pyproject.toml \

@@ -77,5 +77,7 @@
     "max_clock_skew_seconds"
   ],
   "title": "Crucible Runner Machine Request Golden V1",
-  "type": "object"
+  "type": "object",
+  "x-contract-id": "alephain.crucible.runner_machine_request.v1",
+  "x-contract-revision": 1
 }

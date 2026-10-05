@@ -294,6 +294,8 @@ def test_schema_golden_capability_and_signature_are_one_exact_contract() -> None
     )
     assert {fact["kind"] for fact in facts} == SINGLE_BATCH_GOLDEN_KINDS
     assert _authority(batch).subject == index["golden_subject"]
+    subject_template = schema["x-custos-invariants"]["subject"]
+    assert subject_template.format(**batch) == _authority(batch).subject
 
     preimage = runner_fact_module.runner_fact_signing_preimage(batch)
     public_key = Ed25519PublicKey.from_public_bytes(
@@ -743,12 +745,20 @@ def test_terminal_valuation_fields_are_fixed_and_depend_on_outcome() -> None:
         **_terminal_kwargs(equity={"amount": "-5", "currency": "USDT"})
     )
     assert negative["equity"]["amount"] == "-5"
-    # The cited snapshot keeps its own wire rule: equity snapshots are not bounded.
-    fine = "10050." + "1" * 30
+    # The cited snapshot keeps its own wire rule, which bounds equity snapshots to
+    # the consumer's decimal type: 28 significant digits pass, 30 fractional
+    # digits are refused.
+    fine = "10050." + "1" * 23
     cited = runner_fact_module.terminal_valuation(
         **_terminal_kwargs(prior_equity={**_terminal_kwargs()["prior_equity"], "amount": fine})
     )
     assert cited["prior_equity"]["amount"] == fine
+    with pytest.raises(RunnerFactContractError, match="prior_equity.amount"):
+        runner_fact_module.terminal_valuation(
+            **_terminal_kwargs(
+                prior_equity={**_terminal_kwargs()["prior_equity"], "amount": "10050." + "1" * 30}
+            )
+        )
 
 
 def test_terminal_valuation_identity_is_independent_of_content() -> None:

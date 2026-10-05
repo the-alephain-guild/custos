@@ -77,7 +77,10 @@ def test_runtime_is_fully_tested_before_wheels_and_image_publication() -> None:
     install = text.index("--package custos-runner --extra dev --extra nautilus")
     runtime_lock = text.index("make check-runtime-lock", install)
     all_tests = text.index('uv run --extra nautilus pytest tests/ -m "not ci_only"', runtime_lock)
+    contract_vectors = text.index("scripts/generate_contract_conformance.py --check", all_tests)
+    contract_revisions = text.index("scripts/generate_contract_revisions.py --check", all_tests)
     authority = text.index("scripts/check-authority-docs.py", all_tests)
+    assert all_tests < contract_vectors < contract_revisions < authority
     wheel = text.index("make dist")
     wheel_signature = text.index(".github/workflows/scripts/sign-wheel.sh")
     signature_tests = text.index("pytest tests/test_wheel_signature.py", wheel_signature)
@@ -180,7 +183,8 @@ def test_verify_runtime_target_gates_the_image_contract() -> None:
 
 def test_every_makefile_test_path_exists() -> None:
     text = MAKEFILE.read_text()
-    referenced = set(re.findall(r"tests/[\w/]+\.py", text))
+    # Match the whole path, so scripts/tests/x.py is checked as itself, not as tests/x.py.
+    referenced = set(re.findall(r"(?<![\w/.-])((?:[\w.-]+/)*tests/[\w/]+\.py)", text))
     missing = sorted(path for path in referenced if not (ROOT / path).exists())
     assert referenced
     assert not missing

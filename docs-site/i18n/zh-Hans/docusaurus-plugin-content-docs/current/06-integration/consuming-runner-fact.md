@@ -8,10 +8,10 @@ sidebar_position: 3
 ## RunnerFact subject
 
 ```text
-crucible.runner_fact.{trading_mode}.{tenant_id}.{runner_id}.{deployment_instance_id}
+crucible.runner.fact.v1.{tenant_id}.{runner_id}.{trading_mode}
 ```
 
-流身份为租户 + 模式 + runner + 部署实例。spec 或 generation 改变不会重置序号。
+subject 只包含租户、runner 和模式；部署实例位于签名批次 header 中，不在 subject 里。序号流按租户 + 模式 + runner + 部署实例划分，因此同一 runner 的多个实例共用一个 subject，各自独立编号。spec 或 generation 改变不会重置序号。
 
 ## 批次签名
 

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RECEIPT = ROOT / "docs/authority/receipts/custos-runner-safety-policy-v1-consumer-receipt.json"
+PINS = ROOT / "docs/authority/vendor/contract-pins-v1.json"
 
 
 def test_runner_policy_pins_one_v1_producer_handoff() -> None:
@@ -27,23 +29,32 @@ def test_runner_policy_pins_one_v1_producer_handoff() -> None:
     assert receipt["production_ready"] is False
 
 
-def test_producer_authority_digests_match_the_vendored_bytes() -> None:
+def _pinned_policy_paths() -> set[str]:
+    pins = json.loads(PINS.read_text(encoding="utf-8"))
+    pin = pins["contracts"]["alephain.crucible.runner_safety_policy.v1"]
+    return {asset["local_path"] for asset in pin["assets"]}
+
+
+def test_vendored_policy_assets_are_pinned_by_contract_revision() -> None:
     receipt = json.loads(RECEIPT.read_text(encoding="utf-8"))
     producer = receipt["producer_authority"]
 
-    def digest(relative_path: str) -> str:
-        return hashlib.sha256((ROOT / relative_path).read_bytes()).hexdigest()
-
-    assert producer["producer_receipt_sha256"] == digest(producer["producer_receipt_path"])
-    assert producer["schema_sha256"] == digest(
-        "docs/authority/vendor/crucible-runner-safety-policy-v1.schema.json"
+    # The historical receipt still matches the frozen producer receipt it names;
+    # its schema and golden digests prove the revision it accepted, while the
+    # current vendored bytes are pinned by contract revision.
+    assert (
+        producer["producer_receipt_sha256"]
+        == hashlib.sha256((ROOT / producer["producer_receipt_path"]).read_bytes()).hexdigest()
     )
-    assert producer["golden_sha256"] == digest(
-        "docs/authority/vendor/crucible-runner-safety-policy-golden-v1.json"
-    )
+    for key in ("schema_sha256", "golden_sha256"):
+        assert re.fullmatch(r"[0-9a-f]{64}", producer[key])
+    pinned = _pinned_policy_paths()
+    assert "docs/authority/vendor/crucible-runner-safety-policy-v1.schema.json" in pinned
+    assert "docs/authority/vendor/crucible-runner-safety-policy-golden-v1.json" in pinned
+    assert "docs/authority/vendor/crucible-runner-safety-policy-golden-v1.json.sha256" in pinned
 
 
-def test_runner_policy_assets_are_exact_and_single_revision_v1() -> None:
+def test_runner_policy_assets_are_single_revision_v1() -> None:
     index_path = ROOT / "docs/authority/crucible-runner-safety-policy-consumer-assets-v1.json"
     index = json.loads(index_path.read_text(encoding="utf-8"))
     receipt = json.loads(RECEIPT.read_text(encoding="utf-8"))
@@ -55,15 +66,16 @@ def test_runner_policy_assets_are_exact_and_single_revision_v1() -> None:
     }
     assert index["policy_revision_axis"] == "revision"
     assert index["legacy_policy_version_or_generation_allowed"] is False
+    pinned = _pinned_policy_paths()
     for asset in index["producer_assets"]:
-        path = ROOT / asset["path"]
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == asset["sha256"]
-        assert path.stat().st_size == asset["size_bytes"]
+        assert (ROOT / asset["path"]).is_file()
+        assert asset["path"] in pinned or asset["path"].endswith("producer-receipt-v1.json")
     schema = json.loads(
         (ROOT / "docs/authority/vendor/crucible-runner-safety-policy-v1.schema.json").read_text(
             encoding="utf-8"
         )
     )
+    assert schema["x-contract-id"] == "alephain.crucible.runner_safety_policy.v1"
     assert "revision" in schema["required"]
     assert "policy_version" not in schema["properties"]
     assert "generation" not in schema["properties"]
