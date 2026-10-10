@@ -23,6 +23,7 @@ from custos.core.runner_fact import SUPPORTED_CURRENCIES
 from custos.core.runner_fact_producer import VenueLedgerEvidence
 from custos.core.venue_proxy import VenueProxy
 from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory, scoped_balances
+from custos.engines.nautilus.ledger_http import USER_AGENT
 
 _SPOT_LIVE = "https://api.binance.com"
 _SPOT_TESTNET = "https://testnet.binance.vision"
@@ -517,7 +518,7 @@ class BinanceVenueLedgerSource:
     def _request_json(self, url: str, *, headers: Mapping[str, str]) -> Any:
         request = urllib.request.Request(
             url,
-            headers={"Accept": "application/json", "User-Agent": "custos-runner/0.3", **headers},
+            headers={"Accept": "application/json", "User-Agent": USER_AGENT, **headers},
             method="GET",
         )
         try:

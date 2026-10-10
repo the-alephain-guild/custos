@@ -115,6 +115,14 @@ protocol — is published at
   the deployment instance travels in the signed batch header. The disclosure
   gate's exemption for the subject literal follows the new spelling, and its
   self-test now refuses the superseded one.
+- **Independent venue ledger reads name the runner in their User-Agent.** The
+  SoDEX and OKX ledger transport sent no User-Agent, so urllib's default
+  `Python-urllib/<version>` went out and the SoDEX gateway answered 403, even on
+  its public endpoints: start-up reconciliation failed with
+  `venue ledger request failed` on testnet and would on live. Every read now
+  sends `custos/<installed custos-runner version>`, kept when a caller adds
+  headers and replaced only when a caller names its own User-Agent. The
+  Binance ledger, which hard-coded `custos-runner/0.3`, sends the same value.
 
 ## [0.7.0] - 2026-10-05
 

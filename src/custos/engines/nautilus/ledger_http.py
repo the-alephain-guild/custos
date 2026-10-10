@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import json
 import time
 import urllib.error
@@ -14,6 +15,18 @@ from typing import Any
 
 class VenueLedgerError(RuntimeError):
     pass
+
+
+def _user_agent() -> str:
+    # Venue gateways refuse urllib's default ``Python-urllib/<version>``: the
+    # SoDEX gateway answers it with 403 even on its public endpoints.
+    try:
+        return f"custos/{importlib.metadata.version('custos-runner')}"
+    except importlib.metadata.PackageNotFoundError:
+        return "custos"
+
+
+USER_AGENT = _user_agent()
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -39,7 +52,9 @@ class ReadOnlyVenueHttp:
         self._last_request = time.monotonic()
         try:
             request = urllib.request.Request(
-                self.base_url + target, headers=headers or {}, method="GET"
+                self.base_url + target,
+                headers={"User-Agent": USER_AGENT, **(headers or {})},
+                method="GET",
             )
             with self._opener.open(request, timeout=15) as response:
                 payload = response.read(16 * 1024 * 1024 + 1)
