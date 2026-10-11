@@ -29,7 +29,7 @@ from custos.core.readiness import ReadinessFile
 from custos.core.runner_fact import RunnerRuntimeMetricsV1
 from custos.offline.mode_guard import PERMITTED_MODES, refuse_live
 from custos.offline.reconciler import OfflineReconciler
-from custos.offline.safety import TICK_SECS, OfflineExposureGuard
+from custos.offline.safety import EVALUATION_DEADLINE_SECS, TICK_SECS, OfflineExposureGuard
 from custos.offline.spec import OfflineDeploymentSpec, now_rfc3339_nanos, offline_subject
 from custos.offline.state import OfflineAppliedStore
 from custos.offline.strategy_config import strategy_trading_config_for
@@ -126,6 +126,7 @@ async def run_offline_lane(
     credential_for: Any | None = None,
     strategy_config_for: Any | None = None,
     safety_interval: float = TICK_SECS,
+    safety_deadline: float = EVALUATION_DEADLINE_SECS,
     telemetry_interval: float = SNAPSHOT_SECS,
     shutdown_deadline: float = SHUTDOWN_DEADLINE_SECS,
     stop: asyncio.Event | None = None,
@@ -144,7 +145,7 @@ async def run_offline_lane(
     store = OfflineAppliedStore(state_path)
     connect = connect_factory or nats.connect
     stop_event = stop or asyncio.Event()
-    guard = OfflineExposureGuard(engine=engine, interval=safety_interval)
+    guard = OfflineExposureGuard(engine=engine, interval=safety_interval, deadline=safety_deadline)
     installed = _stop_on_signals(stop_event)
 
     connection = await connect(nats_url)

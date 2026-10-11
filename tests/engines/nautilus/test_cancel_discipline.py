@@ -22,13 +22,13 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from dataclasses import dataclass
-from types import SimpleNamespace
 
 import pytest
 from structlog.testing import capture_logs
 
 pytest.importorskip("nautilus_trader")
 
+from custos.core.fallback_breaker import FallbackBreakerConfig  # noqa: E402
 from custos.engines.nautilus import host as nautilus_host  # noqa: E402
 from custos.engines.nautilus import venue_binance, venue_sodex  # noqa: E402
 from custos.engines.nautilus.host import NtTradingNodeHost  # noqa: E402
@@ -227,22 +227,31 @@ async def test_a_cancel_the_venue_cannot_find_is_sent_once_then_queried(
 
 @pytest.mark.asyncio
 async def test_the_refusal_state_outlives_repeated_guard_stops(host, clock, sodex_texts) -> None:
-    """Five guard ticks, each cancelling the stop at its deadline, still cancel once.
+    """Six stops from the guard, each running the policy to its end, still cancel once.
 
-    The guard abandons a stop it has waited ten seconds for and starts another on its
-    next tick. Kept in the stop's own coroutine, what the venue said would be gone by
-    then, and every tick would cancel the ghost order again.
+    Each stop is a fresh run of the shutdown policy: the preserve stop cannot
+    confirm while the ghost order is in the cache, so it fails and the guard tries
+    again after its back-off. Kept in the stop's own coroutine, what the venue said
+    would be gone by the next attempt, and every attempt would cancel the ghost
+    order again.
     """
     strategy, instance = await _deployed(
         host, "not-found-guard", lambda _id: NOT_FOUND, orders=[_Order("ghost-1")]
     )
-    guard = OfflineExposureGuard(engine=host, deadline=0.03)
-    watched = SimpleNamespace(deployment_instance_id=instance)
+    host._shutdown_policies[instance] = nautilus_host._ShutdownPolicy(  # noqa: SLF001
+        position_policy="preserve", confirmation_timeout_secs=0.05
+    )
+    guard = OfflineExposureGuard(engine=host, deadline=2.0, clock=clock)
+    guard.watch("spec", instance, FallbackBreakerConfig.strictest_local_fallback("testnet"))
+    watched = guard._watched["spec"]  # noqa: SLF001 - the guard's own record
 
-    for _ in range(6):
-        await guard._end_deployment("spec", watched)  # noqa: SLF001 - the guard's own stop path
-        clock.advance(15)
+    with capture_logs() as logs:
+        for _ in range(6):
+            await guard._end_deployment("spec", watched)  # noqa: SLF001 - the guard's own stop path
+            clock.advance(300)
 
+    attempts = [event["attempt"] for event in _events(logs, "offline_exposure_stop_failed")]
+    assert attempts == [1, 2, 3, 4, 5, 6], "every attempt ran the policy and failed"
     assert strategy.cancels == ["ghost-1"]
     assert len(strategy.queries) <= 3
     assert host.attached(instance), "an unconfirmed preserve stop keeps the node"

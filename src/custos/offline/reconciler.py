@@ -437,19 +437,28 @@ class OfflineReconciler:
         skips all of it and leaves orders on the exchange nobody asked to keep.
 
         One deadline covers all of them, so the whole shutdown fits inside the
-        grace period the process is given before it is killed.
+        grace period the process is given before it is killed. A stop the guard
+        already has under way is waited on rather than started again. How each
+        deployment ended goes into one summary event and into its last status, so
+        a stop that did not finish says what it left behind.
         """
 
         loop = asyncio.get_running_loop()
         ends_at = loop.time() + deadline
         all_stopped = True
+        summary: list[dict[str, Any]] = []
         for spec_id, (spec, deployment_instance_id) in tuple(self._running.items()):
+            outcome = "stopped"
+            in_progress = self._guard.stop_in_progress(spec_id) if self._guard else None
+            stopping = (
+                asyncio.shield(in_progress)
+                if in_progress is not None
+                else self._engine.stop(deployment_instance_id)
+            )
             try:
-                await asyncio.wait_for(
-                    self._engine.stop(deployment_instance_id),
-                    timeout=max(ends_at - loop.time(), 0.0),
-                )
+                await asyncio.wait_for(stopping, timeout=max(ends_at - loop.time(), 0.0))
             except TimeoutError:
+                outcome = "stop_timed_out"
                 _log.error(
                     "offline_shutdown_stop_unconfirmed",
                     spec_id=spec_id,
@@ -457,6 +466,7 @@ class OfflineReconciler:
                     deadline_seconds=deadline,
                 )
             except Exception as exc:  # noqa: BLE001 - one failed stop must not skip the rest
+                outcome = "stop_failed"
                 _log.error(
                     "offline_shutdown_stop_failed",
                     spec_id=spec_id,
@@ -464,14 +474,51 @@ class OfflineReconciler:
                     error=str(exc),
                 )
             stopped = not self._engine.attached(deployment_instance_id)
+            if stopped:
+                outcome = "stopped"
+            elif outcome == "stopped":
+                outcome = "still_held"
             all_stopped = all_stopped and stopped
+            stop_summary = {
+                "outcome": outcome,
+                "residual_orders": self._stop_residue(deployment_instance_id),
+            }
+            summary.append(
+                {
+                    "spec_id": spec_id,
+                    "deployment_instance_id": deployment_instance_id,
+                    **stop_summary,
+                }
+            )
             if stopped:
                 self._running.pop(spec_id, None)
                 if self._guard is not None:
                     self._guard.release(spec_id)
                 _log.info("offline_shutdown_deployment_stopped", spec_id=spec_id)
-            await self._report(spec, healthy=stopped, phase=LifecycleState.STOPPED)
+            await self._report(
+                spec, healthy=stopped, phase=LifecycleState.STOPPED, stop_summary=stop_summary
+            )
+        if summary:
+            (_log.info if all_stopped else _log.error)(
+                "offline_shutdown_summary", clean=all_stopped, deployments=summary
+            )
         return all_stopped
+
+    def _stop_residue(self, deployment_instance_id: str) -> dict[str, int] | None:
+        """What the engine says is still open after the stop, by why; None if it cannot say."""
+
+        probe = getattr(self._engine, "stop_residue", None)
+        if not callable(probe):
+            return None
+        try:
+            return probe(deployment_instance_id)
+        except Exception as exc:  # noqa: BLE001 - the summary must still be written
+            _log.warning(
+                "offline_shutdown_residue_unreadable",
+                deployment_instance_id=deployment_instance_id,
+                error=str(exc),
+            )
+            return None
 
     async def _report(
         self,
@@ -479,6 +526,7 @@ class OfflineReconciler:
         *,
         healthy: bool,
         phase: LifecycleState | None = None,
+        stop_summary: dict[str, Any] | None = None,
     ) -> None:
         """Publish observed state, and keep running if the channel is gone.
 
@@ -491,6 +539,8 @@ class OfflineReconciler:
             "phase": (phase or spec.lifecycle_state).value,
             "health": "healthy" if healthy else "unhealthy",
         }
+        if stop_summary is not None:
+            payload["stop_summary"] = stop_summary
         envelope = {
             "envelope_version": 1,
             "event_id": str(uuid6.uuid7()),

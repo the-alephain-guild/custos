@@ -618,6 +618,10 @@ class NtTradingNodeHost:
         # deployment_instance_id -> the background reap of a run that outlived its
         # cancellation. Present only while the node may still be running.
         self._pending_reaps: dict[str, asyncio.Future[datetime]] = {}
+        # deployment_instance_id -> the stop under way. Every caller waits on this
+        # one task, and a caller that is cancelled only stops waiting: the shutdown
+        # policy it started runs to its own end instead of beginning again.
+        self._stops_in_flight: dict[str, asyncio.Task[EngineStopBoundary]] = {}
         self._shutdown_poll_secs = 0.2
         self._shutdown_stable_polls = 3
         self._shutdown_close_retry_secs = 2.0
@@ -1304,7 +1308,35 @@ class NtTradingNodeHost:
         undisposed, reaped in the background, and reported with ``reaped=False``.
         A second stop while that reap is pending reports the same reap and does
         not run the shutdown policy again.
+
+        One stop runs per instance at a time. A second caller waits on the first
+        stop and gets its answer, success or failure, and a caller that is
+        cancelled stops waiting without stopping the stop. A failure is not
+        remembered past the waiters it reached: the next stop starts afresh.
         """
+        in_flight = self._stops_in_flight.get(deployment_instance_id)
+        if in_flight is None:
+            in_flight = asyncio.ensure_future(self._stop_at_boundary_once(deployment_instance_id))
+            self._stops_in_flight[deployment_instance_id] = in_flight
+            in_flight.add_done_callback(
+                functools.partial(self._forget_stop_in_flight, deployment_instance_id)
+            )
+        return await asyncio.shield(in_flight)
+
+    def _forget_stop_in_flight(
+        self, deployment_instance_id: str, task: asyncio.Task[EngineStopBoundary]
+    ) -> None:
+        if self._stops_in_flight.get(deployment_instance_id) is task:
+            self._stops_in_flight.pop(deployment_instance_id, None)
+        # Every waiter may have been cancelled; the outcome is still observed here.
+        if not task.cancelled() and task.exception() is not None:
+            _log.warning(
+                "nt_stop_failed",
+                deployment_instance_id=deployment_instance_id,
+                **_sanitize_exception(task.exception()),
+            )
+
+    async def _stop_at_boundary_once(self, deployment_instance_id: str) -> EngineStopBoundary:
         requested_at = datetime.now(UTC)
         pending = self._pending_reaps.get(deployment_instance_id)
         if pending is not None:
@@ -1696,6 +1728,25 @@ class NtTradingNodeHost:
             timeout_secs=timeout_secs,
         )
         raise RuntimeError("shutdown flatten confirmation timed out")
+
+    def stop_residue(self, deployment_instance_id: str) -> dict[str, int] | None:
+        """What a stop has yet to see withdrawn, counted by why each order is still open.
+
+        Empty once the node is gone: a confirmed stop leaves nothing it was asked to
+        withdraw, and protection a preserve stop keeps is not residue. None when the
+        venue state cannot be read.
+        """
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None or runtime.task.done():
+            return {}
+        policy = self._shutdown_policies.get(deployment_instance_id)
+        try:
+            _positions, orders = self._open_venue_state(runtime)
+        except RuntimeError:
+            return None
+        if policy is None or policy.position_policy != "flatten":
+            orders = [order for order in orders if not bool(order.is_reduce_only)]
+        return self._cancel_discipline(deployment_instance_id).residual(orders)
 
     def attached(self, deployment_instance_id: str) -> bool:
         # Answered from the live node registry rather than the authority record:
