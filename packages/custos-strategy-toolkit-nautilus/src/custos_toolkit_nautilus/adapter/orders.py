@@ -26,6 +26,7 @@ from nautilus_trader.model import (
 )
 
 from .runtime_types import Cache, Logger, Order, OrderFactory, Position
+from .strategy_core import order_only_reduces
 
 if TYPE_CHECKING:
     from .config.risk import ScaledTakeProfitConfig, StopLossTrailingConfig
@@ -426,8 +427,9 @@ class OrderTracker:
 # cancel_all_orders() during reversal is fire-and-forget — a venue failure
 # (e.g. demo-fapi transport error) leaves the old SL resting with no retry,
 # while the tracker has already been cleared. The per-bar sweep reconciles
-# cache state and cancels orphaned reduce-only orders only when their stale state
-# is provable without assuming that every account order belongs to this strategy.
+# cache state and cancels orphaned orders that can only reduce, only when their
+# stale state is provable without assuming that every account order belongs to
+# this strategy.
 STALE_ORDER_MIN_AGE_NS: int = 30_000_000_000  # 30s — don't race in-flight orders
 STALE_SWEEP_RETRY_COOLDOWN_NS: int = 120_000_000_000  # 120s — per-order cancel rate guard
 
@@ -439,36 +441,44 @@ def is_stale_order(
     tracked_ids: set[ClientOrderId],
     sl_is_tracked: bool,
     now_ns: int,
+    cash_account: bool | None,
+    strategy_id: object,
     min_age_ns: int = STALE_ORDER_MIN_AGE_NS,
 ) -> bool:
     """Classify whether an open order is a stale orphan that should be cancelled.
 
-    Scope: reduce-only orders (SL/TP) only — pending entry orders are managed
-    by SignalExecutionCoordinator._cancel_pending_entry_order().
+    Scope: orders that can only reduce (``order_only_reduces``) -- reduce-only
+    orders, and on a cash account this strategy's own sells, since a cash account's
+    stops and exits go out without the flag. Pending entry orders are managed by
+    SignalExecutionCoordinator._cancel_pending_entry_order(). With the account
+    unreadable only the flag counts: better to leave an orphan than to cancel a
+    plain order without knowing what it is.
 
     Rules:
     - tracked by OrderTracker or younger than min_age_ns -> keep (in-flight)
-    - no open position -> any untracked reduce-only order is an orphan -> cancel
+    - no open position -> any untracked order in scope is an orphan -> cancel
     - wrong side (cannot reduce the current position) -> cancel
       (the reversal-orphan case: position flipped, old SL side is now invalid)
-    - protective-side reduce-only orders are kept even when untracked. Venue streams
+    - protective-side orders in scope are kept even when untracked. Venue streams
       are account-wide and another deployment may own them; without an explicit owner
       token, treating a second protective stop as a duplicate can cancel a sibling
       instance's only protection. Once flat or reversed, the rules above prove it stale.
 
     Args:
         order: Open order (duck-typed: client_order_id, side, order_type,
-            is_reduce_only, ts_init)
+            is_reduce_only, strategy_id, ts_init)
         position_is_long: Direction of the open position, None when flat
         tracked_ids: client_order_ids currently tracked by OrderTracker
         sl_is_tracked: Whether the tracker holds an SL (sl or exchange_sl)
         now_ns: Current timestamp (ns)
+        cash_account: Whether the account is a cash account; None when unreadable
+        strategy_id: This strategy's id, consulted on a cash account only
         min_age_ns: Minimum order age before it may be swept
 
     Returns:
         True when the order should be cancelled as a stale orphan
     """
-    if not order.is_reduce_only:
+    if not order_only_reduces(order, cash_account=cash_account, strategy_id=strategy_id):
         return False
     if order.client_order_id in tracked_ids:
         return False

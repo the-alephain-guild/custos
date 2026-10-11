@@ -396,14 +396,15 @@ class OrderReconciler:
         ]
 
     def sweep_stale_orders_for_pair(self, ctx: PairContext) -> int:
-        """Cancel stale (orphaned) reduce-only orders for this pair.
+        """Cancel stale (orphaned) orders that can only reduce, for this pair.
 
         Root cause: the reversal path's cancel_all_orders() is fire-and-forget -- when
         the venue call fails (e.g. a demo-fapi transport error) the old SL stays resting
         on the exchange while the tracker is already cleared, and Nautilus sends the
         strategy no cancel-failure event, so the orphan has no backstop. This method
-        reconciles the open orders in the cache every bar and cancels the reduce-only
-        orders the strategy no longer claims.
+        reconciles the open orders in the cache every bar and cancels the orders that
+        can only reduce -- reduce-only, or on a cash account this strategy's own sells --
+        which the strategy no longer claims.
 
         Returns:
             Number of cancel requests issued in this sweep.
@@ -430,6 +431,8 @@ class OrderReconciler:
         position_is_long = positions[0].is_long if positions else None
         sl_is_tracked = bool(tracker.sl_order_ids or tracker.exchange_sl_order_ids)
         now_ns = s.clock.timestamp_ns()
+        cash_account = read_cash_account(s.cache, ctx.instrument_id, s.log.warning)
+        strategy_id = s.strategy_id if cash_account else None
 
         # Prune rate-guard entries for orders no longer open
         open_ids = {o.client_order_id for o in open_orders}
@@ -445,6 +448,8 @@ class OrderReconciler:
                 tracked_ids=tracked_ids,
                 sl_is_tracked=sl_is_tracked,
                 now_ns=now_ns,
+                cash_account=cash_account,
+                strategy_id=strategy_id,
             ):
                 continue
             # rate guard — per-order cooldown between cancel attempts

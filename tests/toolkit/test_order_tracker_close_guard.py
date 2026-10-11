@@ -176,6 +176,8 @@ class TestStaleProtectiveOrderOwnership:
                 tracked_ids={"owned-stop"},
                 sl_is_tracked=True,
                 now_ns=60 * S,
+                cash_account=None,
+                strategy_id=None,
             )
             is False
         )
@@ -196,6 +198,8 @@ class TestStaleProtectiveOrderOwnership:
                 tracked_ids=set(),
                 sl_is_tracked=False,
                 now_ns=60 * S,
+                cash_account=None,
+                strategy_id=None,
             )
             is True
         )

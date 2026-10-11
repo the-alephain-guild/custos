@@ -23,7 +23,10 @@ pytest.importorskip("custos_toolkit_nautilus")
 
 from custos_toolkit.config import load_config  # noqa: E402
 from custos_toolkit.signals.types import Signal  # noqa: E402
-from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator  # noqa: E402
+from custos_toolkit_nautilus.adapter.coordinators import (  # noqa: E402
+    OrderReconciler,
+    SignalExecutionCoordinator,
+)
 from custos_toolkit_nautilus.adapter.execution import ExecutionManager  # noqa: E402
 from custos_toolkit_nautilus.adapter.orders import OrderTracker  # noqa: E402
 from custos_toolkit_nautilus.adapter.strategy_core import NautilusStrategyCore  # noqa: E402
@@ -86,7 +89,7 @@ def _strategy_config(directory, *, tick_type: str | None = None) -> NautilusTrad
     )
 
 
-def _engine() -> BacktestEngine:
+def _engine(base: Money | None = None) -> BacktestEngine:
     engine = BacktestEngine(
         BacktestEngineConfig(logging=LoggerConfig(bypass_logging=True), run_analysis=False)
     )
@@ -94,7 +97,7 @@ def _engine() -> BacktestEngine:
         _VENUE,
         OmsType.NETTING,
         AccountType.CASH,
-        [Money(100_000, _USDT), Money(0, _BTC)],
+        [Money(100_000, _USDT), base or Money(0, _BTC)],
     )
     engine.add_instrument(_SPOT)
     return engine
@@ -281,6 +284,101 @@ def test_the_engine_delivers_denials_to_the_strategy(tmp_path) -> None:
         )
         assert [event.client_order_id for event in handled.events] == [denied_id], (
             "the denial must reach the toolkit's handler"
+        )
+    finally:
+        engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# An orphan plain take-profit on a cash account is cancelled at the venue
+# ---------------------------------------------------------------------------
+
+
+# One quote a second from t=1s: the sweep's per-order cool-down (120s) is measured from
+# the epoch, so the first sweep that may cancel anything runs after t=120s.
+_SWEEP_AT_QUOTE = 125
+
+
+class _LeavesAnOrphan(NautilusStrategyCore):
+    """Buy, rest a plain take-profit far above, close with a market sell, then sweep.
+
+    The take-profit is left behind untracked, the shape a fire-and-forget cancel that
+    failed leaves. The account also holds base currency that is not this strategy's,
+    which is what the orphan would sell if it ever filled. The sweep is the real
+    ``OrderReconciler.sweep_stale_orders_for_pair`` reading the engine's cache and
+    account.
+    """
+
+    def __new__(cls, config: NautilusTradingStrategyConfig, **kwargs: object):
+        return super().__new__(cls, config)
+
+    def __init__(self, config: NautilusTradingStrategyConfig) -> None:
+        super().__init__(config)
+        self._quotes = 0
+        self.take_profit_id = None
+
+    def on_start(self) -> None:
+        self.subscribe_quotes(_SPOT.id)
+
+    def _market(self, side: OrderSide) -> None:
+        self.submit_order(
+            self.order_factory.market(
+                instrument_id=_SPOT.id,
+                order_side=side,
+                quantity=_SPOT.make_qty(0.0063),
+                time_in_force=TimeInForce.IOC,
+            )
+        )
+
+    def on_core_quote_tick(self, tick) -> None:
+        self._quotes += 1
+        if self._quotes == 1:
+            self._market(OrderSide.BUY)
+        elif self._quotes == 2:
+            take_profit = self.order_factory.limit(
+                instrument_id=_SPOT.id,
+                order_side=OrderSide.SELL,
+                quantity=_SPOT.make_qty(0.0063),
+                price=_SPOT.make_price(160_000.0),
+                time_in_force=TimeInForce.GTC,
+            )
+            self.take_profit_id = take_profit.client_order_id
+            self.submit_order(take_profit)
+        elif self._quotes == 3:
+            self._market(OrderSide.SELL)
+        elif self._quotes == _SWEEP_AT_QUOTE:
+            ctx = NS(
+                instrument_id=_SPOT.id,
+                pair="BTC-USDT",
+                order_tracker=OrderTracker(),
+                stale_cancel_attempts={},
+            )
+            OrderReconciler(self).sweep_stale_orders_for_pair(ctx)
+
+    def get_indicator_history(self) -> dict[str, object]:
+        return {}
+
+    def on_core_bar(self, bar) -> None: ...
+    def _on_bar_risk_hygiene(self, bar) -> None: ...
+
+
+def test_an_orphan_plain_take_profit_is_cancelled_at_the_venue(tmp_path) -> None:
+    engine = _engine(base=Money(0.01, _BTC))
+    strategy = _LeavesAnOrphan(_strategy_config(tmp_path))
+    engine.add_strategy(strategy)
+    engine.add_data(_quotes(_SWEEP_AT_QUOTE + 2))
+    try:
+        engine.run()
+
+        assert not engine.cache.positions_open(instrument_id=_SPOT.id), "precondition: flat"
+        take_profit = engine.cache.order(strategy.take_profit_id)
+        assert take_profit.is_reduce_only is False
+        assert take_profit.status == OrderStatus.CANCELED, (
+            f"the orphan must be cancelled, got {take_profit.status!r}"
+        )
+        account = engine.cache.account_for_venue(_VENUE)
+        assert account.balance_total(_BTC).as_decimal() == Decimal("0.01"), (
+            "the base currency that was never the strategy's is still there"
         )
     finally:
         engine.dispose()
