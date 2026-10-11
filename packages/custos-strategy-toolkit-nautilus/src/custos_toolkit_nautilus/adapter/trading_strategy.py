@@ -84,7 +84,11 @@ from custos_toolkit_nautilus.adapter.filter_manager import FilterManager
 from custos_toolkit_nautilus.adapter.orders import OrderTracker
 from custos_toolkit_nautilus.adapter.pair_context import PairContext
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
-from custos_toolkit_nautilus.adapter.strategy_core import NautilusStrategyCore
+from custos_toolkit_nautilus.adapter.strategy_core import (
+    NautilusStrategyCore,
+    order_only_reduces,
+    read_cash_account,
+)
 from custos_toolkit_nautilus.adapter.trading_config import NautilusTradingStrategyConfig
 from custos_toolkit_nautilus.adapter.utils import (
     deep_asdict,
@@ -515,10 +519,16 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         for _, ctx in self._contexts.items():
             if self._shutdown_position_policy == "preserve":
                 # A stopped live process must not leave future entry intent resting,
-                # but canceling reduce-only protection would turn a deliberately
-                # preserved position into an unprotected one.
+                # but canceling protection would turn a deliberately preserved position
+                # into an unprotected one. Protection is told apart by what the venue
+                # records, because this also runs after a restart, when the tracker
+                # holds nothing: reduce-only, or on a cash account this strategy's sell.
+                cash_account = read_cash_account(self.cache, ctx.instrument_id, self.log.warning)
+                strategy_id = self.strategy_id if cash_account else None
                 for order in self.cache.orders_open(instrument_id=ctx.instrument_id):
-                    if not bool(getattr(order, "is_reduce_only", False)):
+                    if not order_only_reduces(
+                        order, cash_account=cash_account, strategy_id=strategy_id
+                    ):
                         self.cancel_order(order)
             else:
                 self.cancel_all_orders(ctx.instrument_id)

@@ -23,7 +23,6 @@ from nautilus_trader.model import OrderSide, QuoteTick, TimeInForce, TradeTick
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
 
 if TYPE_CHECKING:
-
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
     from custos_toolkit_nautilus.adapter.tick_monitor import ExitAction
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
@@ -208,13 +207,13 @@ class ExecutionCoordinator:
         Roots out reduce-only close flooding (-2022). Three layers of protection:
         1. In-flight / cooldown gate -- while a close is in flight or within the
            post-rejection backoff, do not re-send every tick.
-        2. Cancel serialization -- if the venue still has resting reduce_only
-           orders (hybrid safety SL / exchange SL/TP), cancel them first and
-           **skip the close this tick** (close on the next tick once the cancel
-           is confirmed), so a new close order and the resting orders don't add
-           up past the position size and get rejected.
-        3. With no resting reduce_only, submit a **single** full-close order and
-           arm the in-flight gate.
+        2. Cancel serialization -- if this strategy still has protective lots
+           resting (hybrid safety SL / exchange SL/TP / scaled take-profit), cancel
+           them first and **skip the close this tick** (close on the next tick once
+           the cancel is confirmed), so a new close order and the resting orders
+           don't add up past the position size and get rejected.
+        3. With nothing resting, submit a **single** full-close order and arm the
+           in-flight gate.
         """
         s = self._strategy
         positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
@@ -228,18 +227,23 @@ class ExecutionCoordinator:
 
         position = positions[0]
 
-        # Protection 2: decide whether resting reduce_only orders remain using the
-        # venue's actual open-order state (not the local tracker). If so, cancel
-        # first, skip the close this tick, and close on the next tick once the
-        # cancel takes effect.
-        resting_reduce_only = [
-            o for o in s.cache.orders_open(instrument_id=ctx.instrument_id) if o.is_reduce_only
+        # Protection 2: decide from the venue's actual open-order state whether
+        # protection is still resting. If so, cancel first, skip the close this tick,
+        # and close on the next tick once the cancel takes effect. A protective lot is
+        # recognised by the tracker's record -- a cash account's lots carry no
+        # reduce-only flag -- or by that flag, which on a margin account also covers a
+        # lot the tracker does not hold.
+        protection = ctx.order_tracker.protection_order_ids
+        resting_protection = [
+            o
+            for o in s.cache.orders_open(instrument_id=ctx.instrument_id)
+            if o.client_order_id in protection or o.is_reduce_only
         ]
-        if resting_reduce_only:
+        if resting_protection:
             s._sltp_coordinator.cancel_sl_tp_orders(ctx)
             s.log.info(
                 f"[{ctx.pair}] TICK EXIT pending: cancelling "
-                f"{len(resting_reduce_only)} resting reduce-only order(s) before close",
+                f"{len(resting_protection)} resting protective order(s) before close",
                 color=LogColor.MAGENTA,
             )
             return

@@ -26,7 +26,7 @@ class RejectedOrderKind(str, Enum):  # noqa: UP042 - match the str(Enum) style o
 
     TRACKED_STOP = "tracked_stop"
     TRACKED_TAKE_PROFIT = "tracked_take_profit"
-    REDUCE_ONLY_CLOSE = "reduce_only_close"
+    CLOSE = "close"
     ENTRY = "entry"
     UNKNOWN = "unknown"
 
@@ -44,6 +44,9 @@ class _Tracker(Protocol):
     def tp_order_ids(self) -> Collection[Any]: ...
 
     @property
+    def close_order_ids(self) -> Collection[Any]: ...
+
+    @property
     def entry_order_id(self) -> Any: ...
 
 
@@ -55,9 +58,13 @@ def classify_rejected_order(
     """Which of this strategy's orders the rejection is about.
 
     ``order`` is what the cache holds, which can be nothing; the tracker is what the
-    strategy believes it has out. Protective lots are checked before the reduce-only
-    test because a resting stop is also reduce-only, and treating it as a failed close
+    strategy believes it has out. Protective lots are checked before the close test
+    because a resting stop is also reduce-only, and treating it as a failed close
     attempt would cancel the other protective lots along with it.
+
+    A close is a close by the tracker's record or by its reduce-only flag. The flag
+    alone is not enough: a cash account's closes go out without it, and a rejection of
+    one read as unknown would skip the backoff and the count.
 
     ``UNKNOWN`` is a real answer: the venue's report may be about an order this
     strategy never placed, or one it has already forgotten.
@@ -66,8 +73,10 @@ def classify_rejected_order(
         return RejectedOrderKind.TRACKED_STOP
     if client_order_id in set(tracker.tp_order_ids):
         return RejectedOrderKind.TRACKED_TAKE_PROFIT
+    if client_order_id in set(tracker.close_order_ids):
+        return RejectedOrderKind.CLOSE
     if order is not None and bool(order.is_reduce_only):
-        return RejectedOrderKind.REDUCE_ONLY_CLOSE
+        return RejectedOrderKind.CLOSE
     if tracker.entry_order_id is not None and tracker.entry_order_id == client_order_id:
         return RejectedOrderKind.ENTRY
     return RejectedOrderKind.UNKNOWN

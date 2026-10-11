@@ -30,6 +30,7 @@ from nautilus_trader.model import (
     OrderType,
     Price,
     Quantity,
+    StrategyId,
     Symbol,
 )
 
@@ -104,6 +105,7 @@ class Harness:
             limit=lambda **kw: self.order(OrderType.LIMIT, **kw),
         )
         self.clock = NS(timestamp_ns=lambda: self.now_ns)
+        self.strategy_id = StrategyId("Harness-000")
         self._mode = mode
         self._order_signal_map: dict[str, str] = {}
         self._capital_allocator = None
@@ -155,6 +157,7 @@ class Harness:
         oid = f"O-{len(self.orders) + 1}"
         order = NS(
             client_order_id=oid,
+            strategy_id=self.strategy_id,
             order_type=kind,
             quantity=kw["quantity"],
             side=kw["order_side"],

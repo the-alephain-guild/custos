@@ -25,6 +25,8 @@ directly and implement all trading logic themselves.
 import logging
 import os
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -49,6 +51,7 @@ from custos_toolkit_nautilus.adapter.state_persistence import (
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.orders import OrderTracker
+    from custos_toolkit_nautilus.adapter.runtime_types import Cache, Order
 
 # Module-level logger, used as a fallback when self.log is unavailable.
 _logger = logging.getLogger(__name__)
@@ -125,6 +128,93 @@ def plan_close_attempt(
     if plain_close_submitted:
         return CloseAttempt.PLAIN_ALREADY_SPENT
     return CloseAttempt.PLAIN
+
+
+def read_cash_account(
+    cache: "Cache", instrument_id: InstrumentId, warn: Callable[[str], None]
+) -> bool | None:
+    """Whether the account trading this instrument is a cash account.
+
+    ``None`` when the account cannot be read, and that is said once per order so it
+    can be counted. Callers then keep the protective form: the worst a refused
+    reduce-only order can do is not close, while a plain order on a margin account
+    whose cache lags a fill can open the reverse position.
+    """
+    try:
+        account = cache.account_for_venue(instrument_id.venue)
+    except Exception as exc:  # noqa: BLE001 - an unreadable account is an answer, not a crash
+        reason = f"{type(exc).__name__}: {exc}"
+    else:
+        if account is not None:
+            # By name, as the runner reads it: the enum compares equal to anything that
+            # converts to its integer value.
+            return str(account.account_type) == "CASH"
+        reason = "no account in the cache"
+    warn(
+        f"order_form_account_unreadable instrument={instrument_id} reason={reason}; "
+        "the order keeps reduce_only"
+    )
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class OrderForm:
+    """How a close or a protective order goes out."""
+
+    reduce_only: bool
+    submitted: bool
+    """The order is built here and passed to ``submit_order``.
+
+    ``close_position`` cannot carry a plain close: the runner's safety gate refuses a
+    plain ``close_position`` and recognises a plain close only as a submitted order
+    whose quantity is within the position.
+    """
+    spends_hatch: bool
+    """This is the position's one plain attempt, earned by a reduce-only refusal."""
+
+
+def decide_order_form(*, cash_account: bool | None, attempt: CloseAttempt) -> OrderForm:
+    """The one place that decides whether an order carries reduce_only.
+
+    A cash account cannot sell what it does not hold, so the hazard reduce-only guards
+    against -- a duplicate close opening the reverse position -- does not exist there,
+    and spot adapters refuse the flag outright. Every close and protective order on a
+    cash account therefore goes out plain. Anywhere else, including an account that
+    could not be read, ``plan_close_attempt`` decides as before.
+    """
+    if cash_account is True:
+        return OrderForm(reduce_only=False, submitted=True, spends_hatch=False)
+    if attempt is CloseAttempt.PLAIN:
+        return OrderForm(reduce_only=False, submitted=True, spends_hatch=True)
+    return OrderForm(reduce_only=True, submitted=False, spends_hatch=False)
+
+
+def read_order_form(
+    cache: "Cache", instrument_id: InstrumentId, warn: Callable[[str], None]
+) -> OrderForm:
+    """The form of an order that never uses the escape hatch: protection and tick exits."""
+    return decide_order_form(
+        cash_account=read_cash_account(cache, instrument_id, warn),
+        attempt=CloseAttempt.REDUCE_ONLY,
+    )
+
+
+def order_only_reduces(
+    order: "Order", *, cash_account: bool | None, strategy_id: object
+) -> bool:
+    """Whether a working order can only take exposure away, by what the venue records.
+
+    This is the evidence that survives a restart, when the order tracker is empty. On
+    any account a reduce-only order says so itself. On a cash account a sell says so
+    too -- it cannot sell what is not held -- but the venue streams are account-wide,
+    so only this strategy's own sell is read that way: another strategy's sell is not
+    this strategy's protection. Without a readable account only the flag counts.
+    """
+    if order.is_reduce_only:
+        return True
+    return (
+        cash_account is True and order.side == OrderSide.SELL and order.strategy_id == strategy_id
+    )
 
 
 class NautilusStrategyCore(Strategy, ABC):

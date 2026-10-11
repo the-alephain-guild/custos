@@ -36,6 +36,7 @@ from custos_toolkit_nautilus.adapter.coordinators.entry_reservation import (
 from custos_toolkit_nautilus.adapter.orders import STALE_SWEEP_RETRY_COOLDOWN_NS, is_stale_order
 from custos_toolkit_nautilus.adapter.runtime_types import Indicator, Order, Position
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
+from custos_toolkit_nautilus.adapter.strategy_core import order_only_reduces, read_cash_account
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
@@ -252,7 +253,8 @@ class OrderReconciler:
         Find all existing stop-loss lots for the position on the exchange.
 
         Looks for:
-        - Stop market orders (reduce_only=True)
+        - Stop market orders that can only reduce (``order_only_reduces``: reduce-only,
+          or on a cash account this strategy's own sell)
         - Matching instrument
         - Opposite side to position (SELL for long, BUY for short)
 
@@ -264,25 +266,7 @@ class OrderReconciler:
             Order object if found, None otherwise
         """
 
-        # Get all open orders for this instrument
-        open_orders = self._strategy.cache.orders_open(instrument_id=ctx.instrument_id)
-
-        expected_side = OrderSide.SELL if position.is_long else OrderSide.BUY
-
-        matches = []
-        for order in open_orders:
-            # Check if this looks like a SL order:
-            # 1. Stop market order
-            # 2. Reduce only
-            # 3. Correct side (opposite to position)
-            if (
-                order.order_type == OrderType.STOP_MARKET
-                and order.is_reduce_only
-                and order.side == expected_side
-            ):
-                matches.append(order)
-
-        return matches
+        return self._find_protective_orders(ctx, position, OrderType.STOP_MARKET)
 
     def ensure_native_trailing_exists(self, ctx: PairContext, position: Position) -> None:
         """Ensure an exchange-managed trailing stop exists for the position.
@@ -384,23 +368,32 @@ class OrderReconciler:
     def find_existing_trailing_orders(self, ctx: PairContext, position: Position) -> list[Order]:
         """Find an open exchange-managed trailing stop for the position.
 
-        Looks for a reduce-only TRAILING_STOP_MARKET on the protective side
+        Looks for a TRAILING_STOP_MARKET that can only reduce, on the protective side
         (SELL for long, BUY for short).
         """
+        return self._find_protective_orders(ctx, position, OrderType.TRAILING_STOP_MARKET)
 
-        open_orders = self._strategy.cache.orders_open(instrument_id=ctx.instrument_id)
+    def _find_protective_orders(
+        self, ctx: PairContext, position: Position, order_type: OrderType
+    ) -> list[Order]:
+        """Open orders of this type that protect the position, tracked or not.
+
+        After a restart the tracker is empty, so what identifies a protective order is
+        what the venue records about it (``order_only_reduces``). On a cash account that
+        is this strategy's own sell; another strategy's stop on the same account is not
+        claimed, since its quantity protects a position that is not this one.
+        """
+        s = self._strategy
+        cash_account = read_cash_account(s.cache, ctx.instrument_id, s.log.warning)
+        strategy_id = s.strategy_id if cash_account else None
         expected_side = OrderSide.SELL if position.is_long else OrderSide.BUY
-
-        matches = []
-        for order in open_orders:
-            if (
-                order.order_type == OrderType.TRAILING_STOP_MARKET
-                and order.is_reduce_only
-                and order.side == expected_side
-            ):
-                matches.append(order)
-
-        return matches
+        return [
+            order
+            for order in s.cache.orders_open(instrument_id=ctx.instrument_id)
+            if order.order_type == order_type
+            and order.side == expected_side
+            and order_only_reduces(order, cash_account=cash_account, strategy_id=strategy_id)
+        ]
 
     def sweep_stale_orders_for_pair(self, ctx: PairContext) -> int:
         """Cancel stale (orphaned) reduce-only orders for this pair.
@@ -524,7 +517,7 @@ class OrderReconciler:
 
         # Rejected active close order -> severity-tiered breaker: break the tight loop without
         # hammering a throttled endpoint.
-        if kind is RejectedOrderKind.REDUCE_ONLY_CLOSE:
+        if kind is RejectedOrderKind.CLOSE:
             now_ns = s.clock.timestamp_ns()
             tier = classify_rejection_reason(reason)
             if tier == "server":
@@ -535,20 +528,20 @@ class OrderReconciler:
                 # position state, avoiding a repeat close of an order that may have filled.
                 ctx.order_tracker.set_close_cooldown(now_ns, _CLOSE_SERVER_ERROR_BACKOFF_NS)
                 s.log.warning(
-                    f"[{ctx.pair}] Reduce-only order rejected by venue "
+                    f"[{ctx.pair}] Close order rejected by venue "
                     f"(server/ratelimit: {reason}); circuit-breaking "
                     f"{_CLOSE_SERVER_ERROR_BACKOFF_NS // 1_000_000_000}s before retry",
                     color=LogColor.RED,
                 )
             else:
-                # Logical reject (-2022 etc.): clear venue orphans (leftover reduce_only
-                # SL/TP that reconciliation missed and the cache can't see fill the
-                # reduce capacity) + short backoff.
+                # Logical reject (-2022 etc.): clear venue orphans (leftover SL/TP that
+                # reconciliation missed and the cache can't see fill the reduce capacity,
+                # or on a cash account hold the base the close sells) + short backoff.
                 s.cancel_all_orders(ctx.instrument_id)
                 ctx.order_tracker.clear()
                 ctx.order_tracker.set_close_cooldown(now_ns, _CLOSE_REJECT_COOLDOWN_NS)
                 s.log.warning(
-                    f"[{ctx.pair}] Reduce-only order rejected (logic: {reason}); "
+                    f"[{ctx.pair}] Close order rejected (logic: {reason}); "
                     f"cancelling all venue orders (clear orphans) and backing off "
                     f"{_CLOSE_REJECT_COOLDOWN_NS // 1_000_000_000}s before retry",
                     color=LogColor.RED,

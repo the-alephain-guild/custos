@@ -47,6 +47,9 @@ class OrderTracker:
 
     _sl_order_ids: list[ClientOrderId] = field(default_factory=list, repr=False)
     _tp_order_ids: list[ClientOrderId] = field(default_factory=list, repr=False)
+    # Closes this strategy sent. A close on a cash account carries no reduce-only flag,
+    # so the id is the only thing that says a rejection of it is a failed close.
+    _close_order_ids: list[ClientOrderId] = field(default_factory=list, repr=False)
     _exchange_sl_order_ids: list[ClientOrderId] = field(default_factory=list, repr=False)
     _protection_quantities: dict[ClientOrderId, Decimal] = field(default_factory=dict, repr=False)
     _entry_order_id: ClientOrderId | None = field(default=None, repr=False)
@@ -117,6 +120,11 @@ class OrderTracker:
     def set_tp_orders(self, order_ids: list[ClientOrderId]) -> None:
         """Set all take profit order IDs at once."""
         self._tp_order_ids = list(order_ids)
+
+    def add_close_order(self, order_id: ClientOrderId) -> None:
+        """Record a close this strategy is about to submit."""
+        if order_id not in self._close_order_ids:
+            self._close_order_ids.append(order_id)
 
     def set_exchange_sl_order(
         self,
@@ -242,6 +250,7 @@ class OrderTracker:
         """Clear protective orders while retaining an in-flight reversal entry."""
         self._sl_order_ids = []
         self._tp_order_ids = []
+        self._close_order_ids = []
         self._exchange_sl_order_ids = []
         self._protection_quantities = {}
         self._closing_deadline_ns = 0
@@ -327,6 +336,8 @@ class OrderTracker:
             self._sl_order_ids.remove(order_id)
         if order_id in self._tp_order_ids:
             self._tp_order_ids.remove(order_id)
+        if order_id in self._close_order_ids:
+            self._close_order_ids.remove(order_id)
         if order_id in self._exchange_sl_order_ids:
             self._exchange_sl_order_ids.remove(order_id)
         self._protection_quantities.pop(order_id, None)
@@ -347,6 +358,16 @@ class OrderTracker:
     def tp_order_ids(self) -> list[ClientOrderId]:
         """Get a copy of take profit order IDs."""
         return self._tp_order_ids.copy()
+
+    @property
+    def close_order_ids(self) -> list[ClientOrderId]:
+        """Get the closes this strategy has sent and not yet seen settled."""
+        return self._close_order_ids.copy()
+
+    @property
+    def protection_order_ids(self) -> set[ClientOrderId]:
+        """Every protective lot this strategy has out: stops and take-profits."""
+        return {*self._sl_order_ids, *self._exchange_sl_order_ids, *self._tp_order_ids}
 
     @property
     def exchange_sl_order_id(self) -> ClientOrderId | None:

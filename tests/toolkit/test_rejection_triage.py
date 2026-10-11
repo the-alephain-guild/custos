@@ -26,12 +26,14 @@ def _tracker(
     sl: tuple[str, ...] = (),
     exchange_sl: tuple[str, ...] = (),
     tp: tuple[str, ...] = (),
+    close: tuple[str, ...] = (),
     entry: str | None = None,
 ) -> NS:
     return NS(
         sl_order_ids=sl,
         exchange_sl_order_ids=exchange_sl,
         tp_order_ids=tp,
+        close_order_ids=close,
         entry_order_id=entry,
     )
 
@@ -68,7 +70,20 @@ def test_a_tracked_take_profit_is_not_a_close_attempt() -> None:
 def test_an_untracked_reduce_only_order_is_a_close_attempt() -> None:
     kind = classify_rejected_order("close-1", _order(reduce_only=True), _tracker())
 
-    assert kind is RejectedOrderKind.REDUCE_ONLY_CLOSE
+    assert kind is RejectedOrderKind.CLOSE
+
+
+def test_a_tracked_plain_close_is_a_close_attempt() -> None:
+    """A cash account's close carries no reduce-only flag; the tracker knows it anyway.
+
+    Read as unknown, a venue rejection of it would skip the backoff and the count, and
+    the bar path would send the same close again on the next bar.
+    """
+    kind = classify_rejected_order(
+        "close-1", _order(reduce_only=False), _tracker(close=("close-1",))
+    )
+
+    assert kind is RejectedOrderKind.CLOSE
 
 
 def test_the_tracked_entry_order_is_the_entry() -> None:
@@ -85,7 +100,7 @@ def test_a_close_attempt_is_never_also_read_as_the_entry() -> None:
     """
     kind = classify_rejected_order("close-1", _order(reduce_only=True), _tracker(entry="close-1"))
 
-    assert kind is RejectedOrderKind.REDUCE_ONLY_CLOSE
+    assert kind is RejectedOrderKind.CLOSE
 
 
 def test_an_order_this_strategy_never_placed_is_unknown() -> None:
@@ -107,7 +122,8 @@ def test_a_missing_cache_entry_does_not_become_a_close_attempt() -> None:
     [
         (_tracker(sl=("x",)), _order(reduce_only=True), RejectedOrderKind.TRACKED_STOP),
         (_tracker(tp=("x",)), _order(reduce_only=True), RejectedOrderKind.TRACKED_TAKE_PROFIT),
-        (_tracker(), _order(reduce_only=True), RejectedOrderKind.REDUCE_ONLY_CLOSE),
+        (_tracker(), _order(reduce_only=True), RejectedOrderKind.CLOSE),
+        (_tracker(close=("x",)), _order(reduce_only=False), RejectedOrderKind.CLOSE),
         (_tracker(entry="x"), _order(reduce_only=False), RejectedOrderKind.ENTRY),
         (_tracker(), _order(reduce_only=False), RejectedOrderKind.UNKNOWN),
     ],

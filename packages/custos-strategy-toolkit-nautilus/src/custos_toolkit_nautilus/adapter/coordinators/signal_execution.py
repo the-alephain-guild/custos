@@ -426,8 +426,11 @@ class SignalExecutionCoordinator:
             _sig_id = cast(
                 str | None, signal.metadata.get("_signal_id") if signal.metadata else None
             )
+            # Registered before dispatch so a report that races back finds its owner.
+            ctx.order_tracker.add_close_order(order.client_order_id)
             dispatched = cast(bool | None, s.submit_order(order))
             if dispatched is False:
+                ctx.order_tracker.remove_order(order.client_order_id)
                 s.log.warning(
                     f"[{ctx.pair}] EXIT was refused locally before dispatch; "
                     "the close attempt remains available",
