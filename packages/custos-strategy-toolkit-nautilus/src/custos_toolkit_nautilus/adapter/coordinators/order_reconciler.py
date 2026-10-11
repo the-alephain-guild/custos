@@ -8,8 +8,8 @@ severity-tiered reject breaker. Injects a strategy reference and reaches
 ``_get_context_from_instrument`` through it, plus SL/TP submission via
 ``_sltp_coordinator.submit_*``.
 
-The nautilus event callbacks ``on_order_rejected`` / ``on_order_cancel_rejected`` stay
-on the Strategy class (the engine dispatches them by name, the callback contract
+The nautilus event callbacks ``on_order_rejected`` / ``on_order_denied`` /
+``on_order_cancel_rejected`` stay on the Strategy class (the engine dispatches them by name, the callback contract
 requires them); their bodies delegate to this component's ``handle_*`` methods.
 """
 
@@ -24,7 +24,13 @@ from custos_toolkit.risk.exchange_errors import (
 )
 from custos_toolkit.signals.types import Signal, SignalDirection
 from nautilus_trader.common import LogColor
-from nautilus_trader.model import OrderCancelRejected, OrderRejected, OrderSide, OrderType
+from nautilus_trader.model import (
+    OrderCancelRejected,
+    OrderDenied,
+    OrderRejected,
+    OrderSide,
+    OrderType,
+)
 
 from custos_toolkit_nautilus.adapter.coordinators.rejection_triage import (
     RejectedOrderKind,
@@ -584,6 +590,94 @@ class OrderReconciler:
                 f"[{ctx.pair}] Entry order rejected: {event.client_order_id} ({reason})",
                 color=LogColor.RED,
             )
+
+    def handle_order_denied(self, event: OrderDenied) -> None:
+        """Settle an order that was refused before it ever left the process.
+
+        A denial and a rejection both mean the order will never fill, and each kind of
+        order is settled the way its rejected counterpart is -- with two deliberate
+        differences for a close. The order never reached the venue, so the denial says
+        nothing about the venue's view of the position: it is not evidence that
+        reduce-only itself was refused, and it does not arm the one plain attempt. Nor
+        is it caused by resting orders crowding the position, so nothing is cancelled;
+        cancelling everything would take live protection down with it.
+
+        The thin ``on_order_denied`` shell on the Strategy owns the top-level try/except.
+        """
+        s = self._strategy
+        ctx = s._get_context_from_instrument(event.instrument_id)
+        if ctx is None:
+            return
+
+        order = s.cache.order(event.client_order_id)
+        reason = str(event.reason) or "unknown"
+        kind = classify_rejected_order(event.client_order_id, order, ctx.order_tracker)
+
+        # A denied order will never fill, so its signal link goes.
+        s._order_signal_map.pop(str(event.client_order_id), None)
+
+        if kind is RejectedOrderKind.TRACKED_STOP:
+            ctx.order_tracker.remove_order(event.client_order_id)
+            ctx.native_trailing_rebuild_deadline_ns = 0
+            ctx.exchange_sl_rebuild_deadline_ns = 0
+            s.pause()
+            s.log.error(
+                f"[{ctx.pair}] Protective stop denied before dispatch ({reason}); "
+                "preserving other protection and pending entry, pausing new risk until "
+                "coverage is repaired",
+                color=LogColor.RED,
+            )
+            return
+
+        if kind is RejectedOrderKind.TRACKED_TAKE_PROFIT:
+            ctx.order_tracker.remove_order(event.client_order_id)
+            if ctx.tick_monitor is not None:
+                # Nothing was taken, so the scaled level it carried is still owed.
+                ctx.tick_monitor.release_level_order(event.client_order_id)
+            s.log.warning(
+                f"[{ctx.pair}] Take-profit lot denied before dispatch ({reason}); "
+                "stop coverage retained",
+                color=LogColor.YELLOW,
+            )
+            return
+
+        if kind is RejectedOrderKind.CLOSE:
+            # The close is known dead, so the in-flight window gives way to the short
+            # reject cool-down, and the denial counts towards the halt like a rejection.
+            ctx.order_tracker.remove_order(event.client_order_id)
+            ctx.order_tracker.set_close_cooldown(s.clock.timestamp_ns(), _CLOSE_REJECT_COOLDOWN_NS)
+            ctx.order_tracker.record_close_reject()
+            s.log.warning(
+                f"[{ctx.pair}] Close order denied before dispatch ({reason}); backing off "
+                f"{_CLOSE_REJECT_COOLDOWN_NS // 1_000_000_000}s before retry",
+                color=LogColor.RED,
+            )
+            if ctx.order_tracker.close_reject_count >= _CLOSE_REJECT_HALT_THRESHOLD:
+                s.pause()
+                s.log.error(
+                    f"[{ctx.pair}] Close order refused "
+                    f"{ctx.order_tracker.close_reject_count} consecutive times; pausing "
+                    "strategy for manual intervention",
+                    color=LogColor.RED,
+                )
+            return
+
+        if kind is RejectedOrderKind.ENTRY:
+            release_unfilled_entry(s, ctx)
+            ctx.order_tracker.clear_entry_order()
+            ctx.position_tracker.clear_pending_signal()
+            ctx.pending_entry_is_reversal = False
+            s.log.warning(
+                f"[{ctx.pair}] Entry order denied before dispatch: "
+                f"{event.client_order_id} ({reason})",
+                color=LogColor.RED,
+            )
+            return
+
+        s.log.warning(
+            f"[{ctx.pair}] Order denied before dispatch: {event.client_order_id} ({reason}); "
+            "not one this strategy tracks",
+        )
 
     def handle_order_cancel_rejected(self, event: OrderCancelRejected) -> None:
         """

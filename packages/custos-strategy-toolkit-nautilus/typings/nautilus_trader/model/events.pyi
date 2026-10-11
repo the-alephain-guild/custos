@@ -33,6 +33,10 @@ class OrderRejected(_OrderEvent):
 
 class OrderCancelRejected(_OrderEvent): ...
 
+class OrderDenied(_OrderEvent):
+    @property
+    def reason(self) -> object: ...
+
 class _PositionEvent:
     @property
     def entry(self) -> _NamedValue: ...

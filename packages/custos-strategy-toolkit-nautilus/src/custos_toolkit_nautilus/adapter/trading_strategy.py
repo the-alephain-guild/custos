@@ -46,6 +46,7 @@ from nautilus_trader.model import (
     InstrumentId,
     OrderAccepted,
     OrderCancelRejected,
+    OrderDenied,
     OrderCanceled,
     OrderFilled,
     OrderRejected,
@@ -826,6 +827,18 @@ class NautilusTradingStrategy(NautilusStrategyCore):
             self._reconciler.handle_order_rejected(event)
         except Exception as exc:  # noqa: BLE001 — engine doesn't guard callbacks; log and continue
             self.log.error(f"on_order_rejected handler failed: {exc}")
+
+    def on_order_denied(self, event: OrderDenied) -> None:
+        """Handle an order denied before dispatch (body delegated to OrderReconciler).
+
+        NautilusTrader swallows an exception raised in this callback without a word
+        (measured on 2.0.0rc5 in a backtest), so the guard is here to leave the line behind, not to
+        keep the engine running.
+        """
+        try:
+            self._reconciler.handle_order_denied(event)
+        except Exception as exc:  # noqa: BLE001 — engine doesn't guard callbacks; log and continue
+            self.log.error(f"on_order_denied handler failed: {exc}")
 
     def on_order_cancel_rejected(self, event: OrderCancelRejected) -> None:
         """Handle order cancel rejected with top-level exception protection.

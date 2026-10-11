@@ -263,7 +263,6 @@ class _Handled:
             raise RuntimeError("a handler that fails must not stop the engine")
 
 
-@pytest.mark.xfail(strict=True, reason="the toolkit strategy does not handle OrderDenied yet")
 def test_the_engine_delivers_denials_to_the_strategy(tmp_path) -> None:
     engine = _engine()
     strategy = _DeniedOnFirstQuote(_strategy_config(tmp_path, tick_type="quote"))

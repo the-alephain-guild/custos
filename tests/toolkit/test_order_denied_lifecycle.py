@@ -48,11 +48,6 @@ from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode  # noqa: E402
 from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy  # noqa: E402
 from nautilus_trader.model import AccountType, OrderSide, OrderType, Price  # noqa: E402
 
-_NOT_HANDLED = pytest.mark.xfail(
-    strict=True,
-    reason="denied orders are not handled yet",
-)
-
 # The adapter's own words for its refusal, as the probe run logged them.
 _SODEX_REDUCE_ONLY = "reduce-only on spot is not supported by SoDEX"
 
@@ -118,7 +113,6 @@ def _entered() -> tuple[Harness, object]:
     return h, entry
 
 
-@_NOT_HANDLED
 def test_a_denied_entry_returns_its_reservation() -> None:
     h, entry = _entered()
 
@@ -136,7 +130,6 @@ def test_a_denied_entry_returns_its_reservation() -> None:
 # ---------------------------------------------------------------------------
 
 
-@_NOT_HANDLED
 @pytest.mark.parametrize("account_type", [AccountType.MARGIN, AccountType.CASH])
 def test_a_denied_close_is_counted_but_does_not_arm_the_hatch(account_type) -> None:
     """Whatever form the close took, a denial of it is a failed close."""
@@ -160,7 +153,6 @@ def test_a_denied_close_is_counted_but_does_not_arm_the_hatch(account_type) -> N
     h.pause.assert_not_called()
 
 
-@_NOT_HANDLED
 def test_repeated_denied_closes_pause_the_strategy() -> None:
     h = _closing(AccountType.CASH)
 
@@ -202,7 +194,6 @@ def test_a_rejected_close_is_read_as_a_close_whatever_its_form(account_type) -> 
 # ---------------------------------------------------------------------------
 
 
-@_NOT_HANDLED
 def test_a_denied_stop_pauses_new_risk() -> None:
     h = Harness(mode=SLTPMode.HYBRID)
     stop = h.order(
@@ -223,7 +214,6 @@ def test_a_denied_stop_pauses_new_risk() -> None:
     assert h.cancelled == [], "other protection stays in place"
 
 
-@_NOT_HANDLED
 def test_a_denied_take_profit_lot_is_retryable() -> None:
     monitor = scaled_monitor(1)
     monitor.init_position(Decimal("100"), True)
