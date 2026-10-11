@@ -62,23 +62,6 @@ from nautilus_trader.model import (  # noqa: E402
 
 _ONE_SEC_NS = 1_000_000_000
 
-_CASH_DROPS_REDUCE_ONLY = pytest.mark.xfail(
-    strict=True,
-    reason="orders on a cash account still carry reduce_only",
-)
-_CASH_CLOSE_IS_SUBMITTED = pytest.mark.xfail(
-    strict=True,
-    reason="full closes still go through close_position on a cash account",
-)
-_UNREADABLE_ACCOUNT_WARNS = pytest.mark.xfail(
-    strict=True,
-    reason="the account type is not read yet, so an unreadable one leaves no warning",
-)
-_NO_LITERAL_REDUCE_ONLY = pytest.mark.xfail(
-    strict=True,
-    reason="order sites still hard-code reduce_only",
-)
-
 _SPOT = CurrencyPair(
     InstrumentId.from_str("BTCUSDT.BINANCE"),
     Symbol("BTCUSDT"),
@@ -191,7 +174,6 @@ def _exit_long() -> Signal:
     return Signal.exit_long(Decimal("95569"), pair="BTC-USDT")
 
 
-@_CASH_DROPS_REDUCE_ONLY
 def test_a_cash_account_exit_carries_no_reduce_only() -> None:
     accounts = _Accounts(AccountType.CASH)
     strat = _bar_exit_strategy(accounts)
@@ -246,7 +228,6 @@ def test_an_unreadable_account_keeps_the_protective_form() -> None:
         )
 
 
-@_UNREADABLE_ACCOUNT_WARNS
 def test_an_unreadable_account_leaves_a_warning() -> None:
     for accounts in (_Accounts(None), _Accounts(AccountType.CASH, raises=True)):
         strat = _bar_exit_strategy(accounts)
@@ -286,7 +267,6 @@ def _tick_harness(account_type: AccountType, monitor: TickMonitorManager) -> Har
     return harness
 
 
-@_CASH_DROPS_REDUCE_ONLY
 def test_a_cash_partial_exit_carries_no_reduce_only() -> None:
     monitor = scaled_monitor(1)
     monitor.init_position(Decimal("100"), True)
@@ -314,7 +294,6 @@ def _fixed_take_profit() -> TickMonitorManager:
     return monitor
 
 
-@_CASH_CLOSE_IS_SUBMITTED
 def test_a_cash_full_close_is_submitted_not_closed_natively() -> None:
     harness = _tick_harness(AccountType.CASH, _fixed_take_profit())
 
@@ -393,7 +372,6 @@ def _core(account_type: AccountType | None, tracker: OrderTracker | None = None)
     return stub
 
 
-@_CASH_CLOSE_IS_SUBMITTED
 def test_a_cash_containment_close_is_submitted_not_closed_natively() -> None:
     stub = _core(AccountType.CASH)
 
@@ -419,7 +397,6 @@ def test_a_margin_containment_close_still_closes_natively() -> None:
     assert stub.closed[0][1].get("reduce_only") is True
 
 
-@_CASH_CLOSE_IS_SUBMITTED
 def test_the_containment_hatch_submits_its_plain_close() -> None:
     """The runner's gate refuses a plain close_position; a plain submitted order passes."""
     tracker = OrderTracker()
@@ -450,7 +427,7 @@ _ADAPTER = (
 )
 
 # Functions allowed to spell the flag out: the one place that decides it.
-_DECISION_FUNCTIONS: frozenset[str] = frozenset()
+_DECISION_FUNCTIONS: frozenset[str] = frozenset({"decide_order_form"})
 
 
 def _is_bool_literal(node: ast.AST) -> bool:
@@ -518,7 +495,6 @@ def _adapter_literal_sites() -> list[str]:
     return sites
 
 
-@_NO_LITERAL_REDUCE_ONLY
 def test_no_order_site_hardcodes_reduce_only() -> None:
     sites = _adapter_literal_sites()
 

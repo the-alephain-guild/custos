@@ -26,7 +26,12 @@ from custos_toolkit_nautilus.adapter.runtime_types import Indicator, Order
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
 from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
 from custos_toolkit_nautilus.adapter.sizing import notional_from_quantity
-from custos_toolkit_nautilus.adapter.strategy_core import CloseAttempt, plan_close_attempt
+from custos_toolkit_nautilus.adapter.strategy_core import (
+    CloseAttempt,
+    decide_order_form,
+    plan_close_attempt,
+    read_cash_account,
+)
 
 if TYPE_CHECKING:
     from custos_toolkit.signals.types import Signal
@@ -383,13 +388,16 @@ class SignalExecutionCoordinator:
         # In-flight gate: the exit is a market IOC order, but its fill event lags back to
         # the local cache, so within that window the decoupled reversal-EXIT path (which
         # emits an exit every bar while the position is open) could re-submit the same
-        # close. The gate (together with create_exit_order's reduce_only) caps it to one
+        # close. The gate (together with reduce_only on a margin account) caps it to one
         # close in flight per position, shared with the tick exit path.
         now_ns = s.clock.timestamp_ns()
         if not ctx.order_tracker.can_submit_close(now_ns):
             return
 
         execution_manager = cast(ExecutionManager, ctx.execution_manager)
+        # A cash account closes with a plain order: it cannot sell what it does not hold,
+        # and spot venues refuse reduce-only. Everywhere else:
+        #
         # Reduce-only is the protective default. A venue that specifically refused that
         # form while the position is genuinely open (Binance's demo engine does) will
         # refuse it again, so the escape hatch is a plain order of the position's size.
@@ -401,11 +409,12 @@ class SignalExecutionCoordinator:
         #   - it is one attempt per position. Later bars keep emitting an exit while the
         #     position looks open, and re-sending a plain order on each of them is how a
         #     stale view turns into a new position.
+        cash_account = read_cash_account(s.cache, ctx.instrument_id, s.log.warning)
         attempt = plan_close_attempt(
             reduce_only_refused=ctx.order_tracker.reduce_only_refused,
             plain_close_submitted=ctx.order_tracker.plain_close_submitted,
         )
-        if attempt is CloseAttempt.PLAIN_ALREADY_SPENT:
+        if attempt is CloseAttempt.PLAIN_ALREADY_SPENT and not cash_account:
             # This path runs once per bar, so unlike the one-shot containment paths it
             # sends nothing rather than falling back to the refused form -- re-sending on
             # every bar is the flood shape, and the plain form is not an option twice.
@@ -415,12 +424,12 @@ class SignalExecutionCoordinator:
                 f"the venue needs a look rather than another order",
             )
             return
-        use_reduce_only = attempt is not CloseAttempt.PLAIN
+        form = decide_order_form(cash_account=cash_account, attempt=attempt)
         order = execution_manager.create_exit_order(
             instrument_id=ctx.instrument_id,
             signal=signal,
             size=Decimal(str(position.quantity)),
-            reduce_only=use_reduce_only,
+            reduce_only=form.reduce_only,
         )
         if order:
             _sig_id = cast(
@@ -438,7 +447,7 @@ class SignalExecutionCoordinator:
                 return
             if _sig_id:
                 s._order_signal_map[str(order.client_order_id)] = _sig_id
-            if not use_reduce_only:
+            if form.spends_hatch:
                 ctx.order_tracker.mark_plain_close_submitted()
                 s.log.warning(
                     f"[{ctx.pair}] Closing without reduce_only: the venue refused the "

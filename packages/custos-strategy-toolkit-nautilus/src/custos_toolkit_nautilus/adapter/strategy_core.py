@@ -51,7 +51,13 @@ from custos_toolkit_nautilus.adapter.state_persistence import (
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.orders import OrderTracker
-    from custos_toolkit_nautilus.adapter.runtime_types import Cache, Order
+    from custos_toolkit_nautilus.adapter.runtime_types import (
+        Cache,
+        Instrument,
+        Order,
+        OrderFactory,
+        Position,
+    )
 
 # Module-level logger, used as a fallback when self.log is unavailable.
 _logger = logging.getLogger(__name__)
@@ -196,6 +202,23 @@ def read_order_form(
     return decide_order_form(
         cash_account=read_cash_account(cache, instrument_id, warn),
         attempt=CloseAttempt.REDUCE_ONLY,
+    )
+
+
+def build_close_order(
+    order_factory: "OrderFactory",
+    instrument: "Instrument",
+    position: "Position",
+    form: OrderForm,
+) -> "Order":
+    """A market IOC order that closes the whole position, for a form ``close_position``
+    cannot carry (see ``OrderForm.submitted``)."""
+    return order_factory.market(
+        instrument_id=position.instrument_id,
+        order_side=OrderSide.SELL if position.is_long else OrderSide.BUY,
+        quantity=instrument.make_qty(position.quantity),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=form.reduce_only,
     )
 
 
@@ -656,28 +679,48 @@ class NautilusStrategyCore(Strategy, ABC):
             self._log_warning(f"close fallback: could not read order state: {exc}")
             tracker = None
 
+        cash_account = read_cash_account(self.cache, position.instrument_id, self._log_warning)
         attempt = plan_close_attempt(
             reduce_only_refused=bool(tracker is not None and tracker.reduce_only_refused),
             plain_close_submitted=bool(tracker is not None and tracker.plain_close_submitted),
         )
-        if attempt is CloseAttempt.PLAIN:
+        form = decide_order_form(cash_account=cash_account, attempt=attempt)
+        if form.spends_hatch:
             self._log_warning(
                 f"Closing {position.instrument_id} without reduce_only: the venue refused "
                 f"the reduce-only form for this position. This is the one plain attempt"
             )
-        elif attempt is CloseAttempt.PLAIN_ALREADY_SPENT:
+        elif attempt is CloseAttempt.PLAIN_ALREADY_SPENT and form.reduce_only:
             self._log_warning(
                 f"Closing {position.instrument_id} with reduce_only although the venue "
                 f"refused it: the one plain attempt is spent. This will likely be refused "
                 f"too, but a refused reduce-only order cannot open a reverse position"
             )
 
-        self.close_position(
-            position,
-            reduce_only=attempt is not CloseAttempt.PLAIN,
-            time_in_force=TimeInForce.IOC,
-        )
-        if attempt is CloseAttempt.PLAIN and tracker is not None:
+        if not form.submitted:
+            self.close_position(
+                position,
+                reduce_only=form.reduce_only,
+                time_in_force=TimeInForce.IOC,
+            )
+            return
+
+        instrument = self.cache.instrument(position.instrument_id)
+        if instrument is None:
+            self._log_warning(f"close fallback: instrument {position.instrument_id} not found")
+            return
+        order = build_close_order(self.order_factory, instrument, position, form)
+        if tracker is not None:
+            tracker.add_close_order(order.client_order_id)
+        if cast(bool | None, self.submit_order(order)) is False:
+            if tracker is not None:
+                tracker.remove_order(order.client_order_id)
+            self._log_warning(
+                f"close fallback: the close of {position.instrument_id} was refused "
+                "locally before dispatch"
+            )
+            return
+        if form.spends_hatch and tracker is not None:
             tracker.mark_plain_close_submitted()
 
     # ---- Emergency close (Crucible graceful-close layer) ----

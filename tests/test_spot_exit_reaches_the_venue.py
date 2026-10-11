@@ -176,7 +176,6 @@ class _BuysThenExits(NautilusStrategyCore):
     def _on_bar_risk_hygiene(self, bar) -> None: ...
 
 
-@pytest.mark.xfail(strict=True, reason="the exit on a cash account still carries reduce_only")
 def test_a_cash_exit_closes_the_position_at_the_venue(tmp_path) -> None:
     engine = _engine()
     strategy = _BuysThenExits(_strategy_config(tmp_path))

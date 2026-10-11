@@ -225,6 +225,7 @@ class TestCreateExitOrder:
             instrument_id=instrument_id,
             signal=signal,
             size=Decimal("1.0"),
+            reduce_only=True,
         )
 
         assert order is not None
@@ -245,6 +246,7 @@ class TestCreateExitOrder:
             instrument_id=instrument_id,
             signal=signal,
             size=Decimal("1.0"),
+            reduce_only=True,
         )
 
         assert order is not None
@@ -262,6 +264,7 @@ class TestCreateExitOrder:
             instrument_id=instrument_id,
             signal=signal,
             size=Decimal("1.0"),
+            reduce_only=True,
         )
 
         assert order is None
@@ -281,6 +284,7 @@ class TestCreateExitOrder:
             instrument_id=instrument_id,
             signal=signal,
             size=Decimal("1.0"),
+            reduce_only=True,
         )
 
         assert order is None

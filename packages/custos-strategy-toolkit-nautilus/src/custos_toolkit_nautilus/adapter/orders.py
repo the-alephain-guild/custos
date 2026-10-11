@@ -26,7 +26,7 @@ from nautilus_trader.model import (
 )
 
 from .runtime_types import Cache, Logger, Order, OrderFactory, Position
-from .strategy_core import order_only_reduces
+from .strategy_core import order_only_reduces, read_order_form
 
 if TYPE_CHECKING:
     from .config.risk import ScaledTakeProfitConfig, StopLossTrailingConfig
@@ -630,13 +630,14 @@ class StopLossSubmitter:
         stop_price: Decimal,
         tags: list[str] | None = None,
     ) -> Order | None:
-        """Build a reduce-only stop-market order at a given (pre-computed) stop price.
+        """Build a protective stop-market order at a given (pre-computed) stop price.
 
         A shared order-building primitive that separates price calculation from order
         construction: each caller computes its own price (``create_order`` uses the
         order_calculator; break-even uses entry; safety uses max_loss_pct), and the
-        construction part (instrument lookup + side-aware tick alignment + reduce-only
-        stop_market) is unified here. Removes the break-even/safety SL inconsistency of
+        construction part (instrument lookup + side-aware tick alignment + stop_market in
+        the form ``read_order_form`` decides: reduce-only, plain on a cash account) is
+        unified here. Removes the break-even/safety SL inconsistency of
         hand-rolling ``order_factory.stop_market``.
 
         Args:
@@ -666,7 +667,7 @@ class StopLossSubmitter:
             quantity=order_quantity,
             trigger_price=Price(cast(float, aligned_stop_price), instrument.price_precision),
             time_in_force=TimeInForce.GTC,
-            reduce_only=True,
+            reduce_only=read_order_form(self._cache, instrument_id, self._log.warning).reduce_only,
             tags=tags,
         )
 
@@ -707,7 +708,8 @@ class NativeTrailingStopSubmitter:
       (``entry × (1 ± activation_pct)``, tick-aligned) because the Binance
       adapter does NOT enforce it.
     - ``trigger_price`` is never passed (the adapter rejects it,
-      INVALID_TRIGGER_PRICE); orders are ``reduce_only``.
+      INVALID_TRIGGER_PRICE); orders are ``reduce_only`` except on a cash account
+      (``read_order_form``).
 
     Note: parameter mapping from the hand-written
     ``TrailingStopManager`` is static; behavioral equivalence (activation-window,
@@ -818,7 +820,7 @@ class NativeTrailingStopSubmitter:
             trigger_type=trigger_type,
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
             time_in_force=TimeInForce.GTC,
-            reduce_only=True,
+            reduce_only=read_order_form(self._cache, instrument_id, self._log.warning).reduce_only,
             tags=tags,  # signal_id tag passthrough
         )
 
@@ -920,7 +922,7 @@ class TakeProfitSubmitter:
             quantity=order_quantity,
             price=Price(cast(float, aligned_tp_price), instrument.price_precision),
             time_in_force=TimeInForce.GTC,
-            reduce_only=True,
+            reduce_only=read_order_form(self._cache, instrument_id, self._log.warning).reduce_only,
             tags=tags,  # pass-through signal_id tag
         )
 
@@ -990,6 +992,7 @@ class TakeProfitSubmitter:
                 return []
             prev_target = target_pct
 
+        form = read_order_form(self._cache, instrument_id, self._log.warning)
         orders: list[Order] = []
         for level in scaled_levels:
             target_pct = Decimal(str(level.target_pct))
@@ -1013,7 +1016,7 @@ class TakeProfitSubmitter:
                 quantity=instrument.make_qty(scale_qty),
                 price=Price(cast(float, aligned_tp_price), instrument.price_precision),
                 time_in_force=TimeInForce.GTC,
-                reduce_only=True,
+                reduce_only=form.reduce_only,
                 tags=tags,  # pass-through signal_id tag
             )
             orders.append(order)

@@ -38,7 +38,7 @@ def _make_strategy(now_ns: int) -> SimpleNamespace:
     )
     strat.clock = SimpleNamespace(timestamp_ns=lambda: strat.now_ns)
     strat.submit_order = lambda order: submitted.append(order)
-    strat.log = SimpleNamespace(info=lambda *a, **k: None)
+    strat.log = SimpleNamespace(info=lambda *a, **k: None, warning=lambda *a, **k: None)
     return strat
 
 

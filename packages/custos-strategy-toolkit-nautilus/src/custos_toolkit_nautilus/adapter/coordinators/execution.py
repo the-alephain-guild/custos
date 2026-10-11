@@ -2,7 +2,7 @@
 
 Holds the tick-monitor execution path: routing trade/quote ticks to the correct
 pair context, and executing the exit actions the tick monitor produces (partial
-reduce-only exits and full position closes with reduce-only flood protection).
+exits and full position closes with close-flood protection).
 Injects a strategy reference and reaches ``cache`` / ``log`` / ``clock`` /
 ``order_factory`` / ``submit_order`` / ``close_position`` plus ``_mode`` /
 ``_get_context_from_instrument`` / ``_sltp_coordinator`` through it.
@@ -21,6 +21,7 @@ from nautilus_trader.common import LogColor
 from nautilus_trader.model import OrderSide, QuoteTick, TimeInForce, TradeTick
 
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
+from custos_toolkit_nautilus.adapter.strategy_core import build_close_order, read_order_form
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
@@ -174,7 +175,7 @@ class ExecutionCoordinator:
             order_side=OrderSide.SELL if position.is_long else OrderSide.BUY,
             quantity=exit_qty,
             time_in_force=TimeInForce.IOC,
-            reduce_only=True,
+            reduce_only=read_order_form(s.cache, ctx.instrument_id, s.log.warning).reduce_only,
         )
 
         dispatched = cast(bool | None, s.submit_order(order))
@@ -248,17 +249,34 @@ class ExecutionCoordinator:
             )
             return
 
-        # Protection 3: no contention -> use native close_position() to submit a
-        # single full-close order and arm the in-flight gate. close_position
-        # auto-reverses side, closes the full position.quantity, and is idempotent
-        # for an already-closed position (is_closed_c). Pass IOC explicitly
-        # (default GTC) + reduce_only=True to keep the current semantics.
-
-        s.close_position(
-            position,
-            time_in_force=TimeInForce.IOC,
-            reduce_only=True,
-        )
+        # Protection 3: no contention -> submit a single full-close order and arm the
+        # in-flight gate. On a margin account that is the native close_position(),
+        # which auto-reverses side, closes the full position.quantity, and is
+        # idempotent for an already-closed position (is_closed_c); IOC is passed
+        # explicitly (default GTC). A cash account's close carries no reduce-only flag,
+        # and the runner's safety gate refuses a plain close_position, so it is built
+        # and submitted as an order instead.
+        form = read_order_form(s.cache, ctx.instrument_id, s.log.warning)
+        if form.submitted:
+            instrument = s.cache.instrument(ctx.instrument_id)
+            if instrument is None:
+                s.log.error(f"Instrument not found: {ctx.instrument_id}")
+                return
+            order = build_close_order(s.order_factory, instrument, position, form)
+            ctx.order_tracker.add_close_order(order.client_order_id)
+            if cast(bool | None, s.submit_order(order)) is False:
+                ctx.order_tracker.remove_order(order.client_order_id)
+                s.log.warning(
+                    f"[{ctx.pair}] TICK EXIT was refused locally before dispatch; "
+                    "the close attempt remains available",
+                )
+                return
+        else:
+            s.close_position(
+                position,
+                time_in_force=TimeInForce.IOC,
+                reduce_only=form.reduce_only,
+            )
         ctx.order_tracker.mark_closing(now_ns, _CLOSE_INFLIGHT_TIMEOUT_NS)
         s.log.info(
             f"[{ctx.pair}] TICK EXIT: {reason} at {current_price}",
