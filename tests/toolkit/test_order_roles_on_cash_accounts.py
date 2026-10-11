@@ -244,3 +244,58 @@ def test_recovery_on_a_margin_account_ignores_a_plain_trailing_stop() -> None:
     _resting(h, OrderType.TRAILING_STOP_MARKET, OrderSide.SELL, reduce_only=False)
 
     assert OrderReconciler(h).find_existing_trailing_orders(h.ctx, h.position) == []
+
+
+# ---------------------------------------------------------------------------
+# A margin account's rejected escape-hatch close is now read as a close
+# ---------------------------------------------------------------------------
+
+
+def test_a_rejected_margin_hatch_close_is_counted_and_takes_the_protection_with_it() -> None:
+    """The one change on a margin account, pinned with its full consequence.
+
+    The hatch's plain close carries no reduce-only flag, so a venue rejection of it used
+    to fall through as unknown: no count, no back-off. The tracker now knows it as a
+    close, so it is handled like any other rejected close on the logic tier -- counted,
+    backed off, and every open order on the instrument cancelled. That includes the
+    position's own stop: the tracker forgets it and the per-bar repair rebuilds it.
+    """
+    from custos_toolkit.signals.types import Signal
+    from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+    from custos_toolkit_nautilus.adapter.coordinators.order_reconciler import (
+        _CLOSE_REJECT_COOLDOWN_NS,
+    )
+    from custos_toolkit_nautilus.adapter.execution import ExecutionManager
+
+    h = _recovering(AccountType.MARGIN, SLTPMode.HYBRID)
+    h.ctx.execution_manager = ExecutionManager(h.order_factory, h.cache, h.log)
+    stop = _resting(h, OrderType.STOP_MARKET, OrderSide.SELL, reduce_only=True)
+    h.ctx.order_tracker.add_exchange_sl_order(stop.client_order_id, Decimal("1"))
+    h.ctx.order_tracker.record_reduce_only_refusal()
+
+    SignalExecutionCoordinator(h).execute_exit_for_pair(
+        h.ctx, Signal.exit_long(Decimal("100"), pair=h.ctx.pair), bar=NS(close=Decimal("100"))
+    )
+    hatch = h.sent[-1]
+    assert hatch.is_reduce_only is False, "precondition: the one plain attempt went out"
+
+    OrderReconciler(h).handle_order_rejected(
+        NS(
+            instrument_id=h.instrument.id,
+            client_order_id=hatch.client_order_id,
+            reason="code=-2019, msg=Margin is insufficient.",
+        )
+    )
+
+    tracker = h.ctx.order_tracker
+    assert tracker.close_reject_count == 1, "counted towards the halt"
+    assert tracker.can_submit_close(h.now_ns) is False
+    assert tracker.can_submit_close(h.now_ns + _CLOSE_REJECT_COOLDOWN_NS) is True
+    assert stop.client_order_id in h.cancelled, "the logic tier cancels the stop as well"
+    assert tracker.exchange_sl_order_ids == [], "and the tracker no longer holds it"
+
+    stop.is_open, stop.is_closed = False, True  # the venue confirms the cancel
+    OrderReconciler(h).ensure_exchange_sl_protection(h.ctx)
+
+    rebuilt = [o for o in h.sent if o.order_type is OrderType.STOP_MARKET]
+    assert len(rebuilt) == 1, "the per-bar repair puts a stop back"
