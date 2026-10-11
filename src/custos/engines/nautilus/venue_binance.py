@@ -435,3 +435,19 @@ async def validate_account_configuration(spec: dict, credential: dict) -> None:
 def client_order_id_is_valid(value: str) -> bool:
     """Validate the venue character set independently of its length bound."""
     return bool(value)
+
+
+def cancel_rejection_kind(reason: str) -> str | None:
+    """No Binance refusal text has been measured, so none is classified.
+
+    Every refusal is then handled as unknown: a short back-off and five retries
+    before the order is given up on. The cost is that an order Binance no longer
+    holds is not handed to reconciliation the way a SoDEX one is.
+    """
+    del reason
+    return None
+
+
+def safety_request_budget() -> None:
+    """No measured per-account figure: the per-order retry caps are the only bound."""
+    return None

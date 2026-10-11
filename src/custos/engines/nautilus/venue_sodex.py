@@ -33,6 +33,14 @@ from nautilus_trader.model import (
 )
 
 from custos.core.log import get_logger
+from custos.engines.nautilus.cancel_discipline import (
+    NOT_FOUND,
+    RATE_LIMITED,
+    REFUSED,
+    TRANSPORT,
+    UNKNOWN,
+    SafetyRequestBudget,
+)
 from custos.engines.nautilus.venue_config import require_live_owner_evidence, venue_options
 from custos.engines.nautilus.venues import venue_for_connector
 
@@ -341,3 +349,44 @@ async def validate_account_configuration(spec: dict, credential: dict) -> None:
 def client_order_id_is_valid(value: str) -> bool:
     """Validate the venue character set independently of its length bound."""
     return bool(value)
+
+
+# The refusal texts a SoDEX cancel comes back with. The first is the venue's own
+# acknowledgement error, passed through verbatim by the adapter's cancel path; the
+# other three are the adapter's ClientError and RateLimited renderings. All four
+# were read from the adapter at guild-v2.0.0rc5+sodex.2, and the first three were
+# observed on spot testnet.
+_NOT_FOUND_TEXT = "order rejected: OrderNotFound"
+_VENUE_REFUSAL_PREFIX = "order rejected: "
+_STATUS_PREFIX = "venue returned HTTP "
+_RATE_LIMITED_STATUS = "venue returned HTTP 429"
+_TRANSPORT_PREFIX = "transport failed: "
+# The adapter's own pacing refusing before the request leaves, e.g.
+# "IP weight budget exhausted: need 20, 0 available, retry in 812ms".
+_LOCAL_BUDGET_MARKER = " budget exhausted: need "
+_ENVELOPE_REFUSAL_PREFIX = "venue rejected the "
+
+# SoDEX allows an API-key account 600 orders a minute (its rate-limit
+# documentation, which the adapter mirrors as ORDERS_PER_MINUTE). The safety path
+# takes a tenth of that, as ten at once and then one a second: the rest belongs to
+# whatever else trades on the same account, possibly from a machine this runner
+# cannot see.
+_SAFETY_REQUEST_BUDGET = SafetyRequestBudget(capacity=10, refill_per_second=1.0)
+
+
+def cancel_rejection_kind(reason: str) -> str | None:
+    """Which kind of refusal a SoDEX cancel-rejected reason is."""
+    text = reason.strip()
+    if text == _NOT_FOUND_TEXT:
+        return NOT_FOUND
+    if text.startswith(_RATE_LIMITED_STATUS) or _LOCAL_BUDGET_MARKER in text:
+        return RATE_LIMITED
+    if text.startswith(_TRANSPORT_PREFIX):
+        return TRANSPORT
+    if text.startswith((_VENUE_REFUSAL_PREFIX, _STATUS_PREFIX, _ENVELOPE_REFUSAL_PREFIX)):
+        return REFUSED
+    return UNKNOWN
+
+
+def safety_request_budget() -> SafetyRequestBudget:
+    return _SAFETY_REQUEST_BUDGET
