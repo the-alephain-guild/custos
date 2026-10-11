@@ -41,7 +41,7 @@ from tests.test_nt_trading_node_host import (  # noqa: E402
     _VenuePosition,
 )
 
-# Verbatim from the probe run's logs (plan 06, S12).
+# Verbatim from the SoDEX spot testnet probe run's logs.
 NOT_FOUND = "order rejected: OrderNotFound"
 TLS_EOF = (
     "transport failed: HTTP transport error: client error (Connect): tls handshake eof "
@@ -498,7 +498,7 @@ async def test_a_failing_discipline_sink_does_not_degrade_the_deployment(
 
 @pytest.mark.asyncio
 async def test_real_venues_turn_on_the_open_order_check(host) -> None:
-    """D3: a not-found order is resolved by nautilus's own open-order check."""
+    """A not-found order is settled by nautilus's own open-order check."""
     await _deployed(host, "open-check", lambda _id: CANCELED)
     builder = FakeBuilder.instances[-1]
     config = builder.exec_engine_config
