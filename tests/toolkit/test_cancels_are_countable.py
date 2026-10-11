@@ -261,3 +261,33 @@ def test_the_strategy_records_both_outcomes_before_handling_them() -> None:
         assert calls.index(record) < calls.index(body), (
             f"{record} must run before the body, or a raising body loses the record"
         )
+
+
+@pytest.mark.xfail(strict=True, reason="a cancel by id is still recorded with order_id=None")
+def test_a_cancel_by_id_is_recorded_with_that_id() -> None:
+    """The runner cancels by ``ClientOrderId``, not by order object.
+
+    Containment and shutdown in the runner call ``cancel_order(order.client_order_id)``,
+    which is what NautilusTrader 2.0's own ``cancel_order`` takes. Reading ``client_order_id``
+    off that argument found nothing, so every one of those cancels was recorded as
+    ``order_id=None instrument=None`` -- uncountable, which is the one thing the record
+    exists to prevent. The instrument comes from the cache's copy of the order.
+    """
+    from nautilus_trader.model import ClientOrderId, InstrumentId
+
+    order_id = ClientOrderId("O-20261010-0001")
+    instrument_id = InstrumentId.from_str("vBTC_vUSDC.SODEX_SPOT")
+    strat = _RecordingStrategy([])
+    strat.cache.order = lambda client_order_id: (
+        SimpleNamespace(client_order_id=client_order_id, instrument_id=instrument_id)
+        if client_order_id == order_id
+        else None
+    )
+
+    strat.cancel_order(order_id)
+
+    recorded = _lines_with(strat, CANCEL_REQUESTED)
+    assert recorded == [f"{CANCEL_REQUESTED} order_id={order_id} instrument={instrument_id}"], (
+        recorded
+    )
+    assert strat.delegated[0][1][0] == order_id, "the id itself still reaches the venue call"
