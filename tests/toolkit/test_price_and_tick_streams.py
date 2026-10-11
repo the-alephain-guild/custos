@@ -46,17 +46,6 @@ from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode  # noqa: E402
 from custos_toolkit_nautilus.adapter.tick_monitor import TickMonitorManager  # noqa: E402
 from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy  # noqa: E402
 
-_PRICED_FROM_QUOTES = pytest.mark.xfail(strict=True, reason="spot is still priced from trades only")
-_SUBSCRIBED_TWICE = pytest.mark.xfail(
-    strict=True, reason="pricing and tick monitoring still subscribe separately"
-)
-_STOP_LEAVES_PRICING = pytest.mark.xfail(
-    strict=True, reason="shutdown still unsubscribes the tick streams only"
-)
-_MONITOR_READS_EVERYTHING = pytest.mark.xfail(
-    strict=True, reason="tick monitoring still reads every subscribed stream"
-)
-
 
 class _Strategy(NS):
     """Records every subscription; anything else is the real strategy's method.
@@ -112,12 +101,13 @@ def _strategy(
     ):
         setattr(strat, action, recorder(action))
     strat._get_tick_monitoring_config = lambda: strat.config.risk.tick_monitoring
+    strat._pair_context_coordinator = PairContextCoordinator(strat)
     return strat
 
 
 def _start(strat: _Strategy) -> None:
     """The two subscription steps of on_start, in its order: tick streams, then pricing."""
-    coordinator = PairContextCoordinator(strat)
+    coordinator = strat._pair_context_coordinator
     coordinator.subscribe_ticks()
     coordinator.subscribe_mark_prices()
 
@@ -143,7 +133,6 @@ def _unsubscribed(strat: _Strategy) -> Counter:
 # ---------------------------------------------------------------------------
 
 
-@_PRICED_FROM_QUOTES
 @pytest.mark.parametrize("connector", ["sodex", "binance", "okx"])
 def test_a_spot_pair_is_priced_from_trades_and_quotes(connector) -> None:
     strat = _strategy(connector, tick=None)
@@ -172,12 +161,7 @@ def test_a_perpetual_pair_is_priced_from_its_mark_alone(connector) -> None:
 
 @pytest.mark.parametrize(
     "tick_type",
-    [
-        pytest.param("trade", marks=_SUBSCRIBED_TWICE),
-        # Passes today only because spot pricing takes no quotes yet.
-        "quote",
-        pytest.param("both", marks=_SUBSCRIBED_TWICE),
-    ],
+    ["trade", "quote", "both"],
 )
 def test_each_stream_is_subscribed_once(tick_type) -> None:
     strat = _strategy("sodex", tick=TickMonitoringConfig(enabled=True, tick_type=tick_type))
@@ -196,15 +180,10 @@ def test_each_stream_is_subscribed_once(tick_type) -> None:
 @pytest.mark.parametrize(
     ("connector", "tick"),
     [
-        pytest.param("sodex", None, marks=_STOP_LEAVES_PRICING),
-        # Passes today only because the tick stream and the pricing stream coincide.
+        ("sodex", None),
         ("sodex", TickMonitoringConfig(enabled=True, tick_type="trade")),
-        pytest.param(
-            "binance_perpetual",
-            TickMonitoringConfig(enabled=True, tick_type="quote"),
-            marks=_STOP_LEAVES_PRICING,
-        ),
-        pytest.param("binance_perpetual", None, marks=_STOP_LEAVES_PRICING),
+        ("binance_perpetual", TickMonitoringConfig(enabled=True, tick_type="quote")),
+        ("binance_perpetual", None),
     ],
 )
 def test_stop_unsubscribes_everything_start_subscribed(connector, tick, tmp_path) -> None:
@@ -258,7 +237,6 @@ def test_the_configured_stream_drives_the_monitor(tick_type, stream) -> None:
     assert _drives_the_monitor(TickMonitoringConfig(enabled=True, tick_type=tick_type), stream)
 
 
-@_MONITOR_READS_EVERYTHING
 @pytest.mark.parametrize(
     ("tick", "stream"),
     [

@@ -9,6 +9,7 @@ import pytest
 
 pytest.importorskip("nautilus_trader")
 
+from custos_toolkit_nautilus.adapter.coordinators import PairContextCoordinator  # noqa: E402
 from custos_toolkit_nautilus.adapter.strategy_core import NautilusStrategyCore  # noqa: E402
 from custos_toolkit_nautilus.adapter.trading_strategy import (  # noqa: E402
     NautilusTradingStrategy,
@@ -53,6 +54,7 @@ def _stop_stub(tmp_path, position_policy: str):
         _ready=True,
         log=SimpleNamespace(info=MagicMock(), warning=MagicMock()),
     )
+    strategy._pair_context_coordinator = PairContextCoordinator(strategy)
     return strategy, entry, protection
 
 

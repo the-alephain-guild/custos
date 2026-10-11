@@ -51,6 +51,9 @@ class ExecutionCoordinator:
         if not s._mode.uses_tick_monitor:
             return
 
+        if not self._monitors("trade"):
+            return
+
         if not ctx.tick_monitor or not ctx.tick_monitor.is_active:
             return
 
@@ -67,11 +70,25 @@ class ExecutionCoordinator:
         if not s._mode.uses_tick_monitor:
             return
 
+        if not self._monitors("quote"):
+            return
+
         if not ctx.tick_monitor or not ctx.tick_monitor.is_active:
             return
 
         mid_price = (Decimal(str(tick.bid_price)) + Decimal(str(tick.ask_price))) / 2
         self._drain_exit_actions(ctx, mid_price)
+
+    def _monitors(self, stream: str) -> bool:
+        """Whether tick monitoring is configured to read this stream.
+
+        Pricing subscribes trades and quotes whatever the tick config says, so a tick
+        arriving here says nothing about whether the strategy asked to exit on it. A
+        strategy monitoring trades must not take profit at a quote's mid, and one with
+        monitoring switched off must not take profit at all.
+        """
+        tick_config = self._strategy._get_tick_monitoring_config()
+        return tick_config.enabled and tick_config.tick_type in (stream, "both")
 
     def _drain_exit_actions(self, ctx: PairContext, price: Decimal) -> None:
         """Execute every exit the monitor has at this price, not just the first.

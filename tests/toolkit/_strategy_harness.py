@@ -14,7 +14,11 @@ from unittest.mock import MagicMock
 
 from custos_toolkit.position.tracker import PositionTracker
 from custos_toolkit.risk.orders import OrderPriceCalculator
-from custos_toolkit_nautilus.adapter.coordinators import ExecutionCoordinator
+from custos_toolkit_nautilus.adapter.config import TickMonitoringConfig
+from custos_toolkit_nautilus.adapter.coordinators import (
+    ExecutionCoordinator,
+    PairContextCoordinator,
+)
 from custos_toolkit_nautilus.adapter.orders import (
     OrderTracker,
     StopLossSubmitter,
@@ -114,8 +118,13 @@ class Harness:
         self.config = NS(
             position=NS(limits=NS(max_total_positions=0), capital_mode="fixed_capital"),
             trading=NS(order_type="market"),
-            risk=NS(trade=NS(take_profit=NS(method="none", scaled=None))),
+            risk=NS(
+                trade=NS(take_profit=NS(method="none", scaled=None)),
+                # tick() feeds trades, so the monitor is configured to read them.
+                tick_monitoring=TickMonitoringConfig(enabled=True, tick_type="trade"),
+            ),
         )
+        self._get_tick_monitoring_config = lambda: self.config.risk.tick_monitoring
         tracker = PositionTracker()
         tracker.record_entry(Decimal("100"), Decimal("1"))
         self.ctx = NS(
@@ -150,6 +159,7 @@ class Harness:
         from custos_toolkit_nautilus.adapter.coordinators import SLTPCoordinator
 
         self._sltp_coordinator = SLTPCoordinator(self)
+        self._pair_context_coordinator = PairContextCoordinator(self)
         self.pause = MagicMock()
         self.on_trade_closed = MagicMock()
 

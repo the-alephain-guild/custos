@@ -473,10 +473,10 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         # 7. Subscribe to tick data (if enabled)
         self._pair_context_coordinator.subscribe_ticks()
 
-        # 7b. Subscribe the mark price the guards price positions from. Not optional and
-        # not tied to the tick config above: the snapshot the notional cap, the snapshot
+        # 7b. Subscribe the prices the guards value positions at. Not optional and not
+        # tied to the tick config above: the snapshot the notional cap, the snapshot
         # publisher and the fallback breaker all read is unreliable without it whenever a
-        # position is open.
+        # position is open. A stream step 7 already took is not subscribed again.
         self._pair_context_coordinator.subscribe_mark_prices()
 
         # 8. Recover from existing positions
@@ -537,13 +537,8 @@ class NautilusTradingStrategy(NautilusStrategyCore):
             # Unsubscribe from bar data
             self.unsubscribe_bars(ctx.bar_type)
 
-            # Unsubscribe from tick data if enabled
-            tick_config = self._get_tick_monitoring_config()
-            if tick_config and tick_config.enabled:
-                if tick_config.tick_type in ("trade", "both"):
-                    self.unsubscribe_trades(ctx.instrument_id)
-                if tick_config.tick_type in ("quote", "both"):
-                    self.unsubscribe_quotes(ctx.instrument_id)
+        # Release the pricing and tick-monitoring streams the start subscribed
+        self._pair_context_coordinator.unsubscribe_streams()
 
         # Call strategy hook
         self.on_strategy_stop()

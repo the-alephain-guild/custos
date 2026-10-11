@@ -95,23 +95,8 @@ def test_on_start_subscribes_mark_prices() -> None:
     assert "subscribe_mark_prices()" in source
 
 
-@pytest.mark.parametrize("connector", ["sodex", "binance", "okx"])
-def test_a_spot_pair_is_priced_from_its_trades_not_a_mark_it_never_gets(connector) -> None:
-    """Spot venues publish no mark price.
-
-    Measured on runner 0.5.1, 2026-09-29: SoDEX spot answered the mark subscription
-    with an error every five seconds, and the first fill tripped the fallback breaker
-    because nothing could value the position. The runner values it at the last trade
-    when there is no mark and no mid, and that needs the trades subscribed whatever
-    the tick-monitoring config says.
-    """
-    strat = _strategy_with(["vBTC_vUSDC.SODEX_SPOT"], connector=connector)
-    coord = PairContextCoordinator(strat)
-
-    coord.subscribe_mark_prices()
-
-    assert strat.subscribed_mark_prices == []
-    assert strat.subscribed_trades == ["vBTC_vUSDC.SODEX_SPOT"]
+# Spot pricing (trades and quotes, never a mark) is asserted in
+# test_price_and_tick_streams.py::test_a_spot_pair_is_priced_from_trades_and_quotes.
 
 
 @pytest.mark.parametrize("connector", ["binance_perpetual", "okx_perpetual", "sodex_perpetual"])
