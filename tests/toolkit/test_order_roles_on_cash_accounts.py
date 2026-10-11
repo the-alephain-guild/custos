@@ -299,3 +299,102 @@ def test_a_rejected_margin_hatch_close_is_counted_and_takes_the_protection_with_
 
     rebuilt = [o for o in h.sent if o.order_type is OrderType.STOP_MARKET]
     assert len(rebuilt) == 1, "the per-bar repair puts a stop back"
+
+
+def _hatch_rejected(mode: SLTPMode) -> tuple[Harness, NS]:
+    """A margin position whose one plain close the venue has just rejected (logic tier)."""
+    from custos_toolkit.signals.types import Signal
+    from custos_toolkit_nautilus.adapter.coordinators import SignalExecutionCoordinator
+    from custos_toolkit_nautilus.adapter.execution import ExecutionManager
+
+    h = _recovering(AccountType.MARGIN, mode)
+    h.ctx.execution_manager = ExecutionManager(h.order_factory, h.cache, h.log)
+    h.ctx.order_tracker.record_reduce_only_refusal()
+    stop = _resting(h, OrderType.STOP_MARKET, OrderSide.SELL, reduce_only=True)
+    if mode is SLTPMode.HYBRID:
+        h.ctx.order_tracker.add_exchange_sl_order(stop.client_order_id, Decimal("1"))
+    else:
+        h.ctx.order_tracker.add_sl_order(stop.client_order_id, Decimal("1"))
+    SignalExecutionCoordinator(h).execute_exit_for_pair(
+        h.ctx, Signal.exit_long(Decimal("100"), pair=h.ctx.pair), bar=NS(close=Decimal("100"))
+    )
+    hatch = h.sent[-1]
+    assert hatch.is_reduce_only is False, "precondition: the one plain attempt went out"
+    return h, stop
+
+
+def _reject(h: Harness, order: NS) -> None:
+    OrderReconciler(h).handle_order_rejected(
+        NS(
+            instrument_id=h.instrument.id,
+            client_order_id=order.client_order_id,
+            reason="code=-2019, msg=Margin is insufficient.",
+        )
+    )
+
+
+def _confirm_cancels(h: Harness) -> None:
+    for order_id in h.cancelled:
+        h.orders[order_id].is_open, h.orders[order_id].is_closed = False, True
+
+
+def test_a_rejected_hatch_close_loses_an_exchange_take_profit_for_good() -> None:
+    """Exchange mode: the stop comes back on the next repair, the take-profit does not.
+
+    The cancel-all takes both. The per-bar repair (``ensure_exchange_sl_protection``)
+    rebuilds stop coverage only; an exchange take-profit is placed once, when the entry
+    fills (``SLTPMode.on_entry_filled``), and nothing places it again while this
+    position lives.
+    """
+    h, stop = _hatch_rejected(SLTPMode.EXCHANGE)
+    take_profit = _resting(h, OrderType.LIMIT, OrderSide.SELL, reduce_only=True)
+    h.ctx.order_tracker.add_tp_order(take_profit.client_order_id)
+    hatch = h.sent[-1]
+    sent_before = len(h.sent)
+
+    _reject(h, hatch)
+
+    assert {stop.client_order_id, take_profit.client_order_id} <= set(h.cancelled)
+    assert h.ctx.order_tracker.sl_order_ids == []
+    assert h.ctx.order_tracker.tp_order_ids == []
+
+    _confirm_cancels(h)
+    OrderReconciler(h).ensure_exchange_sl_protection(h.ctx)
+
+    placed = h.sent[sent_before:]
+    assert [o.order_type for o in placed] == [OrderType.STOP_MARKET], (
+        "the repair puts back a stop and nothing else"
+    )
+
+
+def test_the_stop_can_be_missing_for_the_repair_cool_down_after_a_rejected_hatch_close() -> None:
+    """How long the gap lasts when the repair runs before the cancel is confirmed.
+
+    The repair on the bar of the rejection finds the stop still open (its cancel is in
+    flight), claims it back, and arms the 60-second rebuild cool-down. Once the cancel
+    is confirmed the position has no stop, and the next repair inside that minute does
+    nothing; the first one after it rebuilds.
+    """
+    from custos_toolkit_nautilus.adapter.coordinators.order_reconciler import (
+        _NATIVE_TRAILING_REBUILD_COOLDOWN_NS,
+    )
+
+    h, stop = _hatch_rejected(SLTPMode.HYBRID)
+    _reject(h, h.sent[-1])
+    assert stop.client_order_id in h.cancelled
+
+    OrderReconciler(h).ensure_exchange_sl_protection(h.ctx)  # cancel not yet confirmed
+    assert h.ctx.order_tracker.exchange_sl_order_ids == [stop.client_order_id], (
+        "the stop being cancelled is claimed back as coverage"
+    )
+    rejected_at = h.now_ns
+    _confirm_cancels(h)
+    sent_before = len(h.sent)
+
+    h.now_ns = rejected_at + _NATIVE_TRAILING_REBUILD_COOLDOWN_NS - 1
+    OrderReconciler(h).ensure_exchange_sl_protection(h.ctx)
+    assert h.sent[sent_before:] == [], "inside the cool-down the position has no stop"
+
+    h.now_ns = rejected_at + _NATIVE_TRAILING_REBUILD_COOLDOWN_NS
+    OrderReconciler(h).ensure_exchange_sl_protection(h.ctx)
+    assert [o.order_type for o in h.sent[sent_before:]] == [OrderType.STOP_MARKET]
