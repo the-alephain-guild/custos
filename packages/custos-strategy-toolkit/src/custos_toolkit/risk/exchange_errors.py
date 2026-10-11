@@ -4,7 +4,8 @@ Platform-neutral pure logic: classifies an order-rejection reason string into a
 backoff tier so the strategy can react differently to transient server/rate-limit
 errors vs. business-logic rejections.
 
-- ``"server"``: gateway/timeout/rate-limit errors (5xx, -1007, -1003, -1015, ...).
+- ``"server"``: gateway/timeout/rate-limit/transport errors (5xx, 429, -1007, -1003,
+  -1015, ...).
   These mean the venue couldn't process the request; the right reaction is a long
   backoff / circuit-break, and NOT hammering the endpoint (which burns order quota).
 - ``"logic"``: business rejections (e.g. -2022 ReduceOnly rejected, -2019 margin).
@@ -36,6 +37,12 @@ _SERVER_ERROR_MARKERS: tuple[str, ...] = (
     "too many",
     "<!doctype",
     "<html",
+    # SoDEX adapter error texts ("venue returned HTTP {status}: {body}" and
+    # "transport failed: {0}"); its order rate limit is per account.
+    "http 429",
+    "http 500",
+    "rate limit",
+    "transport failed",
 )
 
 
