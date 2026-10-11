@@ -1080,3 +1080,158 @@ def test_a_market_order_with_no_price_of_any_kind_is_still_refused() -> None:
 
     with pytest.raises(RuntimeError, match="no reliable price"):
         semantics.order_notional(_market_order("O-5"))
+
+
+class _PricedSemantics(NautilusCachedOrderSemantics):
+    """The real risk judgement over a cached position; a flat notional, as no
+    instrument is loaded to price an order that adds exposure."""
+
+    def order_notional(self, order) -> Decimal:
+        return Decimal("25")
+
+
+def _long_cache(position_quantity: str):
+    position = SimpleNamespace(
+        is_closed=False,
+        is_long=True,
+        is_short=False,
+        quantity=Decimal(position_quantity),
+        strategy_id="STRATEGY-001",
+    )
+    return SimpleNamespace(positions_open=lambda **_kwargs: [position])
+
+
+def _long_boundary(cache, store: _Store) -> RunnerReservationBoundary:
+    return RunnerReservationBoundary(
+        store=store,
+        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        policy_id=POLICY_ID,
+        fallback_breaker=_breaker(),
+        trading_mode="testnet",
+        semantics=_PricedSemantics(cache),
+    )
+
+
+def _gated_long(*, position_quantity: str = "1"):
+    """A gate in front of a strategy holding one long; returns submit and the boundary."""
+    boundary = _long_boundary(_long_cache(position_quantity), _Store([]))
+    gate = _gate(boundary, client_order_id_len_limit=None)
+    downstream = _Downstream([])
+    return (lambda order: gate.submit_order(downstream.submit_order, order)), boundary
+
+
+def _plain_sell(client_order_id: str, *, quantity: str, side: str = "OrderSide.SELL"):
+    return SimpleNamespace(
+        client_order_id=client_order_id,
+        strategy_id="STRATEGY-001",
+        instrument_id="BTCUSDT-PERP.BINANCE",
+        side=side,
+        quantity=Decimal(quantity),
+        is_quote_quantity=False,
+        is_reduce_only=False,
+        emulation_trigger=None,
+        exec_algorithm_id=None,
+    )
+
+
+class OrderInitialized:
+    """Named as nautilus names it: the bridges dispatch on the type name."""
+
+    def __init__(self, order) -> None:
+        self.values = {
+            "event_id": str(UUID(int=abs(hash(order.client_order_id)) % (1 << 120))),
+            "client_order_id": order.client_order_id,
+            "instrument_id": order.instrument_id,
+            "order_side": order.side.rpartition(".")[2],
+            "order_type": "MARKET",
+            "quantity": str(order.quantity),
+            "reduce_only": order.is_reduce_only,
+            "ts_event": 1_786_586_400_000_000_000,
+        }
+
+    @staticmethod
+    def to_dict(event) -> dict:
+        return dict(event.values)
+
+
+class _PublishingStrategy(_GatedStrategy):
+    """Submitting publishes the order's initialization, as nautilus does inside submit."""
+
+    def submit_order(self, order, *_args, **_kwargs) -> None:
+        self.submitted.append(order)
+        self.on_order_event(OrderInitialized(order))
+
+    def on_order_event(self, event) -> None: ...
+
+    def on_position_event(self, event) -> None: ...
+
+
+class _RecordingFactEmitter:
+    def __init__(self) -> None:
+        self.signals: list[dict] = []
+
+    def remember_order(self, **_attribution) -> None: ...
+
+    def recall_orders(self, _deployment_instance_id) -> dict:
+        return {}
+
+    def forget_order(self, **_identity) -> None: ...
+
+    def emit_strategy_signal_sync(self, _authority, **signal):
+        self.signals.append(signal)
+        return signal["fact_id"]
+
+    def emit_sync(self, _authority, facts):
+        return tuple(facts)
+
+
+def test_the_gate_and_the_fact_agree_on_reduction() -> None:
+    """Whatever the gate let out without reserving, the signed fact calls a reduction.
+
+    The two answer one question, and the host wires the fact to the gate's answer
+    rather than to a second judgement of its own; asked twice, the answers drift
+    apart exactly where the claims of earlier exits matter.
+    """
+    from custos.engines.nautilus.host import NtTradingNodeHost
+    from tests.test_nt_trading_node_host import _FactCapabilityReceipt
+    from tests.test_strategy_signal_bridge import _deployment
+
+    emitter = _RecordingFactEmitter()
+    host = NtTradingNodeHost(
+        tenant_id="tenant-a",
+        runner_fact_emitter=emitter,
+        capability_receipt=_FactCapabilityReceipt(),
+    )
+    cache = _long_cache("1")
+    store = _Store([])
+    strategy = _PublishingStrategy()
+    host._attach_runtime_bridges(  # noqa: SLF001 - the host's own wiring under test
+        str(DEPLOYMENT_INSTANCE_ID),
+        strategy,
+        cache,
+        (_deployment(), None),
+        _long_boundary(cache, store),
+    )
+    orders = [
+        _plain_sell("exit-part", quantity="0.4"),
+        _plain_sell("exit-rest", quantity="0.6"),
+        _plain_sell("past-the-position", quantity="0.1"),
+        _plain_sell("add-to-long", quantity="1", side="OrderSide.BUY"),
+    ]
+
+    for order in orders:
+        strategy.submit_order(order)
+
+    directions = {signal["client_order_id"]: signal["direction"] for signal in emitter.signals}
+    reserved = {
+        order.client_order_id: order.client_order_id in store.reservations for order in orders
+    }
+    assert directions == {
+        "exit-part": "flat",
+        "exit-rest": "flat",
+        "past-the-position": "short",
+        "add-to-long": "long",
+    }
+    assert all(
+        (directions[order_id] == "flat") == (not reserved[order_id]) for order_id in reserved
+    )

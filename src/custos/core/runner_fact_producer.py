@@ -307,10 +307,14 @@ class RunnerFactEventBridge:
         deployment: RunnerFactDeployment,
         runtime_log_emitter: RunnerRuntimeLogPort | None = None,
         quantity_to_base: Callable[[str, str], str] | None = None,
+        order_reduces_exposure: Callable[[str], bool | None] | None = None,
     ) -> None:
         self._emitter = emitter
         self._deployment = deployment
         self._quantity_to_base = quantity_to_base
+        # The submission gate's verdict on each order it let out. Without it the
+        # reduce-only flag is the only evidence, and a spot venue refuses that flag.
+        self._order_reduces_exposure = order_reduces_exposure
         self._runtime_log_emitter = runtime_log_emitter
         self._order_directions: dict[str, str] = {}
         self._order_roles: dict[str, str] = {}
@@ -453,10 +457,13 @@ class RunnerFactEventBridge:
             quantity = str(data.get("quantity") or "").strip()
             if not quantity:
                 raise RunnerFactContractError("OrderInitialized has no requested quantity")
-            protective = reduce_only and any(
+            reducing = self._reduces_exposure(
+                authority, client_order_id, instrument, reduce_only, stable_identity
+            )
+            protective = reducing and any(
                 marker in order_type for marker in ("STOP", "TAKE_PROFIT", "TRAILING")
             )
-            if reduce_only:
+            if reducing:
                 direction = "flat"
             elif side == "buy":
                 direction = "long"
@@ -466,10 +473,10 @@ class RunnerFactEventBridge:
                 "protective_stop"
                 if protective
                 else "position_reduction"
-                if reduce_only
+                if reducing
                 else "strategy_entry"
             )
-            lifecycle_side = side if reduce_only else direction
+            lifecycle_side = side if reducing else direction
             if client_order_id:
                 self._remember_order(client_order_id, lifecycle_side, order_role)
             occurred_at = _nt_timestamp(data.get("ts_event") or data.get("ts_init"))
@@ -527,6 +534,56 @@ class RunnerFactEventBridge:
         except Exception as exc:  # the forwarder isolates and records audit failures
             _log.error("runner_strategy_signal_event_failed", error=str(exc))
             raise
+
+    def _reduces_exposure(
+        self,
+        authority: RunnerFactAuthority,
+        client_order_id: str,
+        instrument: str,
+        reduce_only: bool,
+        stable_identity: str,
+    ) -> bool:
+        """Whether this order reduces exposure, as the submission gate decided.
+
+        Reduce-only is enough on its own. Otherwise the gate's verdict decides. When
+        there is a gate but no verdict -- it never judged this order, or asking it
+        failed -- this does not guess: it reads the flag as before and records, as a
+        signed runtime log, that the flag was all it had.
+        """
+        if reduce_only or self._order_reduces_exposure is None:
+            return reduce_only
+        error_type = None
+        try:
+            verdict = self._order_reduces_exposure(client_order_id) if client_order_id else None
+        except Exception as exc:  # noqa: BLE001 - recorded below; the fact still goes out
+            verdict, error_type = None, type(exc).__name__
+        if verdict is not None:
+            return verdict
+        _log.warning(
+            "runner_fact_order_role_inference_unavailable",
+            deployment_instance_id=self._deployment.deployment_instance_id,
+            client_order_id=client_order_id,
+            error_type=error_type,
+        )
+        if self._runtime_log_emitter is not None:
+            fields: dict[str, Any] = {
+                "client_order_id": client_order_id,
+                "instrument": instrument,
+                "fallback": "reduce_only_flag",
+            }
+            if error_type is not None:
+                fields["error_type"] = error_type
+            self._runtime_log_emitter.emit_sync(
+                authority,
+                level="WARN",
+                component="custos.execution.order",
+                message="order_role_inference_unavailable",
+                structured_fields=fields,
+                correlation_id=_scoped_event_id(
+                    authority, "order_trace", client_order_id or stable_identity
+                ),
+            )
+        return reduce_only
 
     def record_local_refusal(
         self,

@@ -589,6 +589,22 @@ class RunnerReservationBoundary:
         self._policy_id = policy_id
         self._fallback_breaker.apply_config(breaker_config)
 
+    def judged_risk_reducing(self, client_order_id: Any) -> bool | None:
+        """What this gate decided about an order when it let the order out.
+
+        True when it was judged to reduce exposure and so reserved nothing, False
+        when it was reserved as risk-increasing, None when this gate never judged
+        it. The signed facts describe an order by this answer instead of asking the
+        question a second time: two judgements of one order can disagree, and the
+        one that decided what the order was allowed to do is this one.
+        """
+        order_id = str(client_order_id)
+        if order_id in self._risk_reducing_order_ids:
+            return True
+        if self._has_reservation(order_id):
+            return False
+        return None
+
     def cached_order(self, client_order_id: Any) -> Any:
         """What the canonical cache holds for this id, or ``None``.
 

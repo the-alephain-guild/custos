@@ -1086,6 +1086,13 @@ class NtTradingNodeHost:
                 quantity_to_base=lambda instrument, quantity: _base_fill_quantity(
                     cache, instrument, quantity
                 ),
+                # The gate's own verdict, not a second judgement: the fact says what
+                # the order was allowed to be.
+                order_reduces_exposure=(
+                    runner_safety_boundary.judged_risk_reducing
+                    if runner_safety_boundary is not None
+                    else None
+                ),
                 runtime_log_emitter=RunnerRuntimeLogEmitter(
                     emitter=self._runner_fact_emitter,
                     capability=self._capability_receipt,

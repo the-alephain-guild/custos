@@ -105,8 +105,8 @@ class OrderSubmitted(_OrderEvent):
 
 
 class OrderCanceled(_OrderEvent):
-    def __init__(self) -> None:
-        super().__init__(event_id="90000000-0000-4000-8000-000000000001")
+    def __init__(self, **values) -> None:
+        super().__init__(event_id="90000000-0000-4000-8000-000000000001", **values)
 
 
 class OrderRejected(_OrderEvent):
@@ -481,3 +481,164 @@ def test_native_position_closed_event_emits_a_durable_fact_without_to_dict() -> 
     assert fact["kind"] == "position_closed"
     assert fact["realized_pnl"] == "8"
     assert fact["currency"] == "USDT"
+
+
+INSTANCE = "20000000-0000-4000-8000-000000000001"
+ORDER = "supertrend-entry-1"
+
+
+def _judged(verdicts: dict[str, bool | None]):
+    """The gate's verdict on each order, as the host hands it to the bridge."""
+    return lambda client_order_id: verdicts.get(client_order_id)
+
+
+def _bridge(emitter, runtime_logs, verdicts) -> RunnerFactEventBridge:
+    return RunnerFactEventBridge(
+        emitter=emitter,
+        deployment=_deployment(),
+        runtime_log_emitter=runtime_logs,
+        order_reduces_exposure=_judged(verdicts),
+    )
+
+
+def _fields(runtime_logs, message: str) -> list[dict]:
+    return [
+        event["structured_fields"] for event in runtime_logs.events if event["message"] == message
+    ]
+
+
+def test_a_spot_exit_without_reduce_only_is_signed_as_a_reduction() -> None:
+    """A spot venue refuses reduce-only, so its exits carry none.
+
+    Read off the flag, a sell of the whole long was signed as a short entry: a signed
+    StrategySignal opening a short, and an order identity remembered as an entry
+    that every later fact about the order inherited.
+    """
+    emitter = _Emitter()
+    runtime_logs = _RuntimeLogEmitter()
+    bridge = _bridge(emitter, runtime_logs, {ORDER: True})
+
+    bridge._on_order_event(OrderInitialized(order_side="SELL", quantity="0.0070"))  # noqa: SLF001
+    remembered = emitter.remembered[(INSTANCE, ORDER)]
+    bridge._on_order_event(OrderSubmitted(order_side="SELL"))  # noqa: SLF001
+    bridge._on_order_event(OrderCanceled())  # noqa: SLF001
+
+    assert [signal["direction"] for signal in emitter.signals] == ["flat"]
+    assert remembered == ("sell", "position_reduction")
+    lifecycle = [event["structured_fields"] for event in runtime_logs.events]
+    assert [(fields["side"], fields["order_role"]) for fields in lifecycle] == [
+        ("sell", "position_reduction")
+    ] * 3
+    assert [fields["lifecycle"] for fields in lifecycle] == ["initialized", "submitted", "canceled"]
+
+
+def test_a_stop_exit_without_reduce_only_is_protective() -> None:
+    emitter = _Emitter()
+    runtime_logs = _RuntimeLogEmitter()
+    bridge = _bridge(emitter, runtime_logs, {ORDER: True})
+
+    bridge._on_order_event(  # noqa: SLF001
+        OrderInitialized(order_side="SELL", order_type="STOP_MARKET")
+    )
+
+    assert emitter.signals == []
+    assert emitter.remembered[(INSTANCE, ORDER)] == ("sell", "protective_stop")
+
+
+def test_a_reversing_sell_on_margin_is_an_entry() -> None:
+    """Past the position it opens the other side, and the gate reserved it as such."""
+    emitter = _Emitter()
+    runtime_logs = _RuntimeLogEmitter()
+    bridge = _bridge(emitter, runtime_logs, {ORDER: False})
+
+    bridge._on_order_event(OrderInitialized(order_side="SELL", quantity="2"))  # noqa: SLF001
+
+    assert [signal["direction"] for signal in emitter.signals] == ["short"]
+    assert emitter.remembered[(INSTANCE, ORDER)] == ("short", "strategy_entry")
+
+
+def test_an_opening_buy_and_a_reduce_only_sell_keep_todays_roles() -> None:
+    emitter = _Emitter()
+    bridge = _bridge(emitter, _RuntimeLogEmitter(), {ORDER: False})
+    bridge._on_order_event(OrderInitialized(order_side="BUY"))  # noqa: SLF001
+
+    closing = _Emitter()
+    bridge = _bridge(closing, _RuntimeLogEmitter(), {ORDER: True})
+    bridge._on_order_event(OrderInitialized(order_side="SELL", reduce_only=True))  # noqa: SLF001
+
+    assert emitter.signals[0]["direction"] == "long"
+    assert emitter.remembered[(INSTANCE, ORDER)] == ("long", "strategy_entry")
+    assert closing.signals[0]["direction"] == "flat"
+    assert closing.remembered[(INSTANCE, ORDER)] == ("sell", "position_reduction")
+
+
+@pytest.mark.parametrize("failure", ["unjudged", "raises"])
+def test_an_inference_failure_falls_back_and_says_so(failure: str) -> None:
+    """Not a guess: today's reading of the flag, and a signed record that it was used."""
+
+    def judge(client_order_id: str) -> bool | None:
+        if failure == "raises":
+            raise RuntimeError("cache unavailable")
+        return None
+
+    emitter = _Emitter()
+    runtime_logs = _RuntimeLogEmitter()
+    bridge = RunnerFactEventBridge(
+        emitter=emitter,
+        deployment=_deployment(),
+        runtime_log_emitter=runtime_logs,
+        order_reduces_exposure=judge,
+    )
+
+    bridge._on_order_event(OrderInitialized(order_side="SELL"))  # noqa: SLF001
+
+    assert emitter.signals[0]["direction"] == "short"
+    assert emitter.remembered[(INSTANCE, ORDER)] == ("short", "strategy_entry")
+    [unavailable] = [
+        event
+        for event in runtime_logs.events
+        if event["message"] == "order_role_inference_unavailable"
+    ]
+    assert unavailable["level"] == "WARN"
+    assert unavailable["structured_fields"]["client_order_id"] == ORDER
+    assert unavailable["structured_fields"]["fallback"] == "reduce_only_flag"
+
+
+def test_without_a_gate_the_flag_is_read_as_before() -> None:
+    """A bridge built with no gate to ask has nothing unavailable to report."""
+    emitter = _Emitter()
+    runtime_logs = _RuntimeLogEmitter()
+    RunnerFactEventBridge(
+        emitter=emitter, deployment=_deployment(), runtime_log_emitter=runtime_logs
+    )._on_order_event(OrderInitialized(order_side="SELL"))
+
+    assert emitter.signals[0]["direction"] == "short"
+    assert _fields(runtime_logs, "order_role_inference_unavailable") == []
+
+
+def test_a_second_full_size_exit_is_an_entry() -> None:
+    """The gate judges each exit against what earlier exits already claim; so do facts."""
+    pytest.importorskip("nautilus_trader")
+    from tests.engines.nautilus.test_runner_safety_execution_boundary import (
+        _gated_long,
+        _plain_sell,
+    )
+
+    emitter = _Emitter()
+    submit, boundary = _gated_long(position_quantity="0.0070")
+    bridge = RunnerFactEventBridge(
+        emitter=emitter,
+        deployment=_deployment(),
+        order_reduces_exposure=boundary.judged_risk_reducing,
+    )
+
+    for client_order_id in ("exit-1", "exit-2"):
+        order = _plain_sell(client_order_id, quantity="0.0070")
+        submit(order)
+        initialized = OrderInitialized(order_side="SELL", quantity="0.0070")
+        initialized.values["client_order_id"] = client_order_id
+        bridge._on_order_event(initialized)  # noqa: SLF001
+
+    assert [signal["direction"] for signal in emitter.signals] == ["flat", "short"]
+    assert emitter.remembered[(INSTANCE, "exit-1")] == ("sell", "position_reduction")
+    assert emitter.remembered[(INSTANCE, "exit-2")] == ("short", "strategy_entry")
