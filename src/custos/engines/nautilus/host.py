@@ -1608,6 +1608,44 @@ class NtTradingNodeHost:
         return positions, orders
 
     @staticmethod
+    def _risk_increasing_orders(
+        deployment_instance_id: str, runtime: _NodeRuntime, orders: list
+    ) -> list:
+        """The working orders that could add exposure, judged as the submission gate does.
+
+        By what each order would do to its strategy's open position, not by its
+        reduce-only flag: a spot venue refuses that flag, so its exits carry none, and
+        judged by the flag they were withdrawn as risk-increasing. Each order is judged
+        against what the orders before it already claim of the position, so two exits
+        for the whole of it do not both pass. Reduce-only orders go first: their answer
+        does not depend on the claims, and they are the protection to keep.
+
+        Anything that cannot be judged is counted as risk-increasing, so the judgement
+        only ever withdraws more than the flag did, never less.
+        """
+        from custos.engines.nautilus.runner_safety import NautilusCachedOrderSemantics
+
+        semantics = NautilusCachedOrderSemantics(runtime.cache)
+        claimed: dict[str, Decimal] = {}
+        risk_increasing = []
+        for order in sorted(orders, key=lambda order: not bool(order.is_reduce_only)):
+            try:
+                instrument_id = semantics.order_instrument_id(order)
+                already = claimed.get(instrument_id, Decimal(0))
+                if semantics.order_is_risk_reducing(order, already):
+                    claimed[instrument_id] = already + semantics.order_quantity(order)
+                    continue
+            except Exception as exc:  # noqa: BLE001 - unjudged counts as risk-increasing
+                _log.error(
+                    "nt_order_risk_unjudged",
+                    deployment_instance_id=deployment_instance_id,
+                    client_order_id=str(getattr(order, "client_order_id", None)),
+                    error_type=type(exc).__name__,
+                )
+            risk_increasing.append(order)
+        return risk_increasing
+
+    @staticmethod
     def _instrument_ids(positions: list, orders: list) -> set:
         return {
             instrument_id
@@ -1628,7 +1666,7 @@ class NtTradingNodeHost:
         deadline = asyncio.get_running_loop().time() + timeout_secs
         while asyncio.get_running_loop().time() < deadline:
             _positions, orders = self._open_venue_state(runtime)
-            risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
+            risk_increasing = self._risk_increasing_orders(deployment_instance_id, runtime, orders)
             if not risk_increasing:
                 _log.info(
                     "nt_shutdown_preserve_confirmed",
@@ -1654,7 +1692,7 @@ class NtTradingNodeHost:
                     discipline.cancel(canceler, order)
             await asyncio.sleep(self._shutdown_poll_secs)
         _positions, orders = self._open_venue_state(runtime)
-        risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
+        risk_increasing = self._risk_increasing_orders(deployment_instance_id, runtime, orders)
         _log.error(
             "nt_shutdown_preserve_unconfirmed",
             deployment_instance_id=deployment_instance_id,
@@ -1745,7 +1783,7 @@ class NtTradingNodeHost:
         except RuntimeError:
             return None
         if policy is None or policy.position_policy != "flatten":
-            orders = [order for order in orders if not bool(order.is_reduce_only)]
+            orders = self._risk_increasing_orders(deployment_instance_id, runtime, orders)
         return self._cancel_discipline(deployment_instance_id).residual(orders)
 
     def attached(self, deployment_instance_id: str) -> bool:
@@ -2189,7 +2227,7 @@ class NtTradingNodeHost:
                     error_type=type(exc).__name__,
                 )
                 return
-            risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
+            risk_increasing = self._risk_increasing_orders(deployment_instance_id, runtime, orders)
             if not positions and not risk_increasing:
                 self._containment_confirmed.add(deployment_instance_id)
                 _log.info(
@@ -2278,7 +2316,7 @@ class NtTradingNodeHost:
                 error_type=type(exc).__name__,
             )
             return None
-        risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
+        risk_increasing = self._risk_increasing_orders(deployment_instance_id, runtime, orders)
         if not risk_increasing:
             return 0
         canceler = self._canceler(runtime.strategies)

@@ -149,3 +149,129 @@ async def test_an_unreadable_order_list_does_not_stop_the_close(host) -> None:
     assert any(event["event"] == "nt_containment_orders_unreadable" for event in events), (
         "and it must not be silent about what it could not do"
     )
+
+
+@dataclass
+class _SpotPosition:
+    """A long the venue is slow to close: the close is asked for, the position stays."""
+
+    quantity: str = "0.0070"
+    instrument_id: str = "vBTC_vUSDC.SODEX_SPOT"
+    strategy_id: str = "S-1"
+    is_long: bool = True
+    is_short: bool = False
+    is_closed: bool = False
+
+
+@dataclass
+class _PlainOrder:
+    """An exit as a spot venue takes it: a plain sell, with no reduce-only flag."""
+
+    client_order_id: str
+    quantity: str = "0.0070"
+    side: str = "OrderSide.SELL"
+    is_reduce_only: bool = False
+    is_quote_quantity: bool = False
+    instrument_id: str = "vBTC_vUSDC.SODEX_SPOT"
+    strategy_id: str = "S-1"
+
+
+class _SlowClose(_ShutdownAwareStrategy):
+    def close_all_positions_with_fallback(self, instrument_id: str) -> None:
+        self.closed.append(instrument_id)
+
+
+async def _holding_long(host: NtTradingNodeHost, label: str, *orders: _PlainOrder, **spec):
+    strategy = _SlowClose()
+    deployment = _spec(label, trading_mode="testnet", **spec)
+    await host.deploy(deployment, _credential(), _Artifact(strategy=strategy))
+    instance = deployment["deployment_instance_id"]
+    strategy.node = host._active_nodes[instance].node  # noqa: SLF001 - fixture wiring
+    strategy.node.cache.positions.append(_SpotPosition())
+    strategy.node.cache.orders.extend(orders)
+    return strategy, instance
+
+
+@pytest.mark.asyncio
+async def test_a_plain_exit_within_the_position_survives_containment(host) -> None:
+    """Judged by what the order does to the position, not by a flag spot venues refuse.
+
+    A spot exit carries no reduce-only flag, because the venue rejects one. Judged by
+    the flag it was a risk-increasing order, and containment withdrew the exit it was
+    there to complete.
+    """
+    host._containment_confirm_secs = 0.05  # noqa: SLF001 - fixture wiring
+    strategy, instance = await _holding_long(host, "contain-plain-exit", _PlainOrder("exit"))
+
+    await host.flatten_positions(instance, "drawdown_breach")
+
+    assert strategy.cancelled == []
+
+
+@pytest.mark.asyncio
+async def test_a_plain_sell_larger_than_the_position_is_still_cancelled(host) -> None:
+    """Past the position it opens the other side, so it is risk-increasing."""
+    host._containment_confirm_secs = 0.05  # noqa: SLF001 - fixture wiring
+    strategy, instance = await _holding_long(
+        host, "contain-oversize", _PlainOrder("reverse", quantity="0.0071")
+    )
+
+    await host.flatten_positions(instance, "drawdown_breach")
+
+    assert strategy.cancelled == ["reverse"]
+
+
+@pytest.mark.asyncio
+async def test_two_full_size_exits_leave_one_standing(host) -> None:
+    """Each judged against what the others have not already claimed.
+
+    Judged one at a time against the whole position, both read as reducing and both
+    stay -- and if both fill, the second opens a short of the same size.
+    """
+    host._containment_confirm_secs = 0.05  # noqa: SLF001 - fixture wiring
+    strategy, instance = await _holding_long(
+        host, "contain-two-exits", _PlainOrder("first"), _PlainOrder("second")
+    )
+
+    await host.flatten_positions(instance, "drawdown_breach")
+
+    assert strategy.cancelled == ["second"]
+
+
+@pytest.mark.asyncio
+async def test_a_preserve_stop_keeps_a_plain_exit_within_the_position(host) -> None:
+    host._shutdown_poll_secs = 0  # noqa: SLF001 - fixture wiring
+    strategy, instance = await _holding_long(
+        host,
+        "preserve-plain-exit",
+        _PlainOrder("exit"),
+        _PlainOrder("reverse", quantity="0.0071"),
+        shutdown_policy={
+            "schema_version": 1,
+            "position_policy": "preserve",
+            "confirmation_timeout_secs": 5,
+        },
+    )
+
+    await host.stop(instance)
+
+    assert strategy.cancelled == ["reverse"]
+    assert strategy.prepared == ["preserve"]
+    assert not host.attached(instance)
+
+
+@pytest.mark.asyncio
+async def test_an_order_that_cannot_be_judged_is_treated_as_risk_increasing(host) -> None:
+    """Containment cancels what it cannot show to be reducing, and says it could not."""
+    from structlog.testing import capture_logs
+
+    host._containment_confirm_secs = 0.05  # noqa: SLF001 - fixture wiring
+    strategy, instance = await _holding_long(
+        host, "contain-unjudged", _PlainOrder("odd", quantity="not a number")
+    )
+
+    with capture_logs() as events:
+        await host.flatten_positions(instance, "drawdown_breach")
+
+    assert strategy.cancelled == ["odd"]
+    assert any(event["event"] == "nt_order_risk_unjudged" for event in events)

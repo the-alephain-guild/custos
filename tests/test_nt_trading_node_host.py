@@ -385,13 +385,24 @@ async def test_restart_requests_fresh_strategy_from_activated_artifact(monkeypat
 @dataclass(slots=True)
 class _VenuePosition:
     instrument_id: str = "BTCUSDT-PERP.BINANCE"
+    quantity: str = "1"
+    strategy_id: str = "S-1"
+    is_long: bool = True
+    is_short: bool = False
+    is_closed: bool = False
 
 
 @dataclass(slots=True)
 class _VenueOrder:
+    """A buy unless the test says otherwise: against the long above, it adds exposure."""
+
     is_reduce_only: bool
     instrument_id: str = "BTCUSDT-PERP.BINANCE"
     client_order_id: str = "O-1"
+    quantity: str = "1"
+    side: str = "OrderSide.BUY"
+    is_quote_quantity: bool = False
+    strategy_id: str = "S-1"
 
 
 class _ShutdownAwareStrategy(_StrategyDouble):

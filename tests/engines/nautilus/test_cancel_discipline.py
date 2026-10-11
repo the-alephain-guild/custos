@@ -78,6 +78,10 @@ class _Order:
     instrument_id: str = "BTCUSDT-PERP.BINANCE"
     is_pending_cancel: bool = False
     is_closed: bool = False
+    quantity: str = "1"
+    side: str = "OrderSide.BUY"
+    is_quote_quantity: bool = False
+    strategy_id: str = "S-1"
 
 
 class _Clock:
