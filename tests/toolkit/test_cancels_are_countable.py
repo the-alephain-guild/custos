@@ -263,7 +263,6 @@ def test_the_strategy_records_both_outcomes_before_handling_them() -> None:
         )
 
 
-@pytest.mark.xfail(strict=True, reason="a cancel by id is still recorded with order_id=None")
 def test_a_cancel_by_id_is_recorded_with_that_id() -> None:
     """The runner cancels by ``ClientOrderId``, not by order object.
 

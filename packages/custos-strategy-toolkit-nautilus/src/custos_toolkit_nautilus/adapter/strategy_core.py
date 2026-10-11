@@ -240,6 +240,18 @@ def order_only_reduces(
     )
 
 
+def _instrument_for_record(cache: Any, order: Any, order_id: Any) -> Any:
+    """The instrument a cancel record names, or None. Never raises: see cancel_audit."""
+    instrument_id = getattr(order, "instrument_id", None)
+    if instrument_id is not None:
+        return instrument_id
+    try:
+        cached = cache.order(order_id)
+    except Exception:  # noqa: BLE001 - a record must never cost a cancel
+        return None
+    return None if cached is None else cached.instrument_id
+
+
 class NautilusStrategyCore(Strategy, ABC):
     """
     Abstract base class defining minimal strategy interface.
@@ -560,11 +572,16 @@ class NautilusStrategyCore(Strategy, ABC):
         record that each of them has to remember to write is a record that the ninth
         will not have. Here there is nothing to route around, and a cancel site added
         later is covered without anyone thinking about it.
+
+        ``order`` is an order or its ``ClientOrderId``: the toolkit passes orders, the
+        runner passes ids, which is what NautilusTrader 2.0's own ``cancel_order`` takes.
+        For an id the instrument comes from the cache's copy of the order.
         """
+        order_id = getattr(order, "client_order_id", order)
         record_cancel_requested(
             self.log,
-            order_id=getattr(order, "client_order_id", None),
-            instrument_id=getattr(order, "instrument_id", None),
+            order_id=order_id,
+            instrument_id=_instrument_for_record(self.cache, order, order_id),
         )
         self._venue_cancel_order(order, client_id, params)
 
@@ -580,8 +597,8 @@ class NautilusStrategyCore(Strategy, ABC):
 
         The bulk call names an instrument, not orders, so on its own it says nothing
         about how many cancels were asked for -- and that count is exactly the left-hand
-        side of the question Plan 29 needs answered. So the open orders are enumerated
-        first and each one recorded.
+        side of the question the cancel records exist to answer. So the open orders are
+        enumerated first and each one recorded.
 
         The enumeration is best-effort: if the cache cannot be read, the cancel still
         goes out unrecorded. Losing a record is bad; losing a cancel is worse.
