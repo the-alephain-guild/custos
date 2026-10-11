@@ -1091,6 +1091,7 @@ class _PricedSemantics(NautilusCachedOrderSemantics):
 
 
 def _long_cache(position_quantity: str):
+    """One long, and the orders submitted against it, keyed by client order id."""
     position = SimpleNamespace(
         is_closed=False,
         is_long=True,
@@ -1098,7 +1099,12 @@ def _long_cache(position_quantity: str):
         quantity=Decimal(position_quantity),
         strategy_id="STRATEGY-001",
     )
-    return SimpleNamespace(positions_open=lambda **_kwargs: [position])
+    orders: dict = {}
+    return SimpleNamespace(
+        positions_open=lambda **_kwargs: [position],
+        orders=orders,
+        order=lambda client_order_id: orders.get(str(client_order_id)),
+    )
 
 
 def _long_boundary(cache, store: _Store) -> RunnerReservationBoundary:
@@ -1155,10 +1161,16 @@ class OrderInitialized:
 
 
 class _PublishingStrategy(_GatedStrategy):
-    """Submitting publishes the order's initialization, as nautilus does inside submit."""
+    """Submitting caches the order and then publishes its initialization, in the order
+    nautilus does both inside submit."""
+
+    def __init__(self, cache) -> None:
+        super().__init__()
+        self._cache = cache
 
     def submit_order(self, order, *_args, **_kwargs) -> None:
         self.submitted.append(order)
+        self._cache.orders[order.client_order_id] = order
         self.on_order_event(OrderInitialized(order))
 
     def on_order_event(self, event) -> None: ...
@@ -1204,7 +1216,7 @@ def test_the_gate_and_the_fact_agree_on_reduction() -> None:
     )
     cache = _long_cache("1")
     store = _Store([])
-    strategy = _PublishingStrategy()
+    strategy = _PublishingStrategy(cache)
     host._attach_runtime_bridges(  # noqa: SLF001 - the host's own wiring under test
         str(DEPLOYMENT_INSTANCE_ID),
         strategy,
