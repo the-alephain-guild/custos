@@ -36,7 +36,7 @@ from custos_toolkit_nautilus.adapter.config import (
     build_snapshot_config,
     build_trading_config,
 )
-from custos_toolkit_nautilus.adapter.utils import instrument_id_str
+from custos_toolkit_nautilus.adapter.utils import NO_EXCHANGE_STOP_CONNECTORS, instrument_id_str
 
 # Valid level values in the (level, message) tuples returned by validation_warnings();
 # they map one-to-one onto the strategy's _validate_startup_config log-dispatch branches.
@@ -205,6 +205,20 @@ class NautilusTradingStrategyConfig(StrategyConfig):
                 "Fixed-risk sizing is derived from the stop distance, so without a stop "
                 "the position cannot be computed; refusing to start to avoid a "
                 "zero-size or risk-uncontrolled order."
+            )
+
+        # Every mode but tick rests a stop order on the venue. Falling back to tick
+        # silently would remove the stop without the author knowing, so refuse and make
+        # them choose it.
+        connector = self.trading.connector
+        sl_tp_mode = self.risk.trade.sl_tp_mode
+        if connector in NO_EXCHANGE_STOP_CONNECTORS and sl_tp_mode != "tick":
+            raise ValueError(
+                f"[STARTUP] connector={connector!r} cannot hold a stop order on the venue "
+                f"(it accepts market and limit orders only), so sl_tp_mode={sl_tp_mode!r} "
+                "would leave every position without the stop that mode relies on. "
+                "Set risk.trade.sl_tp_mode to 'tick' and accept what it means: tick mode "
+                "has no stop loss; it monitors take-profit and the trailing exit on ticks."
             )
 
     def validation_warnings(self) -> list[tuple[WarningLevel, str]]:

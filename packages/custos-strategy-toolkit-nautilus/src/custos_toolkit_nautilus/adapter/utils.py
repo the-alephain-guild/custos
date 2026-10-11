@@ -47,6 +47,15 @@ VENUE_MAP = {
 # listed, and the instrument set simply loads empty.
 PAIRS_ARE_VENUE_SYMBOLS = frozenset({"sodex", "sodex_perpetual"})
 
+# Connectors whose venue cannot hold a stop order.
+#
+# The SoDEX execution adapter maps market and limit orders only, on spot and
+# perpetuals alike (its ``map_order_type``, checked 2026-10-11), and denies anything
+# else locally: "StopMarket orders is not supported by SoDEX". A stop-loss mode there
+# re-submits a denied stop forever while the position stays unprotected. A connector
+# not listed here is treated as able to hold a stop.
+NO_EXCHANGE_STOP_CONNECTORS = frozenset({"sodex", "sodex_perpetual"})
+
 
 def derive_instrument_id(trading_config: "TradingConfig") -> InstrumentId:
     """

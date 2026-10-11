@@ -496,7 +496,7 @@ risk:
       enum: ["exchange", "tick", "hybrid", "native_trailing"]
       description: |
         exchange: SL and TP both as exchange orders
-        tick: SL and TP both monitored on ticks
+        tick: TP and trailing exit monitored on ticks; NO stop loss
         hybrid: SL on the exchange + TP and trailing stop on ticks (recommended)
         native_trailing: exchange-native trailing stop (TrailingStopMarketOrder)
     max_loss_pct:

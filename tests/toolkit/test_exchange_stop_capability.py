@@ -48,7 +48,6 @@ def _config(connector: str, sl_tp_mode: str) -> NautilusTradingStrategyConfig:
     )
 
 
-@pytest.mark.xfail(strict=True, reason="modes needing a venue stop are not refused yet")
 @pytest.mark.parametrize("connector", ["sodex", "sodex_perpetual"])
 @pytest.mark.parametrize("sl_tp_mode", _EXCHANGE_STOP_MODES)
 def test_a_venue_without_exchange_stops_refuses_modes_that_need_them(connector, sl_tp_mode) -> None:
