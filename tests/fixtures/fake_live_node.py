@@ -118,6 +118,10 @@ class FakeBuilder:
         self.logging = None
         self.reconciliation = None
         self.knobs: dict = {}
+        self.exec_engine_config = None
+        # The order the assembly was asked for: a whole execution engine config
+        # replaces the reconciliation flag set before it.
+        self.calls: list[str] = []
         self.data_clients: list = []
         self.exec_clients: list = []
         self.simulated_exec_clients: list = []
@@ -128,7 +132,13 @@ class FakeBuilder:
         return self
 
     def with_reconciliation(self, reconciliation):
+        self.calls.append("with_reconciliation")
         self.reconciliation = reconciliation
+        return self
+
+    def with_exec_engine_config(self, config):
+        self.calls.append("with_exec_engine_config")
+        self.exec_engine_config = config
         return self
 
     def _knob(self, name, value):

@@ -453,7 +453,8 @@ async def test_explicit_flatten_shutdown_confirms_zero_before_dispose(monkeypatc
     await host.stop(deployment_instance_id)
 
     assert strategy.prepared == ["flatten"]
-    assert strategy.cancelled_all == ["BTCUSDT-PERP.BINANCE"]
+    assert strategy.cancelled == ["O-1"], "flatten withdraws order by order"
+    assert strategy.cancelled_all == []
     assert strategy.closed == ["BTCUSDT-PERP.BINANCE"]
     assert node.cache.positions == []
     assert node.cache.orders == []
