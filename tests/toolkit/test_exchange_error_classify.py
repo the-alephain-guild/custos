@@ -71,6 +71,8 @@ _SODEX_SERVER_ERRORS = (
     "venue returned HTTP 500: internal server error",
     "transport failed: error sending request: connection refused",
     "venue returned HTTP 429: rate limit exceeded",
+    # A 429 whose body names no limit at all: the status alone has to be enough.
+    'venue returned HTTP 429: {"code":-1}',
 )
 
 
