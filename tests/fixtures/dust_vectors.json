@@ -1,0 +1,269 @@
+{
+  "description": "Boundary vectors for custos_toolkit.position.dust. The toolkit tests and the runner tests read this one file, so the two sides cannot drift apart on what counts as dust or how much a spot exit may sell. Quantities, prices and balances are canonical decimal strings; null means the value is not known.",
+  "instruments": {
+    "sodex_vbtc_vusdc": {
+      "note": "SoDEX testnet vBTC_vUSDC as its public symbols endpoint reported it on 2026-10-11 (stepSize, minQuantity, minNotional).",
+      "size_increment": "0.00001",
+      "min_quantity": "0.00001",
+      "min_notional": "5"
+    },
+    "coarse_min_quantity": {
+      "note": "A pair whose minimum order quantity is larger than its step.",
+      "size_increment": "0.001",
+      "min_quantity": "0.01",
+      "min_notional": null
+    },
+    "no_minimums": {
+      "note": "A pair that states neither a minimum quantity nor a minimum notional.",
+      "size_increment": "0.001",
+      "min_quantity": null,
+      "min_notional": null
+    }
+  },
+  "dust": [
+    {
+      "name": "the account 60366 remainder, unpriced: the balance is below one step",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.00001",
+      "base_balance": "0.00000935",
+      "price": null,
+      "dust": true,
+      "expected_quantity_source": "balance",
+      "reason": "quantity",
+      "threshold": "0.00001",
+      "threshold_source": "size_increment"
+    },
+    {
+      "name": "the same remainder priced at the book: the position is worth less than the minimum notional",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.00001",
+      "base_balance": "0.00000935",
+      "price": "82962",
+      "dust": true,
+      "expected_quantity_source": "position",
+      "reason": "notional",
+      "threshold": "0.00001",
+      "threshold_source": "size_increment"
+    },
+    {
+      "name": "0.00004 vBTC at 82962 is 3.31848 vUSDC, below the minimum notional of 5",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.00004",
+      "base_balance": "0.00004",
+      "price": "82962",
+      "dust": true,
+      "expected_quantity_source": "position",
+      "reason": "notional",
+      "threshold": "0.00001",
+      "threshold_source": "size_increment"
+    },
+    {
+      "name": "the same 0.00004 vBTC without a price is judged by quantity alone, and is a real holding",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.00004",
+      "base_balance": "0.00004",
+      "price": null,
+      "dust": false
+    },
+    {
+      "name": "a notional of exactly the minimum (0.00004 at 125000 = 5) is not dust",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.00004",
+      "base_balance": "0.00004",
+      "price": "125000",
+      "dust": false
+    },
+    {
+      "name": "one step below the minimum notional: 0.00006 at 82962 is 4.97772",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.00006",
+      "base_balance": "0.00006",
+      "price": "82962",
+      "dust": true,
+      "expected_quantity_source": "position",
+      "reason": "notional",
+      "threshold": "0.00001",
+      "threshold_source": "size_increment"
+    },
+    {
+      "name": "one step above the minimum notional: 0.00007 at 82962 is 5.80734",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.00007",
+      "base_balance": "0.00007",
+      "price": "82962",
+      "dust": false
+    },
+    {
+      "name": "a quantity and a balance of exactly the minimum quantity are not dust",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.00001",
+      "base_balance": "0.00001",
+      "price": null,
+      "dust": false
+    },
+    {
+      "name": "a position rounded to zero beside real inventory: the position is dust, the inventory is not this verdict's business",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0",
+      "base_balance": "0.5",
+      "price": null,
+      "dust": true,
+      "expected_quantity_source": "position",
+      "reason": "quantity",
+      "threshold": "0.00001",
+      "threshold_source": "size_increment"
+    },
+    {
+      "name": "a real holding without a price stays a real holding",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.5",
+      "base_balance": "0.5",
+      "price": null,
+      "dust": false
+    },
+    {
+      "name": "a real holding with a price stays a real holding",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.5",
+      "base_balance": "0.5",
+      "price": "82962",
+      "dust": false
+    },
+    {
+      "name": "without a balance (a margin account) the position quantity alone decides",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.00001",
+      "base_balance": null,
+      "price": null,
+      "dust": false
+    },
+    {
+      "name": "without a balance a priced position below the minimum notional is still dust",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.00004",
+      "base_balance": null,
+      "price": "82962",
+      "dust": true,
+      "expected_quantity_source": "position",
+      "reason": "notional",
+      "threshold": "0.00001",
+      "threshold_source": "size_increment"
+    },
+    {
+      "name": "a balance below the minimum notional makes dust even when the position reads larger",
+      "instrument": "sodex_vbtc_vusdc",
+      "position_quantity": "0.0001",
+      "base_balance": "0.00004",
+      "price": "82962",
+      "dust": true,
+      "expected_quantity_source": "balance",
+      "reason": "notional",
+      "threshold": "0.00001",
+      "threshold_source": "size_increment"
+    },
+    {
+      "name": "a quantity below a minimum order quantity larger than the step",
+      "instrument": "coarse_min_quantity",
+      "position_quantity": "0.005",
+      "base_balance": null,
+      "price": null,
+      "dust": true,
+      "expected_quantity_source": "position",
+      "reason": "quantity",
+      "threshold": "0.01",
+      "threshold_source": "min_quantity"
+    },
+    {
+      "name": "a quantity of exactly that minimum order quantity",
+      "instrument": "coarse_min_quantity",
+      "position_quantity": "0.01",
+      "base_balance": null,
+      "price": "1",
+      "dust": false
+    },
+    {
+      "name": "no stated minimum notional: a priced quantity of one step is not dust",
+      "instrument": "no_minimums",
+      "position_quantity": "0.001",
+      "base_balance": "0.001",
+      "price": "1",
+      "dust": false
+    },
+    {
+      "name": "no stated minimums: nothing at all is dust",
+      "instrument": "no_minimums",
+      "position_quantity": "0",
+      "base_balance": null,
+      "price": null,
+      "dust": true,
+      "expected_quantity_source": "position",
+      "reason": "quantity",
+      "threshold": "0.001",
+      "threshold_source": "size_increment"
+    }
+  ],
+  "sellable": [
+    {
+      "name": "one P1 entry with the fee taken in base: sell what is free above the starting remainder",
+      "size_increment": "0.00001",
+      "wanted": "0.00100",
+      "free_balance": "0.00100870",
+      "reserved": "0.00000935",
+      "sellable": "0.00099"
+    },
+    {
+      "name": "the same exit without a reserve sells the full position and eats into the remainder",
+      "size_increment": "0.00001",
+      "wanted": "0.00100",
+      "free_balance": "0.00100870",
+      "reserved": "0",
+      "sellable": "0.00100"
+    },
+    {
+      "name": "three P1 entries: the plan's D6 example",
+      "size_increment": "0.00001",
+      "wanted": "0.00705",
+      "free_balance": "0.00705475",
+      "reserved": "0.00000935",
+      "sellable": "0.00704"
+    },
+    {
+      "name": "no balance to read (a margin account): the wanted quantity, on the step",
+      "size_increment": "0.00001",
+      "wanted": "0.00100",
+      "free_balance": null,
+      "reserved": "0",
+      "sellable": "0.00100"
+    },
+    {
+      "name": "less free than the reserve sells nothing",
+      "size_increment": "0.00001",
+      "wanted": "0.00100",
+      "free_balance": "0.000005",
+      "reserved": "0.00000935",
+      "sellable": "0"
+    },
+    {
+      "name": "a partial exit below what is free sells exactly what was asked",
+      "size_increment": "0.00001",
+      "wanted": "0.00030",
+      "free_balance": "0.00100870",
+      "reserved": "0.00000935",
+      "sellable": "0.00030"
+    },
+    {
+      "name": "a wanted quantity off the step is floored to it",
+      "size_increment": "0.00001",
+      "wanted": "0.000499675",
+      "free_balance": "0.001",
+      "reserved": "0",
+      "sellable": "0.00049"
+    }
+  ],
+  "starting_remainder": [
+    {"size_increment": "0.00001", "balance": "0.00000935", "remainder": "0.00000935"},
+    {"size_increment": "0.00001", "balance": "0.01", "remainder": "0"},
+    {"size_increment": "0.00001", "balance": "0.0100093", "remainder": "0.0000093"},
+    {"size_increment": "0.00001", "balance": "0", "remainder": "0"}
+  ]
+}
