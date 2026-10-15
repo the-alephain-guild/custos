@@ -127,7 +127,7 @@
       "type": "string"
     },
     "engine_version": {
-      "const": "2.0.0rc5+sodex.2",
+      "const": "2.0.0rc5+sodex.3",
       "title": "Engine Version",
       "type": "string"
     },
@@ -204,5 +204,5 @@
   "title": "StrategyArtifactRefV1",
   "type": "object",
   "x-contract-id": "alephain.custos.strategy_artifact_ref.v1",
-  "x-contract-revision": 1
+  "x-contract-revision": 2
 }

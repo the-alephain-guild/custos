@@ -113,7 +113,7 @@ class ToolkitRcMemberV1(_StrictFrozenModel):
         elif (
             self.distribution_name != "custos-strategy-toolkit-nautilus"
             or self.python_requires != ">=3.12,<3.13"
-            or self.nautilus_version != "2.0.0rc5+sodex.2"
+            or self.nautilus_version != "2.0.0rc5+sodex.3"
         ):
             raise ValueError("Nautilus member policy differs")
         return self
