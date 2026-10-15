@@ -459,7 +459,9 @@ class SignalExecutionCoordinator:
                 ctx.instrument_id,
                 size,
                 ctx.spot_reserved_remainder,
-                signal.price if price is None else price,
+                # A strategy may price the signal with bar.close, a NautilusTrader Price,
+                # which Signal leaves as it is; its text is the exact decimal.
+                Decimal(str(signal.price)) if price is None else price,
             )
             sized.announce(ctx.pair, warning=s.log.warning, info=s.log.info)
             if sized.refused:

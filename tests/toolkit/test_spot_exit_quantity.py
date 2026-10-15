@@ -274,3 +274,21 @@ def test_the_reserve_hook_reads_the_pair_context() -> None:
     assert NautilusStrategyCore.spot_reserve_for(strat, _PAIR.id) is None, (
         "the core keeps no pair state, so it reserves nothing"
     )
+
+
+def test_an_exit_signal_priced_with_the_bar_close_is_sized() -> None:
+    """Strategies build exit signals from ``bar.close``, a NautilusTrader ``Price``.
+
+    ``Signal`` normalises only int and float, so the price arrives as ``Price``. The plan 05
+    T7 backtest of the scale_in_probe fixture found every exit without an amount failing
+    on it with a TypeError inside on_bar, the position left open.
+    """
+    h = _harness(position="0.00100", free="0.00100870", reserved=_REMAINDER)
+
+    SignalExecutionCoordinator(h).execute_exit_for_pair(
+        h.ctx,
+        Signal.exit_long(Price.from_str("82962"), pair=h.ctx.pair),
+        NS(close=Price.from_str("82962")),
+    )
+
+    assert [order.quantity for order in h.sent] == [Quantity.from_str("0.00099")]
