@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
+from custos_toolkit.position.dust import below_tradable_minimum, floor_to_step
 from custos_toolkit.signals.types import SignalDirection
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import Bar
@@ -25,8 +26,8 @@ from custos_toolkit_nautilus.adapter.execution import ExecutionManager
 from custos_toolkit_nautilus.adapter.runtime_types import Indicator, Order
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
 from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
-from custos_toolkit_nautilus.adapter.sizing import notional_from_quantity
-from custos_toolkit_nautilus.adapter.spot_inventory import size_spot_exit
+from custos_toolkit_nautilus.adapter.sizing import notional_from_quantity, quantity_from_notional
+from custos_toolkit_nautilus.adapter.spot_inventory import read_tradable_minimum, size_spot_exit
 from custos_toolkit_nautilus.adapter.strategy_core import (
     CloseAttempt,
     decide_order_form,
@@ -427,12 +428,38 @@ class SignalExecutionCoordinator:
             return
         form = decide_order_form(cash_account=cash_account, attempt=attempt)
         size = Decimal(str(position.quantity))
+        price: Decimal | None = None
+        if signal.amount is not None:
+            # A scale-out: the amount is a quote notional, as on entry, converted at
+            # this bar's close. An amount that covers the position closes it.
+            instrument = s.cache.instrument(ctx.instrument_id)
+            if instrument is None:
+                s.log.error(f"Instrument not found: {ctx.instrument_id}")
+                return
+            price = Decimal(str(bar.close))
+            asked = floor_to_step(
+                quantity_from_notional(instrument, signal.amount, price),
+                instrument.size_increment.as_decimal(),
+            )
+            if asked < size:
+                refusal = below_tradable_minimum(asked, read_tradable_minimum(instrument), price)
+                if refusal is not None:
+                    s.log.warning(
+                        f"[{ctx.pair}] exit_amount_not_sent amount={signal.amount} "
+                        f"price={price} quantity={asked} reason=below_minimum_{refusal}"
+                    )
+                    return
+                size = asked
         if cash_account:
             # The venue sells from the free base balance, which a fee taken in base
             # leaves below the rounded position; the remainder held before the run is
             # not this exit's to sell.
             sized = size_spot_exit(
-                s.cache, ctx.instrument_id, size, ctx.spot_reserved_remainder, signal.price
+                s.cache,
+                ctx.instrument_id,
+                size,
+                ctx.spot_reserved_remainder,
+                signal.price if price is None else price,
             )
             sized.announce(ctx.pair, warning=s.log.warning, info=s.log.info)
             if sized.refused:
@@ -469,7 +496,7 @@ class SignalExecutionCoordinator:
                 )
             ctx.order_tracker.mark_closing(now_ns, _CLOSE_INFLIGHT_TIMEOUT_NS)
             s.log.info(
-                f"[{ctx.pair}] EXIT: {signal.direction.name}",
+                f"[{ctx.pair}] EXIT: {signal.direction.name} | size={size}",
                 color=LogColor.MAGENTA,
             )
 

@@ -546,3 +546,88 @@ def test_a_spot_exit_never_exceeds_the_free_balance(tmp_path) -> None:
         )
     finally:
         engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Scaling out: each exit that carries an amount sells that amount, and fills
+# ---------------------------------------------------------------------------
+
+# Quotes one second apart; exits six seconds apart, past the five-second window a
+# close in flight holds the next one back for.
+_SCALE_OUT_AT = {3: Decimal("200"), 9: Decimal("200"), 15: None}
+
+
+class _ScalesOutOnSodex(_BuysThenExitsOnSodex):
+    """The fixture's slots 14 to 16: two exits of 200 quote each, then the remainder."""
+
+    def on_core_quote_tick(self, tick) -> None:
+        self._probe_quotes += 1
+        if self._probe_quotes == 1:
+            self.submit_order(
+                self.order_factory.market(
+                    instrument_id=_SODEX_PAIR.id,
+                    order_side=OrderSide.BUY,
+                    quantity=Quantity.from_str("0.00630"),
+                    time_in_force=TimeInForce.IOC,
+                )
+            )
+        elif self._probe_quotes in _SCALE_OUT_AT:
+            ctx = self._contexts[_SODEX_PAIR.id]
+            before = {order.client_order_id for order in self.cache.orders()}
+            self._signal_execution_coordinator.execute_exit_for_pair(
+                ctx,
+                Signal.exit_long(
+                    Decimal("82962"), pair=ctx.pair, amount=_SCALE_OUT_AT[self._probe_quotes]
+                ),
+                NS(close=Price.from_str("82962")),
+            )
+            self.exit_order_ids.extend(
+                order.client_order_id
+                for order in self.cache.orders()
+                if order.client_order_id not in before
+            )
+
+
+def test_each_scale_out_exit_fills_its_own_amount(tmp_path) -> None:
+    """200 at 82962 is 0.00241 each; the last exit sells what is left that the account holds.
+
+    The buy fee comes out of the base, so after the two partial exits the position reads
+    0.00148 while the account holds 0.00147935: the remainder exit sells 0.00147.
+    """
+    engine = BacktestEngine(
+        BacktestEngineConfig(logging=LoggerConfig(bypass_logging=True), run_analysis=False)
+    )
+    engine.add_venue(
+        _SODEX,
+        OmsType.NETTING,
+        AccountType.CASH,
+        [Money(10_000, _VUSDC), Money(0, _VBTC)],
+        fee_model=_BuyFeeInBase(),
+    )
+    engine.add_instrument(_SODEX_PAIR)
+    strategy = _ScalesOutOnSodex(_sodex_config(tmp_path))
+    engine.add_strategy(strategy)
+    price = Price.from_str("82962")
+    size = Quantity.from_str("1.00000")
+    engine.add_data(
+        [
+            QuoteTick(
+                _SODEX_PAIR.id, price, price, size, size, n * 1_000_000_000, n * 1_000_000_000
+            )
+            for n in range(1, 18)
+        ]
+    )
+    try:
+        engine.run()
+
+        exits = [engine.cache.order(order_id) for order_id in strategy.exit_order_ids]
+        assert [order.quantity for order in exits] == [
+            Quantity.from_str("0.00241"),
+            Quantity.from_str("0.00241"),
+            Quantity.from_str("0.00147"),
+        ]
+        assert all(order.status == OrderStatus.FILLED for order in exits), [
+            order.status for order in exits
+        ]
+    finally:
+        engine.dispose()

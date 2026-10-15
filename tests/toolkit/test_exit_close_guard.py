@@ -58,7 +58,7 @@ def _make_ctx() -> SimpleNamespace:
 
 
 def _exit_signal() -> SimpleNamespace:
-    return SimpleNamespace(direction=SimpleNamespace(name="EXIT_LONG"), metadata={})
+    return SimpleNamespace(direction=SimpleNamespace(name="EXIT_LONG"), metadata={}, amount=None)
 
 
 def test_exit_not_resubmitted_within_inflight_window():
