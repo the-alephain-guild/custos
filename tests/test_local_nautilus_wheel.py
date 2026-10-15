@@ -12,7 +12,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALL = runpy.run_path(str(ROOT / "docker/install-local-nautilus-wheel.py"))["install"]
-VERSION = "2.0.0rc5+sodex.2"
+VERSION = "2.0.0rc5+sodex.3"
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ def test_corrupt_local_wheel_is_rejected_before_installation(tmp_path, installer
 
 
 def test_local_wheel_cannot_change_the_locked_version(tmp_path, installer):
-    name, digest = wheel(tmp_path, "2.0.0rc5+sodex.3")
+    name, digest = wheel(tmp_path, "2.0.0rc5+sodex.4")
     with pytest.raises(ValueError, match="preserve the locked engine version"):
         INSTALL(tmp_path, name, digest)
     assert installer == []

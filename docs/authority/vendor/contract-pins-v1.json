@@ -121,30 +121,30 @@
         {
           "local_path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json",
           "producer_path": "docs/authority/runner-strategy-release-resolution-v1.golden.json",
-          "sha256": "6aa465d46c9adb859bc6f36cef1250fbd5c0253ad531c628baaeda7d316c5e51",
+          "sha256": "12dcabd7824a6af89e6a8befdda602cc97da17af728720831e436a9cdd72bd8a",
           "size_bytes": 31367
         },
         {
           "local_path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.golden.json.sha256",
           "producer_path": "docs/authority/runner-strategy-release-resolution-v1.golden.json.sha256",
-          "sha256": "71fcd856b5062234ed830af33a93a2fa382a5e230b26e4fd28b4b7331bef0bd6",
+          "sha256": "bc244acd671c9028e61cad38a35bb669b134aa2264521d8fbcc7ea74c826ca87",
           "size_bytes": 116
         },
         {
           "local_path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
           "producer_path": "docs/authority/runner-strategy-release-resolution-v1.schema.json",
-          "sha256": "0e9726a6771e70e7ba27248ac31ce1c19f11711e8fedd71e32195c79b4e43b3b",
+          "sha256": "e467f50f3ac482ab3135486e7e1835bbba3dbe3f6d07f0d08f517019859dfb98",
           "size_bytes": 9285
         },
         {
           "local_path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json.sha256",
           "producer_path": "docs/authority/runner-strategy-release-resolution-v1.schema.json.sha256",
-          "sha256": "4e6954b822539b88c0793c716a317e4ebd97ec257c75f6d5d213af2d10feb37d",
+          "sha256": "f33433d2d0d2ca90c65cb60e750fd11177b4d5854452a2b81feec21b64687912",
           "size_bytes": 116
         }
       ],
       "producer_repository": "tesseract-trading/crucible-rust",
-      "revision": 1,
+      "revision": 2,
       "revision_carrier": "schema",
       "schema_local_path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",
       "vectors_local_path": null,

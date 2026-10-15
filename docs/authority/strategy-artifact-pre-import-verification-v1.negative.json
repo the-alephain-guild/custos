@@ -1,6 +1,6 @@
 {
   "base_golden": "docs/authority/strategy-artifact-pre-import-verification-v1.golden.json",
-  "base_golden_sha256": "cc8940cabaaef7ea1ba0b360327222b9184bf7c14e9bd863fb2208cd097ec3e2",
+  "base_golden_sha256": "1647cee82a68fc64b410c4cf55f73c3081c907a96dcd66dc6d9af50969598a48",
   "canonical_name": "Custos canonical V1 pre-import receipt negative mutations",
   "cases": [
     {
@@ -42,7 +42,7 @@
           "detached_attestation_ref",
           "bundle_sha256"
         ],
-        "value": "d2220c02cf04b13b7ebcf6aac2b7a21c752c64d118cdbc0e1498859bfdae27a7"
+        "value": "ca9f6f247a567932e6668729d8ab31f3c3c90444bf5fc967d9710991119c3adf"
       },
       "name": "bundle_self_reference_forbidden"
     },
@@ -53,7 +53,7 @@
           "crucible_artifact_evidence",
           "manifest_digest"
         ],
-        "value": "5c92a04b97fe74bfecbc60728beb7bcdedae6b336445cf379f9709b0e321e085"
+        "value": "20732ff75b298774d9ebdc49704a5eb220b83820bc2e3522dde53d8b3cc234cd"
       },
       "name": "legacy_crucible_manifest_alias_forbidden"
     },
@@ -64,7 +64,7 @@
           "crucible_artifact_acceptance",
           "receipt_digest"
         ],
-        "value": "8382d6d8b5e1f32b2d96c5897144e1e60e332b92de952b2d1ea59ac65f9dabb5"
+        "value": "2e770a1223689e2a315bd99b16f843841490f26cf6e0116a61e00aef1ed4dee6"
       },
       "name": "legacy_crucible_receipt_alias_forbidden"
     },
@@ -109,7 +109,7 @@
         "value": [
           {
             "digest": {
-              "sha256": "bf223d369fcc7cdd9e9b2aef7a07824741b2352618810b50f4c3654d744eee97"
+              "sha256": "6a11192f04795ed384cf918fb1c928bf918a0aa9325c98861ddddcb435be83b0"
             },
             "name": "strategy-release-bom-v1"
           },
@@ -121,7 +121,7 @@
           },
           {
             "digest": {
-              "sha256": "5c92a04b97fe74bfecbc60728beb7bcdedae6b336445cf379f9709b0e321e085"
+              "sha256": "20732ff75b298774d9ebdc49704a5eb220b83820bc2e3522dde53d8b3cc234cd"
             },
             "name": "strategy-manifest-v1"
           }
@@ -145,19 +145,19 @@
           },
           {
             "digest": {
-              "sha256": "bf223d369fcc7cdd9e9b2aef7a07824741b2352618810b50f4c3654d744eee97"
+              "sha256": "6a11192f04795ed384cf918fb1c928bf918a0aa9325c98861ddddcb435be83b0"
             },
             "name": "strategy-release-bom-v1"
           },
           {
             "digest": {
-              "sha256": "5c92a04b97fe74bfecbc60728beb7bcdedae6b336445cf379f9709b0e321e085"
+              "sha256": "20732ff75b298774d9ebdc49704a5eb220b83820bc2e3522dde53d8b3cc234cd"
             },
             "name": "strategy-manifest-v1"
           },
           {
             "digest": {
-              "sha256": "aafaabf91a01c29b23e04ee7b26554a12d5879202ba80eabbfa88b0fda7b637e"
+              "sha256": "38be1bee0bf9b7c0514a784fc4e792937c023837f76711efaad35884d06fd3c7"
             },
             "name": "strategy-artifact-ref-v1"
           }
@@ -175,7 +175,7 @@
         "value": [
           {
             "digest": {
-              "sha256": "bf223d369fcc7cdd9e9b2aef7a07824741b2352618810b50f4c3654d744eee97"
+              "sha256": "6a11192f04795ed384cf918fb1c928bf918a0aa9325c98861ddddcb435be83b0"
             },
             "name": "strategy-release-bom-v1"
           },
@@ -187,13 +187,13 @@
           },
           {
             "digest": {
-              "sha256": "5c92a04b97fe74bfecbc60728beb7bcdedae6b336445cf379f9709b0e321e085"
+              "sha256": "20732ff75b298774d9ebdc49704a5eb220b83820bc2e3522dde53d8b3cc234cd"
             },
             "name": "strategy-manifest-v1"
           },
           {
             "digest": {
-              "sha256": "5c92a04b97fe74bfecbc60728beb7bcdedae6b336445cf379f9709b0e321e085"
+              "sha256": "20732ff75b298774d9ebdc49704a5eb220b83820bc2e3522dde53d8b3cc234cd"
             },
             "name": "strategy-manifest-v1"
           }
@@ -211,7 +211,7 @@
         "value": [
           {
             "digest": {
-              "sha256": "bf223d369fcc7cdd9e9b2aef7a07824741b2352618810b50f4c3654d744eee97"
+              "sha256": "6a11192f04795ed384cf918fb1c928bf918a0aa9325c98861ddddcb435be83b0"
             },
             "name": "strategy-release-bom-v1"
           },
@@ -223,7 +223,7 @@
           },
           {
             "digest": {
-              "sha256": "5c92a04b97fe74bfecbc60728beb7bcdedae6b336445cf379f9709b0e321e085"
+              "sha256": "20732ff75b298774d9ebdc49704a5eb220b83820bc2e3522dde53d8b3cc234cd"
             },
             "name": "strategy-manifest-v1"
           },
