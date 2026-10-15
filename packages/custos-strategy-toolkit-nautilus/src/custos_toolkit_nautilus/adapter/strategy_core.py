@@ -25,6 +25,9 @@ directly and implement all trading logic themselves.
 import logging
 import os
 from abc import ABC, abstractmethod
+from collections.abc import Callable
+from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -49,6 +52,13 @@ from custos_toolkit_nautilus.adapter.state_persistence import (
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.orders import OrderTracker
+    from custos_toolkit_nautilus.adapter.runtime_types import (
+        Cache,
+        Instrument,
+        Order,
+        OrderFactory,
+        Position,
+    )
 
 # Module-level logger, used as a fallback when self.log is unavailable.
 _logger = logging.getLogger(__name__)
@@ -125,6 +135,127 @@ def plan_close_attempt(
     if plain_close_submitted:
         return CloseAttempt.PLAIN_ALREADY_SPENT
     return CloseAttempt.PLAIN
+
+
+def read_cash_account(
+    cache: "Cache", instrument_id: InstrumentId, warn: Callable[[str], None]
+) -> bool | None:
+    """Whether the account trading this instrument is a cash account.
+
+    ``None`` when the account cannot be read, and that is said once per order so it
+    can be counted. Callers then keep the protective form: the worst a refused
+    reduce-only order can do is not close, while a plain order on a margin account
+    whose cache lags a fill can open the reverse position.
+    """
+    try:
+        account = cache.account_for_venue(instrument_id.venue)
+    except Exception as exc:  # noqa: BLE001 - an unreadable account is an answer, not a crash
+        reason = f"{type(exc).__name__}: {exc}"
+    else:
+        if account is not None:
+            # By name, as the runner reads it: the enum compares equal to anything that
+            # converts to its integer value.
+            return str(account.account_type) == "CASH"
+        reason = "no account in the cache"
+    warn(
+        f"order_form_account_unreadable instrument={instrument_id} reason={reason}; "
+        "the order keeps reduce_only"
+    )
+    return None
+
+
+@dataclass(frozen=True, slots=True)
+class OrderForm:
+    """How a close or a protective order goes out."""
+
+    reduce_only: bool
+    submitted: bool
+    """The order is built here and passed to ``submit_order``.
+
+    ``close_position`` cannot carry a plain close: the runner's safety gate refuses a
+    plain ``close_position`` and recognises a plain close only as a submitted order
+    whose quantity is within the position.
+    """
+    spends_hatch: bool
+    """This is the position's one plain attempt, earned by a reduce-only refusal."""
+
+
+def decide_order_form(*, cash_account: bool | None, attempt: CloseAttempt) -> OrderForm:
+    """The one place that decides whether an order carries reduce_only.
+
+    A cash account cannot sell what it does not hold, so the hazard reduce-only guards
+    against -- a duplicate close opening the reverse position -- does not exist there,
+    and spot adapters refuse the flag outright. Every close and protective order on a
+    cash account therefore goes out plain. Anywhere else, including an account that
+    could not be read, ``plan_close_attempt`` decides as before.
+    """
+    if cash_account is True:
+        return OrderForm(reduce_only=False, submitted=True, spends_hatch=False)
+    if attempt is CloseAttempt.PLAIN:
+        return OrderForm(reduce_only=False, submitted=True, spends_hatch=True)
+    return OrderForm(reduce_only=True, submitted=False, spends_hatch=False)
+
+
+def read_order_form(
+    cache: "Cache", instrument_id: InstrumentId, warn: Callable[[str], None]
+) -> OrderForm:
+    """The form of an order that never uses the escape hatch: protection and tick exits."""
+    return decide_order_form(
+        cash_account=read_cash_account(cache, instrument_id, warn),
+        attempt=CloseAttempt.REDUCE_ONLY,
+    )
+
+
+def build_close_order(
+    order_factory: "OrderFactory",
+    instrument: "Instrument",
+    position: "Position",
+    form: OrderForm,
+    quantity: Decimal,
+) -> "Order":
+    """A market IOC order that closes the position, for a form ``close_position``
+    cannot carry (see ``OrderForm.submitted``).
+
+    ``quantity`` is the position's on a margin account, and on a cash account what the
+    account may sell of it (``spot_inventory.size_spot_exit``).
+    """
+    return order_factory.market(
+        instrument_id=position.instrument_id,
+        order_side=OrderSide.SELL if position.is_long else OrderSide.BUY,
+        quantity=instrument.make_qty(quantity),
+        time_in_force=TimeInForce.IOC,
+        reduce_only=form.reduce_only,
+    )
+
+
+def order_only_reduces(
+    order: "Order", *, cash_account: bool | None, strategy_id: object
+) -> bool:
+    """Whether a working order can only take exposure away, by what the venue records.
+
+    This is the evidence that survives a restart, when the order tracker is empty. On
+    any account a reduce-only order says so itself. On a cash account a sell says so
+    too -- it cannot sell what is not held -- but the venue streams are account-wide,
+    so only this strategy's own sell is read that way: another strategy's sell is not
+    this strategy's protection. Without a readable account only the flag counts.
+    """
+    if order.is_reduce_only:
+        return True
+    return (
+        cash_account is True and order.side == OrderSide.SELL and order.strategy_id == strategy_id
+    )
+
+
+def _instrument_for_record(cache: Any, order: Any, order_id: Any) -> Any:
+    """The instrument a cancel record names, or None. Never raises: see cancel_audit."""
+    instrument_id = getattr(order, "instrument_id", None)
+    if instrument_id is not None:
+        return instrument_id
+    try:
+        cached = cache.order(order_id)
+    except Exception:  # noqa: BLE001 - a record must never cost a cancel
+        return None
+    return None if cached is None else cached.instrument_id
 
 
 class NautilusStrategyCore(Strategy, ABC):
@@ -447,11 +578,16 @@ class NautilusStrategyCore(Strategy, ABC):
         record that each of them has to remember to write is a record that the ninth
         will not have. Here there is nothing to route around, and a cancel site added
         later is covered without anyone thinking about it.
+
+        ``order`` is an order or its ``ClientOrderId``: the toolkit passes orders, the
+        runner passes ids, which is what NautilusTrader 2.0's own ``cancel_order`` takes.
+        For an id the instrument comes from the cache's copy of the order.
         """
+        order_id = getattr(order, "client_order_id", order)
         record_cancel_requested(
             self.log,
-            order_id=getattr(order, "client_order_id", None),
-            instrument_id=getattr(order, "instrument_id", None),
+            order_id=order_id,
+            instrument_id=_instrument_for_record(self.cache, order, order_id),
         )
         self._venue_cancel_order(order, client_id, params)
 
@@ -467,8 +603,8 @@ class NautilusStrategyCore(Strategy, ABC):
 
         The bulk call names an instrument, not orders, so on its own it says nothing
         about how many cancels were asked for -- and that count is exactly the left-hand
-        side of the question Plan 29 needs answered. So the open orders are enumerated
-        first and each one recorded.
+        side of the question the cancel records exist to answer. So the open orders are
+        enumerated first and each one recorded.
 
         The enumeration is best-effort: if the cache cannot be read, the cancel still
         goes out unrecorded. Losing a record is bad; losing a cancel is worse.
@@ -538,6 +674,14 @@ class NautilusStrategyCore(Strategy, ABC):
         """
         return None
 
+    def spot_reserve_for(self, instrument_id: Any) -> Decimal | None:
+        """The base this run must not sell on a cash account, recorded when it started.
+
+        Core keeps no per-instrument state, so it reserves nothing; subclasses that
+        record the starting remainder in their pair contexts override this.
+        """
+        return None
+
     def close_all_positions_with_fallback(self, instrument_id: Any) -> None:
         """Close this instrument's open positions, dropping reduce-only only on evidence.
 
@@ -566,28 +710,65 @@ class NautilusStrategyCore(Strategy, ABC):
             self._log_warning(f"close fallback: could not read order state: {exc}")
             tracker = None
 
+        cash_account = read_cash_account(self.cache, position.instrument_id, self._log_warning)
         attempt = plan_close_attempt(
             reduce_only_refused=bool(tracker is not None and tracker.reduce_only_refused),
             plain_close_submitted=bool(tracker is not None and tracker.plain_close_submitted),
         )
-        if attempt is CloseAttempt.PLAIN:
+        form = decide_order_form(cash_account=cash_account, attempt=attempt)
+        if form.spends_hatch:
             self._log_warning(
                 f"Closing {position.instrument_id} without reduce_only: the venue refused "
                 f"the reduce-only form for this position. This is the one plain attempt"
             )
-        elif attempt is CloseAttempt.PLAIN_ALREADY_SPENT:
+        elif attempt is CloseAttempt.PLAIN_ALREADY_SPENT and form.reduce_only:
             self._log_warning(
                 f"Closing {position.instrument_id} with reduce_only although the venue "
                 f"refused it: the one plain attempt is spent. This will likely be refused "
                 f"too, but a refused reduce-only order cannot open a reverse position"
             )
 
-        self.close_position(
-            position,
-            reduce_only=attempt is not CloseAttempt.PLAIN,
-            time_in_force=TimeInForce.IOC,
-        )
-        if attempt is CloseAttempt.PLAIN and tracker is not None:
+        if not form.submitted:
+            self.close_position(
+                position,
+                reduce_only=form.reduce_only,
+                time_in_force=TimeInForce.IOC,
+            )
+            return
+
+        instrument = self.cache.instrument(position.instrument_id)
+        if instrument is None:
+            self._log_warning(f"close fallback: instrument {position.instrument_id} not found")
+            return
+        quantity = Decimal(str(position.quantity))
+        if cash_account:
+            # spot_inventory reads the account through this module's read_cash_account.
+            from custos_toolkit_nautilus.adapter.spot_inventory import size_spot_exit
+
+            try:
+                reserved = self.spot_reserve_for(position.instrument_id)
+            except Exception as exc:
+                self._log_warning(f"close fallback: could not read the spot reserve: {exc}")
+                reserved = None
+            sized = size_spot_exit(self.cache, position.instrument_id, quantity, reserved, None)
+            sized.announce(
+                str(position.instrument_id), warning=self._log_warning, info=self._log_warning
+            )
+            if sized.refused:
+                return
+            quantity = sized.quantity
+        order = build_close_order(self.order_factory, instrument, position, form, quantity)
+        if tracker is not None:
+            tracker.add_close_order(order.client_order_id)
+        if cast(bool | None, self.submit_order(order)) is False:
+            if tracker is not None:
+                tracker.remove_order(order.client_order_id)
+            self._log_warning(
+                f"close fallback: the close of {position.instrument_id} was refused "
+                "locally before dispatch"
+            )
+            return
+        if form.spends_hatch and tracker is not None:
             tracker.mark_plain_close_submitted()
 
     # ---- Emergency close (Crucible graceful-close layer) ----

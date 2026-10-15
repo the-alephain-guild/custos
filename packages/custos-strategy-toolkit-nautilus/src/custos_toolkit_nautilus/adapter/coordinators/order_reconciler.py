@@ -8,8 +8,8 @@ severity-tiered reject breaker. Injects a strategy reference and reaches
 ``_get_context_from_instrument`` through it, plus SL/TP submission via
 ``_sltp_coordinator.submit_*``.
 
-The nautilus event callbacks ``on_order_rejected`` / ``on_order_cancel_rejected`` stay
-on the Strategy class (the engine dispatches them by name, the callback contract
+The nautilus event callbacks ``on_order_rejected`` / ``on_order_denied`` /
+``on_order_cancel_rejected`` stay on the Strategy class (the engine dispatches them by name, the callback contract
 requires them); their bodies delegate to this component's ``handle_*`` methods.
 """
 
@@ -24,7 +24,13 @@ from custos_toolkit.risk.exchange_errors import (
 )
 from custos_toolkit.signals.types import Signal, SignalDirection
 from nautilus_trader.common import LogColor
-from nautilus_trader.model import OrderCancelRejected, OrderRejected, OrderSide, OrderType
+from nautilus_trader.model import (
+    OrderCancelRejected,
+    OrderDenied,
+    OrderRejected,
+    OrderSide,
+    OrderType,
+)
 
 from custos_toolkit_nautilus.adapter.coordinators.rejection_triage import (
     RejectedOrderKind,
@@ -36,6 +42,8 @@ from custos_toolkit_nautilus.adapter.coordinators.entry_reservation import (
 from custos_toolkit_nautilus.adapter.orders import STALE_SWEEP_RETRY_COOLDOWN_NS, is_stale_order
 from custos_toolkit_nautilus.adapter.runtime_types import Indicator, Order, Position
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
+from custos_toolkit_nautilus.adapter.spot_inventory import read_dust
+from custos_toolkit_nautilus.adapter.strategy_core import order_only_reduces, read_cash_account
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
@@ -73,6 +81,9 @@ class OrderReconciler:
         1. Restore position tracker state
         2. Restore tick monitor state (tick/hybrid mode)
         3. Check and recreate exchange SL orders if missing (exchange/hybrid mode)
+
+        A position that is dust is left alone: no order can sell it, so it gets no
+        protection, no tick monitoring and no exit.
         """
         s = self._strategy
         for ctx in s._contexts.values():
@@ -83,6 +94,9 @@ class OrderReconciler:
 
             position = positions[0]
             if position.is_closed:
+                continue
+
+            if self._holds_dust(ctx, position):
                 continue
 
             s.log.info(
@@ -120,6 +134,31 @@ class OrderReconciler:
             # 4. Re-claim or resubmit exchange-managed trailing stop (native_trailing)
             if s._mode.uses_native_trailing:
                 self.ensure_native_trailing_exists(ctx, position)
+
+    def _holds_dust(self, ctx: PairContext, position: Position) -> bool:
+        """Whether the position is dust, said when it is.
+
+        Priced at the newest bar, so the minimum notional counts when there is one; a
+        holding below the minimum quantity is dust with or without a price. Callers on
+        the per-bar path ask after their rebuild cool-down, so this is said at most
+        once a minute there.
+        """
+        s = self._strategy
+        latest = s.cache.bar(ctx.bar_type)
+        price = None if latest is None else Decimal(str(latest.close))
+        dust = read_dust(
+            s.cache, ctx.instrument_id, Decimal(str(position.quantity)), price, s.log.warning
+        )
+        if dust is None:
+            return False
+        s.log.info(
+            f"[{ctx.pair}] dust_left_alone quantity={dust.quantity} "
+            f"source={dust.quantity_source} reason={dust.reason} "
+            f"minimum_quantity={dust.minimum.quantity} minimum_notional={dust.minimum.notional} "
+            f"price={dust.price}: no order can sell it, so it gets no protection or exit",
+            color=LogColor.YELLOW,
+        )
+        return True
 
     def ensure_exchange_sl_exists(self, ctx: PairContext, position: Position) -> None:
         """
@@ -235,6 +274,8 @@ class OrderReconciler:
         if now_ns < ctx.exchange_sl_rebuild_deadline_ns:
             return
         ctx.exchange_sl_rebuild_deadline_ns = now_ns + _NATIVE_TRAILING_REBUILD_COOLDOWN_NS
+        if self._holds_dust(ctx, position):
+            return
         s.log.error(
             f"[{ctx.pair}] Exchange SL coverage {covered} is below position {expected} — "
             "rebuilding missing delta",
@@ -252,7 +293,8 @@ class OrderReconciler:
         Find all existing stop-loss lots for the position on the exchange.
 
         Looks for:
-        - Stop market orders (reduce_only=True)
+        - Stop market orders that can only reduce (``order_only_reduces``: reduce-only,
+          or on a cash account this strategy's own sell)
         - Matching instrument
         - Opposite side to position (SELL for long, BUY for short)
 
@@ -264,25 +306,7 @@ class OrderReconciler:
             Order object if found, None otherwise
         """
 
-        # Get all open orders for this instrument
-        open_orders = self._strategy.cache.orders_open(instrument_id=ctx.instrument_id)
-
-        expected_side = OrderSide.SELL if position.is_long else OrderSide.BUY
-
-        matches = []
-        for order in open_orders:
-            # Check if this looks like a SL order:
-            # 1. Stop market order
-            # 2. Reduce only
-            # 3. Correct side (opposite to position)
-            if (
-                order.order_type == OrderType.STOP_MARKET
-                and order.is_reduce_only
-                and order.side == expected_side
-            ):
-                matches.append(order)
-
-        return matches
+        return self._find_protective_orders(ctx, position, OrderType.STOP_MARKET)
 
     def ensure_native_trailing_exists(self, ctx: PairContext, position: Position) -> None:
         """Ensure an exchange-managed trailing stop exists for the position.
@@ -351,6 +375,8 @@ class OrderReconciler:
             return  # rate guard: still cooling down from a recent rebuild attempt
 
         ctx.native_trailing_rebuild_deadline_ns = now_ns + _NATIVE_TRAILING_REBUILD_COOLDOWN_NS
+        if self._holds_dust(ctx, position):
+            return
         s.log.error(
             f"[{ctx.pair}] NATIVE_TRAILING coverage {covered} is below position {expected} "
             "(reject/loss) — rebuilding missing delta",
@@ -384,33 +410,43 @@ class OrderReconciler:
     def find_existing_trailing_orders(self, ctx: PairContext, position: Position) -> list[Order]:
         """Find an open exchange-managed trailing stop for the position.
 
-        Looks for a reduce-only TRAILING_STOP_MARKET on the protective side
+        Looks for a TRAILING_STOP_MARKET that can only reduce, on the protective side
         (SELL for long, BUY for short).
         """
+        return self._find_protective_orders(ctx, position, OrderType.TRAILING_STOP_MARKET)
 
-        open_orders = self._strategy.cache.orders_open(instrument_id=ctx.instrument_id)
+    def _find_protective_orders(
+        self, ctx: PairContext, position: Position, order_type: OrderType
+    ) -> list[Order]:
+        """Open orders of this type that protect the position, tracked or not.
+
+        After a restart the tracker is empty, so what identifies a protective order is
+        what the venue records about it (``order_only_reduces``). On a cash account that
+        is this strategy's own sell; another strategy's stop on the same account is not
+        claimed, since its quantity protects a position that is not this one.
+        """
+        s = self._strategy
+        cash_account = read_cash_account(s.cache, ctx.instrument_id, s.log.warning)
+        strategy_id = s.strategy_id if cash_account else None
         expected_side = OrderSide.SELL if position.is_long else OrderSide.BUY
-
-        matches = []
-        for order in open_orders:
-            if (
-                order.order_type == OrderType.TRAILING_STOP_MARKET
-                and order.is_reduce_only
-                and order.side == expected_side
-            ):
-                matches.append(order)
-
-        return matches
+        return [
+            order
+            for order in s.cache.orders_open(instrument_id=ctx.instrument_id)
+            if order.order_type == order_type
+            and order.side == expected_side
+            and order_only_reduces(order, cash_account=cash_account, strategy_id=strategy_id)
+        ]
 
     def sweep_stale_orders_for_pair(self, ctx: PairContext) -> int:
-        """Cancel stale (orphaned) reduce-only orders for this pair.
+        """Cancel stale (orphaned) orders that can only reduce, for this pair.
 
         Root cause: the reversal path's cancel_all_orders() is fire-and-forget -- when
         the venue call fails (e.g. a demo-fapi transport error) the old SL stays resting
         on the exchange while the tracker is already cleared, and Nautilus sends the
         strategy no cancel-failure event, so the orphan has no backstop. This method
-        reconciles the open orders in the cache every bar and cancels the reduce-only
-        orders the strategy no longer claims.
+        reconciles the open orders in the cache every bar and cancels the orders that
+        can only reduce -- reduce-only, or on a cash account this strategy's own sells --
+        which the strategy no longer claims.
 
         Returns:
             Number of cancel requests issued in this sweep.
@@ -437,6 +473,8 @@ class OrderReconciler:
         position_is_long = positions[0].is_long if positions else None
         sl_is_tracked = bool(tracker.sl_order_ids or tracker.exchange_sl_order_ids)
         now_ns = s.clock.timestamp_ns()
+        cash_account = read_cash_account(s.cache, ctx.instrument_id, s.log.warning)
+        strategy_id = s.strategy_id if cash_account else None
 
         # Prune rate-guard entries for orders no longer open
         open_ids = {o.client_order_id for o in open_orders}
@@ -452,6 +490,8 @@ class OrderReconciler:
                 tracked_ids=tracked_ids,
                 sl_is_tracked=sl_is_tracked,
                 now_ns=now_ns,
+                cash_account=cash_account,
+                strategy_id=strategy_id,
             ):
                 continue
             # rate guard — per-order cooldown between cancel attempts
@@ -524,7 +564,7 @@ class OrderReconciler:
 
         # Rejected active close order -> severity-tiered breaker: break the tight loop without
         # hammering a throttled endpoint.
-        if kind is RejectedOrderKind.REDUCE_ONLY_CLOSE:
+        if kind is RejectedOrderKind.CLOSE:
             now_ns = s.clock.timestamp_ns()
             tier = classify_rejection_reason(reason)
             if tier == "server":
@@ -535,20 +575,20 @@ class OrderReconciler:
                 # position state, avoiding a repeat close of an order that may have filled.
                 ctx.order_tracker.set_close_cooldown(now_ns, _CLOSE_SERVER_ERROR_BACKOFF_NS)
                 s.log.warning(
-                    f"[{ctx.pair}] Reduce-only order rejected by venue "
+                    f"[{ctx.pair}] Close order rejected by venue "
                     f"(server/ratelimit: {reason}); circuit-breaking "
                     f"{_CLOSE_SERVER_ERROR_BACKOFF_NS // 1_000_000_000}s before retry",
                     color=LogColor.RED,
                 )
             else:
-                # Logical reject (-2022 etc.): clear venue orphans (leftover reduce_only
-                # SL/TP that reconciliation missed and the cache can't see fill the
-                # reduce capacity) + short backoff.
+                # Logical reject (-2022 etc.): clear venue orphans (leftover SL/TP that
+                # reconciliation missed and the cache can't see fill the reduce capacity,
+                # or on a cash account hold the base the close sells) + short backoff.
                 s.cancel_all_orders(ctx.instrument_id)
                 ctx.order_tracker.clear()
                 ctx.order_tracker.set_close_cooldown(now_ns, _CLOSE_REJECT_COOLDOWN_NS)
                 s.log.warning(
-                    f"[{ctx.pair}] Reduce-only order rejected (logic: {reason}); "
+                    f"[{ctx.pair}] Close order rejected (logic: {reason}); "
                     f"cancelling all venue orders (clear orphans) and backing off "
                     f"{_CLOSE_REJECT_COOLDOWN_NS // 1_000_000_000}s before retry",
                     color=LogColor.RED,
@@ -586,6 +626,94 @@ class OrderReconciler:
                 f"[{ctx.pair}] Entry order rejected: {event.client_order_id} ({reason})",
                 color=LogColor.RED,
             )
+
+    def handle_order_denied(self, event: OrderDenied) -> None:
+        """Settle an order that was refused before it ever left the process.
+
+        A denial and a rejection both mean the order will never fill, and each kind of
+        order is settled the way its rejected counterpart is -- with two deliberate
+        differences for a close. The order never reached the venue, so the denial says
+        nothing about the venue's view of the position: it is not evidence that
+        reduce-only itself was refused, and it does not arm the one plain attempt. Nor
+        is it caused by resting orders crowding the position, so nothing is cancelled;
+        cancelling everything would take live protection down with it.
+
+        The thin ``on_order_denied`` shell on the Strategy owns the top-level try/except.
+        """
+        s = self._strategy
+        ctx = s._get_context_from_instrument(event.instrument_id)
+        if ctx is None:
+            return
+
+        order = s.cache.order(event.client_order_id)
+        reason = str(event.reason) or "unknown"
+        kind = classify_rejected_order(event.client_order_id, order, ctx.order_tracker)
+
+        # A denied order will never fill, so its signal link goes.
+        s._order_signal_map.pop(str(event.client_order_id), None)
+
+        if kind is RejectedOrderKind.TRACKED_STOP:
+            ctx.order_tracker.remove_order(event.client_order_id)
+            ctx.native_trailing_rebuild_deadline_ns = 0
+            ctx.exchange_sl_rebuild_deadline_ns = 0
+            s.pause()
+            s.log.error(
+                f"[{ctx.pair}] Protective stop denied before dispatch ({reason}); "
+                "preserving other protection and pending entry, pausing new risk until "
+                "coverage is repaired",
+                color=LogColor.RED,
+            )
+            return
+
+        if kind is RejectedOrderKind.TRACKED_TAKE_PROFIT:
+            ctx.order_tracker.remove_order(event.client_order_id)
+            if ctx.tick_monitor is not None:
+                # Nothing was taken, so the scaled level it carried is still owed.
+                ctx.tick_monitor.release_level_order(event.client_order_id)
+            s.log.warning(
+                f"[{ctx.pair}] Take-profit lot denied before dispatch ({reason}); "
+                "stop coverage retained",
+                color=LogColor.YELLOW,
+            )
+            return
+
+        if kind is RejectedOrderKind.CLOSE:
+            # The close is known dead, so the in-flight window gives way to the short
+            # reject cool-down, and the denial counts towards the halt like a rejection.
+            ctx.order_tracker.remove_order(event.client_order_id)
+            ctx.order_tracker.set_close_cooldown(s.clock.timestamp_ns(), _CLOSE_REJECT_COOLDOWN_NS)
+            ctx.order_tracker.record_close_reject()
+            s.log.warning(
+                f"[{ctx.pair}] Close order denied before dispatch ({reason}); backing off "
+                f"{_CLOSE_REJECT_COOLDOWN_NS // 1_000_000_000}s before retry",
+                color=LogColor.RED,
+            )
+            if ctx.order_tracker.close_reject_count >= _CLOSE_REJECT_HALT_THRESHOLD:
+                s.pause()
+                s.log.error(
+                    f"[{ctx.pair}] Close order refused "
+                    f"{ctx.order_tracker.close_reject_count} consecutive times; pausing "
+                    "strategy for manual intervention",
+                    color=LogColor.RED,
+                )
+            return
+
+        if kind is RejectedOrderKind.ENTRY:
+            release_unfilled_entry(s, ctx)
+            ctx.order_tracker.clear_entry_order()
+            ctx.position_tracker.clear_pending_signal()
+            ctx.pending_entry_is_reversal = False
+            s.log.warning(
+                f"[{ctx.pair}] Entry order denied before dispatch: "
+                f"{event.client_order_id} ({reason})",
+                color=LogColor.RED,
+            )
+            return
+
+        s.log.warning(
+            f"[{ctx.pair}] Order denied before dispatch: {event.client_order_id} ({reason}); "
+            "not one this strategy tracks",
+        )
 
     def handle_order_cancel_rejected(self, event: OrderCancelRejected) -> None:
         """

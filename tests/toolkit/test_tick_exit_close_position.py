@@ -1,85 +1,94 @@
-"""Tests for block 1: tick full-position exit uses native close_position().
+"""The tick full-position exit keeps its three defences, checked by what it does.
 
-The hand-written `order_factory.market(reduce_only, IOC)` full-close
-in `_execute_trailing_stop_exit_for_pair` is replaced by NautilusTrader's native
-`self.close_position(position, time_in_force=IOC, reduce_only=True)`.
+These tests used to read the method's source text: that it contained
+``s.close_position(``, ``TimeInForce.IOC``, ``reduce_only=True``, ``resting_reduce_only``
+and ``is_reduce_only``, and did not contain ``order_factory.market``. A cash account's
+close cannot take that shape -- it carries no reduce-only flag and is submitted as a
+market order, because the runner's safety gate refuses a plain ``close_position`` -- so
+the text assertions were replaced by the behaviour they stood for, on a margin account
+where that behaviour is unchanged:
 
-The three defences must be preserved:
-  1. `can_submit_close` in-flight/cooldown gate (protection 1)
-  2. cancel resting reduce_only orders before close (protection 2)
-  3. `mark_closing` in-flight gate after submit (protection 3)
+  1. ``can_submit_close`` in-flight/cooldown gate (protection 1)
+  2. protection still resting is cancelled before the close (protection 2)
+  3. ``mark_closing`` in-flight gate after submit (protection 3)
+
+and the close itself is the native ``close_position`` with IOC and reduce-only.
 """
 
-import inspect
+from __future__ import annotations
+
+import sys
+from decimal import Decimal
+from pathlib import Path
+from types import SimpleNamespace as NS
 
 import pytest
 
-pytest.importorskip("msgspec")
+pytest.importorskip("nautilus_trader")
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-def _can_import_nautilus() -> bool:
-    try:
-        from nautilus_trader.trading import Strategy  # noqa: F401
-
-        return True
-    except ImportError:
-        return False
-
-
-requires_nautilus = pytest.mark.skipif(
-    not _can_import_nautilus(), reason="nautilus_trader not installed"
+from _strategy_harness import Harness  # noqa: E402
+from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode  # noqa: E402
+from custos_toolkit_nautilus.adapter.tick_monitor import TickMonitorManager  # noqa: E402
+from nautilus_trader.model import (  # noqa: E402
+    AccountType,
+    OrderSide,
+    OrderType,
+    Price,
+    TimeInForce,
 )
 
 
-class TestTickExitUsesClosePosition:
-    """The tick full-close path must use native close_position, keeping defenses."""
+def _margin_close() -> Harness:
+    monitor = TickMonitorManager(mode="tick", tp_method="fixed", tp_fixed_pct=Decimal("0.02"))
+    monitor.init_position(Decimal("100"), True)
+    h = Harness(mode=SLTPMode.TICK, monitor=monitor)
+    h.cache.account_for_venue = lambda _venue: NS(account_type=AccountType.MARGIN)
+    return h
 
-    @requires_nautilus
-    def test_full_close_uses_native_close_position(self):
-        from custos_toolkit_nautilus.adapter.coordinators import ExecutionCoordinator
 
-        source = inspect.getsource(ExecutionCoordinator._execute_trailing_stop_exit_for_pair)
+def test_a_margin_full_close_is_native_ioc_and_reduce_only() -> None:
+    h = _margin_close()
 
-        assert "s.close_position(" in source, (
-            "_execute_trailing_stop_exit_for_pair should use native close_position()"
-        )
+    h.tick("103")
 
-    @requires_nautilus
-    def test_full_close_no_longer_uses_manual_market_order(self):
-        from custos_toolkit_nautilus.adapter.coordinators import ExecutionCoordinator
+    assert h.sent == [], "no hand-built order on a margin account"
+    assert len(h.closed) == 1
+    (position,), kwargs = h.closed[0]
+    assert position is h.position
+    assert kwargs == {"time_in_force": TimeInForce.IOC, "reduce_only": True}
 
-        source = inspect.getsource(ExecutionCoordinator._execute_trailing_stop_exit_for_pair)
 
-        assert "order_factory.market" not in source, (
-            "Full-close should no longer build a manual market order; "
-            "close_position handles side + full quantity"
-        )
+def test_the_close_arms_the_in_flight_gate() -> None:
+    h = _margin_close()
 
-    @requires_nautilus
-    def test_full_close_passes_ioc_and_reduce_only(self):
-        from custos_toolkit_nautilus.adapter.coordinators import ExecutionCoordinator
+    h.tick("103")
 
-        source = inspect.getsource(ExecutionCoordinator._execute_trailing_stop_exit_for_pair)
+    assert h.ctx.order_tracker.can_submit_close(h.now_ns) is False
 
-        assert "TimeInForce.IOC" in source, (
-            "close_position must keep IOC time-in-force (not default GTC)"
-        )
-        assert "reduce_only=True" in source, "close_position must keep reduce_only=True"
 
-    @requires_nautilus
-    def test_three_defenses_preserved(self):
-        from custos_toolkit_nautilus.adapter.coordinators import ExecutionCoordinator
+def test_a_close_in_flight_is_not_sent_again() -> None:
+    h = _margin_close()
 
-        source = inspect.getsource(ExecutionCoordinator._execute_trailing_stop_exit_for_pair)
+    h.tick("103")
+    h.tick("103")
 
-        # Protection 1: in-flight / cooldown gate
-        assert "can_submit_close" in source, "lost protection 1 (can_submit_close gate)"
-        # Protection 2: cancel resting reduce_only before close
-        assert "resting_reduce_only" in source, (
-            "lost protection 2 (cancel resting reduce_only orders)"
-        )
-        assert "is_reduce_only" in source, (
-            "lost protection 2 detection of resting reduce_only orders"
-        )
-        # Protection 3: mark in-flight after submit
-        assert "mark_closing" in source, "lost protection 3 (mark_closing gate)"
+    assert len(h.closed) == 1
+
+
+def test_resting_protection_is_cancelled_before_the_close() -> None:
+    h = _margin_close()
+    stop = h.order(
+        OrderType.STOP_MARKET,
+        quantity=h.instrument.make_qty(Decimal("1")),
+        order_side=OrderSide.SELL,
+        reduce_only=True,
+        trigger_price=Price.from_str("90.00"),
+    )
+    h.ctx.order_tracker.add_sl_order(stop.client_order_id, Decimal("1"))
+
+    h.tick("103")
+
+    assert h.cancelled == [stop.client_order_id]
+    assert h.closed == [], "the close waits for the next tick"

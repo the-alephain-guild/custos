@@ -26,6 +26,7 @@ from nautilus_trader.model import (
 )
 
 from .runtime_types import Cache, Logger, Order, OrderFactory, Position
+from .strategy_core import order_only_reduces, read_order_form
 
 if TYPE_CHECKING:
     from .config.risk import ScaledTakeProfitConfig, StopLossTrailingConfig
@@ -47,6 +48,9 @@ class OrderTracker:
 
     _sl_order_ids: list[ClientOrderId] = field(default_factory=list, repr=False)
     _tp_order_ids: list[ClientOrderId] = field(default_factory=list, repr=False)
+    # Closes this strategy sent. A close on a cash account carries no reduce-only flag,
+    # so the id is the only thing that says a rejection of it is a failed close.
+    _close_order_ids: list[ClientOrderId] = field(default_factory=list, repr=False)
     _exchange_sl_order_ids: list[ClientOrderId] = field(default_factory=list, repr=False)
     _protection_quantities: dict[ClientOrderId, Decimal] = field(default_factory=dict, repr=False)
     _entry_order_id: ClientOrderId | None = field(default=None, repr=False)
@@ -117,6 +121,11 @@ class OrderTracker:
     def set_tp_orders(self, order_ids: list[ClientOrderId]) -> None:
         """Set all take profit order IDs at once."""
         self._tp_order_ids = list(order_ids)
+
+    def add_close_order(self, order_id: ClientOrderId) -> None:
+        """Record a close this strategy is about to submit."""
+        if order_id not in self._close_order_ids:
+            self._close_order_ids.append(order_id)
 
     def set_exchange_sl_order(
         self,
@@ -242,6 +251,7 @@ class OrderTracker:
         """Clear protective orders while retaining an in-flight reversal entry."""
         self._sl_order_ids = []
         self._tp_order_ids = []
+        self._close_order_ids = []
         self._exchange_sl_order_ids = []
         self._protection_quantities = {}
         self._closing_deadline_ns = 0
@@ -327,6 +337,8 @@ class OrderTracker:
             self._sl_order_ids.remove(order_id)
         if order_id in self._tp_order_ids:
             self._tp_order_ids.remove(order_id)
+        if order_id in self._close_order_ids:
+            self._close_order_ids.remove(order_id)
         if order_id in self._exchange_sl_order_ids:
             self._exchange_sl_order_ids.remove(order_id)
         self._protection_quantities.pop(order_id, None)
@@ -347,6 +359,16 @@ class OrderTracker:
     def tp_order_ids(self) -> list[ClientOrderId]:
         """Get a copy of take profit order IDs."""
         return self._tp_order_ids.copy()
+
+    @property
+    def close_order_ids(self) -> list[ClientOrderId]:
+        """Get the closes this strategy has sent and not yet seen settled."""
+        return self._close_order_ids.copy()
+
+    @property
+    def protection_order_ids(self) -> set[ClientOrderId]:
+        """Every protective lot this strategy has out: stops and take-profits."""
+        return {*self._sl_order_ids, *self._exchange_sl_order_ids, *self._tp_order_ids}
 
     @property
     def exchange_sl_order_id(self) -> ClientOrderId | None:
@@ -405,8 +427,9 @@ class OrderTracker:
 # cancel_all_orders() during reversal is fire-and-forget — a venue failure
 # (e.g. demo-fapi transport error) leaves the old SL resting with no retry,
 # while the tracker has already been cleared. The per-bar sweep reconciles
-# cache state and cancels orphaned reduce-only orders only when their stale state
-# is provable without assuming that every account order belongs to this strategy.
+# cache state and cancels orphaned orders that can only reduce, only when their
+# stale state is provable without assuming that every account order belongs to
+# this strategy.
 STALE_ORDER_MIN_AGE_NS: int = 30_000_000_000  # 30s — don't race in-flight orders
 STALE_SWEEP_RETRY_COOLDOWN_NS: int = 120_000_000_000  # 120s — per-order cancel rate guard
 
@@ -418,36 +441,44 @@ def is_stale_order(
     tracked_ids: set[ClientOrderId],
     sl_is_tracked: bool,
     now_ns: int,
+    cash_account: bool | None,
+    strategy_id: object,
     min_age_ns: int = STALE_ORDER_MIN_AGE_NS,
 ) -> bool:
     """Classify whether an open order is a stale orphan that should be cancelled.
 
-    Scope: reduce-only orders (SL/TP) only — pending entry orders are managed
-    by SignalExecutionCoordinator._cancel_pending_entry_order().
+    Scope: orders that can only reduce (``order_only_reduces``) -- reduce-only
+    orders, and on a cash account this strategy's own sells, since a cash account's
+    stops and exits go out without the flag. Pending entry orders are managed by
+    SignalExecutionCoordinator._cancel_pending_entry_order(). With the account
+    unreadable only the flag counts: better to leave an orphan than to cancel a
+    plain order without knowing what it is.
 
     Rules:
     - tracked by OrderTracker or younger than min_age_ns -> keep (in-flight)
-    - no open position -> any untracked reduce-only order is an orphan -> cancel
+    - no open position -> any untracked order in scope is an orphan -> cancel
     - wrong side (cannot reduce the current position) -> cancel
       (the reversal-orphan case: position flipped, old SL side is now invalid)
-    - protective-side reduce-only orders are kept even when untracked. Venue streams
+    - protective-side orders in scope are kept even when untracked. Venue streams
       are account-wide and another deployment may own them; without an explicit owner
       token, treating a second protective stop as a duplicate can cancel a sibling
       instance's only protection. Once flat or reversed, the rules above prove it stale.
 
     Args:
         order: Open order (duck-typed: client_order_id, side, order_type,
-            is_reduce_only, ts_init)
+            is_reduce_only, strategy_id, ts_init)
         position_is_long: Direction of the open position, None when flat
         tracked_ids: client_order_ids currently tracked by OrderTracker
         sl_is_tracked: Whether the tracker holds an SL (sl or exchange_sl)
         now_ns: Current timestamp (ns)
+        cash_account: Whether the account is a cash account; None when unreadable
+        strategy_id: This strategy's id, consulted on a cash account only
         min_age_ns: Minimum order age before it may be swept
 
     Returns:
         True when the order should be cancelled as a stale orphan
     """
-    if not order.is_reduce_only:
+    if not order_only_reduces(order, cash_account=cash_account, strategy_id=strategy_id):
         return False
     if order.client_order_id in tracked_ids:
         return False
@@ -599,13 +630,14 @@ class StopLossSubmitter:
         stop_price: Decimal,
         tags: list[str] | None = None,
     ) -> Order | None:
-        """Build a reduce-only stop-market order at a given (pre-computed) stop price.
+        """Build a protective stop-market order at a given (pre-computed) stop price.
 
         A shared order-building primitive that separates price calculation from order
         construction: each caller computes its own price (``create_order`` uses the
         order_calculator; break-even uses entry; safety uses max_loss_pct), and the
-        construction part (instrument lookup + side-aware tick alignment + reduce-only
-        stop_market) is unified here. Removes the break-even/safety SL inconsistency of
+        construction part (instrument lookup + side-aware tick alignment + stop_market in
+        the form ``read_order_form`` decides: reduce-only, plain on a cash account) is
+        unified here. Removes the break-even/safety SL inconsistency of
         hand-rolling ``order_factory.stop_market``.
 
         Args:
@@ -635,7 +667,7 @@ class StopLossSubmitter:
             quantity=order_quantity,
             trigger_price=Price(cast(float, aligned_stop_price), instrument.price_precision),
             time_in_force=TimeInForce.GTC,
-            reduce_only=True,
+            reduce_only=read_order_form(self._cache, instrument_id, self._log.warning).reduce_only,
             tags=tags,
         )
 
@@ -676,7 +708,8 @@ class NativeTrailingStopSubmitter:
       (``entry × (1 ± activation_pct)``, tick-aligned) because the Binance
       adapter does NOT enforce it.
     - ``trigger_price`` is never passed (the adapter rejects it,
-      INVALID_TRIGGER_PRICE); orders are ``reduce_only``.
+      INVALID_TRIGGER_PRICE); orders are ``reduce_only`` except on a cash account
+      (``read_order_form``).
 
     Note: parameter mapping from the hand-written
     ``TrailingStopManager`` is static; behavioral equivalence (activation-window,
@@ -787,7 +820,7 @@ class NativeTrailingStopSubmitter:
             trigger_type=trigger_type,
             trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
             time_in_force=TimeInForce.GTC,
-            reduce_only=True,
+            reduce_only=read_order_form(self._cache, instrument_id, self._log.warning).reduce_only,
             tags=tags,  # signal_id tag passthrough
         )
 
@@ -889,7 +922,7 @@ class TakeProfitSubmitter:
             quantity=order_quantity,
             price=Price(cast(float, aligned_tp_price), instrument.price_precision),
             time_in_force=TimeInForce.GTC,
-            reduce_only=True,
+            reduce_only=read_order_form(self._cache, instrument_id, self._log.warning).reduce_only,
             tags=tags,  # pass-through signal_id tag
         )
 
@@ -959,6 +992,7 @@ class TakeProfitSubmitter:
                 return []
             prev_target = target_pct
 
+        form = read_order_form(self._cache, instrument_id, self._log.warning)
         orders: list[Order] = []
         for level in scaled_levels:
             target_pct = Decimal(str(level.target_pct))
@@ -982,7 +1016,7 @@ class TakeProfitSubmitter:
                 quantity=instrument.make_qty(scale_qty),
                 price=Price(cast(float, aligned_tp_price), instrument.price_precision),
                 time_in_force=TimeInForce.GTC,
-                reduce_only=True,
+                reduce_only=form.reduce_only,
                 tags=tags,  # pass-through signal_id tag
             )
             orders.append(order)

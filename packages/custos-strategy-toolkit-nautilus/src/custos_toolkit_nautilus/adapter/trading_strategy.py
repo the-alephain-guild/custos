@@ -46,6 +46,7 @@ from nautilus_trader.model import (
     InstrumentId,
     OrderAccepted,
     OrderCancelRejected,
+    OrderDenied,
     OrderCanceled,
     OrderFilled,
     OrderRejected,
@@ -84,7 +85,11 @@ from custos_toolkit_nautilus.adapter.filter_manager import FilterManager
 from custos_toolkit_nautilus.adapter.orders import OrderTracker
 from custos_toolkit_nautilus.adapter.pair_context import PairContext
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
-from custos_toolkit_nautilus.adapter.strategy_core import NautilusStrategyCore
+from custos_toolkit_nautilus.adapter.strategy_core import (
+    NautilusStrategyCore,
+    order_only_reduces,
+    read_cash_account,
+)
 from custos_toolkit_nautilus.adapter.trading_config import NautilusTradingStrategyConfig
 from custos_toolkit_nautilus.adapter.utils import (
     deep_asdict,
@@ -453,6 +458,10 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         # 2. Create context and initialize execution components for each pair
         self._pair_context_coordinator.setup_pairs()
 
+        # 2b. Before anything trades: the base a cash account already holds below one
+        # step is not this run's to sell.
+        self._pair_context_coordinator.record_spot_reserves()
+
         # 3. Initialize capital allocator
         self._init_capital_allocator()
 
@@ -468,10 +477,10 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         # 7. Subscribe to tick data (if enabled)
         self._pair_context_coordinator.subscribe_ticks()
 
-        # 7b. Subscribe the mark price the guards price positions from. Not optional and
-        # not tied to the tick config above: the snapshot the notional cap, the snapshot
+        # 7b. Subscribe the prices the guards value positions at. Not optional and not
+        # tied to the tick config above: the snapshot the notional cap, the snapshot
         # publisher and the fallback breaker all read is unreliable without it whenever a
-        # position is open.
+        # position is open. A stream step 7 already took is not subscribed again.
         self._pair_context_coordinator.subscribe_mark_prices()
 
         # 8. Recover from existing positions
@@ -515,10 +524,16 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         for _, ctx in self._contexts.items():
             if self._shutdown_position_policy == "preserve":
                 # A stopped live process must not leave future entry intent resting,
-                # but canceling reduce-only protection would turn a deliberately
-                # preserved position into an unprotected one.
+                # but canceling protection would turn a deliberately preserved position
+                # into an unprotected one. Protection is told apart by what the venue
+                # records, because this also runs after a restart, when the tracker
+                # holds nothing: reduce-only, or on a cash account this strategy's sell.
+                cash_account = read_cash_account(self.cache, ctx.instrument_id, self.log.warning)
+                strategy_id = self.strategy_id if cash_account else None
                 for order in self.cache.orders_open(instrument_id=ctx.instrument_id):
-                    if not bool(getattr(order, "is_reduce_only", False)):
+                    if not order_only_reduces(
+                        order, cash_account=cash_account, strategy_id=strategy_id
+                    ):
                         self.cancel_order(order)
             else:
                 self.cancel_all_orders(ctx.instrument_id)
@@ -526,13 +541,8 @@ class NautilusTradingStrategy(NautilusStrategyCore):
             # Unsubscribe from bar data
             self.unsubscribe_bars(ctx.bar_type)
 
-            # Unsubscribe from tick data if enabled
-            tick_config = self._get_tick_monitoring_config()
-            if tick_config and tick_config.enabled:
-                if tick_config.tick_type in ("trade", "both"):
-                    self.unsubscribe_trades(ctx.instrument_id)
-                if tick_config.tick_type in ("quote", "both"):
-                    self.unsubscribe_quotes(ctx.instrument_id)
+        # Release the pricing and tick-monitoring streams the start subscribed
+        self._pair_context_coordinator.unsubscribe_streams()
 
         # Call strategy hook
         self.on_strategy_stop()
@@ -817,6 +827,18 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         except Exception as exc:  # noqa: BLE001 — engine doesn't guard callbacks; log and continue
             self.log.error(f"on_order_rejected handler failed: {exc}")
 
+    def on_order_denied(self, event: OrderDenied) -> None:
+        """Handle an order denied before dispatch (body delegated to OrderReconciler).
+
+        NautilusTrader swallows an exception raised in this callback without a word
+        (measured on 2.0.0rc5 in a backtest), so the guard is here to leave the line behind, not to
+        keep the engine running.
+        """
+        try:
+            self._reconciler.handle_order_denied(event)
+        except Exception as exc:  # noqa: BLE001 — engine doesn't guard callbacks; log and continue
+            self.log.error(f"on_order_denied handler failed: {exc}")
+
     def on_order_cancel_rejected(self, event: OrderCancelRejected) -> None:
         """Handle order cancel rejected with top-level exception protection.
 
@@ -934,6 +956,15 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         """
         ctx = self._contexts.get(instrument_id)
         return ctx.order_tracker if ctx is not None else None
+
+    def spot_reserve_for(self, instrument_id: InstrumentId) -> Decimal | None:
+        """Hand the base class's close paths the remainder this run must not sell.
+
+        Recorded in the pair context at start; the containment flatten and
+        ``emergency_close`` cannot reach it otherwise.
+        """
+        ctx = self._contexts.get(instrument_id)
+        return ctx.spot_reserved_remainder if ctx is not None else None
 
     def _get_context(self, pair: str) -> PairContext | None:
         """Get the context for a pair string.

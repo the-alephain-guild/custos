@@ -168,22 +168,18 @@ class ExecutionManager:
         instrument_id: InstrumentId,
         signal: Signal,
         size: Decimal,
-        reduce_only: bool = True,
+        reduce_only: bool,
     ) -> Order | None:
         """
-        Create exit order (always market; reduce-only unless the venue refused it).
+        Create exit order (always market IOC), in the form the caller decided.
 
-        reduce_only protects the money path: if an exit is re-submitted (e.g. after the
-        close gate's in-flight window) while the local cache still lags a fill that
-        already closed the position, the venue rejects the duplicate instead of opening
-        a reverse position.
-
-        Callers pass ``reduce_only=False`` only after the venue has already refused the
-        reduce-only form for this position on the logic tier. Binance's demo engine does
-        that while the position is genuinely open, and retrying the refused form cannot
-        succeed -- so the plain order is the only way to close. That trade is deliberate:
-        it drops the protection described above, which is why the caller must first
-        establish that the position is still open.
+        The caller takes ``reduce_only`` from ``decide_order_form``. On a margin account
+        it protects the money path: if an exit is re-submitted (e.g. after the close
+        gate's in-flight window) while the local cache still lags a fill that already
+        closed the position, the venue rejects the duplicate instead of opening a reverse
+        position. It is dropped there only after the venue refused the reduce-only form
+        for this position, as the one plain attempt. On a cash account it is never set:
+        a cash account cannot sell what it does not hold, and spot venues refuse the flag.
 
         Translates signal direction to order side:
         - EXIT_LONG -> OrderSide.SELL (close long position)

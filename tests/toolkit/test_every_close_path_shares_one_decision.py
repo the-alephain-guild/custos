@@ -18,6 +18,12 @@ difference is real rather than incidental:
   reduce-only form. It will very likely be refused, but a refused reduce-only order
   cannot open a reverse position, and in those two moments attempting beats abstaining.
 
+The one plain attempt goes out as a submitted market order, not as
+``close_position(reduce_only=False)``: the runner's safety gate refuses a plain
+``close_position`` and recognises a plain close only as a submitted order whose quantity
+is within the position. (These tests used to assert ``close_position`` with
+``reduce_only=False``; that is the shape the gate never let through.)
+
 What the breaker flatten does *not* get from this, stated plainly because it would be
 easy to read the opposite: the venue's rejection arrives asynchronously, as an event,
 while the flatten is a single synchronous pass. So a refusal that happens *during* the
@@ -64,6 +70,8 @@ def _make_stub(tracker: OrderTracker | None = None) -> SimpleNamespace:
     stub.cache = MagicMock()
     stub.cancel_all_orders = MagicMock()
     stub.close_position = MagicMock()
+    stub.submit_order = MagicMock()
+    stub.order_factory = MagicMock()
     for name in _CLOSE_METHODS:
         setattr(stub, name, types.MethodType(getattr(NautilusStrategyCore, name), stub))
     if tracker is not None:
@@ -72,7 +80,16 @@ def _make_stub(tracker: OrderTracker | None = None) -> SimpleNamespace:
 
 
 def _position(instrument_id: str = "BTCUSDT-PERP.BINANCE") -> SimpleNamespace:
-    return SimpleNamespace(instrument_id=instrument_id)
+    return SimpleNamespace(instrument_id=instrument_id, is_long=True, quantity="0.0070")
+
+
+def _submitted_plain_close(stub: SimpleNamespace) -> None:
+    from nautilus_trader.model import TimeInForce
+
+    stub.submit_order.assert_called_once_with(stub.order_factory.market.return_value)
+    kwargs = stub.order_factory.market.call_args.kwargs
+    assert kwargs["reduce_only"] is False
+    assert kwargs["time_in_force"] is TimeInForce.IOC
 
 
 # ---------------------------------------------------------------------------
@@ -129,7 +146,6 @@ def test_emergency_close_keeps_the_protective_form_when_nothing_was_refused() ->
 
 
 def test_emergency_close_drops_reduce_only_after_the_venue_refused_it() -> None:
-    from nautilus_trader.model import TimeInForce
 
     tracker = OrderTracker()
     tracker.record_reduce_only_refusal()
@@ -139,9 +155,8 @@ def test_emergency_close_drops_reduce_only_after_the_venue_refused_it() -> None:
 
     stub.emergency_close()
 
-    stub.close_position.assert_called_once_with(
-        position, reduce_only=False, time_in_force=TimeInForce.IOC
-    )
+    stub.close_position.assert_not_called()
+    _submitted_plain_close(stub)
     assert tracker.plain_close_submitted, "the one plain attempt has to be recorded as spent"
 
 
@@ -158,11 +173,10 @@ def test_emergency_close_spends_the_plain_attempt_only_once() -> None:
     stub.emergency_close()
     stub.emergency_close()
 
-    assert [call.kwargs["reduce_only"] for call in stub.close_position.call_args_list] == [
-        False,
-        True,
-    ]
-    assert stub.close_position.call_args_list[-1].kwargs["time_in_force"] is TimeInForce.IOC
+    _submitted_plain_close(stub)
+    stub.close_position.assert_called_once_with(
+        position, reduce_only=True, time_in_force=TimeInForce.IOC
+    )
 
 
 def test_emergency_close_is_still_fail_safe_around_the_decision() -> None:
@@ -208,7 +222,8 @@ def test_the_containment_flatten_drops_reduce_only_after_a_recorded_refusal() ->
 
     stub.close_all_positions_with_fallback("BTCUSDT-PERP.BINANCE")
 
-    assert stub.close_position.call_args.kwargs["reduce_only"] is False
+    stub.close_position.assert_not_called()
+    _submitted_plain_close(stub)
 
 
 def test_the_containment_flatten_closes_nothing_when_nothing_is_open() -> None:

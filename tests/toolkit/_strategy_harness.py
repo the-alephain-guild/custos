@@ -14,7 +14,11 @@ from unittest.mock import MagicMock
 
 from custos_toolkit.position.tracker import PositionTracker
 from custos_toolkit.risk.orders import OrderPriceCalculator
-from custos_toolkit_nautilus.adapter.coordinators import ExecutionCoordinator
+from custos_toolkit_nautilus.adapter.config import TickMonitoringConfig
+from custos_toolkit_nautilus.adapter.coordinators import (
+    ExecutionCoordinator,
+    PairContextCoordinator,
+)
 from custos_toolkit_nautilus.adapter.orders import (
     OrderTracker,
     StopLossSubmitter,
@@ -30,6 +34,7 @@ from nautilus_trader.model import (
     OrderType,
     Price,
     Quantity,
+    StrategyId,
     Symbol,
 )
 
@@ -104,6 +109,7 @@ class Harness:
             limit=lambda **kw: self.order(OrderType.LIMIT, **kw),
         )
         self.clock = NS(timestamp_ns=lambda: self.now_ns)
+        self.strategy_id = StrategyId("Harness-000")
         self._mode = mode
         self._order_signal_map: dict[str, str] = {}
         self._capital_allocator = None
@@ -112,8 +118,13 @@ class Harness:
         self.config = NS(
             position=NS(limits=NS(max_total_positions=0), capital_mode="fixed_capital"),
             trading=NS(order_type="market"),
-            risk=NS(trade=NS(take_profit=NS(method="none", scaled=None))),
+            risk=NS(
+                trade=NS(take_profit=NS(method="none", scaled=None)),
+                # tick() feeds trades, so the monitor is configured to read them.
+                tick_monitoring=TickMonitoringConfig(enabled=True, tick_type="trade"),
+            ),
         )
+        self._get_tick_monitoring_config = lambda: self.config.risk.tick_monitoring
         tracker = PositionTracker()
         tracker.record_entry(Decimal("100"), Decimal("1"))
         self.ctx = NS(
@@ -132,6 +143,7 @@ class Harness:
             stale_cancel_attempts={},
             exchange_sl_rebuild_deadline_ns=0,
             native_trailing_rebuild_deadline_ns=0,
+            spot_reserved_remainder=None,
         )
         self.ctx.execution_manager = NS(create_entry_order=self.entry_order)
         self._contexts = {self.instrument.id: self.ctx}
@@ -148,6 +160,7 @@ class Harness:
         from custos_toolkit_nautilus.adapter.coordinators import SLTPCoordinator
 
         self._sltp_coordinator = SLTPCoordinator(self)
+        self._pair_context_coordinator = PairContextCoordinator(self)
         self.pause = MagicMock()
         self.on_trade_closed = MagicMock()
 
@@ -155,6 +168,7 @@ class Harness:
         oid = f"O-{len(self.orders) + 1}"
         order = NS(
             client_order_id=oid,
+            strategy_id=self.strategy_id,
             order_type=kind,
             quantity=kw["quantity"],
             side=kw["order_side"],

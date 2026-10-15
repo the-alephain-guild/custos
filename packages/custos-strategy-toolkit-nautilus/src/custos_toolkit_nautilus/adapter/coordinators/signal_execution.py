@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 
+from custos_toolkit.position.dust import below_tradable_minimum, floor_to_step
 from custos_toolkit.signals.types import SignalDirection
 from nautilus_trader.common import LogColor
 from nautilus_trader.model import Bar
@@ -25,8 +26,14 @@ from custos_toolkit_nautilus.adapter.execution import ExecutionManager
 from custos_toolkit_nautilus.adapter.runtime_types import Indicator, Order
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
 from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
-from custos_toolkit_nautilus.adapter.sizing import notional_from_quantity
-from custos_toolkit_nautilus.adapter.strategy_core import CloseAttempt, plan_close_attempt
+from custos_toolkit_nautilus.adapter.sizing import notional_from_quantity, quantity_from_notional
+from custos_toolkit_nautilus.adapter.spot_inventory import read_tradable_minimum, size_spot_exit
+from custos_toolkit_nautilus.adapter.strategy_core import (
+    CloseAttempt,
+    decide_order_form,
+    plan_close_attempt,
+    read_cash_account,
+)
 
 if TYPE_CHECKING:
     from custos_toolkit.signals.types import Signal
@@ -383,13 +390,16 @@ class SignalExecutionCoordinator:
         # In-flight gate: the exit is a market IOC order, but its fill event lags back to
         # the local cache, so within that window the decoupled reversal-EXIT path (which
         # emits an exit every bar while the position is open) could re-submit the same
-        # close. The gate (together with create_exit_order's reduce_only) caps it to one
+        # close. The gate (together with reduce_only on a margin account) caps it to one
         # close in flight per position, shared with the tick exit path.
         now_ns = s.clock.timestamp_ns()
         if not ctx.order_tracker.can_submit_close(now_ns):
             return
 
         execution_manager = cast(ExecutionManager, ctx.execution_manager)
+        # A cash account closes with a plain order: it cannot sell what it does not hold,
+        # and spot venues refuse reduce-only. Everywhere else:
+        #
         # Reduce-only is the protective default. A venue that specifically refused that
         # form while the position is genuinely open (Binance's demo engine does) will
         # refuse it again, so the escape hatch is a plain order of the position's size.
@@ -401,11 +411,12 @@ class SignalExecutionCoordinator:
         #   - it is one attempt per position. Later bars keep emitting an exit while the
         #     position looks open, and re-sending a plain order on each of them is how a
         #     stale view turns into a new position.
+        cash_account = read_cash_account(s.cache, ctx.instrument_id, s.log.warning)
         attempt = plan_close_attempt(
             reduce_only_refused=ctx.order_tracker.reduce_only_refused,
             plain_close_submitted=ctx.order_tracker.plain_close_submitted,
         )
-        if attempt is CloseAttempt.PLAIN_ALREADY_SPENT:
+        if attempt is CloseAttempt.PLAIN_ALREADY_SPENT and not cash_account:
             # This path runs once per bar, so unlike the one-shot containment paths it
             # sends nothing rather than falling back to the refused form -- re-sending on
             # every bar is the flood shape, and the plain form is not an option twice.
@@ -415,19 +426,62 @@ class SignalExecutionCoordinator:
                 f"the venue needs a look rather than another order",
             )
             return
-        use_reduce_only = attempt is not CloseAttempt.PLAIN
+        form = decide_order_form(cash_account=cash_account, attempt=attempt)
+        size = Decimal(str(position.quantity))
+        price: Decimal | None = None
+        if signal.amount is not None:
+            # A scale-out: the amount is a quote notional, as on entry, converted at
+            # this bar's close. An amount that covers the position closes it.
+            instrument = s.cache.instrument(ctx.instrument_id)
+            if instrument is None:
+                s.log.error(f"Instrument not found: {ctx.instrument_id}")
+                return
+            price = Decimal(str(bar.close))
+            asked = floor_to_step(
+                quantity_from_notional(instrument, signal.amount, price),
+                instrument.size_increment.as_decimal(),
+            )
+            if asked < size:
+                refusal = below_tradable_minimum(asked, read_tradable_minimum(instrument), price)
+                if refusal is not None:
+                    s.log.warning(
+                        f"[{ctx.pair}] exit_amount_not_sent amount={signal.amount} "
+                        f"price={price} quantity={asked} reason=below_minimum_{refusal}"
+                    )
+                    return
+                size = asked
+        if cash_account:
+            # The venue sells from the free base balance, which a fee taken in base
+            # leaves below the rounded position; the remainder held before the run is
+            # not this exit's to sell.
+            sized = size_spot_exit(
+                s.cache,
+                ctx.instrument_id,
+                size,
+                ctx.spot_reserved_remainder,
+                # A strategy may price the signal with bar.close, a NautilusTrader Price,
+                # which Signal leaves as it is; its text is the exact decimal.
+                Decimal(str(signal.price)) if price is None else price,
+            )
+            sized.announce(ctx.pair, warning=s.log.warning, info=s.log.info)
+            if sized.refused:
+                return
+            size = sized.quantity
         order = execution_manager.create_exit_order(
             instrument_id=ctx.instrument_id,
             signal=signal,
-            size=Decimal(str(position.quantity)),
-            reduce_only=use_reduce_only,
+            size=size,
+            reduce_only=form.reduce_only,
         )
         if order:
             _sig_id = cast(
                 str | None, signal.metadata.get("_signal_id") if signal.metadata else None
             )
+            # Registered before dispatch so a report that races back finds its owner.
+            ctx.order_tracker.add_close_order(order.client_order_id)
             dispatched = cast(bool | None, s.submit_order(order))
             if dispatched is False:
+                ctx.order_tracker.remove_order(order.client_order_id)
                 s.log.warning(
                     f"[{ctx.pair}] EXIT was refused locally before dispatch; "
                     "the close attempt remains available",
@@ -435,7 +489,7 @@ class SignalExecutionCoordinator:
                 return
             if _sig_id:
                 s._order_signal_map[str(order.client_order_id)] = _sig_id
-            if not use_reduce_only:
+            if form.spends_hatch:
                 ctx.order_tracker.mark_plain_close_submitted()
                 s.log.warning(
                     f"[{ctx.pair}] Closing without reduce_only: the venue refused the "
@@ -444,7 +498,7 @@ class SignalExecutionCoordinator:
                 )
             ctx.order_tracker.mark_closing(now_ns, _CLOSE_INFLIGHT_TIMEOUT_NS)
             s.log.info(
-                f"[{ctx.pair}] EXIT: {signal.direction.name}",
+                f"[{ctx.pair}] EXIT: {signal.direction.name} | size={size}",
                 color=LogColor.MAGENTA,
             )
 

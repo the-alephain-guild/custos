@@ -64,7 +64,7 @@ def _make_ctx(calls: list) -> SimpleNamespace:
 
 
 def _exit_signal() -> SimpleNamespace:
-    return SimpleNamespace(direction=SimpleNamespace(name="EXIT_SHORT"), metadata={})
+    return SimpleNamespace(direction=SimpleNamespace(name="EXIT_SHORT"), metadata={}, amount=None)
 
 
 def test_first_close_attempt_is_reduce_only():

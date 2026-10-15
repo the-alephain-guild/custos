@@ -79,6 +79,11 @@ class PairContext:
     # Capital allocated for current position (for correct release on close)
     allocated_capital: Decimal = field(default_factory=lambda: Decimal("0"))
 
+    # The sub-step part of the base balance a cash account held when the strategy
+    # started: no exit of this run sells it. None when there was no cash account to
+    # read, and then nothing is reserved.
+    spot_reserved_remainder: Decimal | None = None
+
     # State flags
     warmed_up: bool = False
     break_even_applied: bool = False

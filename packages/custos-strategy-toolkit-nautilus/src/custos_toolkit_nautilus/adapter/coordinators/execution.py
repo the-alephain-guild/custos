@@ -2,7 +2,7 @@
 
 Holds the tick-monitor execution path: routing trade/quote ticks to the correct
 pair context, and executing the exit actions the tick monitor produces (partial
-reduce-only exits and full position closes with reduce-only flood protection).
+exits and full position closes with close-flood protection).
 Injects a strategy reference and reaches ``cache`` / ``log`` / ``clock`` /
 ``order_factory`` / ``submit_order`` / ``close_position`` plus ``_mode`` /
 ``_get_context_from_instrument`` / ``_sltp_coordinator`` through it.
@@ -21,9 +21,10 @@ from nautilus_trader.common import LogColor
 from nautilus_trader.model import OrderSide, QuoteTick, TimeInForce, TradeTick
 
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
+from custos_toolkit_nautilus.adapter.strategy_core import build_close_order, read_order_form
+from custos_toolkit_nautilus.adapter.spot_inventory import size_spot_exit
 
 if TYPE_CHECKING:
-
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
     from custos_toolkit_nautilus.adapter.tick_monitor import ExitAction
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
@@ -51,6 +52,9 @@ class ExecutionCoordinator:
         if not s._mode.uses_tick_monitor:
             return
 
+        if not self._monitors("trade"):
+            return
+
         if not ctx.tick_monitor or not ctx.tick_monitor.is_active:
             return
 
@@ -67,11 +71,25 @@ class ExecutionCoordinator:
         if not s._mode.uses_tick_monitor:
             return
 
+        if not self._monitors("quote"):
+            return
+
         if not ctx.tick_monitor or not ctx.tick_monitor.is_active:
             return
 
         mid_price = (Decimal(str(tick.bid_price)) + Decimal(str(tick.ask_price))) / 2
         self._drain_exit_actions(ctx, mid_price)
+
+    def _monitors(self, stream: str) -> bool:
+        """Whether tick monitoring is configured to read this stream.
+
+        Pricing subscribes trades and quotes whatever the tick config says, so a tick
+        arriving here says nothing about whether the strategy asked to exit on it. A
+        strategy monitoring trades must not take profit at a quote's mid, and one with
+        monitoring switched off must not take profit at all.
+        """
+        tick_config = self._strategy._get_tick_monitoring_config()
+        return tick_config.enabled and tick_config.tick_type in (stream, "both")
 
     def _drain_exit_actions(self, ctx: PairContext, price: Decimal) -> None:
         """Execute every exit the monitor has at this price, not just the first.
@@ -126,7 +144,7 @@ class ExecutionCoordinator:
 
         if action.partial_pct:
             self._execute_partial_exit_for_pair(
-                ctx, position, action.partial_pct, action.reason, action.level
+                ctx, position, action.partial_pct, action.reason, action.level, action.price
             )
         else:
             self._execute_trailing_stop_exit_for_pair(ctx, action.price, action.reason)
@@ -138,6 +156,7 @@ class ExecutionCoordinator:
         exit_pct: Decimal,
         reason: str,
         level: int | None = None,
+        price: Decimal | None = None,
     ) -> None:
         """Execute partial position exit for a specific pair.
 
@@ -164,6 +183,14 @@ class ExecutionCoordinator:
             s.log.error(f"Instrument not found: {ctx.instrument_id}")
             abandon_level()
             return
+        form = read_order_form(s.cache, ctx.instrument_id, s.log.warning)
+        if form.submitted:
+            # A cash account: sell no more than is free above the starting remainder.
+            sized = size_spot_exit(
+                s.cache, ctx.instrument_id, raw_exit_qty, ctx.spot_reserved_remainder, price
+            )
+            sized.announce(ctx.pair, warning=s.log.warning, info=s.log.info)
+            raw_exit_qty = sized.quantity
         exit_qty = instrument.make_qty(raw_exit_qty)
 
         if exit_qty <= 0:
@@ -175,7 +202,7 @@ class ExecutionCoordinator:
             order_side=OrderSide.SELL if position.is_long else OrderSide.BUY,
             quantity=exit_qty,
             time_in_force=TimeInForce.IOC,
-            reduce_only=True,
+            reduce_only=form.reduce_only,
         )
 
         dispatched = cast(bool | None, s.submit_order(order))
@@ -208,13 +235,13 @@ class ExecutionCoordinator:
         Roots out reduce-only close flooding (-2022). Three layers of protection:
         1. In-flight / cooldown gate -- while a close is in flight or within the
            post-rejection backoff, do not re-send every tick.
-        2. Cancel serialization -- if the venue still has resting reduce_only
-           orders (hybrid safety SL / exchange SL/TP), cancel them first and
-           **skip the close this tick** (close on the next tick once the cancel
-           is confirmed), so a new close order and the resting orders don't add
-           up past the position size and get rejected.
-        3. With no resting reduce_only, submit a **single** full-close order and
-           arm the in-flight gate.
+        2. Cancel serialization -- if this strategy still has protective lots
+           resting (hybrid safety SL / exchange SL/TP / scaled take-profit), cancel
+           them first and **skip the close this tick** (close on the next tick once
+           the cancel is confirmed), so a new close order and the resting orders
+           don't add up past the position size and get rejected.
+        3. With nothing resting, submit a **single** full-close order and arm the
+           in-flight gate.
         """
         s = self._strategy
         positions = s.cache.positions_open(instrument_id=ctx.instrument_id)
@@ -228,33 +255,70 @@ class ExecutionCoordinator:
 
         position = positions[0]
 
-        # Protection 2: decide whether resting reduce_only orders remain using the
-        # venue's actual open-order state (not the local tracker). If so, cancel
-        # first, skip the close this tick, and close on the next tick once the
-        # cancel takes effect.
-        resting_reduce_only = [
-            o for o in s.cache.orders_open(instrument_id=ctx.instrument_id) if o.is_reduce_only
+        # Protection 2: decide from the venue's actual open-order state whether
+        # protection is still resting. If so, cancel first, skip the close this tick,
+        # and close on the next tick once the cancel takes effect. A protective lot is
+        # recognised by the tracker's record -- a cash account's lots carry no
+        # reduce-only flag -- or by that flag, which on a margin account also covers a
+        # lot the tracker does not hold.
+        protection = ctx.order_tracker.protection_order_ids
+        resting_protection = [
+            o
+            for o in s.cache.orders_open(instrument_id=ctx.instrument_id)
+            if o.client_order_id in protection or o.is_reduce_only
         ]
-        if resting_reduce_only:
+        if resting_protection:
             s._sltp_coordinator.cancel_sl_tp_orders(ctx)
             s.log.info(
                 f"[{ctx.pair}] TICK EXIT pending: cancelling "
-                f"{len(resting_reduce_only)} resting reduce-only order(s) before close",
+                f"{len(resting_protection)} resting protective order(s) before close",
                 color=LogColor.MAGENTA,
             )
             return
 
-        # Protection 3: no contention -> use native close_position() to submit a
-        # single full-close order and arm the in-flight gate. close_position
-        # auto-reverses side, closes the full position.quantity, and is idempotent
-        # for an already-closed position (is_closed_c). Pass IOC explicitly
-        # (default GTC) + reduce_only=True to keep the current semantics.
-
-        s.close_position(
-            position,
-            time_in_force=TimeInForce.IOC,
-            reduce_only=True,
-        )
+        # Protection 3: no contention -> submit a single full-close order and arm the
+        # in-flight gate. On a margin account that is the native close_position(),
+        # which auto-reverses side, closes the full position.quantity, and is
+        # idempotent for an already-closed position (is_closed_c); IOC is passed
+        # explicitly (default GTC). A cash account's close carries no reduce-only flag,
+        # and the runner's safety gate refuses a plain close_position, so it is built
+        # and submitted as an order instead.
+        form = read_order_form(s.cache, ctx.instrument_id, s.log.warning)
+        if form.submitted:
+            instrument = s.cache.instrument(ctx.instrument_id)
+            if instrument is None:
+                s.log.error(f"Instrument not found: {ctx.instrument_id}")
+                return
+            # Only a cash account reaches here (this path never spends the hatch), and
+            # it sells no more than is free above the starting remainder.
+            sized = size_spot_exit(
+                s.cache,
+                ctx.instrument_id,
+                Decimal(str(position.quantity)),
+                ctx.spot_reserved_remainder,
+                current_price,
+            )
+            sized.announce(ctx.pair, warning=s.log.warning, info=s.log.info)
+            if sized.refused:
+                # Nothing to sell will not change by the next tick; hold off as long
+                # as a close in flight would, rather than say this on every tick.
+                ctx.order_tracker.set_close_cooldown(now_ns, _CLOSE_INFLIGHT_TIMEOUT_NS)
+                return
+            order = build_close_order(s.order_factory, instrument, position, form, sized.quantity)
+            ctx.order_tracker.add_close_order(order.client_order_id)
+            if cast(bool | None, s.submit_order(order)) is False:
+                ctx.order_tracker.remove_order(order.client_order_id)
+                s.log.warning(
+                    f"[{ctx.pair}] TICK EXIT was refused locally before dispatch; "
+                    "the close attempt remains available",
+                )
+                return
+        else:
+            s.close_position(
+                position,
+                time_in_force=TimeInForce.IOC,
+                reduce_only=form.reduce_only,
+            )
         ctx.order_tracker.mark_closing(now_ns, _CLOSE_INFLIGHT_TIMEOUT_NS)
         s.log.info(
             f"[{ctx.pair}] TICK EXIT: {reason} at {current_price}",

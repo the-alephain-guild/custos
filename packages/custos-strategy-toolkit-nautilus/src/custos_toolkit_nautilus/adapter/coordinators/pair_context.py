@@ -2,11 +2,12 @@
 
 Holds the per-pair context construction and on_start bootstrap: building a
 PairContext, wiring its execution submitters / ATR indicator / tick monitor and
-subscribing bars for every configured pair, plus the tick-stream subscription.
+subscribing bars for every configured pair, plus the market-data streams that price
+positions and feed tick monitoring.
 Injects a strategy reference and reaches the strategy
 fields/helpers (``_contexts``, ``_mode``, ``_order_calculator``, ``_base_size_factor``,
 ``config`` / ``order_factory`` / ``cache`` / ``log`` / ``register_indicator_for_bars``
-/ ``subscribe_bars`` / ``subscribe_*_ticks``, and the derive helpers
+/ ``subscribe_bars`` / ``(un)subscribe_{trades,quotes,mark_prices}``, and the derive helpers
 ``_derive_instrument_id_for_pair`` / ``_derive_bar_type_for_instrument``) through it.
 
 Stays on the Strategy class: the context lookup/derive accessors
@@ -17,7 +18,7 @@ state, and ``_init_capital_allocator`` is the capital domain — neither belongs
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from custos_toolkit.position import PositionTracker
 from nautilus_trader.indicators import AverageTrueRange
@@ -30,11 +31,16 @@ from custos_toolkit_nautilus.adapter.orders import (
     TakeProfitSubmitter,
 )
 from custos_toolkit_nautilus.adapter.pair_context import PairContext
+from custos_toolkit_nautilus.adapter.spot_inventory import read_starting_remainder
 from custos_toolkit_nautilus.adapter.tick_monitor import TickMonitorManager
 from custos_toolkit_nautilus.adapter.utils import is_futures_connector
 
 if TYPE_CHECKING:
+    from nautilus_trader.model import InstrumentId
+
     from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy
+
+MarketStream = Literal["trades", "quotes", "mark_prices"]
 
 
 class PairContextCoordinator:
@@ -45,6 +51,11 @@ class PairContextCoordinator:
 
     def __init__(self, strategy: NautilusTradingStrategy) -> None:
         self._strategy = strategy
+        # Pricing and tick monitoring draw on the same streams. Each stream is
+        # subscribed once whichever of them asks first, and the stop releases exactly
+        # this list -- the engine refuses a second trade subscription, and a stream
+        # nobody remembered taking is never released.
+        self._streams: list[tuple[MarketStream, InstrumentId]] = []
 
     def create_context(self, pair: str) -> PairContext:
         """
@@ -110,8 +121,22 @@ class PairContextCoordinator:
 
             s.log.info(f"Initialized context for {pair}: instrument={ctx.instrument_id}")
 
+    def record_spot_reserves(self) -> None:
+        """Note, per pair, the base a cash account held below one step before this run.
+
+        No exit of this run sells it: it is either a remainder no order can take off
+        the book, or base currency that was never this strategy's. Taken before
+        anything is traded, because afterwards the strategy's own fills are mixed in.
+        """
+        s = self._strategy
+        for ctx in s._contexts.values():
+            reserved = read_starting_remainder(s.cache, ctx.instrument_id, s.log.warning)
+            ctx.spot_reserved_remainder = reserved
+            if reserved is not None:
+                s.log.info(f"spot_reserved_remainder pair={ctx.pair} quantity={reserved}")
+
     def subscribe_mark_prices(self) -> None:
-        """Subscribe the price every pair's open position is valued at, unconditionally.
+        """Subscribe the prices every pair's open position is valued at, unconditionally.
 
         The portfolio snapshot values each open position, and the notional cap, the
         snapshot publisher and the fallback breaker all read that snapshot. Without a
@@ -119,24 +144,28 @@ class PairContextCoordinator:
         can only fail closed.
 
         A perpetual gets its mark price: that is what its unrealised PnL and
-        liquidation are marked against. A spot market publishes no mark, and some
-        (SoDEX spot) publish no order book either, so there is no mid; the snapshot
-        then values the position at the last trade, and the trades are subscribed
-        here for that reason. Subscribing a mark on spot only drew an error from the
-        venue every few seconds.
+        liquidation are marked against. A spot market publishes no mark, so the
+        snapshot values the position at the mid, or at the last trade when there is
+        no book; both streams are subscribed. A quiet spot market can go days without
+        a trade while its book stays live: on 2026-10-10 the SoDEX spot public
+        endpoint showed best bid 82961 and best ask 82962, and its last trade was three
+        days old. Subscribing a mark on spot only drew an error from the venue every
+        few seconds.
 
         Unconditional on purpose: tick subscriptions are gated on the exit mode and the
         tick-monitoring config, and neither has anything to do with whether the guards
-        need a price.
+        need a price. Tick monitoring reads only the stream its config names, so a
+        stream subscribed here for pricing does not drive exits.
         """
         s = self._strategy
         perpetual = is_futures_connector(str(s.config.trading.connector))
         for ctx in s._contexts.values():
             if perpetual:
-                s.subscribe_mark_prices(ctx.instrument_id)
+                self._subscribe("mark_prices", ctx.instrument_id)
             else:
-                s.subscribe_trades(ctx.instrument_id)
-        source = "Mark price" if perpetual else "Trades (spot has no mark price)"
+                self._subscribe("trades", ctx.instrument_id)
+                self._subscribe("quotes", ctx.instrument_id)
+        source = "Mark price" if perpetual else "Trades and quotes (spot has no mark price)"
         s.log.info(f"{source} subscribed for {len(s._contexts)} pairs (position pricing)")
 
     def subscribe_ticks(self) -> None:
@@ -152,11 +181,35 @@ class PairContextCoordinator:
 
         for _, ctx in s._contexts.items():
             if tick_config.tick_type in ("trade", "both"):
-                s.subscribe_trades(ctx.instrument_id)
+                self._subscribe("trades", ctx.instrument_id)
             if tick_config.tick_type in ("quote", "both"):
-                s.subscribe_quotes(ctx.instrument_id)
+                self._subscribe("quotes", ctx.instrument_id)
 
         s.log.info(f"Tick monitoring enabled for {len(s._contexts)} pairs: {tick_config.tick_type}")
+
+    def unsubscribe_streams(self) -> None:
+        """Release every stream the start subscribed, pricing and tick monitoring alike."""
+        s = self._strategy
+        for stream, instrument_id in self._streams:
+            if stream == "trades":
+                s.unsubscribe_trades(instrument_id)
+            elif stream == "quotes":
+                s.unsubscribe_quotes(instrument_id)
+            else:
+                s.unsubscribe_mark_prices(instrument_id)
+        self._streams.clear()
+
+    def _subscribe(self, stream: MarketStream, instrument_id: InstrumentId) -> None:
+        if (stream, instrument_id) in self._streams:
+            return
+        s = self._strategy
+        if stream == "trades":
+            s.subscribe_trades(instrument_id)
+        elif stream == "quotes":
+            s.subscribe_quotes(instrument_id)
+        else:
+            s.subscribe_mark_prices(instrument_id)
+        self._streams.append((stream, instrument_id))
 
     def _init_tick_monitor(self, ctx: PairContext) -> None:
         """Build the tick monitor for a pair context (tick/hybrid mode only).
