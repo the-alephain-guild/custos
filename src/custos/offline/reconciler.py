@@ -482,6 +482,7 @@ class OfflineReconciler:
             stop_summary = {
                 "outcome": outcome,
                 "residual_orders": self._stop_residue(deployment_instance_id),
+                "dust": self._stop_dust(deployment_instance_id),
             }
             summary.append(
                 {
@@ -515,6 +516,26 @@ class OfflineReconciler:
         except Exception as exc:  # noqa: BLE001 - the summary must still be written
             _log.warning(
                 "offline_shutdown_residue_unreadable",
+                deployment_instance_id=deployment_instance_id,
+                error=str(exc),
+            )
+            return None
+
+    def _stop_dust(self, deployment_instance_id: str) -> list[dict[str, Any]] | None:
+        """The holdings below what the venue trades, left after the stop; None if unknown.
+
+        Dust is not residue: no order could have taken it, so a clean stop still
+        leaves it, and saying so is what tells the operator it is not a failure.
+        """
+
+        probe = getattr(self._engine, "stop_dust", None)
+        if not callable(probe):
+            return None
+        try:
+            return probe(deployment_instance_id)
+        except Exception as exc:  # noqa: BLE001 - the summary must still be written
+            _log.warning(
+                "offline_shutdown_dust_unreadable",
                 deployment_instance_id=deployment_instance_id,
                 error=str(exc),
             )

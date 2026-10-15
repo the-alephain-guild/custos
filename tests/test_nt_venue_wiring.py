@@ -511,6 +511,9 @@ def test_every_venue_module_declares_its_refusal_kinds_and_request_budget() -> N
         assert kind is None or kind in _REFUSAL_KINDS, connector
         budget = module.safety_request_budget()
         assert budget is None or isinstance(budget, SafetyRequestBudget), connector
+        # Whether a holding below the smallest order counts as flat for safety
+        # depends on what one minimum order is worth there, so it is the venue's too.
+        assert module.dust_counts_as_flat() in {True, False}, connector
 
 
 @pytest.mark.parametrize(

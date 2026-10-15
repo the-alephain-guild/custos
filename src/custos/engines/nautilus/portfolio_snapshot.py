@@ -4,16 +4,32 @@ This module is the only Custos adapter allowed to translate Nautilus portfolio
 objects into engine status, breaker inputs, and RunnerFact risk rows.  Keeping
 the translation here prevents those consumers from silently disagreeing about
 equity, marks, or unrealized PnL.
+
+A snapshot answers for two readers. Safety -- the breaker, readiness, engine
+status -- needs to know what this deployment is exposed to. Signed valuations need
+the whole account. They differ only on dust, a holding below the smallest order
+the venue accepts: no order can change it, so safety leaves it out when nothing
+prices it, while a signed valuation cannot leave out an asset without being wrong.
+``reliable`` is the safety answer; ``signable`` is the signed one.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from contextvars import ContextVar
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
-from custos.core.engine_protocol import PositionSnapshot
+from custos_toolkit.position.dust import (
+    Dust,
+    TradableMinimum,
+    below_tradable_minimum,
+    classify_dust,
+    tradable_minimum,
+)
+
+from custos.core.engine_protocol import DustHolding, PositionSnapshot
 
 # Set only while a stop boundary is read. Custos converts no input of that valuation
 # from a binary float: each one arrives as one of the engine's exact types (Money,
@@ -25,6 +41,14 @@ _REFUSE_FLOAT: ContextVar[bool] = ContextVar("portfolio_refuse_float", default=F
 
 class _FloatSource(ValueError):
     """A portfolio input arrived as a binary float while floats are refused."""
+
+
+class _ConversionUnavailable(ValueError):
+    """A nonzero balance that no single trusted price converts to the target currency."""
+
+    def __init__(self, pair: str) -> None:
+        super().__init__(f"asset conversion unavailable or ambiguous: {pair}")
+        self.pair = pair
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +120,9 @@ class NautilusPortfolioSnapshot:
     # None when it used none. Complete is False when some price had no source time.
     marks_oldest_ns: int | None = None
     price_watermarks_complete: bool = True
+    # Holdings below the smallest order the venue accepts. Priced dust is valued like
+    # anything else; unpriced dust is left out of equity, exposure and positions.
+    dust: tuple[DustHolding, ...] = ()
 
     def __post_init__(self) -> None:
         if self.reliable:
@@ -107,8 +134,13 @@ class NautilusPortfolioSnapshot:
             raise ValueError("an unreliable portfolio snapshot needs a failure reason")
 
     @classmethod
-    def unreliable(cls, reason: str) -> NautilusPortfolioSnapshot:
-        """Build a typed fail-closed result without guessed financial values."""
+    def unreliable(
+        cls, reason: str, *, dust: tuple[DustHolding, ...] = ()
+    ) -> NautilusPortfolioSnapshot:
+        """Build a typed fail-closed result without guessed financial values.
+
+        Dust found before the failure is kept: it is a count of holdings, not a value.
+        """
 
         return cls(
             venue=None,
@@ -117,7 +149,22 @@ class NautilusPortfolioSnapshot:
             positions=(),
             reliable=False,
             unreliable_reason=reason,
+            dust=dust,
         )
+
+    @property
+    def unpriced_dust(self) -> tuple[DustHolding, ...]:
+        return tuple(holding for holding in self.dust if holding.price is None)
+
+    @property
+    def signable(self) -> bool:
+        """Whether a signed valuation may be built from this snapshot.
+
+        Safety leaves unpriced dust out of equity; a settlement that leaves out an
+        asset is a wrong account. So unpriced dust keeps this False while
+        ``reliable`` stays True.
+        """
+        return self.reliable and not self.unpriced_dust
 
     @property
     def open_notional(self) -> Decimal:
@@ -141,19 +188,23 @@ class NautilusPortfolioSnapshotProvider:
         *,
         price_type_mid: object | None = None,
         price_type_last: object | None = None,
+        dust_counts_as_flat: Callable[[str], bool] | None = None,
     ) -> None:
+        """``dust_counts_as_flat`` says, per venue, whether dust is exempt; None exempts none."""
         self._price_type_mid = price_type_mid
         self._price_type_last = price_type_last
+        self._dust_counts_as_flat = dust_counts_as_flat
 
     def _price(self, cache: Any, instrument_id: object) -> object | None:
         """The trusted price of one instrument: mark, then mid, then last trade.
 
         The mark is what a perpetual's unrealised PnL and liquidation are marked
-        against, so it comes first. A spot venue publishes none, and one that also
-        publishes no order book (SoDEX spot) has no mid either; its last trade is
-        then the only price there is. Without that last step every valuation on
-        such a venue ended unpriced, and the fallback breaker stopped the
-        deployment on its first fill.
+        against, so it comes first. A spot venue publishes none. The mid needs a
+        quote subscription: SoDEX spot has a book and ticker bid and ask, so whether
+        a mid exists depends on whether the strategy subscribed to quotes, not on the
+        venue. Without one the last trade is the only price there is; before that
+        step every valuation of a trades-only subscription ended unpriced, and the
+        fallback breaker stopped the deployment on its first fill.
 
         ``Cache.mark_price`` returns a ``MarkPriceUpdate`` -- the price with its
         timestamps -- while ``Cache.price`` returns the ``Price`` itself;
@@ -211,8 +262,81 @@ class NautilusPortfolioSnapshotProvider:
         finally:
             _REFUSE_FLOAT.reset(token)
 
+    def position_dust(self, runtime: Any) -> dict[str, DustHolding]:
+        """The open positions that are dust, by instrument id.
+
+        What containment and a flatten stop count as flat: no order could close them.
+        Empty on a venue that exempts no dust.
+        """
+        cache = runtime.cache
+        holdings = self._position_dust(cache, tuple(cache.positions_open()))
+        return {holding.instrument_id: holding for holding in holdings}
+
+    def _dust_exempt(self, venue: object) -> bool:
+        return self._dust_counts_as_flat is not None and self._dust_counts_as_flat(str(venue))
+
+    def _position_dust(self, cache: Any, positions: tuple[Any, ...]) -> list[DustHolding]:
+        """Each position no order could close, judged by the toolkit's rule.
+
+        On a cash account the base balance is read as well as the position, which
+        NautilusTrader rounds to the step: a 0.00000935 balance reads as a 0.00001
+        position, and only the balance shows there is nothing to sell. A position
+        whose instrument the cache does not hold is not dust: an exemption needs the
+        venue's own minimums to stand on.
+        """
+        found = []
+        for position in positions:
+            instrument_id = position.instrument_id
+            if not self._dust_exempt(getattr(instrument_id, "venue", None)):
+                continue
+            instrument = _cached_instrument(cache, instrument_id)
+            if instrument is None:
+                continue
+            price = self._price(cache, instrument_id)
+            verdict = classify_dust(
+                position_quantity=_decimal(position.quantity),
+                base_balance=_base_balance(cache, instrument_id, instrument),
+                minimum=_tradable_minimum(instrument),
+                price=None if price is None else _decimal(price),
+            )
+            if verdict is not None:
+                found.append(_dust_holding(instrument_id, instrument, verdict))
+        return found
+
+    def _inventory_dust(
+        self,
+        venue: object,
+        source: str,
+        amount: Decimal,
+        pairs: list[tuple[object, Any, Decimal | None]],
+    ) -> DustHolding | None:
+        """A cash balance below the minimum of the one pair that sells it, if it is one.
+
+        ``pairs`` are the spot pairs with ``source`` as their base, each with its price
+        when it has one. Without exactly one such pair there is no single minimum to
+        judge against, and the balance is treated as real.
+        """
+        if len(pairs) != 1 or not self._dust_exempt(venue):
+            return None
+        instrument_id, instrument, price = pairs[0]
+        minimum = _tradable_minimum(instrument)
+        reason = below_tradable_minimum(amount, minimum, price)
+        if reason is None:
+            return None
+        return DustHolding(
+            instrument_id=str(instrument_id),
+            asset=source,
+            quantity=amount,
+            quantity_source="balance",
+            reason=reason,
+            threshold=minimum.quantity,
+            threshold_source=minimum.quantity_source,
+            price=price,
+        )
+
     def _snapshot(self, runtime: Any, currency: str | None) -> NautilusPortfolioSnapshot:
         watermarks: list[int | None] = []
+        dust: list[DustHolding] = []
         try:
             cache = runtime.cache
             portfolio = runtime.portfolio
@@ -221,6 +345,9 @@ class NautilusPortfolioSnapshotProvider:
             venue = self._resolve_venue(cache, positions)
             if venue is None:
                 return NautilusPortfolioSnapshot.unreliable("venue_unavailable")
+
+            dust.extend(self._position_dust(cache, positions))
+            unpriced_dust = {holding.instrument_id for holding in dust if holding.price is None}
 
             # Equity first, then the verdict on whether it could be computed.
             #
@@ -237,17 +364,25 @@ class NautilusPortfolioSnapshotProvider:
             # still reported missing two minutes and 347 mark prices later.
             equity_by_currency = portfolio.equity(venue)
 
-            missing_prices = portfolio.missing_price_instruments(venue)
+            # Unpriced dust is the one missing price that is not a failure: it is left
+            # out of the valuation below, and listed instead.
+            missing_prices = [
+                instrument
+                for instrument in portfolio.missing_price_instruments(venue)
+                if str(instrument) not in unpriced_dust
+            ]
             if missing_prices:
                 # Name them. "prices missing" alone cannot be acted on: whether the
                 # feed is down, the subscription never landed, or a position is held
                 # in an instrument nothing subscribed to are three different
                 # problems, and the instrument that is missing says which.
                 named = ",".join(sorted(str(instrument) for instrument in missing_prices))
-                return NautilusPortfolioSnapshot.unreliable(f"portfolio_prices_missing:{named}")
+                return NautilusPortfolioSnapshot.unreliable(
+                    f"portfolio_prices_missing:{named}", dust=tuple(dust)
+                )
 
             resolved_currency, equity, cash_inventory = self._equity_in_currency(
-                cache, venue, equity_by_currency, currency, watermarks
+                cache, venue, equity_by_currency, currency, watermarks, dust
             )
             if resolved_currency is None or equity is None:
                 reason = (
@@ -255,23 +390,27 @@ class NautilusPortfolioSnapshotProvider:
                     if currency is not None
                     else "portfolio_equity_ambiguous"
                 )
-                return NautilusPortfolioSnapshot.unreliable(reason)
+                return NautilusPortfolioSnapshot.unreliable(reason, dust=tuple(dust))
 
             converted: list[NautilusPortfolioPosition] = []
             for position in positions:
                 instrument_id = position.instrument_id
+                if str(instrument_id) in unpriced_dust:
+                    continue
                 mark, mark_time = self._priced(cache, instrument_id)
                 watermarks.append(mark_time)
                 if mark is None:
                     return NautilusPortfolioSnapshot.unreliable(
-                        f"mark_price_unavailable:{instrument_id}"
+                        f"mark_price_unavailable:{instrument_id}", dust=tuple(dust)
                     )
 
                 quantity = _decimal(position.quantity) * _decimal(
                     getattr(position, "multiplier", 1)
                 )
                 if bool(getattr(position, "is_inverse", False)):
-                    return NautilusPortfolioSnapshot.unreliable("inverse_position_not_supported")
+                    return NautilusPortfolioSnapshot.unreliable(
+                        "inverse_position_not_supported", dust=tuple(dust)
+                    )
                 if bool(getattr(position, "is_short", False)) and quantity > 0:
                     quantity = -quantity
                 settlement_currency = str(
@@ -305,12 +444,17 @@ class NautilusPortfolioSnapshotProvider:
                 cash_inventory=cash_inventory,
                 marks_oldest_ns=min(known) if known else None,
                 price_watermarks_complete=len(known) == len(watermarks),
+                dust=tuple(dust),
             )
         except _FloatSource:
             raise
+        except _ConversionUnavailable as exc:
+            return NautilusPortfolioSnapshot.unreliable(
+                f"asset_conversion_unavailable:{exc.pair}", dust=tuple(dust)
+            )
         except (ArithmeticError, AttributeError, InvalidOperation, TypeError, ValueError) as exc:
             return NautilusPortfolioSnapshot.unreliable(
-                f"portfolio_snapshot_invalid:{type(exc).__name__}"
+                f"portfolio_snapshot_invalid:{type(exc).__name__}", dust=tuple(dust)
             )
 
     @staticmethod
@@ -325,7 +469,7 @@ class NautilusPortfolioSnapshotProvider:
         first = min(instrument_ids, key=str)
         return getattr(first, "venue", None)
 
-    def _equity_in_currency(self, cache, venue, values, requested_currency, watermarks):
+    def _equity_in_currency(self, cache, venue, values, requested_currency, watermarks, dust):
         if requested_currency is None or not hasattr(values, "items") or not values:
             return (*self._resolve_equity(values, requested_currency), None)
         target = requested_currency.upper()
@@ -351,6 +495,8 @@ class NautilusPortfolioSnapshotProvider:
             if not amount:
                 continue
             rates = []
+            # The pairs that sell this asset for the target, each with its price if any.
+            selling: list[tuple[object, Any, Decimal | None]] = []
             for instrument_id in cache.instrument_ids():
                 if str(instrument_id.venue) != str(venue):
                     continue
@@ -364,15 +510,25 @@ class NautilusPortfolioSnapshotProvider:
                 if (base, quote) not in {(source, target), (target, source)}:
                     continue
                 mark, mark_time = self._priced(cache, instrument_id)
-                if mark is None:
-                    continue
-                watermarks.append(mark_time)
-                rate = _decimal(mark)
-                if not rate.is_finite() or rate <= 0:
-                    raise ValueError("invalid asset conversion price")
-                rates.append(rate if base == source else Decimal("1") / rate)
+                rate = None
+                if mark is not None:
+                    watermarks.append(mark_time)
+                    rate = _decimal(mark)
+                    if not rate.is_finite() or rate <= 0:
+                        raise ValueError("invalid asset conversion price")
+                    rates.append(rate if base == source else Decimal("1") / rate)
+                if base == source:
+                    selling.append((instrument_id, instrument, rate))
+            holding = self._inventory_dust(venue, source, amount, selling)
+            if holding is not None and holding.instrument_id not in {
+                listed.instrument_id for listed in dust
+            }:
+                dust.append(holding)
+            if not rates and holding is not None:
+                # Below the smallest order and priced by nothing: left out, and listed.
+                continue
             if len(rates) != 1:
-                raise ValueError(f"asset conversion unavailable or ambiguous: {source}/{target}")
+                raise _ConversionUnavailable(f"{source}/{target}")
             total += amount * rates[0]
             inventory.append(
                 {"asset": source, "quantity": str(amount), "mark_price": str(rates[0])}
@@ -405,6 +561,54 @@ class NautilusPortfolioSnapshotProvider:
         if raw_currency is None:
             return None, None
         return str(raw_currency).upper(), _decimal(raw_equity)
+
+
+def _cached_instrument(cache: Any, instrument_id: object) -> Any:
+    reader = getattr(cache, "instrument", None)
+    return reader(instrument_id) if callable(reader) else None
+
+
+def _tradable_minimum(instrument: Any) -> TradableMinimum:
+    """The smallest order the venue accepts on a pair, from the instrument it loaded.
+
+    A minimum notional stated in anything but the quote currency cannot be compared
+    with a quote price, so it is left out rather than guessed at.
+    """
+    min_quantity = getattr(instrument, "min_quantity", None)
+    min_notional = getattr(instrument, "min_notional", None)
+    notional_in_quote = (
+        min_notional is not None
+        and str(getattr(min_notional, "currency", "")).upper()
+        == str(instrument.quote_currency).upper()
+    )
+    return tradable_minimum(
+        size_increment=_decimal(instrument.size_increment),
+        min_quantity=None if min_quantity is None else _decimal(min_quantity),
+        min_notional=_decimal(min_notional) if notional_in_quote else None,
+    )
+
+
+def _base_balance(cache: Any, instrument_id: Any, instrument: Any) -> Decimal | None:
+    """The account's total in the pair's base currency on a cash account, else None."""
+    reader = getattr(cache, "account_for_venue", None)
+    account = reader(instrument_id.venue) if callable(reader) else None
+    if account is None or str(account.account_type) != "CASH":
+        return None
+    total = account.balance_total(instrument.base_currency)
+    return None if total is None else _decimal(total)
+
+
+def _dust_holding(instrument_id: object, instrument: Any, verdict: Dust) -> DustHolding:
+    return DustHolding(
+        instrument_id=str(instrument_id),
+        asset=str(instrument.base_currency).upper(),
+        quantity=verdict.quantity,
+        quantity_source=verdict.quantity_source,
+        reason=verdict.reason,
+        threshold=verdict.minimum.quantity,
+        threshold_source=verdict.minimum.quantity_source,
+        price=verdict.price,
+    )
 
 
 def _position_average_price(position: object) -> Decimal:

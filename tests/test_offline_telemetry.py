@@ -15,7 +15,7 @@ import json
 from decimal import Decimal
 from typing import Any
 
-from custos.core.engine_protocol import EngineStatus, OrderSnapshot, PositionSnapshot
+from custos.core.engine_protocol import DustHolding, EngineStatus, OrderSnapshot, PositionSnapshot
 from custos.engines.nautilus.strategy_event_forwarding import StrategyEventForwarder
 from custos.offline.daemon import _run_together
 from custos.offline.telemetry import OfflineTelemetry, telemetry_subject
@@ -190,6 +190,41 @@ async def test_an_unreliable_status_is_sent_with_its_reason_and_without_position
     assert payload["status"]["unreliable_reason"] == "missing_price"
     assert payload["positions"] == []
     assert engine.position_calls == 0
+
+
+async def test_a_snapshot_lists_the_dust_its_status_carries() -> None:
+    """Dust is what no order can take; the operator sees it, money as strings."""
+    telemetry, engine, publisher = _telemetry()
+    engine.status = _status(
+        dust=(
+            DustHolding(
+                instrument_id="vBTC_vUSDC.SODEX_SPOT",
+                asset="VBTC",
+                quantity=Decimal("0.00000935"),
+                quantity_source="balance",
+                reason="quantity",
+                threshold=Decimal("0.00001"),
+                threshold_source="size_increment",
+                price=None,
+            ),
+        )
+    )
+
+    await telemetry.publish_snapshots()
+
+    payload = publisher.published[0][1]["payload"]
+    assert payload["status"]["dust"] == [
+        {
+            "instrument_id": "vBTC_vUSDC.SODEX_SPOT",
+            "asset": "VBTC",
+            "quantity": "0.00000935",
+            "quantity_source": "balance",
+            "reason": "quantity",
+            "threshold": "0.00001",
+            "threshold_source": "size_increment",
+            "price": None,
+        }
+    ]
 
 
 async def test_an_unreadable_deployment_skips_its_turn_and_the_others_still_report() -> None:

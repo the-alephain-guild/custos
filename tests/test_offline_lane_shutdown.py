@@ -171,7 +171,7 @@ async def test_a_stop_that_does_not_finish_in_time_fails_the_exit_code(tmp_path:
         "observed_generation": 1,
         "phase": "stopped",
         "health": "unhealthy",
-        "stop_summary": {"outcome": "stop_timed_out", "residual_orders": None},
+        "stop_summary": {"outcome": "stop_timed_out", "residual_orders": None, "dust": None},
     }
 
 
@@ -222,6 +222,19 @@ async def test_a_second_signal_while_stopping_changes_nothing(tmp_path: Path) ->
     assert len(engine.stops) == 1
 
 
+# The account 60366 remainder as the host lists it.
+DUST_ROW: dict[str, str | None] = {
+    "instrument_id": "vBTC_vUSDC.SODEX_SPOT",
+    "asset": "VBTC",
+    "quantity": "0.00000935",
+    "quantity_source": "balance",
+    "reason": "quantity",
+    "threshold": "0.00001",
+    "threshold_source": "size_increment",
+    "price": None,
+}
+
+
 class _GuardStoppedEngine(_Engine):
     """Breaches every ceiling, so the guard stops it; the stop ends when the test says.
 
@@ -235,6 +248,7 @@ class _GuardStoppedEngine(_Engine):
         self.open_notional = Decimal("10000")
         self.released = asyncio.Event()
         self.residue: dict[str, int] = {"in_flight": 1}
+        self.dust: list[dict[str, str | None]] = [DUST_ROW]
 
     async def stop(self, deployment_instance_id: str) -> None:
         self.stops.append(deployment_instance_id)
@@ -243,6 +257,10 @@ class _GuardStoppedEngine(_Engine):
 
     def stop_residue(self, deployment_instance_id: str) -> dict[str, int]:
         return dict(self.residue) if self.attached(deployment_instance_id) else {}
+
+    def stop_dust(self, deployment_instance_id: str) -> list[dict[str, str | None]]:
+        """Dust outlives the stop: it is what no order could take, so it is still there."""
+        return list(self.dust)
 
 
 def _summaries(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -276,11 +294,13 @@ async def test_shutdown_waits_for_the_guards_stop_and_summarises_it(tmp_path: Pa
             "deployment_instance_id": instance,
             "outcome": "stopped",
             "residual_orders": {},
+            "dust": [DUST_ROW],
         }
     ]
     assert _statuses(jetstream)[-1]["stop_summary"] == {
         "outcome": "stopped",
         "residual_orders": {},
+        "dust": [DUST_ROW],
     }
 
 
@@ -312,6 +332,7 @@ async def test_a_stop_still_unconfirmed_at_the_deadline_is_summarised_with_what_
             "deployment_instance_id": instance,
             "outcome": "stop_timed_out",
             "residual_orders": {"in_flight": 1},
+            "dust": [DUST_ROW],
         }
     ]
     last = _statuses(jetstream)[-1]
@@ -319,4 +340,5 @@ async def test_a_stop_still_unconfirmed_at_the_deadline_is_summarised_with_what_
     assert last["stop_summary"] == {
         "outcome": "stop_timed_out",
         "residual_orders": {"in_flight": 1},
+        "dust": [DUST_ROW],
     }

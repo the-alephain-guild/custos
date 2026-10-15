@@ -390,3 +390,14 @@ def cancel_rejection_kind(reason: str) -> str | None:
 
 def safety_request_budget() -> SafetyRequestBudget:
     return _SAFETY_REQUEST_BUDGET
+
+
+def dust_counts_as_flat() -> bool:
+    """Whether a holding below the pair's smallest order counts as flat for safety.
+
+    Yes: the dearest minimum order on SoDEX was worth 1.29 (vLINK_vUSDC, 0.1 at
+    12.899, read from the public symbols and tickers on 2026-10-11), under 1% of
+    the strictest local exposure ceiling. Unpriced dust that small is left out of
+    the safety valuation rather than stopping the deployment over it.
+    """
+    return True

@@ -205,3 +205,15 @@ def cancel_rejection_kind(reason: str) -> str | None:
 def safety_request_budget() -> None:
     """No measured per-account figure: the per-order retry caps are the only bound."""
     return None
+
+
+def dust_counts_as_flat() -> bool:
+    """Whether a holding below the pair's smallest order counts as flat for safety.
+
+    No. Of 710 dollar-quoted OKX spot pairs with a price, 150 have a minimum order
+    worth more than 1% of the strictest local exposure ceiling, up to 32.49
+    (CT-USDT, 100 at 0.32486; public instruments and tickers, 2026-10-11). An
+    unpriced holding below that minimum could be worth that much, so it is valued
+    like any other holding, and without a price it fails closed.
+    """
+    return False

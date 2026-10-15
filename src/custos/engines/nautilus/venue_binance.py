@@ -451,3 +451,14 @@ def cancel_rejection_kind(reason: str) -> str | None:
 def safety_request_budget() -> None:
     """No measured per-account figure: the per-order retry caps are the only bound."""
     return None
+
+
+def dust_counts_as_flat() -> bool:
+    """Whether a holding below the pair's smallest order counts as flat for safety.
+
+    Yes: the dearest minimum order among Binance's stablecoin-quoted spot pairs was
+    worth 1.22 (ZECUSDC on testnet, ZECUSDT in production, read from the public
+    exchange info and ticker prices on 2026-10-11), under 1% of the strictest local
+    exposure ceiling.
+    """
+    return True

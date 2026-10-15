@@ -269,8 +269,16 @@ def _timestamp(value: Any) -> str:
 
 
 def _plain(document: dict[str, Any]) -> dict[str, Any]:
-    """Money leaves as a string, never a float."""
+    """Money leaves as a string, never a float, at any depth."""
 
-    return {
-        key: str(value) if isinstance(value, Decimal) else value for key, value in document.items()
-    }
+    return {key: _plain_value(value) for key, value in document.items()}
+
+
+def _plain_value(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return _plain(value)
+    if isinstance(value, list | tuple):
+        return [_plain_value(item) for item in value]
+    return value

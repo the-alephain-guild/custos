@@ -330,9 +330,11 @@ class NautilusCachedOrderSemantics:
         if marked is not None:
             return _positive_decimal(marked, field="order mark price")
 
-        # A spot venue publishes no mark, and one without an order book (SoDEX spot)
-        # has no mid either; its last trade is then the only price there is, and a
-        # market order valued off nothing would be refused on every submission.
+        # A spot venue publishes no mark. The mid needs a quote subscription: SoDEX
+        # spot has a book and ticker bid and ask, so a strategy that subscribed to
+        # trades alone has no mid there. Its last trade is then the only price there
+        # is, and a market order valued off nothing would be refused on every
+        # submission.
         mid = self._cache.price(order.instrument_id, PriceType.MID)
         if mid is None:
             last = self._cache.price(order.instrument_id, PriceType.LAST)

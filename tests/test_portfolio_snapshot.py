@@ -728,9 +728,10 @@ class _LastOnlyCache(_Cache):
 
 
 def test_a_position_on_a_venue_without_mark_or_book_is_priced_from_its_last_trade() -> None:
-    """SoDEX spot publishes neither a mark price nor an order book.
+    """A spot cache with no mark and no quote: SoDEX spot subscribed to trades alone.
 
-    Measured on runner 0.5.1, 2026-09-29: the first fill on a SoDEX spot profile
+    SoDEX spot publishes no mark price. It does have a book, but a strategy that
+    subscribed to trades only has no quote to take a mid from. Measured on runner 0.5.1, 2026-09-29: the first fill on a SoDEX spot profile
     tripped the fallback breaker within four seconds and the runner stopped the
     deployment, because every valuation path ended at mark or mid and neither
     ever arrives there. The last trade does.
