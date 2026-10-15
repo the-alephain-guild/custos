@@ -22,6 +22,11 @@ Start with the selected lane, source/image revision, CLI arguments and local JSO
 | Quarantined with `strategy_trading_scope_undeclared` or `signed_strategy_config_overrides_trading` | The strategy's config, and the signed strategy config | The strategy must declare `trading` in its config; the signed strategy config may not carry a `trading` section |
 | `portfolio_prices_missing:<instrument>` | Exact missing instrument and its mark/quote asset | Check symbol, network and market-data availability; do not substitute zero |
 | `portfolio_equity_missing:<currency>` | Account and settlement currency | Confirm the account balance and required valuation prices |
+| `asset_conversion_unavailable:<asset>/<currency>` | The account balance in that asset, and the spot pair that prices it against the settlement currency | Subscribe to a price for that pair, or move the balance out of the account; a balance at or above the pair's minimum order is real inventory and is never valued at zero |
+| Status lists `dust` | The holding, its quantity and the minimum it is below | Nothing to do: no order can sell it, so it is treated as flat; see [dust](/operator-guide/offline-testnet#dust-in-status-and-stop-reports) |
+| Signed valuations stop with `portfolio_dust_unpriced` | Unpriced dust named in the runtime log of the same name | Subscribe to a price for the pair; signed valuations resume once the dust is priced |
+| `stop_summary.residual_orders` is not empty | Each order at the venue, by the reason counted | See [refused cancels](/operator-guide/offline-testnet#when-the-venue-refuses-a-cancel); resolve the orders at the venue before ending supervision |
+| `offline_exposure_stop_failed` repeats | `attempt`, the retry delay and the stop's own error | The guard retries after 15, 30, 60, 120 and then every 300 seconds; inspect what the stop could not withdraw |
 | Offline generation refused after trip | Guard latch and recent containment logs | Inspect positions/orders, address the cause, then deliberately restart |
 | SoDEX testnet account fields unavailable | Offline spec contract | Use the supported sandbox path; see [SoDEX](/engines/sodex) |
 

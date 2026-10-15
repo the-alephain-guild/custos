@@ -42,4 +42,32 @@ Inspect local status at `arx.<tenant>.deployment_status.<runner-label>.<spec-id>
 
 To stop, publish the same spec id with a higher generation and `lifecycle_state: stopped`. The default engine stop policy preserves positions. Verify outstanding orders and positions at the venue before ending supervision. A breaker trip has separate containment behavior; see [emergency recovery](/operator-guide/emergency-playbook).
 
+## When the venue refuses a cancel
+
+Containment and stop withdraw orders one at a time and read each refusal before asking again:
+
+| Refusal | What the runner does |
+|---|---|
+| The order is already waiting for its cancel | Sends nothing more; asks the venue for the order if no answer comes within 15 seconds |
+| The venue does not know the order | Stops cancelling it and asks the venue for it three times: at once, then 10 and 20 seconds later. If it is still open locally 40 seconds after the last answer, it is left for reconciliation and no further requests are sent for it |
+| Rate limited | Pauses every safety request on that account (cancels, closes and queries) for 60 seconds, doubling up to 600; never falls back to cancelling everything |
+| Connection failure | Pauses the account for 5 seconds, doubling up to 120; gives up on the order after 10 retries |
+| Any other refusal | Retries that order after 2 seconds, doubling up to 60; gives up after 5 retries |
+
+Only SoDEX refusal texts are classified today; on other venues every refusal is handled as "any other refusal". On SoDEX the safety path also keeps to ten requests at once and then one a second per account, leaving the rest of the account's order allowance to whatever else trades on it.
+
+An order the runner gave up on is not cancelled: the stop or containment still reports it as unconfirmed. The stop's error log and `stop_summary.residual_orders` count what is left by reason, such as `in_flight`, `not_found`, `venue_state_contradicted`, `cancel_abandoned`, `paused` or `backing_off`. Check those orders at the venue before ending supervision.
+
+## Dust in status and stop reports
+
+Dust is a holding below the smallest order the pair accepts: under its minimum order quantity, or, when a price is known, worth less than its minimum notional. No order can sell it or close it, so containment and a flatten stop treat it as flat, send no close for it and do not wait for it. A spot fee taken in the base currency commonly leaves such a remainder.
+
+Dust appears in the `dust` list of the engine status and the telemetry snapshot, and in `stop_summary.dust` and `offline_shutdown_summary` when the lane stops. Each entry names the instrument, the asset, the quantity and whether it was read from the position or the account balance, the minimum it is below and why (`quantity` or `notional`), and the price if one was known. `position_count` includes dust positions.
+
+Without a price, dust is left out of the equity and exposure the guard evaluates, so it cannot trip the breaker. A holding at or above the minimum quantity is never treated this way: without a price the status is unreliable and the guard fails closed. On OKX, where one minimum order can be worth tens of dollars, dust is valued like any other holding and fails closed when unpriced.
+
+## Keep container logs bounded
+
+Run the runner container with log rotation, for example `max-size` and `max-file` options on the Docker `json-file` logging driver, so that a long or noisy run cannot fill the disk. Read the stop's exit status before exporting its logs: a large export can outlast the time you allow for the stop.
+
 Testnet results and offline status cannot authorize live execution or become production promotion evidence.
