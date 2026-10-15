@@ -107,7 +107,7 @@ that load failure quarantines the activation as an artifact defect.
 
 The `custos-strategy-toolkit` base/contracts distribution supports Python
 >=3.11. The separate `custos-strategy-toolkit-nautilus` distribution requires
-Python >=3.12,<3.13, exact matching base version, and `nautilus-trader==2.0.0rc5+sodex.2`;
+Python >=3.12,<3.13, exact matching base version, and `nautilus-trader==2.0.0rc5+sodex.3`;
 Python 3.11 resolution must fail rather than omit NT.
 
 `docs/authority/strategy-toolkit-inventory-v1.json` classifies every current

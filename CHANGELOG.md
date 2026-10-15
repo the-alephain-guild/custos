@@ -34,6 +34,22 @@ protocol — is published at
 
 ### Changed
 
+- **Breaking: the engine is NautilusTrader `2.0.0rc5+sodex.3`.** The runner
+  image and the `custos-strategy-toolkit-nautilus` distribution install the
+  fork release `guild-v2.0.0rc5+sodex.3`, pinned by the sha256 of each platform
+  wheel. What changed in the engine (fork commit `a375b1e5bd`): the SoDEX
+  adapter reads the venue's order history as a log of revisions and reconciles
+  each order at its latest one, so orders cancelled weeks earlier no longer
+  come back as accepted at startup with their funds booked as locked, and the
+  cancels sent at shutdown are no longer refused for orders the venue no longer
+  holds. The V1 strategy contracts change the `engine_version` constant in
+  place: a strategy manifest, artifact ref or pre-import receipt that still
+  names `2.0.0rc5+sodex.2` is refused, so a strategy release built on the
+  previous engine must be rebuilt and published again. Because the constant is
+  part of their wire shape, `StrategyArtifactRefV1` and
+  `StrategyArtifactPreImportVerificationReceiptV1` move to contract revision 2.
+  The strategy release publisher stays on `2.0.0rc5+sodex.2` until a toolkit
+  release candidate built on the new engine exists.
 - **Contract schemas carry a contract revision.** The RunnerFact batch,
   `StrategyArtifactRefV1`, `StrategyArtifactPreImportVerificationReceiptV1` and
   `RuntimeCandidateAcceptanceV1` schemas gain two top-level annotation keywords,

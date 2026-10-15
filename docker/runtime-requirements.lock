@@ -118,14 +118,14 @@ nats-py==2.15.0 ; (platform_machine == 'arm64' and sys_platform == 'darwin') or 
     --hash=sha256:6622c547d9a7d2313d9c147d46c386188f4ec2c7b5c9f9a0438a4d1b55f54a93 \
     --hash=sha256:9f8d36aa52a9926a88b8f1d70cf1fdce0ad387941479b500ee9ab3e51073cefd
     # via custos-runner
-nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-macosx_11_0_arm64.whl ; platform_machine == 'arm64' and sys_platform == 'darwin' \
-    --hash=sha256:86619ef578ae2444eee49dccdf1def7fdc2c92c3f77751e4c1c05b440ea63f87
+nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.3/nautilus_trader-2.0.0rc5%2Bsodex.3-cp312-cp312-macosx_11_0_arm64.whl ; platform_machine == 'arm64' and sys_platform == 'darwin' \
+    --hash=sha256:7966215b87d84fae180084c138c5b6e4ea6b28291c4b57ed1ca5a508884ec483
     # via custos-strategy-toolkit-nautilus
-nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_aarch64.whl ; platform_machine == 'aarch64' and sys_platform == 'linux' \
-    --hash=sha256:e8ef7826068eb7a5ef81d8f6613da24ff138f758a1bf9c41cbfc6d380b36a248
+nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.3/nautilus_trader-2.0.0rc5%2Bsodex.3-cp312-cp312-manylinux_2_39_aarch64.whl ; platform_machine == 'aarch64' and sys_platform == 'linux' \
+    --hash=sha256:148179acb5c17d629c2c9c0ed52b010914c913fd73ab7d9517cc6cb2f726f3eb
     # via custos-strategy-toolkit-nautilus
-nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.2/nautilus_trader-2.0.0rc5%2Bsodex.2-cp312-cp312-manylinux_2_39_x86_64.whl ; platform_machine == 'x86_64' and sys_platform == 'linux' \
-    --hash=sha256:2b9fc62beb3e888c754d88ad80d3228ba25260f3fde7cf48333398f802f0a79e
+nautilus-trader @ https://github.com/the-alephain-guild/nautilus_trader/releases/download/guild-v2.0.0rc5%2Bsodex.3/nautilus_trader-2.0.0rc5%2Bsodex.3-cp312-cp312-manylinux_2_39_x86_64.whl ; platform_machine == 'x86_64' and sys_platform == 'linux' \
+    --hash=sha256:52affdf1980bafd3cc5aa9131890a46bf4abef3373c4dff612b16eb556d9ed02
     # via custos-strategy-toolkit-nautilus
 nkeys==0.2.1 ; (platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') \
     --hash=sha256:3a201dcd203d8bb05ba2884d441b2c92918b2a537a10d324e73738887dde9da3
