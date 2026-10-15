@@ -103,6 +103,13 @@ def test_artifact_ref_rejects_business_authority_fields() -> None:
         StrategyArtifactRefV1.model_validate(value)
 
 
+def test_an_artifact_ref_built_on_the_previous_engine_is_refused() -> None:
+    value = dict(_artifact_ref_golden())
+    value["engine_version"] = "2.0.0rc5+sodex.2"
+    with pytest.raises(ValidationError, match="engine_version"):
+        StrategyArtifactRefV1.model_validate(value)
+
+
 @pytest.mark.parametrize(("filename", "model"), SOURCE_GENERATED_SCHEMA_MODELS.items())
 def test_schema_is_source_generated(filename: str, model: type) -> None:
     path = ROOT / "docs/gateway-contract/v1" / filename
@@ -150,7 +157,7 @@ def _manifest(**overrides: object) -> dict[str, object]:
         "entry_point_group": "alephain.strategy_runtime.v1",
         "entry_point": "alephain_strategy.supertrend.runtime:SuperTrendRuntimeAdapterV1",
         "engine": "nautilus",
-        "engine_version": "2.0.0rc5+sodex.2",
+        "engine_version": "2.0.0rc5+sodex.3",
         "requires_python": ">=3.12,<3.13",
         "base_contracts_version": "0.1.0rc8",
         "engine_toolkit_version": "0.1.0rc8",
@@ -179,6 +186,11 @@ def test_a_manifest_without_a_trading_scope_is_refused() -> None:
 
     with pytest.raises(ValidationError, match="trading_scope"):
         StrategyManifestV1.model_validate(value)
+
+
+def test_a_manifest_built_on_the_previous_engine_is_refused() -> None:
+    with pytest.raises(ValidationError, match="engine_version"):
+        StrategyManifestV1.model_validate(_manifest(engine_version="2.0.0rc5+sodex.2"))
 
 
 @pytest.mark.parametrize(

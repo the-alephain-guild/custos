@@ -68,8 +68,8 @@ HISTORICAL_CONTRACT_EVIDENCE_PATHS.update(
 )
 # Contract revisions are raised only when the wire shape or the meaning of a field
 # changes; a change to descriptive text alone keeps the revision.
-ARTIFACT_REF_CONTRACT = ("alephain.custos.strategy_artifact_ref.v1", 1)
-PRE_IMPORT_CONTRACT = ("alephain.custos.strategy_artifact_pre_import_verification_receipt.v1", 1)
+ARTIFACT_REF_CONTRACT = ("alephain.custos.strategy_artifact_ref.v1", 2)
+PRE_IMPORT_CONTRACT = ("alephain.custos.strategy_artifact_pre_import_verification_receipt.v1", 2)
 
 TOOLKIT_RC_SCHEMA_PATH = "docs/gateway-contract/v1/toolkit_rc_receipt_manifest_v1.schema.json"
 TOOLKIT_RC_PENDING_SCHEMA_PATH = (
@@ -133,7 +133,7 @@ def _build_artifact_ref_assets() -> dict[str, bytes]:
         normalized_source_tree_sha256="3" * 64,
         python_version="3.12.4",
         engine="nautilus",
-        engine_version="2.0.0rc5+sodex.2",
+        engine_version="2.0.0rc5+sodex.3",
         base_contracts_version="1.0.0rc1",
         engine_toolkit_version="1.0.0rc1",
         build_inputs=(DigestBindingV1(name="uv.lock", sha256="9" * 64),),
