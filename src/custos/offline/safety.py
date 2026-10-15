@@ -22,7 +22,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from dataclasses import dataclass, replace
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from decimal import Decimal, InvalidOperation
 from typing import Final, Protocol, runtime_checkable
 
@@ -51,6 +52,10 @@ EVALUATION_DEADLINE_SECS: Final = 10.0
 # It is a backstop, not a schedule: an engine that never reports ready must still end up
 # guarded rather than silently exempt.
 READINESS_TIMEOUT_SECS: Final = 120.0
+# How long to wait after a failed stop before trying the next one. Each attempt runs
+# the host's shutdown policy, which withdraws orders, so retrying on every tick was a
+# request storm against a venue already refusing them; the last step repeats.
+STOP_RETRY_SECS: Final = (15.0, 30.0, 60.0, 120.0, 300.0)
 
 
 @runtime_checkable
@@ -126,11 +131,27 @@ class _Startup:
     announced_unknown: bool = False
 
 
+@dataclass(slots=True)
+class _Ending:
+    """The guard's stop of a latched deployment: the one under way, and the retries.
+
+    The stop is a task of its own, so the guard's deadline ends only its wait.
+    Cancelling the stop instead abandoned the shutdown policy part way through, and
+    the next tick began it again from the top.
+    """
+
+    stop: asyncio.Future[None] | None = None
+    attempts: int = 0
+    next_attempt_at: float = 0.0
+    announced_in_progress: bool = False
+
+
 @dataclass(frozen=True, slots=True)
 class _Watched:
     deployment_instance_id: str
     supervisor: EngineSafetySupervisor
     startup: _Startup
+    ending: _Ending = field(default_factory=_Ending)
 
     @property
     def latched(self) -> bool:
@@ -159,11 +180,13 @@ class OfflineExposureGuard:
         interval: float = TICK_SECS,
         deadline: float = EVALUATION_DEADLINE_SECS,
         readiness_timeout: float = READINESS_TIMEOUT_SECS,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._engine = engine
         self._interval = interval
         self._deadline = deadline
         self._readiness_timeout = readiness_timeout
+        self._clock = clock
         self._watched: dict[str, _Watched] = {}
         self._lifecycle_lock = asyncio.Lock()
 
@@ -192,7 +215,7 @@ class OfflineExposureGuard:
                 supervisor=EngineSafetySupervisor(
                     engine=self._engine, breaker=FallbackBreaker(limits)
                 ),
-                startup=_Startup(watched_at=time.monotonic()),
+                startup=_Startup(watched_at=self._clock()),
             )
             _log.info(
                 "offline_exposure_guard_watching",
@@ -225,6 +248,14 @@ class OfflineExposureGuard:
         if self._watched.pop(spec_id, None) is not None:
             _log.info("offline_exposure_guard_released", spec_id=spec_id)
 
+    def stop_in_progress(self, spec_id: str) -> asyncio.Future[None] | None:
+        """The stop this guard started for that deployment, while it is still running."""
+
+        watched = self._watched.get(spec_id)
+        if watched is None or watched.ending.stop is None or watched.ending.stop.done():
+            return None
+        return watched.ending.stop
+
     @contextlib.asynccontextmanager
     async def lifecycle_transition(self):
         """Keep a risk observation from straddling two runtime generations."""
@@ -237,7 +268,7 @@ class OfflineExposureGuard:
         """Reset startup readiness while retaining the breaker and its high-water mark."""
         watched = self._watched.get(spec_id)
         if watched is not None:
-            self._watched[spec_id] = replace(watched, startup=_Startup(time.monotonic()))
+            self._watched[spec_id] = replace(watched, startup=_Startup(self._clock()))
 
     async def evaluate_once(self) -> list[EngineSafetyTick]:
         """Evaluate every deployment still worth evaluating, and end the latched ones."""
@@ -259,7 +290,7 @@ class OfflineExposureGuard:
         return ticks
 
     async def _end_deployment(self, spec_id: str, watched: _Watched) -> None:
-        """Stop a deployment that has tripped, and keep saying so until it has stopped.
+        """Stop a deployment that has tripped, and keep at it until it has stopped.
 
         Flattening removes the exposure that tripped the breaker. It does not stop
         the strategy, which goes on opening positions from its own signals inside
@@ -269,31 +300,85 @@ class OfflineExposureGuard:
         Whether to keep trying is decided by asking the engine what it still holds,
         not by remembering that a stop was once requested -- a record of the request
         cannot tell a stop that took effect apart from one that did not.
+
+        One stop runs at a time. A stop still running past the deadline is left to
+        finish rather than cancelled and begun again; one that ends with the
+        deployment still held is tried again after a back-off, and each attempt
+        says which it is.
         """
 
         if not self._engine.attached(watched.deployment_instance_id):
             return
+        ending = watched.ending
+        if ending.stop is not None and ending.stop.done():
+            self._record_failed_stop(spec_id, watched)
+        if ending.stop is not None:
+            self._announce_stop_in_progress(spec_id, watched)
+            return
+        if self._clock() < ending.next_attempt_at:
+            return
+        ending.attempts += 1
+        ending.announced_in_progress = False
         _log.error(
             "offline_exposure_latched_deployment_stopping",
             spec_id=spec_id,
             deployment_instance_id=watched.deployment_instance_id,
+            attempt=ending.attempts,
         )
-        try:
-            await asyncio.wait_for(
-                self._engine.stop(watched.deployment_instance_id),
-                timeout=self._deadline,
-            )
-        except TimeoutError:
-            # An engine that will not answer a stop is not an engine that has
-            # stopped, and nothing here can make it so. The next tick asks again,
-            # because the alternative is one attempt followed by silence -- which is
-            # the shape of the defect this whole path exists to remove.
-            _log.error(
-                "offline_exposure_stop_unconfirmed",
+        ending.stop = asyncio.ensure_future(self._engine.stop(watched.deployment_instance_id))
+        ending.stop.add_done_callback(_observe_outcome)
+        # The stop is shielded: running out of patience ends this wait, not the stop.
+        with contextlib.suppress(TimeoutError, Exception):
+            await asyncio.wait_for(asyncio.shield(ending.stop), timeout=self._deadline)
+        if not ending.stop.done():
+            # An engine that has not finished stopping is not an engine that has
+            # stopped. The next tick looks again, without starting another stop.
+            self._announce_stop_in_progress(spec_id, watched)
+            return
+        if self._engine.attached(watched.deployment_instance_id):
+            self._record_failed_stop(spec_id, watched)
+            return
+        stop, ending.stop = ending.stop, None
+        if not stop.cancelled() and stop.exception() is not None:
+            # The deployment is gone, so the stop took; how it ended is still said.
+            _log.warning(
+                "offline_exposure_stop_raised_after_release",
                 spec_id=spec_id,
                 deployment_instance_id=watched.deployment_instance_id,
-                deadline_seconds=self._deadline,
+                error_type=type(stop.exception()).__name__,
+                error=str(stop.exception()),
             )
+
+    def _announce_stop_in_progress(self, spec_id: str, watched: _Watched) -> None:
+        ending = watched.ending
+        if ending.announced_in_progress:
+            return
+        ending.announced_in_progress = True
+        _log.error(
+            "offline_exposure_stop_in_progress",
+            spec_id=spec_id,
+            deployment_instance_id=watched.deployment_instance_id,
+            attempt=ending.attempts,
+            deadline_seconds=self._deadline,
+        )
+
+    def _record_failed_stop(self, spec_id: str, watched: _Watched) -> None:
+        """A stop that ended with the deployment still held: wait, then try again."""
+
+        ending = watched.ending
+        stop, ending.stop = ending.stop, None
+        retry_in = STOP_RETRY_SECS[min(ending.attempts, len(STOP_RETRY_SECS)) - 1]
+        ending.next_attempt_at = self._clock() + retry_in
+        error = None if stop is None or stop.cancelled() else stop.exception()
+        _log.error(
+            "offline_exposure_stop_failed",
+            spec_id=spec_id,
+            deployment_instance_id=watched.deployment_instance_id,
+            attempt=ending.attempts,
+            retry_in_seconds=retry_in,
+            error_type=type(error).__name__ if error is not None else None,
+            error=str(error) if error is not None else "the engine still holds the deployment",
+        )
 
     async def _may_evaluate(self, spec_id: str, watched: _Watched) -> bool:
         """Whether the engine has finished starting enough to be asked about exposure.
@@ -330,14 +415,14 @@ class OfflineExposureGuard:
                 "offline_exposure_guard_evaluating",
                 spec_id=spec_id,
                 deployment_instance_id=watched.deployment_instance_id,
-                waited_seconds=round(time.monotonic() - watched.startup.watched_at, 3),
+                waited_seconds=round(self._clock() - watched.startup.watched_at, 3),
             )
             return True
 
         # Never blind: an engine stuck half-started must still end up guarded, so past
         # the bound this evaluates anyway. That lands on an unreliable snapshot and fails
         # closed -- the behaviour this whole change delays, which is the right way round.
-        if time.monotonic() - watched.startup.watched_at >= self._readiness_timeout:
+        if self._clock() - watched.startup.watched_at >= self._readiness_timeout:
             watched.startup.evaluating = True
             _log.error(
                 "offline_exposure_readiness_timeout",
@@ -398,6 +483,13 @@ class OfflineExposureGuard:
             await _sleep_until_stopped(stop, self._interval)
 
 
+def _observe_outcome(stop: asyncio.Future[None]) -> None:
+    # The guard reads the outcome on its next tick, but it may have stopped
+    # watching by then; reading it here keeps a failure from going unretrieved.
+    if not stop.cancelled():
+        stop.exception()
+
+
 async def _sleep_until_stopped(stop: asyncio.Event, seconds: float) -> None:
     with contextlib.suppress(TimeoutError):
         await asyncio.wait_for(stop.wait(), timeout=seconds)
@@ -405,6 +497,7 @@ async def _sleep_until_stopped(stop: asyncio.Event, seconds: float) -> None:
 
 __all__ = [
     "EVALUATION_DEADLINE_SECS",
+    "STOP_RETRY_SECS",
     "TICK_SECS",
     "OfflineExposureGuard",
     "OfflineSafetyEngine",

@@ -18,6 +18,7 @@ __all__ = [
     "VENUE_MODULE_BY_CONNECTOR",
     "venue_for_connector",
     "venue_module_name_for",
+    "venue_module_name_for_venue",
 ]
 
 # connector (spec.connector) -> the venue it trades on. This is the name that reaches
@@ -66,3 +67,16 @@ def venue_for_connector(connector: str) -> str:
             f"(wired: {', '.join(sorted(VENUE_BY_CONNECTOR))})"
         )
     return venue
+
+
+def venue_module_name_for_venue(venue: str) -> str | None:
+    """The venue module for a venue as NautilusTrader names it, or None if none is wired.
+
+    What a position or an instrument carries is its venue, not the connector that
+    traded it. Every venue here is wired by exactly one module, so the answer is
+    unambiguous.
+    """
+    for connector, name in VENUE_BY_CONNECTOR.items():
+        if name == str(venue).upper():
+            return VENUE_MODULE_BY_CONNECTOR[connector]
+    return None

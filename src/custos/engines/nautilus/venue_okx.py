@@ -189,3 +189,31 @@ async def validate_account_configuration(spec: dict, credential: dict) -> None:
 def client_order_id_is_valid(value: str) -> bool:
     """Validate the venue character set independently of its length bound."""
     return value.isascii() and value.isalnum()
+
+
+def cancel_rejection_kind(reason: str) -> str | None:
+    """No OKX refusal text has been measured, so none is classified.
+
+    Every refusal is then handled as unknown: a short back-off and five retries
+    before the order is given up on. The cost is that an order OKX no longer holds
+    is not handed to reconciliation the way a SoDEX one is.
+    """
+    del reason
+    return None
+
+
+def safety_request_budget() -> None:
+    """No measured per-account figure: the per-order retry caps are the only bound."""
+    return None
+
+
+def dust_counts_as_flat() -> bool:
+    """Whether a holding below the pair's smallest order counts as flat for safety.
+
+    No. Of 710 dollar-quoted OKX spot pairs with a price, 150 have a minimum order
+    worth more than 1% of the strictest local exposure ceiling, up to 32.49
+    (CT-USDT, 100 at 0.32486; public instruments and tickers, 2026-10-11). An
+    unpriced holding below that minimum could be worth that much, so it is valued
+    like any other holding, and without a price it fails closed.
+    """
+    return False

@@ -65,6 +65,8 @@ _MONEY_FIELDS_SHOULD_BE_DECIMAL = frozenset(
         "peak_equity",
         "current_equity",
         "drawdown_pct",
+        # DustHolding shares ``quantity`` and ``price``; adds ``threshold``.
+        "threshold",
     }
 )
 
@@ -72,6 +74,7 @@ _MONEY_FIELDS_SHOULD_BE_DECIMAL = frozenset(
 # new nullable money field has to be declared deliberately rather than inherited.
 _OPTIONAL_MONEY_FIELDS: dict[str, frozenset[str]] = {
     "OrderSnapshot": frozenset({"price"}),
+    "DustHolding": frozenset({"price"}),
 }
 
 
@@ -164,6 +167,43 @@ class OrderSnapshot:
 
 
 @dataclass(frozen=True)
+class DustHolding:
+    """A holding no order can take off the book, and what decided that.
+
+    Below the pair's minimum order quantity, or worth less than its minimum
+    notional at a known ``price``. ``quantity_source`` says which reading decided
+    it: the position, or on a cash account the base balance, which the position
+    rounds up to the step. ``price`` is None when nothing priced it, in which case
+    the holding is left out of the valuation rather than counted at zero.
+    """
+
+    instrument_id: str
+    asset: str
+    quantity: Decimal
+    quantity_source: str
+    reason: str
+    threshold: Decimal
+    threshold_source: str
+    price: Decimal | None
+
+    def __post_init__(self) -> None:
+        _reject_float_money(self)
+
+    def row(self) -> dict[str, str | None]:
+        """The holding as plain strings, for a summary or a log."""
+        return {
+            "instrument_id": self.instrument_id,
+            "asset": self.asset,
+            "quantity": str(self.quantity),
+            "quantity_source": self.quantity_source,
+            "reason": self.reason,
+            "threshold": str(self.threshold),
+            "threshold_source": self.threshold_source,
+            "price": None if self.price is None else str(self.price),
+        }
+
+
+@dataclass(frozen=True)
 class EngineStatus:
     """Engine-side runner state snapshot: aggregate counters + gross exposure +
     equity high-water mark + drawdown percentage.
@@ -184,6 +224,10 @@ class EngineStatus:
     drawdown_pct: Decimal
     reliable: bool = True
     unreliable_reason: str | None = None
+    # Holdings below what the venue will trade. Counted in ``position_count`` when
+    # they are open positions, and left out of ``open_notional`` and equity when
+    # unpriced: no order can change them, so they are listed rather than acted on.
+    dust: tuple[DustHolding, ...] = ()
 
     def __post_init__(self) -> None:
         _reject_float_money(self)

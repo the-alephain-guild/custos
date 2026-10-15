@@ -495,3 +495,65 @@ def test_the_venue_modules_and_the_nt_free_table_answer_alike() -> None:
 
     for connector, venue in VENUE_BY_CONNECTOR.items():
         assert _venue_module_for(connector).venue_name({"connector": connector}) == venue
+
+
+# How a venue says no to a cancel is the venue's to declare, like its order id cap:
+# the safety path's back-off depends on telling "this order does not exist" from
+# "this account is rate limited", and the two read differently on every venue.
+_REFUSAL_KINDS = {"not_found", "rate_limited", "transport", "refused", "unknown"}
+
+
+def test_every_venue_module_declares_its_refusal_kinds_and_request_budget() -> None:
+    from custos.engines.nautilus.cancel_discipline import SafetyRequestBudget
+
+    for connector, module in _venue_modules().items():
+        kind = module.cancel_rejection_kind("anything at all")
+        assert kind is None or kind in _REFUSAL_KINDS, connector
+        budget = module.safety_request_budget()
+        assert budget is None or isinstance(budget, SafetyRequestBudget), connector
+        # Whether a holding below the smallest order counts as flat for safety
+        # depends on what one minimum order is worth there, so it is the venue's too.
+        assert module.dust_counts_as_flat() in {True, False}, connector
+
+
+@pytest.mark.parametrize(
+    ("reason", "kind"),
+    [
+        # Each verbatim from the SoDEX spot testnet probe run.
+        ("order rejected: OrderNotFound", "not_found"),
+        (
+            'venue returned HTTP 429: {"code":-1,"error":"per-account order rate limit exceeded"}',
+            "rate_limited",
+        ),
+        (
+            "transport failed: HTTP transport error: client error (Connect): tls handshake "
+            "eof for url (https://testnet-gw.sodex.dev/api/v1/spot/trade/orders/batch)",
+            "transport",
+        ),
+        ("venue order id abc is not numeric", "unknown"),
+    ],
+)
+def test_sodex_refusal_texts_are_classified_from_the_logged_originals(
+    reason: str, kind: str
+) -> None:
+    from custos.engines.nautilus import venue_sodex
+
+    assert venue_sodex.cancel_rejection_kind(reason) == kind
+
+
+def test_the_sodex_request_budget_is_a_tenth_of_its_account_order_limit() -> None:
+    from custos.engines.nautilus import venue_sodex
+
+    budget = venue_sodex.safety_request_budget()
+    assert budget.capacity == 10
+    assert budget.refill_per_second == 1
+
+
+@pytest.mark.parametrize("module_name", ["venue_binance", "venue_okx"])
+def test_unmeasured_venues_declare_no_refusal_classification(module_name: str) -> None:
+    from importlib import import_module
+
+    module = import_module(f"custos.engines.nautilus.{module_name}")
+    assert module.cancel_rejection_kind("order rejected: OrderNotFound") is None
+    assert module.cancel_rejection_kind("venue returned HTTP 429: {}") is None
+    assert module.safety_request_budget() is None

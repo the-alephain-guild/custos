@@ -22,6 +22,11 @@ sidebar_position: 6
 | 以 `strategy_trading_scope_undeclared` 或 `signed_strategy_config_overrides_trading` 被隔离 | 策略配置，以及签名的 strategy config | 策略须在配置中声明 `trading`；签名的 strategy config 不得包含 `trading` 段 |
 | `portfolio_prices_missing:<instrument>` | 缺失标的及其标记/计价资产 | 检查名称、网络和行情可用性，不以零代替 |
 | `portfolio_equity_missing:<currency>` | 账户与结算币种 | 检查账户余额和估值所需价格 |
+| `asset_conversion_unavailable:<asset>/<currency>` | 该资产的账户余额，以及按结算币种为它定价的现货交易对 | 为该交易对订阅价格，或把余额移出该账户；达到或超过最小下单量的余额是真实库存，不会按零估值 |
+| 状态中出现 `dust` | 该持有、其数量及它低于的最小值 | 无需处理：任何订单都卖不出它，因此视为已平；详见[尘埃](/operator-guide/offline-testnet#状态与停止报告中的尘埃) |
+| 签名估值因 `portfolio_dust_unpriced` 停止 | 同名运行日志中列出的无价尘埃 | 为该交易对订阅价格；尘埃有价后签名估值恢复 |
+| `stop_summary.residual_orders` 不为空 | 按原因计数的每张交易所订单 | 详见[撤单被拒](/operator-guide/offline-testnet#交易所拒绝撤单时)；结束监督前在交易所处理这些订单 |
+| `offline_exposure_stop_failed` 反复出现 | `attempt`、重试间隔及停止自身的错误 | 守卫按 15、30、60、120 秒、之后每 300 秒重试；检查停止未能撤下的内容 |
 | 熔断后拒绝离线 generation | 熔断锁存与近期风险控制日志 | 核对持仓/订单，处理原因后再主动重启 |
 | SoDEX testnet 无法提供账户字段 | 离线 spec 契约 | 使用支持的 sandbox 路径，详见[SoDEX](/engines/sodex) |
 

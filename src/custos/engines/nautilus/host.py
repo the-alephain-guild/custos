@@ -48,33 +48,42 @@ from custos.core.runner_fact import (
     RunnerCapabilityReceipt,
     RunnerFactAuthority,
     RunnerFactEmitter,
+    runner_fact_event_id,
 )
 from custos.core.runner_fact_producer import (
     RunnerCapitalBasisSnapshot,
     RunnerFactDeployment,
     RunnerFactEventBridge,
+    RunnerRuntimeLogPort,
     VenueLedgerEvidence,
     strategy_signal_metadata,
 )
 from custos.core.runtime_log_fact import RunnerRuntimeLogEmitter, RuntimeLogRedactor
 from custos.core.venue_proxy import VenueProxy
+from custos.engines.nautilus.cancel_discipline import CancelDiscipline, PartitionGate
 from custos.engines.nautilus.portfolio_snapshot import (
+    NautilusPortfolioSnapshot,
     NautilusPortfolioSnapshotProvider,
 )
 from custos.engines.nautilus.settlement import settlement_currency_for_pairs
 from custos.engines.nautilus.strategy_event_forwarding import StrategyEventForwarder
-from custos.engines.nautilus.venues import venue_for_connector, venue_module_name_for
+from custos.engines.nautilus.venues import (
+    venue_for_connector,
+    venue_module_name_for,
+    venue_module_name_for_venue,
+)
 
 try:
     from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory
     from nautilus_trader.common import Environment, LoggerConfig, LogLevel
-    from nautilus_trader.live import LiveNode, NodeState
+    from nautilus_trader.live import LiveExecutionEngineConfig, LiveNode, NodeState
     from nautilus_trader.model import PriceType, TraderId
 except ImportError:  # nautilus extra absent (audit / paper install) — deploy fails fast
     SandboxExecutionClientFactory = None
     Environment = None
     LoggerConfig = None
     LogLevel = None
+    LiveExecutionEngineConfig = None
     LiveNode = None
     NodeState = None
     TraderId = None
@@ -89,6 +98,13 @@ _STOP_TIMEOUT_SECS = 30.0
 # After the graceful stop times out the run task is cancelled; a run that does not
 # end within this bound either may still be running, and is reaped in the background.
 _REAP_TIMEOUT_SECS = 10.0
+# Nautilus's continuous open-order check, off by default. It is what settles an
+# order the venue says it does not have: after this many misses it asks for the
+# order directly and, still missing, marks it rejected. Its threshold leaves an
+# order alone for five seconds after any local action on it, and the cancel
+# discipline never re-cancels a not-found order, so the check gets to decide.
+_OPEN_CHECK_INTERVAL_SECS = 10.0
+_OPEN_CHECK_MISSING_RETRIES = 3
 
 # Venues this runner can execute, per trading mode. Kept NT-free so admission can
 # query capability on a base install, and kept in sync with the venue-config modules'
@@ -123,6 +139,16 @@ def _venue_module_for(connector: str):
     from importlib import import_module
 
     return import_module(f"custos.engines.nautilus.{venue_module_name_for(connector)}")
+
+
+def _venue_dust_counts_as_flat(venue: str) -> bool:
+    """Whether the venue a holding is on exempts dust; a venue nothing wires exempts none."""
+    module_name = venue_module_name_for_venue(venue)
+    if module_name is None:
+        return False
+    from importlib import import_module
+
+    return import_module(f"custos.engines.nautilus.{module_name}").dust_counts_as_flat() is True
 
 
 def _require_authorized_trading_scope(strategy: object, spec: dict, venue) -> None:
@@ -348,6 +374,17 @@ def _apply_nautilus_knobs(builder, nautilus_cfg: dict):
         if key in nautilus_cfg:
             builder = apply(nautilus_cfg[key])
     return builder
+
+
+def _exec_engine_config(trading_mode: str) -> object | None:
+    """The execution engine config a real venue runs with; the sandbox keeps the default."""
+    if trading_mode == "sandbox":
+        return None
+    return LiveExecutionEngineConfig(
+        open_check_interval_secs=_OPEN_CHECK_INTERVAL_SECS,
+        open_check_open_only=True,
+        open_check_missing_retries=_OPEN_CHECK_MISSING_RETRIES,
+    )
 
 
 def _add_exec_client(builder, name: str, factory, config, trading_mode: str):
@@ -598,6 +635,10 @@ class NtTradingNodeHost:
         # deployment_instance_id -> the background reap of a run that outlived its
         # cancellation. Present only while the node may still be running.
         self._pending_reaps: dict[str, asyncio.Future[datetime]] = {}
+        # deployment_instance_id -> the stop under way. Every caller waits on this
+        # one task, and a caller that is cancelled only stops waiting: the shutdown
+        # policy it started runs to its own end instead of beginning again.
+        self._stops_in_flight: dict[str, asyncio.Task[EngineStopBoundary]] = {}
         self._shutdown_poll_secs = 0.2
         self._shutdown_stable_polls = 3
         self._shutdown_close_retry_secs = 2.0
@@ -611,6 +652,19 @@ class NtTradingNodeHost:
         # with the node, because the instance id outlives it and the next
         # generation must answer that question with its own evidence.
         self._containment_confirmed: set[str] = set()
+        # What each venue said about each safety-path cancel, per instance, and the
+        # request allowance of each account partition. Held here rather than in the
+        # stop or containment coroutine, which the guard cancels every tick.
+        self._cancel_disciplines: dict[str, CancelDiscipline] = {}
+        self._partition_gates: dict[tuple[str, str], PartitionGate] = {}
+        self._safety_clock: Callable[[], float] = time.monotonic
+        # deployment_instance_id -> the unpriced dust last signed as a runtime log, so
+        # the log says when it changes rather than on every valuation it blocks.
+        self._signed_unpriced_dust: dict[str, tuple[tuple[str, str, str], ...]] = {}
+        # deployment_instance_id -> the dust read just before its node was released:
+        # what a stop leaves behind, asked for once the node is gone.
+        self._dust_at_stop: dict[str, list[dict[str, str | None]] | None] = {}
+        self._runtime_logs: RunnerRuntimeLogPort | None = None
         self._tenant_id = tenant_id
         self._runner_id = runner_id
         self._runner_fact_emitter = runner_fact_emitter
@@ -627,6 +681,7 @@ class NtTradingNodeHost:
             NautilusPortfolioSnapshotProvider(
                 price_type_mid=PriceType.MID if PriceType else None,
                 price_type_last=PriceType.LAST if PriceType else None,
+                dust_counts_as_flat=_venue_dust_counts_as_flat,
             )
         )
 
@@ -689,6 +744,43 @@ class NtTradingNodeHost:
 
     def _release_execution_account_partition(self, deployment_instance_id: str) -> None:
         self._execution_account_partitions.pop(deployment_instance_id, None)
+
+    def _partition_gate(self, deployment_instance_id: str, budget) -> PartitionGate:
+        """The gate of the account this instance trades on, made on first use.
+
+        A sandbox instance has no real account, so it is its own partition.
+        """
+        partition = self._execution_account_partitions.get(
+            deployment_instance_id, ("sandbox", deployment_instance_id)
+        )
+        gate = self._partition_gates.get(partition)
+        if gate is None:
+            gate = self._partition_gates[partition] = PartitionGate(budget, self._safety_clock)
+        return gate
+
+    def _new_cancel_discipline(self, deployment_instance_id: str, venue) -> CancelDiscipline:
+        return CancelDiscipline(
+            deployment_instance_id=deployment_instance_id,
+            classify=venue.cancel_rejection_kind,
+            partition=self._partition_gate(deployment_instance_id, venue.safety_request_budget()),
+            clock=self._safety_clock,
+        )
+
+    def _cancel_discipline(self, deployment_instance_id: str) -> CancelDiscipline:
+        """The discipline deploy registered with this node.
+
+        A node assembled outside deploy has none; it gets one that classifies no
+        refusal and has no request budget, which is the most conservative there is.
+        """
+        discipline = self._cancel_disciplines.get(deployment_instance_id)
+        if discipline is None:
+            discipline = self._cancel_disciplines[deployment_instance_id] = CancelDiscipline(
+                deployment_instance_id=deployment_instance_id,
+                classify=lambda _reason: None,
+                partition=self._partition_gate(deployment_instance_id, None),
+                clock=self._safety_clock,
+            )
+        return discipline
 
     def node_holder(self) -> EngineNodeHolder | None:
         """The instance whose node holds this runner, if any (see EngineNodeCapacity).
@@ -795,6 +887,11 @@ class NtTradingNodeHost:
                 _environment_for_mode(trading_mode),
             )
             builder = builder.with_logging(_logger_config(spec))
+            exec_engine = _exec_engine_config(trading_mode)
+            if exec_engine is not None:
+                # It replaces the whole execution engine config, so it goes before
+                # the reconciliation flag and lookback that set fields of it.
+                builder = builder.with_exec_engine_config(exec_engine)
             # Real venues reconcile against exchange account state; the sandbox has none.
             builder = builder.with_reconciliation(reconciliation)
             builder = _apply_nautilus_knobs(builder, nautilus_cfg)
@@ -835,6 +932,7 @@ class NtTradingNodeHost:
                 identity,
                 runtime_strategy=strategy,
             )
+            discipline = self._new_cancel_discipline(deployment_instance_id, venue)
             self._attach_runtime_bridges(
                 deployment_instance_id,
                 strategy,
@@ -843,6 +941,7 @@ class NtTradingNodeHost:
                 runner_safety_boundary,
                 client_order_id_len_limit=venue.client_order_id_len_limit(),
                 client_order_id_validator=venue.client_order_id_is_valid,
+                cancel_discipline=discipline,
             )
         except Exception:
             self._release_execution_account_partition(deployment_instance_id)
@@ -853,6 +952,8 @@ class NtTradingNodeHost:
                 self._runner_fact_contexts[fact_context[0].deployment_instance_id] = fact_context
             if runner_safety_boundary is not None:
                 self._runner_safety_boundaries[deployment_instance_id] = runner_safety_boundary
+            self._cancel_disciplines[deployment_instance_id] = discipline
+            self._dust_at_stop.pop(deployment_instance_id, None)
             node.add_strategy(strategy)
             # Captured before the run: run_async moves the node into the awaitable, and
             # reaching for these through the node afterwards raises.
@@ -861,6 +962,7 @@ class NtTradingNodeHost:
         except Exception:
             self._runner_fact_contexts.pop(deployment_instance_id, None)
             self._runner_safety_boundaries.pop(deployment_instance_id, None)
+            self._cancel_disciplines.pop(deployment_instance_id, None)
             self._event_forwarding_failures.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)
             self._dispose_node(deployment_instance_id, node)
@@ -978,6 +1080,7 @@ class NtTradingNodeHost:
         *,
         client_order_id_len_limit: int | None = None,
         client_order_id_validator=None,
+        cancel_discipline: CancelDiscipline | None = None,
     ) -> None:
         """Wire the runner onto the strategy, or refuse the deploy.
 
@@ -1009,6 +1112,13 @@ class NtTradingNodeHost:
                 quantity_to_base=lambda instrument, quantity: _base_fill_quantity(
                     cache, instrument, quantity
                 ),
+                # The gate's own verdict, not a second judgement: the fact says what
+                # the order was allowed to be.
+                order_reduces_exposure=(
+                    runner_safety_boundary.judged_risk_reducing
+                    if runner_safety_boundary is not None
+                    else None
+                ),
                 runtime_log_emitter=RunnerRuntimeLogEmitter(
                     emitter=self._runner_fact_emitter,
                     capability=self._capability_receipt,
@@ -1016,6 +1126,10 @@ class NtTradingNodeHost:
                 ),
             )
             fact_bridge.bootstrap(forwarder)
+        if cancel_discipline is not None:
+            # Never raises: the discipline reports its own failures, so a broken
+            # classifier does not mark the deployment's observations unreliable.
+            forwarder.add_order_sink("cancel_discipline", cancel_discipline.on_order_event)
         if self._observation_sinks is not None:
             order_sink, position_sink = self._observation_sinks
             forwarder.add_order_sink(
@@ -1227,7 +1341,35 @@ class NtTradingNodeHost:
         undisposed, reaped in the background, and reported with ``reaped=False``.
         A second stop while that reap is pending reports the same reap and does
         not run the shutdown policy again.
+
+        One stop runs per instance at a time. A second caller waits on the first
+        stop and gets its answer, success or failure, and a caller that is
+        cancelled stops waiting without stopping the stop. A failure is not
+        remembered past the waiters it reached: the next stop starts afresh.
         """
+        in_flight = self._stops_in_flight.get(deployment_instance_id)
+        if in_flight is None:
+            in_flight = asyncio.ensure_future(self._stop_at_boundary_once(deployment_instance_id))
+            self._stops_in_flight[deployment_instance_id] = in_flight
+            in_flight.add_done_callback(
+                functools.partial(self._forget_stop_in_flight, deployment_instance_id)
+            )
+        return await asyncio.shield(in_flight)
+
+    def _forget_stop_in_flight(
+        self, deployment_instance_id: str, task: asyncio.Task[EngineStopBoundary]
+    ) -> None:
+        if self._stops_in_flight.get(deployment_instance_id) is task:
+            self._stops_in_flight.pop(deployment_instance_id, None)
+        # Every waiter may have been cancelled; the outcome is still observed here.
+        if not task.cancelled() and task.exception() is not None:
+            _log.warning(
+                "nt_stop_failed",
+                deployment_instance_id=deployment_instance_id,
+                **_sanitize_exception(task.exception()),
+            )
+
+    async def _stop_at_boundary_once(self, deployment_instance_id: str) -> EngineStopBoundary:
         requested_at = datetime.now(UTC)
         pending = self._pending_reaps.get(deployment_instance_id)
         if pending is not None:
@@ -1257,6 +1399,7 @@ class NtTradingNodeHost:
             )
 
         task = runtime.task
+        self._dust_at_stop.pop(deployment_instance_id, None)
         policy = self._shutdown_policies.get(
             deployment_instance_id,
             _ShutdownPolicy(position_policy="preserve", confirmation_timeout_secs=30.0),
@@ -1335,6 +1478,12 @@ class NtTradingNodeHost:
             except (asyncio.CancelledError, Exception):  # noqa: BLE001 — reaping the run task
                 if not task.done():
                     raise
+        if deployment_instance_id not in self._dust_at_stop:
+            # No boundary read to take it from: judge the positions alone, which is
+            # not a valuation and needs none of what the stop failed to reach.
+            self._dust_at_stop[deployment_instance_id] = self._position_dust_rows(
+                deployment_instance_id, runtime
+            )
         self._release_stopped_node(deployment_instance_id, runtime)
         return EngineStopBoundary(
             stop_requested_at=requested_at,
@@ -1372,8 +1521,10 @@ class NtTradingNodeHost:
         snapshot = self._portfolio_snapshot_provider.snapshot(
             runtime, currency=currency, refuse_float=True
         )
+        # The last look at the account before the node goes: what the stop leaves.
+        self._dust_at_stop[deployment_instance_id] = [holding.row() for holding in snapshot.dust]
         if (
-            not snapshot.reliable
+            not snapshot.signable
             or currency is None
             or snapshot.currency != currency
             or not snapshot.price_watermarks_complete
@@ -1382,6 +1533,7 @@ class NtTradingNodeHost:
                 "nt_stop_boundary_valuation_unreliable",
                 deployment_instance_id=deployment_instance_id,
                 reason=snapshot.unreliable_reason
+                or ("portfolio_dust_unpriced" if snapshot.unpriced_dust else None)
                 or ("price_watermark_missing" if snapshot.reliable else None),
             )
             return None, "valuation_unreliable"
@@ -1426,6 +1578,8 @@ class NtTradingNodeHost:
         self._settlement_currencies.pop(deployment_instance_id, None)
         self._runner_fact_contexts.pop(deployment_instance_id, None)
         self._runner_safety_boundaries.pop(deployment_instance_id, None)
+        self._cancel_disciplines.pop(deployment_instance_id, None)
+        self._signed_unpriced_dust.pop(deployment_instance_id, None)
         self._event_forwarding_failures.pop(deployment_instance_id, None)
         self._release_execution_account_partition(deployment_instance_id)
         if self._active_nodes.get(deployment_instance_id) is runtime:
@@ -1498,6 +1652,44 @@ class NtTradingNodeHost:
         return positions, orders
 
     @staticmethod
+    def _risk_increasing_orders(
+        deployment_instance_id: str, runtime: _NodeRuntime, orders: list
+    ) -> list:
+        """The working orders that could add exposure, judged as the submission gate does.
+
+        By what each order would do to its strategy's open position, not by its
+        reduce-only flag: a spot venue refuses that flag, so its exits carry none, and
+        judged by the flag they were withdrawn as risk-increasing. Each order is judged
+        against what the orders before it already claim of the position, so two exits
+        for the whole of it do not both pass. Reduce-only orders go first: their answer
+        does not depend on the claims, and they are the protection to keep.
+
+        Anything that cannot be judged is counted as risk-increasing, so the judgement
+        only ever withdraws more than the flag did, never less.
+        """
+        from custos.engines.nautilus.runner_safety import NautilusCachedOrderSemantics
+
+        semantics = NautilusCachedOrderSemantics(runtime.cache)
+        claimed: dict[str, Decimal] = {}
+        risk_increasing = []
+        for order in sorted(orders, key=lambda order: not bool(order.is_reduce_only)):
+            try:
+                instrument_id = semantics.order_instrument_id(order)
+                already = claimed.get(instrument_id, Decimal(0))
+                if semantics.order_is_risk_reducing(order, already):
+                    claimed[instrument_id] = already + semantics.order_quantity(order)
+                    continue
+            except Exception as exc:  # noqa: BLE001 - unjudged counts as risk-increasing
+                _log.error(
+                    "nt_order_risk_unjudged",
+                    deployment_instance_id=deployment_instance_id,
+                    client_order_id=str(getattr(order, "client_order_id", None)),
+                    error_type=type(exc).__name__,
+                )
+            risk_increasing.append(order)
+        return risk_increasing
+
+    @staticmethod
     def _instrument_ids(positions: list, orders: list) -> set:
         return {
             instrument_id
@@ -1518,7 +1710,7 @@ class NtTradingNodeHost:
         deadline = asyncio.get_running_loop().time() + timeout_secs
         while asyncio.get_running_loop().time() < deadline:
             _positions, orders = self._open_venue_state(runtime)
-            risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
+            risk_increasing = self._risk_increasing_orders(deployment_instance_id, runtime, orders)
             if not risk_increasing:
                 _log.info(
                     "nt_shutdown_preserve_confirmed",
@@ -1539,12 +1731,21 @@ class NtTradingNodeHost:
                     raise RuntimeError(
                         "shutdown preserve cannot cancel risk-increasing venue orders"
                     )
+                discipline = self._cancel_discipline(deployment_instance_id)
                 for order in risk_increasing:
-                    # 2.0 cancels by id. Passing the order raises before anything is
-                    # withdrawn, so a preserve shutdown could never finish and the
-                    # orderly handover to a new generation stalled with it.
-                    canceler.cancel_order(order.client_order_id)
+                    discipline.cancel(canceler, order)
             await asyncio.sleep(self._shutdown_poll_secs)
+        _positions, orders = self._open_venue_state(runtime)
+        risk_increasing = self._risk_increasing_orders(deployment_instance_id, runtime, orders)
+        _log.error(
+            "nt_shutdown_preserve_unconfirmed",
+            deployment_instance_id=deployment_instance_id,
+            risk_increasing_order_count=len(risk_increasing),
+            residual_orders=self._cancel_discipline(deployment_instance_id).residual(
+                risk_increasing
+            ),
+            timeout_secs=timeout_secs,
+        )
         raise RuntimeError("shutdown preserve confirmation timed out")
 
     async def _flatten_and_confirm_shutdown(
@@ -1563,6 +1764,7 @@ class NtTradingNodeHost:
         while asyncio.get_running_loop().time() < deadline:
             now = asyncio.get_running_loop().time()
             positions, orders = self._open_venue_state(runtime)
+            positions = self._without_dust(deployment_instance_id, runtime, positions)
             if not positions and not orders:
                 stable_polls += 1
                 if stable_polls >= self._shutdown_stable_polls:
@@ -1587,31 +1789,109 @@ class NtTradingNodeHost:
                 and now - last_close_request < self._shutdown_close_retry_secs
             )
             if orders and not close_ack_pending:
-                canceler = next(
-                    (
-                        strategy
-                        for strategy in strategies
-                        if callable(getattr(strategy, "cancel_all_orders", None))
-                    ),
-                    None,
-                )
+                canceler = self._canceler(strategies)
                 if canceler is None:
                     raise RuntimeError("shutdown flatten cannot cancel venue orders")
-                for instrument_id in instrument_ids:
-                    canceler.cancel_all_orders(instrument_id)
+                # One by one rather than cancel_all_orders, which would carry every
+                # order past what the venue last said about it.
+                discipline = self._cancel_discipline(deployment_instance_id)
+                for order in orders:
+                    discipline.cancel(canceler, order)
             elif not orders and positions and not close_ack_pending:
                 await self.flatten_positions(deployment_instance_id, "shutdown_policy")
                 last_close_request = now
             await asyncio.sleep(self._shutdown_poll_secs)
         positions, orders = self._open_venue_state(runtime)
+        positions = self._without_dust(deployment_instance_id, runtime, positions)
         _log.error(
             "nt_shutdown_flatten_unconfirmed",
             deployment_instance_id=deployment_instance_id,
             position_count=len(positions),
             order_count=len(orders),
+            residual_orders=self._cancel_discipline(deployment_instance_id).residual(orders),
             timeout_secs=timeout_secs,
         )
         raise RuntimeError("shutdown flatten confirmation timed out")
+
+    def stop_residue(self, deployment_instance_id: str) -> dict[str, int] | None:
+        """What a stop has yet to see withdrawn, counted by why each order is still open.
+
+        Empty once the node is gone: a confirmed stop leaves nothing it was asked to
+        withdraw, and protection a preserve stop keeps is not residue. None when the
+        venue state cannot be read.
+        """
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is None or runtime.task.done():
+            return {}
+        policy = self._shutdown_policies.get(deployment_instance_id)
+        try:
+            _positions, orders = self._open_venue_state(runtime)
+        except RuntimeError:
+            return None
+        if policy is None or policy.position_policy != "flatten":
+            orders = self._risk_increasing_orders(deployment_instance_id, runtime, orders)
+        return self._cancel_discipline(deployment_instance_id).residual(orders)
+
+    def stop_dust(self, deployment_instance_id: str) -> list[dict[str, str | None]] | None:
+        """The dust a stop leaves behind: no order could take it, so it outlives the stop.
+
+        Read now while the node is still held; once it is released, as read just
+        before. None when it could not be read.
+        """
+        runtime = self._active_nodes.get(deployment_instance_id)
+        if runtime is not None and not runtime.task.done():
+            return self._dust_rows(deployment_instance_id, runtime)
+        return self._dust_at_stop.get(deployment_instance_id)
+
+    def _dust_rows(
+        self, deployment_instance_id: str, runtime: _NodeRuntime
+    ) -> list[dict[str, str | None]] | None:
+        try:
+            snapshot = self._portfolio_snapshot_provider.snapshot(
+                runtime, currency=self._settlement_currencies.get(deployment_instance_id)
+            )
+            return [holding.row() for holding in snapshot.dust]
+        except Exception as exc:  # noqa: BLE001 - a stop's summary must still be written
+            _log.warning(
+                "nt_stop_dust_unreadable",
+                deployment_instance_id=deployment_instance_id,
+                error_type=type(exc).__name__,
+            )
+            return None
+
+    def _position_dust_rows(
+        self, deployment_instance_id: str, runtime: _NodeRuntime
+    ) -> list[dict[str, str | None]] | None:
+        try:
+            dust = self._portfolio_snapshot_provider.position_dust(runtime)
+        except Exception as exc:  # noqa: BLE001 - a stop's summary must still be written
+            _log.warning(
+                "nt_stop_dust_unreadable",
+                deployment_instance_id=deployment_instance_id,
+                error_type=type(exc).__name__,
+            )
+            return None
+        return [holding.row() for holding in dust.values()]
+
+    def _without_dust(self, deployment_instance_id: str, runtime: _NodeRuntime, positions: list):
+        """The positions an order could still close: dust counts as flat.
+
+        No order can close dust, so waiting for it to go would never confirm, and
+        asking for it to be closed would only be refused. A judgement that cannot be
+        made counts every position as real.
+        """
+        if not positions:
+            return positions
+        try:
+            dust = self._portfolio_snapshot_provider.position_dust(runtime)
+        except Exception as exc:  # noqa: BLE001 - unjudged counts as real
+            _log.error(
+                "nt_position_dust_unjudged",
+                deployment_instance_id=deployment_instance_id,
+                error_type=type(exc).__name__,
+            )
+            return positions
+        return [position for position in positions if str(position.instrument_id) not in dust]
 
     def attached(self, deployment_instance_id: str) -> bool:
         # Answered from the live node registry rather than the authority record:
@@ -1803,8 +2083,7 @@ class NtTradingNodeHost:
                 f"RunnerFact DeploymentInstance {deployment_instance_id!r} is not active"
             )
         snapshot = self._portfolio_snapshot_provider.snapshot(runtime, currency=currency)
-        if not snapshot.reliable:
-            raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
+        self._require_signable(deployment_instance_id, snapshot)
         return snapshot.equity, snapshot.runner_fact_rows()
 
     async def runner_fact_valuation_snapshot(
@@ -1817,8 +2096,7 @@ class NtTradingNodeHost:
                 f"RunnerFact DeploymentInstance {deployment_instance_id!r} is not active"
             )
         snapshot = self._portfolio_snapshot_provider.snapshot(runtime, currency=currency)
-        if not snapshot.reliable:
-            raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
+        self._require_signable(deployment_instance_id, snapshot)
         return snapshot.equity, snapshot.valuation_rows()
 
     async def runner_fact_cash_snapshot(
@@ -1828,9 +2106,94 @@ class NtTradingNodeHost:
         if runtime is None or deployment_instance_id not in self._runner_fact_contexts:
             raise RuntimeError("cash inventory requires an active RunnerFact deployment")
         snapshot = self._portfolio_snapshot_provider.snapshot(runtime, currency=currency)
-        if not snapshot.reliable or snapshot.cash_inventory is None:
+        self._require_signable(deployment_instance_id, snapshot)
+        if snapshot.cash_inventory is None:
             raise RuntimeError("cash inventory is unavailable or unreliable")
         return snapshot.equity, snapshot.cash_inventory
+
+    def _require_signable(
+        self, deployment_instance_id: str, snapshot: NautilusPortfolioSnapshot
+    ) -> None:
+        """Refuse a signed valuation the account cannot fully back.
+
+        Safety may leave unpriced dust out; a signed valuation may not, so it is not
+        produced, and a signed runtime log says why.
+        """
+        if not snapshot.reliable:
+            raise RuntimeError(f"portfolio snapshot unreliable: {snapshot.unreliable_reason}")
+        self._sign_unpriced_dust(deployment_instance_id, snapshot)
+        if not snapshot.signable:
+            raise RuntimeError("portfolio snapshot unsignable: portfolio_dust_unpriced")
+
+    def _sign_unpriced_dust(
+        self, deployment_instance_id: str, snapshot: NautilusPortfolioSnapshot
+    ) -> None:
+        """Sign the unpriced dust that holds valuations back, once each time it changes."""
+        holdings = snapshot.unpriced_dust
+        identity = tuple(
+            sorted(
+                (holding.instrument_id, str(holding.quantity), holding.quantity_source)
+                for holding in holdings
+            )
+        )
+        if self._signed_unpriced_dust.get(deployment_instance_id, ()) == identity:
+            return
+        self._signed_unpriced_dust[deployment_instance_id] = identity
+        if not holdings:
+            return
+        fields = {
+            "holdings": [
+                {
+                    key: value
+                    for key, value in holding.row().items()
+                    if key not in {"reason", "price"}
+                }
+                for holding in holdings
+            ]
+        }
+        _log.warning(
+            "nt_portfolio_dust_unpriced",
+            deployment_instance_id=deployment_instance_id,
+            **fields,
+        )
+        logs = self._runtime_log()
+        context = self._runner_fact_contexts.get(deployment_instance_id)
+        if logs is None or context is None:
+            return
+        authority = context[0].authority
+        try:
+            logs.emit_sync(
+                authority,
+                level="WARN",
+                component="custos.portfolio",
+                message="portfolio_dust_unpriced",
+                structured_fields=fields,
+                correlation_id=runner_fact_event_id(
+                    authority.stream_key,
+                    "portfolio_dust_unpriced",
+                    *(part for entry in identity for part in entry),
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 - asked again on the next valuation
+            self._signed_unpriced_dust.pop(deployment_instance_id, None)
+            _log.error(
+                "nt_portfolio_dust_fact_failed",
+                deployment_instance_id=deployment_instance_id,
+                error_type=type(exc).__name__,
+            )
+
+    def _runtime_log(self) -> RunnerRuntimeLogPort | None:
+        if (
+            self._runtime_logs is None
+            and self._runner_fact_emitter is not None
+            and self._capability_receipt is not None
+        ):
+            self._runtime_logs = RunnerRuntimeLogEmitter(
+                emitter=self._runner_fact_emitter,
+                capability=self._capability_receipt,
+                redactor=RuntimeLogRedactor(),
+            )
+        return self._runtime_logs
 
     async def runner_fact_capital_snapshot(
         self, deployment_instance_id: str, currency: str
@@ -1951,11 +2314,14 @@ class NtTradingNodeHost:
         # exactly the exposure this is containing. Reduce-only orders stay: they are
         # the position's own protection, which containment wants kept.
         working = self._cancel_risk_increasing_orders(deployment_instance_id, runtime, reason)
-        instrument_ids = {position.instrument_id for position in runtime.cache.positions_open()}
+        held = list(runtime.cache.positions_open())
+        closable = self._without_dust(deployment_instance_id, runtime, held)
+        instrument_ids = {position.instrument_id for position in closable}
         if not instrument_ids:
-            if working:
-                # Nothing to close, but something that could reopen. The cancel above
-                # was a request like any other; confirm the venue honoured it.
+            if working or held:
+                # Nothing to close, but something that could reopen, or dust no order
+                # can take. The cancel above was a request like any other, and the
+                # dust is what reconciliation delivered; confirm against both.
                 await self._confirm_containment(deployment_instance_id, runtime, reason)
                 return
             # Nothing was contained, and at startup that is not the same as nothing being
@@ -1978,17 +2344,22 @@ class NtTradingNodeHost:
                 reason=reason,
             )
             return
-        self._request_close(runtime, instrument_ids)
+        close_requests = self._request_close(deployment_instance_id, runtime, instrument_ids)
         _log.warning(
             "positions_flattened",
             deployment_instance_id=deployment_instance_id,
             reason=reason,
             instrument_count=len(instrument_ids),
+            close_requests=close_requests,
         )
         await self._confirm_containment(deployment_instance_id, runtime, reason)
 
-    @staticmethod
-    def _request_close(runtime: _NodeRuntime, instrument_ids: set) -> None:
+    def _request_close(
+        self, deployment_instance_id: str, runtime: _NodeRuntime, instrument_ids: set
+    ) -> int:
+        """Ask each strategy to close each instrument, as the account allows; returns how many."""
+        discipline = self._cancel_discipline(deployment_instance_id)
+        sent = 0
         for strategy in runtime.strategies:
             # NT's own close_all_positions is reduce-only, and a venue that refuses that
             # form refuses it here too -- leaving containment unable to contain at the
@@ -1997,11 +2368,14 @@ class NtTradingNodeHost:
             # Duck-typed, not isinstance: the toolkit is not required of a deployment,
             # and a strategy without it has to keep behaving exactly as before.
             close_with_fallback = getattr(strategy, "close_all_positions_with_fallback", None)
+            close = (
+                close_with_fallback
+                if callable(close_with_fallback)
+                else strategy.close_all_positions
+            )
             for instrument_id in instrument_ids:
-                if callable(close_with_fallback):
-                    close_with_fallback(instrument_id)
-                else:
-                    strategy.close_all_positions(instrument_id)
+                sent += discipline.close(functools.partial(close, instrument_id))
+        return sent
 
     async def _confirm_containment(
         self,
@@ -2046,7 +2420,8 @@ class NtTradingNodeHost:
                     error_type=type(exc).__name__,
                 )
                 return
-            risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
+            positions = self._without_dust(deployment_instance_id, runtime, positions)
+            risk_increasing = self._risk_increasing_orders(deployment_instance_id, runtime, orders)
             if not positions and not risk_increasing:
                 self._containment_confirmed.add(deployment_instance_id)
                 _log.info(
@@ -2060,7 +2435,7 @@ class NtTradingNodeHost:
             if now >= deadline:
                 break
             if now - last_request >= self._containment_retry_secs:
-                self._retry_containment(runtime, positions, risk_increasing)
+                self._retry_containment(deployment_instance_id, runtime, positions, risk_increasing)
                 last_request = now
             await asyncio.sleep(self._shutdown_poll_secs)
         _log.error(
@@ -2069,22 +2444,29 @@ class NtTradingNodeHost:
             reason=reason,
             position_count=len(positions),
             risk_increasing_order_count=len(risk_increasing),
+            residual_orders=self._cancel_discipline(deployment_instance_id).residual(
+                risk_increasing
+            ),
         )
 
     def _retry_containment(
         self,
+        deployment_instance_id: str,
         runtime: _NodeRuntime,
         positions: list,
         risk_increasing: list,
     ) -> None:
-        """Ask again for exactly what is still outstanding, and nothing else."""
+        """Ask again for what is still outstanding, as far as the venue's answers allow."""
         if risk_increasing:
             canceler = self._canceler(runtime.strategies)
             if canceler is not None:
+                discipline = self._cancel_discipline(deployment_instance_id)
                 for order in risk_increasing:
-                    canceler.cancel_order(order.client_order_id)
+                    discipline.cancel(canceler, order)
         if positions:
-            self._request_close(runtime, self._instrument_ids(positions, []))
+            self._request_close(
+                deployment_instance_id, runtime, self._instrument_ids(positions, [])
+            )
 
     @staticmethod
     def _canceler(strategies: tuple):
@@ -2128,7 +2510,7 @@ class NtTradingNodeHost:
                 error_type=type(exc).__name__,
             )
             return None
-        risk_increasing = [order for order in orders if not bool(order.is_reduce_only)]
+        risk_increasing = self._risk_increasing_orders(deployment_instance_id, runtime, orders)
         if not risk_increasing:
             return 0
         canceler = self._canceler(runtime.strategies)
@@ -2140,13 +2522,14 @@ class NtTradingNodeHost:
                 order_count=len(risk_increasing),
             )
             return len(risk_increasing)
-        for order in risk_increasing:
-            canceler.cancel_order(order.client_order_id)
+        discipline = self._cancel_discipline(deployment_instance_id)
+        cancel_requests = sum(discipline.cancel(canceler, order) for order in risk_increasing)
         _log.warning(
             "nt_containment_cancelled_risk_increasing_orders",
             deployment_instance_id=deployment_instance_id,
             reason=reason,
             order_count=len(risk_increasing),
+            cancel_requests=cancel_requests,
         )
         return len(risk_increasing)
 
@@ -2209,13 +2592,19 @@ class NtTradingNodeHost:
         snapshot = self._portfolio_snapshot_provider.snapshot(
             runtime, currency=self._declared_currency(deployment_instance_id)
         )
+        # What the cache holds open, dust included, whatever the valuation made of it:
+        # a status that could not be valued must not report the account as empty.
+        try:
+            position_count = len(runtime.cache.positions_open())
+        except AttributeError:
+            position_count = len(snapshot.positions)
         if forwarding_failure is not None:
             # An event never reached one of the runner's sinks, so a fact is missing or
             # a reservation is still held. Whatever the portfolio says, what this
             # deployment reports about itself no longer matches what happened.
             return EngineStatus(
                 phase="degraded",
-                position_count=len(snapshot.positions),
+                position_count=position_count,
                 order_count=len(orders),
                 open_notional=snapshot.open_notional,
                 peak_equity=self._peak_equity.get(deployment_instance_id, Decimal("0")),
@@ -2223,11 +2612,12 @@ class NtTradingNodeHost:
                 drawdown_pct=Decimal("0"),
                 reliable=False,
                 unreliable_reason=f"runner_event_forwarding_failed:{forwarding_failure}",
+                dust=snapshot.dust,
             )
         if not snapshot.reliable:
             return EngineStatus(
                 phase="degraded",
-                position_count=len(snapshot.positions),
+                position_count=position_count,
                 order_count=len(orders),
                 open_notional=snapshot.open_notional,
                 peak_equity=self._peak_equity.get(deployment_instance_id, Decimal("0")),
@@ -2235,6 +2625,7 @@ class NtTradingNodeHost:
                 drawdown_pct=Decimal("0"),
                 reliable=False,
                 unreliable_reason=snapshot.unreliable_reason,
+                dust=snapshot.dust,
             )
 
         current_equity = snapshot.equity
@@ -2248,13 +2639,14 @@ class NtTradingNodeHost:
             drawdown_pct = Decimal("0")
         return EngineStatus(
             phase="running",
-            position_count=len(snapshot.positions),
+            position_count=position_count,
             order_count=len(orders),
             open_notional=snapshot.open_notional,
             peak_equity=peak,
             current_equity=current_equity,
             drawdown_pct=drawdown_pct,
             reliable=True,
+            dust=snapshot.dust,
         )
 
     @staticmethod

@@ -12,8 +12,11 @@ import asyncio
 import json
 import os
 import signal
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
+
+from structlog.testing import capture_logs
 
 from custos.offline.daemon import run_offline_lane
 from custos.offline.spec import OfflineDeploymentMessage
@@ -75,12 +78,12 @@ def _message(spec_id: str = "supertrend-sandbox", **overrides: Any) -> bytes:
 
 
 async def _start(
-    tmp_path: Path, messages: list[bytes], **overrides: Any
+    tmp_path: Path, messages: list[bytes], engine_type: type[_Engine] = _Engine, **overrides: Any
 ) -> tuple[asyncio.Task[int], asyncio.Event, _Engine, _JetStream, _FakeConnection]:
     stop = asyncio.Event()
     jetstream = _JetStream(messages, stop)
     connection = _FakeConnection(jetstream)
-    engine = _Engine([connection])
+    engine = engine_type([connection])
 
     async def connect(url: str) -> _FakeConnection:
         return connection
@@ -168,6 +171,7 @@ async def test_a_stop_that_does_not_finish_in_time_fails_the_exit_code(tmp_path:
         "observed_generation": 1,
         "phase": "stopped",
         "health": "unhealthy",
+        "stop_summary": {"outcome": "stop_timed_out", "residual_orders": None, "dust": None},
     }
 
 
@@ -216,3 +220,125 @@ async def test_a_second_signal_while_stopping_changes_nothing(tmp_path: Path) ->
 
     assert await asyncio.wait_for(lane, timeout=2) == 0
     assert len(engine.stops) == 1
+
+
+# The account 60366 remainder as the host lists it.
+DUST_ROW: dict[str, str | None] = {
+    "instrument_id": "vBTC_vUSDC.SODEX_SPOT",
+    "asset": "VBTC",
+    "quantity": "0.00000935",
+    "quantity_source": "balance",
+    "reason": "quantity",
+    "threshold": "0.00001",
+    "threshold_source": "size_increment",
+    "price": None,
+}
+
+
+class _GuardStoppedEngine(_Engine):
+    """Breaches every ceiling, so the guard stops it; the stop ends when the test says.
+
+    Its stop is one stop however many callers wait on it, as the host's is: what is
+    under test here is that the lane's shutdown waits on the guard's stop instead of
+    starting another, and that it says how each deployment ended.
+    """
+
+    def __init__(self, connection: list[_FakeConnection]) -> None:
+        super().__init__(connection)
+        self.open_notional = Decimal("10000")
+        self.released = asyncio.Event()
+        self.residue: dict[str, int] = {"in_flight": 1}
+        self.dust: list[dict[str, str | None]] = [DUST_ROW]
+
+    async def stop(self, deployment_instance_id: str) -> None:
+        self.stops.append(deployment_instance_id)
+        await self.released.wait()
+        self._attached.discard(deployment_instance_id)
+
+    def stop_residue(self, deployment_instance_id: str) -> dict[str, int]:
+        return dict(self.residue) if self.attached(deployment_instance_id) else {}
+
+    def stop_dust(self, deployment_instance_id: str) -> list[dict[str, str | None]]:
+        """Dust outlives the stop: it is what no order could take, so it is still there."""
+        return list(self.dust)
+
+
+def _summaries(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [entry for entry in logs if entry["event"] == "offline_shutdown_summary"]
+
+
+async def test_shutdown_waits_for_the_guards_stop_and_summarises_it(tmp_path: Path) -> None:
+    lane, stop, engine, jetstream, _ = await _start(
+        tmp_path,
+        [_message()],
+        engine_type=_GuardStoppedEngine,
+        safety_interval=0.01,
+        safety_deadline=0.02,
+    )
+    await _until(lambda: engine.stops)
+    instance = engine.stops[0]
+
+    with capture_logs() as logs:
+        stop.set()
+        await asyncio.sleep(0.05)
+        engine.released.set()
+        assert await asyncio.wait_for(lane, timeout=2) == 0
+
+    assert engine.stops == [instance], "shutdown joined the guard's stop"
+    summaries = _summaries(logs)
+    assert len(summaries) == 1
+    assert summaries[0]["clean"] is True
+    assert summaries[0]["deployments"] == [
+        {
+            "spec_id": "supertrend-sandbox",
+            "deployment_instance_id": instance,
+            "outcome": "stopped",
+            "residual_orders": {},
+            "dust": [DUST_ROW],
+        }
+    ]
+    assert _statuses(jetstream)[-1]["stop_summary"] == {
+        "outcome": "stopped",
+        "residual_orders": {},
+        "dust": [DUST_ROW],
+    }
+
+
+async def test_a_stop_still_unconfirmed_at_the_deadline_is_summarised_with_what_is_left(
+    tmp_path: Path,
+) -> None:
+    lane, stop, engine, jetstream, _ = await _start(
+        tmp_path,
+        [_message()],
+        engine_type=_GuardStoppedEngine,
+        safety_interval=0.01,
+        safety_deadline=0.02,
+        shutdown_deadline=0.05,
+    )
+    await _until(lambda: engine.stops)
+    instance = engine.stops[0]
+
+    with capture_logs() as logs:
+        stop.set()
+        assert await asyncio.wait_for(lane, timeout=2) == 1
+    engine.released.set()
+
+    assert engine.stops == [instance]
+    summaries = _summaries(logs)
+    assert summaries[0]["clean"] is False
+    assert summaries[0]["deployments"] == [
+        {
+            "spec_id": "supertrend-sandbox",
+            "deployment_instance_id": instance,
+            "outcome": "stop_timed_out",
+            "residual_orders": {"in_flight": 1},
+            "dust": [DUST_ROW],
+        }
+    ]
+    last = _statuses(jetstream)[-1]
+    assert last["health"] == "unhealthy"
+    assert last["stop_summary"] == {
+        "outcome": "stop_timed_out",
+        "residual_orders": {"in_flight": 1},
+        "dust": [DUST_ROW],
+    }

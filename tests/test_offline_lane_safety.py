@@ -195,6 +195,17 @@ class _SafetyEngine:
         return deployment_instance_id not in self._released
 
 
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 1_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
 def _guard(engine: _SafetyEngine, **overrides: Any) -> OfflineExposureGuard:
     return OfflineExposureGuard(engine=engine, interval=0.001, **overrides)
 
@@ -461,19 +472,27 @@ async def test_stopping_the_deployment_does_not_unlatch_the_generation_gate() ->
     assert not guard.allows_new_generations()
 
 
-async def test_a_deployment_that_will_not_stop_is_reported_on_every_tick() -> None:
-    """One shout and then silence would recreate the blind spot being removed."""
+async def test_a_deployment_that_will_not_stop_is_retried_and_reported_on_each_attempt() -> None:
+    """One shout and then silence would recreate the blind spot being removed.
 
+    This used to assert a stop and an alarm on every tick. A stop runs the shutdown
+    policy, which withdraws orders, so one per tick was the request storm the
+    back-off removes; the alarm now comes with each attempt, which is never more
+    than five minutes apart, and says which attempt it is.
+    """
+
+    clock = _Clock()
     engine = _UnstoppableEngine(_status(open_notional=Decimal("10000")))
-    guard = _guard(engine)
+    guard = _guard(engine, clock=clock)
     _watch(guard, _spec())
 
     with capture_logs() as logs:
-        for _ in range(3):
+        for advance in (0, 15, 30):
+            clock.advance(advance)
             await guard.evaluate_once()
 
     alarms = [entry for entry in logs if entry["event"] == _STILL_HELD]
-    assert len(alarms) == 3
+    assert [alarm["attempt"] for alarm in alarms] == [1, 2, 3]
     assert engine.stopped == [INSTANCE, INSTANCE, INSTANCE]
 
 
@@ -503,19 +522,93 @@ async def test_a_stop_that_never_returns_is_recorded_rather_than_assumed() -> No
     with capture_logs() as logs:
         await asyncio.wait_for(guard.evaluate_once(), timeout=2)
 
-    assert any(entry["event"] == "offline_exposure_stop_unconfirmed" for entry in logs)
+    assert any(entry["event"] == "offline_exposure_stop_in_progress" for entry in logs)
 
 
-async def test_the_tick_does_not_swallow_a_failure_to_stop() -> None:
-    """Same contract as a failure to flatten: containment failing is not a detail."""
+async def test_the_guard_waits_out_a_stop_in_progress() -> None:
+    """A stop past the deadline is still running; asking again would start another.
 
-    engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
-    engine.stop_error = RuntimeError("the engine refused to stop")
-    guard = _guard(engine)
+    The guard used to cancel it at the deadline and start a fresh one on the next
+    tick, so the shutdown policy began again from the top every fifteen seconds.
+    """
+
+    engine = _StopWedgedEngine(_status(open_notional=Decimal("10000")))
+    guard = _guard(engine, deadline=0.02)
     _watch(guard, _spec())
 
-    with pytest.raises(RuntimeError, match="refused to stop"):
-        await asyncio.wait_for(guard.run(asyncio.Event()), timeout=2)
+    with capture_logs() as logs:
+        for _ in range(3):
+            await asyncio.wait_for(guard.evaluate_once(), timeout=2)
+
+    assert engine.stopped == [INSTANCE]
+    assert len([entry for entry in logs if entry["event"] == _STILL_HELD]) == 1
+    in_progress = [entry for entry in logs if entry["event"] == "offline_exposure_stop_in_progress"]
+    assert len(in_progress) == 1
+    assert in_progress[0]["attempt"] == 1
+
+
+async def test_a_failed_stop_is_retried_on_a_back_off() -> None:
+    """Fifteen seconds after the first failure, thirty after the second.
+
+    This replaces a contract that a failure to stop was raised out of the guard's
+    loop. Raised, it ended the lane; a stop that fails because the venue has not yet
+    withdrawn an order is the ordinary case on a venue that refuses cancels, and the
+    lane must keep guarding while it waits for the next attempt. Each failure is
+    logged as an error with its attempt number and when the next one comes.
+    """
+
+    clock = _Clock()
+    engine = _SafetyEngine(_status(open_notional=Decimal("10000")))
+    engine.stop_error = RuntimeError("shutdown preserve confirmation timed out")
+    guard = _guard(engine, clock=clock)
+    _watch(guard, _spec())
+
+    with capture_logs() as logs:
+        await guard.evaluate_once()
+        clock.advance(14.9)
+        await guard.evaluate_once()
+        assert engine.stopped == [INSTANCE]
+        clock.advance(0.1)
+        await guard.evaluate_once()
+        clock.advance(29.9)
+        await guard.evaluate_once()
+        assert engine.stopped == [INSTANCE, INSTANCE]
+        clock.advance(0.1)
+        await guard.evaluate_once()
+
+    assert engine.stopped == [INSTANCE, INSTANCE, INSTANCE]
+    failures = [entry for entry in logs if entry["event"] == "offline_exposure_stop_failed"]
+    assert [(entry["attempt"], entry["retry_in_seconds"]) for entry in failures] == [
+        (1, 15.0),
+        (2, 30.0),
+        (3, 60.0),
+    ]
+    assert all(entry["log_level"] == "error" for entry in failures)
+    assert not guard.allows_new_generations()
+
+
+async def test_the_back_off_stops_growing_at_five_minutes() -> None:
+    clock = _Clock()
+    engine = _UnstoppableEngine(_status(open_notional=Decimal("10000")))
+    guard = _guard(engine, clock=clock)
+    _watch(guard, _spec())
+
+    with capture_logs() as logs:
+        await guard.evaluate_once()
+        for wait in (15, 30, 60, 120, 300, 300):
+            clock.advance(wait)
+            await guard.evaluate_once()
+
+    failures = [entry for entry in logs if entry["event"] == "offline_exposure_stop_failed"]
+    assert [entry["retry_in_seconds"] for entry in failures] == [
+        15.0,
+        30.0,
+        60.0,
+        120.0,
+        300.0,
+        300.0,
+        300.0,
+    ]
 
 
 async def test_a_latched_deployment_the_engine_never_held_is_left_alone() -> None:

@@ -435,3 +435,30 @@ async def validate_account_configuration(spec: dict, credential: dict) -> None:
 def client_order_id_is_valid(value: str) -> bool:
     """Validate the venue character set independently of its length bound."""
     return bool(value)
+
+
+def cancel_rejection_kind(reason: str) -> str | None:
+    """No Binance refusal text has been measured, so none is classified.
+
+    Every refusal is then handled as unknown: a short back-off and five retries
+    before the order is given up on. The cost is that an order Binance no longer
+    holds is not handed to reconciliation the way a SoDEX one is.
+    """
+    del reason
+    return None
+
+
+def safety_request_budget() -> None:
+    """No measured per-account figure: the per-order retry caps are the only bound."""
+    return None
+
+
+def dust_counts_as_flat() -> bool:
+    """Whether a holding below the pair's smallest order counts as flat for safety.
+
+    Yes: the dearest minimum order among Binance's stablecoin-quoted spot pairs was
+    worth 1.22 (ZECUSDC on testnet, ZECUSDT in production, read from the public
+    exchange info and ticker prices on 2026-10-11), under 1% of the strictest local
+    exposure ceiling.
+    """
+    return True
