@@ -141,3 +141,24 @@ def test_a_cash_partial_exit_is_capped_at_what_the_account_may_sell() -> None:
     _exit(h, "200")
 
     assert [order.quantity for order in h.sent] == [Quantity.from_str("0.00100")]
+
+
+def test_the_amount_is_floored_to_the_pairs_step_not_its_precision() -> None:
+    """A step of 0.00005 at precision 5: 0.0020927 is 0.00205, not the 0.00209 precision allows."""
+    h = _harness(AccountType.MARGIN)
+    h.instrument = CurrencyPair(
+        _PAIR.id,
+        Symbol("BTCUSDT"),
+        Currency.from_str("BTC"),
+        _USDT,
+        2,
+        5,
+        Price.from_str("0.01"),
+        Quantity.from_str("0.00005"),
+        0,
+        0,
+    )
+
+    _exit(h, "200")
+
+    assert [order.quantity for order in h.sent] == [Quantity.from_str("0.00205")]
