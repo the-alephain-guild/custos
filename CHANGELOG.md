@@ -48,7 +48,10 @@ protocol — is published at
   previous engine must be rebuilt and published again. Because the constant is
   part of their wire shape, `StrategyArtifactRefV1` and
   `StrategyArtifactPreImportVerificationReceiptV1` move to contract revision 2.
-  The strategy release publisher stays on `2.0.0rc5+sodex.2` until a toolkit
+  The deployment service's strategy release resolution contract is pinned at
+  revision 2, the revision whose golden names the new engine; consumers sync
+  revision 2 of both contracts and no receipt is written. The strategy release
+  publisher stays on `2.0.0rc5+sodex.2` until a toolkit
   release candidate built on the new engine exists.
 - **Contract schemas carry a contract revision.** The RunnerFact batch,
   `StrategyArtifactRefV1`, `StrategyArtifactPreImportVerificationReceiptV1` and

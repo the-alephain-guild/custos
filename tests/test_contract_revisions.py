@@ -16,6 +16,7 @@ GENERATOR = runpy.run_path(
 RUNNER_FACT = "alephain.custos.runner_fact_batch.v1"
 RUNNER_FACT_SCHEMA = "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json"
 RUNNER_FACT_VECTORS = "docs/authority/conformance/runner-fact-batch-v1.vectors.json"
+ARTIFACT_REF_SCHEMA = "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json"
 
 
 @pytest.fixture
@@ -112,22 +113,31 @@ def test_changed_vectors_without_a_raised_revision_fail(root: Path, capsys) -> N
     assert "conformance vectors changed" in output
 
 
-def test_a_raised_revision_without_a_change_only_warns(root: Path, capsys) -> None:
-    path = root / "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json"
+def _set_artifact_ref_revision(root: Path, revision_from_current) -> int:
+    path = root / ARTIFACT_REF_SCHEMA
     schema = json.loads(path.read_text(encoding="utf-8"))
-    schema["x-contract-revision"] = 2
+    schema["x-contract-revision"] = revision_from_current(schema["x-contract-revision"])
     path.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
+    return schema["x-contract-revision"]
+
+
+def test_a_raised_revision_without_a_change_only_warns(root: Path, capsys) -> None:
+    raised = _set_artifact_ref_revision(root, lambda current: current + 1)
     code, output = _run(root, capsys=capsys)
     assert code == 0
-    assert "warning: alephain.custos.strategy_artifact_ref.v1: revision 2 changes neither" in output
+    assert (
+        f"warning: alephain.custos.strategy_artifact_ref.v1: revision {raised} changes neither"
+        in output
+    )
 
 
-@pytest.mark.parametrize("revision", [0, 3])
-def test_a_skipped_or_lowered_revision_fails(root: Path, revision: int, capsys) -> None:
-    path = root / "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json"
-    schema = json.loads(path.read_text(encoding="utf-8"))
-    schema["x-contract-revision"] = revision
-    path.write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
+@pytest.mark.parametrize(
+    "revision_from_current",
+    [lambda current: 0, lambda current: current + 2],
+    ids=["lowered", "skipped"],
+)
+def test_a_skipped_or_lowered_revision_fails(root: Path, revision_from_current, capsys) -> None:
+    _set_artifact_ref_revision(root, revision_from_current)
     code, output = _run(root, capsys=capsys)
     assert code == 1
     assert "alephain.custos.strategy_artifact_ref.v1: revision" in output

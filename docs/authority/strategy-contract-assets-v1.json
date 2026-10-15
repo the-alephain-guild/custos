@@ -3,42 +3,42 @@
   "assets": [
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.golden.json",
-      "sha256": "cc8940cabaaef7ea1ba0b360327222b9184bf7c14e9bd863fb2208cd097ec3e2",
+      "sha256": "1647cee82a68fc64b410c4cf55f73c3081c907a96dcd66dc6d9af50969598a48",
       "size_bytes": 18172
     },
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.golden.json.sha256",
-      "sha256": "c51a7811f3aae2ac8fec2175057155ebc6f67827bddf7b408b7fe8833cce0b9a",
+      "sha256": "ffa19a3fafdb5c785746ad94ce61048565db18b5a4395054d28360e96637b04e",
       "size_bytes": 123
     },
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json",
-      "sha256": "1f724b568b4b9375f7f7bd74a9cb7558131eda50f741280ce1df72032837db34",
+      "sha256": "f2cd3e719061bbdd27bc3e43d00eccc8197f2baf3912ef5ffcbad9a3a6742186",
       "size_bytes": 7242
     },
     {
       "path": "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json.sha256",
-      "sha256": "990a55a7527005543c3e671dbfc4c9d342df22621b580fd34fc9e94438d2fb4a",
+      "sha256": "f569060b5071554e90085fec0effba4af018fc6e4b099cbb50b917e7d3f14af1",
       "size_bytes": 125
     },
     {
       "path": "docs/authority/strategy-artifact-ref-v1.golden.json",
-      "sha256": "2555e19063536f364f9fff8a2a3d1093254145267a37489baf2bece5a0dd4195",
+      "sha256": "33347c5026ede0ee86afc68cd983abd629e213e19f9d963c3acb86e9624b8ccd",
       "size_bytes": 1988
     },
     {
       "path": "docs/authority/strategy-artifact-ref-v1.golden.json.sha256",
-      "sha256": "cfa5e43f69435b5fe3d180de1f78d4f58cffa7cde752bbbdae8282e010904a66",
+      "sha256": "2af617da216f837216d30845380d3205bda7ff99df70e24f1efcb9981fd7acfd",
       "size_bytes": 103
     },
     {
       "path": "docs/gateway-contract/v1/strategy_artifact_pre_import_verification_receipt_v1.schema.json",
-      "sha256": "e70f58eba0143689a571afcc4e0c988d3f2032ba7135dbcb18ab04c9e39cfde3",
+      "sha256": "fcb0f3114a2cead87c06545a56aa97d3c849bc1010a2804792522fe4d91ebf4e",
       "size_bytes": 10966
     },
     {
       "path": "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json",
-      "sha256": "1e7fbde739d21451c069e014c9f2360f183dd5e38551f851884f8e59323d5ac5",
+      "sha256": "5dc10e7c6f44545f6eaf34915da64c1e2877c11a64f0023eb06e6e762498f9b9",
       "size_bytes": 5050
     }
   ],
@@ -59,7 +59,7 @@
   "producer": {
     "repository": "tesseract-trading/custos",
     "source_path": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
-    "source_sha256": "ee3faa757bf2bb31eb117c111811570d188624a5b24c2995df8c4b4d620e7cda"
+    "source_sha256": "f4e3a4b141c0868a99b38ec2eed32de2766c82585728f819f9244be7637ebc07"
   },
   "status": "CANONICAL_V1_CONTRACT_ASSETS_PUBLISHED"
 }

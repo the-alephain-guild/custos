@@ -96,7 +96,7 @@ def test_schema_and_index_publish_only_canonical_v1() -> None:
     }
     assert contract_keywords == {
         "x-contract-id": "alephain.custos.strategy_artifact_ref.v1",
-        "x-contract-revision": 1,
+        "x-contract-revision": 2,
     }
     assert schema == StrategyArtifactRefV1.model_json_schema(mode="validation")
     assert set(schema["properties"]) == ALLOWED_FIELDS
