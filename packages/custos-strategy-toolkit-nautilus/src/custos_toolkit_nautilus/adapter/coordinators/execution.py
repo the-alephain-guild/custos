@@ -22,6 +22,7 @@ from nautilus_trader.model import OrderSide, QuoteTick, TimeInForce, TradeTick
 
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
 from custos_toolkit_nautilus.adapter.strategy_core import build_close_order, read_order_form
+from custos_toolkit_nautilus.adapter.spot_inventory import size_spot_exit
 
 if TYPE_CHECKING:
     from custos_toolkit_nautilus.adapter.pair_context import PairContext
@@ -143,7 +144,7 @@ class ExecutionCoordinator:
 
         if action.partial_pct:
             self._execute_partial_exit_for_pair(
-                ctx, position, action.partial_pct, action.reason, action.level
+                ctx, position, action.partial_pct, action.reason, action.level, action.price
             )
         else:
             self._execute_trailing_stop_exit_for_pair(ctx, action.price, action.reason)
@@ -155,6 +156,7 @@ class ExecutionCoordinator:
         exit_pct: Decimal,
         reason: str,
         level: int | None = None,
+        price: Decimal | None = None,
     ) -> None:
         """Execute partial position exit for a specific pair.
 
@@ -181,6 +183,14 @@ class ExecutionCoordinator:
             s.log.error(f"Instrument not found: {ctx.instrument_id}")
             abandon_level()
             return
+        form = read_order_form(s.cache, ctx.instrument_id, s.log.warning)
+        if form.submitted:
+            # A cash account: sell no more than is free above the starting remainder.
+            sized = size_spot_exit(
+                s.cache, ctx.instrument_id, raw_exit_qty, ctx.spot_reserved_remainder, price
+            )
+            sized.announce(ctx.pair, warning=s.log.warning, info=s.log.info)
+            raw_exit_qty = sized.quantity
         exit_qty = instrument.make_qty(raw_exit_qty)
 
         if exit_qty <= 0:
@@ -192,7 +202,7 @@ class ExecutionCoordinator:
             order_side=OrderSide.SELL if position.is_long else OrderSide.BUY,
             quantity=exit_qty,
             time_in_force=TimeInForce.IOC,
-            reduce_only=read_order_form(s.cache, ctx.instrument_id, s.log.warning).reduce_only,
+            reduce_only=form.reduce_only,
         )
 
         dispatched = cast(bool | None, s.submit_order(order))
@@ -279,7 +289,22 @@ class ExecutionCoordinator:
             if instrument is None:
                 s.log.error(f"Instrument not found: {ctx.instrument_id}")
                 return
-            order = build_close_order(s.order_factory, instrument, position, form)
+            # Only a cash account reaches here (this path never spends the hatch), and
+            # it sells no more than is free above the starting remainder.
+            sized = size_spot_exit(
+                s.cache,
+                ctx.instrument_id,
+                Decimal(str(position.quantity)),
+                ctx.spot_reserved_remainder,
+                current_price,
+            )
+            sized.announce(ctx.pair, warning=s.log.warning, info=s.log.info)
+            if sized.refused:
+                # Nothing to sell will not change by the next tick; hold off as long
+                # as a close in flight would, rather than say this on every tick.
+                ctx.order_tracker.set_close_cooldown(now_ns, _CLOSE_INFLIGHT_TIMEOUT_NS)
+                return
+            order = build_close_order(s.order_factory, instrument, position, form, sized.quantity)
             ctx.order_tracker.add_close_order(order.client_order_id)
             if cast(bool | None, s.submit_order(order)) is False:
                 ctx.order_tracker.remove_order(order.client_order_id)

@@ -31,6 +31,7 @@ from custos_toolkit_nautilus.adapter.orders import (
     TakeProfitSubmitter,
 )
 from custos_toolkit_nautilus.adapter.pair_context import PairContext
+from custos_toolkit_nautilus.adapter.spot_inventory import read_starting_remainder
 from custos_toolkit_nautilus.adapter.tick_monitor import TickMonitorManager
 from custos_toolkit_nautilus.adapter.utils import is_futures_connector
 
@@ -119,6 +120,20 @@ class PairContextCoordinator:
             s.subscribe_bars(ctx.bar_type)
 
             s.log.info(f"Initialized context for {pair}: instrument={ctx.instrument_id}")
+
+    def record_spot_reserves(self) -> None:
+        """Note, per pair, the base a cash account held below one step before this run.
+
+        No exit of this run sells it: it is either a remainder no order can take off
+        the book, or base currency that was never this strategy's. Taken before
+        anything is traded, because afterwards the strategy's own fills are mixed in.
+        """
+        s = self._strategy
+        for ctx in s._contexts.values():
+            reserved = read_starting_remainder(s.cache, ctx.instrument_id, s.log.warning)
+            ctx.spot_reserved_remainder = reserved
+            if reserved is not None:
+                s.log.info(f"spot_reserved_remainder pair={ctx.pair} quantity={reserved}")
 
     def subscribe_mark_prices(self) -> None:
         """Subscribe the prices every pair's open position is valued at, unconditionally.

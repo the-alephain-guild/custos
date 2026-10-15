@@ -143,6 +143,7 @@ class Harness:
             stale_cancel_attempts={},
             exchange_sl_rebuild_deadline_ns=0,
             native_trailing_rebuild_deadline_ns=0,
+            spot_reserved_remainder=None,
         )
         self.ctx.execution_manager = NS(create_entry_order=self.entry_order)
         self._contexts = {self.instrument.id: self.ctx}

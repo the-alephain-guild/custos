@@ -458,6 +458,10 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         # 2. Create context and initialize execution components for each pair
         self._pair_context_coordinator.setup_pairs()
 
+        # 2b. Before anything trades: the base a cash account already holds below one
+        # step is not this run's to sell.
+        self._pair_context_coordinator.record_spot_reserves()
+
         # 3. Initialize capital allocator
         self._init_capital_allocator()
 
@@ -952,6 +956,15 @@ class NautilusTradingStrategy(NautilusStrategyCore):
         """
         ctx = self._contexts.get(instrument_id)
         return ctx.order_tracker if ctx is not None else None
+
+    def spot_reserve_for(self, instrument_id: InstrumentId) -> Decimal | None:
+        """Hand the base class's close paths the remainder this run must not sell.
+
+        Recorded in the pair context at start; the containment flatten and
+        ``emergency_close`` cannot reach it otherwise.
+        """
+        ctx = self._contexts.get(instrument_id)
+        return ctx.spot_reserved_remainder if ctx is not None else None
 
     def _get_context(self, pair: str) -> PairContext | None:
         """Get the context for a pair string.

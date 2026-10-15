@@ -39,16 +39,21 @@ from custos_toolkit_nautilus.adapter.trading_strategy import (  # noqa: E402
 )
 from nautilus_trader.backtest import BacktestEngine  # noqa: E402
 from nautilus_trader.config import BacktestEngineConfig, LoggerConfig  # noqa: E402
+from nautilus_trader.execution import FeeModel  # noqa: E402
 from nautilus_trader.model import (  # noqa: E402
     AccountType,
     Currency,
+    CurrencyPair,
+    InstrumentId,
     Money,
     OmsType,
     OrderSide,
     OrderStatus,
     PositionSide,
+    Price,
     Quantity,
     QuoteTick,
+    Symbol,
     TimeInForce,
     Venue,
 )
@@ -157,6 +162,7 @@ class _BuysThenExits(NautilusStrategyCore):
                 pair="BTC-USDT",
                 order_tracker=OrderTracker(),
                 execution_manager=ExecutionManager(self.order_factory, self.cache, self.log),
+                spot_reserved_remainder=None,
             )
             before = {order.client_order_id for order in self.cache.orders()}
             SignalExecutionCoordinator(self).execute_exit_for_pair(
@@ -377,6 +383,166 @@ def test_an_orphan_plain_take_profit_is_cancelled_at_the_venue(tmp_path) -> None
         account = engine.cache.account_for_venue(_VENUE)
         assert account.balance_total(_BTC).as_decimal() == Decimal("0.01"), (
             "the base currency that was never the strategy's is still there"
+        )
+    finally:
+        engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# A spot exit sells no more than the account holds, and not the starting remainder
+# ---------------------------------------------------------------------------
+
+_VBTC = Currency.from_str("vBTC")
+_VUSDC = Currency.from_str("vUSDC")
+_SODEX = Venue("SODEX_SPOT")
+# SoDEX testnet vBTC_vUSDC: step and minimum quantity 0.00001, minimum notional 5.
+_SODEX_PAIR = CurrencyPair(
+    InstrumentId.from_str("vBTC_vUSDC.SODEX_SPOT"),
+    Symbol("vBTC_vUSDC"),
+    _VBTC,
+    _VUSDC,
+    0,
+    5,
+    Price.from_str("1"),
+    Quantity.from_str("0.00001"),
+    0,
+    0,
+    min_quantity=Quantity.from_str("0.00001"),
+    min_notional=Money(Decimal("5"), _VUSDC),
+)
+_ACCOUNT_60366_REMAINDER = Decimal("0.00000935")
+_BUY_FEE_IN_BASE = Decimal("0.00000065")
+
+
+class _BuyFeeInBase(FeeModel):
+    """SoDEX spot takes a buy's fee from the base it delivers, a sell's from the quote."""
+
+    def get_commission(self, order, fill_quantity, fill_px, instrument) -> Money:
+        if order.side == OrderSide.BUY:
+            return Money(_BUY_FEE_IN_BASE, _VBTC)
+        return Money(Decimal("0.05"), _VUSDC)
+
+
+class _BuysThenExitsOnSodex(NautilusTradingStrategy):
+    """A toolkit strategy on a SoDEX-shaped pair: buy once, then take the bar exit.
+
+    It runs the toolkit's own ``on_start``, so the starting remainder is recorded the
+    way a deployment records it, and the exit is the toolkit's bar-exit path.
+    """
+
+    def __init__(self, config: NautilusTradingStrategyConfig) -> None:
+        super().__init__(config)
+        self._probe_quotes = 0
+        self.exit_order_ids: list = []
+
+    def on_strategy_start(self) -> None: ...
+
+    def on_strategy_stop(self) -> None: ...
+
+    def calculate_signal(self, ctx, bar) -> Signal:
+        return Signal.neutral(float(bar.close), pair=ctx.pair)
+
+    def get_indicator_history(self) -> dict[str, object]:
+        return {}
+
+    def on_core_quote_tick(self, tick) -> None:
+        self._probe_quotes += 1
+        if self._probe_quotes == 1:
+            self.submit_order(
+                self.order_factory.market(
+                    instrument_id=_SODEX_PAIR.id,
+                    order_side=OrderSide.BUY,
+                    quantity=Quantity.from_str("0.00100"),
+                    time_in_force=TimeInForce.IOC,
+                )
+            )
+        elif self._probe_quotes == 3:
+            ctx = self._contexts[_SODEX_PAIR.id]
+            before = {order.client_order_id for order in self.cache.orders()}
+            self._signal_execution_coordinator.execute_exit_for_pair(
+                ctx,
+                Signal.exit_long(Decimal("82962"), pair=ctx.pair),
+                NS(close=Price.from_str("82962")),
+            )
+            self.exit_order_ids = [
+                order.client_order_id
+                for order in self.cache.orders()
+                if order.client_order_id not in before
+            ]
+
+
+def _sodex_config(directory) -> NautilusTradingStrategyConfig:
+    (directory / "config.yaml").write_text(
+        "strategy:\n"
+        "  name: probe\n"
+        "trading:\n"
+        "  connector:\n"
+        "    value: sodex\n"
+        "  pairs:\n"
+        "    value: [vBTC_vUSDC]\n"
+        "risk:\n"
+        "  trade:\n"
+        "    sl_tp_mode:\n"
+        "      value: tick\n"
+        "  tick_monitoring:\n"
+        "    enabled:\n"
+        "      value: true\n"
+        "    tick_type:\n"
+        "      value: quote\n",
+        encoding="utf-8",
+    )
+    return NautilusTradingStrategyConfig(
+        **build_nautilus_base_config(load_config(directory / "config.yaml"))
+    )
+
+
+def test_a_spot_exit_never_exceeds_the_free_balance(tmp_path) -> None:
+    """The P1 shape on a real engine: 0.00000935 vBTC before, one 0.00100 buy, then exit.
+
+    The buy fee comes out of the base, so the account holds 0.00100870 while
+    NautilusTrader reports a 0.00100 position. Selling 0.00100 would take 0.00000065 of
+    the remainder that was there before the run; the exit sells what is free above it,
+    on the step.
+    """
+    engine = BacktestEngine(
+        BacktestEngineConfig(logging=LoggerConfig(bypass_logging=True), run_analysis=False)
+    )
+    engine.add_venue(
+        _SODEX,
+        OmsType.NETTING,
+        AccountType.CASH,
+        [Money(10_000, _VUSDC), Money(_ACCOUNT_60366_REMAINDER, _VBTC)],
+        fee_model=_BuyFeeInBase(),
+    )
+    engine.add_instrument(_SODEX_PAIR)
+    strategy = _BuysThenExitsOnSodex(_sodex_config(tmp_path))
+    engine.add_strategy(strategy)
+    price = Price.from_str("82962")
+    size = Quantity.from_str("1.00000")
+    engine.add_data(
+        [
+            QuoteTick(
+                _SODEX_PAIR.id, price, price, size, size, n * 1_000_000_000, n * 1_000_000_000
+            )
+            for n in range(1, 6)
+        ]
+    )
+    try:
+        engine.run()
+
+        ctx = strategy._contexts[_SODEX_PAIR.id]  # noqa: SLF001 - the recorded reserve
+        assert ctx.spot_reserved_remainder == _ACCOUNT_60366_REMAINDER, (
+            "on_start must record the sub-step balance the account held before the run"
+        )
+        assert len(strategy.exit_order_ids) == 1, "the exit path must have sent one order"
+        exit_order = engine.cache.order(strategy.exit_order_ids[0])
+        assert exit_order.quantity == Quantity.from_str("0.00099"), (
+            "free 0.00100870 less the 0.00000935 reserve, floored to the step"
+        )
+        assert exit_order.status == OrderStatus.FILLED
+        account = engine.cache.account_for_venue(_SODEX)
+        assert account.balance_total(_VBTC).as_decimal() >= _ACCOUNT_60366_REMAINDER, (
+            "the remainder the account held before the run is still there"
         )
     finally:
         engine.dispose()

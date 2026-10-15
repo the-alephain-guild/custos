@@ -27,6 +27,7 @@ import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, cast
@@ -210,13 +211,18 @@ def build_close_order(
     instrument: "Instrument",
     position: "Position",
     form: OrderForm,
+    quantity: Decimal,
 ) -> "Order":
-    """A market IOC order that closes the whole position, for a form ``close_position``
-    cannot carry (see ``OrderForm.submitted``)."""
+    """A market IOC order that closes the position, for a form ``close_position``
+    cannot carry (see ``OrderForm.submitted``).
+
+    ``quantity`` is the position's on a margin account, and on a cash account what the
+    account may sell of it (``spot_inventory.size_spot_exit``).
+    """
     return order_factory.market(
         instrument_id=position.instrument_id,
         order_side=OrderSide.SELL if position.is_long else OrderSide.BUY,
-        quantity=instrument.make_qty(position.quantity),
+        quantity=instrument.make_qty(quantity),
         time_in_force=TimeInForce.IOC,
         reduce_only=form.reduce_only,
     )
@@ -668,6 +674,14 @@ class NautilusStrategyCore(Strategy, ABC):
         """
         return None
 
+    def spot_reserve_for(self, instrument_id: Any) -> Decimal | None:
+        """The base this run must not sell on a cash account, recorded when it started.
+
+        Core keeps no per-instrument state, so it reserves nothing; subclasses that
+        record the starting remainder in their pair contexts override this.
+        """
+        return None
+
     def close_all_positions_with_fallback(self, instrument_id: Any) -> None:
         """Close this instrument's open positions, dropping reduce-only only on evidence.
 
@@ -726,7 +740,24 @@ class NautilusStrategyCore(Strategy, ABC):
         if instrument is None:
             self._log_warning(f"close fallback: instrument {position.instrument_id} not found")
             return
-        order = build_close_order(self.order_factory, instrument, position, form)
+        quantity = Decimal(str(position.quantity))
+        if cash_account:
+            # spot_inventory reads the account through this module's read_cash_account.
+            from custos_toolkit_nautilus.adapter.spot_inventory import size_spot_exit
+
+            try:
+                reserved = self.spot_reserve_for(position.instrument_id)
+            except Exception as exc:
+                self._log_warning(f"close fallback: could not read the spot reserve: {exc}")
+                reserved = None
+            sized = size_spot_exit(self.cache, position.instrument_id, quantity, reserved, None)
+            sized.announce(
+                str(position.instrument_id), warning=self._log_warning, info=self._log_warning
+            )
+            if sized.refused:
+                return
+            quantity = sized.quantity
+        order = build_close_order(self.order_factory, instrument, position, form, quantity)
         if tracker is not None:
             tracker.add_close_order(order.client_order_id)
         if cast(bool | None, self.submit_order(order)) is False:

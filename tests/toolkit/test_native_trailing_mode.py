@@ -495,6 +495,10 @@ def _protection_stub(sl_tp_mode, cache, now_ns=1_000_000_000_000):
 
     clock = MagicMock()
     clock.timestamp_ns.return_value = now_ns
+    # The repair asks whether the position is dust; with no instrument and no bar in
+    # the cache nothing is, and the repair proceeds as it did before that question.
+    cache.instrument.return_value = None
+    cache.bar.return_value = None
     strategy = SimpleNamespace(
         _mode=SLTPMode(sl_tp_mode),
         cache=cache,
@@ -575,6 +579,8 @@ def test_protection_rebuilds_only_the_missing_partial_fill_delta():
     cache = MagicMock()
     cache.positions_open.return_value = [position]
     cache.order.return_value = MagicMock(is_closed=False)
+    cache.instrument.return_value = None
+    cache.bar.return_value = None
     strategy = SimpleNamespace(
         _mode=SLTPMode.NATIVE_TRAILING,
         cache=cache,
@@ -600,6 +606,8 @@ def test_hybrid_protection_rebuilds_only_the_missing_partial_fill_delta():
     cache = MagicMock()
     cache.positions_open.return_value = [position]
     cache.order.return_value = MagicMock(is_closed=False)
+    cache.instrument.return_value = None
+    cache.bar.return_value = None
     strategy = SimpleNamespace(
         _mode=SLTPMode.HYBRID,
         cache=cache,

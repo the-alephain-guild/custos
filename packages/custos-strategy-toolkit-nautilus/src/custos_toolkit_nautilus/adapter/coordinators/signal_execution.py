@@ -26,6 +26,7 @@ from custos_toolkit_nautilus.adapter.runtime_types import Indicator, Order
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
 from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
 from custos_toolkit_nautilus.adapter.sizing import notional_from_quantity
+from custos_toolkit_nautilus.adapter.spot_inventory import size_spot_exit
 from custos_toolkit_nautilus.adapter.strategy_core import (
     CloseAttempt,
     decide_order_form,
@@ -425,10 +426,22 @@ class SignalExecutionCoordinator:
             )
             return
         form = decide_order_form(cash_account=cash_account, attempt=attempt)
+        size = Decimal(str(position.quantity))
+        if cash_account:
+            # The venue sells from the free base balance, which a fee taken in base
+            # leaves below the rounded position; the remainder held before the run is
+            # not this exit's to sell.
+            sized = size_spot_exit(
+                s.cache, ctx.instrument_id, size, ctx.spot_reserved_remainder, signal.price
+            )
+            sized.announce(ctx.pair, warning=s.log.warning, info=s.log.info)
+            if sized.refused:
+                return
+            size = sized.quantity
         order = execution_manager.create_exit_order(
             instrument_id=ctx.instrument_id,
             signal=signal,
-            size=Decimal(str(position.quantity)),
+            size=size,
             reduce_only=form.reduce_only,
         )
         if order:

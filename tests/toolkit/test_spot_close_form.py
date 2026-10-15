@@ -52,6 +52,7 @@ from nautilus_trader.model import (  # noqa: E402
     Currency,
     CurrencyPair,
     InstrumentId,
+    Money,
     OrderSide,
     OrderType,
     Price,
@@ -94,7 +95,14 @@ class _Accounts:
             raise RuntimeError("account cache unavailable")
         if self._account_type is None:
             return None
-        return NS(account_type=self._account_type, id=f"{venue}-001")
+        # More base than any position here, so a cash exit is never capped by it.
+        held = lambda currency: Money(Decimal("1"), currency)  # noqa: E731
+        return NS(
+            account_type=self._account_type,
+            id=f"{venue}-001",
+            balance_free=held,
+            balance_total=held,
+        )
 
 
 def _recording_factory(created: list[dict]) -> NS:
@@ -167,6 +175,7 @@ def _bar_exit_ctx(strat: NS) -> NS:
         pair="BTC-USDT",
         order_tracker=OrderTracker(),
         execution_manager=ExecutionManager(strat.order_factory, strat.cache, strat.log),
+        spot_reserved_remainder=None,
     )
 
 

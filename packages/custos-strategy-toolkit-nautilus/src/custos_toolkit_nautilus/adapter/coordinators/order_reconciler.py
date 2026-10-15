@@ -42,6 +42,7 @@ from custos_toolkit_nautilus.adapter.coordinators.entry_reservation import (
 from custos_toolkit_nautilus.adapter.orders import STALE_SWEEP_RETRY_COOLDOWN_NS, is_stale_order
 from custos_toolkit_nautilus.adapter.runtime_types import Indicator, Order, Position
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
+from custos_toolkit_nautilus.adapter.spot_inventory import read_dust
 from custos_toolkit_nautilus.adapter.strategy_core import order_only_reduces, read_cash_account
 
 if TYPE_CHECKING:
@@ -80,6 +81,9 @@ class OrderReconciler:
         1. Restore position tracker state
         2. Restore tick monitor state (tick/hybrid mode)
         3. Check and recreate exchange SL orders if missing (exchange/hybrid mode)
+
+        A position that is dust is left alone: no order can sell it, so it gets no
+        protection, no tick monitoring and no exit.
         """
         s = self._strategy
         for ctx in s._contexts.values():
@@ -90,6 +94,9 @@ class OrderReconciler:
 
             position = positions[0]
             if position.is_closed:
+                continue
+
+            if self._holds_dust(ctx, position):
                 continue
 
             s.log.info(
@@ -127,6 +134,31 @@ class OrderReconciler:
             # 4. Re-claim or resubmit exchange-managed trailing stop (native_trailing)
             if s._mode.uses_native_trailing:
                 self.ensure_native_trailing_exists(ctx, position)
+
+    def _holds_dust(self, ctx: PairContext, position: Position) -> bool:
+        """Whether the position is dust, said when it is.
+
+        Priced at the newest bar, so the minimum notional counts when there is one; a
+        holding below the minimum quantity is dust with or without a price. Callers on
+        the per-bar path ask after their rebuild cool-down, so this is said at most
+        once a minute there.
+        """
+        s = self._strategy
+        latest = s.cache.bar(ctx.bar_type)
+        price = None if latest is None else Decimal(str(latest.close))
+        dust = read_dust(
+            s.cache, ctx.instrument_id, Decimal(str(position.quantity)), price, s.log.warning
+        )
+        if dust is None:
+            return False
+        s.log.info(
+            f"[{ctx.pair}] dust_left_alone quantity={dust.quantity} "
+            f"source={dust.quantity_source} reason={dust.reason} "
+            f"minimum_quantity={dust.minimum.quantity} minimum_notional={dust.minimum.notional} "
+            f"price={dust.price}: no order can sell it, so it gets no protection or exit",
+            color=LogColor.YELLOW,
+        )
+        return True
 
     def ensure_exchange_sl_exists(self, ctx: PairContext, position: Position) -> None:
         """
@@ -242,6 +274,8 @@ class OrderReconciler:
         if now_ns < ctx.exchange_sl_rebuild_deadline_ns:
             return
         ctx.exchange_sl_rebuild_deadline_ns = now_ns + _NATIVE_TRAILING_REBUILD_COOLDOWN_NS
+        if self._holds_dust(ctx, position):
+            return
         s.log.error(
             f"[{ctx.pair}] Exchange SL coverage {covered} is below position {expected} — "
             "rebuilding missing delta",
@@ -341,6 +375,8 @@ class OrderReconciler:
             return  # rate guard: still cooling down from a recent rebuild attempt
 
         ctx.native_trailing_rebuild_deadline_ns = now_ns + _NATIVE_TRAILING_REBUILD_COOLDOWN_NS
+        if self._holds_dust(ctx, position):
+            return
         s.log.error(
             f"[{ctx.pair}] NATIVE_TRAILING coverage {covered} is below position {expected} "
             "(reject/loss) — rebuilding missing delta",

@@ -46,7 +46,7 @@ from custos_toolkit_nautilus.adapter.execution import ExecutionManager  # noqa: 
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS  # noqa: E402
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode  # noqa: E402
 from custos_toolkit_nautilus.adapter.trading_strategy import NautilusTradingStrategy  # noqa: E402
-from nautilus_trader.model import AccountType, OrderSide, OrderType, Price  # noqa: E402
+from nautilus_trader.model import AccountType, Money, OrderSide, OrderType, Price  # noqa: E402
 
 # The adapter's own words for its refusal, as the probe run logged them.
 _SODEX_REDUCE_ONLY = "reduce-only on spot is not supported by SoDEX"
@@ -70,7 +70,11 @@ def _deny(h: Harness, order, reason: str = _SODEX_REDUCE_ONLY) -> None:
 def _closing(account_type: AccountType) -> Harness:
     """A harness with an open long and the real bar-exit path wired to it."""
     h = Harness(mode=SLTPMode.TICK)
-    h.cache.account_for_venue = lambda _venue: NS(account_type=account_type)
+    # More base than the position, so a cash exit is never capped by the balance.
+    held = lambda currency: Money(Decimal("1"), currency)  # noqa: E731
+    h.cache.account_for_venue = lambda _venue: NS(
+        account_type=account_type, balance_free=held, balance_total=held
+    )
     h.ctx.execution_manager = ExecutionManager(h.order_factory, h.cache, h.log)
     h.ctx.execution_manager.create_entry_order = h.entry_order
     return h
