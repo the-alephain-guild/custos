@@ -703,3 +703,94 @@ async def test_a_venue_that_keeps_dust_real_closes_it(deployed_host, monkeypatch
     await deployed_host.flatten_positions(instance, "drawdown_breach")
 
     assert [str(instrument) for instrument in strategy.closed] == [VBTC]
+
+
+def test_the_runner_hands_the_dust_rule_decimals_read_from_real_nautilus_types() -> None:
+    """The rule takes Decimal only; the cache hands out Price, Quantity and Money.
+
+    Every value is unwrapped at the runner's edge before it reaches the rule, so a
+    real instrument, position quantity, balance and price judge exactly as the
+    vectors' decimal strings do -- including a minimum notional stated in Money.
+    """
+    from nautilus_trader.model import (
+        Currency,
+        CurrencyPair,
+        InstrumentId,
+        Money,
+        Price,
+        Quantity,
+        Symbol,
+    )
+
+    instrument_id = InstrumentId.from_str("BTC-USDT.SODEX_SPOT")
+    pair = CurrencyPair(
+        instrument_id,
+        Symbol("BTC-USDT"),
+        Currency.from_str("BTC"),
+        Currency.from_str("USDT"),
+        2,
+        5,
+        Price.from_str("0.01"),
+        Quantity.from_str("0.00001"),
+        0,
+        0,
+        min_quantity=Quantity.from_str("0.00001"),
+        min_notional=Money.from_str("5 USDT"),
+    )
+
+    class _Account:
+        account_type = "CASH"
+
+        def __init__(self, balance: str) -> None:
+            self._balance = Money.from_str(f"{balance} BTC")
+
+        def balance_total(self, currency):
+            return self._balance if currency == pair.base_currency else None
+
+    class _Cache:
+        def __init__(self, *, position: str, balance: str, price: str | None) -> None:
+            self.position = SimpleNamespace(
+                instrument_id=instrument_id, quantity=Quantity.from_str(position)
+            )
+            self.account = _Account(balance)
+            self.last = None if price is None else Price.from_str(price)
+
+        def positions_open(self, instrument_id=None):
+            return [self.position]
+
+        def instrument(self, requested):
+            return pair if requested == instrument_id else None
+
+        def account_for_venue(self, venue):
+            return self.account
+
+        def mark_price(self, requested):
+            return None
+
+        def price(self, requested, price_type):
+            return self.last if price_type == "LAST" else None
+
+    remainder = _provider().position_dust(
+        SimpleNamespace(cache=_Cache(position="0.00001", balance="0.00000935", price=None))
+    )
+    (holding,) = remainder.values()
+    assert holding.quantity == Decimal("0.00000935")
+    assert holding.quantity_source == "balance"
+    assert holding.reason == "quantity"
+    assert holding.threshold == Decimal("0.00001")
+    assert holding.price is None
+
+    under_notional = _provider().position_dust(
+        SimpleNamespace(cache=_Cache(position="0.00004", balance="0.00004", price="82962.00"))
+    )
+    (holding,) = under_notional.values()
+    assert holding.reason == "notional"
+    assert holding.price == Decimal("82962.00")
+    assert all(
+        type(value) is Decimal for value in (holding.quantity, holding.threshold, holding.price)
+    )
+
+    at_notional = _provider().position_dust(
+        SimpleNamespace(cache=_Cache(position="0.00004", balance="0.00004", price="125000.00"))
+    )
+    assert at_notional == {}, "a notional of exactly the minimum is not dust"
