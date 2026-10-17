@@ -204,7 +204,7 @@
   ],
   "sellable": [
     {
-      "name": "one P1 entry with the fee taken in base: sell what is free above the starting remainder",
+      "name": "one entry with the fee taken in base: sell what is free above the starting remainder",
       "size_increment": "0.00001",
       "wanted": "0.00100",
       "free_balance": "0.00100870",
@@ -220,7 +220,7 @@
       "sellable": "0.00100"
     },
     {
-      "name": "three P1 entries: the plan's D6 example",
+      "name": "three entries with the fee taken in base: sell what is free above the starting remainder, on the step",
       "size_increment": "0.00001",
       "wanted": "0.00705",
       "free_balance": "0.00705475",
