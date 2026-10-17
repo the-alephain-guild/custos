@@ -47,6 +47,35 @@ protocol — is published at
 
 ### Changed
 
+- **Breaking: a SoDEX strategy refuses to start in a mode that rests a stop on
+  the venue.** SoDEX, spot and perpetual, accepts market and limit orders only,
+  so a stop the `exchange`, `hybrid` or `native_trailing` mode places was refused
+  every time it was repaired, and the strategy kept entering without one. With
+  connector `sodex` or `sodex_perpetual`, any `risk.trade.sl_tp_mode` other than
+  `tick` now fails configuration with a `[STARTUP]` error that names `tick` and
+  says what it means: tick mode has no stop loss, only take-profit and the
+  trailing exit on ticks. Connectors that are not listed are not refused. The
+  `base_config.yaml` description of tick mode now says the same.
+- **On a cash account the toolkit's closes and protective orders carry no
+  `reduce_only`.** Spot venues refuse a reduce-only order outright, so on SoDEX
+  and Binance spot every exit, the containment close and every protective order
+  was refused. One function now decides an order's form from the account type,
+  and all eight places that send a close or a protective order use it: on a cash
+  account the order goes out plain and through `submit_order`, on a margin
+  account nothing changes, and when the account cannot be read the order keeps
+  `reduce_only` and a warning is logged. A static test fails on any literal
+  `reduce_only=True` or `False` in the adapter. Where the toolkit used the flag
+  to recognise its own exits and stops, it now asks its order tracker, or
+  whether a cash account's sell order is this strategy's, so a plain exit is not
+  mistaken for an entry.
+- **Spot positions are priced from trades and quotes.** A spot pair that had no
+  trade for days had no price, which made the runner's valuation fail. The
+  pricing subscription now takes quotes as well as trades on spot (perpetuals
+  keep the mark price). Tick monitoring consumes only the stream `tick_type`
+  selects, and none when tick monitoring is disabled: a `tick_type: quote`
+  strategy, or one with tick monitoring off, is no longer driven by trades it
+  happened to receive through the pricing subscription.
+
 - **Breaking: the engine is NautilusTrader `2.0.0rc5+sodex.3`.** The runner
   image and the `custos-strategy-toolkit-nautilus` distribution install the
   fork release `guild-v2.0.0rc5+sodex.3`, pinned by the sha256 of each platform
@@ -223,6 +252,45 @@ protocol — is published at
   sends `custos/<installed custos-runner version>`, kept when a caller adds
   headers and replaced only when a caller names its own User-Agent. The
   Binance ledger, which hard-coded `custos-runner/0.3`, sends the same value.
+- **Orders denied before they reach the venue are settled.** An `OrderDenied`
+  was not handled by the toolkit at all: an entry's capital stayed reserved, a
+  denied close left the in-flight gate shut, and a denied stop did not pause new
+  risk. The toolkit now handles it like a rejection of the same order: an entry
+  returns its reservation, a close reopens the gate after a short cooldown and
+  counts towards the halt, a stop is removed and pauses new risk, a
+  take-profit level is released for retry. A local denial does not arm the
+  escape hatch or cancel every open order.
+- **SoDEX rate limits and transport failures are server errors.** The adapter's
+  `venue returned HTTP 429 …`, `HTTP 500` and `transport failed` texts fell to
+  the logic tier, which cancelled every open order on an already throttled
+  account. They now back off as server errors.
+- **A cancel by order id is audited with that id.** The `cancel_requested` line
+  recorded `order_id=None` when the runner cancelled by client order id; it now
+  records the id and looks the instrument up in the cache.
+- **Each pricing and tick stream is subscribed once and unsubscribed on stop.**
+  A strategy whose tick monitoring and pricing wanted the same stream subscribed
+  it twice, and nothing was unsubscribed when it stopped.
+- **The orphan sweep recognises a cash account's plain exits and stops.** The
+  sweep only looked at reduce-only orders, so once spot exits went out plain an
+  orphaned exit would never have been cancelled. It now also treats this
+  strategy's sell orders on a cash account as closing orders; other strategies'
+  orders, buy orders, and accounts it cannot read are handled as before.
+- **A spot exit sells what the account can sell and leaves the starting dust.**
+  NautilusTrader's position can read larger than the base balance when the fee
+  is taken in base, so a full exit asked for more than was held and was refused.
+  On start the toolkit records the part of each pair's free base balance below
+  one step and logs `spot_reserved_remainder`. Bar exits, tick exits and
+  containment then sell at most the free balance less that remainder, floored
+  to the step, and an exit that would fall below the pair's minimum quantity or
+  notional is not sent and says why. A recovered position that is dust gets no
+  stop, no tick monitoring and no exit, and logs `dust_left_alone`. The dust
+  rule and the sellable quantity live in `custos_toolkit.position.dust`, shared
+  with the runner, with boundary vectors both sides test against.
+- **An exit that carries an amount sells that amount.** A partial exit signal's
+  `amount` was ignored and the whole position was sold. The amount is now read
+  as a quote-currency notional, converted at the bar's close, floored to the
+  pair's step and capped at the position; an exit without an amount still
+  closes the position.
 
 ## [0.7.0] - 2026-10-05
 

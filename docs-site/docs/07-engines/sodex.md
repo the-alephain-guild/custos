@@ -17,4 +17,10 @@ Use venue-native symbols, such as `vBTC_vUSDC` for spot or `BTC-USD` for perpetu
 
 Independent evidence reads balances, positions, trades, funding and closed-position history. Truncated queries, mismatched accounts or inconsistent block snapshots refuse reconciliation. Liquidation and additional builder fees remain refused until their economic events have complete reconciliation support.
 
+## Order types and stop modes
+
+SoDEX accepts market and limit orders only, on spot and on perpetuals. It cannot hold a stop order, so a strategy on `sodex` or `sodex_perpetual` must set `risk.trade.sl_tp_mode` to `tick`; any other mode refuses to start with a `[STARTUP]` error. Tick mode has no stop loss: it watches take-profit and the trailing exit on market data and closes with a market order. Bound the exposure another way, for example with the `max_total_notional` ceiling (see [safety during disconnects](/trust-model/safety-survives-disconnect)).
+
+A spot account is a cash account and refuses reduce-only orders. On a cash account the strategy toolkit sends exits and protective orders without `reduce_only`. A spot exit sells at most the free base balance, less the part below one quantity step that the account already held when the strategy started; an exit below the pair's minimum quantity or minimum notional is not sent, and the strategy logs why.
+
 See [production preparation](/operator-guide/production-preparation). Local configuration tests do not establish acceptance of an exchange account on testnet or production.
