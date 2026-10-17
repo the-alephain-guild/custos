@@ -31,6 +31,19 @@ protocol — is published at
 - **`scripts/contract_vendor.py`** vendors another repository's contract assets
   at a contract revision and checks the vendored bytes offline, without naming
   any commit.
+- **Stop reports say what a stop left behind.** When the offline lane stops,
+  it logs one `offline_shutdown_summary` event and adds a `stop_summary` field
+  to each deployment's last `deployment_status`. Each carries the outcome
+  (`stopped`, `stop_timed_out`, `stop_failed` or `still_held`), the orders
+  still open counted by reason (`residual_orders`, `null` when the engine
+  cannot tell) and the dust left on the account (`dust`). Existing readers are
+  unaffected; the exit codes do not change.
+- **Engine status and telemetry snapshots list dust.** `EngineStatus` and the
+  offline telemetry snapshot gain a `dust` list, empty by default. Each entry
+  names the instrument, the asset, the quantity and whether it was read from
+  the position or the account balance, the minimum it is below
+  (`size_increment` or `min_quantity`) and why (`quantity` or `notional`), and
+  the price when one is known.
 
 ### Changed
 
@@ -117,6 +130,74 @@ protocol — is published at
   pin current source or vendored bytes, so editing a consumer source file no
   longer fails the authority gate. `scripts/generate_runner_machine_request_consumer_assets.py`
   is removed.
+- **Containment and stops back off when the venue refuses a cancel.** Until
+  now a refused cancel was sent again on every pass of containment or a stop,
+  with no pause and no limit. On a venue that no longer held the orders this
+  became a stream of requests that never ended, and NautilusTrader's warning
+  for each repeated cancel made the container log grow quadratically, to many
+  gigabytes in hours. Each refusal is now read before the order is asked
+  about again:
+  - an order already waiting for its cancel is never cancelled again; if no
+    answer comes within 15 seconds the venue is asked for the order;
+  - an order the venue does not know is no longer cancelled; the venue is
+    asked for it at once and 10 and 20 seconds later, and 40 seconds after
+    the last answer it is left to reconciliation. On testnet and live the
+    engine now also checks open orders against the venue every 10 seconds
+    and acts on an order missing three times in a row;
+  - a rate limit pauses every safety request on that account (cancels,
+    closes and queries) for 60 seconds, doubling up to 600, and never falls
+    back to cancelling everything;
+  - a connection failure pauses the account for 5 seconds, doubling up to
+    120, and the order is given up after 10 retries;
+  - any other refusal retries that order after 2 seconds, doubling up to 60,
+    and gives up after 5 retries.
+  A flatten stop cancels its orders one at a time instead of all at once, so
+  each keeps its own back-off, and the back-off survives the stop being tried
+  again. Only SoDEX refusal texts are classified; on Binance and OKX every
+  refusal is handled as "any other refusal". On SoDEX the safety path also
+  keeps to 10 requests at once and then one a second per account. An order
+  given up on still counts as unconfirmed: containment does not report it
+  confirmed and the stop reports it in `residual_orders`.
+- **A stop runs once, and the guard waits for it.** A second stop of the same
+  deployment waits for the one already running, and a caller that gives up
+  waiting no longer cancels the stop. The offline lane's exposure guard logs
+  `offline_exposure_stop_in_progress` (formerly
+  `offline_exposure_stop_unconfirmed`) while a stop it started is still
+  running, and retries a stop that ended with the deployment still held after
+  15, 30, 60, 120 and then every 300 seconds, logging
+  `offline_exposure_stop_failed` with the attempt number. A failed stop no
+  longer makes the whole lane exit.
+- **Dust no longer trips the breaker or keeps containment from confirming.**
+  A holding below the smallest order its pair accepts (under the minimum
+  order quantity, or worth less than the minimum notional when a price is
+  known) cannot be sold or closed. Containment and a flatten stop now treat it
+  as flat: they send no close for it and do not wait for it. Without a price,
+  it is left out of the equity and exposure the breaker, readiness check and
+  engine status use, so it no longer leaves the status unreliable and trips
+  the breaker. Any other unpriced holding still fails closed, and a nonzero
+  unpriced balance now names the conversion it lacks,
+  `asset_conversion_unavailable:<asset>/<currency>`. Signed valuations do not
+  change: while unpriced dust is held they are withheld, and the runner signs
+  a `portfolio_dust_unpriced` runtime log fact each time the dust changes. On
+  OKX, where one minimum order can be worth tens of dollars, dust is valued
+  like any other holding. `position_count` now counts the positions the
+  engine holds, dust included, instead of reporting 0 whenever the status is
+  unreliable.
+- **Containment and a preserve stop judge an order by what it does to the
+  position.** An open order is kept as risk-reducing when it reduces the
+  strategy's own position, whether or not it carries `reduce_only`; before,
+  only the flag counted, so a spot exit order without it was cancelled as if
+  it added risk. An order that cannot be judged is treated as adding risk.
+- **Signed facts take an order's direction and role from the same judgement.**
+  An order the runner's order gate judged as reducing the strategy's position
+  is signed as `direction: flat`, with the role `protective_stop` for stop,
+  take-profit and trailing order types and `position_reduction` otherwise.
+  Other orders are signed as `long` or `short` entries. Before, a sell without
+  `reduce_only`, such as a spot exit, was signed as a short entry. When the
+  order gate holds no judgement for the order or cannot be asked, the runner
+  falls back to the `reduce_only` flag and signs an
+  `order_role_inference_unavailable` runtime log fact. The RunnerFact
+  contract does not change.
 
 ### Fixed
 
