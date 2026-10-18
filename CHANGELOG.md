@@ -77,9 +77,9 @@ protocol — is published at
   happened to receive through the pricing subscription.
 
 - **Breaking: the engine is NautilusTrader `2.0.0rc5+sodex.3`.** The runner
-  image and the `custos-strategy-toolkit-nautilus` distribution install the
-  fork release `guild-v2.0.0rc5+sodex.3`, pinned by the sha256 of each platform
-  wheel. What changed in the engine (fork commit `a375b1e5bd`): the SoDEX
+  image, the `custos-strategy-toolkit-nautilus` distribution and the
+  publisher's build environment install the fork release
+  `guild-v2.0.0rc5+sodex.3`, pinned by the sha256 of each platform wheel. What changed in the engine (fork commit `a375b1e5bd`): the SoDEX
   adapter reads the venue's order history as a log of revisions and reconciles
   each order at its latest one, so orders cancelled weeks earlier no longer
   come back as accepted at startup with their funds booked as locked, and the
@@ -93,8 +93,8 @@ protocol — is published at
   The deployment service's strategy release resolution contract is pinned at
   revision 2, the revision whose golden names the new engine; consumers sync
   revision 2 of both contracts and no receipt is written. The strategy release
-  publisher stays on `2.0.0rc5+sodex.2` until a toolkit
-  release candidate built on the new engine exists.
+  publisher builds against strategy toolkit `0.1.0rc10`, the release candidate
+  built on the new engine.
 - **Contract schemas carry a contract revision.** The RunnerFact batch,
   `StrategyArtifactRefV1`, `StrategyArtifactPreImportVerificationReceiptV1` and
   `RuntimeCandidateAcceptanceV1` schemas gain two top-level annotation keywords,
