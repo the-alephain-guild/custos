@@ -53,6 +53,7 @@ into the changelog's `### Deprecated` section.
 | 0.5.x | 2026-09-29 | 2027-09-29 |
 | 0.6.x | 2026-10-02 | 2027-10-02 |
 | 0.7.x | 2026-10-05 | 2027-10-05 |
+| 0.8.x | 2026-10-18 | 2027-10-18 |
 
 Each row, once present, is a hard commitment: a line is not dropped before its
 published end-of-life date.

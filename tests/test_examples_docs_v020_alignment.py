@@ -29,8 +29,9 @@ ACTIVE_RUNTIME_DOCS = (
     SANDBOX_DIR / "README.md",
     TESTNET_DIR / "README.md",
 )
-LOCAL_IMAGE = "custos-runner:v0.7.0"
-REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.7.0"
+LOCAL_IMAGE = "custos-runner:v0.8.0"
+REMOTE_IMAGE = "ghcr.io/the-alephain-guild/custos:v0.8.0"
+REMOTE_IMAGE_V070 = "ghcr.io/the-alephain-guild/custos:v0.7.0"
 REMOTE_IMAGE_V062 = "ghcr.io/the-alephain-guild/custos:v0.6.2"
 REMOTE_IMAGE_V061 = "ghcr.io/the-alephain-guild/custos:v0.6.1"
 REMOTE_IMAGE_V060 = "ghcr.io/the-alephain-guild/custos:v0.6.0"
@@ -45,15 +46,28 @@ MAKEFILE = REPO_ROOT / "Makefile"
 OPERATOR_DEPLOYMENT = REPO_ROOT / "docs-site" / "docs" / "04-operator-guide" / "deployment.md"
 
 
-def test_project_and_lock_are_versioned_v070() -> None:
+def test_project_and_lock_are_versioned_v080() -> None:
     project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     lock = tomllib.loads((REPO_ROOT / "uv.lock").read_text(encoding="utf-8"))
     locked_project = next(
         package for package in lock["package"] if package["name"] == "custos-runner"
     )
 
-    assert project["project"]["version"] == "0.7.0"
-    assert locked_project["version"] == "0.7.0"
+    assert project["project"]["version"] == "0.8.0"
+    assert locked_project["version"] == "0.8.0"
+
+
+def test_changelog_documents_the_published_v080() -> None:
+    text = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    v080 = " ".join(text[text.index("## [0.8.0]") : text.index("## [0.7.0]")].split())
+
+    assert "## [0.8.0] - 2026-10-18" in text
+    assert REMOTE_IMAGE in v080
+    assert "@v0.8.0" in v080
+    assert "0.1.0rc10" in v080
+    assert "2.0.0rc5+sodex.3" in v080
+    for breaking in ("sl_tp_mode", "contract revision 2"):
+        assert breaking in v080
 
 
 def test_changelog_documents_the_published_v070() -> None:
@@ -61,7 +75,7 @@ def test_changelog_documents_the_published_v070() -> None:
     v070 = " ".join(text[text.index("## [0.7.0]") : text.index("## [0.6.2]")].split())
 
     assert "## [0.7.0] - 2026-10-05" in text
-    assert REMOTE_IMAGE in v070
+    assert REMOTE_IMAGE_V070 in v070
     assert "@v0.7.0" in v070
     assert "CUSTOS_RUNTIME_IMAGE_DIGEST" in v070
 

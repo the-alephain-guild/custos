@@ -13,6 +13,27 @@ protocol — is published at
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-18
+
+It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.8.0`
+and as source; there is no PyPI package. Call the reusable publishing workflow at
+`publish-strategy-release.yml@v0.8.0`; a runner or deployment service that trusts
+releases published through it lists that tag as the workflow identity. The engine
+is `2.0.0rc5+sodex.3`, and the strategy toolkit that matches it is `0.1.0rc10`,
+built from the same engine. A strategy repository moves to both together: a
+strategy release built on `0.1.0rc9` names `2.0.0rc5+sodex.2` and is refused. The
+runner state database is unchanged.
+
+Minor, not patch, with two **Breaking** changes. The V1 strategy contracts change
+the engine constant in place, which moves `StrategyArtifactRefV1` and
+`StrategyArtifactPreImportVerificationReceiptV1` to contract revision 2 and
+refuses every strategy release built on the previous engine. A SoDEX strategy
+whose `risk.trade.sl_tp_mode` is anything other than `tick` no longer starts.
+Rebuild and publish strategy releases on toolkit `0.1.0rc10`, set `sl_tp_mode` to
+`tick` for SoDEX, then move runners to 0.8.0. The RunnerFact batch contract moves
+to revision 3; the values it now refuses are ones the consumer already refused,
+and consumers sync it with no receipt.
+
 ### Added
 
 - **Conformance vectors for consumers.** `docs/authority/conformance/` publishes
@@ -79,8 +100,9 @@ protocol — is published at
 - **Breaking: the engine is NautilusTrader `2.0.0rc5+sodex.3`.** The runner
   image, the `custos-strategy-toolkit-nautilus` distribution and the
   publisher's build environment install the fork release
-  `guild-v2.0.0rc5+sodex.3`, pinned by the sha256 of each platform wheel. What changed in the engine (fork commit `a375b1e5bd`): the SoDEX
-  adapter reads the venue's order history as a log of revisions and reconciles
+  `guild-v2.0.0rc5+sodex.3`, pinned by the sha256 of each platform wheel. What
+  changed in the engine (fork commit `a375b1e5bd`): the SoDEX adapter reads
+  the venue's order history as a log of revisions and reconciles
   each order at its latest one, so orders cancelled weeks earlier no longer
   come back as accepted at startup with their funds booked as locked, and the
   cancels sent at shutdown are no longer refused for orders the venue no longer
