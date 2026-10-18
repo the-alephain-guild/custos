@@ -693,13 +693,13 @@ def verify_toolkit_rc_release_authority(manifest: dict[str, object], errors: lis
         },
         {
             "role": "toolkit_rc_authority_receipt_v1",
-            "path": "docs/authority/receipts/custos-toolkit-rc9-authority-v1.json",
+            "path": "docs/authority/receipts/custos-toolkit-rc10-authority-v1.json",
             "contract_only": False,
             "ready_receipt_published": True,
         },
         {
             "role": "toolkit_rc_authority_receipt_v1_sha256",
-            "path": "docs/authority/receipts/custos-toolkit-rc9-authority-v1.json.sha256",
+            "path": "docs/authority/receipts/custos-toolkit-rc10-authority-v1.json.sha256",
             "contract_only": False,
             "ready_receipt_published": True,
         },
@@ -730,8 +730,8 @@ def verify_toolkit_rc_release_authority(manifest: dict[str, object], errors: lis
         "authority_schema": "docs/gateway-contract/v1/toolkit_rc_authority_receipt_v1.schema.json",
         "receipt_status": "READY_TOOLKIT_RC",
         "receipt_present": True,
-        "receipt_path": "docs/authority/receipts/custos-toolkit-rc9-authority-v1.json",
-        "receipt_sha256": "ed9d0597a181b9073f6ff4b6996ef2f59fb4fd9c74c72704272c968d6d0f20c6",
+        "receipt_path": "docs/authority/receipts/custos-toolkit-rc10-authority-v1.json",
+        "receipt_sha256": "0b9eb3dd756cd660cb9ee33f29639f42de4e7fb8b023f24ae00e556fdcf60026",
         "handoff_ready": True,
         "publication_protocol": "OCI_DISTRIBUTION_V1",
         "runtime_ready": False,
@@ -755,7 +755,7 @@ def _verify_toolkit_rc_receipt(errors: list[str]) -> None:
     if not isinstance(release, dict):
         errors.append("ecosystem toolkit_rc_release must be an object")
         return
-    receipt_path = ROOT / "docs/authority/receipts/custos-toolkit-rc9-authority-v1.json"
+    receipt_path = ROOT / "docs/authority/receipts/custos-toolkit-rc10-authority-v1.json"
     sidecar_path = receipt_path.with_suffix(f"{receipt_path.suffix}.sha256")
     if not receipt_path.is_file() or not sidecar_path.is_file():
         errors.append("canonical Toolkit RC READY receipt or sidecar is missing")
@@ -767,8 +767,8 @@ def _verify_toolkit_rc_receipt(errors: list[str]) -> None:
         errors.append("canonical Toolkit RC READY receipt sidecar differs")
     receipt = load_json(receipt_path)
     expected_receipt = {
-        "candidate_version": "0.1.0rc9",
-        "source_commit": "8ce29584aa0d7b72eea6bb8cfd5031e201c2970e",
+        "candidate_version": "0.1.0rc10",
+        "source_commit": "417b0e17e19e359d91b0fde5e6a941a5950f8055",
         "status": "READY_TOOLKIT_RC",
         "ready": True,
         "handoff_ready": True,
@@ -788,8 +788,8 @@ def _verify_toolkit_rc_receipt(errors: list[str]) -> None:
         errors.append("canonical Toolkit RC READY receipt lacks publication evidence")
     else:
         expected_publication = {
-            "manifest_digest": "sha256:04189c67a255a4e186bd4200a75bdf813d2e94b93de66a5774528e3072c9cee7",
-            "workflow_run_id": 36517888397,
+            "manifest_digest": "sha256:9ac0136b243a6f51d7cadd00d7dcc48c8794794d9a4a05030c9178294382b2bb",
+            "workflow_run_id": 39036691989,
             "release_environment": "toolkit-rc-release",
             "tag_readback_verified": True,
             "manifest_commit_verified": True,
@@ -798,8 +798,8 @@ def _verify_toolkit_rc_receipt(errors: list[str]) -> None:
             if publication.get(key) != value:
                 errors.append(f"canonical Toolkit RC publication {key} differs")
     expected_release = {
-        "promotion_run_id": 36518881294,
-        "promotion_artifact_digest": "sha256:1807b4c8c0bd4c427c30ba1a802bea48e53b6c770a191d5cf23c93c628b2eb62",
+        "promotion_run_id": 39037175327,
+        "promotion_artifact_digest": "sha256:41e3960848aa7cf59a4e6e49bf9880bda3c7d10b141e7907ee4c5b6841060293",
         "receipt_sha256": receipt_digest,
     }
     for key, value in expected_release.items():
