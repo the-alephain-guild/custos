@@ -26,9 +26,16 @@ from typing import Any
 from uuid import UUID
 
 from custos.core.runner_fact import (
+    MAX_STRATEGY_SIGNAL_REASON_FIELDS,
+    RUNNER_STRATEGY_SIGNAL_DECISION_FIELDS,
     RUNNER_STRATEGY_SIGNAL_SCHEMA_VERSION,
     RUNNER_STRATEGY_SIGNAL_SIGNING_DOMAIN,
     RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS,
+    STRATEGY_SIGNAL_ACTIONS,
+    STRATEGY_SIGNAL_ARRIVAL_SOURCES,
+    STRATEGY_SIGNAL_CLOSED_REASONS,
+    STRATEGY_SIGNAL_EVENTS,
+    STRATEGY_SIGNAL_FIELD_GROUPS,
     RunnerFactAuthority,
     RunnerFactIdentity,
     signed_strategy_signal_fact,
@@ -38,7 +45,7 @@ from custos.core.runner_fact import (
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_ID = "alephain.custos.strategy_signal.v1"
 # Raised only when the wire shape or the meaning of a field changes.
-CONTRACT_REVISION = 1
+CONTRACT_REVISION = 2
 SCHEMA_PATH = Path("docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json")
 GOLDEN_PATH = Path("docs/authority/strategy-signal-golden-v1.json")
 VECTORS_PATH = Path("docs/authority/conformance/strategy-signal-fact-v1.vectors.json")
@@ -57,11 +64,21 @@ SPEC_DIGEST = "a" * 64
 CAPABILITY_MANIFEST_DIGEST = "b" * 64
 GENERATION = 7
 
-ERROR_CLASSES = ("unknown_field", "missing_field", "schema_violation")
+ERROR_CLASSES = ("unknown_field", "missing_field", "schema_violation", "invariant_violation")
 
 UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 DIGEST_PATTERN = r"^[0-9a-f]{64}$"
 TIMESTAMP_PATTERN = r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{3,9})?Z$"
+# A canonical decimal the consumer can hold: at most 28 fractional digits and 29
+# digits in all, no trailing fractional zero, no sign on zero.
+_DECIMAL_SCALE_AND_DIGITS = r"(?![^.]*\.[0-9]{29})(?=-?(?:0\.0*)?(?:[0-9]\.?){1,29}$)"
+POSITIVE_DECIMAL_PATTERN = (
+    "^" + _DECIMAL_SCALE_AND_DIGITS + r"(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])$"
+)
+DECIMAL_PATTERN = (
+    "^" + _DECIMAL_SCALE_AND_DIGITS + r"(?:0|-?(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9]))$"
+)
+CURRENCIES = ["USD", "USDT", "USDC", "BTC", "ETH", "VUSDC", "VBTC", "VETH"]
 
 
 def _canonical(value: object) -> bytes:
@@ -180,6 +197,11 @@ def _schema() -> dict[str, Any]:
     }
     if list(properties)[:-1] != list(RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS):
         raise RuntimeError("schema properties differ from the signed payload fields")
+    required = list(properties)
+    decision = _decision_properties(uuid)
+    if list(decision) != list(RUNNER_STRATEGY_SIGNAL_DECISION_FIELDS):
+        raise RuntimeError("schema decision properties differ from the decision fields")
+    properties.update(decision)
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "custos://gateway-contract/v1/strategy_signal_fact_v1.schema.json",
@@ -188,8 +210,10 @@ def _schema() -> dict[str, Any]:
         "title": "Custos StrategySignalFact.v1",
         "type": "object",
         "additionalProperties": False,
-        "required": list(properties),
+        "required": required,
         "properties": properties,
+        "dependentRequired": _dependent_required(),
+        "allOf": _decision_rules(),
         "x-custos-invariants": {
             "subject": (
                 "crucible.runner.strategy-signal.v1.{tenant_id}.{runner_id}.{trading_mode}"
@@ -206,8 +230,112 @@ def _schema() -> dict[str, Any]:
             ),
             "canonicalization": "utf8-json-sort-keys-compact-v1",
             "length_unit": "maxLength counts Unicode characters",
+            "absent_decision_member": (
+                "a decision field without a value is left out, never written as null, so a "
+                "signal without decision fields signs the bytes it signed before they existed"
+            ),
+            "base_quantity_rule": (
+                "target_quantity, reversal_close_quantity and residue_min_quantity are the "
+                "matching _native quantity times its _multiplier, exactly"
+            ),
         },
     }
+
+
+def _decision_properties(uuid: dict[str, Any]) -> dict[str, Any]:
+    positive = {"type": "string", "pattern": POSITIVE_DECIMAL_PATTERN}
+    timestamp = {"type": "string", "pattern": TIMESTAMP_PATTERN}
+    currency = {"enum": CURRENCIES}
+
+    def base(what: str) -> dict[str, Any]:
+        return {**positive, "description": f"{what}, in base-asset units"}
+
+    def native(what: str) -> dict[str, Any]:
+        return {**positive, "description": f"{what}, in the venue's own quantity units"}
+
+    return {
+        "signal_id": uuid,
+        "signal_event": {"enum": list(STRATEGY_SIGNAL_EVENTS)},
+        "closed_reason": {"enum": list(STRATEGY_SIGNAL_CLOSED_REASONS)},
+        "signal_action": {"enum": list(STRATEGY_SIGNAL_ACTIONS)},
+        "target_quantity": base("The position change the decision aims at"),
+        "target_quantity_native": native("The position change the decision aims at"),
+        "target_quantity_multiplier": positive,
+        "target_notional": positive,
+        "target_notional_currency": currency,
+        "reversal_close_quantity": base("The old position a reversal closes"),
+        "reversal_close_quantity_native": native("The old position a reversal closes"),
+        "reversal_close_quantity_multiplier": positive,
+        "reversal_closes_signal_id": uuid,
+        "arrival_price": positive,
+        "arrival_price_source": {"enum": list(STRATEGY_SIGNAL_ARRIVAL_SOURCES)},
+        "arrival_observed_at": timestamp,
+        "reason_code": {"type": "string", "pattern": r"^[a-z][a-z0-9_]{0,63}$"},
+        "reason_fields": {
+            "type": "object",
+            "maxProperties": MAX_STRATEGY_SIGNAL_REASON_FIELDS,
+            "propertyNames": {"pattern": r"^[a-z][a-z0-9_]{0,31}$"},
+            "additionalProperties": {"type": "string", "pattern": DECIMAL_PATTERN},
+        },
+        "valid_until": timestamp,
+        "supersedes_signal_id": uuid,
+        "residue_min_quantity": base("The smallest quantity the venue takes"),
+        "residue_min_quantity_native": native("The smallest quantity the venue takes"),
+        "residue_min_quantity_multiplier": positive,
+        "residue_min_notional": {
+            **positive,
+            "description": "The smallest notional the venue takes",
+        },
+        "residue_min_notional_currency": currency,
+    }
+
+
+def _dependent_required() -> dict[str, list[str]]:
+    rules: dict[str, list[str]] = {}
+    for group in STRATEGY_SIGNAL_FIELD_GROUPS:
+        for field in group:
+            rules[field] = [other for other in group if other != field]
+    for field in RUNNER_STRATEGY_SIGNAL_DECISION_FIELDS:
+        if field not in {"signal_id", "signal_event"}:
+            rules.setdefault(field, [])
+            rules[field] = sorted({*rules[field], "signal_id"})
+    return rules
+
+
+def _decision_rules() -> list[dict[str, Any]]:
+    decided_only = [
+        field
+        for field in RUNNER_STRATEGY_SIGNAL_DECISION_FIELDS
+        if field not in {"signal_id", "signal_event", "closed_reason"}
+    ]
+
+    def when(event: str, then: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "if": {"required": ["signal_event"], "properties": {"signal_event": {"const": event}}},
+            "then": then,
+        }
+
+    return [
+        when(
+            "decided",
+            {
+                "required": ["signal_action"],
+                "properties": {"closed_reason": False},
+                "oneOf": [{"required": ["target_quantity"]}, {"required": ["target_notional"]}],
+            },
+        ),
+        when(
+            "withdrawn",
+            {"properties": {field: False for field in [*decided_only, "closed_reason"]}},
+        ),
+        when(
+            "closed",
+            {
+                "required": ["closed_reason"],
+                "properties": {field: False for field in decided_only},
+            },
+        ),
+    ]
 
 
 def raw(fact: Mapping[str, Any]) -> str:
@@ -335,7 +463,233 @@ def vectors() -> list[dict[str, Any]]:
         _edited(put("source_sequence", 0)),
         reject("schema_violation"),
     )
+    produced(
+        "signal-instrument-below-character-limit",
+        "instrument at 119 characters",
+        {"instrument": "I" * 119},
+        signal(instrument="I" * 119),
+    )
+    _decision_vectors(produced, tolerated)
     return result
+
+
+SIGNAL_ID = "a3000000-0000-4000-8000-000000000001"
+DECIDED: dict[str, Any] = {
+    "signal_id": SIGNAL_ID,
+    "signal_event": "decided",
+    "signal_action": "enter",
+    "target_quantity_native": "37",
+    "target_quantity_multiplier": "1.3",
+}
+DECIDED_IN_FULL: dict[str, Any] = {
+    **DECIDED,
+    "reversal_close_quantity_native": "20",
+    "reversal_close_quantity_multiplier": "1.3",
+    "reversal_closes_signal_id": "a3000000-0000-4000-8000-000000000000",
+    "arrival_price": "60000.5",
+    "arrival_price_source": "quote_mid",
+    "arrival_observed_at": "2026-10-04T01:02:03.500001Z",
+    "reason_code": "supertrend_flip",
+    "reason_fields": {"atr": "152.3", "slope": "-0.07"},
+    "valid_until": "2026-10-04T01:03:03Z",
+    "supersedes_signal_id": "a3000000-0000-4000-8000-0000000000ff",
+    "residue_min_quantity_native": "0.001",
+    "residue_min_quantity_multiplier": "1.3",
+    "residue_min_notional": "5",
+    "residue_min_notional_currency": "USDT",
+}
+BY_NOTIONAL: dict[str, Any] = {
+    "signal_id": SIGNAL_ID,
+    "signal_event": "decided",
+    "signal_action": "scale_in",
+    "target_notional": "1500",
+    "target_notional_currency": "USDT",
+    "residue_min_quantity_native": "0.001",
+    "residue_min_quantity_multiplier": "1.3",
+    "residue_min_notional": "5",
+    "residue_min_notional_currency": "USDT",
+}
+
+
+def _decision_vectors(produced, tolerated) -> None:
+    """Revision 2: the decision fields. The runner writes each accepted vector from
+    the recorded input; each refused one is an edit of a built signal, signed again."""
+
+    def decided(**inputs: Any) -> dict[str, Any]:
+        return signal(source_sequence=2, **inputs)
+
+    def edit(inputs: dict[str, Any], change: Callable[[dict[str, Any]], None]) -> dict:
+        fact = decided(**inputs)
+        change(fact)
+        return _resigned(fact)
+
+    def drop(*fields: str) -> Callable[[dict[str, Any]], None]:
+        return lambda fact: [fact.pop(field) for field in fields]
+
+    def put(**fields: Any) -> Callable[[dict[str, Any]], None]:
+        return lambda fact: fact.update(fields)
+
+    for vector_id, covers, inputs in (
+        ("signal-decided-quantity", "a decision that targets a quantity", DECIDED),
+        ("signal-decided-in-full", "a decision with every optional field", DECIDED_IN_FULL),
+        (
+            "signal-decided-notional-with-residue",
+            "a decision that targets a notional, with the venue's minimums",
+            BY_NOTIONAL,
+        ),
+        (
+            "signal-withdrawn",
+            "a withdrawn signal names itself and nothing else",
+            {"signal_id": SIGNAL_ID, "signal_event": "withdrawn"},
+        ),
+        (
+            "signal-closed",
+            "a closed signal names its reason",
+            {"signal_id": SIGNAL_ID, "signal_event": "closed", "closed_reason": "completed"},
+        ),
+        (
+            "signal-reason-fields-at-limit",
+            "sixteen numeric reason fields",
+            {
+                **DECIDED,
+                "reason_fields": {f"f{index:02d}": str(index) for index in range(16)},
+            },
+        ),
+    ):
+        produced(vector_id, covers, inputs, decided(**inputs))
+    refused: list[tuple[str, str, dict[str, Any], Callable[[dict[str, Any]], None], str]] = [
+        (
+            "signal-decision-null",
+            "a decision field written as null",
+            DECIDED,
+            put(valid_until=None),
+            "schema_violation",
+        ),
+        (
+            "signal-decision-without-signal-id",
+            "decision fields without signal_id",
+            DECIDED,
+            drop("signal_id"),
+            "schema_violation",
+        ),
+        (
+            "signal-decided-without-target",
+            "a decision with no target",
+            DECIDED,
+            drop("target_quantity", "target_quantity_native", "target_quantity_multiplier"),
+            "schema_violation",
+        ),
+        (
+            "signal-decided-with-both-targets",
+            "a decision that targets a quantity and a notional",
+            DECIDED,
+            put(target_notional="1500", target_notional_currency="USDT"),
+            "schema_violation",
+        ),
+        (
+            "signal-decided-without-action",
+            "a decision without its action",
+            DECIDED,
+            drop("signal_action"),
+            "schema_violation",
+        ),
+        (
+            "signal-target-without-multiplier",
+            "a target quantity without its multiplier",
+            DECIDED,
+            drop("target_quantity_multiplier"),
+            "schema_violation",
+        ),
+        (
+            "signal-reversal-without-signal",
+            "a reversal quantity without the signal it closes",
+            DECIDED_IN_FULL,
+            drop("reversal_closes_signal_id"),
+            "schema_violation",
+        ),
+        (
+            "signal-reversal-without-multiplier",
+            "a reversal quantity without its multiplier",
+            DECIDED_IN_FULL,
+            drop("reversal_close_quantity_multiplier"),
+            "schema_violation",
+        ),
+        (
+            "signal-arrival-without-time",
+            "an arrival price without its time",
+            DECIDED_IN_FULL,
+            drop("arrival_observed_at"),
+            "schema_violation",
+        ),
+        (
+            "signal-residue-without-multiplier",
+            "a minimum quantity without its multiplier",
+            BY_NOTIONAL,
+            drop("residue_min_quantity_multiplier"),
+            "schema_violation",
+        ),
+        (
+            "signal-withdrawn-with-action",
+            "a withdrawn signal with a decision field",
+            {"signal_id": SIGNAL_ID, "signal_event": "withdrawn"},
+            put(signal_action="exit"),
+            "schema_violation",
+        ),
+        (
+            "signal-closed-without-reason",
+            "a closed signal without its reason",
+            {"signal_id": SIGNAL_ID, "signal_event": "closed", "closed_reason": "completed"},
+            drop("closed_reason"),
+            "schema_violation",
+        ),
+        (
+            "signal-reason-fields-over-limit",
+            "seventeen reason fields",
+            {**DECIDED, "reason_fields": {f"f{index:02d}": str(index) for index in range(16)}},
+            lambda fact: fact["reason_fields"].update(f16="16"),
+            "schema_violation",
+        ),
+        (
+            "signal-reason-field-key-too-long",
+            "a reason field key of 33 characters",
+            DECIDED,
+            put(reason_fields={"k" * 33: "1"}),
+            "schema_violation",
+        ),
+        (
+            "signal-reason-field-key-invalid",
+            "a reason field key that is not a code",
+            DECIDED,
+            put(reason_fields={"ATR": "1"}),
+            "schema_violation",
+        ),
+        (
+            "signal-reason-field-text",
+            "a reason field that is text",
+            DECIDED,
+            put(reason_fields={"note": "breakout"}),
+            "schema_violation",
+        ),
+        (
+            "signal-reason-field-non-canonical",
+            "a reason field in a non-canonical spelling",
+            DECIDED,
+            put(reason_fields={"atr": "1.50"}),
+            "schema_violation",
+        ),
+        (
+            "signal-target-base-differs",
+            "a base quantity that is not native times multiplier",
+            DECIDED,
+            put(target_quantity="48"),
+            "invariant_violation",
+        ),
+    ]
+    for vector_id, covers, inputs, change, error_class in refused:
+        expected = reject(error_class)
+        if error_class == "invariant_violation":
+            expected["schema_outcome"] = "accept"
+        tolerated(vector_id, covers, edit(dict(inputs), change), expected)
 
 
 def vector_document() -> dict[str, Any]:

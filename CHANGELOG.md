@@ -14,9 +14,10 @@ protocol — is published at
 ## [Unreleased]
 
 The RunnerFact batch contract moves to revision 4 and the strategy signal fact
-gets its own contract, `alephain.custos.strategy_signal.v1`, at revision 1. No
-runner behaviour changes: the runner does not sign the new facts yet, and every
-capability published today keeps loading.
+gets its own contract, `alephain.custos.strategy_signal.v1`, at revision 2. No
+runner behaviour changes: the runner does not sign the new facts or fields yet,
+every capability published today keeps loading, and a signal signs the bytes it
+signed before.
 
 ### Added
 
@@ -44,7 +45,14 @@ capability published today keeps loading.
   of the four optional capability flags with the verdict both sides give.
 - **The strategy signal contract.** `strategy_signal_fact_v1.schema.json`, a
   golden signal and `strategy-signal-fact-v1.vectors.json` publish the payload
-  the runner signs today, with no byte changed.
+  the runner signs. Revision 1 is the payload as it was; revision 2 adds optional
+  decision fields: the signal's identity and event (decided, withdrawn or
+  closed), its action and its target as a quantity or a notional, the old
+  position a reversal closes, the arrival price, a reason code with up to
+  sixteen numeric reason fields, a validity end, the signal it supersedes and
+  the venue's minimum quantity and notional at the decision. A decision field
+  without a value is left out, never written as null, so a signal without them
+  signs the revision 1 bytes.
 
 ### Changed
 

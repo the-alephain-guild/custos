@@ -80,6 +80,64 @@ RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS: Final[tuple[str, ...]] = (
     "trace_id",
     "key_id",
 )
+# The decision a signal may also carry. Each is optional and, when absent, is left
+# out of the signed payload rather than written as null, so a signal without them
+# signs the same bytes as before they existed.
+RUNNER_STRATEGY_SIGNAL_DECISION_FIELDS: Final[tuple[str, ...]] = (
+    "signal_id",
+    "signal_event",
+    "closed_reason",
+    "signal_action",
+    "target_quantity",
+    "target_quantity_native",
+    "target_quantity_multiplier",
+    "target_notional",
+    "target_notional_currency",
+    "reversal_close_quantity",
+    "reversal_close_quantity_native",
+    "reversal_close_quantity_multiplier",
+    "reversal_closes_signal_id",
+    "arrival_price",
+    "arrival_price_source",
+    "arrival_observed_at",
+    "reason_code",
+    "reason_fields",
+    "valid_until",
+    "supersedes_signal_id",
+    "residue_min_quantity",
+    "residue_min_quantity_native",
+    "residue_min_quantity_multiplier",
+    "residue_min_notional",
+    "residue_min_notional_currency",
+)
+# Fields that appear together or not at all.
+STRATEGY_SIGNAL_FIELD_GROUPS: Final[tuple[tuple[str, ...], ...]] = (
+    ("signal_id", "signal_event"),
+    ("target_quantity", "target_quantity_native", "target_quantity_multiplier"),
+    ("target_notional", "target_notional_currency"),
+    (
+        "reversal_close_quantity",
+        "reversal_close_quantity_native",
+        "reversal_close_quantity_multiplier",
+        "reversal_closes_signal_id",
+    ),
+    ("arrival_price", "arrival_price_source", "arrival_observed_at"),
+    ("residue_min_quantity", "residue_min_quantity_native", "residue_min_quantity_multiplier"),
+    ("residue_min_notional", "residue_min_notional_currency"),
+)
+STRATEGY_SIGNAL_EVENTS: Final[tuple[str, ...]] = ("decided", "withdrawn", "closed")
+STRATEGY_SIGNAL_ACTIONS: Final[tuple[str, ...]] = ("enter", "scale_in", "reduce", "exit")
+STRATEGY_SIGNAL_CLOSED_REASONS: Final[tuple[str, ...]] = (
+    "completed",
+    "target_unreachable",
+    "suppressed",
+    "refused",
+    "abandoned",
+    "superseded",
+)
+STRATEGY_SIGNAL_ARRIVAL_SOURCES: Final[tuple[str, ...]] = ("quote_mid", "last_trade", "bar_close")
+MAX_STRATEGY_SIGNAL_REASON_FIELDS: Final = 16
+_REASON_FIELD_KEY: Final = re.compile(r"[a-z][a-z0-9_]{0,31}")
 RUNNER_FACT_SIGNING_HEADER_FIELDS: Final[tuple[str, ...]] = (
     "schema_version",
     "batch_id",
@@ -661,15 +719,130 @@ def runner_fact_signing_preimage(value: Mapping[str, Any]) -> bytes:
 
 
 def strategy_signal_signing_payload(value: Mapping[str, Any]) -> dict[str, Any]:
-    """Return the exact closed payload signed by StrategySignalFact.v1."""
+    """Return the exact closed payload signed by StrategySignalFact.v1.
+
+    Every field of ``RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS`` is present; a decision
+    field is present only with a value and only in a combination the contract
+    allows. A decision field written as null is refused: absent and null would
+    sign different bytes for the same signal.
+    """
 
     if not isinstance(value, Mapping):
         raise RunnerFactContractError("strategy signal signing input must be an object")
-    signing_keys = frozenset(RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS)
-    input_keys = frozenset(value)
-    if input_keys not in {signing_keys, signing_keys | {"signature"}}:
+    required = frozenset(RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS)
+    input_keys = frozenset(value) - {"signature"}
+    if not required <= input_keys <= required | frozenset(RUNNER_STRATEGY_SIGNAL_DECISION_FIELDS):
         raise RunnerFactContractError("strategy signal signing fields differ from v1 contract")
-    return {field: value[field] for field in RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS}
+    decision = {
+        field: value[field] for field in RUNNER_STRATEGY_SIGNAL_DECISION_FIELDS if field in value
+    }
+    _require_signal_decision_shape(decision)
+    return {
+        **{field: value[field] for field in RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS},
+        **decision,
+    }
+
+
+def _require_signal_decision_shape(decision: Mapping[str, Any]) -> None:
+    """Which decision fields may appear together, whatever their values."""
+
+    if any(value is None for value in decision.values()):
+        raise RunnerFactContractError("a strategy signal decision field is absent, never null")
+    for group in STRATEGY_SIGNAL_FIELD_GROUPS:
+        present = [field for field in group if field in decision]
+        if present and len(present) != len(group):
+            raise RunnerFactContractError(f"{', '.join(group)} appear together")
+    if not decision:
+        return
+    if "signal_id" not in decision:
+        raise RunnerFactContractError("a strategy signal decision needs signal_id")
+    event = decision["signal_event"]
+    rest = set(decision) - {"signal_id", "signal_event"}
+    if event == "withdrawn":
+        allowed: set[str] = set()
+    elif event == "closed":
+        allowed = {"closed_reason"}
+        if "closed_reason" not in decision:
+            raise RunnerFactContractError("a closed signal names its closed_reason")
+    elif event == "decided":
+        allowed = set(RUNNER_STRATEGY_SIGNAL_DECISION_FIELDS) - {
+            "signal_id",
+            "signal_event",
+            "closed_reason",
+        }
+        if "signal_action" not in decision:
+            raise RunnerFactContractError("a decided signal names its signal_action")
+        if ("target_quantity" in decision) == ("target_notional" in decision):
+            raise RunnerFactContractError(
+                "a decided signal targets a quantity or a notional, exactly one"
+            )
+    else:
+        raise RunnerFactContractError("signal_event must be decided, withdrawn or closed")
+    if rest - allowed:
+        raise RunnerFactContractError(
+            f"a {event} signal does not carry {', '.join(sorted(rest - allowed))}"
+        )
+
+
+def _signal_decision(decision: Mapping[str, Any]) -> dict[str, Any]:
+    """Normalise the decision a caller gives: native quantities with their
+    multiplier in, exact base-asset quantities out."""
+
+    given = {name: value for name, value in decision.items() if value is not None}
+    for base in ("target_quantity", "reversal_close_quantity", "residue_min_quantity"):
+        if base in given:
+            raise RunnerFactContractError(f"{base} is computed from its native quantity")
+    accepted = set(RUNNER_STRATEGY_SIGNAL_DECISION_FIELDS) - {
+        "target_quantity",
+        "reversal_close_quantity",
+        "residue_min_quantity",
+    }
+    unknown = set(given) - accepted
+    if unknown:
+        raise RunnerFactContractError(f"not strategy signal fields: {', '.join(sorted(unknown))}")
+    result: dict[str, Any] = {}
+    for name, value in given.items():
+        if name in {"signal_id", "reversal_closes_signal_id", "supersedes_signal_id"}:
+            result[name] = _wire_uuid(value, name)
+        elif name == "signal_event":
+            result[name] = _enum(value, STRATEGY_SIGNAL_EVENTS, name)
+        elif name == "signal_action":
+            result[name] = _enum(value, STRATEGY_SIGNAL_ACTIONS, name)
+        elif name == "closed_reason":
+            result[name] = _enum(value, STRATEGY_SIGNAL_CLOSED_REASONS, name)
+        elif name == "arrival_price_source":
+            result[name] = _enum(value, STRATEGY_SIGNAL_ARRIVAL_SOURCES, name)
+        elif name in {"target_notional_currency", "residue_min_notional_currency"}:
+            result[name] = _currency(value)
+        elif name in {"arrival_observed_at", "valid_until"}:
+            result[name] = _timestamp(value, name)
+        elif name == "reason_code":
+            result[name] = _reason_code(value)
+        elif name == "reason_fields":
+            result[name] = _reason_fields(value)
+        else:
+            result[name] = _positive_quantity(value, name)
+    for base in ("target_quantity", "reversal_close_quantity", "residue_min_quantity"):
+        native, multiplier = f"{base}_native", f"{base}_multiplier"
+        if native in result and multiplier in result:
+            result[base] = _base_quantity(result[native], result[multiplier], base)
+    _require_signal_decision_shape(result)
+    return result
+
+
+def _reason_fields(value: Any) -> dict[str, str]:
+    if not isinstance(value, Mapping) or len(value) > MAX_STRATEGY_SIGNAL_REASON_FIELDS:
+        raise RunnerFactContractError(
+            f"reason_fields holds at most {MAX_STRATEGY_SIGNAL_REASON_FIELDS} numeric fields"
+        )
+    fields: dict[str, str] = {}
+    for key, item in value.items():
+        if not isinstance(key, str) or not _REASON_FIELD_KEY.fullmatch(key):
+            raise RunnerFactContractError("a reason_fields key is a short lower-case code")
+        if isinstance(item, bool) or not isinstance(item, (str, int, Decimal)):
+            raise RunnerFactContractError("a reason_fields value is a decimal")
+        fields[key] = _signed_decimal(item, f"reason_fields.{key}", bounded=True)
+    return fields
 
 
 def _utc_now() -> str:
@@ -1122,8 +1295,13 @@ def signed_strategy_signal_fact(
     strategy_version: str,
     trace_id: UUID | str,
     client_order_id: str | None = None,
+    **decision: Any,
 ) -> dict[str, Any]:
     """Build one independently signed, scope-complete strategy signal fact.
+
+    ``decision`` holds the optional decision fields; native quantities come with
+    their multiplier and the base-asset quantities are computed here. A field
+    left out, or given as None, is not written.
 
     The dedicated subject preserves RunnerFact V1 compatibility: consumers that
     only understand the canonical batch contract never receive this envelope.
@@ -1180,6 +1358,7 @@ def signed_strategy_signal_fact(
             "input_digest": input_digest,
             "trace_id": _uuid(trace_id, "trace_id"),
             "key_id": identity.key_id,
+            **_signal_decision(decision),
         }
     )
     return {

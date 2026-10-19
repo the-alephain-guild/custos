@@ -197,17 +197,17 @@
       ]
     },
     "alephain.custos.strategy_signal.v1": {
-      "revision": 1,
+      "revision": 2,
       "revision_carrier": "schema",
       "schema_path": "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json",
-      "wire_sha256": "8b28bdd22d9772a8a83375968a655c7c3933461a848f81aab130f08f05a68717",
-      "vectors_sha256": "d4091225018f64687e4671f2cfdc858d1bc6781721d3b1ff4ad5d3818f87787e",
+      "wire_sha256": "0565b531c0aca02d2cf7538ebdb91fee2733385c213878b94eeb2d506026fdac",
+      "vectors_sha256": "079badf1344f65b0ffac6f46005ddfede05879d33b5ee40edfdea73cf470f325",
       "vectors_path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json",
       "assets": [
         {
           "path": "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json",
-          "sha256": "5d99ebbabb7eb74e593a6b69e8fcef31626984377c96aa6c5e5ebe419f8b14ee",
-          "size_bytes": 4991
+          "sha256": "3ddbccacfe1a7be7ecf2d1f76dbcbba2ec17d5f65770d1860eb04fc0de248c00",
+          "size_bytes": 16004
         },
         {
           "path": "docs/authority/strategy-signal-golden-v1.json",
@@ -216,12 +216,12 @@
         },
         {
           "path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json",
-          "sha256": "d4091225018f64687e4671f2cfdc858d1bc6781721d3b1ff4ad5d3818f87787e",
-          "size_bytes": 27572
+          "sha256": "079badf1344f65b0ffac6f46005ddfede05879d33b5ee40edfdea73cf470f325",
+          "size_bytes": 99812
         },
         {
           "path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json.sha256",
-          "sha256": "6ee1b7015887899af586294b999b3c9444ca84b1534bdef3d0b9536603f82990",
+          "sha256": "7391bbb602be14a7e4ae28bdbf2dab1fb0f1a9ca636d627599f6e5da62345d2d",
           "size_bytes": 103
         }
       ],
@@ -231,6 +231,12 @@
           "wire_sha256": "8b28bdd22d9772a8a83375968a655c7c3933461a848f81aab130f08f05a68717",
           "vectors_sha256": "d4091225018f64687e4671f2cfdc858d1bc6781721d3b1ff4ad5d3818f87787e",
           "note": "first revision; earlier versions of the contract carried no revision"
+        },
+        {
+          "revision": 2,
+          "wire_sha256": "0565b531c0aca02d2cf7538ebdb91fee2733385c213878b94eeb2d506026fdac",
+          "vectors_sha256": "079badf1344f65b0ffac6f46005ddfede05879d33b5ee40edfdea73cf470f325",
+          "note": "raised"
         }
       ]
     },

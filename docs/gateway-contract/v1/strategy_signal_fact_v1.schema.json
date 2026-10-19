@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "custos://gateway-contract/v1/strategy_signal_fact_v1.schema.json",
   "x-contract-id": "alephain.custos.strategy_signal.v1",
-  "x-contract-revision": 1,
+  "x-contract-revision": 2,
   "title": "Custos StrategySignalFact.v1",
   "type": "object",
   "additionalProperties": false,
@@ -149,8 +149,379 @@
     "signature": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "signal_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "signal_event": {
+      "enum": [
+        "decided",
+        "withdrawn",
+        "closed"
+      ]
+    },
+    "closed_reason": {
+      "enum": [
+        "completed",
+        "target_unreachable",
+        "suppressed",
+        "refused",
+        "abandoned",
+        "superseded"
+      ]
+    },
+    "signal_action": {
+      "enum": [
+        "enter",
+        "scale_in",
+        "reduce",
+        "exit"
+      ]
+    },
+    "target_quantity": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+      "description": "The position change the decision aims at, in base-asset units"
+    },
+    "target_quantity_native": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+      "description": "The position change the decision aims at, in the venue's own quantity units"
+    },
+    "target_quantity_multiplier": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"
+    },
+    "target_notional": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"
+    },
+    "target_notional_currency": {
+      "enum": [
+        "USD",
+        "USDT",
+        "USDC",
+        "BTC",
+        "ETH",
+        "VUSDC",
+        "VBTC",
+        "VETH"
+      ]
+    },
+    "reversal_close_quantity": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+      "description": "The old position a reversal closes, in base-asset units"
+    },
+    "reversal_close_quantity_native": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+      "description": "The old position a reversal closes, in the venue's own quantity units"
+    },
+    "reversal_close_quantity_multiplier": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"
+    },
+    "reversal_closes_signal_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "arrival_price": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"
+    },
+    "arrival_price_source": {
+      "enum": [
+        "quote_mid",
+        "last_trade",
+        "bar_close"
+      ]
+    },
+    "arrival_observed_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$"
+    },
+    "reason_code": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "reason_fields": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9_]{0,31}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$"
+      }
+    },
+    "valid_until": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$"
+    },
+    "supersedes_signal_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "residue_min_quantity": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+      "description": "The smallest quantity the venue takes, in base-asset units"
+    },
+    "residue_min_quantity_native": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+      "description": "The smallest quantity the venue takes, in the venue's own quantity units"
+    },
+    "residue_min_quantity_multiplier": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"
+    },
+    "residue_min_notional": {
+      "type": "string",
+      "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+      "description": "The smallest notional the venue takes"
+    },
+    "residue_min_notional_currency": {
+      "enum": [
+        "USD",
+        "USDT",
+        "USDC",
+        "BTC",
+        "ETH",
+        "VUSDC",
+        "VBTC",
+        "VETH"
+      ]
     }
   },
+  "dependentRequired": {
+    "signal_id": [
+      "signal_event"
+    ],
+    "signal_event": [
+      "signal_id"
+    ],
+    "target_quantity": [
+      "signal_id",
+      "target_quantity_multiplier",
+      "target_quantity_native"
+    ],
+    "target_quantity_native": [
+      "signal_id",
+      "target_quantity",
+      "target_quantity_multiplier"
+    ],
+    "target_quantity_multiplier": [
+      "signal_id",
+      "target_quantity",
+      "target_quantity_native"
+    ],
+    "target_notional": [
+      "signal_id",
+      "target_notional_currency"
+    ],
+    "target_notional_currency": [
+      "signal_id",
+      "target_notional"
+    ],
+    "reversal_close_quantity": [
+      "reversal_close_quantity_multiplier",
+      "reversal_close_quantity_native",
+      "reversal_closes_signal_id",
+      "signal_id"
+    ],
+    "reversal_close_quantity_native": [
+      "reversal_close_quantity",
+      "reversal_close_quantity_multiplier",
+      "reversal_closes_signal_id",
+      "signal_id"
+    ],
+    "reversal_close_quantity_multiplier": [
+      "reversal_close_quantity",
+      "reversal_close_quantity_native",
+      "reversal_closes_signal_id",
+      "signal_id"
+    ],
+    "reversal_closes_signal_id": [
+      "reversal_close_quantity",
+      "reversal_close_quantity_multiplier",
+      "reversal_close_quantity_native",
+      "signal_id"
+    ],
+    "arrival_price": [
+      "arrival_observed_at",
+      "arrival_price_source",
+      "signal_id"
+    ],
+    "arrival_price_source": [
+      "arrival_observed_at",
+      "arrival_price",
+      "signal_id"
+    ],
+    "arrival_observed_at": [
+      "arrival_price",
+      "arrival_price_source",
+      "signal_id"
+    ],
+    "residue_min_quantity": [
+      "residue_min_quantity_multiplier",
+      "residue_min_quantity_native",
+      "signal_id"
+    ],
+    "residue_min_quantity_native": [
+      "residue_min_quantity",
+      "residue_min_quantity_multiplier",
+      "signal_id"
+    ],
+    "residue_min_quantity_multiplier": [
+      "residue_min_quantity",
+      "residue_min_quantity_native",
+      "signal_id"
+    ],
+    "residue_min_notional": [
+      "residue_min_notional_currency",
+      "signal_id"
+    ],
+    "residue_min_notional_currency": [
+      "residue_min_notional",
+      "signal_id"
+    ],
+    "closed_reason": [
+      "signal_id"
+    ],
+    "signal_action": [
+      "signal_id"
+    ],
+    "reason_code": [
+      "signal_id"
+    ],
+    "reason_fields": [
+      "signal_id"
+    ],
+    "valid_until": [
+      "signal_id"
+    ],
+    "supersedes_signal_id": [
+      "signal_id"
+    ]
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "signal_event"
+        ],
+        "properties": {
+          "signal_event": {
+            "const": "decided"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "signal_action"
+        ],
+        "properties": {
+          "closed_reason": false
+        },
+        "oneOf": [
+          {
+            "required": [
+              "target_quantity"
+            ]
+          },
+          {
+            "required": [
+              "target_notional"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "signal_event"
+        ],
+        "properties": {
+          "signal_event": {
+            "const": "withdrawn"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "signal_action": false,
+          "target_quantity": false,
+          "target_quantity_native": false,
+          "target_quantity_multiplier": false,
+          "target_notional": false,
+          "target_notional_currency": false,
+          "reversal_close_quantity": false,
+          "reversal_close_quantity_native": false,
+          "reversal_close_quantity_multiplier": false,
+          "reversal_closes_signal_id": false,
+          "arrival_price": false,
+          "arrival_price_source": false,
+          "arrival_observed_at": false,
+          "reason_code": false,
+          "reason_fields": false,
+          "valid_until": false,
+          "supersedes_signal_id": false,
+          "residue_min_quantity": false,
+          "residue_min_quantity_native": false,
+          "residue_min_quantity_multiplier": false,
+          "residue_min_notional": false,
+          "residue_min_notional_currency": false,
+          "closed_reason": false
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "signal_event"
+        ],
+        "properties": {
+          "signal_event": {
+            "const": "closed"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "closed_reason"
+        ],
+        "properties": {
+          "signal_action": false,
+          "target_quantity": false,
+          "target_quantity_native": false,
+          "target_quantity_multiplier": false,
+          "target_notional": false,
+          "target_notional_currency": false,
+          "reversal_close_quantity": false,
+          "reversal_close_quantity_native": false,
+          "reversal_close_quantity_multiplier": false,
+          "reversal_closes_signal_id": false,
+          "arrival_price": false,
+          "arrival_price_source": false,
+          "arrival_observed_at": false,
+          "reason_code": false,
+          "reason_fields": false,
+          "valid_until": false,
+          "supersedes_signal_id": false,
+          "residue_min_quantity": false,
+          "residue_min_quantity_native": false,
+          "residue_min_quantity_multiplier": false,
+          "residue_min_notional": false,
+          "residue_min_notional_currency": false
+        }
+      }
+    }
+  ],
   "x-custos-invariants": {
     "subject": "crucible.runner.strategy-signal.v1.{tenant_id}.{runner_id}.{trading_mode}",
     "signing_domain_base64": "Q1JVQ0lCTEUtUlVOTkVSLVNUUkFURUdZLVNJR05BTC1WMQA=",
@@ -185,6 +556,8 @@
     "sequence_rule": "source_sequence is contiguous per deployment instance",
     "nullable_member": "client_order_id is always present and written as null when absent",
     "canonicalization": "utf8-json-sort-keys-compact-v1",
-    "length_unit": "maxLength counts Unicode characters"
+    "length_unit": "maxLength counts Unicode characters",
+    "absent_decision_member": "a decision field without a value is left out, never written as null, so a signal without decision fields signs the bytes it signed before they existed",
+    "base_quantity_rule": "target_quantity, reversal_close_quantity and residue_min_quantity are the matching _native quantity times its _multiplier, exactly"
   }
 }
