@@ -66,7 +66,7 @@ AUTHORITY_COORDINATE = "custos.runner-fact.v1"
 # Raised only when the wire shape or the meaning of a field changes; a change to
 # descriptive text alone keeps the revision.
 CONTRACT_ID = "alephain.custos.runner_fact_batch.v1"
-CONTRACT_REVISION = 5
+CONTRACT_REVISION = 6
 TENANT_ID = "acme"
 MODE = "sandbox"
 RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")

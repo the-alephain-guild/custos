@@ -497,6 +497,29 @@ def test_every_forbidden_cell_of_the_frozen_matrix_has_its_vector(event: str, fi
 
 
 @pytest.mark.parametrize(
+    ("event", "field"), FROZEN_FORBIDDEN, ids=[f"{e}-{f}" for e, f in FROZEN_FORBIDDEN]
+)
+def test_a_forbidden_cell_is_refused_for_its_field_alone(event: str, field: str) -> None:
+    # The vector is the event's smallest valid fact plus the field and the
+    # fields that must come with it, all of them: take those away and what is
+    # left is the accepted smallest fact. A consumer that let the event carry
+    # the whole group would accept it, so it tests the event's column and
+    # nothing else.
+    batch = _batch(_matrix_vector(event, field, "forbids"))
+    (fact,) = batch["facts"]
+    smallest = VECTORS[f"order-event-{event}"]
+    assert smallest["expected"]["outcome"] == "accept"
+    (base,) = _batch(smallest)["facts"]
+    added = set(fact) - set(base)
+    group = frozen.partners(field)
+    assert field in added and added <= group, sorted(added)
+    assert group <= set(fact), sorted(group - set(fact))
+    stripped = {name: value for name, value in fact.items() if name not in added}
+    assert stripped == base
+    Draft202012Validator(_json(SCHEMA)).validate({**batch, "facts": [stripped]})
+
+
+@pytest.mark.parametrize(
     ("event", "field"), FROZEN_REQUIRED, ids=[f"{e}-{f}" for e, f in FROZEN_REQUIRED]
 )
 def test_every_required_cell_of_the_frozen_matrix_has_its_vector(event: str, field: str) -> None:
@@ -542,11 +565,25 @@ def test_capability_shape_verdicts_are_the_frozen_shape_table() -> None:
         assert shape["expected"] == expected, shape["id"]
 
 
-def test_an_undeclared_capability_is_the_canonical_one() -> None:
-    batch = _batch(VECTORS["lineage-kinds-under-the-canonical-capability"])
+@pytest.mark.parametrize(
+    ("vector_id", "kind"),
+    [
+        ("lineage-kinds-under-the-canonical-capability", ORDER_EVENT_KIND),
+        ("fill-correction-under-the-canonical-capability", FILL_CORRECTION_KIND),
+    ],
+)
+def test_an_undeclared_capability_is_the_canonical_one(vector_id: str, kind: str) -> None:
+    vector = VECTORS[vector_id]
+    assert vector["expected"] == {
+        "outcome": "reject",
+        "error_class": "capability_mismatch",
+        "stage": "admission",
+    }
+    batch = _batch(vector)
     manifest = _json(ROOT / "docs/authority/runner-fact-capability-manifest-v1.json")
     assert batch["capability_manifest_digest"] == _sha256(_canonical(manifest))
-    assert ORDER_EVENT_KIND not in manifest["fact_kind_projectors"]
+    assert [fact["kind"] for fact in batch["facts"]] == [kind]
+    assert kind not in manifest["fact_kind_projectors"]
 
 
 def test_sequences_name_the_contract_and_only_documented_expectations() -> None:
@@ -622,6 +659,81 @@ def test_a_refused_amendment_step_names_the_values_it_keeps() -> None:
                     assert "order_confirmed_limit_price" in step["expected"], sequence["id"]
                     covered.add("limit_price")
     assert covered == {"quantity", "limit_price"}
+
+
+def _base(value: str) -> Decimal:
+    return Decimal(value)
+
+
+def test_the_fills_effective_quantity_is_its_quantity_less_the_last_applied_void() -> None:
+    checked = 0
+    for sequence in SEQUENCES["sequences"]:
+        fills: dict[str, Decimal] = {}
+        applied: dict[str, Decimal] = {}
+        for step in sequence["steps"]:
+            expected = step["expected"]
+            facts = json.loads(step["raw"])["facts"]
+            for fact in facts:
+                if fact["kind"] == "execution_fill":
+                    fills[fact["venue_trade_id"]] = _base(fact["quantity"])
+            voids = [fact for fact in facts if fact.get("order_event") == "fill_voided"]
+            for void in voids:
+                trade = void["voided_venue_trade_id"]
+                if expected["outcome"] == "accept" and trade in fills:
+                    applied[trade] = _base(void["voided_base_quantity"])
+            if "fill_effective_base_quantity" not in expected or len(fills) != 1:
+                continue
+            ((trade, quantity),) = fills.items()
+            effective = quantity - applied.get(trade, Decimal(0))
+            assert _base(expected["fill_effective_base_quantity"]) == effective, (
+                sequence["id"],
+                expected,
+            )
+            checked += 1
+    assert checked >= 40
+
+
+def test_settlement_steps_add_up_and_match_the_order_side() -> None:
+    checked = 0
+    for sequence in SEQUENCES["sequences"]:
+        settled_quantity = None
+        removed = Decimal(0)
+        last_effective = None
+        corrections = 0
+        for step in sequence["steps"]:
+            expected = step["expected"]
+            facts = json.loads(step["raw"])["facts"]
+            for fact in facts:
+                if fact["kind"] == "execution_fill":
+                    settled_quantity = _base(fact["quantity"])
+            if "fill_effective_base_quantity" in expected:
+                last_effective = _base(expected["fill_effective_base_quantity"])
+            if not any(fact["kind"] == FILL_CORRECTION_KIND for fact in facts):
+                continue
+            step_quantity = _base(expected["settled_fill_void_base_quantity_step"])
+            settled_commission = expected["settled_commission_reversal_step"]
+            if expected["outcome"] == "reject":
+                # A refused version applies nothing on either side.
+                assert step_quantity == 0, sequence["id"]
+                assert _base(settled_commission["amount"]) == 0, sequence["id"]
+                assert "commission_reversal_step" not in expected or (
+                    _base(expected["commission_reversal_step"]["amount"]) == 0
+                ), sequence["id"]
+            else:
+                # The settled fill and the order fold reverse the same commission.
+                assert settled_commission == expected["commission_reversal_step"], (
+                    sequence["id"],
+                    expected,
+                )
+            removed += step_quantity
+            corrections += 1
+        checked += corrections
+        if corrections:
+            assert settled_quantity is not None and last_effective is not None
+            # What the corrections took off the settled fill is what the void took
+            # off the fill.
+            assert removed == settled_quantity - last_effective, sequence["id"]
+    assert checked >= 9
 
 
 def test_settlement_corrections_are_preceded_by_their_settled_fill() -> None:

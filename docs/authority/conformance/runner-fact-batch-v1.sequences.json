@@ -1,7 +1,7 @@
 {
   "sequence_set_version": 1,
   "contract_id": "alephain.custos.runner_fact_batch.v1",
-  "contract_revision": 5,
+  "contract_revision": 6,
   "stream": "every step is one signed batch on the lineage stream, in order",
   "expected_keys": {
     "outcome": "accept, or reject when the consumer must not apply the step",

@@ -118,3 +118,27 @@ CAPABILITY_FLAGS = (
     "order_lineage",
     "fill_correction",
 )
+
+# Fields that only come together, from the frozen rules: a native quantity and
+# its base quantity; each commission amount with its currency. A requested
+# quantity also needs the multiplier, but the multiplier does not need it.
+PAIRED = (
+    frozenset({"quantity", "base_quantity"}),
+    frozenset({"voided_quantity", "voided_base_quantity"}),
+    frozenset({"leaves_quantity_after", "leaves_base_quantity_after"}),
+    frozenset({"requested_quantity", "requested_base_quantity"}),
+    frozenset({"commission_voided", "commission_voided_currency"}),
+    frozenset({"fill_commission", "fill_commission_currency"}),
+)
+
+
+def partners(field: str) -> frozenset[str]:
+    """The field and every field that must come with it."""
+
+    group = {field}
+    for pair in PAIRED:
+        if field in pair:
+            group |= pair
+    if field in {"requested_quantity", "requested_base_quantity"}:
+        group.add("quantity_multiplier")
+    return frozenset(group)

@@ -13,12 +13,13 @@ protocol — is published at
 
 ## [Unreleased]
 
-The RunnerFact batch contract moves to revision 5 and the strategy signal fact
+The RunnerFact batch contract moves to revision 6 and the strategy signal fact
 gets its own contract, `alephain.custos.strategy_signal.v1`, at revision 3. No
 runner behaviour changes: the runner does not sign the new facts or fields yet,
 every capability published today keeps loading, and a signal signs the bytes it
-signed before. Revision 4 is in the revision index but was never released;
-revision 5 keeps its wire shape and replaces its vectors and sequences.
+signed before. Revisions 4 and 5 are in the revision index but were never
+released; revision 6 keeps their wire shape and replaces their vectors and
+sequences.
 
 ### Added
 
@@ -47,10 +48,14 @@ revision 5 keeps its wire shape and replaces its vectors and sequences.
 - **Refusal classes and stages are defined in the vector file.** Each error
   class has a one-line definition, and a third stage, `admission`, sits between
   decoding and the inbox for the checks that need the capability record: a kind
-  the capability does not declare is refused there, not while decoding.
+  the capability does not declare is refused there, not while decoding, with one
+  vector for each of the two new kinds.
 - **The field matrix is covered cell by cell.** Every field an order event must
   not carry, and every field it must, has its own vector, base quantities
-  included.
+  included. A forbidden field that the schema only takes together with another
+  (a native quantity and its base quantity, a requested quantity with its
+  multiplier, a commission with its currency) comes with all of them, so the
+  vector is refused for the event's column alone.
 - **The revision index fingerprints the sequences.** A changed sequence file
   under an unchanged revision now fails the revision rule, as a changed vector
   file does.

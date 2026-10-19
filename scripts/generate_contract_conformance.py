@@ -58,7 +58,7 @@ RUNNER_FACT_VECTORS_PATH = Path("docs/authority/conformance/runner-fact-batch-v1
 RUNNER_FACT_SEQUENCES_PATH = Path("docs/authority/conformance/runner-fact-batch-v1.sequences.json")
 LINEAGE_GOLDEN_PATH = Path("docs/authority/runner-fact-lineage-golden-v1.json")
 STRATEGY_VECTORS_PATH = Path("docs/authority/conformance/strategy-canonical-json-v1.vectors.json")
-RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 5)
+RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 6)
 STRATEGY_CANONICAL_CONTRACT = ("alephain.custos.strategy_canonical_json.v1", 1)
 CAPABILITY_MANIFEST_PATH = Path("docs/authority/runner-fact-capability-manifest-v1.json")
 
@@ -899,6 +899,24 @@ _BASE_OF = {
     "voided_quantity": "voided_base_quantity",
     "leaves_quantity_after": "leaves_base_quantity_after",
 }
+# Fields the schema only takes together (its dependentRequired): a native
+# quantity and its base quantity, a requested quantity with its multiplier, and
+# each commission amount with its currency. A vector that adds one of them adds
+# all, so the field's absence from an event is the only thing refused.
+_PAIRED: dict[str, tuple[str, ...]] = {
+    **{native: (native, base) for native, base in _BASE_OF.items()},
+    **{base: (native, base) for native, base in _BASE_OF.items()},
+    "requested_quantity": ("requested_quantity", "requested_base_quantity", "quantity_multiplier"),
+    "requested_base_quantity": (
+        "requested_quantity",
+        "requested_base_quantity",
+        "quantity_multiplier",
+    ),
+    "commission_voided": ("commission_voided", "commission_voided_currency"),
+    "commission_voided_currency": ("commission_voided", "commission_voided_currency"),
+    "fill_commission": ("fill_commission", "fill_commission_currency"),
+    "fill_commission_currency": ("fill_commission", "fill_commission_currency"),
+}
 
 
 def order_event(event: str, **fields: Any) -> dict[str, Any]:
@@ -972,9 +990,29 @@ def _lineage_vector(
     return vector
 
 
+def _add_with_partners(fact: dict[str, Any], field: str) -> None:
+    """Add a field to a built fact together with every field the schema requires
+    beside it, each with a value valid on its own."""
+
+    group = _PAIRED.get(field, (field,))
+    if "quantity_multiplier" in group and "quantity_multiplier" not in fact:
+        fact["quantity_multiplier"] = LINEAGE_SAMPLE["quantity_multiplier"]
+    multiplier = Decimal(fact.get("quantity_multiplier", LINEAGE_SAMPLE["quantity_multiplier"]))
+    for name in group:
+        if name in fact:
+            continue
+        if name in _BASE_OF:
+            fact[name] = LINEAGE_SAMPLE[name]
+            product = format(Decimal(LINEAGE_SAMPLE[name]) * multiplier, "f")
+            fact[_BASE_OF[name]] = product.rstrip("0").rstrip(".") if "." in product else product
+        elif name not in _BASE_OF.values():
+            fact[name] = LINEAGE_SAMPLE[name]
+
+
 def _matrix_vectors() -> list[dict[str, Any]]:
     """One vector per cell of the field-by-event matrix: every field an event must
-    not carry, and every field it must, a base quantity on its own included."""
+    not carry, and every field it must, a base quantity on its own included. A
+    forbidden field comes with its schema partners, so only the event refuses it."""
 
     vectors = []
     wire_fields = [*LINEAGE_SAMPLE, *_BASE_OF.values()]
@@ -995,14 +1033,15 @@ def _matrix_vectors() -> list[dict[str, Any]]:
             name = field.replace("_", "-")
             if not allowed:
                 fact = order_event(event)
-                if field in native_of:
-                    fact[field] = "1"
-                else:
-                    _wire(fact, field, LINEAGE_SAMPLE[field])
+                _add_with_partners(fact, field)
+                partners = [other for other in _PAIRED.get(field, ()) if other != field]
+                covers = f"{event} carries no {field}"
+                if partners:
+                    covers += f" (added with {', '.join(partners)})"
                 vectors.append(
                     _lineage_vector(
                         f"order-event-{event}-forbids-{name}",
-                        f"{event} carries no {field}",
+                        covers,
                         [fact],
                         reject("schema_violation", "decode"),
                     )
@@ -1547,23 +1586,37 @@ def _lineage_vectors() -> list[dict[str, Any]]:
         *_void_vectors(),
         *_quantity_vectors(),
         *_lineage_identifier_vectors(),
-        _undeclared_capability_vector(),
+        *_undeclared_capability_vectors(),
     ]
 
 
-def _undeclared_capability_vector() -> dict[str, Any]:
-    batch = signed_batch(
-        "lineage-kinds-under-the-canonical-capability",
-        [order_event("submitted")],
-        emitted_at="2026-10-19T08:00:01Z",
-    )
-    return {
-        "id": "lineage-kinds-under-the-canonical-capability",
-        "origin": "tolerance",
-        "covers": ["an order event under a capability that does not declare order lineage"],
-        "raw": raw(batch),
-        "expected": reject("capability_mismatch", "admission"),
-    }
+def _undeclared_capability_vectors() -> list[dict[str, Any]]:
+    """Each new kind under the canonical capability, which declares neither flag."""
+
+    vectors = []
+    for vector_id, fact, covers in (
+        (
+            "lineage-kinds-under-the-canonical-capability",
+            order_event("submitted"),
+            "an order event under a capability that does not declare order lineage",
+        ),
+        (
+            "fill-correction-under-the-canonical-capability",
+            correction(),
+            "a fill correction under a capability that does not declare fill correction",
+        ),
+    ):
+        batch = signed_batch(vector_id, [fact], emitted_at="2026-10-19T08:00:01Z")
+        vectors.append(
+            {
+                "id": vector_id,
+                "origin": "tolerance",
+                "covers": [covers],
+                "raw": raw(batch),
+                "expected": reject("capability_mismatch", "admission"),
+            }
+        )
+    return vectors
 
 
 def capability_shape_vectors() -> list[dict[str, Any]]:
