@@ -380,6 +380,9 @@ class RunnerFactEventBridge:
         if event_name == "OrderExpired":
             self._on_order_lifecycle(event, lifecycle="expired", level="WARN")
             return
+        if event_name == "OrderFillVoided":
+            self._report_fill_voided(event, client_order_id)
+            return
         if event_name != "OrderFilled":
             return
         try:
@@ -690,6 +693,27 @@ class RunnerFactEventBridge:
             instrument=str(data.get("instrument_id") or ""),
             reason="not placed by this instance, or released longer ago than the window",
             retention_hours=RELEASED_ORDER_RETENTION_NS // (3_600 * 1_000_000_000),
+        )
+
+    def _report_fill_voided(self, event: Any, client_order_id: str) -> None:
+        """Say so when a signed fill is voided; no fact corrects it yet.
+
+        The settlement and reconciliation facts already sent for the fill keep the
+        voided quantity until a correction fact exists, so the void has to be visible.
+        """
+        try:
+            data = type(event).to_dict(event)
+        except Exception:  # noqa: BLE001 - the report must not fail where silence did not
+            data = {}
+        _log.warning(
+            "runner_fact_fill_voided_not_corrected",
+            deployment_instance_id=self._deployment.deployment_instance_id,
+            client_order_id=client_order_id,
+            trade_id=str(data.get("trade_id") or ""),
+            correction_id=str(data.get("correction_id") or ""),
+            voided_quantity=str(data.get("voided_qty") or ""),
+            is_reopened=bool(data.get("is_reopened")),
+            reason="settlement and reconciliation facts are not corrected for a voided fill",
         )
 
     def _recall_orders(self) -> None:

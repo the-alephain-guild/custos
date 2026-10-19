@@ -28,6 +28,14 @@ protocol — is published at
   silently. The runner state database gains one table, created in place, so an
   existing database does not need to be recreated. Attribution an earlier version
   already removed before the upgrade cannot be recovered.
+- **A voided fill is reported.** When the engine voids part or all of a fill on
+  an order the instance owns, the runner logs
+  `runner_fact_fill_voided_not_corrected` with the client order id, the voided
+  trade id, the correction id, the cumulative voided quantity and whether the
+  order was reopened. No correction fact is signed yet, so the settlement and
+  reconciliation facts already sent for that fill still count the voided
+  quantity; the warning makes the gap visible until a correction fact exists. A
+  void on an order the instance does not own is still dropped.
 
 ## [0.8.0] - 2026-10-18
 
