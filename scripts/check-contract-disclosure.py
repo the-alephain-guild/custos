@@ -11,9 +11,9 @@ and the private planning repository.
 Two scopes, both derived, never listed by hand:
 
 - the standing scope (default): every path named by ``authority-manifest.json``
-  and by ``docs/authority/contract-revisions-v1.json``, the RunnerFact pages of
-  the documentation in both languages, the fact builders and the contract
-  generators;
+  and by ``docs/authority/contract-revisions-v1.json``, the changelog, the
+  RunnerFact pages of the documentation in both languages, the fact builders and
+  the contract generators;
 - ``--since <commit>``: every file changed since that commit and still present,
   together with the standing scope. A change under review uses it to cover its
   sources and tests as well, and adds the terms in ``ACCEPTANCE_TERMS``.
@@ -37,6 +37,7 @@ SELF = Path("scripts/check-contract-disclosure.py")
 AUTHORITY_MANIFEST = Path("authority-manifest.json")
 REVISION_INDEX = Path("docs/authority/contract-revisions-v1.json")
 STANDING_EXTRAS = (
+    Path("CHANGELOG.md"),
     Path("docs-site/docs/03-concepts/runner-fact.md"),
     Path("docs-site/docs/06-integration/consuming-runner-fact.md"),
     Path(
