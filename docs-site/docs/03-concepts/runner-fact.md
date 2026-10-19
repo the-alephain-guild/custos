@@ -37,7 +37,7 @@ Quantities are signed in two units. A native quantity is in the venue's own unit
 
 A refused amendment or cancellation (`modify_refused`, `modify_rejected`, `cancel_rejected`) never changes the order's confirmed quantity or prices. `requested_values_known` says whether the refused values are known; when it is true, a requested value left out was not part of the request.
 
-A fill void is cumulative for the fill it names. Two voids of one fill are the same version only when the voided quantity, the commission reversal and the reopen flag are all equal; a fact delivered again is recognised by its `event_id`. A version with a smaller voided quantity or a smaller absolute commission reversal is not applied. `order_status_after` is the order's state once the engine applied the void, and it decides the order's state.
+A fill void is cumulative for the fill it names. Two voids of one fill are the same version only when the voided quantity, the commission reversal and the reopen flag are all equal; a fact delivered again is recognised by its `event_id`. A version with a smaller voided quantity or a smaller absolute commission reversal is not applied. When the voided fill carried a commission, a version without a reversal is not applied once an earlier version gave one. A version whose voided quantity exceeds the fill's quantity is not applied either. `order_status_after` is the order's state once the engine applied the void, and it decides the order's state.
 
 | Flags declared | Fill signed by this instance | No fill signed by this instance |
 |---|---|---|
