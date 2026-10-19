@@ -205,17 +205,17 @@
       ]
     },
     "alephain.custos.strategy_signal.v1": {
-      "revision": 2,
+      "revision": 3,
       "revision_carrier": "schema",
       "schema_path": "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json",
-      "wire_sha256": "0565b531c0aca02d2cf7538ebdb91fee2733385c213878b94eeb2d506026fdac",
-      "vectors_sha256": "079badf1344f65b0ffac6f46005ddfede05879d33b5ee40edfdea73cf470f325",
+      "wire_sha256": "049e0dba67274cb722d2166343258b06615436c9535aa85f7c0cb96f1ed785c9",
+      "vectors_sha256": "4ad20d8d1de6d70e9f51a8d28f1e80928ad9132189d9deaf94837d78cf074465",
       "vectors_path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json",
       "assets": [
         {
           "path": "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json",
-          "sha256": "3ddbccacfe1a7be7ecf2d1f76dbcbba2ec17d5f65770d1860eb04fc0de248c00",
-          "size_bytes": 16004
+          "sha256": "515606673e9b84a3005d9d2f0c27ef8f71fb5706f5fba5e382786275b45cd15b",
+          "size_bytes": 16999
         },
         {
           "path": "docs/authority/strategy-signal-golden-v1.json",
@@ -224,12 +224,12 @@
         },
         {
           "path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json",
-          "sha256": "079badf1344f65b0ffac6f46005ddfede05879d33b5ee40edfdea73cf470f325",
+          "sha256": "4ad20d8d1de6d70e9f51a8d28f1e80928ad9132189d9deaf94837d78cf074465",
           "size_bytes": 99812
         },
         {
           "path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json.sha256",
-          "sha256": "7391bbb602be14a7e4ae28bdbf2dab1fb0f1a9ca636d627599f6e5da62345d2d",
+          "sha256": "9936216707250b5b96fe329d866c701da81972ca041d35c2ca38d369438b0da4",
           "size_bytes": 103
         }
       ],
@@ -244,6 +244,12 @@
           "revision": 2,
           "wire_sha256": "0565b531c0aca02d2cf7538ebdb91fee2733385c213878b94eeb2d506026fdac",
           "vectors_sha256": "079badf1344f65b0ffac6f46005ddfede05879d33b5ee40edfdea73cf470f325",
+          "note": "raised"
+        },
+        {
+          "revision": 3,
+          "wire_sha256": "049e0dba67274cb722d2166343258b06615436c9535aa85f7c0cb96f1ed785c9",
+          "vectors_sha256": "4ad20d8d1de6d70e9f51a8d28f1e80928ad9132189d9deaf94837d78cf074465",
           "note": "raised"
         }
       ]

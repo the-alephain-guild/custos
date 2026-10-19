@@ -1,7 +1,7 @@
 {
   "vector_set_version": 1,
   "contract_id": "alephain.custos.strategy_signal.v1",
-  "contract_revision": 2,
+  "contract_revision": 3,
   "canonicalization": "utf8-json-sort-keys-compact-v1",
   "digest": "sha256-hex",
   "error_classes": [

@@ -137,9 +137,10 @@ def test_signal_schema_names_the_vectors_revision_and_the_signed_fields() -> Non
     schema = json.loads(SIGNAL_SCHEMA.read_text(encoding="utf-8"))
     assert schema["x-contract-id"] == SIGNAL_DOCUMENT["contract_id"]
     assert schema["x-contract-revision"] == SIGNAL_DOCUMENT["contract_revision"]
-    assert schema["x-custos-invariants"]["signing_payload_fields"] == list(
-        RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS
-    )
+    assert schema["x-custos-invariants"]["signing_payload_fields"] == [
+        *RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS,
+        *RUNNER_STRATEGY_SIGNAL_DECISION_FIELDS,
+    ]
 
 
 def test_signal_golden_is_a_valid_fact_the_runner_signs() -> None:
@@ -182,6 +183,20 @@ def test_accepted_signal_vectors_carry_the_preimage_and_a_valid_signature(
     Ed25519PublicKey.from_public_bytes(
         bytes.fromhex(SIGNAL_DOCUMENT["test_public_key_hex"])
     ).verify(base64.urlsafe_b64decode(signature), preimage)
+
+
+@pytest.mark.parametrize("vector", ACCEPTED_SIGNALS, ids=[str(v["id"]) for v in ACCEPTED_SIGNALS])
+def test_the_published_signing_fields_rebuild_every_accepted_preimage(
+    vector: dict[str, Any],
+) -> None:
+    # A consumer verifies from the schema, not from the runner's code: the
+    # payload it builds from the published field list must be the signed one.
+    invariants = json.loads(SIGNAL_SCHEMA.read_text(encoding="utf-8"))["x-custos-invariants"]
+    fact = json.loads(vector["raw"])
+    payload = {name: fact[name] for name in invariants["signing_payload_fields"] if name in fact}
+    assert set(payload) == set(fact) - {"signature"}
+    domain = base64.b64decode(invariants["signing_domain_base64"])
+    assert (domain + _canonical(payload)).hex() == vector["expected"]["signing_preimage_hex"]
 
 
 REFUSED_SIGNALS = _signal_vectors(lambda vector: vector["expected"]["outcome"] == "reject")

@@ -14,7 +14,7 @@ protocol — is published at
 ## [Unreleased]
 
 The RunnerFact batch contract moves to revision 5 and the strategy signal fact
-gets its own contract, `alephain.custos.strategy_signal.v1`, at revision 2. No
+gets its own contract, `alephain.custos.strategy_signal.v1`, at revision 3. No
 runner behaviour changes: the runner does not sign the new facts or fields yet,
 every capability published today keeps loading, and a signal signs the bytes it
 signed before. Revision 4 is in the revision index but was never released;
@@ -65,7 +65,11 @@ revision 5 keeps its wire shape and replaces its vectors and sequences.
   sixteen numeric reason fields, a validity end, the signal it supersedes and
   the venue's minimum quantity and notional at the decision. A decision field
   without a value is left out, never written as null, so a signal without them
-  signs the revision 1 bytes.
+  signs the revision 1 bytes. Revision 3 changes no bytes a runner signs: the
+  schema's list of signed fields now names the decision fields too, and states
+  that every member but `signature` is signed. Revision 2 listed only the fields
+  of revision 1, so a consumer verifying from that list would refuse a valid
+  decided signal.
 
 ### Changed
 

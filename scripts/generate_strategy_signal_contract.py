@@ -45,7 +45,7 @@ from custos.core.runner_fact import (
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_ID = "alephain.custos.strategy_signal.v1"
 # Raised only when the wire shape or the meaning of a field changes.
-CONTRACT_REVISION = 2
+CONTRACT_REVISION = 3
 SCHEMA_PATH = Path("docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json")
 GOLDEN_PATH = Path("docs/authority/strategy-signal-golden-v1.json")
 VECTORS_PATH = Path("docs/authority/conformance/strategy-signal-fact-v1.vectors.json")
@@ -221,7 +221,16 @@ def _schema() -> dict[str, Any]:
             "signing_domain_base64": base64.b64encode(RUNNER_STRATEGY_SIGNAL_SIGNING_DOMAIN).decode(
                 "ascii"
             ),
-            "signing_payload_fields": list(RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS),
+            "signing_payload_fields": [
+                *RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS,
+                *RUNNER_STRATEGY_SIGNAL_DECISION_FIELDS,
+            ],
+            "signing_payload_rule": (
+                "every member of the fact except signature is signed: each of "
+                "signing_payload_fields the fact carries. The decision fields are carried "
+                "only with a value, so the payload of a signal without them is the fields "
+                "before them"
+            ),
             "signing_preimage_formula": "DOMAIN || canonical_json(payload)",
             "signature_encoding": "base64url-unpadded",
             "sequence_rule": "source_sequence is contiguous per deployment instance",
