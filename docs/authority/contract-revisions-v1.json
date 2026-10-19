@@ -175,6 +175,44 @@
         }
       ]
     },
+    "alephain.custos.strategy_signal.v1": {
+      "revision": 1,
+      "revision_carrier": "schema",
+      "schema_path": "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json",
+      "wire_sha256": "8b28bdd22d9772a8a83375968a655c7c3933461a848f81aab130f08f05a68717",
+      "vectors_sha256": "d4091225018f64687e4671f2cfdc858d1bc6781721d3b1ff4ad5d3818f87787e",
+      "vectors_path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json",
+      "assets": [
+        {
+          "path": "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json",
+          "sha256": "5d99ebbabb7eb74e593a6b69e8fcef31626984377c96aa6c5e5ebe419f8b14ee",
+          "size_bytes": 4991
+        },
+        {
+          "path": "docs/authority/strategy-signal-golden-v1.json",
+          "sha256": "3abb0b686d21dde17701e44963c8bd09b98e7c7351b4b6c0a8f5c638c790c632",
+          "size_bytes": 1321
+        },
+        {
+          "path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json",
+          "sha256": "d4091225018f64687e4671f2cfdc858d1bc6781721d3b1ff4ad5d3818f87787e",
+          "size_bytes": 27572
+        },
+        {
+          "path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json.sha256",
+          "sha256": "6ee1b7015887899af586294b999b3c9444ca84b1534bdef3d0b9536603f82990",
+          "size_bytes": 103
+        }
+      ],
+      "history": [
+        {
+          "revision": 1,
+          "wire_sha256": "8b28bdd22d9772a8a83375968a655c7c3933461a848f81aab130f08f05a68717",
+          "vectors_sha256": "d4091225018f64687e4671f2cfdc858d1bc6781721d3b1ff4ad5d3818f87787e",
+          "note": "first revision; earlier versions of the contract carried no revision"
+        }
+      ]
+    },
     "alephain.custos.strategy_canonical_json.v1": {
       "revision": 1,
       "revision_carrier": "index",

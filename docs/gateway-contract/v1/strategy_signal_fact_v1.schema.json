@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "custos://gateway-contract/v1/strategy_signal_fact_v1.schema.json",
+  "x-contract-id": "alephain.custos.strategy_signal.v1",
+  "x-contract-revision": 1,
+  "title": "Custos StrategySignalFact.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "fact_id",
+    "subject",
+    "tenant_id",
+    "trading_mode",
+    "runner_id",
+    "deployment_instance_id",
+    "deployment_spec_id",
+    "deployment_spec_digest",
+    "generation",
+    "strategy_id",
+    "capability_version_id",
+    "capability_version",
+    "capability_manifest_digest",
+    "strategy_version",
+    "instrument",
+    "client_order_id",
+    "timeframe",
+    "direction",
+    "occurred_at",
+    "source_sequence",
+    "input_digest",
+    "trace_id",
+    "key_id",
+    "signature"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "fact_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "subject": {
+      "type": "string",
+      "pattern": "^crucible\\.runner\\.strategy-signal\\.v1\\.[A-Za-z0-9_-]+\\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(?:live|sandbox|testnet)$"
+    },
+    "tenant_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$"
+    },
+    "trading_mode": {
+      "enum": [
+        "live",
+        "sandbox",
+        "testnet"
+      ]
+    },
+    "runner_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "deployment_instance_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "deployment_spec_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "deployment_spec_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "strategy_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "capability_version_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "capability_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "capability_manifest_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "strategy_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "instrument": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "client_order_id": {
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "timeframe": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32
+    },
+    "direction": {
+      "enum": [
+        "long",
+        "short",
+        "flat"
+      ]
+    },
+    "occurred_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$"
+    },
+    "source_sequence": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "input_digest": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "trace_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "key_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    }
+  },
+  "x-custos-invariants": {
+    "subject": "crucible.runner.strategy-signal.v1.{tenant_id}.{runner_id}.{trading_mode}",
+    "signing_domain_base64": "Q1JVQ0lCTEUtUlVOTkVSLVNUUkFURUdZLVNJR05BTC1WMQA=",
+    "signing_payload_fields": [
+      "schema_version",
+      "fact_id",
+      "subject",
+      "tenant_id",
+      "trading_mode",
+      "runner_id",
+      "deployment_instance_id",
+      "deployment_spec_id",
+      "deployment_spec_digest",
+      "generation",
+      "strategy_id",
+      "capability_version_id",
+      "capability_version",
+      "capability_manifest_digest",
+      "strategy_version",
+      "instrument",
+      "client_order_id",
+      "timeframe",
+      "direction",
+      "occurred_at",
+      "source_sequence",
+      "input_digest",
+      "trace_id",
+      "key_id"
+    ],
+    "signing_preimage_formula": "DOMAIN || canonical_json(payload)",
+    "signature_encoding": "base64url-unpadded",
+    "sequence_rule": "source_sequence is contiguous per deployment instance",
+    "nullable_member": "client_order_id is always present and written as null when absent",
+    "canonicalization": "utf8-json-sort-keys-compact-v1",
+    "length_unit": "maxLength counts Unicode characters"
+  }
+}

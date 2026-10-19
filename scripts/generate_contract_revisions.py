@@ -52,6 +52,8 @@ class Contract:
 
 RUNNER_FACT_VECTORS = "docs/authority/conformance/runner-fact-batch-v1.vectors.json"
 STRATEGY_VECTORS = "docs/authority/conformance/strategy-canonical-json-v1.vectors.json"
+STRATEGY_SIGNAL_SCHEMA = "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json"
+STRATEGY_SIGNAL_VECTORS = "docs/authority/conformance/strategy-signal-fact-v1.vectors.json"
 
 CONTRACTS = (
     Contract(
@@ -95,6 +97,17 @@ CONTRACTS = (
         contract_id="alephain.custos.runtime_candidate_acceptance.v1",
         schema_path="docs/gateway-contract/v1/runtime_candidate_acceptance_v1.schema.json",
         assets=("docs/gateway-contract/v1/runtime_candidate_acceptance_v1.schema.json",),
+    ),
+    Contract(
+        contract_id="alephain.custos.strategy_signal.v1",
+        schema_path=STRATEGY_SIGNAL_SCHEMA,
+        vectors_path=STRATEGY_SIGNAL_VECTORS,
+        assets=(
+            STRATEGY_SIGNAL_SCHEMA,
+            "docs/authority/strategy-signal-golden-v1.json",
+            STRATEGY_SIGNAL_VECTORS,
+            STRATEGY_SIGNAL_VECTORS + ".sha256",
+        ),
     ),
     Contract(
         contract_id="alephain.custos.strategy_canonical_json.v1",

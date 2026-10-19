@@ -3,14 +3,19 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import runpy
 from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from jsonschema import Draft202012Validator
 
 from custos.core.runner_fact import (
     RUNNER_STRATEGY_SIGNAL_SIGNING_DOMAIN,
+    RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS,
     RunnerFactAuthority,
     RunnerFactContractError,
     RunnerFactIdentity,
@@ -98,3 +103,104 @@ def test_signal_fact_rejects_invalid_direction_digest_and_sequence() -> None:
         _fact(timeframe="x" * 33)
     with pytest.raises(RunnerFactContractError):
         _fact(client_order_id="x" * 513)
+
+
+# The published contract: schema, golden and conformance vectors.
+
+ROOT = Path(__file__).resolve().parents[1]
+SIGNAL_SCHEMA = ROOT / "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json"
+SIGNAL_GOLDEN = ROOT / "docs/authority/strategy-signal-golden-v1.json"
+SIGNAL_VECTORS = ROOT / "docs/authority/conformance/strategy-signal-fact-v1.vectors.json"
+SIGNAL_DOCUMENT = json.loads(SIGNAL_VECTORS.read_text(encoding="utf-8"))
+SIGNAL_GENERATOR = runpy.run_path(
+    str(ROOT / "scripts/generate_strategy_signal_contract.py"), run_name="signal_contract_test"
+)
+
+
+def _canonical(value: object) -> bytes:
+    return json.dumps(
+        value, ensure_ascii=False, allow_nan=False, separators=(",", ":"), sort_keys=True
+    ).encode("utf-8")
+
+
+def _signal_vectors(predicate) -> list[dict[str, object]]:
+    return [vector for vector in SIGNAL_DOCUMENT["vectors"] if predicate(vector)]
+
+
+def test_signal_contract_assets_are_exactly_what_the_generator_writes() -> None:
+    for relative, payload in SIGNAL_GENERATOR["build_assets"]().items():
+        assert (ROOT / relative).read_bytes() == payload, relative
+
+
+def test_signal_schema_names_the_vectors_revision_and_the_signed_fields() -> None:
+    schema = json.loads(SIGNAL_SCHEMA.read_text(encoding="utf-8"))
+    assert schema["x-contract-id"] == SIGNAL_DOCUMENT["contract_id"]
+    assert schema["x-contract-revision"] == SIGNAL_DOCUMENT["contract_revision"]
+    assert schema["x-custos-invariants"]["signing_payload_fields"] == list(
+        RUNNER_STRATEGY_SIGNAL_SIGNING_FIELDS
+    )
+
+
+def test_signal_golden_is_a_valid_fact_the_runner_signs() -> None:
+    golden = json.loads(SIGNAL_GOLDEN.read_text(encoding="utf-8"))
+    Draft202012Validator(json.loads(SIGNAL_SCHEMA.read_text(encoding="utf-8"))).validate(golden)
+    assert golden == SIGNAL_GENERATOR["signal"]()
+
+
+ALL_SIGNAL_VECTORS = _signal_vectors(lambda vector: True)
+
+
+@pytest.mark.parametrize(
+    "vector", ALL_SIGNAL_VECTORS, ids=[str(v["id"]) for v in ALL_SIGNAL_VECTORS]
+)
+def test_every_signal_vector_meets_the_schema_as_expected(vector: dict[str, Any]) -> None:
+    validator = Draft202012Validator(json.loads(SIGNAL_SCHEMA.read_text(encoding="utf-8")))
+    fact = json.loads(vector["raw"])
+    if vector["expected"]["outcome"] == "accept":
+        validator.validate(fact)
+    else:
+        assert list(validator.iter_errors(fact)), "schema accepts a vector refused at decode"
+
+
+ACCEPTED_SIGNALS = _signal_vectors(lambda vector: vector["expected"]["outcome"] == "accept")
+
+
+@pytest.mark.parametrize("vector", ACCEPTED_SIGNALS, ids=[str(v["id"]) for v in ACCEPTED_SIGNALS])
+def test_accepted_signal_vectors_carry_the_preimage_and_a_valid_signature(
+    vector: dict[str, Any],
+) -> None:
+    fact = json.loads(vector["raw"])
+    assert _canonical(fact).decode("utf-8") == vector["raw"]
+    assert hashlib.sha256(_canonical(fact)).hexdigest() == vector["expected"]["envelope_digest"]
+    preimage = RUNNER_STRATEGY_SIGNAL_SIGNING_DOMAIN + _canonical(
+        strategy_signal_signing_payload(fact)
+    )
+    assert preimage.hex() == vector["expected"]["signing_preimage_hex"]
+    signature = str(fact["signature"]) + "=" * (-len(str(fact["signature"])) % 4)
+    Ed25519PublicKey.from_public_bytes(
+        bytes.fromhex(SIGNAL_DOCUMENT["test_public_key_hex"])
+    ).verify(base64.urlsafe_b64decode(signature), preimage)
+
+
+REFUSED_SIGNALS = _signal_vectors(lambda vector: vector["expected"]["outcome"] == "reject")
+
+
+@pytest.mark.parametrize("vector", REFUSED_SIGNALS, ids=[str(v["id"]) for v in REFUSED_SIGNALS])
+def test_the_runner_never_signs_a_refused_signal_vector(vector: dict[str, Any]) -> None:
+    fact = json.loads(vector["raw"])
+    with pytest.raises(RunnerFactContractError):
+        payload = strategy_signal_signing_payload(fact)
+        signed_strategy_signal_fact(
+            SIGNAL_GENERATOR["authority"](),
+            SIGNAL_GENERATOR["identity"](),
+            fact_id=payload["fact_id"],
+            instrument=payload["instrument"],
+            timeframe=payload["timeframe"],
+            direction=payload["direction"],
+            occurred_at=payload["occurred_at"],
+            source_sequence=payload["source_sequence"],
+            input_digest=payload["input_digest"],
+            strategy_version=payload["strategy_version"],
+            trace_id=payload["trace_id"],
+            client_order_id=payload["client_order_id"],
+        )

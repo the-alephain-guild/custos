@@ -1,0 +1,161 @@
+{
+  "vector_set_version": 1,
+  "contract_id": "alephain.custos.strategy_signal.v1",
+  "contract_revision": 1,
+  "canonicalization": "utf8-json-sort-keys-compact-v1",
+  "digest": "sha256-hex",
+  "error_classes": [
+    "unknown_field",
+    "missing_field",
+    "schema_violation"
+  ],
+  "stages": {
+    "decode": "refused while parsing the fact, before any state changes"
+  },
+  "test_only": true,
+  "test_signing_seed_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+  "test_public_key_hex": "79b5562e8fe654f94078b112e8a98ba7901f853ae695bed7e0e3910bad049664",
+  "test_key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
+  "vectors": [
+    {
+      "id": "signal-golden",
+      "origin": "producer-canonical",
+      "covers": [
+        "the signed payload and its preimage"
+      ],
+      "producer_input": {},
+      "raw": "{\"capability_manifest_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"client_order_id\":\"O-20261004-001\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"direction\":\"long\",\"fact_id\":\"a1000000-0000-4000-8000-000000000001\",\"generation\":7,\"input_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"occurred_at\":\"2026-10-04T01:02:03.632001Z\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"Mrsq26L9pse9WFhtCACDiQKb5bdbkpjtZCdl9Bhi0NSt72OQoxjLmD7VsqmlZnq4JpObd-n3jmTdekgnWlpgDA\",\"source_sequence\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"strategy_version\":\"trend-v1\",\"subject\":\"crucible.runner.strategy-signal.v1.acme.10000000-0000-4000-8000-000000000001.sandbox\",\"tenant_id\":\"acme\",\"timeframe\":\"1-MINUTE\",\"trace_id\":\"a2000000-0000-4000-8000-000000000001\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "accept",
+        "envelope_digest": "8efbe490b6eb565884302d256037263dde702f18bf6a4bb39d0e5c6e81fc6871",
+        "signing_preimage_hex": "4352554349424c452d52554e4e45522d53545241544547592d5349474e414c2d5631007b226361706162696c6974795f6d616e69666573745f646967657374223a2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c226361706162696c6974795f76657273696f6e223a312c226361706162696c6974795f76657273696f6e5f6964223a2235303030303030302d303030302d343030302d383030302d303030303030303030303035222c22636c69656e745f6f726465725f6964223a224f2d32303236313030342d303031222c226465706c6f796d656e745f696e7374616e63655f6964223a2232303030303030302d303030302d343030302d383030302d303030303030303030303032222c226465706c6f796d656e745f737065635f646967657374223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226465706c6f796d656e745f737065635f6964223a2233303030303030302d303030302d343030302d383030302d303030303030303030303033222c22646972656374696f6e223a226c6f6e67222c22666163745f6964223a2261313030303030302d303030302d343030302d383030302d303030303030303030303031222c2267656e65726174696f6e223a372c22696e7075745f646967657374223a2263636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c22696e737472756d656e74223a22425443555344542d504552502e42494e414e4345222c226b65795f6964223a22656432353531392d3635623630363733643665643838346266303163326332323264383261646130222c226f636375727265645f6174223a22323032362d31302d30345430313a30323a30332e3633323030315a222c2272756e6e65725f6964223a2231303030303030302d303030302d343030302d383030302d303030303030303030303031222c22736368656d615f76657273696f6e223a312c22736f757263655f73657175656e6365223a312c2273747261746567795f6964223a2234303030303030302d303030302d343030302d383030302d303030303030303030303034222c2273747261746567795f76657273696f6e223a227472656e642d7631222c227375626a656374223a226372756369626c652e72756e6e65722e73747261746567792d7369676e616c2e76312e61636d652e31303030303030302d303030302d343030302d383030302d3030303030303030303030312e73616e64626f78222c2274656e616e745f6964223a2261636d65222c2274696d656672616d65223a22312d4d494e555445222c2274726163655f6964223a2261323030303030302d303030302d343030302d383030302d303030303030303030303031222c2274726164696e675f6d6f6465223a2273616e64626f78227d"
+      }
+    },
+    {
+      "id": "signal-client-order-id-null",
+      "origin": "producer-canonical",
+      "covers": [
+        "client_order_id is written as null when the signal names no order"
+      ],
+      "producer_input": {
+        "client_order_id": null
+      },
+      "raw": "{\"capability_manifest_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"client_order_id\":null,\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"direction\":\"long\",\"fact_id\":\"a1000000-0000-4000-8000-000000000001\",\"generation\":7,\"input_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"occurred_at\":\"2026-10-04T01:02:03.632001Z\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"owsPtnWi3PLNeOODuquU_uSQDqBwL8FO9d9lL9AqbV2i-Ene08zvebI0vUW99WxufT8DazC82b9ah97KyNK9Cg\",\"source_sequence\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"strategy_version\":\"trend-v1\",\"subject\":\"crucible.runner.strategy-signal.v1.acme.10000000-0000-4000-8000-000000000001.sandbox\",\"tenant_id\":\"acme\",\"timeframe\":\"1-MINUTE\",\"trace_id\":\"a2000000-0000-4000-8000-000000000001\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "accept",
+        "envelope_digest": "432042326847c0b6203642b95d1b3acb87f8d3df8da8de8cdc38882d92ee6057",
+        "signing_preimage_hex": "4352554349424c452d52554e4e45522d53545241544547592d5349474e414c2d5631007b226361706162696c6974795f6d616e69666573745f646967657374223a2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c226361706162696c6974795f76657273696f6e223a312c226361706162696c6974795f76657273696f6e5f6964223a2235303030303030302d303030302d343030302d383030302d303030303030303030303035222c22636c69656e745f6f726465725f6964223a6e756c6c2c226465706c6f796d656e745f696e7374616e63655f6964223a2232303030303030302d303030302d343030302d383030302d303030303030303030303032222c226465706c6f796d656e745f737065635f646967657374223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226465706c6f796d656e745f737065635f6964223a2233303030303030302d303030302d343030302d383030302d303030303030303030303033222c22646972656374696f6e223a226c6f6e67222c22666163745f6964223a2261313030303030302d303030302d343030302d383030302d303030303030303030303031222c2267656e65726174696f6e223a372c22696e7075745f646967657374223a2263636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c22696e737472756d656e74223a22425443555344542d504552502e42494e414e4345222c226b65795f6964223a22656432353531392d3635623630363733643665643838346266303163326332323264383261646130222c226f636375727265645f6174223a22323032362d31302d30345430313a30323a30332e3633323030315a222c2272756e6e65725f6964223a2231303030303030302d303030302d343030302d383030302d303030303030303030303031222c22736368656d615f76657273696f6e223a312c22736f757263655f73657175656e6365223a312c2273747261746567795f6964223a2234303030303030302d303030302d343030302d383030302d303030303030303030303034222c2273747261746567795f76657273696f6e223a227472656e642d7631222c227375626a656374223a226372756369626c652e72756e6e65722e73747261746567792d7369676e616c2e76312e61636d652e31303030303030302d303030302d343030302d383030302d3030303030303030303030312e73616e64626f78222c2274656e616e745f6964223a2261636d65222c2274696d656672616d65223a22312d4d494e555445222c2274726163655f6964223a2261323030303030302d303030302d343030302d383030302d303030303030303030303031222c2274726164696e675f6d6f6465223a2273616e64626f78227d"
+      }
+    },
+    {
+      "id": "signal-instrument-at-character-limit",
+      "origin": "producer-canonical",
+      "covers": [
+        "instrument at 120 characters"
+      ],
+      "producer_input": {
+        "instrument": "IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII"
+      },
+      "raw": "{\"capability_manifest_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"client_order_id\":\"O-20261004-001\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"direction\":\"long\",\"fact_id\":\"a1000000-0000-4000-8000-000000000001\",\"generation\":7,\"input_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"instrument\":\"IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\",\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"occurred_at\":\"2026-10-04T01:02:03.632001Z\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"QaBJIxEH8ZH5eKpJiIgvJCcP_g9D1TDXa_IdJW35-yZEjNK4us4xWh2zZprjH0uoNwmrH1u_Ds1TeoU1JB0zBw\",\"source_sequence\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"strategy_version\":\"trend-v1\",\"subject\":\"crucible.runner.strategy-signal.v1.acme.10000000-0000-4000-8000-000000000001.sandbox\",\"tenant_id\":\"acme\",\"timeframe\":\"1-MINUTE\",\"trace_id\":\"a2000000-0000-4000-8000-000000000001\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "accept",
+        "envelope_digest": "84fc20881c506324e6a5e55cb6fc7d6466b679ead56ff2c37337eba2907e7d1c",
+        "signing_preimage_hex": "4352554349424c452d52554e4e45522d53545241544547592d5349474e414c2d5631007b226361706162696c6974795f6d616e69666573745f646967657374223a2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c226361706162696c6974795f76657273696f6e223a312c226361706162696c6974795f76657273696f6e5f6964223a2235303030303030302d303030302d343030302d383030302d303030303030303030303035222c22636c69656e745f6f726465725f6964223a224f2d32303236313030342d303031222c226465706c6f796d656e745f696e7374616e63655f6964223a2232303030303030302d303030302d343030302d383030302d303030303030303030303032222c226465706c6f796d656e745f737065635f646967657374223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226465706c6f796d656e745f737065635f6964223a2233303030303030302d303030302d343030302d383030302d303030303030303030303033222c22646972656374696f6e223a226c6f6e67222c22666163745f6964223a2261313030303030302d303030302d343030302d383030302d303030303030303030303031222c2267656e65726174696f6e223a372c22696e7075745f646967657374223a2263636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c22696e737472756d656e74223a22494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949494949222c226b65795f6964223a22656432353531392d3635623630363733643665643838346266303163326332323264383261646130222c226f636375727265645f6174223a22323032362d31302d30345430313a30323a30332e3633323030315a222c2272756e6e65725f6964223a2231303030303030302d303030302d343030302d383030302d303030303030303030303031222c22736368656d615f76657273696f6e223a312c22736f757263655f73657175656e6365223a312c2273747261746567795f6964223a2234303030303030302d303030302d343030302d383030302d303030303030303030303034222c2273747261746567795f76657273696f6e223a227472656e642d7631222c227375626a656374223a226372756369626c652e72756e6e65722e73747261746567792d7369676e616c2e76312e61636d652e31303030303030302d303030302d343030302d383030302d3030303030303030303030312e73616e64626f78222c2274656e616e745f6964223a2261636d65222c2274696d656672616d65223a22312d4d494e555445222c2274726163655f6964223a2261323030303030302d303030302d343030302d383030302d303030303030303030303031222c2274726164696e675f6d6f6465223a2273616e64626f78227d"
+      }
+    },
+    {
+      "id": "signal-instrument-multibyte",
+      "origin": "producer-canonical",
+      "covers": [
+        "instrument of 50 three-byte characters: 50 characters, 150 UTF-8 bytes"
+      ],
+      "producer_input": {
+        "instrument": "€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€"
+      },
+      "raw": "{\"capability_manifest_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"client_order_id\":\"O-20261004-001\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"direction\":\"long\",\"fact_id\":\"a1000000-0000-4000-8000-000000000001\",\"generation\":7,\"input_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"instrument\":\"€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€\",\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"occurred_at\":\"2026-10-04T01:02:03.632001Z\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"eGtN9g_CmI9LE4HX6AnH3lpPx5tMdljRFGJlgAWsmoDhmMCL-t49KcJ1op5RRDN8vpDvDwJFSFauTaLlDru9Bg\",\"source_sequence\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"strategy_version\":\"trend-v1\",\"subject\":\"crucible.runner.strategy-signal.v1.acme.10000000-0000-4000-8000-000000000001.sandbox\",\"tenant_id\":\"acme\",\"timeframe\":\"1-MINUTE\",\"trace_id\":\"a2000000-0000-4000-8000-000000000001\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "accept",
+        "envelope_digest": "e7302a3ab39d2f180b1bfa83c7841ab64265803667e9edf84f9cd2dd8d87c2f1",
+        "signing_preimage_hex": "4352554349424c452d52554e4e45522d53545241544547592d5349474e414c2d5631007b226361706162696c6974795f6d616e69666573745f646967657374223a2262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262626262222c226361706162696c6974795f76657273696f6e223a312c226361706162696c6974795f76657273696f6e5f6964223a2235303030303030302d303030302d343030302d383030302d303030303030303030303035222c22636c69656e745f6f726465725f6964223a224f2d32303236313030342d303031222c226465706c6f796d656e745f696e7374616e63655f6964223a2232303030303030302d303030302d343030302d383030302d303030303030303030303032222c226465706c6f796d656e745f737065635f646967657374223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161222c226465706c6f796d656e745f737065635f6964223a2233303030303030302d303030302d343030302d383030302d303030303030303030303033222c22646972656374696f6e223a226c6f6e67222c22666163745f6964223a2261313030303030302d303030302d343030302d383030302d303030303030303030303031222c2267656e65726174696f6e223a372c22696e7075745f646967657374223a2263636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363636363222c22696e737472756d656e74223a22e282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ace282ac222c226b65795f6964223a22656432353531392d3635623630363733643665643838346266303163326332323264383261646130222c226f636375727265645f6174223a22323032362d31302d30345430313a30323a30332e3633323030315a222c2272756e6e65725f6964223a2231303030303030302d303030302d343030302d383030302d303030303030303030303031222c22736368656d615f76657273696f6e223a312c22736f757263655f73657175656e6365223a312c2273747261746567795f6964223a2234303030303030302d303030302d343030302d383030302d303030303030303030303034222c2273747261746567795f76657273696f6e223a227472656e642d7631222c227375626a656374223a226372756369626c652e72756e6e65722e73747261746567792d7369676e616c2e76312e61636d652e31303030303030302d303030302d343030302d383030302d3030303030303030303030312e73616e64626f78222c2274656e616e745f6964223a2261636d65222c2274696d656672616d65223a22312d4d494e555445222c2274726163655f6964223a2261323030303030302d303030302d343030302d383030302d303030303030303030303031222c2274726164696e675f6d6f6465223a2273616e64626f78227d"
+      }
+    },
+    {
+      "id": "signal-instrument-over-character-limit",
+      "origin": "tolerance",
+      "covers": [
+        "instrument at 121 characters"
+      ],
+      "raw": "{\"capability_manifest_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"client_order_id\":\"O-20261004-001\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"direction\":\"long\",\"fact_id\":\"a1000000-0000-4000-8000-000000000001\",\"generation\":7,\"input_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"instrument\":\"IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\",\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"occurred_at\":\"2026-10-04T01:02:03.632001Z\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"KRLCqYMcJX9aRlL-Dw8fWR3Omxu-aLs84T95A2d0kAIkCM80MWl2uLWfCb6LHZBb1dCNqETFPBdoNQaiHKWLCQ\",\"source_sequence\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"strategy_version\":\"trend-v1\",\"subject\":\"crucible.runner.strategy-signal.v1.acme.10000000-0000-4000-8000-000000000001.sandbox\",\"tenant_id\":\"acme\",\"timeframe\":\"1-MINUTE\",\"trace_id\":\"a2000000-0000-4000-8000-000000000001\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "signal-unknown-field",
+      "origin": "tolerance",
+      "covers": [
+        "a member the payload does not define"
+      ],
+      "raw": "{\"capability_manifest_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"client_order_id\":\"O-20261004-001\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"direction\":\"long\",\"fact_id\":\"a1000000-0000-4000-8000-000000000001\",\"generation\":7,\"input_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"occurred_at\":\"2026-10-04T01:02:03.632001Z\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"1lM6357ccWqSDDVzy9jtI4zWiYCF50IWk4RylZ-6j6Kg1TAb88qrwQFhHuQG1R6AdHEhj2bbOcZOIdh9HCRXCQ\",\"source_sequence\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"strategy_version\":\"trend-v1\",\"subject\":\"crucible.runner.strategy-signal.v1.acme.10000000-0000-4000-8000-000000000001.sandbox\",\"tenant_id\":\"acme\",\"timeframe\":\"1-MINUTE\",\"trace_id\":\"a2000000-0000-4000-8000-000000000001\",\"trading_mode\":\"sandbox\",\"x_unknown\":true}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "unknown_field",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "signal-client-order-id-omitted",
+      "origin": "tolerance",
+      "covers": [
+        "client_order_id is required and may be null; leaving it out is refused"
+      ],
+      "raw": "{\"capability_manifest_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"direction\":\"long\",\"fact_id\":\"a1000000-0000-4000-8000-000000000001\",\"generation\":7,\"input_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"occurred_at\":\"2026-10-04T01:02:03.632001Z\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"PyXNtJHappMyYo_FhPu36EUgabNZWfdS4ZYzsbsiORfIHjFF2r5oiyLW4gIxDhESk4o6uBSS0pkowwxV7DwXBw\",\"source_sequence\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"strategy_version\":\"trend-v1\",\"subject\":\"crucible.runner.strategy-signal.v1.acme.10000000-0000-4000-8000-000000000001.sandbox\",\"tenant_id\":\"acme\",\"timeframe\":\"1-MINUTE\",\"trace_id\":\"a2000000-0000-4000-8000-000000000001\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "missing_field",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "signal-direction-unknown",
+      "origin": "tolerance",
+      "covers": [
+        "direction outside long, short and flat"
+      ],
+      "raw": "{\"capability_manifest_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"client_order_id\":\"O-20261004-001\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"direction\":\"buy\",\"fact_id\":\"a1000000-0000-4000-8000-000000000001\",\"generation\":7,\"input_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"occurred_at\":\"2026-10-04T01:02:03.632001Z\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"Tp02G9tbNEHz_Oc8s6EW1bjC2UDXTNyz1eI4jjMbOViKgYT2dyEsjTPxql3IlK4IiyBUolOsFa6otWEbI-G9BA\",\"source_sequence\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"strategy_version\":\"trend-v1\",\"subject\":\"crucible.runner.strategy-signal.v1.acme.10000000-0000-4000-8000-000000000001.sandbox\",\"tenant_id\":\"acme\",\"timeframe\":\"1-MINUTE\",\"trace_id\":\"a2000000-0000-4000-8000-000000000001\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "signal-input-digest-uppercase",
+      "origin": "tolerance",
+      "covers": [
+        "input_digest in upper case"
+      ],
+      "raw": "{\"capability_manifest_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"client_order_id\":\"O-20261004-001\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"direction\":\"long\",\"fact_id\":\"a1000000-0000-4000-8000-000000000001\",\"generation\":7,\"input_digest\":\"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"occurred_at\":\"2026-10-04T01:02:03.632001Z\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"MqVs8NE-ENSPeSiEeZgJTbi0mJmCutnxufDBu3dB9lxqCdxMm3R3svj8UmSFXmJ_V2o8qFQg8-zR0lhWlD55Ag\",\"source_sequence\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"strategy_version\":\"trend-v1\",\"subject\":\"crucible.runner.strategy-signal.v1.acme.10000000-0000-4000-8000-000000000001.sandbox\",\"tenant_id\":\"acme\",\"timeframe\":\"1-MINUTE\",\"trace_id\":\"a2000000-0000-4000-8000-000000000001\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode"
+      }
+    },
+    {
+      "id": "signal-source-sequence-zero",
+      "origin": "tolerance",
+      "covers": [
+        "source_sequence below one"
+      ],
+      "raw": "{\"capability_manifest_digest\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000005\",\"client_order_id\":\"O-20261004-001\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000002\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"direction\":\"long\",\"fact_id\":\"a1000000-0000-4000-8000-000000000001\",\"generation\":7,\"input_digest\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"occurred_at\":\"2026-10-04T01:02:03.632001Z\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"masps83DrLmczt8lUcm9JeLJCpTx9eGbWHzUVqe7ExU95X-x3GTAFy-0W41rvkiBjJtrkev9wNKcT2Veb5UMDQ\",\"source_sequence\":0,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"strategy_version\":\"trend-v1\",\"subject\":\"crucible.runner.strategy-signal.v1.acme.10000000-0000-4000-8000-000000000001.sandbox\",\"tenant_id\":\"acme\",\"timeframe\":\"1-MINUTE\",\"trace_id\":\"a2000000-0000-4000-8000-000000000001\",\"trading_mode\":\"sandbox\"}",
+      "expected": {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode"
+      }
+    }
+  ]
+}
