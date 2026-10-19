@@ -182,7 +182,15 @@ def standing_scope(root: Path) -> set[Path]:
         scope |= {Path(path) for path in _paths_in(document)}
         scope.add(index)
     scope |= set(STANDING_EXTRAS)
-    return {path for path in scope if (root / path).is_file()}
+    # The manifest also names upstream documents outside this repository (found
+    # only when the checkout sits inside the workspace); they are not published
+    # from here, so they are not read.
+    inside = root.resolve()
+    return {
+        path
+        for path in scope
+        if (root / path).is_file() and (root / path).resolve().is_relative_to(inside)
+    }
 
 
 def changed_scope(since: str) -> set[Path]:
@@ -259,6 +267,17 @@ def self_test() -> None:
         notes.write_text("cleaned up\n", encoding="utf-8")
         findings = scan(root, {Path("notes.md")}, TERMS, exempt)
         assert len(findings) == 1 and "no longer present" in findings[0], findings
+        repository = root / "repository"
+        (repository / "docs").mkdir(parents=True)
+        (root / "upstream.md").write_text("see plan 98\n", encoding="utf-8")
+        (repository / AUTHORITY_MANIFEST).write_text(
+            json.dumps({"upstream": {"path": "../upstream.md"}}), encoding="utf-8"
+        )
+        (repository / REVISION_INDEX).parent.mkdir(parents=True)
+        (repository / REVISION_INDEX).write_text(json.dumps({}), encoding="utf-8")
+        scope = standing_scope(repository)
+        assert Path("../upstream.md") not in scope, "a file outside the repository was read"
+        assert not scan(repository, scope, TERMS), "an upstream document was scanned"
         try:
             scan(root, set(), TERMS)
         except SystemExit:
