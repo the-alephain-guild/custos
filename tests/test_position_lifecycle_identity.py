@@ -100,6 +100,11 @@ class _Emitter:
 
     def forget_order(self, **_order) -> None: ...
 
+    def release_order(self, **_order) -> None: ...
+
+    def prune_released_orders(self, **_scope) -> tuple[str, ...]:
+        return ()
+
     def emit_strategy_signal_sync(self, authority, **signal):
         assert authority == _authority()
         return signal["fact_id"]

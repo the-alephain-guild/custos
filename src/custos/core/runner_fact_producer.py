@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -32,6 +33,17 @@ from custos.core.runner_fact import (
 from custos.core.utc_time import render_utc, render_utc_nanos
 
 _log = get_logger("custos.runner_fact_producer")
+
+# How long a canceled or expired order stays attributed to this instance. The cancel
+# acknowledgement and a fill can cross on the wire, and the engine accepts a fill on
+# an order it already holds as canceled; letting go at the acknowledgement dropped
+# that fill and the settlement facts it carries. The window is bounded so released
+# attribution cannot grow without limit.
+RELEASED_ORDER_RETENTION_NS = 24 * 3_600 * 1_000_000_000
+
+
+def _now_ns() -> int:
+    return time.time_ns()
 
 
 @dataclass(frozen=True, slots=True)
@@ -348,6 +360,8 @@ class RunnerFactEventBridge:
             # A live venue stream is account-wide. Separate deployment nodes can see
             # sibling/manual orders on the same account; only a locally initialized
             # order may enter this instance-scoped signed fact stream.
+            if event_name == "OrderFilled":
+                self._report_unowned_fill(event, client_order_id)
             return
         if event_name == "OrderSubmitted":
             self._on_order_lifecycle(event, lifecycle="submitted", level="INFO")
@@ -643,12 +657,48 @@ class RunnerFactEventBridge:
             client_order_id=client_order_id,
         )
 
+    def _release_order(self, client_order_id: str) -> None:
+        now_ns = _now_ns()
+        self._emitter.release_order(
+            deployment_instance_id=self._deployment.deployment_instance_id,
+            client_order_id=client_order_id,
+            released_at_ns=now_ns,
+        )
+        self._prune_released_orders(now_ns)
+
+    def _prune_released_orders(self, now_ns: int) -> None:
+        expired = self._emitter.prune_released_orders(
+            deployment_instance_id=self._deployment.deployment_instance_id,
+            released_before_ns=now_ns - RELEASED_ORDER_RETENTION_NS,
+        )
+        for client_order_id in expired:
+            self._order_directions.pop(client_order_id, None)
+            self._order_roles.pop(client_order_id, None)
+            self._owned_order_ids.discard(client_order_id)
+
+    def _report_unowned_fill(self, event: Any, client_order_id: str) -> None:
+        """Say so when a fill is left unsigned; it is an execution that happened."""
+        try:
+            data = type(event).to_dict(event)
+        except Exception:  # noqa: BLE001 - the report must not fail where the drop did not
+            data = {}
+        _log.warning(
+            "runner_fact_fill_for_unowned_order_dropped",
+            deployment_instance_id=self._deployment.deployment_instance_id,
+            client_order_id=client_order_id,
+            trade_id=str(data.get("trade_id") or ""),
+            instrument=str(data.get("instrument_id") or ""),
+            reason="not placed by this instance, or released longer ago than the window",
+            retention_hours=RELEASED_ORDER_RETENTION_NS // (3_600 * 1_000_000_000),
+        )
+
     def _recall_orders(self) -> None:
         """Load this instance's orders before the first report can reach the filter.
 
         Scoped to the deployment instance, so a sibling instance sharing the venue
         account -- or anything placed by hand -- is still refused.
         """
+        self._prune_released_orders(_now_ns())
         remembered = self._emitter.recall_orders(self._deployment.deployment_instance_id)
         for client_order_id, (direction, order_role) in remembered.items():
             self._owned_order_ids.add(client_order_id)
@@ -684,9 +734,13 @@ class RunnerFactEventBridge:
                 )
             # Letting go of an order the venue has finished with is not a logging
             # concern: an instance with no runtime log sink must still stop owning it,
-            # or the durable attribution grows without bound.
-            if lifecycle in {"rejected", "canceled", "expired"}:
+            # or the durable attribution grows without bound. A rejected order was
+            # never accepted and the engine refuses a fill on it, so it goes at once;
+            # a canceled or expired one can still be filled, so it is only released.
+            if lifecycle == "rejected":
                 self._forget_order(client_order_id)
+            elif lifecycle in {"canceled", "expired"}:
+                self._release_order(client_order_id)
         except Exception as exc:  # the forwarder isolates and records audit failures
             _log.error("runner_order_lifecycle_event_failed", error=str(exc))
             raise

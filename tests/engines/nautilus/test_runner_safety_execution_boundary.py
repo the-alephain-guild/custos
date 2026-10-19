@@ -1189,6 +1189,11 @@ class _RecordingFactEmitter:
 
     def forget_order(self, **_identity) -> None: ...
 
+    def release_order(self, **_identity) -> None: ...
+
+    def prune_released_orders(self, **_scope) -> tuple[str, ...]:
+        return ()
+
     def emit_strategy_signal_sync(self, _authority, **signal):
         self.signals.append(signal)
         return signal["fact_id"]
