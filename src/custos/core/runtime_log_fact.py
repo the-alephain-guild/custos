@@ -19,7 +19,7 @@ import math
 import re
 import time
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -101,15 +101,31 @@ class RuntimeLogFactError(RunnerFactContractError):
 
 @dataclass(frozen=True, slots=True)
 class RuntimeLogRedactor:
-    """Deterministic recursive redactor with optional exact secret values."""
+    """Deterministic recursive redactor with optional exact secret values.
 
-    known_secrets: tuple[str, ...] = ()
+    The exact values are credentials, so the instance never prints them: the
+    generated repr leaves the field out and ``__repr__`` reports only how many it
+    holds. ``str()`` and f-strings fall back to ``__repr__``.
+
+    Never convert a redactor with ``dataclasses.asdict``, pickle, ``copy`` or any
+    other serializer: each of them would hand the values over. Pickling and
+    copying are refused below. ``asdict`` has no hook a class can refuse through,
+    so it is left to this rule.
+    """
+
+    known_secrets: tuple[str, ...] = field(default=(), repr=False)
 
     def __init__(self, known_secrets: Iterable[str] = ()) -> None:
         cleaned = tuple(
             value for value in (str(candidate) for candidate in known_secrets) if len(value) >= 8
         )
         object.__setattr__(self, "known_secrets", cleaned)
+
+    def __repr__(self) -> str:
+        return f"RuntimeLogRedactor(<{len(self.known_secrets)} known secrets>)"
+
+    def __reduce_ex__(self, protocol: object) -> Any:
+        raise TypeError("RuntimeLogRedactor holds credentials and cannot be pickled or copied")
 
     def message(self, value: str) -> str:
         if not isinstance(value, str) or not value.strip():

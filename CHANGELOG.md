@@ -104,6 +104,18 @@ sequences.
   reconciliation facts already sent for that fill still count the voided
   quantity; the warning makes the gap visible until a correction fact exists. A
   void on an order the instance does not own is still dropped.
+- **The runtime-log redactor no longer prints the secrets it holds, and a failed
+  start redacts the OKX passphrase.** A redactor built with exact credential
+  values used to show them in its repr, so `repr()`, `str()` or an f-string of the
+  object would have printed them; it now reports only how many values it holds,
+  and refuses to be pickled or copied. `dataclasses.asdict` cannot be refused and
+  would still return the values; the class documents that it must not be used.
+  No code path rendered such an object, so nothing was printed before this
+  change. When an engine start fails, the error text in the local
+  `engine_start_attempt_failed` log line was redacted with the API key and
+  secret only; the OKX passphrase is now redacted as well. The redactor still
+  ignores values shorter than 8 characters, so a passphrase that short is not
+  replaced.
 
 ## [0.8.0] - 2026-10-18
 
