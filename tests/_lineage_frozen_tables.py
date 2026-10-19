@@ -142,3 +142,9 @@ def partners(field: str) -> frozenset[str]:
     if field in {"requested_quantity", "requested_base_quantity"}:
         group.add("quantity_multiplier")
     return frozenset(group)
+
+
+# The vectors' sample instrument settles in USDT; a native quantity on an event
+# that carries no multiplier is converted with the sample multiplier.
+SAMPLE_CURRENCY = "USDT"
+SAMPLE_MULTIPLIER = "0.01"

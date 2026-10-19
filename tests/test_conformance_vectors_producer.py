@@ -514,6 +514,16 @@ def test_a_forbidden_cell_is_refused_for_its_field_alone(event: str, field: str)
     group = frozen.partners(field)
     assert field in added and added <= group, sorted(added)
     assert group <= set(fact), sorted(group - set(fact))
+    # The added members carry values valid together: a base quantity is its
+    # native quantity times the multiplier the fact carries (the sample's when it
+    # carries none), and a commission is in the sample's currency.
+    multiplier = Decimal(fact.get("quantity_multiplier", frozen.SAMPLE_MULTIPLIER))
+    for native, base_name in frozen.BASE_OF.items():
+        if base_name in added:
+            assert Decimal(fact[base_name]) == Decimal(fact[native]) * multiplier, base_name
+    for currency in ("commission_voided_currency", "fill_commission_currency"):
+        if currency in added:
+            assert fact[currency] == frozen.SAMPLE_CURRENCY, currency
     stripped = {name: value for name, value in fact.items() if name not in added}
     assert stripped == base
     Draft202012Validator(_json(SCHEMA)).validate({**batch, "facts": [stripped]})
@@ -700,6 +710,9 @@ def test_settlement_steps_add_up_and_match_the_order_side() -> None:
         removed = Decimal(0)
         last_effective = None
         corrections = 0
+        # The cumulative void and commission reversal of the version last applied.
+        applied_void = Decimal(0)
+        applied_commission = Decimal(0)
         for step in sequence["steps"]:
             expected = step["expected"]
             facts = json.loads(step["raw"])["facts"]
@@ -712,6 +725,7 @@ def test_settlement_steps_add_up_and_match_the_order_side() -> None:
                 continue
             step_quantity = _base(expected["settled_fill_void_base_quantity_step"])
             settled_commission = expected["settled_commission_reversal_step"]
+            (correction,) = [fact for fact in facts if fact["kind"] == FILL_CORRECTION_KIND]
             if expected["outcome"] == "reject":
                 # A refused version applies nothing on either side.
                 assert step_quantity == 0, sequence["id"]
@@ -725,6 +739,16 @@ def test_settlement_steps_add_up_and_match_the_order_side() -> None:
                     sequence["id"],
                     expected,
                 )
+                # Each applied step takes off what its version adds to the version
+                # last applied, so steps that trade amounts with each other fail.
+                voided = _base(correction["voided_base_quantity"])
+                commission = _base(correction.get("commission_voided", "0"))
+                assert step_quantity == voided - applied_void, (sequence["id"], expected)
+                assert _base(settled_commission["amount"]) == commission - applied_commission, (
+                    sequence["id"],
+                    expected,
+                )
+                applied_void, applied_commission = voided, commission
             removed += step_quantity
             corrections += 1
         checked += corrections
