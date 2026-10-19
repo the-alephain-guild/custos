@@ -8,6 +8,9 @@ them out of.
 
 from __future__ import annotations
 
+import copy
+import pickle
+
 import pytest
 from structlog.testing import capture_logs
 
@@ -57,3 +60,19 @@ async def test_a_failed_start_does_not_log_the_okx_passphrase() -> None:
     assert len(failures) == 1
     assert FAKE_PASSPHRASE not in failures[0]["error"]
     assert failures[0]["error"] == "venue refused login <redacted>"
+
+
+@pytest.mark.parametrize("protocol", range(pickle.HIGHEST_PROTOCOL + 1))
+def test_a_redactor_refuses_to_be_pickled(protocol: int) -> None:
+    redactor = RuntimeLogRedactor((FAKE_KEY,))
+
+    with pytest.raises(TypeError, match="cannot be pickled or copied"):
+        pickle.dumps(redactor, protocol=protocol)
+
+
+@pytest.mark.parametrize("duplicate", [copy.copy, copy.deepcopy])
+def test_a_redactor_refuses_to_be_copied(duplicate) -> None:
+    redactor = RuntimeLogRedactor((FAKE_KEY,))
+
+    with pytest.raises(TypeError, match="cannot be pickled or copied"):
+        duplicate(redactor)

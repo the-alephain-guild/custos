@@ -106,6 +106,11 @@ class RuntimeLogRedactor:
     The exact values are credentials, so the instance never prints them: the
     generated repr leaves the field out and ``__repr__`` reports only how many it
     holds. ``str()`` and f-strings fall back to ``__repr__``.
+
+    Never convert a redactor with ``dataclasses.asdict``, pickle, ``copy`` or any
+    other serializer: each of them would hand the values over. Pickling and
+    copying are refused below. ``asdict`` has no hook a class can refuse through,
+    so it is left to this rule.
     """
 
     known_secrets: tuple[str, ...] = field(default=(), repr=False)
@@ -118,6 +123,9 @@ class RuntimeLogRedactor:
 
     def __repr__(self) -> str:
         return f"RuntimeLogRedactor(<{len(self.known_secrets)} known secrets>)"
+
+    def __reduce_ex__(self, protocol: object) -> Any:
+        raise TypeError("RuntimeLogRedactor holds credentials and cannot be pickled or copied")
 
     def message(self, value: str) -> str:
         if not isinstance(value, str) or not value.strip():
