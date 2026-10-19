@@ -19,3 +19,7 @@ jobs:
         run: |
           python3 scripts/check-public-surface.py --self-test
           python3 scripts/check-public-surface.py
+      - name: Refuse internal vocabulary in published contract files
+        run: |
+          python3 scripts/check-contract-disclosure.py --self-test
+          python3 scripts/check-contract-disclosure.py
