@@ -98,7 +98,7 @@ clean:  ## Remove pycache / pytest cache / ruff cache
 	find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
 
-# --- Plan 12 release engineering ---------------------------------------------
+# --- Release engineering -----------------------------------------------------
 # `make dist` produces the signed-artifact input; `docker-build` consumes it.
 # `verify-release` is the post-publish smoke gate for the image on GHCR.
 
@@ -195,7 +195,7 @@ check-strategy-contract-assets:  ## Fail when generated strategy contract assets
 	uv run python scripts/generate_strategy_contract_assets.py --check
 
 # ---- Future targets (pending plan rollout) ----
-# typecheck:  ## pyright type checks (integrate in Plan 02+)
+# typecheck:  ## pyright type checks (to be integrated)
 # 	uv run pyright src/ tests/
 #
 # docs:  ## Generate API docs when needed

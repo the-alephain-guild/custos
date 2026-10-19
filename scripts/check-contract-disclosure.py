@@ -91,6 +91,10 @@ EXEMPTIONS: dict[tuple[str, str], str] = {
         "asserts the historical producer receipt, which names the repository that "
         "accepted it; the receipt is not rewritten"
     ),
+    ("Makefile", "internal service name"): (
+        "the path of the sibling copy the vendoring script is compared with; renaming "
+        "it breaks the comparison"
+    ),
     ("docs/authority/strategy-toolkit-contract.md", "planning reference"): _PROVENANCE,
     ("docs/authority/strategy-toolkit-provenance.md", "planning reference"): _PROVENANCE,
 }
