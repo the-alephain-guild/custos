@@ -167,6 +167,18 @@
       "runtime_evidence": false
     },
     {
+      "role": "runner_fact_lineage_golden_v1",
+      "path": "docs/authority/runner-fact-lineage-golden-v1.json",
+      "contract_only": true,
+      "runtime_evidence": false
+    },
+    {
+      "role": "runner_fact_conformance_sequences_v1",
+      "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json",
+      "contract_only": true,
+      "runtime_evidence": false
+    },
+    {
       "role": "local_nats_contract",
       "path": "docs/authority/nats-transport-contract.md"
     },

@@ -177,6 +177,8 @@ RUNNER_FACT_KIND_PROJECTORS: Final[Mapping[str, str]] = MappingProxyType(
         "RunnerValuationCheckpointFact.v1": "reconciliation",
         "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle",
         "RunnerInstanceTerminalValuationFact.v1": "settlement",
+        "RunnerOrderEventFact.v1": "reconciliation",
+        "RunnerFillCorrectionFact.v1": "settlement",
     }
 )
 RUNNER_FACT_PROJECTOR_CONTRACTS: Final[Mapping[str, Mapping[str, object]]] = MappingProxyType(
@@ -197,6 +199,7 @@ RUNNER_FACT_PROJECTOR_CONTRACTS: Final[Mapping[str, Mapping[str, object]]] = Map
                 "fee": "v1",
                 "period_closed": "v1",
                 "terminal_valuation": "v1",
+                "fill_correction": "v1",
             }
         ),
         "reconciliation": MappingProxyType(
@@ -207,6 +210,7 @@ RUNNER_FACT_PROJECTOR_CONTRACTS: Final[Mapping[str, Mapping[str, object]]] = Map
                 "venue_ledger_snapshot_chunk": "v1",
                 "reconciliation_period_closed": "v1",
                 "valuation_checkpoint": "v1",
+                "order_lineage": "v1",
             }
         ),
         "health": MappingProxyType(
@@ -389,6 +393,91 @@ ORDER_EVENT_FIELDS: Final[Mapping[str, tuple[frozenset[str], frozenset[str]]]] =
             _VOID_COMMISSION,
         ),
     }
+)
+
+
+def _capability_shape(
+    *,
+    terminal_valuation: bool,
+    valuation_checkpoint: bool,
+    order_lineage: bool,
+    fill_correction: bool,
+) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
+    projectors = dict(RUNNER_FACT_KIND_PROJECTORS)
+    contracts = {
+        projector: dict(contract) for projector, contract in RUNNER_FACT_PROJECTOR_CONTRACTS.items()
+    }
+    for declared, kind, projector, flag in (
+        (terminal_valuation, TERMINAL_VALUATION_KIND, "settlement", "terminal_valuation"),
+        (
+            valuation_checkpoint,
+            "RunnerValuationCheckpointFact.v1",
+            "reconciliation",
+            "valuation_checkpoint",
+        ),
+        (order_lineage, ORDER_EVENT_KIND, "reconciliation", "order_lineage"),
+        (fill_correction, FILL_CORRECTION_KIND, "settlement", "fill_correction"),
+    ):
+        if not declared:
+            projectors.pop(kind)
+            contracts[projector].pop(flag)
+    return projectors, contracts
+
+
+def runner_fact_capability_shape(
+    *, order_lineage: bool = False, fill_correction: bool = False
+) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
+    """The projectors and contracts of a capability on the current shape, with
+    the order lineage and fill correction flags as asked."""
+
+    return _capability_shape(
+        terminal_valuation=True,
+        valuation_checkpoint=True,
+        order_lineage=order_lineage,
+        fill_correction=fill_correction,
+    )
+
+
+# Every capability shape a receipt may declare. Each optional flag is declared
+# exactly when its kind is routed, so a receipt published before a flag existed
+# stays valid. The order lineage and fill correction flags are offered only on
+# the current shape; an older shape that declares one is refused.
+RUNNER_FACT_CAPABILITY_SHAPES: Final[
+    tuple[tuple[dict[str, str], dict[str, dict[str, object]]], ...]
+] = (
+    _capability_shape(
+        terminal_valuation=True,
+        valuation_checkpoint=True,
+        order_lineage=False,
+        fill_correction=False,
+    ),
+    _capability_shape(
+        terminal_valuation=False,
+        valuation_checkpoint=True,
+        order_lineage=False,
+        fill_correction=False,
+    ),
+    _capability_shape(
+        terminal_valuation=False,
+        valuation_checkpoint=False,
+        order_lineage=False,
+        fill_correction=False,
+    ),
+    _capability_shape(
+        terminal_valuation=True,
+        valuation_checkpoint=True,
+        order_lineage=True,
+        fill_correction=False,
+    ),
+    _capability_shape(
+        terminal_valuation=True,
+        valuation_checkpoint=True,
+        order_lineage=False,
+        fill_correction=True,
+    ),
+    _capability_shape(
+        terminal_valuation=True, valuation_checkpoint=True, order_lineage=True, fill_correction=True
+    ),
 )
 # A terminal valuation is only "same boundary" when its prices and the stop it
 # values are this close to the moment the portfolio was read.
@@ -8922,34 +9011,11 @@ class RunnerCapabilityReceipt:
         manifest = document["capability_manifest"]
         if not isinstance(manifest, dict):
             raise RunnerFactContractError("receipt capability_manifest must be an object")
-        current_projectors = dict(RUNNER_FACT_KIND_PROJECTORS)
-        current_contracts = {
-            projector: dict(contract)
-            for projector, contract in RUNNER_FACT_PROJECTOR_CONTRACTS.items()
-        }
-        # The terminal valuation flag is optional: a receipt published before it
-        # existed stays valid, and the kind is declared exactly when the flag is.
-        without_terminal_projectors = dict(current_projectors)
-        without_terminal_projectors.pop(TERMINAL_VALUATION_KIND)
-        without_terminal_contracts = {
-            projector: dict(contract) for projector, contract in current_contracts.items()
-        }
-        without_terminal_contracts["settlement"].pop("terminal_valuation")
-        legacy_projectors = dict(without_terminal_projectors)
-        legacy_projectors.pop("RunnerValuationCheckpointFact.v1")
-        legacy_contracts = {
-            projector: dict(contract) for projector, contract in without_terminal_contracts.items()
-        }
-        legacy_contracts["reconciliation"].pop("valuation_checkpoint")
         declared_contract = (
             manifest.get("fact_kind_projectors"),
             manifest.get("runner_fact_contracts"),
         )
-        known_contract = declared_contract in (
-            (current_projectors, current_contracts),
-            (without_terminal_projectors, without_terminal_contracts),
-            (legacy_projectors, legacy_contracts),
-        )
+        known_contract = declared_contract in RUNNER_FACT_CAPABILITY_SHAPES
         if (
             manifest.get("closed_fact_union") is not True
             or not known_contract

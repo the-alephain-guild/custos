@@ -63,11 +63,14 @@
     "reconciliation_period_closed": "reconciliation",
     "RunnerValuationCheckpointFact.v1": "reconciliation",
     "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle",
-    "RunnerInstanceTerminalValuationFact.v1": "settlement"
+    "RunnerInstanceTerminalValuationFact.v1": "settlement",
+    "RunnerOrderEventFact.v1": "reconciliation",
+    "RunnerFillCorrectionFact.v1": "settlement"
   },
   "closed_fact_union_assets": [
     "docs/authority/runner-fact-golden-v1.json",
-    "docs/authority/runner-fact-terminal-boundary-golden-v1.json"
+    "docs/authority/runner-fact-terminal-boundary-golden-v1.json",
+    "docs/authority/runner-fact-lineage-golden-v1.json"
   ],
   "synthetic_signature": {
     "algorithm": "ed25519",
@@ -79,8 +82,8 @@
     {
       "role": "runner_fact_batch_schema",
       "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-      "sha256": "eba0af2fac996bc5059ecb3f0dd7f322c7dd337648b1f5d4a6b99ae4294effb1",
-      "size_bytes": 77128
+      "sha256": "9541b509a1d27d934cef646e50ba13469e58d3bf440595f6220b95d39c7bdcee",
+      "size_bytes": 129188
     },
     {
       "role": "runner_fact_batch_golden",
@@ -103,8 +106,8 @@
     {
       "role": "runtime_event_fact_parity_matrix",
       "path": "docs/authority/runner-fact-parity-matrix-v1.json",
-      "sha256": "5b6d1f1ae0d04330e403e094b1856293455a1d8e742cc073d9e77d390d6e28de",
-      "size_bytes": 4357
+      "sha256": "46bb5e16dc8354155b5bcd1b1ba49940b3cfc4b0ac3078ee609dbc2360208c8d",
+      "size_bytes": 4743
     },
     {
       "role": "runner_fact_signing_preimage_golden",
@@ -117,6 +120,12 @@
       "path": "docs/authority/runner-fact-terminal-boundary-golden-v1.json",
       "sha256": "ad0ce237c6d74a76902a3c72e17461fa290e76e77315d518242b72f271cb6c3f",
       "size_bytes": 5080
+    },
+    {
+      "role": "runner_fact_lineage_golden",
+      "path": "docs/authority/runner-fact-lineage-golden-v1.json",
+      "sha256": "5345d72c1967f5198563c953cf0373a8bca3bb0d9616fd6212ec431c25b07264",
+      "size_bytes": 10047
     }
   ]
 }

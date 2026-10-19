@@ -13,6 +13,44 @@ protocol — is published at
 
 ## [Unreleased]
 
+The RunnerFact batch contract moves to revision 4 and the strategy signal fact
+gets its own contract, `alephain.custos.strategy_signal.v1`, at revision 1. No
+runner behaviour changes: the runner does not sign the new facts yet, and every
+capability published today keeps loading.
+
+### Added
+
+- **Order events and fill corrections in RunnerFact V1.** Two optional fact
+  kinds join the closed union. `RunnerOrderEventFact.v1` records an order's life
+  one engine event at a time (initialized, submitted, updated, rejected, denied,
+  refused, canceled, expired, the three refused or rejected amendments and
+  cancellations, and fill_voided), with which fields each event carries fixed in
+  the schema. `RunnerFillCorrectionFact.v1` reverses part of a settlement fill
+  this instance signed and the engine has since voided; it carries the same
+  `source_event_id`, quantities and commission as the matching `fill_voided`
+  event. A capability declares them with two new optional flags,
+  `reconciliation.order_lineage = "v1"` and `settlement.fill_correction = "v1"`,
+  offered only on the current shape; the canonical capability manifest declares
+  neither, so a deployment opts in. Every native quantity comes with its
+  multiplier and an exact base-asset quantity.
+- **`runner-fact-lineage-golden-v1.json`** signs one order through its life,
+  with a fill void and its correction, under a capability that declares both
+  flags.
+- **`runner-fact-batch-v1.sequences.json`** publishes sequences of batches with
+  the state a consumer's fold must reach after each step: cumulative voids,
+  repeated and refused versions, a void without a local fill, refused
+  amendments and prices on an update.
+- **Capability shape vectors.** The vector file lists all sixteen combinations
+  of the four optional capability flags with the verdict both sides give.
+- **The strategy signal contract.** `strategy_signal_fact_v1.schema.json`, a
+  golden signal and `strategy-signal-fact-v1.vectors.json` publish the payload
+  the runner signs today, with no byte changed.
+
+### Changed
+
+- The parity matrix names ARX, not an internal service, as the owner of a fact
+  after ingest.
+
 ## [0.8.0] - 2026-10-18
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.8.0`

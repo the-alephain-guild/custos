@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "custos://gateway-contract/v1/runner_fact_batch_v1.schema.json",
   "x-contract-id": "alephain.custos.runner_fact_batch.v1",
-  "x-contract-revision": 3,
+  "x-contract-revision": 4,
   "title": "Custos RunnerFactBatchV1",
   "type": "object",
   "additionalProperties": false,
@@ -153,6 +153,12 @@
           },
           {
             "$ref": "#/$defs/fact_RunnerInstanceTerminalValuationFact.v1"
+          },
+          {
+            "$ref": "#/$defs/fact_RunnerOrderEventFact.v1"
+          },
+          {
+            "$ref": "#/$defs/fact_RunnerFillCorrectionFact.v1"
           }
         ]
       }
@@ -2601,6 +2607,1671 @@
           }
         }
       ]
+    },
+    "fact_RunnerOrderEventFact.v1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "event_id",
+        "seq",
+        "order_event",
+        "client_order_id",
+        "source_event_id",
+        "occurred_at"
+      ],
+      "properties": {
+        "kind": {
+          "const": "RunnerOrderEventFact.v1"
+        },
+        "event_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "order_event": {
+          "enum": [
+            "initialized",
+            "submitted",
+            "updated",
+            "rejected",
+            "denied",
+            "refused",
+            "canceled",
+            "expired",
+            "modify_refused",
+            "modify_rejected",
+            "cancel_rejected",
+            "fill_voided"
+          ]
+        },
+        "client_order_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "source_event_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "description": "The engine event this fact records; the two facts of one fill void carry the same value"
+        },
+        "occurred_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$"
+        },
+        "instrument": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "side": {
+          "enum": [
+            "buy",
+            "sell"
+          ]
+        },
+        "order_type": {
+          "enum": [
+            "market",
+            "limit",
+            "stop_market",
+            "stop_limit",
+            "market_to_limit",
+            "market_if_touched",
+            "limit_if_touched",
+            "trailing_stop_market",
+            "trailing_stop_limit"
+          ]
+        },
+        "time_in_force": {
+          "enum": [
+            "gtc",
+            "ioc",
+            "fok",
+            "gtd",
+            "day",
+            "at_the_open",
+            "at_the_close"
+          ]
+        },
+        "reduce_only": {
+          "type": "boolean"
+        },
+        "order_purpose": {
+          "enum": [
+            "entry",
+            "scale_in",
+            "exit",
+            "reduce",
+            "protective_stop",
+            "take_profit",
+            "flatten",
+            "unspecified"
+          ]
+        },
+        "execution_relation": {
+          "enum": [
+            "original",
+            "exec_slice",
+            "retry",
+            "replace"
+          ]
+        },
+        "attribution_source": {
+          "enum": [
+            "order_tag",
+            "derived",
+            "none"
+          ]
+        },
+        "signal_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "unattributed_reason": {
+          "enum": [
+            "runner_shutdown_flatten",
+            "runner_breaker_flatten",
+            "recovered_without_attribution",
+            "strategy_without_signal_hook",
+            "missing_signal_tag",
+            "legacy_without_signal",
+            "reserved_tag_forged",
+            "signal_rate_limited"
+          ]
+        },
+        "derived_signal_fact_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "closes_signal_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+        },
+        "parent_client_order_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "retry_of_client_order_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "replaces_client_order_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "exec_spawn_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "order_list_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "venue_parent_order_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "contingency_type": {
+          "enum": [
+            "oco",
+            "oto",
+            "ouo"
+          ]
+        },
+        "quantity": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+          "description": "The confirmed order quantity, in the venue's own quantity units"
+        },
+        "base_quantity": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+          "description": "The confirmed order quantity, in base-asset units: exactly the native quantity times quantity_multiplier"
+        },
+        "quantity_multiplier": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+          "description": "The multiplier from the venue's quantity units to base-asset units"
+        },
+        "limit_price": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "trigger_price": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "requested_values_known": {
+          "type": "boolean",
+          "description": "Whether the refused request's values are known. When true, a requested value left out was not part of the request; when false, none is given"
+        },
+        "requested_quantity": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+          "description": "The quantity a refused amendment asked for, in the venue's own quantity units"
+        },
+        "requested_base_quantity": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+          "description": "The quantity a refused amendment asked for, in base-asset units: exactly the native quantity times quantity_multiplier"
+        },
+        "requested_limit_price": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "requested_trigger_price": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "last_trigger_price": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "voided_venue_trade_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "correction_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "voided_quantity": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+          "description": "The fill's cumulative voided quantity, in the venue's own quantity units"
+        },
+        "voided_base_quantity": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+          "description": "The fill's cumulative voided quantity, in base-asset units: exactly the native quantity times quantity_multiplier"
+        },
+        "is_reopened": {
+          "type": "boolean"
+        },
+        "from_reconciliation": {
+          "type": "boolean"
+        },
+        "order_status_after": {
+          "enum": [
+            "working",
+            "partially_filled",
+            "canceled",
+            "expired",
+            "voided"
+          ],
+          "description": "The order's coarse state once the engine applied the void"
+        },
+        "leaves_quantity_after": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$",
+          "description": "What the order may still fill, in the venue's own quantity units"
+        },
+        "leaves_base_quantity_after": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$",
+          "description": "What the order may still fill, in base-asset units: exactly the native quantity times quantity_multiplier"
+        },
+        "commission_voided": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+          "description": "The fill's cumulative commission reversal, with the fill's sign"
+        },
+        "commission_voided_currency": {
+          "enum": [
+            "USD",
+            "USDT",
+            "USDC",
+            "BTC",
+            "ETH",
+            "VUSDC",
+            "VBTC",
+            "VETH"
+          ]
+        },
+        "fill_commission": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+          "description": "What the voided fill charged; absent when it charged nothing"
+        },
+        "fill_commission_currency": {
+          "enum": [
+            "USD",
+            "USDT",
+            "USDC",
+            "BTC",
+            "ETH",
+            "VUSDC",
+            "VBTC",
+            "VETH"
+          ]
+        }
+      },
+      "dependentRequired": {
+        "quantity": [
+          "base_quantity"
+        ],
+        "requested_quantity": [
+          "requested_base_quantity",
+          "quantity_multiplier"
+        ],
+        "voided_quantity": [
+          "voided_base_quantity"
+        ],
+        "leaves_quantity_after": [
+          "leaves_base_quantity_after"
+        ],
+        "base_quantity": [
+          "quantity"
+        ],
+        "requested_base_quantity": [
+          "requested_quantity"
+        ],
+        "voided_base_quantity": [
+          "voided_quantity"
+        ],
+        "leaves_base_quantity_after": [
+          "leaves_quantity_after"
+        ],
+        "commission_voided": [
+          "commission_voided_currency"
+        ],
+        "commission_voided_currency": [
+          "commission_voided"
+        ],
+        "fill_commission": [
+          "fill_commission_currency"
+        ],
+        "fill_commission_currency": [
+          "fill_commission"
+        ]
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "initialized"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "attribution_source",
+              "base_quantity",
+              "execution_relation",
+              "instrument",
+              "order_purpose",
+              "order_type",
+              "quantity",
+              "quantity_multiplier",
+              "reduce_only",
+              "side",
+              "time_in_force"
+            ],
+            "properties": {
+              "commission_voided": false,
+              "commission_voided_currency": false,
+              "correction_id": false,
+              "fill_commission": false,
+              "fill_commission_currency": false,
+              "from_reconciliation": false,
+              "is_reopened": false,
+              "last_trigger_price": false,
+              "leaves_base_quantity_after": false,
+              "leaves_quantity_after": false,
+              "order_status_after": false,
+              "reason_code": false,
+              "requested_base_quantity": false,
+              "requested_limit_price": false,
+              "requested_quantity": false,
+              "requested_trigger_price": false,
+              "requested_values_known": false,
+              "voided_base_quantity": false,
+              "voided_quantity": false,
+              "voided_venue_trade_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "submitted"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "attribution_source": false,
+              "base_quantity": false,
+              "closes_signal_id": false,
+              "commission_voided": false,
+              "commission_voided_currency": false,
+              "contingency_type": false,
+              "correction_id": false,
+              "derived_signal_fact_id": false,
+              "exec_spawn_id": false,
+              "execution_relation": false,
+              "fill_commission": false,
+              "fill_commission_currency": false,
+              "from_reconciliation": false,
+              "instrument": false,
+              "is_reopened": false,
+              "last_trigger_price": false,
+              "leaves_base_quantity_after": false,
+              "leaves_quantity_after": false,
+              "limit_price": false,
+              "order_list_id": false,
+              "order_purpose": false,
+              "order_status_after": false,
+              "order_type": false,
+              "parent_client_order_id": false,
+              "quantity": false,
+              "quantity_multiplier": false,
+              "reason_code": false,
+              "reduce_only": false,
+              "replaces_client_order_id": false,
+              "requested_base_quantity": false,
+              "requested_limit_price": false,
+              "requested_quantity": false,
+              "requested_trigger_price": false,
+              "requested_values_known": false,
+              "retry_of_client_order_id": false,
+              "side": false,
+              "signal_id": false,
+              "time_in_force": false,
+              "trigger_price": false,
+              "unattributed_reason": false,
+              "venue_parent_order_id": false,
+              "voided_base_quantity": false,
+              "voided_quantity": false,
+              "voided_venue_trade_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "updated"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "base_quantity",
+              "quantity",
+              "quantity_multiplier"
+            ],
+            "properties": {
+              "attribution_source": false,
+              "closes_signal_id": false,
+              "commission_voided": false,
+              "commission_voided_currency": false,
+              "contingency_type": false,
+              "correction_id": false,
+              "derived_signal_fact_id": false,
+              "exec_spawn_id": false,
+              "execution_relation": false,
+              "fill_commission": false,
+              "fill_commission_currency": false,
+              "from_reconciliation": false,
+              "instrument": false,
+              "is_reopened": false,
+              "last_trigger_price": false,
+              "leaves_base_quantity_after": false,
+              "leaves_quantity_after": false,
+              "order_list_id": false,
+              "order_purpose": false,
+              "order_status_after": false,
+              "order_type": false,
+              "parent_client_order_id": false,
+              "reason_code": false,
+              "reduce_only": false,
+              "replaces_client_order_id": false,
+              "requested_base_quantity": false,
+              "requested_limit_price": false,
+              "requested_quantity": false,
+              "requested_trigger_price": false,
+              "requested_values_known": false,
+              "retry_of_client_order_id": false,
+              "side": false,
+              "signal_id": false,
+              "time_in_force": false,
+              "unattributed_reason": false,
+              "venue_parent_order_id": false,
+              "voided_base_quantity": false,
+              "voided_quantity": false,
+              "voided_venue_trade_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "rejected"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason_code"
+            ],
+            "properties": {
+              "attribution_source": false,
+              "base_quantity": false,
+              "closes_signal_id": false,
+              "commission_voided": false,
+              "commission_voided_currency": false,
+              "contingency_type": false,
+              "correction_id": false,
+              "derived_signal_fact_id": false,
+              "exec_spawn_id": false,
+              "execution_relation": false,
+              "fill_commission": false,
+              "fill_commission_currency": false,
+              "from_reconciliation": false,
+              "instrument": false,
+              "is_reopened": false,
+              "last_trigger_price": false,
+              "leaves_base_quantity_after": false,
+              "leaves_quantity_after": false,
+              "limit_price": false,
+              "order_list_id": false,
+              "order_purpose": false,
+              "order_status_after": false,
+              "order_type": false,
+              "parent_client_order_id": false,
+              "quantity": false,
+              "quantity_multiplier": false,
+              "reduce_only": false,
+              "replaces_client_order_id": false,
+              "requested_base_quantity": false,
+              "requested_limit_price": false,
+              "requested_quantity": false,
+              "requested_trigger_price": false,
+              "requested_values_known": false,
+              "retry_of_client_order_id": false,
+              "side": false,
+              "signal_id": false,
+              "time_in_force": false,
+              "trigger_price": false,
+              "unattributed_reason": false,
+              "venue_parent_order_id": false,
+              "voided_base_quantity": false,
+              "voided_quantity": false,
+              "voided_venue_trade_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "denied"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason_code"
+            ],
+            "properties": {
+              "attribution_source": false,
+              "base_quantity": false,
+              "closes_signal_id": false,
+              "commission_voided": false,
+              "commission_voided_currency": false,
+              "contingency_type": false,
+              "correction_id": false,
+              "derived_signal_fact_id": false,
+              "exec_spawn_id": false,
+              "execution_relation": false,
+              "fill_commission": false,
+              "fill_commission_currency": false,
+              "from_reconciliation": false,
+              "instrument": false,
+              "is_reopened": false,
+              "last_trigger_price": false,
+              "leaves_base_quantity_after": false,
+              "leaves_quantity_after": false,
+              "limit_price": false,
+              "order_list_id": false,
+              "order_purpose": false,
+              "order_status_after": false,
+              "order_type": false,
+              "parent_client_order_id": false,
+              "quantity": false,
+              "quantity_multiplier": false,
+              "reduce_only": false,
+              "replaces_client_order_id": false,
+              "requested_base_quantity": false,
+              "requested_limit_price": false,
+              "requested_quantity": false,
+              "requested_trigger_price": false,
+              "requested_values_known": false,
+              "retry_of_client_order_id": false,
+              "side": false,
+              "signal_id": false,
+              "time_in_force": false,
+              "trigger_price": false,
+              "unattributed_reason": false,
+              "venue_parent_order_id": false,
+              "voided_base_quantity": false,
+              "voided_quantity": false,
+              "voided_venue_trade_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "refused"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "attribution_source",
+              "base_quantity",
+              "execution_relation",
+              "instrument",
+              "order_purpose",
+              "order_type",
+              "quantity",
+              "quantity_multiplier",
+              "reason_code",
+              "reduce_only",
+              "side",
+              "time_in_force"
+            ],
+            "properties": {
+              "commission_voided": false,
+              "commission_voided_currency": false,
+              "correction_id": false,
+              "fill_commission": false,
+              "fill_commission_currency": false,
+              "from_reconciliation": false,
+              "is_reopened": false,
+              "last_trigger_price": false,
+              "leaves_base_quantity_after": false,
+              "leaves_quantity_after": false,
+              "order_status_after": false,
+              "requested_base_quantity": false,
+              "requested_limit_price": false,
+              "requested_quantity": false,
+              "requested_trigger_price": false,
+              "requested_values_known": false,
+              "voided_base_quantity": false,
+              "voided_quantity": false,
+              "voided_venue_trade_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "canceled"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "attribution_source": false,
+              "base_quantity": false,
+              "closes_signal_id": false,
+              "commission_voided": false,
+              "commission_voided_currency": false,
+              "contingency_type": false,
+              "correction_id": false,
+              "derived_signal_fact_id": false,
+              "exec_spawn_id": false,
+              "execution_relation": false,
+              "fill_commission": false,
+              "fill_commission_currency": false,
+              "from_reconciliation": false,
+              "instrument": false,
+              "is_reopened": false,
+              "leaves_base_quantity_after": false,
+              "leaves_quantity_after": false,
+              "limit_price": false,
+              "order_list_id": false,
+              "order_purpose": false,
+              "order_status_after": false,
+              "order_type": false,
+              "parent_client_order_id": false,
+              "quantity": false,
+              "quantity_multiplier": false,
+              "reason_code": false,
+              "reduce_only": false,
+              "replaces_client_order_id": false,
+              "requested_base_quantity": false,
+              "requested_limit_price": false,
+              "requested_quantity": false,
+              "requested_trigger_price": false,
+              "requested_values_known": false,
+              "retry_of_client_order_id": false,
+              "side": false,
+              "signal_id": false,
+              "time_in_force": false,
+              "trigger_price": false,
+              "unattributed_reason": false,
+              "venue_parent_order_id": false,
+              "voided_base_quantity": false,
+              "voided_quantity": false,
+              "voided_venue_trade_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "expired"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "attribution_source": false,
+              "base_quantity": false,
+              "closes_signal_id": false,
+              "commission_voided": false,
+              "commission_voided_currency": false,
+              "contingency_type": false,
+              "correction_id": false,
+              "derived_signal_fact_id": false,
+              "exec_spawn_id": false,
+              "execution_relation": false,
+              "fill_commission": false,
+              "fill_commission_currency": false,
+              "from_reconciliation": false,
+              "instrument": false,
+              "is_reopened": false,
+              "leaves_base_quantity_after": false,
+              "leaves_quantity_after": false,
+              "limit_price": false,
+              "order_list_id": false,
+              "order_purpose": false,
+              "order_status_after": false,
+              "order_type": false,
+              "parent_client_order_id": false,
+              "quantity": false,
+              "quantity_multiplier": false,
+              "reason_code": false,
+              "reduce_only": false,
+              "replaces_client_order_id": false,
+              "requested_base_quantity": false,
+              "requested_limit_price": false,
+              "requested_quantity": false,
+              "requested_trigger_price": false,
+              "requested_values_known": false,
+              "retry_of_client_order_id": false,
+              "side": false,
+              "signal_id": false,
+              "time_in_force": false,
+              "trigger_price": false,
+              "unattributed_reason": false,
+              "venue_parent_order_id": false,
+              "voided_base_quantity": false,
+              "voided_quantity": false,
+              "voided_venue_trade_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "modify_refused"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason_code",
+              "requested_values_known"
+            ],
+            "properties": {
+              "attribution_source": false,
+              "base_quantity": false,
+              "closes_signal_id": false,
+              "commission_voided": false,
+              "commission_voided_currency": false,
+              "contingency_type": false,
+              "correction_id": false,
+              "derived_signal_fact_id": false,
+              "exec_spawn_id": false,
+              "execution_relation": false,
+              "fill_commission": false,
+              "fill_commission_currency": false,
+              "from_reconciliation": false,
+              "instrument": false,
+              "is_reopened": false,
+              "last_trigger_price": false,
+              "leaves_base_quantity_after": false,
+              "leaves_quantity_after": false,
+              "limit_price": false,
+              "order_list_id": false,
+              "order_purpose": false,
+              "order_status_after": false,
+              "order_type": false,
+              "parent_client_order_id": false,
+              "quantity": false,
+              "reduce_only": false,
+              "replaces_client_order_id": false,
+              "retry_of_client_order_id": false,
+              "side": false,
+              "signal_id": false,
+              "time_in_force": false,
+              "trigger_price": false,
+              "unattributed_reason": false,
+              "venue_parent_order_id": false,
+              "voided_base_quantity": false,
+              "voided_quantity": false,
+              "voided_venue_trade_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "modify_rejected"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason_code",
+              "requested_values_known"
+            ],
+            "properties": {
+              "attribution_source": false,
+              "base_quantity": false,
+              "closes_signal_id": false,
+              "commission_voided": false,
+              "commission_voided_currency": false,
+              "contingency_type": false,
+              "correction_id": false,
+              "derived_signal_fact_id": false,
+              "exec_spawn_id": false,
+              "execution_relation": false,
+              "fill_commission": false,
+              "fill_commission_currency": false,
+              "from_reconciliation": false,
+              "instrument": false,
+              "is_reopened": false,
+              "last_trigger_price": false,
+              "leaves_base_quantity_after": false,
+              "leaves_quantity_after": false,
+              "limit_price": false,
+              "order_list_id": false,
+              "order_purpose": false,
+              "order_status_after": false,
+              "order_type": false,
+              "parent_client_order_id": false,
+              "quantity": false,
+              "reduce_only": false,
+              "replaces_client_order_id": false,
+              "retry_of_client_order_id": false,
+              "side": false,
+              "signal_id": false,
+              "time_in_force": false,
+              "trigger_price": false,
+              "unattributed_reason": false,
+              "venue_parent_order_id": false,
+              "voided_base_quantity": false,
+              "voided_quantity": false,
+              "voided_venue_trade_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "cancel_rejected"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reason_code"
+            ],
+            "properties": {
+              "attribution_source": false,
+              "base_quantity": false,
+              "closes_signal_id": false,
+              "commission_voided": false,
+              "commission_voided_currency": false,
+              "contingency_type": false,
+              "correction_id": false,
+              "derived_signal_fact_id": false,
+              "exec_spawn_id": false,
+              "execution_relation": false,
+              "fill_commission": false,
+              "fill_commission_currency": false,
+              "from_reconciliation": false,
+              "instrument": false,
+              "is_reopened": false,
+              "last_trigger_price": false,
+              "leaves_base_quantity_after": false,
+              "leaves_quantity_after": false,
+              "limit_price": false,
+              "order_list_id": false,
+              "order_purpose": false,
+              "order_status_after": false,
+              "order_type": false,
+              "parent_client_order_id": false,
+              "quantity": false,
+              "quantity_multiplier": false,
+              "reduce_only": false,
+              "replaces_client_order_id": false,
+              "requested_base_quantity": false,
+              "requested_limit_price": false,
+              "requested_quantity": false,
+              "requested_trigger_price": false,
+              "requested_values_known": false,
+              "retry_of_client_order_id": false,
+              "side": false,
+              "signal_id": false,
+              "time_in_force": false,
+              "trigger_price": false,
+              "unattributed_reason": false,
+              "venue_parent_order_id": false,
+              "voided_base_quantity": false,
+              "voided_quantity": false,
+              "voided_venue_trade_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "const": "fill_voided"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "correction_id",
+              "from_reconciliation",
+              "instrument",
+              "is_reopened",
+              "leaves_base_quantity_after",
+              "leaves_quantity_after",
+              "order_status_after",
+              "quantity_multiplier",
+              "voided_base_quantity",
+              "voided_quantity",
+              "voided_venue_trade_id"
+            ],
+            "properties": {
+              "attribution_source": false,
+              "base_quantity": false,
+              "closes_signal_id": false,
+              "contingency_type": false,
+              "derived_signal_fact_id": false,
+              "exec_spawn_id": false,
+              "execution_relation": false,
+              "last_trigger_price": false,
+              "limit_price": false,
+              "order_list_id": false,
+              "order_purpose": false,
+              "order_type": false,
+              "parent_client_order_id": false,
+              "quantity": false,
+              "reason_code": false,
+              "reduce_only": false,
+              "replaces_client_order_id": false,
+              "requested_base_quantity": false,
+              "requested_limit_price": false,
+              "requested_quantity": false,
+              "requested_trigger_price": false,
+              "requested_values_known": false,
+              "retry_of_client_order_id": false,
+              "side": false,
+              "signal_id": false,
+              "time_in_force": false,
+              "trigger_price": false,
+              "unattributed_reason": false,
+              "venue_parent_order_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "order_type"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "order_type": {
+                "const": "market"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "limit_price": false,
+              "trigger_price": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "order_type"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "order_type": {
+                "const": "market_to_limit"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "limit_price": false,
+              "trigger_price": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "order_type"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "order_type": {
+                "const": "limit"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "limit_price"
+            ],
+            "properties": {
+              "trigger_price": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "order_type"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "order_type": {
+                "const": "stop_market"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "trigger_price"
+            ],
+            "properties": {
+              "limit_price": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "order_type"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "order_type": {
+                "const": "market_if_touched"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "trigger_price"
+            ],
+            "properties": {
+              "limit_price": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "order_type"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "order_type": {
+                "const": "stop_limit"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "limit_price",
+              "trigger_price"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "order_type"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "order_type": {
+                "const": "limit_if_touched"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "limit_price",
+              "trigger_price"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "order_type"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "order_type": {
+                "const": "trailing_stop_market"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "limit_price": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "order_type"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "order_type": {
+                "const": "trailing_stop_limit"
+              }
+            }
+          },
+          "then": {}
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "attribution_source"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "attribution_source": {
+                "const": "order_tag"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "signal_id"
+            ],
+            "properties": {
+              "derived_signal_fact_id": false,
+              "unattributed_reason": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "attribution_source",
+              "order_purpose"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "attribution_source": {
+                "const": "derived"
+              },
+              "order_purpose": {
+                "not": {
+                  "enum": [
+                    "protective_stop",
+                    "take_profit"
+                  ]
+                }
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "derived_signal_fact_id"
+            ],
+            "properties": {
+              "signal_id": false,
+              "unattributed_reason": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "attribution_source",
+              "order_purpose"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "attribution_source": {
+                "const": "derived"
+              },
+              "order_purpose": {
+                "enum": [
+                  "protective_stop",
+                  "take_profit"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "unattributed_reason"
+            ],
+            "properties": {
+              "derived_signal_fact_id": false,
+              "signal_id": false,
+              "unattributed_reason": {
+                "const": "legacy_without_signal"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event",
+              "attribution_source"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "initialized",
+                  "refused"
+                ]
+              },
+              "attribution_source": {
+                "const": "none"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "unattributed_reason"
+            ],
+            "properties": {
+              "derived_signal_fact_id": false,
+              "signal_id": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "requested_values_known"
+            ],
+            "properties": {
+              "requested_values_known": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requested_quantity": false,
+              "requested_limit_price": false,
+              "requested_trigger_price": false,
+              "requested_base_quantity": false,
+              "quantity_multiplier": false
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "requested_values_known"
+            ],
+            "properties": {
+              "requested_values_known": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "anyOf": [
+              {
+                "required": [
+                  "requested_quantity"
+                ]
+              },
+              {
+                "required": [
+                  "requested_limit_price"
+                ]
+              },
+              {
+                "required": [
+                  "requested_trigger_price"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_event"
+            ],
+            "properties": {
+              "order_event": {
+                "enum": [
+                  "modify_refused",
+                  "modify_rejected"
+                ]
+              }
+            }
+          },
+          "then": {
+            "dependentRequired": {
+              "quantity_multiplier": [
+                "requested_quantity"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "order_status_after"
+            ],
+            "properties": {
+              "order_status_after": {
+                "const": "voided"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "leaves_quantity_after": {
+                "const": "0"
+              },
+              "leaves_base_quantity_after": {
+                "const": "0"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "fact_RunnerFillCorrectionFact.v1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "event_id",
+        "seq",
+        "fill_id",
+        "venue",
+        "voided_venue_trade_id",
+        "instrument",
+        "order_side",
+        "last_px",
+        "source_event_id",
+        "correction_id",
+        "voided_quantity",
+        "voided_base_quantity",
+        "quantity_multiplier",
+        "is_reopened",
+        "from_reconciliation",
+        "occurred_at"
+      ],
+      "properties": {
+        "kind": {
+          "const": "RunnerFillCorrectionFact.v1"
+        },
+        "event_id": {
+          "$ref": "#/$defs/uuid"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fill_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "description": "The settlement fill this correction reverses"
+        },
+        "venue": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "voided_venue_trade_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "instrument": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "order_side": {
+          "enum": [
+            "buy",
+            "sell"
+          ]
+        },
+        "last_px": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "position_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "description": "The position lifecycle the voided fill belongs to, named the way position_closed names it; absent when the runner cannot tell"
+        },
+        "source_event_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "description": "The engine void this fact records, shared with its order event"
+        },
+        "correction_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "voided_quantity": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+          "description": "The fill's cumulative voided quantity, in the venue's own quantity units"
+        },
+        "voided_base_quantity": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$",
+          "description": "The fill's cumulative voided quantity, in base-asset units: exactly the native quantity times quantity_multiplier"
+        },
+        "quantity_multiplier": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9])$"
+        },
+        "commission_voided": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$"
+        },
+        "commission_voided_currency": {
+          "enum": [
+            "USD",
+            "USDT",
+            "USDC",
+            "BTC",
+            "ETH",
+            "VUSDC",
+            "VBTC",
+            "VETH"
+          ]
+        },
+        "fill_commission": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$"
+        },
+        "fill_commission_currency": {
+          "enum": [
+            "USD",
+            "USDT",
+            "USDC",
+            "BTC",
+            "ETH",
+            "VUSDC",
+            "VBTC",
+            "VETH"
+          ]
+        },
+        "is_reopened": {
+          "type": "boolean"
+        },
+        "from_reconciliation": {
+          "type": "boolean"
+        },
+        "occurred_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$"
+        }
+      },
+      "dependentRequired": {
+        "commission_voided": [
+          "commission_voided_currency"
+        ],
+        "commission_voided_currency": [
+          "commission_voided"
+        ],
+        "fill_commission": [
+          "fill_commission_currency"
+        ],
+        "fill_commission_currency": [
+          "fill_commission"
+        ]
+      }
     }
   },
   "x-custos-invariants": {

@@ -25,8 +25,11 @@ from custos.core.runner_fact import (
     RunnerFactContractError,
     RunnerFactIdentity,
     RunnerFactOutbox,
+    capability_binding_evidence_digest,
+    capability_scope_binding_values,
     normalize_capability_scope_bindings,
     reconciliation_period_closed,
+    runner_fact_signing_preimage,
     settlement_period_closed,
 )
 
@@ -43,7 +46,10 @@ CAPABILITY_RECEIPT_PATH = ROOT / "docs/authority/runner-fact-capability-receipt-
 PARITY_PATH = ROOT / "docs/authority/runner-fact-parity-matrix-v1.json"
 SIGNING_PREIMAGE_PATH = ROOT / "docs/authority/runner-fact-signing-preimage-golden-v1.json"
 TERMINAL_BOUNDARY_PATH = ROOT / "docs/authority/runner-fact-terminal-boundary-golden-v1.json"
+LINEAGE_PATH = ROOT / "docs/authority/runner-fact-lineage-golden-v1.json"
 TERMINAL_KIND = "RunnerInstanceTerminalValuationFact.v1"
+ORDER_EVENT_KIND = "RunnerOrderEventFact.v1"
+FILL_CORRECTION_KIND = "RunnerFillCorrectionFact.v1"
 
 EXPECTED_SIGNING_HEADER_FIELDS = [
     "schema_version",
@@ -83,6 +89,10 @@ EXPECTED_KINDS = {
     "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle",
     "RunnerInstanceTerminalValuationFact.v1": "settlement",
 }
+# Declared only by a capability that opts in; the canonical manifest declares
+# neither.
+LINEAGE_KINDS = {ORDER_EVENT_KIND: "reconciliation", FILL_CORRECTION_KIND: "settlement"}
+ALL_KINDS = {**EXPECTED_KINDS, **LINEAGE_KINDS}
 # The terminal valuation fact must be the last fact of a stop batch, so the
 # single-batch golden cannot carry it; the stop-boundary asset does.
 SINGLE_BATCH_GOLDEN_KINDS = set(EXPECTED_KINDS) - {TERMINAL_KIND}
@@ -157,6 +167,7 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
             PARITY_PATH,
             SIGNING_PREIMAGE_PATH,
             TERMINAL_BOUNDARY_PATH,
+            LINEAGE_PATH,
         )
     }
     assets = {asset["path"]: asset for asset in index["assets"]}
@@ -416,7 +427,8 @@ def test_parity_and_capability_matrices_are_closed_and_deny_unknown() -> None:
     manifest = _json(CAPABILITY_MANIFEST_PATH)
     parity = _json(PARITY_PATH)
     assert manifest["fact_kind_projectors"] == EXPECTED_KINDS
-    assert {row["fact_kind"] for row in parity["rows"]} == set(EXPECTED_KINDS)
+    assert {row["fact_kind"]: row["capability_projector"] for row in parity["rows"]} == ALL_KINDS
+    assert {row["canonical_owner_after_ingest"] for row in parity["rows"]} == {"arx"}
     assert parity["unknown_fact_kind"] == "terminal_unsupported_contract"
     assert parity["unsigned_telemetry_fallback"] is False
     assert parity["local_deny_reject_fact_kind"] == "RunnerRuntimeLogFact.v1"
@@ -600,11 +612,17 @@ def test_closed_union_holds_across_the_golden_and_the_terminal_boundary_asset() 
     index = _json(INDEX_PATH)
     golden_kinds = {fact["kind"] for fact in _json(GOLDEN_PATH)["facts"]}
     boundary_kinds = {fact["kind"] for batch in _boundary() for fact in batch["facts"]}
+    lineage_kinds = {
+        fact["kind"] for batch in _json(LINEAGE_PATH)["batches"] for fact in batch["facts"]
+    }
     assert TERMINAL_KIND not in golden_kinds
     assert golden_kinds | boundary_kinds == set(EXPECTED_KINDS)
+    assert golden_kinds | boundary_kinds | lineage_kinds == set(ALL_KINDS)
+    assert index["fact_kind_projectors"] == ALL_KINDS
     assert index["closed_fact_union_assets"] == [
         str(GOLDEN_PATH.relative_to(ROOT)),
         str(TERMINAL_BOUNDARY_PATH.relative_to(ROOT)),
+        str(LINEAGE_PATH.relative_to(ROOT)),
     ]
 
 
@@ -1126,3 +1144,158 @@ def test_capability_loader_treats_terminal_valuation_as_one_optional_flag(
     ):
         with pytest.raises(RunnerFactContractError, match="closed fact projector contract"):
             RunnerCapabilityReceipt.load(_receipt_with(tmp_path, name, edit))
+
+
+# Order lineage and fill correction: two more optional flags, offered only on the
+# current shape.
+
+
+def _declare(manifest: dict[str, Any], *, lineage: bool, correction: bool) -> None:
+    if lineage:
+        manifest["fact_kind_projectors"][ORDER_EVENT_KIND] = "reconciliation"
+        manifest["runner_fact_contracts"]["reconciliation"]["order_lineage"] = "v1"
+    if correction:
+        manifest["fact_kind_projectors"][FILL_CORRECTION_KIND] = "settlement"
+        manifest["runner_fact_contracts"]["settlement"]["fill_correction"] = "v1"
+
+
+def _without_terminal(manifest: dict[str, Any]) -> None:
+    manifest["fact_kind_projectors"].pop(TERMINAL_KIND)
+    manifest["runner_fact_contracts"]["settlement"].pop("terminal_valuation")
+
+
+def _without_checkpoint(manifest: dict[str, Any]) -> None:
+    manifest["fact_kind_projectors"].pop("RunnerValuationCheckpointFact.v1")
+    manifest["runner_fact_contracts"]["reconciliation"].pop("valuation_checkpoint")
+
+
+@pytest.mark.parametrize(("lineage", "correction"), [(True, False), (False, True), (True, True)])
+def test_the_current_shape_may_add_order_lineage_and_fill_correction(
+    tmp_path: Path, lineage: bool, correction: bool
+) -> None:
+    receipt = RunnerCapabilityReceipt.load(
+        _receipt_with(
+            tmp_path,
+            f"lineage-{lineage}-{correction}",
+            lambda manifest: _declare(manifest, lineage=lineage, correction=correction),
+        )
+    )
+    contracts = receipt.capability_manifest["runner_fact_contracts"]
+    assert ("order_lineage" in contracts["reconciliation"]) is lineage
+    assert ("fill_correction" in contracts["settlement"]) is correction
+
+
+OLDER_SHAPES = {
+    "without-terminal": [_without_terminal],
+    "legacy": [_without_terminal, _without_checkpoint],
+}
+
+
+@pytest.mark.parametrize("shape", sorted(OLDER_SHAPES))
+@pytest.mark.parametrize(("lineage", "correction"), [(True, False), (False, True), (True, True)])
+def test_an_older_shape_cannot_add_order_lineage_or_fill_correction(
+    tmp_path: Path, shape: str, lineage: bool, correction: bool
+) -> None:
+    def edit(manifest: dict[str, Any]) -> None:
+        for step in OLDER_SHAPES[shape]:
+            step(manifest)
+        _declare(manifest, lineage=lineage, correction=correction)
+
+    with pytest.raises(RunnerFactContractError, match="closed fact projector contract"):
+        RunnerCapabilityReceipt.load(_receipt_with(tmp_path, f"{shape}-lineage", edit))
+
+
+def test_a_terminal_valuation_without_its_checkpoint_is_refused(tmp_path: Path) -> None:
+    # Not one of the shapes a receipt may declare, although each flag alone is optional.
+    with pytest.raises(RunnerFactContractError, match="closed fact projector contract"):
+        RunnerCapabilityReceipt.load(
+            _receipt_with(tmp_path, "terminal-without-checkpoint", _without_checkpoint)
+        )
+
+
+@pytest.mark.parametrize(
+    ("name", "kind", "projector", "flag"),
+    [
+        ("order-lineage", ORDER_EVENT_KIND, "reconciliation", "order_lineage"),
+        ("fill-correction", FILL_CORRECTION_KIND, "settlement", "fill_correction"),
+    ],
+)
+def test_a_lineage_flag_and_its_kind_come_together(
+    tmp_path: Path, name: str, kind: str, projector: str, flag: str
+) -> None:
+    def kind_only(manifest: dict[str, Any]) -> None:
+        manifest["fact_kind_projectors"][kind] = projector
+
+    def flag_only(manifest: dict[str, Any]) -> None:
+        manifest["runner_fact_contracts"][projector][flag] = "v1"
+
+    for edit in (kind_only, flag_only):
+        with pytest.raises(RunnerFactContractError, match="closed fact projector contract"):
+            RunnerCapabilityReceipt.load(_receipt_with(tmp_path, f"{name}-half", edit))
+
+
+def test_the_receipt_shapes_are_the_published_capability_shape_vectors() -> None:
+    vectors = _json(ROOT / "docs/authority/conformance/runner-fact-batch-v1.vectors.json")
+    accepted = [
+        (shape["fact_kind_projectors"], shape["runner_fact_contracts"])
+        for shape in vectors["capability_shapes"]
+        if shape["expected"] == "accept"
+    ]
+    assert len(vectors["capability_shapes"]) == 16
+    assert sorted(map(json.dumps, accepted)) == sorted(
+        map(json.dumps, runner_fact_module.RUNNER_FACT_CAPABILITY_SHAPES)
+    )
+    terminal_only = next(
+        shape
+        for shape in vectors["capability_shapes"]
+        if shape["declares"]
+        == {
+            "terminal_valuation": True,
+            "valuation_checkpoint": False,
+            "order_lineage": False,
+            "fill_correction": False,
+        }
+    )
+    assert terminal_only["expected"] == "reject"
+
+
+def test_lineage_golden_is_a_signed_batch_under_its_own_capability(tmp_path: Path) -> None:
+    lineage = _json(LINEAGE_PATH)
+    manifest = lineage["capability_manifest"]
+    assert manifest["fact_kind_projectors"] == ALL_KINDS
+    assert manifest["runner_fact_contracts"]["reconciliation"]["order_lineage"] == "v1"
+    assert manifest["runner_fact_contracts"]["settlement"]["fill_correction"] == "v1"
+    canonical = _json(CAPABILITY_MANIFEST_PATH)
+    assert "order_lineage" not in canonical["runner_fact_contracts"]["reconciliation"]
+    assert "fill_correction" not in canonical["runner_fact_contracts"]["settlement"]
+
+    def replace(document_manifest: dict[str, Any]) -> None:
+        document_manifest.clear()
+        document_manifest.update(copy.deepcopy(manifest))
+
+    path = _receipt_with(tmp_path, "lineage-golden", replace)
+    document = _json(path)
+    bindings = normalize_capability_scope_bindings(manifest)
+    document["scope_bindings"] = capability_scope_binding_values(bindings)
+    document["binding_evidence_digest"] = capability_binding_evidence_digest(
+        document["tenant_id"], document["runner_id"], bindings
+    )
+    path.write_bytes(json.dumps(document).encode("utf-8"))
+    RunnerCapabilityReceipt.load(path)
+
+    schema = Draft202012Validator(_json(SCHEMA_PATH))
+    (batch,) = lineage["batches"]
+    schema.validate(batch)
+    assert batch["capability_manifest_digest"] == hashlib.sha256(_canonical(manifest)).hexdigest()
+    assert batch["payload_digest"] == hashlib.sha256(_canonical(batch["facts"])).hexdigest()
+    signature = batch["signature"] + "=" * (-len(batch["signature"]) % 4)
+    Ed25519PublicKey.from_public_bytes(
+        base64.b64decode(_json(SIGNING_PREIMAGE_PATH)["synthetic_signature"]["public_key_base64"])
+    ).verify(base64.urlsafe_b64decode(signature), runner_fact_signing_preimage(batch))
+    void, correction = batch["facts"][-2:]
+    assert void["order_event"] == "fill_voided"
+    assert correction["kind"] == FILL_CORRECTION_KIND
+    assert void["source_event_id"] == correction["source_event_id"]
+    for field in ("voided_venue_trade_id", "voided_quantity", "voided_base_quantity"):
+        assert void[field] == correction[field]
+    assert void["event_id"] != correction["event_id"]

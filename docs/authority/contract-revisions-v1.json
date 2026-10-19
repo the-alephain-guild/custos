@@ -5,17 +5,17 @@
   "revision_rule": "raise a contract's revision by one when its wire fingerprint or its conformance vectors change; descriptive text alone keeps the revision",
   "contracts": {
     "alephain.custos.runner_fact_batch.v1": {
-      "revision": 3,
+      "revision": 4,
       "revision_carrier": "schema",
       "schema_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-      "wire_sha256": "93d194fd4bfa29cf5e458f40204b71a31f7ea48482e03190ad71cae6ac3a2fa9",
-      "vectors_sha256": "92ad6cf9864ba781a75902511e327a1b43d6fcf7ffe2b19979bd59e4ae25f7e2",
+      "wire_sha256": "eded38c3a402a2b661fc2ad15ab00787ddb9fed91de3a82218ae9da45f98cb82",
+      "vectors_sha256": "f7cd8a3ced1f3c2872e1c7aee6db29597fd852df394a145649707eeb98c5f61b",
       "vectors_path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
       "assets": [
         {
           "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-          "sha256": "eba0af2fac996bc5059ecb3f0dd7f322c7dd337648b1f5d4a6b99ae4294effb1",
-          "size_bytes": 77128
+          "sha256": "9541b509a1d27d934cef646e50ba13469e58d3bf440595f6220b95d39c7bdcee",
+          "size_bytes": 129188
         },
         {
           "path": "docs/authority/runner-fact-golden-v1.json",
@@ -34,8 +34,8 @@
         },
         {
           "path": "docs/authority/runner-fact-parity-matrix-v1.json",
-          "sha256": "5b6d1f1ae0d04330e403e094b1856293455a1d8e742cc073d9e77d390d6e28de",
-          "size_bytes": 4357
+          "sha256": "46bb5e16dc8354155b5bcd1b1ba49940b3cfc4b0ac3078ee609dbc2360208c8d",
+          "size_bytes": 4743
         },
         {
           "path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
@@ -48,19 +48,34 @@
           "size_bytes": 5080
         },
         {
+          "path": "docs/authority/runner-fact-lineage-golden-v1.json",
+          "sha256": "5345d72c1967f5198563c953cf0373a8bca3bb0d9616fd6212ec431c25b07264",
+          "size_bytes": 10047
+        },
+        {
           "path": "docs/authority/runner-fact-contract-assets-v1.json",
-          "sha256": "76e25dcde37ece87ef13e6abef2f50386de5bc5880d47bc658bc3681091bf284",
-          "size_bytes": 4178
+          "sha256": "042d356609d2c97b31fc447c321a0eb68f52411adab1595392f7aac7ef18d4bd",
+          "size_bytes": 4568
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
-          "sha256": "92ad6cf9864ba781a75902511e327a1b43d6fcf7ffe2b19979bd59e4ae25f7e2",
-          "size_bytes": 115229
+          "sha256": "f7cd8a3ced1f3c2872e1c7aee6db29597fd852df394a145649707eeb98c5f61b",
+          "size_bytes": 726818
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json.sha256",
-          "sha256": "fd5b53ea9c46e7f7bf9671e3433a7376e07e72a2d21104c366f548db504f02d7",
+          "sha256": "bdc160832f14c922423762e959e08eedc052663cda8fe42635647f6cb270eb5d",
           "size_bytes": 100
+        },
+        {
+          "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json",
+          "sha256": "13dd399a384fafec34cfc3f12ba9378a16806c11105630ed416bab972dbc79b2",
+          "size_bytes": 134908
+        },
+        {
+          "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json.sha256",
+          "sha256": "80b2cc73da2302ed336c92711585f09adf219e3934d765cf71a2c9429bf78e28",
+          "size_bytes": 102
         }
       ],
       "history": [
@@ -80,6 +95,12 @@
           "revision": 3,
           "wire_sha256": "93d194fd4bfa29cf5e458f40204b71a31f7ea48482e03190ad71cae6ac3a2fa9",
           "vectors_sha256": "92ad6cf9864ba781a75902511e327a1b43d6fcf7ffe2b19979bd59e4ae25f7e2",
+          "note": "raised"
+        },
+        {
+          "revision": 4,
+          "wire_sha256": "eded38c3a402a2b661fc2ad15ab00787ddb9fed91de3a82218ae9da45f98cb82",
+          "vectors_sha256": "f7cd8a3ced1f3c2872e1c7aee6db29597fd852df394a145649707eeb98c5f61b",
           "note": "raised"
         }
       ]

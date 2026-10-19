@@ -51,6 +51,7 @@ class Contract:
 
 
 RUNNER_FACT_VECTORS = "docs/authority/conformance/runner-fact-batch-v1.vectors.json"
+RUNNER_FACT_SEQUENCES = "docs/authority/conformance/runner-fact-batch-v1.sequences.json"
 STRATEGY_VECTORS = "docs/authority/conformance/strategy-canonical-json-v1.vectors.json"
 STRATEGY_SIGNAL_SCHEMA = "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json"
 STRATEGY_SIGNAL_VECTORS = "docs/authority/conformance/strategy-signal-fact-v1.vectors.json"
@@ -68,9 +69,12 @@ CONTRACTS = (
             "docs/authority/runner-fact-parity-matrix-v1.json",
             "docs/authority/runner-fact-signing-preimage-golden-v1.json",
             "docs/authority/runner-fact-terminal-boundary-golden-v1.json",
+            "docs/authority/runner-fact-lineage-golden-v1.json",
             "docs/authority/runner-fact-contract-assets-v1.json",
             RUNNER_FACT_VECTORS,
             RUNNER_FACT_VECTORS + ".sha256",
+            RUNNER_FACT_SEQUENCES,
+            RUNNER_FACT_SEQUENCES + ".sha256",
         ),
     ),
     Contract(

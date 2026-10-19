@@ -35,6 +35,8 @@ from custos.core.runner_fact import (
     RunnerFactContractError,
     equity_snapshot,
     execution_fill,
+    fill_correction_fact,
+    order_event_fact,
     position_closed,
     runner_fact_signing_preimage,
 )
@@ -363,3 +365,118 @@ def test_strategy_canonical_json_vectors_match_the_toolkit_encoder(vector: dict[
     encoded = canonical_json_bytes(_tagged(vector["input"]))
     assert encoded.decode("utf-8") == expected["canonical_utf8"]
     assert _sha256(encoded) == expected["sha256"]
+
+
+# Order lineage and fill correction.
+
+ORDER_EVENT_KIND = "RunnerOrderEventFact.v1"
+FILL_CORRECTION_KIND = "RunnerFillCorrectionFact.v1"
+SEQUENCES = _json(CONFORMANCE / "runner-fact-batch-v1.sequences.json")
+_DERIVED = {
+    "kind",
+    "event_id",
+    "seq",
+    "base_quantity",
+    "requested_base_quantity",
+    "voided_base_quantity",
+    "leaves_base_quantity_after",
+}
+
+
+def _rebuild(fact: dict[str, Any], authority: RunnerFactAuthority) -> dict[str, Any]:
+    """The fact the runner's builder writes from the same inputs."""
+
+    inputs = {name: value for name, value in fact.items() if name not in _DERIVED}
+    if fact["kind"] == ORDER_EVENT_KIND:
+        return order_event_fact(authority, **inputs)
+    return fill_correction_fact(authority, **inputs)
+
+
+def _lineage_facts(batch: dict[str, Any]) -> list[dict[str, Any]]:
+    return [
+        fact for fact in batch["facts"] if fact["kind"] in {ORDER_EVENT_KIND, FILL_CORRECTION_KIND}
+    ]
+
+
+LINEAGE_ACCEPTED = _vectors(
+    lambda v: v["expected"]["outcome"] == "accept" and _lineage_facts(_batch(v))
+)
+
+
+@pytest.mark.parametrize("vector", LINEAGE_ACCEPTED, ids=_ids(LINEAGE_ACCEPTED))
+def test_accepted_lineage_vectors_are_what_the_runner_builds(vector: dict[str, Any]) -> None:
+    assert vector["origin"] == "producer-canonical"
+    batch = _batch(vector)
+    for fact in _lineage_facts(batch):
+        stored = {name: value for name, value in fact.items() if name != "seq"}
+        assert _rebuild(fact, _authority(batch)) == stored
+
+
+LINEAGE_REFUSED = _vectors(
+    lambda v: (
+        v["expected"]["outcome"] == "reject"
+        and v["expected"]["error_class"] != "capability_mismatch"
+        and _lineage_facts(_batch(v))
+    )
+)
+
+
+@pytest.mark.parametrize("vector", LINEAGE_REFUSED, ids=_ids(LINEAGE_REFUSED))
+def test_the_runner_never_signs_a_refused_lineage_vector(vector: dict[str, Any]) -> None:
+    batch = _batch(vector)
+    refused = 0
+    for fact in _lineage_facts(batch):
+        stored = {name: value for name, value in fact.items() if name != "seq"}
+        try:
+            rebuilt = _rebuild(fact, _authority(batch))
+        except (RunnerFactContractError, TypeError, ValueError):
+            refused += 1
+            continue
+        refused += rebuilt != stored
+    assert refused, "the runner would sign this refused vector"
+
+
+def test_an_undeclared_capability_is_the_canonical_one() -> None:
+    batch = _batch(VECTORS["lineage-kinds-under-the-canonical-capability"])
+    manifest = _json(ROOT / "docs/authority/runner-fact-capability-manifest-v1.json")
+    assert batch["capability_manifest_digest"] == _sha256(_canonical(manifest))
+    assert ORDER_EVENT_KIND not in manifest["fact_kind_projectors"]
+
+
+def test_sequences_name_the_contract_and_only_documented_expectations() -> None:
+    assert SEQUENCES["contract_id"] == RUNNER_FACT_DOCUMENT["contract_id"]
+    assert SEQUENCES["contract_revision"] == RUNNER_FACT_DOCUMENT["contract_revision"]
+    keys = set(SEQUENCES["expected_keys"])
+    for sequence in SEQUENCES["sequences"]:
+        for step in sequence["steps"]:
+            assert step["expected"]["outcome"] in {"accept", "reject"}
+            assert set(step["expected"]) <= keys, sequence["id"]
+
+
+STEPS = [
+    (sequence["id"], index, step)
+    for sequence in SEQUENCES["sequences"]
+    for index, step in enumerate(sequence["steps"])
+]
+
+
+@pytest.mark.parametrize(
+    ("sequence_id", "index", "step"), STEPS, ids=[f"{s}-{i}" for s, i, _ in STEPS]
+)
+def test_every_sequence_step_is_a_valid_message_on_its_own(
+    sequence_id: str, index: int, step: dict[str, Any]
+) -> None:
+    # A step the fold refuses is still a well-formed message; only the history
+    # before it makes it wrong.
+    batch = json.loads(step["raw"])
+    Draft202012Validator(_json(SCHEMA)).validate(batch)
+    assert batch["payload_digest"] == _sha256(_canonical(batch["facts"]))
+
+
+def test_sequences_continue_one_stream() -> None:
+    for sequence in SEQUENCES["sequences"]:
+        expected_start = 1
+        for step in sequence["steps"]:
+            batch = json.loads(step["raw"])
+            assert batch["source_seq_start"] == expected_start, sequence["id"]
+            expected_start = batch["source_seq_end"] + 1

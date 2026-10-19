@@ -1,0 +1,258 @@
+{
+  "capability_manifest": {
+    "schema_version": 1,
+    "agent_version": "fixture-v1",
+    "runtime": {
+      "distribution": "oci_image",
+      "image_digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "source_revision": "8888888888888888888888888888888888888888",
+      "engine": "nautilus",
+      "engine_version": "2.0.0rc5+sodex.2"
+    },
+    "contract": "custos.runner_fact.capability.v1",
+    "closed_fact_union": true,
+    "unknown_fact_kind": "terminal_unsupported_contract",
+    "fact_kind_projectors": {
+      "execution_fill": "reconciliation",
+      "fill": "settlement",
+      "position_closed": "settlement",
+      "fee": "settlement",
+      "period_closed": "settlement",
+      "equity_snapshot": "risk",
+      "position_snapshot": "risk",
+      "heartbeat": "health",
+      "RunnerRuntimeLogFact.v1": "health",
+      "venue_ledger_snapshot_manifest": "reconciliation",
+      "venue_ledger_snapshot_chunk": "reconciliation",
+      "reconciliation_period_closed": "reconciliation",
+      "RunnerValuationCheckpointFact.v1": "reconciliation",
+      "RunnerDeploymentLifecycleFact.v1": "deployment_lifecycle",
+      "RunnerInstanceTerminalValuationFact.v1": "settlement",
+      "RunnerOrderEventFact.v1": "reconciliation",
+      "RunnerFillCorrectionFact.v1": "settlement"
+    },
+    "runner_fact_contracts": {
+      "risk": {
+        "schema_version": 1,
+        "equity_snapshot": "v1",
+        "position_snapshot": "v1",
+        "heartbeat": "v1"
+      },
+      "settlement": {
+        "schema_version": 1,
+        "fill": "v1",
+        "position_closed": "v1",
+        "fee": "v1",
+        "period_closed": "v1",
+        "terminal_valuation": "v1",
+        "fill_correction": "v1"
+      },
+      "reconciliation": {
+        "schema_version": 1,
+        "execution_fill": "v1",
+        "venue_ledger_snapshot_manifest": "v1",
+        "venue_ledger_snapshot_chunk": "v1",
+        "reconciliation_period_closed": "v1",
+        "valuation_checkpoint": "v1",
+        "order_lineage": "v1"
+      },
+      "health": {
+        "schema_version": 1,
+        "heartbeat": "v1"
+      },
+      "deployment_lifecycle": {
+        "schema_version": 1,
+        "deployment_lifecycle": "v1"
+      }
+    },
+    "settlement_scope_bindings": [
+      {
+        "trading_mode": "sandbox",
+        "deployment_instance_id": "20000000-0000-4000-8000-000000000015",
+        "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+        "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "strategy_id": "40000000-0000-4000-8000-000000000004"
+      }
+    ],
+    "risk_scope_bindings": [
+      {
+        "trading_mode": "sandbox",
+        "deployment_instance_id": "20000000-0000-4000-8000-000000000015",
+        "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+        "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "strategy_id": "40000000-0000-4000-8000-000000000004",
+        "resource_type": "deployment_instance",
+        "resource_id": "20000000-0000-4000-8000-000000000015"
+      }
+    ],
+    "reconciliation_scope_bindings": [
+      {
+        "trading_mode": "sandbox",
+        "deployment_instance_id": "20000000-0000-4000-8000-000000000015",
+        "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+        "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "strategy_id": "40000000-0000-4000-8000-000000000004",
+        "source_policy_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "required_venues": [
+          {
+            "venue": "BINANCE",
+            "ledger_source": "venue_api"
+          }
+        ]
+      }
+    ],
+    "health_scope_bindings": [
+      {
+        "trading_mode": "sandbox",
+        "deployment_instance_id": "20000000-0000-4000-8000-000000000015",
+        "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+        "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "strategy_id": "40000000-0000-4000-8000-000000000004",
+        "expected_cadence_seconds": 30,
+        "grace_seconds": 10
+      }
+    ],
+    "deployment_lifecycle_scope_bindings": [
+      {
+        "trading_mode": "sandbox",
+        "deployment_instance_id": "20000000-0000-4000-8000-000000000015",
+        "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+        "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "strategy_id": "40000000-0000-4000-8000-000000000004"
+      }
+    ]
+  },
+  "batches": [
+    {
+      "schema_version": 1,
+      "batch_id": "60000000-0000-4000-8000-000000000015",
+      "tenant_id": "acme",
+      "trading_mode": "sandbox",
+      "runner_id": "10000000-0000-4000-8000-000000000001",
+      "deployment_instance_id": "20000000-0000-4000-8000-000000000015",
+      "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+      "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "generation": 1,
+      "strategy_id": "40000000-0000-4000-8000-000000000004",
+      "capability_version_id": "50000000-0000-4000-8000-000000000015",
+      "capability_version": 1,
+      "capability_manifest_digest": "e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb",
+      "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
+      "emitted_at": "2026-07-15T08:00:00Z",
+      "source_seq_start": 1,
+      "source_seq_end": 6,
+      "payload_digest": "ee84a07e1927b38640f3672db3b43f13499fb04acfecca0d90dcdc1fb418ce35",
+      "facts": [
+        {
+          "kind": "RunnerOrderEventFact.v1",
+          "event_id": "c2665ee0-a760-5a48-93a4-2a8e3477b9f5",
+          "order_event": "initialized",
+          "client_order_id": "O-20260715-0001",
+          "source_event_id": "a4000000-0000-4000-8000-000000000001",
+          "occurred_at": "2026-07-15T07:58:00Z",
+          "instrument": "BTCUSDT-PERP.BINANCE",
+          "side": "buy",
+          "order_type": "limit",
+          "time_in_force": "gtc",
+          "reduce_only": false,
+          "order_purpose": "entry",
+          "execution_relation": "original",
+          "attribution_source": "order_tag",
+          "signal_id": "a3000000-0000-4000-8000-000000000001",
+          "quantity": "100",
+          "quantity_multiplier": "0.01",
+          "limit_price": "60000",
+          "base_quantity": "1",
+          "seq": 1
+        },
+        {
+          "kind": "RunnerOrderEventFact.v1",
+          "event_id": "e79ae855-1b1d-57d0-ab1c-fed6c85a460b",
+          "order_event": "submitted",
+          "client_order_id": "O-20260715-0001",
+          "source_event_id": "a4000000-0000-4000-8000-000000000002",
+          "occurred_at": "2026-07-15T07:58:00.010Z",
+          "seq": 2
+        },
+        {
+          "kind": "RunnerOrderEventFact.v1",
+          "event_id": "6a2e4996-5c7d-513d-b776-c5630c79b502",
+          "order_event": "updated",
+          "client_order_id": "O-20260715-0001",
+          "source_event_id": "a4000000-0000-4000-8000-000000000003",
+          "occurred_at": "2026-07-15T07:58:30Z",
+          "quantity": "100",
+          "quantity_multiplier": "0.01",
+          "limit_price": "60100",
+          "base_quantity": "1",
+          "seq": 3
+        },
+        {
+          "kind": "execution_fill",
+          "event_id": "a5000000-0000-4000-8000-000000000004",
+          "venue": "BINANCE",
+          "venue_trade_id": "T-20260715-0001",
+          "client_order_id": "O-20260715-0001",
+          "venue_order_id": "V-20260715-0001",
+          "instrument": "BTCUSDT-PERP.BINANCE",
+          "side": "buy",
+          "quantity": "1",
+          "price": "60100",
+          "fee": "0.6",
+          "currency": "USDT",
+          "occurred_at": "2026-07-15T07:59:00Z",
+          "seq": 4
+        },
+        {
+          "kind": "RunnerOrderEventFact.v1",
+          "event_id": "2cef802f-9d61-5beb-80ec-5eae3c262a48",
+          "order_event": "fill_voided",
+          "client_order_id": "O-20260715-0001",
+          "source_event_id": "a4000000-0000-4000-8000-000000000005",
+          "occurred_at": "2026-07-15T07:59:30Z",
+          "instrument": "BTCUSDT-PERP.BINANCE",
+          "voided_venue_trade_id": "T-20260715-0001",
+          "correction_id": "C-20260715-0001",
+          "order_status_after": "partially_filled",
+          "leaves_quantity_after": "40",
+          "voided_quantity": "40",
+          "quantity_multiplier": "0.01",
+          "is_reopened": true,
+          "from_reconciliation": false,
+          "commission_voided": "0.24",
+          "commission_voided_currency": "USDT",
+          "fill_commission": "0.6",
+          "fill_commission_currency": "USDT",
+          "voided_base_quantity": "0.4",
+          "leaves_base_quantity_after": "0.4",
+          "seq": 5
+        },
+        {
+          "kind": "RunnerFillCorrectionFact.v1",
+          "event_id": "8efabd8f-4115-52e4-bfe3-8f19877e7dbb",
+          "fill_id": "a6000000-0000-4000-8000-000000000001",
+          "venue": "BINANCE",
+          "voided_venue_trade_id": "T-20260715-0001",
+          "instrument": "BTCUSDT-PERP.BINANCE",
+          "order_side": "buy",
+          "last_px": "60100",
+          "source_event_id": "a4000000-0000-4000-8000-000000000005",
+          "correction_id": "C-20260715-0001",
+          "voided_quantity": "40",
+          "voided_base_quantity": "0.4",
+          "quantity_multiplier": "0.01",
+          "is_reopened": true,
+          "from_reconciliation": false,
+          "occurred_at": "2026-07-15T07:59:30Z",
+          "commission_voided": "0.24",
+          "fill_commission": "0.6",
+          "commission_voided_currency": "USDT",
+          "fill_commission_currency": "USDT",
+          "position_id": "a7000000-0000-5000-8000-000000000001",
+          "seq": 6
+        }
+      ],
+      "signature": "noFB2kx-HHdDiqcG5GaIiM3-E3qoH0UKEMicsByTDM9hHbN3o0WodJcb3m5AKp88EXlDbXxYDmqTdJkWErRSDA"
+    }
+  ]
+}
