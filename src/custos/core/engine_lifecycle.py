@@ -578,10 +578,14 @@ class EngineLifecycleSupervisor:
                 raise
             except Exception as exc:  # noqa: BLE001 - typed terminal mapping below
                 try:
+                    # Every secret the credential carries, the OKX passphrase included.
+                    # The redactor ignores values shorter than 8 characters, so a
+                    # passphrase that short is still not replaced here.
                     error = RuntimeLogRedactor(
                         (
                             credential.get("api_key", ""),
                             credential.get("api_secret", ""),
+                            credential.get("api_passphrase", ""),
                         )
                     ).message(str(exc) or type(exc).__name__)
                 except RuntimeLogFactError:
