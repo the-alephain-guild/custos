@@ -29,6 +29,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -69,9 +70,10 @@ ACCEPTANCE_TERMS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("internal service name", re.compile(r"\bcrucible-rust\b")),
 )
 # Lines left as they are, by (path, term label), each group with its reason. A
-# line is exempt only while its text, stripped, is exactly one of these; a new
-# line with the same term in the same file is refused, and an exempt line that
-# is gone is reported, so the list only shrinks as the files are cleaned up.
+# line is exempt only while its text, stripped, is exactly one of these, and only
+# as many times as it is listed: a new line with the same term in the same file is
+# refused, so is a copy of an exempt line, and an exempt line that is gone is
+# reported, so the list only shrinks as the files are cleaned up.
 _SIGNED_ELSEWHERE = (
     "a receipt another repository signed, kept byte for byte as the record of an "
     "acceptance; it is not rewritten"
@@ -93,71 +95,60 @@ _LIFECYCLE_EVIDENCE = (
     '"evidence": "DEV-03-9 approved by the decision maker on 2026-10-04 (tabularium '
     '05c43abc, custos plan 03 deviation log)"'
 )
-EXEMPTIONS: dict[tuple[str, str], tuple[str, frozenset[str]]] = {
+EXEMPTIONS: dict[tuple[str, str], tuple[str, tuple[str, ...]]] = {
     (_CAPABILITY_RECEIPT, "private planning repository"): (
         _SIGNED_ELSEWHERE,
-        frozenset({_PLANNING_REPOSITORY, _CAPABILITY_EVIDENCE}),
+        (_PLANNING_REPOSITORY, _CAPABILITY_EVIDENCE),
     ),
     (_CAPABILITY_RECEIPT, "planning reference"): (
         _SIGNED_ELSEWHERE,
-        frozenset(
-            {
-                '"dispatch": "main session dispatch for custos plan 03 T3 (crucible-rust '
-                'segment), decisions D1-D8 and DEV-03-1 ruled 2026-10-03",',
-                _CAPABILITY_EVIDENCE,
-            }
+        (
+            '"dispatch": "main session dispatch for custos plan 03 T3 (crucible-rust '
+            'segment), decisions D1-D8 and DEV-03-1 ruled 2026-10-03",',
+            _CAPABILITY_EVIDENCE,
         ),
     ),
     (_LIFECYCLE_RECEIPT, "private planning repository"): (
         _SIGNED_ELSEWHERE,
-        frozenset({_PLANNING_REPOSITORY, _LIFECYCLE_EVIDENCE}),
+        (_PLANNING_REPOSITORY, _PLANNING_REPOSITORY, _LIFECYCLE_EVIDENCE),
     ),
     (_LIFECYCLE_RECEIPT, "planning reference"): (
         _SIGNED_ELSEWHERE,
-        frozenset(
-            {
-                '"dispatch": "main session dispatch for custos plan 03 step 7 integration and '
-                'contract close-out",',
-                _LIFECYCLE_EVIDENCE,
-            }
+        (
+            '"dispatch": "main session dispatch for custos plan 03 step 7 integration and '
+            'contract close-out",',
+            _LIFECYCLE_EVIDENCE,
         ),
     ),
     (_FACT_RECEIPT, "private planning repository"): (
         _SIGNED_ELSEWHERE,
-        frozenset(
-            {'"source": "tabularium .forge/fixes/2026-09/runner-fact-cash-flows-09-114-fixes.md",'}
-        ),
+        ('"source": "tabularium .forge/fixes/2026-09/runner-fact-cash-flows-09-114-fixes.md",',),
     ),
     ("tests/test_runner_fact_contract_v1.py", "internal service name"): (
         "asserts the historical producer receipt, which names the repository that "
         "accepted it; the receipt is not rewritten",
-        frozenset({'"repository": "tesseract-trading/crucible-rust",'}),
+        ('"repository": "tesseract-trading/crucible-rust",',),
     ),
     ("Makefile", "internal service name"): (
         "the path of the sibling copy the vendoring script is compared with; renaming "
         "it breaks the comparison",
-        frozenset({"--sibling-copy ../crucible-rust/scripts/contract_vendor.py"}),
+        ("--sibling-copy ../crucible-rust/scripts/contract_vendor.py",),
     ),
     ("docs/authority/strategy-toolkit-contract.md", "planning reference"): (
         _PROVENANCE,
-        frozenset(
-            {
-                "Plan 18 T4 maps those inputs one-to-one into `custos_toolkit`,",
-                "Plan 18 T3 moves the exact reviewed execution-contract source bytes to",
-                "289 Nautilus-adapter errors are acknowledged debt, not a strict PASS. Plan 18",
-                "Crucible's owner-produced Plan 88 contract receipt is pinned by exact commit and",
-            }
+        (
+            "Plan 18 T4 maps those inputs one-to-one into `custos_toolkit`,",
+            "Plan 18 T3 moves the exact reviewed execution-contract source bytes to",
+            "289 Nautilus-adapter errors are acknowledged debt, not a strict PASS. Plan 18",
+            "Crucible's owner-produced Plan 88 contract receipt is pinned by exact commit and",
         ),
     ),
     ("docs/authority/strategy-toolkit-provenance.md", "planning reference"): (
         _PROVENANCE,
-        frozenset(
-            {
-                "(philosophers-stone plan 64): the toolkit is the only implementation, and "
-                "there is no",
-                "Task 4 establishes package authority only. Runtime verifier activation and "
-                "consumer cutover remain later Plan 18 tasks.",
-            }
+        (
+            "(philosophers-stone plan 64): the toolkit is the only implementation, and there is no",
+            "Task 4 establishes package authority only. Runtime verifier activation and "
+            "consumer cutover remain later Plan 18 tasks.",
         ),
     ),
 }
@@ -203,12 +194,12 @@ def scan(
     root: Path,
     scope: set[Path],
     terms: tuple[tuple[str, re.Pattern[str]], ...],
-    exemptions: dict[tuple[str, str], tuple[str, frozenset[str]]] = EXEMPTIONS,
+    exemptions: dict[tuple[str, str], tuple[str, tuple[str, ...]]] = EXEMPTIONS,
 ) -> list[str]:
     if not scope:
         raise SystemExit("contract disclosure: the scope is empty; nothing was read")
     findings = []
-    used: set[tuple[str, str, str]] = set()
+    used: Counter[tuple[str, str, str]] = Counter()
     for path in sorted(scope - {SELF}):
         try:
             text = (root / path).read_text(encoding="utf-8")
@@ -219,17 +210,18 @@ def scan(
                 match = pattern.search(line)
                 if not match:
                     continue
-                _, exempt = exemptions.get((str(path), label), ("", frozenset()))
-                if line.strip() in exempt:
-                    used.add((str(path), label, line.strip()))
+                _, exempt = exemptions.get((str(path), label), ("", ()))
+                key = (str(path), label, line.strip())
+                if used[key] < exempt.count(line.strip()):
+                    used[key] += 1
                     continue
                 findings.append(f"{path}:{number}: {label}: {match.group(0)!r}")
     labels = {label for label, _ in terms}
     for (path, label), (_, lines) in exemptions.items():
         if Path(path) not in scope or label not in labels:
             continue
-        for line in sorted(lines):
-            if (path, label, line) not in used:
+        for line in sorted(set(lines)):
+            if used[(path, label, line)] < lines.count(line):
                 findings.append(f"{path}: {label}: exempt line no longer present: {line!r}")
     return findings
 
@@ -254,12 +246,16 @@ def self_test() -> None:
             clean.write_text(harmless, encoding="utf-8")
             assert not scan(root, {Path("clean.json")}, TERMS), harmless
         notes = root / "notes.md"
-        exempt = {("notes.md", "planning reference"): ("kept", frozenset({"see plan 18"}))}
+        exempt = {("notes.md", "planning reference"): ("kept", ("see plan 18",))}
         notes.write_text("see plan 18\n", encoding="utf-8")
         assert not scan(root, {Path("notes.md")}, TERMS, exempt), "an exempt line was refused"
         notes.write_text("see plan 18\nsee plan 19\n", encoding="utf-8")
         findings = scan(root, {Path("notes.md")}, TERMS, exempt)
         assert [finding.split(": ")[0] for finding in findings] == ["notes.md:2"], findings
+        for copy in ("see plan 18\nsee plan 18\n", "see plan 18\n  see plan 18 \n"):
+            notes.write_text(copy, encoding="utf-8")
+            findings = scan(root, {Path("notes.md")}, TERMS, exempt)
+            assert [finding.split(": ")[0] for finding in findings] == ["notes.md:2"], findings
         notes.write_text("cleaned up\n", encoding="utf-8")
         findings = scan(root, {Path("notes.md")}, TERMS, exempt)
         assert len(findings) == 1 and "no longer present" in findings[0], findings
