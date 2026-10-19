@@ -16,8 +16,20 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from custos.core.runner_fact import (
+    FILL_CORRECTION_KIND,
+    ORDER_ATTRIBUTION_SOURCES,
+    ORDER_CONTINGENCY_TYPES,
+    ORDER_EVENT_FIELDS,
+    ORDER_EVENT_KIND,
+    ORDER_EVENTS,
+    ORDER_EXECUTION_RELATIONS,
+    ORDER_PRICE_RULES,
+    ORDER_PURPOSES,
+    ORDER_STATUS_AFTER_VOID,
+    ORDER_TIME_IN_FORCE,
+    ORDER_TYPES,
+    ORDER_UNATTRIBUTED_REASONS,
     RUNNER_FACT_KIND_PROJECTORS,
-    RUNNER_FACT_PROJECTOR_CONTRACTS,
     RUNNER_FACT_SCHEMA_VERSION,
     RUNNER_FACT_SIGNING_DOMAIN,
     RUNNER_FACT_SIGNING_HEADER_FIELDS,
@@ -30,11 +42,14 @@ from custos.core.runner_fact import (
     command_lifecycle_event_id,
     equity_snapshot,
     execution_fill,
+    fill_correction_fact,
     heartbeat,
     normalize_capability_scope_bindings,
+    order_event_fact,
     position_closed,
     position_snapshot,
     reconciliation_period_closed,
+    runner_fact_capability_shape,
     runner_fact_event_id,
     runner_fact_signing_header,
     runner_fact_signing_preimage,
@@ -51,7 +66,7 @@ AUTHORITY_COORDINATE = "custos.runner-fact.v1"
 # Raised only when the wire shape or the meaning of a field changes; a change to
 # descriptive text alone keeps the revision.
 CONTRACT_ID = "alephain.custos.runner_fact_batch.v1"
-CONTRACT_REVISION = 3
+CONTRACT_REVISION = 6
 TENANT_ID = "acme"
 MODE = "sandbox"
 RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
@@ -72,6 +87,11 @@ TERMINAL_RUN_BATCH_ID = UUID("60000000-0000-4000-8000-000000000007")
 TERMINAL_STOP_BATCH_ID = UUID("60000000-0000-4000-8000-000000000008")
 CREDENTIAL_SCOPE_ID = "91000000-0000-4000-8000-000000000011"
 CREDENTIAL_SCOPE_DIGEST = "a" * 64
+# The lineage vector is its own stream: a capability on the current shape that
+# also declares order lineage and fill correction, on another instance.
+LINEAGE_INSTANCE_ID = UUID("20000000-0000-4000-8000-000000000015")
+LINEAGE_CAPABILITY_ID = UUID("50000000-0000-4000-8000-000000000015")
+LINEAGE_BATCH_ID = UUID("60000000-0000-4000-8000-000000000015")
 # A synthetic image runtime: a well-formed declaration, not a published image.
 # A runner writes its own observed runtime when it publishes; nothing copies this.
 RUNTIME = {
@@ -89,6 +109,7 @@ CAPABILITY_RECEIPT_PATH = Path("docs/authority/runner-fact-capability-receipt-go
 PARITY_PATH = Path("docs/authority/runner-fact-parity-matrix-v1.json")
 SIGNING_PREIMAGE_PATH = Path("docs/authority/runner-fact-signing-preimage-golden-v1.json")
 TERMINAL_BOUNDARY_PATH = Path("docs/authority/runner-fact-terminal-boundary-golden-v1.json")
+LINEAGE_PATH = Path("docs/authority/runner-fact-lineage-golden-v1.json")
 INDEX_PATH = Path("docs/authority/runner-fact-contract-assets-v1.json")
 RECEIPT_PATH = Path("docs/authority/receipts/custos-runner-fact-v1-producer-receipt.json")
 
@@ -639,6 +660,24 @@ def _schema() -> dict[str, Any]:
             "properties": {**position_row["properties"], "instrument": non_empty},
         },
     )
+    definitions[f"fact_{ORDER_EVENT_KIND}"] = _order_event_schema(
+        uuid=uuid,
+        timestamp=timestamp,
+        currency=currency,
+        decimal=decimal,
+        unsigned_decimal=unsigned_decimal,
+        positive_decimal=positive_decimal,
+        side=side,
+    )
+    definitions[f"fact_{FILL_CORRECTION_KIND}"] = _fill_correction_schema(
+        uuid=uuid,
+        timestamp=timestamp,
+        currency=currency,
+        decimal=decimal,
+        unsigned_decimal=unsigned_decimal,
+        positive_decimal=positive_decimal,
+        side=side,
+    )
     facts["execution_fill"]["properties"]["fee_currency"] = currency
     facts["execution_fill"]["properties"]["fee"] = decimal
     facts["fee"]["properties"]["amount"] = decimal
@@ -875,18 +914,336 @@ def _terminal_valuation_schema(
     return schema
 
 
-def _scope(spec_id: UUID, spec_digest: str) -> dict[str, Any]:
+# Each native quantity of an order fact and the base-asset quantity it becomes.
+_BASE_OF = {
+    "quantity": "base_quantity",
+    "requested_quantity": "requested_base_quantity",
+    "voided_quantity": "voided_base_quantity",
+    "leaves_quantity_after": "leaves_base_quantity_after",
+}
+_NATIVE_UNIT = "in the venue's own quantity units"
+_BASE_UNIT = "in base-asset units: exactly the native quantity times quantity_multiplier"
+
+
+def _wire_fields(fields: frozenset[str]) -> set[str]:
+    return set(fields) | {_BASE_OF[name] for name in fields if name in _BASE_OF}
+
+
+def _order_event_schema(
+    *,
+    uuid: dict[str, Any],
+    timestamp: dict[str, Any],
+    currency: dict[str, Any],
+    decimal: dict[str, Any],
+    unsigned_decimal: dict[str, Any],
+    positive_decimal: dict[str, Any],
+    side: dict[str, Any],
+) -> dict[str, Any]:
+    def native(description: str) -> dict[str, Any]:
+        return {**positive_decimal, "description": f"{description}, {_NATIVE_UNIT}"}
+
+    def base(description: str, schema: dict[str, Any] = positive_decimal) -> dict[str, Any]:
+        return {**schema, "description": f"{description}, {_BASE_UNIT}"}
+
+    order_id = _identifier(256)
+    fields: dict[str, Any] = {
+        "order_event": {"enum": list(ORDER_EVENTS)},
+        "client_order_id": order_id,
+        "source_event_id": {
+            **uuid,
+            "description": (
+                "The engine event this fact records; the two facts of one fill void "
+                "carry the same value"
+            ),
+        },
+        "occurred_at": timestamp,
+        "instrument": _identifier(128),
+        "side": side,
+        "order_type": {"enum": list(ORDER_TYPES)},
+        "time_in_force": {"enum": list(ORDER_TIME_IN_FORCE)},
+        "reduce_only": {"type": "boolean"},
+        "order_purpose": {"enum": list(ORDER_PURPOSES)},
+        "execution_relation": {"enum": list(ORDER_EXECUTION_RELATIONS)},
+        "attribution_source": {"enum": list(ORDER_ATTRIBUTION_SOURCES)},
+        "signal_id": uuid,
+        "unattributed_reason": {"enum": list(ORDER_UNATTRIBUTED_REASONS)},
+        "derived_signal_fact_id": uuid,
+        "closes_signal_id": uuid,
+        "parent_client_order_id": order_id,
+        "retry_of_client_order_id": order_id,
+        "replaces_client_order_id": order_id,
+        "exec_spawn_id": order_id,
+        "order_list_id": order_id,
+        "venue_parent_order_id": order_id,
+        "contingency_type": {"enum": list(ORDER_CONTINGENCY_TYPES)},
+        "quantity": native("The confirmed order quantity"),
+        "base_quantity": base("The confirmed order quantity"),
+        "quantity_multiplier": {
+            **positive_decimal,
+            "description": "The multiplier from the venue's quantity units to base-asset units",
+        },
+        "limit_price": unsigned_decimal,
+        "trigger_price": unsigned_decimal,
+        "requested_values_known": {
+            "type": "boolean",
+            "description": (
+                "Whether the refused request's values are known. When true, a requested "
+                "value left out was not part of the request; when false, none is given"
+            ),
+        },
+        "requested_quantity": native("The quantity a refused amendment asked for"),
+        "requested_base_quantity": base("The quantity a refused amendment asked for"),
+        "requested_limit_price": unsigned_decimal,
+        "requested_trigger_price": unsigned_decimal,
+        "reason_code": {"type": "string", "pattern": r"^[a-z][a-z0-9_]{0,63}$"},
+        "last_trigger_price": unsigned_decimal,
+        "voided_venue_trade_id": _identifier(256),
+        "correction_id": _identifier(256),
+        "voided_quantity": native("The fill's cumulative voided quantity"),
+        "voided_base_quantity": base("The fill's cumulative voided quantity"),
+        "is_reopened": {"type": "boolean"},
+        "from_reconciliation": {"type": "boolean"},
+        "order_status_after": {
+            "enum": list(ORDER_STATUS_AFTER_VOID),
+            "description": "The order's coarse state once the engine applied the void",
+        },
+        "leaves_quantity_after": {
+            **unsigned_decimal,
+            "description": f"What the order may still fill, {_NATIVE_UNIT}",
+        },
+        "leaves_base_quantity_after": base("What the order may still fill", unsigned_decimal),
+        "commission_voided": {
+            **decimal,
+            "description": "The fill's cumulative commission reversal, with the fill's sign",
+        },
+        "commission_voided_currency": currency,
+        "fill_commission": {
+            **decimal,
+            "description": "What the voided fill charged; absent when it charged nothing",
+        },
+        "fill_commission_currency": currency,
+    }
+    common = ["order_event", "client_order_id", "source_event_id", "occurred_at"]
+    schema = _object_schema(ORDER_EVENT_KIND, fields)
+    schema["required"] = ["kind", "event_id", "seq", *common]
+    every = set(fields) - set(common)
+    creation = ["initialized", "refused"]
+
+    def when(condition: dict[str, Any], then: dict[str, Any], required: list[str]) -> dict:
+        return {"if": {"required": required, "properties": condition}, "then": then}
+
+    rules: list[dict[str, Any]] = []
+    for event in ORDER_EVENTS:
+        required, optional = ORDER_EVENT_FIELDS[event]
+        wired_required = sorted(_wire_fields(required))
+        allowed = _wire_fields(required | optional)
+        rules.append(
+            when(
+                {"order_event": {"const": event}},
+                {
+                    **({"required": wired_required} if wired_required else {}),
+                    "properties": {name: False for name in sorted(every - allowed)},
+                },
+                ["order_event"],
+            )
+        )
+    for order_type, (limit, trigger, _, _) in ORDER_PRICE_RULES.items():
+        then: dict[str, Any] = {}
+        needed = [
+            field
+            for field, rule in (("limit_price", limit), ("trigger_price", trigger))
+            if rule == "required"
+        ]
+        if needed:
+            then["required"] = needed
+        absent = [
+            field
+            for field, rule in (("limit_price", limit), ("trigger_price", trigger))
+            if rule == "absent"
+        ]
+        if absent:
+            then["properties"] = {field: False for field in absent}
+        rules.append(
+            when(
+                {"order_event": {"enum": creation}, "order_type": {"const": order_type}},
+                then,
+                ["order_event", "order_type"],
+            )
+        )
+    protective = {"enum": ["protective_stop", "take_profit"]}
+    for condition, required_link, links in (
+        ({"attribution_source": {"const": "order_tag"}}, "signal_id", None),
+        (
+            {"attribution_source": {"const": "derived"}, "order_purpose": {"not": protective}},
+            "derived_signal_fact_id",
+            None,
+        ),
+        (
+            {"attribution_source": {"const": "derived"}, "order_purpose": protective},
+            "unattributed_reason",
+            {"unattributed_reason": {"const": "legacy_without_signal"}},
+        ),
+        ({"attribution_source": {"const": "none"}}, "unattributed_reason", None),
+    ):
+        others = {"signal_id", "derived_signal_fact_id", "unattributed_reason"} - {required_link}
+        rules.append(
+            when(
+                {"order_event": {"enum": creation}, **condition},
+                {
+                    "required": [required_link],
+                    "properties": {
+                        **{name: False for name in sorted(others)},
+                        **(links or {}),
+                    },
+                },
+                ["order_event", *condition],
+            )
+        )
+    requested = ["requested_quantity", "requested_limit_price", "requested_trigger_price"]
+    rules.append(
+        when(
+            {"requested_values_known": {"const": False}},
+            {
+                "properties": {
+                    name: False
+                    for name in [*requested, "requested_base_quantity", "quantity_multiplier"]
+                }
+            },
+            ["requested_values_known"],
+        )
+    )
+    rules.append(
+        when(
+            {"requested_values_known": {"const": True}},
+            {"anyOf": [{"required": [name]} for name in requested]},
+            ["requested_values_known"],
+        )
+    )
+    rules.append(
+        when(
+            {"order_event": {"enum": ["modify_refused", "modify_rejected"]}},
+            {"dependentRequired": {"quantity_multiplier": ["requested_quantity"]}},
+            ["order_event"],
+        )
+    )
+    rules.append(
+        when(
+            {"order_status_after": {"const": "voided"}},
+            {
+                "properties": {
+                    "leaves_quantity_after": {"const": "0"},
+                    "leaves_base_quantity_after": {"const": "0"},
+                }
+            },
+            ["order_status_after"],
+        )
+    )
+    schema["dependentRequired"] = {
+        **{native_name: [base_name] for native_name, base_name in _BASE_OF.items()},
+        **{base_name: [native_name] for native_name, base_name in _BASE_OF.items()},
+        "requested_quantity": ["requested_base_quantity", "quantity_multiplier"],
+        "commission_voided": ["commission_voided_currency"],
+        "commission_voided_currency": ["commission_voided"],
+        "fill_commission": ["fill_commission_currency"],
+        "fill_commission_currency": ["fill_commission"],
+    }
+    schema["allOf"] = rules
+    return schema
+
+
+def _fill_correction_schema(
+    *,
+    uuid: dict[str, Any],
+    timestamp: dict[str, Any],
+    currency: dict[str, Any],
+    decimal: dict[str, Any],
+    unsigned_decimal: dict[str, Any],
+    positive_decimal: dict[str, Any],
+    side: dict[str, Any],
+) -> dict[str, Any]:
+    optional = frozenset(
+        {
+            "position_id",
+            "commission_voided",
+            "commission_voided_currency",
+            "fill_commission",
+            "fill_commission_currency",
+        }
+    )
+    schema = _object_schema(
+        FILL_CORRECTION_KIND,
+        {
+            "fill_id": {**uuid, "description": "The settlement fill this correction reverses"},
+            "venue": _identifier(128),
+            "voided_venue_trade_id": _identifier(256),
+            "instrument": _identifier(128),
+            "order_side": side,
+            "last_px": unsigned_decimal,
+            "position_id": {
+                **uuid,
+                "description": (
+                    "The position lifecycle the voided fill belongs to, named the way "
+                    "position_closed names it; absent when the runner cannot tell"
+                ),
+            },
+            "source_event_id": {
+                **uuid,
+                "description": "The engine void this fact records, shared with its order event",
+            },
+            "correction_id": _identifier(256),
+            "voided_quantity": {
+                **positive_decimal,
+                "description": f"The fill's cumulative voided quantity, {_NATIVE_UNIT}",
+            },
+            "voided_base_quantity": {
+                **positive_decimal,
+                "description": f"The fill's cumulative voided quantity, {_BASE_UNIT}",
+            },
+            "quantity_multiplier": positive_decimal,
+            "commission_voided": decimal,
+            "commission_voided_currency": currency,
+            "fill_commission": decimal,
+            "fill_commission_currency": currency,
+            "is_reopened": {"type": "boolean"},
+            "from_reconciliation": {"type": "boolean"},
+            "occurred_at": timestamp,
+        },
+        optional=optional,
+    )
+    schema["dependentRequired"] = {
+        "commission_voided": ["commission_voided_currency"],
+        "commission_voided_currency": ["commission_voided"],
+        "fill_commission": ["fill_commission_currency"],
+        "fill_commission_currency": ["fill_commission"],
+    }
+    return schema
+
+
+def _scope(spec_id: UUID, spec_digest: str, instance_id: UUID = INSTANCE_ID) -> dict[str, Any]:
     return {
         "trading_mode": MODE,
-        "deployment_instance_id": str(INSTANCE_ID),
+        "deployment_instance_id": str(instance_id),
         "deployment_spec_id": str(spec_id),
         "deployment_spec_digest": spec_digest,
         "strategy_id": str(STRATEGY_ID),
     }
 
 
-def _capability_manifest(spec_id: UUID, spec_digest: str) -> dict[str, Any]:
-    base = _scope(spec_id, spec_digest)
+def _capability_manifest(
+    spec_id: UUID,
+    spec_digest: str,
+    *,
+    instance_id: UUID = INSTANCE_ID,
+    lineage: bool = False,
+) -> dict[str, Any]:
+    """The capability on the current shape. The canonical manifest declares
+    neither order lineage nor fill correction: those flags are an operator's
+    choice per deployment, never a template default."""
+
+    base = _scope(spec_id, spec_digest, instance_id)
+    projectors, contracts = runner_fact_capability_shape(
+        order_lineage=lineage, fill_correction=lineage
+    )
     return {
         "schema_version": 1,
         "agent_version": "fixture-v1",
@@ -894,17 +1251,14 @@ def _capability_manifest(spec_id: UUID, spec_digest: str) -> dict[str, Any]:
         "contract": "custos.runner_fact.capability.v1",
         "closed_fact_union": True,
         "unknown_fact_kind": "terminal_unsupported_contract",
-        "fact_kind_projectors": dict(RUNNER_FACT_KIND_PROJECTORS),
-        "runner_fact_contracts": {
-            projector: dict(contract)
-            for projector, contract in RUNNER_FACT_PROJECTOR_CONTRACTS.items()
-        },
+        "fact_kind_projectors": projectors,
+        "runner_fact_contracts": contracts,
         "settlement_scope_bindings": [dict(base)],
         "risk_scope_bindings": [
             {
                 **base,
                 "resource_type": "deployment_instance",
-                "resource_id": str(INSTANCE_ID),
+                "resource_id": str(instance_id),
             }
         ],
         "reconciliation_scope_bindings": [
@@ -1164,9 +1518,8 @@ def _facts() -> list[dict[str, Any]]:
     )
     # The terminal valuation must close its own stop batch; the stop-boundary
     # asset carries it, and the closed union is asserted across both assets.
-    if set(RUNNER_FACT_KIND_PROJECTORS) - {TERMINAL_VALUATION_KIND} != {
-        fact["kind"] for fact in facts
-    }:
+    single_batch = set(runner_fact_capability_shape()[0]) - {TERMINAL_VALUATION_KIND}
+    if single_batch != {fact["kind"] for fact in facts}:
         raise RuntimeError("golden does not contain the single-batch RunnerFact kind union")
     return facts
 
@@ -1312,6 +1665,7 @@ def _batch(
     capability_id: UUID,
     capability_manifest_digest: str,
     identity: RunnerFactIdentity,
+    instance_id: UUID = INSTANCE_ID,
 ) -> dict[str, Any]:
     sequenced = [{**fact, "seq": source_seq_start + offset} for offset, fact in enumerate(facts)]
     source_seq_end = source_seq_start + len(sequenced) - 1
@@ -1322,7 +1676,7 @@ def _batch(
             "tenant_id": TENANT_ID,
             "trading_mode": MODE,
             "runner_id": str(RUNNER_ID),
-            "deployment_instance_id": str(INSTANCE_ID),
+            "deployment_instance_id": str(instance_id),
             "deployment_spec_id": str(spec_id),
             "deployment_spec_digest": spec_digest,
             "generation": generation,
@@ -1344,6 +1698,136 @@ def _batch(
     }
 
 
+def _lineage(identity: RunnerFactIdentity) -> dict[str, Any]:
+    """One order through its life on a capability that declares order lineage and
+    fill correction: created, submitted, amended, filled, then part of its one
+    fill voided, recorded both as the order event and as the settlement
+    correction of the signed fill."""
+
+    manifest = _capability_manifest(
+        SPEC_ID, SPEC_DIGEST, instance_id=LINEAGE_INSTANCE_ID, lineage=True
+    )
+    manifest_digest = _sha256(_canonical(manifest))
+    authority = RunnerFactAuthority(
+        tenant_id=TENANT_ID,
+        trading_mode=MODE,
+        runner_id=RUNNER_ID,
+        deployment_instance_id=LINEAGE_INSTANCE_ID,
+        deployment_spec_id=SPEC_ID,
+        deployment_spec_digest=SPEC_DIGEST,
+        generation=1,
+        strategy_id=STRATEGY_ID,
+        capability_version_id=LINEAGE_CAPABILITY_ID,
+        capability_version=1,
+        capability_manifest_digest=manifest_digest,
+    )
+    order = "O-20260715-0001"
+    signal = "a3000000-0000-4000-8000-000000000001"
+
+    def event(name: str, source: str, at: str, **fields: Any) -> dict[str, Any]:
+        return order_event_fact(
+            authority,
+            order_event=name,
+            client_order_id=order,
+            source_event_id=source,
+            occurred_at=at,
+            **fields,
+        )
+
+    void_source = "a4000000-0000-4000-8000-000000000005"
+    void = {
+        "voided_quantity": "40",
+        "quantity_multiplier": "0.01",
+        "is_reopened": True,
+        "from_reconciliation": False,
+        "commission_voided": "0.24",
+        "commission_voided_currency": "USDT",
+        "fill_commission": "0.6",
+        "fill_commission_currency": "USDT",
+    }
+    facts = [
+        event(
+            "initialized",
+            "a4000000-0000-4000-8000-000000000001",
+            "2026-07-15T07:58:00Z",
+            instrument="BTCUSDT-PERP.BINANCE",
+            side="buy",
+            order_type="limit",
+            time_in_force="gtc",
+            reduce_only=False,
+            order_purpose="entry",
+            execution_relation="original",
+            attribution_source="order_tag",
+            signal_id=signal,
+            quantity="100",
+            quantity_multiplier="0.01",
+            limit_price="60000",
+        ),
+        event("submitted", "a4000000-0000-4000-8000-000000000002", "2026-07-15T07:58:00.010Z"),
+        event(
+            "updated",
+            "a4000000-0000-4000-8000-000000000003",
+            "2026-07-15T07:58:30Z",
+            quantity="100",
+            quantity_multiplier="0.01",
+            limit_price="60100",
+        ),
+        execution_fill(
+            event_id=UUID("a5000000-0000-4000-8000-000000000004"),
+            venue="BINANCE",
+            venue_trade_id="T-20260715-0001",
+            client_order_id=order,
+            venue_order_id="V-20260715-0001",
+            instrument="BTCUSDT-PERP.BINANCE",
+            side="buy",
+            quantity="1",
+            price="60100",
+            fee="0.6",
+            currency="USDT",
+            occurred_at="2026-07-15T07:59:00Z",
+        ),
+        event(
+            "fill_voided",
+            void_source,
+            "2026-07-15T07:59:30Z",
+            instrument="BTCUSDT-PERP.BINANCE",
+            voided_venue_trade_id="T-20260715-0001",
+            correction_id="C-20260715-0001",
+            order_status_after="partially_filled",
+            leaves_quantity_after="40",
+            **void,
+        ),
+        fill_correction_fact(
+            authority,
+            fill_id="a6000000-0000-4000-8000-000000000001",
+            venue="BINANCE",
+            voided_venue_trade_id="T-20260715-0001",
+            instrument="BTCUSDT-PERP.BINANCE",
+            order_side="buy",
+            last_px="60100",
+            position_id="a7000000-0000-5000-8000-000000000001",
+            source_event_id=void_source,
+            correction_id="C-20260715-0001",
+            occurred_at="2026-07-15T07:59:30Z",
+            **void,
+        ),
+    ]
+    batch = _batch(
+        facts=facts,
+        batch_id=LINEAGE_BATCH_ID,
+        emitted_at="2026-07-15T08:00:00Z",
+        source_seq_start=1,
+        spec_id=SPEC_ID,
+        spec_digest=SPEC_DIGEST,
+        generation=1,
+        capability_id=LINEAGE_CAPABILITY_ID,
+        capability_manifest_digest=manifest_digest,
+        identity=identity,
+        instance_id=LINEAGE_INSTANCE_ID,
+    )
+    return {"capability_manifest": manifest, "batches": [batch]}
+
+
 def _parity() -> dict[str, Any]:
     sources = {
         "RunnerValuationCheckpointFact.v1": "common-mark independent ledger valuation",
@@ -1361,6 +1845,8 @@ def _parity() -> dict[str, Any]:
         "reconciliation_period_closed": "completed reconciliation evidence period",
         "RunnerDeploymentLifecycleFact.v1": "local engine lifecycle observation",
         TERMINAL_VALUATION_KIND: "same-boundary valuation at a signed instance stop",
+        ORDER_EVENT_KIND: "engine order events and runner order refusals",
+        FILL_CORRECTION_KIND: "engine fill void of a fill this instance signed",
     }
     return {
         "schema_version": 1,
@@ -1377,7 +1863,7 @@ def _parity() -> dict[str, Any]:
                 "fact_kind": kind,
                 "capability_projector": projector,
                 "signed_batch": "RunnerFactBatchV1",
-                "canonical_owner_after_ingest": "crucible-rust",
+                "canonical_owner_after_ingest": "arx",
             }
             for kind, projector in RUNNER_FACT_KIND_PROJECTORS.items()
         ],
@@ -1410,9 +1896,12 @@ def build_assets() -> dict[Path, bytes]:
     terminal_boundary = _terminal_boundary(
         golden, capability_manifest_digest=manifest_digest, identity=identity
     )
-    union_kinds = {fact["kind"] for fact in golden["facts"]} | {
-        fact["kind"] for batch in terminal_boundary for fact in batch["facts"]
-    }
+    lineage = _lineage(identity)
+    union_kinds = (
+        {fact["kind"] for fact in golden["facts"]}
+        | {fact["kind"] for batch in terminal_boundary for fact in batch["facts"]}
+        | {fact["kind"] for batch in lineage["batches"] for fact in batch["facts"]}
+    )
     if union_kinds != set(RUNNER_FACT_KIND_PROJECTORS):
         raise RuntimeError("assets do not contain the closed RunnerFact kind union")
     signing_header = runner_fact_signing_header(golden)
@@ -1473,6 +1962,7 @@ def build_assets() -> dict[Path, bytes]:
         PARITY_PATH: parity,
         SIGNING_PREIMAGE_PATH: signing_vector,
         TERMINAL_BOUNDARY_PATH: terminal_boundary,
+        LINEAGE_PATH: lineage,
     }
     assets: dict[Path, bytes] = {path: _pretty(value) for path, value in objects.items()}
     roles = {
@@ -1483,6 +1973,7 @@ def build_assets() -> dict[Path, bytes]:
         PARITY_PATH: "runtime_event_fact_parity_matrix",
         SIGNING_PREIMAGE_PATH: "runner_fact_signing_preimage_golden",
         TERMINAL_BOUNDARY_PATH: "runner_fact_terminal_boundary_golden",
+        LINEAGE_PATH: "runner_fact_lineage_golden",
     }
     index = {
         "asset_index_schema_version": 1,
@@ -1516,7 +2007,11 @@ def build_assets() -> dict[Path, bytes]:
             "generation",
         ],
         "fact_kind_projectors": dict(RUNNER_FACT_KIND_PROJECTORS),
-        "closed_fact_union_assets": [str(GOLDEN_PATH), str(TERMINAL_BOUNDARY_PATH)],
+        "closed_fact_union_assets": [
+            str(GOLDEN_PATH),
+            str(TERMINAL_BOUNDARY_PATH),
+            str(LINEAGE_PATH),
+        ],
         "synthetic_signature": {
             "algorithm": "ed25519",
             "key_id": key_id,

@@ -3,12 +3,15 @@
 
 docs/authority/contract-revisions-v1.json lists every contract this repository
 produces for another repository: its current revision, wire fingerprint, the
-assets a consumer vendors and the conformance vectors it runs, with the
-fingerprints of every earlier revision. A contract's revision is raised only when
-its wire shape or the meaning of a field changes, which the vectors pin. The rule
-is mechanical: a changed wire fingerprint or vector file under an unchanged
-revision fails; a raised revision with neither changed is only a warning, since
-a meaning change the vectors do not yet cover is possible.
+assets a consumer vendors and the conformance vectors and sequences it runs, with
+the fingerprints of every earlier revision. A contract's revision is raised only
+when its wire shape or the meaning of a field changes, which the vectors and
+sequences pin. The rule is mechanical: a changed wire fingerprint, vector file or
+sequence file under an unchanged revision fails; a raised revision with none of
+them changed is only a warning, since a meaning change the vectors do not yet
+cover is possible. A revision recorded before sequences joined the fingerprint
+has no sequence digest; it is never compared again, since only the current
+revision is.
 
 ``--check`` fails on a rule violation or when the committed index differs from
 the regenerated one; without it the index is rewritten.
@@ -46,18 +49,23 @@ class Contract:
     assets: tuple[str, ...]
     schema_path: str | None = None
     vectors_path: str | None = None
+    sequences_path: str | None = None
     # Only for a contract without a schema to carry its revision.
     index_revision: int | None = None
 
 
 RUNNER_FACT_VECTORS = "docs/authority/conformance/runner-fact-batch-v1.vectors.json"
+RUNNER_FACT_SEQUENCES = "docs/authority/conformance/runner-fact-batch-v1.sequences.json"
 STRATEGY_VECTORS = "docs/authority/conformance/strategy-canonical-json-v1.vectors.json"
+STRATEGY_SIGNAL_SCHEMA = "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json"
+STRATEGY_SIGNAL_VECTORS = "docs/authority/conformance/strategy-signal-fact-v1.vectors.json"
 
 CONTRACTS = (
     Contract(
         contract_id="alephain.custos.runner_fact_batch.v1",
         schema_path="docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
         vectors_path=RUNNER_FACT_VECTORS,
+        sequences_path=RUNNER_FACT_SEQUENCES,
         assets=(
             "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
             "docs/authority/runner-fact-golden-v1.json",
@@ -66,9 +74,12 @@ CONTRACTS = (
             "docs/authority/runner-fact-parity-matrix-v1.json",
             "docs/authority/runner-fact-signing-preimage-golden-v1.json",
             "docs/authority/runner-fact-terminal-boundary-golden-v1.json",
+            "docs/authority/runner-fact-lineage-golden-v1.json",
             "docs/authority/runner-fact-contract-assets-v1.json",
             RUNNER_FACT_VECTORS,
             RUNNER_FACT_VECTORS + ".sha256",
+            RUNNER_FACT_SEQUENCES,
+            RUNNER_FACT_SEQUENCES + ".sha256",
         ),
     ),
     Contract(
@@ -95,6 +106,17 @@ CONTRACTS = (
         contract_id="alephain.custos.runtime_candidate_acceptance.v1",
         schema_path="docs/gateway-contract/v1/runtime_candidate_acceptance_v1.schema.json",
         assets=("docs/gateway-contract/v1/runtime_candidate_acceptance_v1.schema.json",),
+    ),
+    Contract(
+        contract_id="alephain.custos.strategy_signal.v1",
+        schema_path=STRATEGY_SIGNAL_SCHEMA,
+        vectors_path=STRATEGY_SIGNAL_VECTORS,
+        assets=(
+            STRATEGY_SIGNAL_SCHEMA,
+            "docs/authority/strategy-signal-golden-v1.json",
+            STRATEGY_SIGNAL_VECTORS,
+            STRATEGY_SIGNAL_VECTORS + ".sha256",
+        ),
     ),
     Contract(
         contract_id="alephain.custos.strategy_canonical_json.v1",
@@ -146,11 +168,31 @@ def _current(root: Path, contract: Contract, vendor) -> dict[str, Any]:
                 f"not revision {revision}"
             )
         vectors = _sha256(data)
+    sequences = None
+    if contract.sequences_path is not None:
+        data = (root / contract.sequences_path).read_bytes()
+        document = json.loads(data)
+        if (
+            document.get("contract_id") != contract.contract_id
+            or document.get("contract_revision") != revision
+        ):
+            raise RevisionRuleError(
+                f"{contract.contract_id}: {contract.sequences_path} names "
+                f"{document.get('contract_id')} revision {document.get('contract_revision')}, "
+                f"not revision {revision}"
+            )
+        sequences = _sha256(data)
     assets = []
     for relative in contract.assets:
         data = (root / relative).read_bytes()
         assets.append({"path": relative, "sha256": _sha256(data), "size_bytes": len(data)})
-    return {"revision": revision, "wire_sha256": wire, "vectors_sha256": vectors, "assets": assets}
+    return {
+        "revision": revision,
+        "wire_sha256": wire,
+        "vectors_sha256": vectors,
+        "sequences_sha256": sequences,
+        "assets": assets,
+    }
 
 
 def build_index(root: Path, committed: dict[str, Any] | None) -> tuple[dict[str, Any], list[str]]:
@@ -169,13 +211,15 @@ def build_index(root: Path, committed: dict[str, Any] | None) -> tuple[dict[str,
             "wire_sha256": current["wire_sha256"],
             "vectors_sha256": current["vectors_sha256"],
         }
+        if contract.sequences_path is not None:
+            fingerprint["sequences_sha256"] = current["sequences_sha256"]
         if revision in recorded:
             entry = recorded[revision]
-            if (entry["wire_sha256"], entry["vectors_sha256"]) != tuple(fingerprint.values()):
+            if any(entry.get(key) != value for key, value in fingerprint.items()):
                 raise RevisionRuleError(
-                    f"{contract.contract_id}: the wire fingerprint or the conformance vectors "
-                    f"changed but the contract revision is still {revision}; raise "
-                    "x-contract-revision (or the index revision) by one"
+                    f"{contract.contract_id}: the wire fingerprint, the conformance vectors or "
+                    f"the sequences changed but the contract revision is still {revision}; "
+                    "raise x-contract-revision (or the index revision) by one"
                 )
         else:
             highest = max(recorded, default=0)
@@ -184,13 +228,13 @@ def build_index(root: Path, committed: dict[str, Any] | None) -> tuple[dict[str,
                     f"{contract.contract_id}: revision {revision} does not follow the recorded "
                     f"revision {highest}"
                 )
-            if highest and (
-                recorded[highest]["wire_sha256"],
-                recorded[highest]["vectors_sha256"],
-            ) == tuple(fingerprint.values()):
+            if highest and all(
+                recorded[highest].get(key) == value for key, value in fingerprint.items()
+            ):
                 warnings.append(
                     f"{contract.contract_id}: revision {revision} changes neither the wire "
-                    "fingerprint nor the vectors; make sure a meaning change justifies it"
+                    "fingerprint, the vectors nor the sequences; make sure a meaning change "
+                    "justifies it"
                 )
             note = FIRST_REVISION_NOTE if revision == 1 else "raised"
             history.append({"revision": revision, **fingerprint, "note": note})
@@ -208,8 +252,9 @@ def build_index(root: Path, committed: dict[str, Any] | None) -> tuple[dict[str,
         "producer_repository": PRODUCER_REPOSITORY,
         "canonicalization": "utf8-json-sort-keys-compact-v1",
         "revision_rule": (
-            "raise a contract's revision by one when its wire fingerprint or its conformance "
-            "vectors change; descriptive text alone keeps the revision"
+            "raise a contract's revision by one when its wire fingerprint, its conformance "
+            "vectors or its conformance sequences change; descriptive text alone keeps the "
+            "revision"
         ),
         "contracts": contracts,
     }

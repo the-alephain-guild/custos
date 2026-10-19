@@ -46,11 +46,13 @@ Contract golden keys are synthetic test evidence and must not be trusted as runt
 
 | Purpose | `facts[].kind` |
 |---|---|
-| Settlement | `fill`, `position_closed`, `fee`, `period_closed` |
+| Settlement | `fill`, `position_closed`, `fee`, `period_closed`, `RunnerInstanceTerminalValuationFact.v1`, `RunnerFillCorrectionFact.v1` |
 | Risk | `equity_snapshot`, `position_snapshot` |
 | Health | `heartbeat`, `RunnerRuntimeLogFact.v1` |
-| Reconciliation | `execution_fill`, `venue_ledger_snapshot_manifest`, `venue_ledger_snapshot_chunk`, `reconciliation_period_closed` |
+| Reconciliation | `execution_fill`, `venue_ledger_snapshot_manifest`, `venue_ledger_snapshot_chunk`, `reconciliation_period_closed`, `RunnerValuationCheckpointFact.v1`, `RunnerOrderEventFact.v1` |
 | Deployment lifecycle | `RunnerDeploymentLifecycleFact.v1` |
+
+Four kinds appear only when the runner's capability declares their flag: `RunnerInstanceTerminalValuationFact.v1` with `settlement.terminal_valuation`, `RunnerValuationCheckpointFact.v1` with `reconciliation.valuation_checkpoint`, `RunnerOrderEventFact.v1` with `reconciliation.order_lineage`, and `RunnerFillCorrectionFact.v1` with `settlement.fill_correction`. Refuse a batch that carries a kind its capability does not declare. The batch bytes alone cannot show this: the check needs the capability record the batch's `capability_manifest_digest` names, so it runs after decoding and before the batch is taken in. The conformance vectors list every combination of the four flags with its verdict, and name for every refusal its error class and the stage that decides it, each defined in the vector file. The conformance sequences give the state a fold must reach after each step of an order's history, and how much each fill correction takes off its settled fill and its commission.
 
 A `heartbeat` reports `online` only while the deployment's engine is ready and its state is reliable. A deployment that is still starting, including one retrying because its venue cannot be reached, reports `degraded`.
 
@@ -95,9 +97,25 @@ capability_manifest_digest, strategy_version, instrument, client_order_id,
 timeframe, direction, occurred_at, source_sequence, input_digest, trace_id, key_id
 ```
 
-`schema_version` is 1; `direction` is `long`, `short` or `flat`; `client_order_id` may be null. Validate exact subject and full instance/capability scope, verify the enrolled signature, deduplicate `fact_id` and enforce `source_sequence` per tenant/mode/runner/instance. Multiple instances share the signal subject but have separate sequence streams.
+`schema_version` is 1; `direction` is `long`, `short` or `flat`; `client_order_id` is always present and may be null. Validate exact subject and full instance/capability scope, verify the enrolled signature, deduplicate `fact_id` and enforce `source_sequence` per tenant/mode/runner/instance. Multiple instances share the signal subject but have separate sequence streams.
 
-Signals have their own durable sequence allocation and PubAck tracking. They are not a fourteenth RunnerFactBatch kind, and their sequence must not be compared with batch sequence numbers. A strategy signal does not establish that an order filled.
+A signal may also carry a decision. These fields are optional and, when absent, are left out of the payload, never written as null, so the signature covers whichever of them are present:
+
+```text
+signal_id, signal_event, closed_reason, signal_action,
+target_quantity, target_quantity_native, target_quantity_multiplier,
+target_notional, target_notional_currency,
+reversal_close_quantity, reversal_close_quantity_native,
+reversal_close_quantity_multiplier, reversal_closes_signal_id,
+arrival_price, arrival_price_source, arrival_observed_at,
+reason_code, reason_fields, valid_until, supersedes_signal_id,
+residue_min_quantity, residue_min_quantity_native,
+residue_min_quantity_multiplier, residue_min_notional, residue_min_notional_currency
+```
+
+A decision field needs `signal_id`. `signal_event` is `decided`, `withdrawn` or `closed`: a decided signal names its `signal_action` and exactly one target, a quantity or a notional; a withdrawn signal carries nothing else; a closed signal adds `closed_reason`. Fields that belong together appear together, and each base quantity is exactly its native quantity times its multiplier. Refuse a decision field written as null. The schema is `strategy_signal_fact_v1.schema.json`.
+
+Signals have their own durable sequence allocation and PubAck tracking. They are not a RunnerFactBatch kind, and their sequence must not be compared with batch sequence numbers. A strategy signal does not establish that an order filled.
 
 ## Delivery
 

@@ -167,6 +167,18 @@
       "runtime_evidence": false
     },
     {
+      "role": "runner_fact_lineage_golden_v1",
+      "path": "docs/authority/runner-fact-lineage-golden-v1.json",
+      "contract_only": true,
+      "runtime_evidence": false
+    },
+    {
+      "role": "runner_fact_conformance_sequences_v1",
+      "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json",
+      "contract_only": true,
+      "runtime_evidence": false
+    },
+    {
       "role": "local_nats_contract",
       "path": "docs/authority/nats-transport-contract.md"
     },
@@ -225,6 +237,17 @@
     {
       "path": "docs/authority/contract-revisions-v1.json",
       "role": "contract_revision_index_v1"
+    },
+    {
+      "role": "strategy_signal_fact_schema_v1",
+      "path": "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json",
+      "contract_only": true
+    },
+    {
+      "role": "strategy_signal_fact_golden_v1",
+      "path": "docs/authority/strategy-signal-golden-v1.json",
+      "contract_only": true,
+      "runtime_evidence": false
     },
     {
       "role": "runner_policy_consumer_asset_index_v1",
@@ -565,7 +588,8 @@
       "docs/authority/contract-revisions-v1.json",
       "scripts/contract_vendor.py",
       "scripts/generate_contract_conformance.py",
-      "scripts/generate_contract_revisions.py"
+      "scripts/generate_contract_revisions.py",
+      "scripts/generate_strategy_signal_contract.py"
     ],
     "forbidden_regex": [
       "ArxNatsTelemetryAdapter",

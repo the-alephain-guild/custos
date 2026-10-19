@@ -30,15 +30,24 @@ from custos.core import runner_deployment_lifecycle_fact as lifecycle_module
 from custos.core import runtime_log_fact as runtime_log_module
 from custos.core.runner_deployment_lifecycle_fact import RunnerDeploymentLifecycleFact
 from custos.core.runner_fact import (
+    ORDER_EVENT_FIELDS,
+    ORDER_EVENTS,
+    ORDER_PRICE_RULES,
+    RUNNER_FACT_CAPABILITY_SHAPES,
     RUNNER_FACT_SCHEMA_VERSION,
     RunnerFactAuthority,
     RunnerFactIdentity,
     equity_snapshot,
     execution_fill,
+    fill_correction_fact,
+    order_event_fact,
     position_closed,
     position_snapshot,
+    runner_fact_capability_shape,
     runner_fact_signing_header,
     runner_fact_signing_preimage,
+    settlement_fee,
+    settlement_fill,
 )
 from custos.core.runner_fact_producer import RunnerFactDeployment, RunnerFactEventBridge
 from custos.core.runtime_log_fact import RunnerRuntimeLogEmitter, RuntimeLogRedactor
@@ -46,21 +55,60 @@ from custos.core.utc_time import render_utc_nanos
 
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER_FACT_VECTORS_PATH = Path("docs/authority/conformance/runner-fact-batch-v1.vectors.json")
+RUNNER_FACT_SEQUENCES_PATH = Path("docs/authority/conformance/runner-fact-batch-v1.sequences.json")
+LINEAGE_GOLDEN_PATH = Path("docs/authority/runner-fact-lineage-golden-v1.json")
 STRATEGY_VECTORS_PATH = Path("docs/authority/conformance/strategy-canonical-json-v1.vectors.json")
-RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 3)
+RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 6)
 STRATEGY_CANONICAL_CONTRACT = ("alephain.custos.strategy_canonical_json.v1", 1)
 CAPABILITY_MANIFEST_PATH = Path("docs/authority/runner-fact-capability-manifest-v1.json")
 
-ERROR_CLASSES = (
-    "unknown_field",
-    "non_canonical_decimal",
-    "binary_float",
-    "missing_timezone",
-    "digest_mismatch",
-    "identity_conflict",
-    "schema_violation",
-    "decimal_out_of_range",
-)
+# What each refusal means, and where in the consumer it is decided. A class is a
+# kind of wrongness; a stage is the earliest point that has what it takes to see it.
+ERROR_CLASS_DEFINITIONS = {
+    "unknown_field": "a member the published schema does not name for its object",
+    "non_canonical_decimal": (
+        "a decimal string in any spelling other than its one canonical form: no exponent, "
+        "no leading zero before other digits, no trailing fractional zero, no negative zero"
+    ),
+    "binary_float": "a JSON number where the contract carries a decimal string",
+    "missing_timezone": "a timestamp without its UTC designator",
+    "digest_mismatch": "a payload or envelope digest that does not match the bytes it covers",
+    "identity_conflict": (
+        "an identifier already bound to a different fact, such as one position_id under two "
+        "different closes"
+    ),
+    "schema_violation": (
+        "a message the published schema refuses: a missing or forbidden member, a wrong "
+        "type, a value outside its enum or pattern, a bound"
+    ),
+    "decimal_out_of_range": (
+        "a decimal the consumer cannot hold: a scale above 28 or a mantissa above 2**96 - 1"
+    ),
+    "invariant_violation": (
+        "a single fact the schema admits but a rule across its own fields refuses, such as a "
+        "commission reversal larger than the commission it reverses; the fact alone decides it"
+    ),
+    "unknown_reference": (
+        "a fact naming another fact the consumer never received, such as a fill correction "
+        "for a fill that was never signed"
+    ),
+    "capability_mismatch": "a fact of a kind the runner's capability record does not declare",
+}
+ERROR_CLASSES = tuple(ERROR_CLASS_DEFINITIONS)
+STAGES = {
+    "decode": (
+        "refused from the batch bytes alone, while parsing the envelope and each fact, "
+        "before any state changes"
+    ),
+    "admission": (
+        "refused after decode and before the inbox takes the batch, by a check that needs "
+        "the capability record the batch's capability_manifest_digest names; no state changes"
+    ),
+    "projection": (
+        "taken into the inbox, then refused by a projector because of state the batch "
+        "does not carry"
+    ),
+}
 # A test-only signing seed; it signs nothing outside these vectors.
 TEST_SIGNING_SEED = bytes(range(1, 33))
 TENANT_ID = "acme"
@@ -128,6 +176,27 @@ def authority() -> RunnerFactAuthority:
         capability_version_id=CAPABILITY_ID,
         capability_version=1,
         capability_manifest_digest=_sha256(_canonical(manifest)),
+    )
+
+
+def lineage_authority() -> RunnerFactAuthority:
+    """The stream of the lineage golden: a capability that declares order lineage
+    and fill correction, so its batches may carry the two kinds."""
+
+    golden = json.loads((ROOT / LINEAGE_GOLDEN_PATH).read_text(encoding="utf-8"))
+    batch = golden["batches"][0]
+    return RunnerFactAuthority(
+        tenant_id=batch["tenant_id"],
+        trading_mode=batch["trading_mode"],
+        runner_id=UUID(batch["runner_id"]),
+        deployment_instance_id=UUID(batch["deployment_instance_id"]),
+        deployment_spec_id=UUID(batch["deployment_spec_id"]),
+        deployment_spec_digest=batch["deployment_spec_digest"],
+        generation=batch["generation"],
+        strategy_id=UUID(batch["strategy_id"]),
+        capability_version_id=UUID(batch["capability_version_id"]),
+        capability_version=batch["capability_version"],
+        capability_manifest_digest=batch["capability_manifest_digest"],
     )
 
 
@@ -224,11 +293,12 @@ def signed_batch(
     *,
     emitted_at: str,
     source_seq_start: int = 1,
+    auth: RunnerFactAuthority | None = None,
 ) -> dict[str, Any]:
     """Sequence, digest and sign facts the way the runner's outbox does."""
 
     sequenced = [{**fact, "seq": source_seq_start + offset} for offset, fact in enumerate(facts)]
-    auth = authority()
+    auth = auth or authority()
     signer = identity()
     header = {
         "schema_version": RUNNER_FACT_SCHEMA_VERSION,
@@ -276,14 +346,24 @@ def accept(batch: Mapping[str, Any], *, typed_roundtrip_equal: bool) -> dict[str
 
 
 def reject(error_class: str, stage: str) -> dict[str, Any]:
-    assert error_class in ERROR_CLASSES
+    if error_class not in ERROR_CLASSES or stage not in STAGES:
+        raise ValueError(f"no error class {error_class} at stage {stage}")
     return {"outcome": "reject", "error_class": error_class, "stage": stage}
 
 
-# The schema states some bounds only approximately: maxLength counts characters
-# where the consumer counts UTF-8 bytes, and a pattern cannot compare a mantissa
-# with 2**96 - 1. A vector the consumer refuses but the schema admits says so.
+# A vector refused at decode that the published schema still admits says so: the
+# schema states some bounds only approximately (maxLength counts characters where
+# the consumer counts UTF-8 bytes, and a pattern cannot compare a mantissa with
+# 2**96 - 1) and states no rule across the fields of a fact.
 SCHEMA_COARSE = {"schema_outcome": "accept"}
+SCHEMA_OUTCOME = (
+    "present only on a vector refused at decode that the published schema admits: the "
+    "schema states some bounds only approximately (maxLength counts characters where the "
+    "consumer counts UTF-8 bytes, and a pattern cannot compare a mantissa with 2**96 - 1) "
+    "and states no rule across the fields of a fact (invariant_violation). Every other "
+    "vector refused at decode is refused by the schema too; vectors refused at admission "
+    "or projection, and accepted vectors, pass it"
+)
 
 
 def _closed(position_id: str, realized_pnl: Any, event_id: str) -> dict[str, Any]:
@@ -534,6 +614,7 @@ def runner_fact_vectors() -> list[dict[str, Any]]:
     )
 
     vectors.extend(_identifier_vectors())
+    vectors.extend(_lineage_vectors())
     vectors.extend(_decimal_spelling_vectors())
     vectors.extend(_decimal_range_vectors())
     vectors.extend(_omitted_nullable_vectors())
@@ -715,6 +796,1571 @@ def _omitted_nullable_vectors() -> list[dict[str, Any]]:
     return vectors
 
 
+# Order lineage and fill correction. Every fact below is signed on the lineage
+# stream; the runner's builders write the accepted ones and an edit of a built
+# fact writes each refused one, so a refusal comes from the edit alone.
+
+LINEAGE_ORDER = "O-1"
+LINEAGE_SOURCE = "c0000000-0000-4000-8000-0000000000aa"
+LINEAGE_SAMPLE: dict[str, Any] = {
+    "instrument": "BTCUSDT-PERP.BINANCE",
+    "side": "buy",
+    "order_type": "limit",
+    "time_in_force": "gtc",
+    "reduce_only": False,
+    "order_purpose": "entry",
+    "execution_relation": "original",
+    "attribution_source": "order_tag",
+    "signal_id": "d0000000-0000-4000-8000-0000000000bb",
+    "unattributed_reason": "missing_signal_tag",
+    "derived_signal_fact_id": "e0000000-0000-4000-8000-0000000000cc",
+    "closes_signal_id": "f0000000-0000-4000-8000-0000000000dd",
+    "parent_client_order_id": "O-0",
+    "retry_of_client_order_id": "O-00",
+    "replaces_client_order_id": "O-000",
+    "exec_spawn_id": "O-SPAWN",
+    "order_list_id": "OL-1",
+    "venue_parent_order_id": "VP-1",
+    "contingency_type": "oco",
+    "quantity": "100",
+    "quantity_multiplier": "0.01",
+    "limit_price": "60000",
+    "trigger_price": "59000",
+    "requested_values_known": True,
+    "requested_quantity": "50",
+    "requested_limit_price": "61000",
+    "requested_trigger_price": "58000",
+    "reason_code": "price_band",
+    "last_trigger_price": "58500",
+    "voided_venue_trade_id": "T-1",
+    "correction_id": "C-1",
+    "voided_quantity": "30",
+    "is_reopened": True,
+    "from_reconciliation": False,
+    "order_status_after": "partially_filled",
+    "leaves_quantity_after": "40",
+    "commission_voided": "0.3",
+    "commission_voided_currency": "USDT",
+    "fill_commission": "0.6",
+    "fill_commission_currency": "USDT",
+}
+_CREATION = (
+    "instrument",
+    "side",
+    "order_type",
+    "time_in_force",
+    "reduce_only",
+    "order_purpose",
+    "execution_relation",
+    "attribution_source",
+    "signal_id",
+    "quantity",
+    "quantity_multiplier",
+    "limit_price",
+)
+LINEAGE_MINIMAL: dict[str, dict[str, Any]] = {
+    "initialized": {name: LINEAGE_SAMPLE[name] for name in _CREATION},
+    "refused": {
+        **{name: LINEAGE_SAMPLE[name] for name in _CREATION},
+        "reason_code": "runner_cap_exceeded",
+    },
+    "submitted": {},
+    "updated": {"quantity": "80", "quantity_multiplier": "0.01"},
+    "rejected": {"reason_code": "insufficient_margin"},
+    "denied": {"reason_code": "risk_denied"},
+    "canceled": {},
+    "expired": {},
+    "modify_refused": {
+        "requested_values_known": True,
+        "requested_quantity": "50",
+        "quantity_multiplier": "0.01",
+        "reason_code": "runner_cap_exceeded",
+    },
+    "modify_rejected": {"requested_values_known": False, "reason_code": "venue_rejected"},
+    "cancel_rejected": {"reason_code": "order_not_found"},
+    "fill_voided": {
+        name: LINEAGE_SAMPLE[name]
+        for name in (
+            "instrument",
+            "voided_venue_trade_id",
+            "correction_id",
+            "voided_quantity",
+            "quantity_multiplier",
+            "is_reopened",
+            "from_reconciliation",
+            "order_status_after",
+            "leaves_quantity_after",
+        )
+    },
+}
+_BASE_OF = {
+    "quantity": "base_quantity",
+    "requested_quantity": "requested_base_quantity",
+    "voided_quantity": "voided_base_quantity",
+    "leaves_quantity_after": "leaves_base_quantity_after",
+}
+# Fields the schema only takes together (its dependentRequired): a native
+# quantity and its base quantity, a requested quantity with its multiplier, and
+# each commission amount with its currency. A vector that adds one of them adds
+# all, so the field's absence from an event is the only thing refused.
+_PAIRED: dict[str, tuple[str, ...]] = {
+    **{native: (native, base) for native, base in _BASE_OF.items()},
+    **{base: (native, base) for native, base in _BASE_OF.items()},
+    "requested_quantity": ("requested_quantity", "requested_base_quantity", "quantity_multiplier"),
+    "requested_base_quantity": (
+        "requested_quantity",
+        "requested_base_quantity",
+        "quantity_multiplier",
+    ),
+    "commission_voided": ("commission_voided", "commission_voided_currency"),
+    "commission_voided_currency": ("commission_voided", "commission_voided_currency"),
+    "fill_commission": ("fill_commission", "fill_commission_currency"),
+    "fill_commission_currency": ("fill_commission", "fill_commission_currency"),
+}
+
+
+def order_event(event: str, **fields: Any) -> dict[str, Any]:
+    """An order event the runner's builder writes on the lineage stream."""
+
+    given = {**LINEAGE_MINIMAL[event], **fields}
+    return order_event_fact(
+        lineage_authority(),
+        order_event=event,
+        client_order_id=LINEAGE_ORDER,
+        source_event_id=given.pop("source_event_id", LINEAGE_SOURCE),
+        occurred_at=given.pop("occurred_at", "2026-10-19T08:00:00.123456Z"),
+        **{name: value for name, value in given.items() if value is not None},
+    )
+
+
+def correction(**fields: Any) -> dict[str, Any]:
+    given: dict[str, Any] = {
+        "fill_id": "a0000000-0000-4000-8000-000000000011",
+        "venue": "BINANCE",
+        "voided_venue_trade_id": "T-1",
+        "instrument": "BTCUSDT-PERP.BINANCE",
+        "order_side": "buy",
+        "last_px": "60000",
+        "source_event_id": LINEAGE_SOURCE,
+        "correction_id": "C-1",
+        "voided_quantity": "30",
+        "quantity_multiplier": "0.01",
+        "is_reopened": True,
+        "from_reconciliation": False,
+        "occurred_at": "2026-10-19T08:00:00.123456Z",
+        **fields,
+    }
+    return fill_correction_fact(
+        lineage_authority(), **{name: value for name, value in given.items() if value is not None}
+    )
+
+
+def _wire(fact: dict[str, Any], field: str, value: Any) -> None:
+    """Set a field on a built fact, with its base quantity when it has one."""
+
+    fact[field] = value
+    base = _BASE_OF.get(field)
+    multiplier = fact.get("quantity_multiplier")
+    if base is not None and multiplier is not None:
+        product = format(Decimal(value) * Decimal(multiplier), "f")
+        if "." in product:
+            product = product.rstrip("0").rstrip(".")
+        fact[base] = product
+
+
+def _lineage_vector(
+    vector_id: str,
+    covers: str,
+    facts: list[dict[str, Any]],
+    expected: dict[str, Any] | None = None,
+    producer_input: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    batch = signed_batch(
+        vector_id, facts, emitted_at="2026-10-19T08:00:01Z", auth=lineage_authority()
+    )
+    vector: dict[str, Any] = {
+        "id": vector_id,
+        "origin": "producer-canonical" if expected is None else "tolerance",
+        "covers": [covers],
+    }
+    if expected is None:
+        vector["producer_input"] = producer_input or {}
+    vector["raw"] = raw(batch)
+    vector["expected"] = accept(batch, typed_roundtrip_equal=True) if expected is None else expected
+    return vector
+
+
+def _add_with_partners(fact: dict[str, Any], field: str) -> None:
+    """Add a field to a built fact together with every field the schema requires
+    beside it, each with a value valid on its own."""
+
+    group = _PAIRED.get(field, (field,))
+    if "quantity_multiplier" in group and "quantity_multiplier" not in fact:
+        fact["quantity_multiplier"] = LINEAGE_SAMPLE["quantity_multiplier"]
+    multiplier = Decimal(fact.get("quantity_multiplier", LINEAGE_SAMPLE["quantity_multiplier"]))
+    for name in group:
+        if name in fact:
+            continue
+        if name in _BASE_OF:
+            fact[name] = LINEAGE_SAMPLE[name]
+            product = format(Decimal(LINEAGE_SAMPLE[name]) * multiplier, "f")
+            fact[_BASE_OF[name]] = product.rstrip("0").rstrip(".") if "." in product else product
+        elif name not in _BASE_OF.values():
+            fact[name] = LINEAGE_SAMPLE[name]
+
+
+def _matrix_vectors() -> list[dict[str, Any]]:
+    """One vector per cell of the field-by-event matrix: every field an event must
+    not carry, and every field it must, a base quantity on its own included. A
+    forbidden field comes with its schema partners, so only the event refuses it."""
+
+    vectors = []
+    wire_fields = [*LINEAGE_SAMPLE, *_BASE_OF.values()]
+    native_of = {base: native for native, base in _BASE_OF.items()}
+    for event in ORDER_EVENTS:
+        vectors.append(
+            _lineage_vector(
+                f"order-event-{event}",
+                f"the smallest {event} order event",
+                [order_event(event)],
+                producer_input={"order_event": event, **LINEAGE_MINIMAL[event]},
+            )
+        )
+        required, optional = ORDER_EVENT_FIELDS[event]
+        for field in wire_fields:
+            allowed = native_of.get(field, field) in required | optional
+            needed = native_of.get(field, field) in required
+            name = field.replace("_", "-")
+            if not allowed:
+                fact = order_event(event)
+                _add_with_partners(fact, field)
+                partners = [other for other in _PAIRED.get(field, ()) if other != field]
+                covers = f"{event} carries no {field}"
+                if partners:
+                    covers += f" (added with {', '.join(partners)})"
+                vectors.append(
+                    _lineage_vector(
+                        f"order-event-{event}-forbids-{name}",
+                        covers,
+                        [fact],
+                        reject("schema_violation", "decode"),
+                    )
+                )
+            if needed:
+                fact = order_event(event)
+                fact.pop(field)
+                if field not in native_of:
+                    fact.pop(_BASE_OF.get(field, ""), None)
+                vectors.append(
+                    _lineage_vector(
+                        f"order-event-{event}-needs-{name}",
+                        f"{event} needs its {field}",
+                        [fact],
+                        reject("schema_violation", "decode"),
+                    )
+                )
+    return vectors
+
+
+def _price_vectors() -> list[dict[str, Any]]:
+    vectors = []
+    for order_type, (limit, trigger, _, _) in ORDER_PRICE_RULES.items():
+        prices = {
+            "order_type": order_type,
+            "limit_price": "60000" if limit != "absent" else None,
+            "trigger_price": "59000" if trigger != "absent" else None,
+        }
+        vectors.append(
+            _lineage_vector(
+                f"order-price-{order_type}",
+                f"a {order_type} order carries the prices its type has",
+                [order_event("initialized", **prices)],
+                producer_input=prices,
+            )
+        )
+        for field, rule in (("limit_price", limit), ("trigger_price", trigger)):
+            if rule == "optional":
+                continue
+            fact = order_event("initialized", **prices)
+            if rule == "required":
+                fact.pop(field)
+                outcome = "needs"
+            else:
+                fact[field] = "60000"
+                outcome = "forbids"
+            vectors.append(
+                _lineage_vector(
+                    f"order-price-{order_type}-{outcome}-{field.replace('_', '-')}",
+                    f"a {order_type} order {outcome} {field}",
+                    [fact],
+                    reject("schema_violation", "decode"),
+                )
+            )
+    return vectors
+
+
+ATTRIBUTION_ROWS: tuple[tuple[str, str, str, dict[str, Any]], ...] = (
+    ("tagged", "order_tag", "entry", {"signal_id": LINEAGE_SAMPLE["signal_id"]}),
+    (
+        "derived",
+        "derived",
+        "entry",
+        {"derived_signal_fact_id": LINEAGE_SAMPLE["derived_signal_fact_id"]},
+    ),
+    (
+        "derived-protective",
+        "derived",
+        "protective_stop",
+        {"unattributed_reason": "legacy_without_signal"},
+    ),
+    ("unattributed", "none", "flatten", {"unattributed_reason": "runner_shutdown_flatten"}),
+)
+
+
+def _attribution_vectors() -> list[dict[str, Any]]:
+    vectors = []
+    for row, source, purpose, links in ATTRIBUTION_ROWS:
+        inputs = {
+            "attribution_source": source,
+            "order_purpose": purpose,
+            "signal_id": None,
+            **links,
+        }
+        built = order_event("initialized", **inputs)
+        vectors.append(
+            _lineage_vector(
+                f"order-attribution-{row}",
+                f"attribution {source} on a {purpose} order carries exactly its link",
+                [built],
+                producer_input={k: v for k, v in inputs.items() if v is not None},
+            )
+        )
+        missing = dict(built)
+        for link in links:
+            missing.pop(link)
+        vectors.append(
+            _lineage_vector(
+                f"order-attribution-{row}-without-link",
+                f"attribution {source} without its link",
+                [missing],
+                reject("schema_violation", "decode"),
+            )
+        )
+        extra_link = next(
+            name
+            for name in ("signal_id", "derived_signal_fact_id", "unattributed_reason")
+            if name not in links
+        )
+        doubled = {**built, extra_link: LINEAGE_SAMPLE[extra_link]}
+        vectors.append(
+            _lineage_vector(
+                f"order-attribution-{row}-with-another-link",
+                f"attribution {source} with another link ({extra_link})",
+                [doubled],
+                reject("schema_violation", "decode"),
+            )
+        )
+    wrong_reason = order_event(
+        "initialized",
+        attribution_source="derived",
+        order_purpose="take_profit",
+        signal_id=None,
+        unattributed_reason="legacy_without_signal",
+    )
+    wrong_reason["unattributed_reason"] = "missing_signal_tag"
+    vectors.append(
+        _lineage_vector(
+            "order-attribution-derived-protective-not-legacy",
+            "a protective order under a derived signal is legacy_without_signal",
+            [wrong_reason],
+            reject("schema_violation", "decode"),
+        )
+    )
+    unknown_purpose = order_event("initialized")
+    unknown_purpose["order_purpose"] = "hedge"
+    vectors.append(
+        _lineage_vector(
+            "order-purpose-unknown",
+            "an order purpose outside the closed set",
+            [unknown_purpose],
+            reject("schema_violation", "decode"),
+        )
+    )
+    unknown_relation = order_event("initialized")
+    unknown_relation["execution_relation"] = "split"
+    vectors.append(
+        _lineage_vector(
+            "order-relation-unknown",
+            "an execution relation outside the closed set",
+            [unknown_relation],
+            reject("schema_violation", "decode"),
+        )
+    )
+    closes = order_event("refused", closes_signal_id=LINEAGE_SAMPLE["closes_signal_id"])
+    vectors.append(
+        _lineage_vector(
+            "order-refused-is-self-contained",
+            "a refused order carries its own attribution, elements and reversal group",
+            [closes],
+            producer_input={
+                "order_event": "refused",
+                "closes_signal_id": closes["closes_signal_id"],
+            },
+        )
+    )
+    return vectors
+
+
+def _request_vectors() -> list[dict[str, Any]]:
+    vectors = []
+    for vector_id, inputs in (
+        (
+            "order-request-known-price-only",
+            {
+                "requested_values_known": True,
+                "requested_quantity": None,
+                "quantity_multiplier": None,
+                "requested_limit_price": "61000",
+            },
+        ),
+        (
+            "order-request-unknown",
+            {
+                "requested_values_known": False,
+                "requested_quantity": None,
+                "quantity_multiplier": None,
+            },
+        ),
+    ):
+        vectors.append(
+            _lineage_vector(
+                vector_id,
+                "a refused amendment says which requested values it knows",
+                [order_event("modify_rejected", **inputs)],
+                producer_input={k: v for k, v in inputs.items() if v is not None},
+            )
+        )
+    known_empty = order_event("modify_rejected", requested_values_known=False)
+    known_empty["requested_values_known"] = True
+    vectors.append(
+        _lineage_vector(
+            "order-request-known-without-values",
+            "a known request names at least one requested value",
+            [known_empty],
+            reject("schema_violation", "decode"),
+        )
+    )
+    unknown_with_value = order_event("modify_rejected", requested_values_known=False)
+    unknown_with_value["requested_limit_price"] = "61000"
+    vectors.append(
+        _lineage_vector(
+            "order-request-unknown-with-value",
+            "an unknown request names no requested value",
+            [unknown_with_value],
+            reject("schema_violation", "decode"),
+        )
+    )
+    multiplier_alone = order_event(
+        "modify_rejected",
+        requested_values_known=True,
+        requested_quantity=None,
+        quantity_multiplier=None,
+        requested_limit_price="61000",
+    )
+    multiplier_alone["quantity_multiplier"] = "0.01"
+    vectors.append(
+        _lineage_vector(
+            "order-request-multiplier-without-quantity",
+            "a refused amendment carries quantity_multiplier only with requested_quantity",
+            [multiplier_alone],
+            reject("schema_violation", "decode"),
+        )
+    )
+    return vectors
+
+
+def _fee(voided: str | None, charged: str | None, currency: str = "USDT") -> dict[str, Any]:
+    return {
+        "commission_voided": voided,
+        "commission_voided_currency": currency if voided is not None else None,
+        "fill_commission": charged,
+        "fill_commission_currency": "USDT" if charged is not None else None,
+    }
+
+
+VOID_FEES_ACCEPTED = (
+    ("none", None, None),
+    ("zero-on-no-charge", "0", None),
+    ("charge-not-yet-reversed", None, "0.6"),
+    ("part-of-charge", "0.3", "0.6"),
+    ("part-of-rebate", "-0.1", "-0.2"),
+    ("zero-on-zero-charge", "0", "0"),
+    # 29 significant digits, more than a default 28-digit decimal context keeps.
+    ("all-of-charge-29-digits", "1.0000000000000000000000000001", "1.0000000000000000000000000001"),
+)
+VOID_FEES_REFUSED = (
+    ("something-on-no-charge", "0.1", None, "USDT"),
+    ("other-currency", "0.3", "0.6", "USDC"),
+    ("charge-as-rebate", "-0.3", "0.6", "USDT"),
+    ("rebate-as-charge", "0.1", "-0.2", "USDT"),
+    ("zero-on-charge", "0", "0.6", "USDT"),
+    ("zero-on-rebate", "0", "-0.2", "USDT"),
+    ("over-charge", "0.7", "0.6", "USDT"),
+    ("over-rebate", "-0.3", "-0.2", "USDT"),
+    # One unit in the 29th significant digit: an absolute value taken in a
+    # 28-digit context rounds it away.
+    (
+        "over-charge-29-digits",
+        "1.0000000000000000000000000002",
+        "1.0000000000000000000000000001",
+        "USDT",
+    ),
+    (
+        "over-rebate-29-digits",
+        "-1.0000000000000000000000000002",
+        "-1.0000000000000000000000000001",
+        "USDT",
+    ),
+)
+
+
+def _void_vectors() -> list[dict[str, Any]]:
+    vectors = []
+    for case, voided, charged in VOID_FEES_ACCEPTED:
+        fee = _fee(voided, charged)
+        vectors.append(
+            _lineage_vector(
+                f"fill-void-commission-{case}",
+                "a commission correction the engine takes, on both facts of one void",
+                [order_event("fill_voided", **fee), correction(**fee)],
+                producer_input={k: v for k, v in fee.items() if v is not None},
+            )
+        )
+    for case, voided, charged, currency in VOID_FEES_REFUSED:
+        fact = order_event("fill_voided")
+        for name, value in _fee(voided, charged, currency).items():
+            if value is not None:
+                fact[name] = value
+        vectors.append(
+            _lineage_vector(
+                f"fill-void-commission-{case}",
+                "a commission correction the engine refuses",
+                [fact],
+                {**reject("invariant_violation", "decode"), **SCHEMA_COARSE},
+            )
+        )
+    half = order_event("fill_voided", **_fee("0.3", "0.6"))
+    half.pop("commission_voided_currency")
+    vectors.append(
+        _lineage_vector(
+            "fill-void-commission-without-currency",
+            "a commission amount without its currency",
+            [half],
+            reject("schema_violation", "decode"),
+        )
+    )
+    zero = order_event("fill_voided")
+    _wire(zero, "voided_quantity", "0")
+    vectors.append(
+        _lineage_vector(
+            "fill-void-zero-quantity",
+            "a void moves some quantity",
+            [zero],
+            reject("schema_violation", "decode"),
+        )
+    )
+    left = order_event("fill_voided")
+    left["order_status_after"] = "voided"
+    vectors.append(
+        _lineage_vector(
+            "fill-void-voided-with-leaves",
+            "a voided order has nothing left to fill",
+            [left],
+            reject("schema_violation", "decode"),
+        )
+    )
+    filled = order_event("fill_voided")
+    filled["order_status_after"] = "filled"
+    vectors.append(
+        _lineage_vector(
+            "fill-void-ends-filled",
+            "a void never leaves the order filled",
+            [filled],
+            reject("schema_violation", "decode"),
+        )
+    )
+    synthetic = order_event(
+        "fill_voided",
+        voided_venue_trade_id="VOID-V-1",
+        is_reopened=False,
+        order_status_after="voided",
+        leaves_quantity_after="0",
+    )
+    vectors.append(
+        _lineage_vector(
+            "fill-void-synthetic-trade",
+            "a reconciliation void without a local fill is an order event",
+            [synthetic],
+            producer_input={"voided_venue_trade_id": "VOID-V-1"},
+        )
+    )
+    synthetic_correction = correction()
+    synthetic_correction["voided_venue_trade_id"] = "VOID-V-1"
+    vectors.append(
+        _lineage_vector(
+            "fill-correction-synthetic-trade",
+            "no signed fill exists under a synthetic void trade id (the runner also refuses "
+            "it; whether a fill was signed is decided by the runner's signed-event ledger)",
+            [synthetic_correction],
+            reject("unknown_reference", "projection"),
+        )
+    )
+    raw_position = correction()
+    raw_position["position_id"] = "BTCUSDT-PERP.BINANCE-NETTING"
+    vectors.append(
+        _lineage_vector(
+            "fill-correction-raw-position-id",
+            "position_id names a lifecycle, not the engine's position slot",
+            [raw_position],
+            reject("schema_violation", "decode"),
+        )
+    )
+    lifecycle = "a0000000-0000-5000-8000-000000000022"
+    vectors.append(
+        _lineage_vector(
+            "fill-correction-with-position-lifecycle",
+            "a correction that names its position lifecycle",
+            [correction(position_id=lifecycle)],
+            producer_input={"position_id": lifecycle},
+        )
+    )
+    return vectors
+
+
+def _quantity_vectors() -> list[dict[str, Any]]:
+    vectors = [
+        _lineage_vector(
+            "order-quantity-times-multiplier",
+            "base_quantity is the native quantity times the multiplier (100 x 0.01)",
+            [order_event("initialized", quantity="100", quantity_multiplier="0.01")],
+            producer_input={"quantity": "100", "quantity_multiplier": "0.01"},
+        ),
+        _lineage_vector(
+            "order-quantity-fractional-multiplier",
+            "a multiplier that is not a power of ten (37 x 1.3)",
+            [order_event("initialized", quantity="37", quantity_multiplier="1.3")],
+            producer_input={"quantity": "37", "quantity_multiplier": "1.3"},
+        ),
+    ]
+    mismatch = order_event("initialized", quantity="37", quantity_multiplier="1.3")
+    mismatch["base_quantity"] = "48"
+    vectors.append(
+        _lineage_vector(
+            "order-quantity-base-differs",
+            "a base quantity that is not native times multiplier",
+            [mismatch],
+            {**reject("invariant_violation", "decode"), **SCHEMA_COARSE},
+        )
+    )
+    # 7000000000000000000000000001 x 1.3 is 9100000000000000000000000001.3, past the
+    # decimal type; a 28-digit context rounds it to 9100000000000000000000000000,
+    # which fits. The runner refuses to sign; a consumer must not accept the rounding.
+    rounded = order_event("initialized", quantity="1", quantity_multiplier="1.3")
+    rounded["quantity"] = "7000000000000000000000000001"
+    rounded["base_quantity"] = "9100000000000000000000000000"
+    vectors.append(
+        _lineage_vector(
+            "order-quantity-rounded-product",
+            "a product rounded into range is not the exact product",
+            [rounded],
+            {**reject("invariant_violation", "decode"), **SCHEMA_COARSE},
+        )
+    )
+    tiny = order_event("initialized", quantity="1", quantity_multiplier="0.1")
+    tiny["quantity"] = "0." + "0" * 27 + "1"
+    tiny["base_quantity"] = "0." + "0" * 28 + "1"
+    vectors.append(
+        _lineage_vector(
+            "order-quantity-product-past-scale",
+            "an exact product with 29 fractional digits",
+            [tiny],
+            reject("decimal_out_of_range", "decode"),
+        )
+    )
+    return vectors
+
+
+def _lineage_identifier_vectors() -> list[dict[str, Any]]:
+    vectors = []
+    for vector_id, instrument, accepted, extra in (
+        ("lineage-instrument-127-bytes", "I" * 127, True, None),
+        ("lineage-instrument-128-bytes", "I" * 128, True, None),
+        ("lineage-instrument-129-bytes", "I" * 129, False, None),
+        # 50 characters but 150 UTF-8 bytes: the schema counts characters.
+        ("lineage-instrument-multibyte-over-bytes", "€" * 50, False, SCHEMA_COARSE),
+    ):
+        if accepted:
+            vectors.append(
+                _lineage_vector(
+                    vector_id,
+                    "instrument against the batch stream's bound of 128 UTF-8 bytes",
+                    [order_event("fill_voided", instrument=instrument)],
+                    producer_input={"instrument": instrument},
+                )
+            )
+            continue
+        fact = order_event("fill_voided")
+        fact["instrument"] = instrument
+        vectors.append(
+            _lineage_vector(
+                vector_id,
+                "instrument against the batch stream's bound of 128 UTF-8 bytes",
+                [fact],
+                {**reject("schema_violation", "decode"), **(extra or {})},
+            )
+        )
+    for vector_id, given in (
+        ("lineage-uuid-upper-case-input", "C0000000-0000-4000-8000-0000000000AA"),
+        ("lineage-uuid-braced-input", "{c0000000-0000-4000-8000-0000000000aa}"),
+    ):
+        vectors.append(
+            _lineage_vector(
+                vector_id,
+                "a UUID given in another spelling is written lower case and hyphenated",
+                [order_event("submitted", source_event_id=given)],
+                producer_input={"source_event_id": given},
+            )
+        )
+    for vector_id, written in (
+        ("lineage-uuid-upper-case-wire", "C0000000-0000-4000-8000-0000000000AA"),
+        ("lineage-uuid-version-zero-wire", "c0000000-0000-0000-8000-0000000000aa"),
+        ("lineage-uuid-variant-wire", "c0000000-0000-4000-c000-0000000000aa"),
+        ("lineage-uuid-nil-wire", "00000000-0000-0000-0000-000000000000"),
+    ):
+        fact = order_event("submitted")
+        fact["source_event_id"] = written
+        vectors.append(
+            _lineage_vector(
+                vector_id,
+                "a UUID on the wire in a spelling the runner never writes",
+                [fact],
+                reject("schema_violation", "decode"),
+            )
+        )
+    for vector_id, value, error_class in (
+        ("lineage-decimal-scale-28", "0." + "0" * 27 + "1", None),
+        ("lineage-decimal-scale-29", "0." + "0" * 28 + "1", "decimal_out_of_range"),
+        ("lineage-decimal-negative", "-30", "schema_violation"),
+        ("lineage-decimal-exponent", "1e-5", "non_canonical_decimal"),
+        ("lineage-decimal-leading-zero", "030", "non_canonical_decimal"),
+    ):
+        if error_class is None:
+            vectors.append(
+                _lineage_vector(
+                    vector_id,
+                    "a fill void's quantity at the edge of the decimal type",
+                    [order_event("fill_voided", voided_quantity=value, quantity_multiplier="1")],
+                    producer_input={"voided_quantity": value, "quantity_multiplier": "1"},
+                )
+            )
+            continue
+        fact = order_event("fill_voided", quantity_multiplier="1")
+        fact["voided_quantity"] = fact["voided_base_quantity"] = value
+        vectors.append(
+            _lineage_vector(
+                vector_id,
+                "a fill void's quantity in a spelling the runner never writes",
+                [fact],
+                reject(error_class, "decode"),
+            )
+        )
+    return vectors
+
+
+def _lineage_vectors() -> list[dict[str, Any]]:
+    return [
+        *_matrix_vectors(),
+        *_price_vectors(),
+        *_attribution_vectors(),
+        *_request_vectors(),
+        *_void_vectors(),
+        *_quantity_vectors(),
+        *_lineage_identifier_vectors(),
+        *_undeclared_capability_vectors(),
+    ]
+
+
+def _undeclared_capability_vectors() -> list[dict[str, Any]]:
+    """Each new kind under the canonical capability, which declares neither flag."""
+
+    vectors = []
+    for vector_id, fact, covers in (
+        (
+            "lineage-kinds-under-the-canonical-capability",
+            order_event("submitted"),
+            "an order event under a capability that does not declare order lineage",
+        ),
+        (
+            "fill-correction-under-the-canonical-capability",
+            correction(),
+            "a fill correction under a capability that does not declare fill correction",
+        ),
+    ):
+        batch = signed_batch(vector_id, [fact], emitted_at="2026-10-19T08:00:01Z")
+        vectors.append(
+            {
+                "id": vector_id,
+                "origin": "tolerance",
+                "covers": [covers],
+                "raw": raw(batch),
+                "expected": reject("capability_mismatch", "admission"),
+            }
+        )
+    return vectors
+
+
+def capability_shape_vectors() -> list[dict[str, Any]]:
+    """Every combination of the four optional capability flags, with the verdict
+    both sides of the contract give it."""
+
+    known = list(RUNNER_FACT_CAPABILITY_SHAPES)
+    current_projectors, current_contracts = runner_fact_capability_shape(
+        order_lineage=True, fill_correction=True
+    )
+    flags = (
+        ("terminal_valuation", "RunnerInstanceTerminalValuationFact.v1", "settlement"),
+        ("valuation_checkpoint", "RunnerValuationCheckpointFact.v1", "reconciliation"),
+        ("order_lineage", "RunnerOrderEventFact.v1", "reconciliation"),
+        ("fill_correction", "RunnerFillCorrectionFact.v1", "settlement"),
+    )
+    shapes = []
+    for mask in range(16):
+        declared = {flag: bool(mask & (1 << index)) for index, (flag, _, _) in enumerate(flags)}
+        projectors = dict(current_projectors)
+        contracts = {name: dict(contract) for name, contract in current_contracts.items()}
+        for flag, kind, projector in flags:
+            if not declared[flag]:
+                projectors.pop(kind)
+                contracts[projector].pop(flag)
+        shapes.append(
+            {
+                "id": "capability-"
+                + ("-".join(flag for flag, _, _ in flags if declared[flag]) or "none"),
+                "declares": declared,
+                "fact_kind_projectors": projectors,
+                "runner_fact_contracts": contracts,
+                "expected": "accept" if (projectors, contracts) in known else "reject",
+            }
+        )
+    if sum(shape["expected"] == "accept" for shape in shapes) != len(known):
+        raise RuntimeError("the capability shape vectors differ from the accepted shapes")
+    return shapes
+
+
+# Sequences: what a consumer's fold must make of several facts in order. Each
+# step is one signed batch; its expectation is written here by hand, from the
+# engine's rules, and never computed by the code under test.
+
+SEQUENCE_FILL = "T-1"
+SEQUENCE_KEYS = {
+    "outcome": "accept, or reject when the consumer must not apply the step",
+    "void_version": (
+        "for a fill void: new (a version the engine takes), duplicate (the same "
+        "event again) or regression (a version the engine refuses)"
+    ),
+    "order_state": "the order's coarse state after the step",
+    "order_confirmed_base_quantity": "the order quantity no refused request overrides",
+    "order_confirmed_limit_price": "the order's limit price, which no refused request overrides",
+    "fill_effective_base_quantity": "the fill's quantity less its cumulative void",
+    "commission_reversal_step": "the commission reversal this step adds, in its currency",
+    "settled_fill_void_base_quantity_step": (
+        "the base quantity a fill correction in this step removes from the settled fill its "
+        "fill_id names: the change since the version last applied"
+    ),
+    "settled_commission_reversal_step": (
+        "the reversal a fill correction in this step applies to that settled fill's "
+        "commission, in its currency: the change since the version last applied"
+    ),
+    "flags": "integrity marks the consumer raises on the order",
+}
+SEQUENCE_SETTLED_FILL = "a0000000-0000-4000-8000-000000000011"
+
+
+def _sequence_events() -> dict[str, Any]:
+    """The building blocks the sequences share."""
+
+    def at(second: int) -> str:
+        return f"2026-10-19T08:00:{second:02d}Z"
+
+    def initialized(**fields: Any) -> dict[str, Any]:
+        return order_event(
+            "initialized",
+            source_event_id="b1000000-0000-4000-8000-000000000001",
+            occurred_at=at(1),
+            **fields,
+        )
+
+    def submitted() -> dict[str, Any]:
+        return order_event(
+            "submitted", source_event_id="b1000000-0000-4000-8000-000000000002", occurred_at=at(2)
+        )
+
+    def fill(fee: str = "0.6", quantity: str = "1") -> dict[str, Any]:
+        return execution_fill(
+            event_id=UUID("b2000000-0000-4000-8000-000000000003"),
+            venue="BINANCE",
+            venue_trade_id=SEQUENCE_FILL,
+            client_order_id=LINEAGE_ORDER,
+            venue_order_id="V-1",
+            instrument="BTCUSDT-PERP.BINANCE",
+            side="buy",
+            quantity=quantity,
+            price="60000",
+            fee=fee,
+            currency="USDT",
+            occurred_at=at(3),
+        )
+
+    def settled_fill() -> list[dict[str, Any]]:
+        """A fill as the runner signs it: execution, settlement fill and its fee."""
+
+        return [
+            fill(),
+            settlement_fill(
+                event_id=UUID("b2000000-0000-4000-8000-000000000005"),
+                fill_id=SEQUENCE_SETTLED_FILL,
+                order_type="limit",
+                category="maker",
+                price="60000",
+                avg_fill_price="60000",
+                currency="USDT",
+                filled_at=at(3),
+            ),
+            settlement_fee(
+                event_id=UUID("b2000000-0000-4000-8000-000000000006"),
+                fill_id=SEQUENCE_SETTLED_FILL,
+                amount="0.6",
+                currency="USDT",
+                assessed_at=at(3),
+            ),
+        ]
+
+    def void(step: int, voided: str, **fields: Any) -> dict[str, Any]:
+        given = {
+            "voided_venue_trade_id": SEQUENCE_FILL,
+            "correction_id": "C-1",
+            "voided_quantity": voided,
+            "is_reopened": True,
+            "order_status_after": "partially_filled",
+            "leaves_quantity_after": voided,
+            "fill_commission": "0.6",
+            "fill_commission_currency": "USDT",
+            **fields,
+        }
+        return order_event(
+            "fill_voided",
+            source_event_id=f"b3000000-0000-4000-8000-00000000000{step}",
+            occurred_at=at(10 + step),
+            **given,
+        )
+
+    def corrected(step: int, voided: str, **fields: Any) -> list[dict[str, Any]]:
+        """A fill void and its correction, signed together as the runner does when
+        both flags are declared."""
+
+        event = void(step, voided, **fields)
+        pair = correction(
+            fill_id=SEQUENCE_SETTLED_FILL,
+            voided_quantity=voided,
+            source_event_id=event["source_event_id"],
+            occurred_at=event["occurred_at"],
+            is_reopened=event["is_reopened"],
+            **{
+                name: event.get(name)
+                for name in (
+                    "commission_voided",
+                    "commission_voided_currency",
+                    "fill_commission",
+                    "fill_commission_currency",
+                )
+            },
+        )
+        return [event, pair]
+
+    return {
+        "initialized": initialized,
+        "submitted": submitted,
+        "fill": fill,
+        "settled_fill": settled_fill,
+        "void": void,
+        "corrected": corrected,
+    }
+
+
+def _sequence(
+    sequence_id: str, covers: str, steps: list[tuple[list[dict[str, Any]], dict[str, Any]]]
+) -> dict[str, Any]:
+    signed = []
+    next_seq = 1
+    for index, (facts, expected) in enumerate(steps):
+        batch = signed_batch(
+            f"{sequence_id}-{index}",
+            facts,
+            emitted_at=f"2026-10-19T08:01:{index:02d}Z",
+            source_seq_start=next_seq,
+            auth=lineage_authority(),
+        )
+        next_seq += len(facts)
+        signed.append({"raw": raw(batch), "expected": expected})
+    return {"id": sequence_id, "covers": [covers], "steps": signed}
+
+
+def runner_fact_sequences() -> list[dict[str, Any]]:
+    e = _sequence_events()
+    init, submit, fill, void = e["initialized"], e["submitted"], e["fill"], e["void"]
+    settled_fill, corrected = e["settled_fill"], e["corrected"]
+    opened = [
+        ([init()], {"outcome": "accept", "order_state": "initialized"}),
+        ([submit()], {"outcome": "accept", "order_state": "working"}),
+        (
+            [fill()],
+            {"outcome": "accept", "order_state": "filled", "fill_effective_base_quantity": "1"},
+        ),
+    ]
+    no_reversal = {"commission_reversal_step": {"amount": "0", "currency": "USDT"}}
+
+    def reversal(amount: str) -> dict[str, Any]:
+        return {"commission_reversal_step": {"amount": amount, "currency": "USDT"}}
+
+    def applied(effective: str, state: str = "partially_filled") -> dict[str, Any]:
+        return {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": state,
+            "fill_effective_base_quantity": effective,
+        }
+
+    regression = {
+        "outcome": "reject",
+        "void_version": "regression",
+        "flags": ["void_regression"],
+    }
+    first_void = void(1, "20")
+    sequences = [
+        _sequence(
+            "void-grows",
+            "one fill voided twice, the cumulative quantity growing",
+            [
+                *opened,
+                ([first_void], {**applied("0.8"), **no_reversal}),
+                ([void(2, "50")], {**applied("0.5"), **no_reversal}),
+            ],
+        ),
+        _sequence(
+            "void-commission-completed",
+            "the same correction again, now with its commission: a new version",
+            [
+                *opened,
+                ([first_void], {**applied("0.8"), **no_reversal}),
+                (
+                    [void(2, "20", commission_voided="0.12", commission_voided_currency="USDT")],
+                    {**applied("0.8"), **reversal("0.12")},
+                ),
+            ],
+        ),
+        _sequence(
+            "void-reopen-changed",
+            "the same quantity with the reopen flag changed: a new version",
+            [
+                *opened,
+                (
+                    [
+                        void(
+                            1,
+                            "20",
+                            is_reopened=False,
+                            order_status_after="voided",
+                            leaves_quantity_after="0",
+                        )
+                    ],
+                    {**applied("0.8", "voided"), **no_reversal},
+                ),
+                (
+                    [void(2, "20", order_status_after="voided", leaves_quantity_after="0")],
+                    {**applied("0.8", "voided"), **no_reversal},
+                ),
+            ],
+        ),
+        _sequence(
+            "void-reopen-changed-before-voided",
+            "the reopen flag changed on an order still open: a new version, and the reopened "
+            "quantity can fill again",
+            [
+                opened[0],
+                opened[1],
+                (
+                    [fill(fee="0.3", quantity="0.5")],
+                    {
+                        "outcome": "accept",
+                        "order_state": "partially_filled",
+                        "fill_effective_base_quantity": "0.5",
+                    },
+                ),
+                (
+                    [
+                        void(
+                            1,
+                            "20",
+                            is_reopened=False,
+                            leaves_quantity_after="50",
+                            fill_commission="0.3",
+                        )
+                    ],
+                    {**applied("0.3"), **no_reversal},
+                ),
+                (
+                    [void(2, "20", leaves_quantity_after="70", fill_commission="0.3")],
+                    {**applied("0.3"), **no_reversal},
+                ),
+            ],
+        ),
+        _sequence(
+            "void-redelivered",
+            "the same fact delivered again is one fact",
+            [
+                *opened,
+                ([first_void], {**applied("0.8"), **no_reversal}),
+                (
+                    [first_void],
+                    {
+                        "outcome": "accept",
+                        "void_version": "duplicate",
+                        "order_state": "partially_filled",
+                        "fill_effective_base_quantity": "0.8",
+                        **no_reversal,
+                    },
+                ),
+            ],
+        ),
+        _sequence(
+            "void-commission-shrinks",
+            "a smaller cumulative commission reversal is refused",
+            [
+                *opened,
+                (
+                    [void(1, "20", commission_voided="0.12", commission_voided_currency="USDT")],
+                    {**applied("0.8"), **reversal("0.12")},
+                ),
+                (
+                    [void(2, "20", commission_voided="0.06", commission_voided_currency="USDT")],
+                    {**regression, "fill_effective_base_quantity": "0.8"},
+                ),
+            ],
+        ),
+        _sequence(
+            "void-commission-withdrawn",
+            "with a charged fill, a reversal once given cannot become absent",
+            [
+                *opened,
+                (
+                    [void(1, "20", commission_voided="0.12", commission_voided_currency="USDT")],
+                    {**applied("0.8"), **reversal("0.12")},
+                ),
+                ([void(2, "30")], {**regression, "fill_effective_base_quantity": "0.8"}),
+            ],
+        ),
+        _sequence(
+            "void-commission-absent-on-uncharged-fill",
+            "with a fill that charged nothing, a zero reversal may later be absent",
+            [
+                opened[0],
+                opened[1],
+                (
+                    [fill(fee="0")],
+                    {
+                        "outcome": "accept",
+                        "order_state": "filled",
+                        "fill_effective_base_quantity": "1",
+                    },
+                ),
+                (
+                    [
+                        void(
+                            1,
+                            "20",
+                            fill_commission=None,
+                            fill_commission_currency=None,
+                            commission_voided="0",
+                            commission_voided_currency="USDT",
+                        )
+                    ],
+                    {**applied("0.8"), **no_reversal},
+                ),
+                (
+                    [void(2, "30", fill_commission=None, fill_commission_currency=None)],
+                    {**applied("0.7"), **no_reversal},
+                ),
+            ],
+        ),
+        _sequence(
+            "void-rebate",
+            "a rebate is reversed with its own sign",
+            [
+                opened[0],
+                opened[1],
+                (
+                    [fill(fee="-0.2")],
+                    {
+                        "outcome": "accept",
+                        "order_state": "filled",
+                        "fill_effective_base_quantity": "1",
+                    },
+                ),
+                (
+                    [
+                        void(
+                            1,
+                            "20",
+                            fill_commission="-0.2",
+                            commission_voided="-0.04",
+                            commission_voided_currency="USDT",
+                        )
+                    ],
+                    {**applied("0.8"), **reversal("-0.04")},
+                ),
+                (
+                    [
+                        void(
+                            2,
+                            "50",
+                            fill_commission="-0.2",
+                            commission_voided="-0.1",
+                            commission_voided_currency="USDT",
+                        )
+                    ],
+                    {**applied("0.5"), **reversal("-0.06")},
+                ),
+            ],
+        ),
+        _sequence(
+            "void-quantity-shrinks",
+            "a smaller cumulative void quantity is refused",
+            [
+                *opened,
+                ([void(1, "50")], {**applied("0.5"), **no_reversal}),
+                ([void(2, "20")], {**regression, "fill_effective_base_quantity": "0.5"}),
+            ],
+        ),
+        _sequence(
+            "void-over-fill",
+            "a void larger than its fill is refused",
+            [
+                *opened,
+                (
+                    [void(1, "120", leaves_quantity_after="100")],
+                    {
+                        "outcome": "reject",
+                        "void_version": "regression",
+                        "order_state": "filled",
+                        "fill_effective_base_quantity": "1",
+                        "flags": ["over_void"],
+                    },
+                ),
+            ],
+        ),
+        _sequence(
+            "void-without-local-fill",
+            "a reconciliation void of what never filled ends the order, with no correction",
+            [
+                opened[0],
+                opened[1],
+                (
+                    [
+                        void(
+                            1,
+                            "100",
+                            voided_venue_trade_id="VOID-V-1",
+                            is_reopened=False,
+                            order_status_after="voided",
+                            leaves_quantity_after="0",
+                            fill_commission=None,
+                            fill_commission_currency=None,
+                        )
+                    ],
+                    {"outcome": "accept", "void_version": "new", "order_state": "voided"},
+                ),
+            ],
+        ),
+    ]
+    for case, fields, flag in (
+        (
+            "reopened",
+            {
+                "is_reopened": True,
+                "order_status_after": "partially_filled",
+                "leaves_quantity_after": "100",
+            },
+            "void_without_fill_reopened",
+        ),
+        (
+            # Legal on its own (the reversal stays within the commission it names);
+            # only the missing local fill makes any reversal wrong.
+            "with-commission",
+            {
+                "commission_voided": "0.1",
+                "commission_voided_currency": "USDT",
+                "fill_commission": "0.6",
+                "fill_commission_currency": "USDT",
+            },
+            "void_without_fill_commission",
+        ),
+        ("over-order", {"voided_quantity_override": "120"}, "over_void"),
+    ):
+        overrides = {
+            "voided_venue_trade_id": "VOID-V-1",
+            "is_reopened": False,
+            "order_status_after": "voided",
+            "leaves_quantity_after": "0",
+            "fill_commission": None,
+            "fill_commission_currency": None,
+        }
+        quantity = fields.pop("voided_quantity_override", "100")
+        overrides.update(fields)
+        fact = void(1, "100", **overrides)
+        if quantity != "100":
+            _wire(fact, "voided_quantity", quantity)
+        sequences.append(
+            _sequence(
+                f"void-without-local-fill-{case}",
+                "a void of what never filled cannot reopen, reverse commission or exceed the order",
+                [
+                    opened[0],
+                    opened[1],
+                    ([fact], {"outcome": "reject", "order_state": "working", "flags": [flag]}),
+                ],
+            )
+        )
+    sequences.extend(
+        [
+            _sequence(
+                "refused-amendment-keeps-the-order",
+                "an amendment the venue refused does not change the confirmed quantity",
+                [
+                    opened[0],
+                    opened[1],
+                    (
+                        [
+                            order_event(
+                                "modify_rejected",
+                                requested_values_known=True,
+                                requested_quantity="50",
+                                quantity_multiplier="0.01",
+                                source_event_id="b4000000-0000-4000-8000-000000000001",
+                            )
+                        ],
+                        {
+                            "outcome": "accept",
+                            "order_state": "working",
+                            "order_confirmed_base_quantity": "1",
+                        },
+                    ),
+                    (
+                        [
+                            execution_fill(
+                                event_id=UUID("b2000000-0000-4000-8000-000000000004"),
+                                venue="BINANCE",
+                                venue_trade_id="T-2",
+                                client_order_id=LINEAGE_ORDER,
+                                venue_order_id="V-1",
+                                instrument="BTCUSDT-PERP.BINANCE",
+                                side="buy",
+                                quantity="0.5",
+                                price="60000",
+                                fee="0.3",
+                                currency="USDT",
+                                occurred_at="2026-10-19T08:00:20Z",
+                            )
+                        ],
+                        {
+                            "outcome": "accept",
+                            "order_state": "partially_filled",
+                            "order_confirmed_base_quantity": "1",
+                        },
+                    ),
+                ],
+            ),
+            _sequence(
+                "refused-price-amendment",
+                "a refused price-only amendment names no quantity and keeps the order's",
+                [
+                    opened[0],
+                    opened[1],
+                    (
+                        [
+                            order_event(
+                                "modify_rejected",
+                                requested_values_known=True,
+                                requested_quantity=None,
+                                quantity_multiplier=None,
+                                requested_limit_price="61000",
+                                source_event_id="b4000000-0000-4000-8000-000000000002",
+                            )
+                        ],
+                        {
+                            "outcome": "accept",
+                            "order_state": "working",
+                            "order_confirmed_base_quantity": "1",
+                            "order_confirmed_limit_price": "60000",
+                        },
+                    ),
+                ],
+            ),
+        ]
+    )
+    for order_type, prices, update, accepted in (
+        ("limit", {"limit_price": "60000"}, {"trigger_price": "59000"}, False),
+        ("market_to_limit", {"limit_price": None}, {"limit_price": "60500"}, True),
+        ("market", {"limit_price": None}, {"limit_price": "60500"}, False),
+    ):
+        sequences.append(
+            _sequence(
+                f"update-prices-{order_type.replace('_', '-')}",
+                "an update carries only the prices the order's type has",
+                [
+                    (
+                        [init(order_type=order_type, **prices)],
+                        {"outcome": "accept", "order_state": "initialized"},
+                    ),
+                    (
+                        [
+                            order_event(
+                                "updated",
+                                quantity="100",
+                                quantity_multiplier="0.01",
+                                source_event_id="b5000000-0000-4000-8000-000000000001",
+                                **update,
+                            )
+                        ],
+                        {
+                            "outcome": "accept",
+                            "order_state": "initialized",
+                            "order_confirmed_base_quantity": "1",
+                            "order_confirmed_limit_price": update["limit_price"],
+                        }
+                        if accepted
+                        else {
+                            "outcome": "reject",
+                            "order_state": "initialized",
+                            "flags": ["price_for_type"],
+                        },
+                    ),
+                ],
+            )
+        )
+    settled = [opened[0], opened[1]] + [
+        (
+            settled_fill(),
+            {"outcome": "accept", "order_state": "filled", "fill_effective_base_quantity": "1"},
+        )
+    ]
+
+    def settled_step(void_base: str, commission: str) -> dict[str, Any]:
+        return {
+            "settled_fill_void_base_quantity_step": void_base,
+            "settled_commission_reversal_step": {"amount": commission, "currency": "USDT"},
+        }
+
+    completed = corrected(3, "50", commission_voided="0.3", commission_voided_currency="USDT")
+    sequences.append(
+        _sequence(
+            "settled-fill-corrections",
+            "a settled fill corrected again and again: each correction applies the change "
+            "since the version last applied, and a correction delivered again applies nothing",
+            [
+                *settled,
+                (
+                    corrected(1, "20"),
+                    {**applied("0.8"), **no_reversal, **settled_step("0.2", "0")},
+                ),
+                (
+                    corrected(2, "50"),
+                    {**applied("0.5"), **no_reversal, **settled_step("0.3", "0")},
+                ),
+                (
+                    completed,
+                    {**applied("0.5"), **reversal("0.3"), **settled_step("0", "0.3")},
+                ),
+                (
+                    completed,
+                    {
+                        "outcome": "accept",
+                        "void_version": "duplicate",
+                        "order_state": "partially_filled",
+                        "fill_effective_base_quantity": "0.5",
+                        **no_reversal,
+                        **settled_step("0", "0"),
+                    },
+                ),
+            ],
+        )
+    )
+    refused = {**regression, "fill_effective_base_quantity": "0.5", **settled_step("0", "0")}
+    sequences.append(
+        _sequence(
+            "settled-fill-correction-regressions",
+            "corrections of a settled fill the fold refuses apply nothing, and the next "
+            "correction is measured from the version last applied",
+            [
+                *settled,
+                (
+                    corrected(1, "50", commission_voided="0.3", commission_voided_currency="USDT"),
+                    {**applied("0.5"), **reversal("0.3"), **settled_step("0.5", "0.3")},
+                ),
+                (
+                    corrected(2, "40", commission_voided="0.3", commission_voided_currency="USDT"),
+                    refused,
+                ),
+                (
+                    corrected(3, "50", commission_voided="0.2", commission_voided_currency="USDT"),
+                    refused,
+                ),
+                (corrected(4, "60"), refused),
+                (
+                    corrected(5, "60", commission_voided="0.3", commission_voided_currency="USDT"),
+                    {**applied("0.4"), **no_reversal, **settled_step("0.1", "0")},
+                ),
+            ],
+        )
+    )
+    return sequences
+
+
+def runner_fact_sequence_document() -> dict[str, Any]:
+    contract_id, revision = RUNNER_FACT_CONTRACT
+    return {
+        "sequence_set_version": 1,
+        "contract_id": contract_id,
+        "contract_revision": revision,
+        "stream": "every step is one signed batch on the lineage stream, in order",
+        "expected_keys": SEQUENCE_KEYS,
+        "fold_rules": [
+            "a fill's versions are compared by voided quantity, commission reversal and "
+            "reopen flag together; a fact delivered again is recognised by its event_id",
+            "a version with a smaller cumulative void quantity, a smaller absolute "
+            "commission reversal, or, for a charged fill, no reversal after one was given "
+            "is not applied",
+            "a refused amendment never overrides the confirmed quantity or prices",
+            "the signed order_status_after decides the order's state after a void; an order "
+            "already voided stays voided, whatever its reopen flag",
+            "a fill correction applies to the settled fill its fill_id names the change since "
+            "the version last applied; a version the fold refuses applies nothing, and the "
+            "next version is measured from the one last applied",
+        ],
+        "test_only": True,
+        "sequences": runner_fact_sequences(),
+    }
+
+
 def runner_fact_vector_document() -> dict[str, Any]:
     signer = identity()
     contract_id, revision = RUNNER_FACT_CONTRACT
@@ -725,20 +2371,15 @@ def runner_fact_vector_document() -> dict[str, Any]:
         "canonicalization": "utf8-json-sort-keys-compact-v1",
         "digest": "sha256-hex",
         "error_classes": list(ERROR_CLASSES),
-        "stages": {
-            "decode": "refused while parsing the envelope, before any state changes",
-            "projection": "accepted into the inbox, then refused by a projector",
-        },
-        "schema_outcome": (
-            "present only where the published schema admits a vector the consumer "
-            "refuses: maxLength counts characters where the consumer counts UTF-8 bytes, "
-            "and a pattern cannot compare a mantissa with 2**96 - 1"
-        ),
+        "error_class_definitions": ERROR_CLASS_DEFINITIONS,
+        "stages": STAGES,
+        "schema_outcome": SCHEMA_OUTCOME,
         "test_only": True,
         "test_signing_seed_hex": TEST_SIGNING_SEED.hex(),
         "test_public_key_hex": signer.public_key_bytes.hex(),
         "test_key_id": signer.key_id,
         "vectors": runner_fact_vectors(),
+        "capability_shapes": capability_shape_vectors(),
     }
 
 
@@ -813,6 +2454,7 @@ def build_assets() -> dict[Path, bytes]:
     assets: dict[Path, bytes] = {}
     documents: dict[Path, Callable[[], dict[str, Any]]] = {
         RUNNER_FACT_VECTORS_PATH: runner_fact_vector_document,
+        RUNNER_FACT_SEQUENCES_PATH: runner_fact_sequence_document,
         STRATEGY_VECTORS_PATH: strategy_vector_document,
     }
     for path, build in documents.items():

@@ -2,20 +2,21 @@
   "index_schema_version": 1,
   "producer_repository": "tesseract-trading/custos",
   "canonicalization": "utf8-json-sort-keys-compact-v1",
-  "revision_rule": "raise a contract's revision by one when its wire fingerprint or its conformance vectors change; descriptive text alone keeps the revision",
+  "revision_rule": "raise a contract's revision by one when its wire fingerprint, its conformance vectors or its conformance sequences change; descriptive text alone keeps the revision",
   "contracts": {
     "alephain.custos.runner_fact_batch.v1": {
-      "revision": 3,
+      "revision": 6,
       "revision_carrier": "schema",
       "schema_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-      "wire_sha256": "93d194fd4bfa29cf5e458f40204b71a31f7ea48482e03190ad71cae6ac3a2fa9",
-      "vectors_sha256": "92ad6cf9864ba781a75902511e327a1b43d6fcf7ffe2b19979bd59e4ae25f7e2",
+      "wire_sha256": "eded38c3a402a2b661fc2ad15ab00787ddb9fed91de3a82218ae9da45f98cb82",
+      "vectors_sha256": "ea62a272a95b50e8a0bfaf45795110f8f8e158b74b234915b795a5bfff9c8636",
+      "sequences_sha256": "c54833dc8117a38b7c7ea62d5e947606b78f8b41342d025f66285c85bd60f8e2",
       "vectors_path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
       "assets": [
         {
           "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-          "sha256": "eba0af2fac996bc5059ecb3f0dd7f322c7dd337648b1f5d4a6b99ae4294effb1",
-          "size_bytes": 77128
+          "sha256": "8b557849a1a79cce25b1fe3df5f36232a9df17f63443411d14e2047a3877d267",
+          "size_bytes": 129188
         },
         {
           "path": "docs/authority/runner-fact-golden-v1.json",
@@ -34,8 +35,8 @@
         },
         {
           "path": "docs/authority/runner-fact-parity-matrix-v1.json",
-          "sha256": "5b6d1f1ae0d04330e403e094b1856293455a1d8e742cc073d9e77d390d6e28de",
-          "size_bytes": 4357
+          "sha256": "46bb5e16dc8354155b5bcd1b1ba49940b3cfc4b0ac3078ee609dbc2360208c8d",
+          "size_bytes": 4743
         },
         {
           "path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
@@ -48,19 +49,34 @@
           "size_bytes": 5080
         },
         {
+          "path": "docs/authority/runner-fact-lineage-golden-v1.json",
+          "sha256": "5345d72c1967f5198563c953cf0373a8bca3bb0d9616fd6212ec431c25b07264",
+          "size_bytes": 10047
+        },
+        {
           "path": "docs/authority/runner-fact-contract-assets-v1.json",
-          "sha256": "76e25dcde37ece87ef13e6abef2f50386de5bc5880d47bc658bc3681091bf284",
-          "size_bytes": 4178
+          "sha256": "f6baba458c526596b17afb1561f5efefff8082239fe2d57fef7ac50fcafec374",
+          "size_bytes": 4568
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
-          "sha256": "92ad6cf9864ba781a75902511e327a1b43d6fcf7ffe2b19979bd59e4ae25f7e2",
-          "size_bytes": 115229
+          "sha256": "ea62a272a95b50e8a0bfaf45795110f8f8e158b74b234915b795a5bfff9c8636",
+          "size_bytes": 1311844
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json.sha256",
-          "sha256": "fd5b53ea9c46e7f7bf9671e3433a7376e07e72a2d21104c366f548db504f02d7",
+          "sha256": "b1f4acc0ee3b64fbf1060e11efc260052a0f5de7752cd4ddd9a01e835a6775f4",
           "size_bytes": 100
+        },
+        {
+          "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json",
+          "sha256": "c54833dc8117a38b7c7ea62d5e947606b78f8b41342d025f66285c85bd60f8e2",
+          "size_bytes": 183009
+        },
+        {
+          "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json.sha256",
+          "sha256": "fe1680d7579d9e5c46d90ab711b6b9791f42b60d9399420d891d1c213d8e6380",
+          "size_bytes": 102
         }
       ],
       "history": [
@@ -80,6 +96,26 @@
           "revision": 3,
           "wire_sha256": "93d194fd4bfa29cf5e458f40204b71a31f7ea48482e03190ad71cae6ac3a2fa9",
           "vectors_sha256": "92ad6cf9864ba781a75902511e327a1b43d6fcf7ffe2b19979bd59e4ae25f7e2",
+          "note": "raised"
+        },
+        {
+          "revision": 4,
+          "wire_sha256": "eded38c3a402a2b661fc2ad15ab00787ddb9fed91de3a82218ae9da45f98cb82",
+          "vectors_sha256": "f7cd8a3ced1f3c2872e1c7aee6db29597fd852df394a145649707eeb98c5f61b",
+          "note": "raised"
+        },
+        {
+          "revision": 5,
+          "wire_sha256": "eded38c3a402a2b661fc2ad15ab00787ddb9fed91de3a82218ae9da45f98cb82",
+          "vectors_sha256": "982d27bb555f220583864b822abe473bb9e722551100336461112b9900113c21",
+          "sequences_sha256": "9d4afc7fdf923fad2dd110e5a25345764b1d66643cba73b44e58a233a26e514f",
+          "note": "raised"
+        },
+        {
+          "revision": 6,
+          "wire_sha256": "eded38c3a402a2b661fc2ad15ab00787ddb9fed91de3a82218ae9da45f98cb82",
+          "vectors_sha256": "ea62a272a95b50e8a0bfaf45795110f8f8e158b74b234915b795a5bfff9c8636",
+          "sequences_sha256": "c54833dc8117a38b7c7ea62d5e947606b78f8b41342d025f66285c85bd60f8e2",
           "note": "raised"
         }
       ]
@@ -172,6 +208,56 @@
           "wire_sha256": "5c5e1e028af9400a0a47f97c3a0af7059162b121697227e3b9070dfa4ecae925",
           "vectors_sha256": null,
           "note": "first revision; earlier versions of the contract carried no revision"
+        }
+      ]
+    },
+    "alephain.custos.strategy_signal.v1": {
+      "revision": 3,
+      "revision_carrier": "schema",
+      "schema_path": "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json",
+      "wire_sha256": "049e0dba67274cb722d2166343258b06615436c9535aa85f7c0cb96f1ed785c9",
+      "vectors_sha256": "4ad20d8d1de6d70e9f51a8d28f1e80928ad9132189d9deaf94837d78cf074465",
+      "vectors_path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json",
+      "assets": [
+        {
+          "path": "docs/gateway-contract/v1/strategy_signal_fact_v1.schema.json",
+          "sha256": "515606673e9b84a3005d9d2f0c27ef8f71fb5706f5fba5e382786275b45cd15b",
+          "size_bytes": 16999
+        },
+        {
+          "path": "docs/authority/strategy-signal-golden-v1.json",
+          "sha256": "3abb0b686d21dde17701e44963c8bd09b98e7c7351b4b6c0a8f5c638c790c632",
+          "size_bytes": 1321
+        },
+        {
+          "path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json",
+          "sha256": "4ad20d8d1de6d70e9f51a8d28f1e80928ad9132189d9deaf94837d78cf074465",
+          "size_bytes": 99812
+        },
+        {
+          "path": "docs/authority/conformance/strategy-signal-fact-v1.vectors.json.sha256",
+          "sha256": "9936216707250b5b96fe329d866c701da81972ca041d35c2ca38d369438b0da4",
+          "size_bytes": 103
+        }
+      ],
+      "history": [
+        {
+          "revision": 1,
+          "wire_sha256": "8b28bdd22d9772a8a83375968a655c7c3933461a848f81aab130f08f05a68717",
+          "vectors_sha256": "d4091225018f64687e4671f2cfdc858d1bc6781721d3b1ff4ad5d3818f87787e",
+          "note": "first revision; earlier versions of the contract carried no revision"
+        },
+        {
+          "revision": 2,
+          "wire_sha256": "0565b531c0aca02d2cf7538ebdb91fee2733385c213878b94eeb2d506026fdac",
+          "vectors_sha256": "079badf1344f65b0ffac6f46005ddfede05879d33b5ee40edfdea73cf470f325",
+          "note": "raised"
+        },
+        {
+          "revision": 3,
+          "wire_sha256": "049e0dba67274cb722d2166343258b06615436c9535aa85f7c0cb96f1ed785c9",
+          "vectors_sha256": "4ad20d8d1de6d70e9f51a8d28f1e80928ad9132189d9deaf94837d78cf074465",
+          "note": "raised"
         }
       ]
     },

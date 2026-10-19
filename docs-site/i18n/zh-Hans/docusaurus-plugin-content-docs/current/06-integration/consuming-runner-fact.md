@@ -46,11 +46,13 @@ signed bytes = DOMAIN || canonical_json(header)
 
 | 用途 | `facts[].kind` |
 |---|---|
-| 结算 | `fill`、`position_closed`、`fee`、`period_closed` |
+| 结算 | `fill`、`position_closed`、`fee`、`period_closed`、`RunnerInstanceTerminalValuationFact.v1`、`RunnerFillCorrectionFact.v1` |
 | 风险 | `equity_snapshot`、`position_snapshot` |
 | 健康 | `heartbeat`、`RunnerRuntimeLogFact.v1` |
-| 对账 | `execution_fill`、`venue_ledger_snapshot_manifest`、`venue_ledger_snapshot_chunk`、`reconciliation_period_closed` |
+| 对账 | `execution_fill`、`venue_ledger_snapshot_manifest`、`venue_ledger_snapshot_chunk`、`reconciliation_period_closed`、`RunnerValuationCheckpointFact.v1`、`RunnerOrderEventFact.v1` |
 | 部署生命周期 | `RunnerDeploymentLifecycleFact.v1` |
+
+有四种 kind 只在 runner 的能力清单声明了对应标志位时才出现：`RunnerInstanceTerminalValuationFact.v1` 对应 `settlement.terminal_valuation`，`RunnerValuationCheckpointFact.v1` 对应 `reconciliation.valuation_checkpoint`，`RunnerOrderEventFact.v1` 对应 `reconciliation.order_lineage`，`RunnerFillCorrectionFact.v1` 对应 `settlement.fill_correction`。批次带了能力清单未声明的 kind 时应拒收。单看批次字节判断不了这一点：它需要批次 `capability_manifest_digest` 所指的那份能力记录，所以在解码之后、接收批次之前检查。一致性用例列出了四个标志位的全部组合及其结论，并为每一条拒收写明错误类别与判定它的阶段，类别与阶段的定义都在用例文件里。一致性序列给出了订单历史每一步之后折叠应得到的状态，以及每条成交作废更正从已结算成交及其手续费上冲减多少。
 
 只有部署的引擎已就绪且状态可靠时，`heartbeat` 才报告 `online`。仍在启动中的部署，包括因连不上交易所而在重试的部署，报告 `degraded`。
 
@@ -95,9 +97,25 @@ capability_manifest_digest, strategy_version, instrument, client_order_id,
 timeframe, direction, occurred_at, source_sequence, input_digest, trace_id, key_id
 ```
 
-`schema_version` 为 1；`direction` 为 `long`、`short` 或 `flat`；`client_order_id` 可为 null。校验精确 subject 及完整实例/能力范围，验证注册签名，按 `fact_id` 去重，并按租户/模式/runner/实例检查 `source_sequence`。多个实例共享信号 subject，但序号流独立。
+`schema_version` 为 1；`direction` 为 `long`、`short` 或 `flat`；`client_order_id` 始终出现，可为 null。校验精确 subject 及完整实例/能力范围，验证注册签名，按 `fact_id` 去重，并按租户/模式/runner/实例检查 `source_sequence`。多个实例共享信号 subject，但序号流独立。
 
-信号具有独立持久化序号分配与 PubAck 跟踪，不是 RunnerFactBatch 的第十四种 kind，也不能与批次序号比较。策略信号不能证明订单已成交。
+信号还可以携带一次决策。下列字段都可缺席；缺席时不出现在载荷里，不写 null，签名覆盖出现的那些字段：
+
+```text
+signal_id, signal_event, closed_reason, signal_action,
+target_quantity, target_quantity_native, target_quantity_multiplier,
+target_notional, target_notional_currency,
+reversal_close_quantity, reversal_close_quantity_native,
+reversal_close_quantity_multiplier, reversal_closes_signal_id,
+arrival_price, arrival_price_source, arrival_observed_at,
+reason_code, reason_fields, valid_until, supersedes_signal_id,
+residue_min_quantity, residue_min_quantity_native,
+residue_min_quantity_multiplier, residue_min_notional, residue_min_notional_currency
+```
+
+决策字段必须与 `signal_id` 一起出现。`signal_event` 为 `decided`、`withdrawn` 或 `closed`：decided 必须给出 `signal_action`，并且目标数量与目标名义金额恰有其一；withdrawn 不带其他字段；closed 另带 `closed_reason`。同组字段同进同出，每个基础数量严格等于对应的原生数量乘以乘数。决策字段写成 null 时应拒收。schema 为 `strategy_signal_fact_v1.schema.json`。
+
+信号具有独立持久化序号分配与 PubAck 跟踪，不是 RunnerFactBatch 的 kind，也不能与批次序号比较。策略信号不能证明订单已成交。
 
 ## 投递
 

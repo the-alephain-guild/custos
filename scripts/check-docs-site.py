@@ -29,6 +29,7 @@ PUBLIC_SCHEMAS = frozenset(
         "strategy_execution_context_v1.schema.json",
         "development_source_ref_v1.schema.json",
         "offline_deployment_spec.schema.json",
+        "strategy_signal_fact_v1.schema.json",
     }
 )
 INTERNAL_SCHEMA_PREFIXES = ("toolkit_rc_", "runtime_candidate_")

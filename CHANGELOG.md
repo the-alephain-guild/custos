@@ -13,6 +13,74 @@ protocol — is published at
 
 ## [Unreleased]
 
+The RunnerFact batch contract moves to revision 6 and the strategy signal fact
+gets its own contract, `alephain.custos.strategy_signal.v1`, at revision 3. The
+contract changes leave the runner as it was: it does not sign the new facts or
+fields yet, every capability published today keeps loading, and a signal signs
+the bytes it signed before. Revisions 4 and 5 are in the revision index but were
+never released; revision 6 keeps their wire shape and replaces their vectors and
+sequences.
+
+### Added
+
+- **Order events and fill corrections in RunnerFact V1.** Two optional fact
+  kinds join the closed union. `RunnerOrderEventFact.v1` records an order's life
+  one engine event at a time (initialized, submitted, updated, rejected, denied,
+  refused, canceled, expired, the three refused or rejected amendments and
+  cancellations, and fill_voided), with which fields each event carries fixed in
+  the schema. `RunnerFillCorrectionFact.v1` reverses part of a settlement fill
+  this instance signed and the engine has since voided; it carries the same
+  `source_event_id`, quantities and commission as the matching `fill_voided`
+  event. A capability declares them with two new optional flags,
+  `reconciliation.order_lineage = "v1"` and `settlement.fill_correction = "v1"`,
+  offered only on the current shape; the canonical capability manifest declares
+  neither, so a deployment opts in. Every native quantity comes with its
+  multiplier and an exact base-asset quantity.
+- **`runner-fact-lineage-golden-v1.json`** signs one order through its life,
+  with a fill void and its correction, under a capability that declares both
+  flags.
+- **`runner-fact-batch-v1.sequences.json`** publishes sequences of batches with
+  the state a consumer's fold must reach after each step: cumulative voids,
+  repeated and refused versions, a reopen on an open and on a voided order, a
+  void without a local fill, refused amendments with the quantity and price
+  they keep, prices on an update, and fill corrections of a settled fill with
+  the quantity and commission each one takes off it.
+- **Refusal classes and stages are defined in the vector file.** Each error
+  class has a one-line definition, and a third stage, `admission`, comes after
+  decoding and before the batch is taken in, for the checks that need the
+  capability record: a kind the capability does not declare is refused there,
+  not while decoding, with one vector for each of the two new kinds.
+- **The field matrix is covered cell by cell.** Every field an order event must
+  not carry, and every field it must, has its own vector, base quantities
+  included. A forbidden field that the schema only takes together with another
+  (a native quantity and its base quantity, a requested quantity with its
+  multiplier, a commission with its currency) comes with all of them, so the
+  vector is refused for the event's column alone.
+- **The revision index fingerprints the sequences.** A changed sequence file
+  under an unchanged revision now fails the revision rule, as a changed vector
+  file does.
+- **Capability shape vectors.** The vector file lists all sixteen combinations
+  of the four optional capability flags with the verdict both sides give.
+- **The strategy signal contract.** `strategy_signal_fact_v1.schema.json`, a
+  golden signal and `strategy-signal-fact-v1.vectors.json` publish the payload
+  the runner signs. Revision 1 is the payload as it was; revision 2 adds optional
+  decision fields: the signal's identity and event (decided, withdrawn or
+  closed), its action and its target as a quantity or a notional, the old
+  position a reversal closes, the arrival price, a reason code with up to
+  sixteen numeric reason fields, a validity end, the signal it supersedes and
+  the venue's minimum quantity and notional at the decision. A decision field
+  without a value is left out, never written as null, so a signal without them
+  signs the revision 1 bytes. Revision 3 changes no bytes a runner signs: the
+  schema's list of signed fields now names the decision fields too, and states
+  that every member but `signature` is signed. Revision 2 listed only the fields
+  of revision 1, so a consumer verifying from that list would refuse a valid
+  decided signal.
+
+### Changed
+
+- The parity matrix names ARX, not an internal service, as the owner of a fact
+  after ingest.
+
 ### Fixed
 
 - **A fill that crosses a cancel is still signed.** The runner let go of an order

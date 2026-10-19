@@ -13,105 +13,119 @@
       "fact_kind": "execution_fill",
       "capability_projector": "reconciliation",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "Nautilus OrderFilled settlement projection",
       "fact_kind": "fill",
       "capability_projector": "settlement",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "Nautilus PositionClosed realized PnL",
       "fact_kind": "position_closed",
       "capability_projector": "settlement",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "Nautilus OrderFilled commission",
       "fact_kind": "fee",
       "capability_projector": "settlement",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "runner settlement period timer",
       "fact_kind": "period_closed",
       "capability_projector": "settlement",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "canonical portfolio equity snapshot",
       "fact_kind": "equity_snapshot",
       "capability_projector": "risk",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "canonical trusted-mark position snapshot",
       "fact_kind": "position_snapshot",
       "capability_projector": "risk",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "runner observability cadence",
       "fact_kind": "heartbeat",
       "capability_projector": "health",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "sanitized local deny reject and runtime diagnostics",
       "fact_kind": "RunnerRuntimeLogFact.v1",
       "capability_projector": "health",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "authoritative venue ledger snapshot manifest",
       "fact_kind": "venue_ledger_snapshot_manifest",
       "capability_projector": "reconciliation",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "bounded authoritative venue ledger chunk",
       "fact_kind": "venue_ledger_snapshot_chunk",
       "capability_projector": "reconciliation",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "completed reconciliation evidence period",
       "fact_kind": "reconciliation_period_closed",
       "capability_projector": "reconciliation",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "common-mark independent ledger valuation",
       "fact_kind": "RunnerValuationCheckpointFact.v1",
       "capability_projector": "reconciliation",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "local engine lifecycle observation",
       "fact_kind": "RunnerDeploymentLifecycleFact.v1",
       "capability_projector": "deployment_lifecycle",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
     },
     {
       "runtime_source": "same-boundary valuation at a signed instance stop",
       "fact_kind": "RunnerInstanceTerminalValuationFact.v1",
       "capability_projector": "settlement",
       "signed_batch": "RunnerFactBatchV1",
-      "canonical_owner_after_ingest": "crucible-rust"
+      "canonical_owner_after_ingest": "arx"
+    },
+    {
+      "runtime_source": "engine order events and runner order refusals",
+      "fact_kind": "RunnerOrderEventFact.v1",
+      "capability_projector": "reconciliation",
+      "signed_batch": "RunnerFactBatchV1",
+      "canonical_owner_after_ingest": "arx"
+    },
+    {
+      "runtime_source": "engine fill void of a fill this instance signed",
+      "fact_kind": "RunnerFillCorrectionFact.v1",
+      "capability_projector": "settlement",
+      "signed_batch": "RunnerFactBatchV1",
+      "canonical_owner_after_ingest": "arx"
     }
   ]
 }

@@ -3,7 +3,7 @@
 # Standalone open-source repository entrypoint. Standardized validation targets
 # keep shell execution deterministic and avoid permission drift from ad-hoc commands.
 
-.PHONY: test-publisher help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication verify-runner-fact-publication-network clean strategy-contract-assets check-strategy-contract-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
+.PHONY: check-contract-disclosure test-publisher help install install-nt install-lts fmt fmt-check lint check toolkit-typecheck test test-baseline test-nt test-docker test-docker-existing verify verify-base-clean verify-nt verify-runtime verify-runtime-existing verify-local-v030 verify-nats-revocation verify-authenticated-runtime-projection verify-runner-fact-publication verify-runner-fact-publication-network clean strategy-contract-assets check-strategy-contract-assets dist sign docker-build docker-build-local-v030 docker-sign verify-release release check-commit-hook commit-hook-dry-run
 
 # Default target: help
 .DEFAULT_GOAL := help
@@ -74,13 +74,17 @@ check-public-surface:  ## Refuse tracked private working notes (runs first in ve
 	python3 scripts/check-public-surface.py --self-test
 	python3 scripts/check-public-surface.py
 
+check-contract-disclosure:  ## Refuse internal vocabulary in the text of published contract files
+	python3 scripts/check-contract-disclosure.py --self-test
+	python3 scripts/check-contract-disclosure.py
+
 # The strategy release publisher is its own project with its own lock: it signs with a
 # sigstore release the runner's verifier pin does not accept.
 test-publisher:  ## Run the strategy release publisher's lint and tests in its own environment
 	cd packages/custos-strategy-publisher && uv run --frozen ruff check src tests && \
 	  uv run --frozen ruff format --check src tests && uv run --frozen pytest -q
 
-verify: check-public-surface check test-baseline test-publisher  ## Base release gate: public surface + check + green test-baseline + publisher
+verify: check-public-surface check-contract-disclosure check test-baseline test-publisher  ## Base release gate: public surface + contract disclosure + check + green test-baseline + publisher
 	@echo "✅ make verify passed"
 
 verify-base-clean:  ## Clean dev-only sync followed by the base release gate
@@ -94,7 +98,7 @@ clean:  ## Remove pycache / pytest cache / ruff cache
 	find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
 	rm -rf .pytest_cache .ruff_cache .mypy_cache
 
-# --- Plan 12 release engineering ---------------------------------------------
+# --- Release engineering -----------------------------------------------------
 # `make dist` produces the signed-artifact input; `docker-build` consumes it.
 # `verify-release` is the post-publish smoke gate for the image on GHCR.
 
@@ -191,7 +195,7 @@ check-strategy-contract-assets:  ## Fail when generated strategy contract assets
 	uv run python scripts/generate_strategy_contract_assets.py --check
 
 # ---- Future targets (pending plan rollout) ----
-# typecheck:  ## pyright type checks (integrate in Plan 02+)
+# typecheck:  ## pyright type checks (to be integrated)
 # 	uv run pyright src/ tests/
 #
 # docs:  ## Generate API docs when needed
@@ -206,8 +210,8 @@ check-toolkit-extraction:
 # Contracts other repositories vendor by revision: the vector files are what the
 # runner writes, the revision index follows its rule, and the vendoring script's
 # own tests pass under the system interpreter that consumers run it with. The
-# crucible-rust contracts Custos consumes are checked against their revision pins
-# offline; the canonical copy of the script lives in crucible-rust.
+# contracts Custos consumes are checked against their revision pins offline; the
+# canonical copy of the script is the sibling copy named below.
 check-contract-revisions:
 	uv run python scripts/generate_contract_conformance.py --check
 	uv run python scripts/generate_contract_revisions.py --check

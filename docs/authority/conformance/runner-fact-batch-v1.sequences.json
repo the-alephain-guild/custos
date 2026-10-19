@@ -1,0 +1,1109 @@
+{
+  "sequence_set_version": 1,
+  "contract_id": "alephain.custos.runner_fact_batch.v1",
+  "contract_revision": 6,
+  "stream": "every step is one signed batch on the lineage stream, in order",
+  "expected_keys": {
+    "outcome": "accept, or reject when the consumer must not apply the step",
+    "void_version": "for a fill void: new (a version the engine takes), duplicate (the same event again) or regression (a version the engine refuses)",
+    "order_state": "the order's coarse state after the step",
+    "order_confirmed_base_quantity": "the order quantity no refused request overrides",
+    "order_confirmed_limit_price": "the order's limit price, which no refused request overrides",
+    "fill_effective_base_quantity": "the fill's quantity less its cumulative void",
+    "commission_reversal_step": "the commission reversal this step adds, in its currency",
+    "settled_fill_void_base_quantity_step": "the base quantity a fill correction in this step removes from the settled fill its fill_id names: the change since the version last applied",
+    "settled_commission_reversal_step": "the reversal a fill correction in this step applies to that settled fill's commission, in its currency: the change since the version last applied",
+    "flags": "integrity marks the consumer raises on the order"
+  },
+  "fold_rules": [
+    "a fill's versions are compared by voided quantity, commission reversal and reopen flag together; a fact delivered again is recognised by its event_id",
+    "a version with a smaller cumulative void quantity, a smaller absolute commission reversal, or, for a charged fill, no reversal after one was given is not applied",
+    "a refused amendment never overrides the confirmed quantity or prices",
+    "the signed order_status_after decides the order's state after a void; an order already voided stays voided, whatever its reopen flag",
+    "a fill correction applies to the settled fill its fill_id names the change since the version last applied; a version the fold refuses applies nothing, and the next version is measured from the one last applied"
+  ],
+  "test_only": true,
+  "sequences": [
+    {
+      "id": "void-grows",
+      "covers": [
+        "one fill voided twice, the cumulative quantity growing"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"15207d20-6b7a-4eba-9070-2263d87dd617\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"CKHwbVAISFzrvbqL-xPnwA0c5n6JyQs9zvlonrjzKsM4rhqM9QhYTJY0LyGs8pCx-iY20_vi8a5pkpYlP1mJBQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"e7f79078-5288-4215-a8c9-667f39ca7312\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"JN3PqqTRPStV7AOrh1Hu0vXOHn_lqWPUjVnMjre1kJQ4BPgLdvdlXCWAXrhlwV0_DhcR0Le6AAC43SqsuvSOCQ\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"359cf43f-d8c9-4e33-8950-84096ceebe41\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0.6\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"de5ea94015e3c0e8a9e66e7cd59ab75c12d1cf5573a6a90314122fc6a61424b6\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"umqvkIudmVaavNITjdvtTEBmf-ffnJK-PXQzuavikQ9zWf2J_8rgp2OMyTqLK5Fpq23SnhmJE-lcc3hLAEOUDA\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"48324df4-bf9a-4795-865e-e7782cfbd0c4\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":4,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"aa8bbf06bcc8b8527a06984f28d1722090d019cc15ada4de211350e50008c257\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"7OYYWPcodHjQDpcO0BKR1eea42-OnvWuLpKBETHWQG_YEFXB0W5p9B9cuHUaGxF9aaEu93azTggEC1-ta8dDBg\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"52a6ed2c-2240-4690-b6c5-38a0ff2ee481\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"21d7d9e3-104d-53b4-a237-6f9c6bcaac4d\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.5\",\"leaves_quantity_after\":\"50\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":5,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"91972ff42327cc102c79c2713b2858bbc0359970d93774c707cbdd1e6d659cd6\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"n5HiqOks8AwgKa-G_QAIYybiK6KEkqZqPEoCBGMaUEvfKQm6sPDcgW2-esm1ZgYhrn74zyC77VeqAN7aNAbDDA\",\"source_seq_end\":5,\"source_seq_start\":5,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.5",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-commission-completed",
+      "covers": [
+        "the same correction again, now with its commission: a new version"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"dbdd1822-a956-4065-8710-b5136ddfa935\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"Xk-wZn8ytN2MaM1dA7FlLE4cMJpmX8L0rm6XaIdgDBjXmeXapUd3rvSknDAOfdz59SJrhKVJAUP1XHqI6ifjCQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"a59bada9-f080-497e-b958-e91d9eb8e222\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"ne6xzWi5sRufWH0GFfWD_ButGPFK3jBr3pJedGoihx7eHZ466us8EEreatCYqpWObH572TBGCpW89Hel62q5Dw\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"1746c449-ed6f-4d2a-b7b4-00d8cf15d42e\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0.6\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"de5ea94015e3c0e8a9e66e7cd59ab75c12d1cf5573a6a90314122fc6a61424b6\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"P0INwepgHQv-GR-1uZQIoD3-RZHDlfeYG9gBaMZY-CGn34s_35PblXu-PUGOZNq7EybTVAqCkvqkz5m1oMaDBQ\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"bcafd498-3f33-4f5e-9ac7-10b59188b2b0\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":4,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"aa8bbf06bcc8b8527a06984f28d1722090d019cc15ada4de211350e50008c257\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"y7zzz3F2ajK2-RgMU2sG49nk1S4LnXOrLi-3wyVGBMNzvL1eT9NIm_E2yGuS7eTlqQUt8C68Tq0osp_w4MKtCQ\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"3538a181-06fc-4225-895b-7ee49142046f\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0.12\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"21d7d9e3-104d-53b4-a237-6f9c6bcaac4d\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":5,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"b102a4be8eb071a3f3ba2ea100139a71ba7f1d589fc776a4d5845ad03104fd45\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"12gW2oN1dMGTKh5Gq18aAKIQ7I7QcxFQg1eR0LrWAdvCBlU3LPzbVW6Yu32PlE7Iqkzmf08v9jLVFsyaHK4iBA\",\"source_seq_end\":5,\"source_seq_start\":5,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "0.12",
+              "currency": "USDT"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-reopen-changed",
+      "covers": [
+        "the same quantity with the reopen flag changed: a new version"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"87e02cef-5a40-420d-bc33-8303a70fd035\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"RmzKb4nY-08n7uDG3bKjpI7roDTW2H-GcNF-PycJ_0cCgMPPyUKt5J_P8FXE03yDE6vSZZDiXIFM7TpglTV3Cw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"9e111e26-88fa-41b1-a99b-f3d66420515a\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"PeVp2l6mE0MbAo0kQM7FZyLrbw9YNmvQ-eKMWgda-wsBtxLJWGJXEevGZl60WS-I0NQHVrdcNN2cDXkJBNgEAA\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"31612388-b0a2-4177-82d9-8ecf93c56983\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0.6\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"de5ea94015e3c0e8a9e66e7cd59ab75c12d1cf5573a6a90314122fc6a61424b6\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"0DgCitrtcSC4_G0yRqgkQ7sNIto2XUaJ4cUTAz-pes69a1Ubd_UoXN3lYLoD-5oNEJ34TBBR8q9JAiP_kC4IAw\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"290e9c21-c7e1-49b7-b0ae-cdd5474be070\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":false,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0\",\"leaves_quantity_after\":\"0\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"voided\",\"quantity_multiplier\":\"0.01\",\"seq\":4,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"2629dfe17afb096e50e2beff69ff5077ad842605148170f0b77f3ed8db66eb5a\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"oCYKmwQ7k3sQ86o5RTQ22mSx-GAzT_K11kYT1b8eh5xgFemMAGAQKbnkX542RfymktG18GOoZHT5O6ausopGCQ\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "voided",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"b2a9cc50-c86f-4ee7-90f3-8dae641ce689\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"21d7d9e3-104d-53b4-a237-6f9c6bcaac4d\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0\",\"leaves_quantity_after\":\"0\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"voided\",\"quantity_multiplier\":\"0.01\",\"seq\":5,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"72820f1f6836464c7c6d12ef036294448cc1f6bc84eaa1cc8cccd7dd0e6bed54\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"C36_Qv2TOA3W-94rDlt6PGJNs0r8F3C_nz2BY6iAYTD02cu8rLOR6XPZT_K7p0i5GfZ7vmm_hFNllzbsBVIsBg\",\"source_seq_end\":5,\"source_seq_start\":5,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "voided",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-reopen-changed-before-voided",
+      "covers": [
+        "the reopen flag changed on an order still open: a new version, and the reopened quantity can fill again"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"1df4fb26-017e-43b0-ace8-902d4a2d0aee\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"b37fzT4FNhB5Dx8e6iGIbQgS4ZH0se2NtRnp44JbEWElFJyv2W2PP01vhAMgxxYxmztc8-LHV2pkvpMJaOnTCw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"cf3bf292-d35a-4267-980f-264e2fe81517\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"yWj9LdcQwxMirR_hN_hmMStrYJGnxxulYXQDRTPHJAs7f7bC2dO2ZUBNAxU-LOWpYgDN31fGx60_fuPwrlfYBw\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"727892dc-6f78-4503-aa59-c6365979568b\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0.3\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"0.5\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"ec794f955297100b1be56525893dd0eb46e90f5740989ecbbda3cb5a3d794b81\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"OSX8izlCD7HCDBrjnyX9QwYC_e50SwflChz-GtqS1itJBxb7NKAuY42VCJuXtfkZyQlH7ksYp5dnjHS-SnEKBQ\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.5"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"a7f418bc-aca8-47f0-853b-c986ff96d9ff\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.3\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":false,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.5\",\"leaves_quantity_after\":\"50\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":4,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"b241fadd85306966e55d7a50cce481131c1ba56a643cdfb72cbd4f9a50feecc2\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"dQFa3kRIpN-Kjlmdevgoefw7ermP_iPQS3uCrmqx2lCqrPTjOypyScB5egk32S2kq-5hCwuNs0p2GlY408k0AA\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.3",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"09009b58-0d4c-41b6-960c-e0d9640ab777\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"21d7d9e3-104d-53b4-a237-6f9c6bcaac4d\",\"fill_commission\":\"0.3\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.7\",\"leaves_quantity_after\":\"70\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":5,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"8549bcb50813758a48bfd26384c125743a22e733870089bf08ad682f4870c939\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"JePDHBzfmxZFlTfntjlYWY6pn8XK6FfxO0o97lV3NDe77yT8U6VNv4S9tyyxH9C6i80i_Ln9j9pQGaTl5evwCA\",\"source_seq_end\":5,\"source_seq_start\":5,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.3",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-redelivered",
+      "covers": [
+        "the same fact delivered again is one fact"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"9766fd9c-8586-458c-ad25-6be47fcec9fc\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"4dBSnSdv8DGsBbbyq050ZpanboTCROkWUn52QkMG60gtksw_jns944alP4t-Mk3FE_Ms9YJN4dIq__amPxQfDA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"862c406a-96d1-4708-866d-6d94f52b0f87\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"xQnTWOCeAreIrzP3L6V3R4CjApqkX9jokVLJsT_EY8-YXotZn5s9_g2hH7XoKQP9HrQqW6nzCLe2BQIp0odsCw\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"94ba2a5a-d76b-4d4b-baf9-85d3bda76e27\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0.6\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"de5ea94015e3c0e8a9e66e7cd59ab75c12d1cf5573a6a90314122fc6a61424b6\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"dSMDz4t8hFp_BEyMSl5-tDOb6tqZgjrneqUl_R8EKmJRiHsvtpi4hNXpSWLLL_-gt3kRCU7-cuiY9uwIi77CBA\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"496304af-0608-42c8-8c7e-e6fb4a95778c\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":4,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"aa8bbf06bcc8b8527a06984f28d1722090d019cc15ada4de211350e50008c257\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"Se9NoX6TFJrSI3sj-FIOAWulsU7zy93ZxsgZpJJiwgbX6HKYSyuc4xN5oJiDM_HFl8SqLcLe7O7BdZvgi9QMAg\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"e1fca3c2-d959-4458-83ae-c3dca01a3460\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":5,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"eaa7950fc6923319c001d3c39e512b8d62e0d59cb8ae20b600f47e169084d36a\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"N6hwSog06ROsmHATAgjRUeuMnExzgsNlYByoiCCwkQ5hwOYVE8uvaiwq602IaPaugCLo4TVko7XCb6TAJA6TCQ\",\"source_seq_end\":5,\"source_seq_start\":5,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "duplicate",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-commission-shrinks",
+      "covers": [
+        "a smaller cumulative commission reversal is refused"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"84adac8f-4bc6-484f-839d-b0a3142fbfc5\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"hhTXZGDjNHV4KFBr2-lz5yslVVp1JSqZP9N4hD9Ly5Wqa0jx0iasBl2kqn8EOgMP6HU3WA94BiS4LJ3oEs4PCw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"ce2bef76-3bf9-4924-9656-307a2c86875b\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"wf8yT_NH4Nx8FFPeFVghVl2Z5I_FzXNMVfqtCS-RfDuA96uB5L4UXtRSShNZ1klr2XktHUin8hrz1ep0ydMtCA\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"f94f47ec-3fc7-4c6e-b63a-00d5e6fd2590\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0.6\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"de5ea94015e3c0e8a9e66e7cd59ab75c12d1cf5573a6a90314122fc6a61424b6\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"dGu0mid_N_RocsB8MFosXIkXMyAqIS6jUvi5s2rN147jAy0gy7qRuXaE-41ZDqzDZLh-f-inQ-aB-Y23-taEBw\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"453b6b83-c5e4-489c-b050-6407dd67cd2d\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0.12\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":4,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"a8afd9da82a6ef35d462725d858e93c1655751ad3f9861d0efca953ed64f5826\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"sJ1mPZKtpBBpb7QtIZlFmxpV89Q3M96cXiv7yS7Zfq_GlZH86RNbieg-9Mf2PRyrZgfc2STgghDJsCs2LFDSAQ\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "0.12",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"430783da-1cec-4a62-a937-4930de274459\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0.06\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"21d7d9e3-104d-53b4-a237-6f9c6bcaac4d\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":5,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e7018e40a20b81432dcc2324740c48b050fc7535aac09e0cc8d1d553fcbbee32\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"4xq81WvqNaX7DABmTs-NwfpP-j1pNCEuBQ7IGy2ndD9iD5QuSi1JiWQE5DcEHrTQxLhhPfOFdexNYuO1Wl1IBw\",\"source_seq_end\":5,\"source_seq_start\":5,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "void_version": "regression",
+            "flags": [
+              "void_regression"
+            ],
+            "fill_effective_base_quantity": "0.8"
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-commission-withdrawn",
+      "covers": [
+        "with a charged fill, a reversal once given cannot become absent"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"c0fba6f3-7490-4965-b0ef-051417b33801\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"4ulHJUKZDltfu73GPigNFfzs5wSOOw54D4_9b9YrWcgNEvUOsr_fmQA0LJt7rZU2Mp2htD9RQTy9ihMkcnpVAw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"7bd71921-8ef6-429c-963c-05da08736162\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"_P_J0gvZGZyBOvNES8UZcCrqXjN4VDjGWb07vlXrcACd3MhD2IS4CWUhE6Yw5f72yhS64rxS_wRnQLraCIaIAQ\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"dcc03a33-2f1c-4e2f-af42-5a1de85e43b3\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0.6\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"de5ea94015e3c0e8a9e66e7cd59ab75c12d1cf5573a6a90314122fc6a61424b6\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"zcKOhijRzJJSkySpIwZ11XG4KFXbj7xelpekyHtSC3UedSD6oD6_PH7S-Q_eJZyyKoYNHPlJC4NesJ6gqpTgBQ\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"fcab7f2e-bf07-4a17-abdb-aa00e999a1dd\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0.12\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":4,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"a8afd9da82a6ef35d462725d858e93c1655751ad3f9861d0efca953ed64f5826\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"9kwgFJYmx-iFaJkpvL9q-0zsLzPw2dyw7UvAB7g9q5wYgW5nr5OT4_QcpgDA6WAC2ic51P14X1-OwKBGIN67DA\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "0.12",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"875e0c38-efca-4598-9e21-777454f99b2d\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"21d7d9e3-104d-53b4-a237-6f9c6bcaac4d\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.3\",\"leaves_quantity_after\":\"30\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":5,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"voided_base_quantity\":\"0.3\",\"voided_quantity\":\"30\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"8ff53e540c1a2b2e3094ad225d5192967191a515377a1cbf86260419151a1a1e\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"W4TDGvR4AX4DrV_Oe6SaRil6-cf584VvqP8577jIBxl2b4oS8p2bV-TMsFWx9uR-frex4rOuG88AdmuL1zglBg\",\"source_seq_end\":5,\"source_seq_start\":5,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "void_version": "regression",
+            "flags": [
+              "void_regression"
+            ],
+            "fill_effective_base_quantity": "0.8"
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-commission-absent-on-uncharged-fill",
+      "covers": [
+        "with a fill that charged nothing, a zero reversal may later be absent"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"b424f9ac-8069-4bef-8f49-30a5e5bf6ecd\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"7V1xO_mhwnpZX42XWCk5jNo9uQsP-ASDUVdX8Ol4A202e0Ms4PSkNoVA0ww7WS274UxXtOU0r7a0V6-QZgecCw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"4e49f4d0-6eb9-4436-8ebf-f0fbe204afcf\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"zkmPP0Lohlon1I68Zwo8YCvU5d7ToowfrXZV7mj8hSA-6gkGQ0sGAEcogVxOQp1pwu4N2AIdg5TzVIiwBXfjCA\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"415010cf-479f-4a9f-929f-bb8ee87fa689\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"bbdc0a34ee3702ec26e3e34c462d5e95c6379985d5554d2079797bfb79929dcd\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"svK0cUx_f-f7cEdYm74gNhd1jhtAQwW7ChWr6HqBGOwqKcFNE1FOSCz6zG5LyrUDDdTondvHjpMTZP0-XSfkDA\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"ee0b1337-155c-4fb6-8387-d70e7bade20a\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":4,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"d19d2f70a230170f2a89709dddcf763378ef375208a9a6f9df63056e5f6275a9\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"c2Ou5P8T1HUwb3ZYqf0hBCJWrgBeJuqMyamsh9zYWU06NaDFgEykr2buudbelwOqzxUHYkAfUMgrsDxSjyqrBQ\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"689e2568-2b8a-4fd8-b994-bc1f59c7cdfb\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"21d7d9e3-104d-53b4-a237-6f9c6bcaac4d\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.3\",\"leaves_quantity_after\":\"30\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":5,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"voided_base_quantity\":\"0.3\",\"voided_quantity\":\"30\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"cd8675aba0cfad1f6b001b9160f186db7c38af0f4275b56514c06a3f264e1314\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"Y4qj-VKDiDJr28krB_JnZW5Dzl2a8RP7tKSA7iUVYyLEqx9c5orXE1erYkc1_6BrUXJ87VISuL7aYoT2fEgNDA\",\"source_seq_end\":5,\"source_seq_start\":5,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.7",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-rebate",
+      "covers": [
+        "a rebate is reversed with its own sign"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"885a5172-4972-466d-bb91-0b138047e7fb\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"GjKbw5iTbPgUdBTODtBU0RCTzT4dsBj8n7EH5Fo1uhUcm0VM1T9sfeb8t8UBVYFJu7oTt-tdI3O7Z8u1IetwCg\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"02c0efa5-48c1-4169-aa2b-c4166522b0e0\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"KFIhBiGh5maBs0B6d68uSX1g71CKASATP4k8n08MBcSqOC8GdFyc29XxVUD--kBZLullE9pFCsEu9OGCpe6sAA\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"228b3878-1bc4-4985-a5e3-180540cf716c\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"-0.2\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"3497192a3a63770d14b3b4240243cab83bb39894d81191b27d65f75a02b7ce42\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"T_IVcUa2z59CqW68ybIH3dSzLODrDseMXopb8x5ufDpKbTXrBGl9jUXEnct65mQgN1URHSG1x9hUUhWHKBo8Bg\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"130f9c18-3a17-48a9-891c-ddb65ab69cf8\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"-0.04\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"-0.2\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":4,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"21b6906e7e52cbb2b537b71dae2e29de91b22292a9f60bc77d8283d26cc68771\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"2Vz4II6ddaCe2rhce24gESJss9u8diYedajCcCOD224tstuOxYyg8z3_MFZAfoOZSCsUvbWxfVXfdCx-7nLsBw\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "-0.04",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"5703eb81-6cbe-4344-bf82-1ac492567f85\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"-0.1\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"21d7d9e3-104d-53b4-a237-6f9c6bcaac4d\",\"fill_commission\":\"-0.2\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.5\",\"leaves_quantity_after\":\"50\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":5,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"50d2c53891c0911f348c498f5d3836263b60e492ff721ee15bf76c915d0584d2\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"dywhGWdQJX0tjH48k_erNNriPWIXa-47OPfdGOcdI_Gf6JbpC2zAAlRWplZos3U0PYTpiX1LsWpYFKcDAp_jDQ\",\"source_seq_end\":5,\"source_seq_start\":5,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.5",
+            "commission_reversal_step": {
+              "amount": "-0.06",
+              "currency": "USDT"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-quantity-shrinks",
+      "covers": [
+        "a smaller cumulative void quantity is refused"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"d7fef70f-dd45-4fe6-85fe-605b55309a64\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"vXXrzuGDUufqoz8O974_qbEeTQoSYiJ1u_roSF0dHee7ZAKlwqXt6_RrfPpc7uocqH9srpw-od3ok-RWTgOxDA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"c3852ace-227c-49f1-9dbd-1a68cb744aed\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"3hZZ0t84_gqTAmGCkMIvReMMP_8BhS-LG-1w7uRFGsXORtaCeHKxD0TR1QL-jwpb7ITmtEMtfLibWppfEYqNCw\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"52b49a53-300a-4721-a629-3256cff0ea6e\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0.6\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"de5ea94015e3c0e8a9e66e7cd59ab75c12d1cf5573a6a90314122fc6a61424b6\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"nZZGsROwxe2v-rG_TWlL2eAjH1LbtTZAH4cuRIxTigmF67InnH4lkh53DUIHqdiv26HSLOc8rHuWs52ZUzvbCQ\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"d008cafb-bab1-46db-a95b-b704230b64b2\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.5\",\"leaves_quantity_after\":\"50\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":4,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"1ad6f6ea9ea4923800264902d6eba035e443e5a356e43adda76a69e12a739366\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"P8vDI-BiZD_Yn410Wu7BGQ0hnXmxFcxXuQvPrt0UG3kH6M7Jr4WGwiWQrWU_RBBJNG3jHH1qCjAbaWW01_3GDw\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.5",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"99f8b891-a95c-4837-888e-3cfae309c79c\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"21d7d9e3-104d-53b4-a237-6f9c6bcaac4d\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":5,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"da67be7b9fc114c7163088ac05e8a3495fd30b4e07ef12df62decc45d01624df\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"8DI9Nz7p2mEOWeR4Goxe89BOmOXqbo9RLRzyVS2a153lGpQoBQ8a2YySr-6eqLje5n-2eo7IsD7NJSXTf3D6CQ\",\"source_seq_end\":5,\"source_seq_start\":5,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "void_version": "regression",
+            "flags": [
+              "void_regression"
+            ],
+            "fill_effective_base_quantity": "0.5"
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-over-fill",
+      "covers": [
+        "a void larger than its fill is refused"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"bf6929ff-f5d5-4724-b56d-7b47aea48d3d\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"SQtvbbVVck8eq_QTquRlZR1NpXPZNhpXMJGBsrr4VMNNlvzoD1-Lo83DQHl4t-d484gNeZ0eHwWpYsAS3A8vAw\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"e6871b99-95a9-44ac-b305-80bebe7cf980\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"PZTDSxPgKinSBglOe3w-ZIzcRX9weSTifeGPY8BRQPWj_vDaxd-oCN7Q2DBI2_Rc_klYjnF98qzJ_J21UL2aDg\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"b3e9b348-0b22-47da-9409-56d6f7f9d1c1\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0.6\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"de5ea94015e3c0e8a9e66e7cd59ab75c12d1cf5573a6a90314122fc6a61424b6\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"JjMVqvd_Op8qQi0fY7F1DRdMsJRBvdJhgf9r08EcFLc4Q7alajblPMxio69OZOAEB69S3-Nt5Sqm0EoQmgL7Ag\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"e5f994ea-faf3-4e76-9981-24937ea23869\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"1\",\"leaves_quantity_after\":\"100\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":4,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"1.2\",\"voided_quantity\":\"120\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"897c8baa224afe284e388d1b0d60dba6bcb3b4176c23670f41351a92ba84a1cc\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"7KPQR8NSxt-mwd_AbsvF6dxgL0jHNjEPN_qdhYp0ETyZ67BQu9Jfg6k4uAPHIlJymdvWe85KwNRAWCeWwJhdCQ\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "void_version": "regression",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1",
+            "flags": [
+              "over_void"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-without-local-fill",
+      "covers": [
+        "a reconciliation void of what never filled ends the order, with no correction"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"2b724b4d-e31b-482d-b295-7b95a39558ce\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"aT0Kd7g9hoGMQgD1rOgjG-47LW4ujyezoyTZazsJgYlPSkEZMuU3VYL_fGbgBlRt76qFp529gcO7SEi2VdQ6Cg\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"2ed5f170-573b-447b-b1aa-71f5ac48acbf\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"g8F_Iw9FlIVdY-53WUfbUfAJiXyQwC4m1gd2hTuRRWqxIPo3XgjSbon-0sxVg4Jfkzk0BTYtSUanz-HhxdpDAQ\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"dc294237-52ab-48f9-b7a1-5b0ec8436582\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":false,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0\",\"leaves_quantity_after\":\"0\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"voided\",\"quantity_multiplier\":\"0.01\",\"seq\":3,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"1\",\"voided_quantity\":\"100\",\"voided_venue_trade_id\":\"VOID-V-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"07db11a6801e8660702e575b45419e8fa3ef7dcea40e020a9f74976e81e98793\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"O__DDqLlLhNe3RJPCFYBTidQlTTHiCQF48namBhbyIICnz8w5y5Hp63V1VpC20KivsMiwI1Dtv0g_O_kVjmTAQ\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "voided"
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-without-local-fill-reopened",
+      "covers": [
+        "a void of what never filled cannot reopen, reverse commission or exceed the order"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"bb754985-3e83-4393-b205-578db64ce06b\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"rfceYOhXO1a71tX9rDc4ftDCBFSsuNASkVZE5FTu0zGYLzDUVBT71zGYftOfPnzAZAKlKFXf7rDMlU3Q7rdYDQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"05c2d0c4-5bd8-4567-b1ce-801becbce827\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"VlOgeE4IM6VifLQZ0SSUVDFaoyXIpuQCDMeVas9CopRXqhHxpEYfUVndXVaUW31rT376QeHhq0OzjYyE81bHDA\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"a6933425-0636-4495-a3b2-ca23f4f51d92\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"1\",\"leaves_quantity_after\":\"100\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":3,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"1\",\"voided_quantity\":\"100\",\"voided_venue_trade_id\":\"VOID-V-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"92a7430baaabfc4ed9e4d3aade10c1860b0db440306027d9a06a73d5f29a6780\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"Wqei0_vw8dJ_IM7EgfeyGHDe9S98cmfKHjofH4_KzfKbGWJmW2Za1Sj639FChp6JNkCFOSx7zgeSG5nJLhpdDA\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "order_state": "working",
+            "flags": [
+              "void_without_fill_reopened"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-without-local-fill-with-commission",
+      "covers": [
+        "a void of what never filled cannot reopen, reverse commission or exceed the order"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"36a9d555-1b50-4123-860b-15cf3194304e\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"9VQDod2f6ite2JOiCHs0Nhch91C-glTThKbfN_SrZ_LGoj0Ws9LBvATqLhfk492jiXXEqrOkGumWhhWAlRYxAg\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"1bbb737c-05fd-43cf-9120-37e46931e45d\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"yF0MXG5cDN8uEM8WcFqCGM_Tas945NhEwkGUeQM_-l3O4hkyECO-gziizXg16ruokVdYoZ8cOZWYF4dNnOicAw\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"c5e1a99b-6e1b-4d21-be61-e78f13756dc5\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0.1\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":false,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0\",\"leaves_quantity_after\":\"0\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"voided\",\"quantity_multiplier\":\"0.01\",\"seq\":3,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"1\",\"voided_quantity\":\"100\",\"voided_venue_trade_id\":\"VOID-V-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"fd6cd120c432170b3f0ce7b60f77be99b0330e2f02cd2e0e023fa7f3ba9cfb38\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"7K4yV4_C-sSHL_iuUl-Uy7DYuDjOj7F84u1Pmmy_Gjbv5cgMwHYKX5JV9qQV7abxWsR-tAMQUAWPNVWNCrA1Dw\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "order_state": "working",
+            "flags": [
+              "void_without_fill_commission"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "void-without-local-fill-over-order",
+      "covers": [
+        "a void of what never filled cannot reopen, reverse commission or exceed the order"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"cf05b483-087d-4907-a6d8-d258aa669bfb\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"s3nNtpRCbCtjruvFnjld1fzj4VHW40v0OCfDuLjGMh2Z6HP-4lj3o4UKAb3_Qa1kKKUieTMy4U4fbK9AwbdDBQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"8523af08-6dba-417f-a5a5-119cd06a38b6\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"xR03m1_MmKW5NmlErq8adwGHAHYaa7ACiFMaz04pMPvcURIom80oZy0xAGg1N5-b0FipCaE-QvYFlgu7oATVBA\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"b0a67a0a-76ad-4f20-9eb2-a7425beda37b\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":false,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0\",\"leaves_quantity_after\":\"0\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"voided\",\"quantity_multiplier\":\"0.01\",\"seq\":3,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"1.2\",\"voided_quantity\":\"120\",\"voided_venue_trade_id\":\"VOID-V-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"f49d576e9600dec263b0294c83d78c4d063238fe32b1ca219d8ed5dd14487045\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"BXUUz2tPX5HRIrNKGBG_3tyG5H5BrSvZXbFLg3FZs2pSNMIVAMTXvkbK3SUN5kSGK9PLlABwUA3lPu8xzfUBCA\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "order_state": "working",
+            "flags": [
+              "over_void"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "refused-amendment-keeps-the-order",
+      "covers": [
+        "an amendment the venue refused does not change the confirmed quantity"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"45e59732-6744-4949-9d31-958a076f6db3\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"lh7WVhtW_xYm85agg02_Mdxuiy0huE1yuoBYearStxrMYML4LUWtI14qYogCeKzAH322oblmYqfbE7y_6mqrBQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"cd2ffcda-a23b-4821-bafc-d530443d8c64\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"lGBIAu5ocj8ZK43EkMD8FcT_fY2PvcxL80zQfN45Nqw1355ozh_UDniQD7pOs36nRVq7d54IPqNVFM7rRRTDCg\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"7b6bcd60-75cb-416e-ad5f-c82653ab581e\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"aa8f7624-1c3c-5f01-8d12-3a7b4cebffb0\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:00.123456Z\",\"order_event\":\"modify_rejected\",\"quantity_multiplier\":\"0.01\",\"reason_code\":\"venue_rejected\",\"requested_base_quantity\":\"0.5\",\"requested_quantity\":\"50\",\"requested_values_known\":true,\"seq\":3,\"source_event_id\":\"b4000000-0000-4000-8000-000000000001\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"d5aabae72782fa70046a5ef5ac3c2fc84e0cd23ef948914cd12d08e96e7b2dc2\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"XeC78Z1koFb7uAJ7fpM3PETSJTvDmOFgsJII-Pe-ahwTyxQHkJBr_ydGqHfieiVo40dvfD3MmmTU7y2of4DgAg\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working",
+            "order_confirmed_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"e40b2cc8-2f4b-46fa-93e1-c78520b0ef4b\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000004\",\"fee\":\"0.3\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:20Z\",\"price\":\"60000\",\"quantity\":\"0.5\",\"seq\":4,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-2\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"a2a1aa2b67cefff9ece3defda6e02e827daad04689e1fba4c26239896cdc4d01\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"56aZX8vSvrnCjdO0uKKhGeMG9rg-VSubKr3rWd3wNX--k7D0Aznr2ayoLBT7RSRpHN7Kb0wal6qy2KFMdkyzCA\",\"source_seq_end\":4,\"source_seq_start\":4,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "partially_filled",
+            "order_confirmed_base_quantity": "1"
+          }
+        }
+      ]
+    },
+    {
+      "id": "refused-price-amendment",
+      "covers": [
+        "a refused price-only amendment names no quantity and keeps the order's"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"545f730d-8e9d-47fe-a722-0a8f1a0c3cc0\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"hDxY8bUlhn50DlTuWzoPw6nPWTZUQrfx1mMWr47S1_F79VNxvkl3Om5a-7wyo9NSNb10DDH9xkSsRPdiz9nEDg\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"b1bd8da3-658d-458f-b988-9f44b1a914e9\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"zim0zFM1TEFrUIloSGootZHRUUGzpNvXdSbL4IkiHtwKJ_K1utB7XlucLt7oZjRqJ_itqQrO_i_9m3ykhqAqAw\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"b771cdbc-0297-4437-833f-c5e526a77a3b\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"50061f8f-611c-57eb-978c-02f36f340b5d\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:00.123456Z\",\"order_event\":\"modify_rejected\",\"reason_code\":\"venue_rejected\",\"requested_limit_price\":\"61000\",\"requested_values_known\":true,\"seq\":3,\"source_event_id\":\"b4000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"2f2546e286a91b3bf502f38d594d7e2e61f82fb7178f1922fe6c238494e1e6c5\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"uTD_jdfov0WnKFrFpR2YQLBNRRQu7le9_3BadfJO4MZn0w7az7Xo52YecNq-PNaOlOfhE7yPRBFS5PZMv7wTDg\",\"source_seq_end\":3,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working",
+            "order_confirmed_base_quantity": "1",
+            "order_confirmed_limit_price": "60000"
+          }
+        }
+      ]
+    },
+    {
+      "id": "update-prices-limit",
+      "covers": [
+        "an update carries only the prices the order's type has"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"8377b61b-0206-4d19-b4e1-2652c3ab3804\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"tfn__BcIh4JNGGJRrnZzd3GeiNb86Pk0qIhMkdofzZblAkgIRKyhVtQxKmGH813tZv8waojHCxb9YiMsqGcOBA\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"2e26b1e8-8b9f-41dd-96a5-414403933700\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"fdf3f4e2-e08b-5ea4-90ca-3663cc8201b9\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:00.123456Z\",\"order_event\":\"updated\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"seq\":2,\"source_event_id\":\"b5000000-0000-4000-8000-000000000001\",\"trigger_price\":\"59000\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e1b6836d2f7b254a8eb18a38c1b833f6f3bfa2a8094681539a884aa113ee1734\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"Q9nR6XVCSnyAa1P1cOprvYpk91GcWIK6cDBIGBpULiDW5zQg_j9MlS1X6EEcYZuyX85twS8fJoUIJGtC0NVfAA\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "order_state": "initialized",
+            "flags": [
+              "price_for_type"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "update-prices-market-to-limit",
+      "covers": [
+        "an update carries only the prices the order's type has"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"6fb8cdf1-e5b6-4b54-9eec-153779c49442\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"market_to_limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"956c9f166cebb265cb1dd7342f3f844103405c5e3ca2ad1bc570beace3124874\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"0zIPLSQ8LoTMgHQvDtULkFTuOBtYOFXUPhnKVKNrfDoiNcz4vLxoWxKrscLpQYI_Dccap-lJSCv8Tffu96l3AQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"787edc2c-3a33-465d-8e17-f977760425a2\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"fdf3f4e2-e08b-5ea4-90ca-3663cc8201b9\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60500\",\"occurred_at\":\"2026-10-19T08:00:00.123456Z\",\"order_event\":\"updated\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"seq\":2,\"source_event_id\":\"b5000000-0000-4000-8000-000000000001\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"cd989df2e79d5844e993af0537102e77ae30b33c20d450a3560d8f37a915ea1b\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"-DOcEXL093rT4m1Dfc1UyEPrNjcNvErTU-v0yvYWJzXG4LBaf78h2dUAw-ekxW-Y_i7_S1e-8rSL67VTNXmEAA\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized",
+            "order_confirmed_base_quantity": "1",
+            "order_confirmed_limit_price": "60500"
+          }
+        }
+      ]
+    },
+    {
+      "id": "update-prices-market",
+      "covers": [
+        "an update carries only the prices the order's type has"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"b213cc86-9ae2-4395-b5f1-ac8e45759dc2\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"market\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"bb968fe45aa57cd32d12cf9ba5aa6d4a1f60145a39b00b7b6f8e80bc8d600b20\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"bVoJTMuuoylRrTQ4-x9eNt_udCMoWudIOwubFhqnDlyFuU1-NHXQMmFOSBRJT6Q-K6RiLTy2ZR2ZyHm-X1J6CQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"c319a19e-de65-4ab6-97a0-3b47b70b0eb1\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"fdf3f4e2-e08b-5ea4-90ca-3663cc8201b9\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60500\",\"occurred_at\":\"2026-10-19T08:00:00.123456Z\",\"order_event\":\"updated\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"seq\":2,\"source_event_id\":\"b5000000-0000-4000-8000-000000000001\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"cd989df2e79d5844e993af0537102e77ae30b33c20d450a3560d8f37a915ea1b\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"hIg99JDUKxYjd9kK_eCG24RVHaq5NRBdPXLcS60fHQ-lHGEZI7yReJ2fy1oYq021K5CWTOZDXUNR6I-eBGi4Aw\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "order_state": "initialized",
+            "flags": [
+              "price_for_type"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "settled-fill-corrections",
+      "covers": [
+        "a settled fill corrected again and again: each correction applies the change since the version last applied, and a correction delivered again applies nothing"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"12d165af-c249-457e-86b4-cdd8d26f6302\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"7rk2Nlk3UC8LHvI-mZ1l5Z3Pjp7UFC4y1Rud-1xw0MFCbehQpb9qtADKfXNwH3Zw1IPj2GQUao5pE5RT0DVVBQ\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"12bc2d50-0e2c-4b44-b121-9713cd7d9a47\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"zMgIO8T8ebC3QKkSgvXi6Z0e7f6CVIHo9l0ZTRnfUZ5CdRyBo6LXjji1j34CYuiQrbFuGi0K6P5Pub7TZ4rwDw\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"66da7365-c2d6-4d9f-8329-8f9b52bbfc93\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0.6\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"},{\"avg_fill_price\":\"60000\",\"category\":\"maker\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000005\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"filled_at\":\"2026-10-19T08:00:03Z\",\"kind\":\"fill\",\"order_type\":\"limit\",\"price\":\"60000\",\"seq\":4},{\"amount\":\"0.6\",\"assessed_at\":\"2026-10-19T08:00:03Z\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000006\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"kind\":\"fee\",\"seq\":5}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"7785f88c3394b0bde838b81cda94bf681421fc3c551d0487ee6d86b0567c6403\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"IugISZcVhSsksW7xVXafbbvqi1DhhnoT-uosWVCPJEEkCYdVUgmupMot2sBRmAnnlkesPJE_mqFB8HyMVyFpDA\",\"source_seq_end\":5,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"ae7666de-273c-4ebb-9a9f-2a061c341acf\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.2\",\"leaves_quantity_after\":\"20\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":6,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"},{\"correction_id\":\"C-1\",\"event_id\":\"35ce4eb3-958c-5c26-be27-187233515eb1\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerFillCorrectionFact.v1\",\"last_px\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_side\":\"buy\",\"quantity_multiplier\":\"0.01\",\"seq\":7,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"venue\":\"BINANCE\",\"voided_base_quantity\":\"0.2\",\"voided_quantity\":\"20\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"eeb99960bb0fb01b2e57a61e82a92a28a9e1b6d659068bf7bc2d4c6c5822ea6a\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"RU5_Ng8pEhqvtGmAjO7i5CJ0jDeckD2uaexbLwIq5x0XoASLxZmqQA_K0aTbrt6VdP4KKMn9WwMW7cXk7e2wBA\",\"source_seq_end\":7,\"source_seq_start\":6,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.8",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            },
+            "settled_fill_void_base_quantity_step": "0.2",
+            "settled_commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"485fff59-f1f5-45c2-8f13-f5b284ff9f6a\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"21d7d9e3-104d-53b4-a237-6f9c6bcaac4d\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.5\",\"leaves_quantity_after\":\"50\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":8,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"},{\"correction_id\":\"C-1\",\"event_id\":\"b7e1d748-3296-54b3-bdfe-8e9996c27870\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerFillCorrectionFact.v1\",\"last_px\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_side\":\"buy\",\"quantity_multiplier\":\"0.01\",\"seq\":9,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"venue\":\"BINANCE\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"44423183e1fd3220b7cc5cd2914d81b838c0927e8f7a8a035167f284880423e8\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"8Y3PKihfaGhrGliRKPNVLmXnwoFvuwCDT6Kjm6_06jKoMy1eunCkEqq8QtPxX2Mpo5jMSbGyh0_LAxg3cNe6Cw\",\"source_seq_end\":9,\"source_seq_start\":8,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.5",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            },
+            "settled_fill_void_base_quantity_step": "0.3",
+            "settled_commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"0323b881-6493-485a-b81e-337edfc0daff\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:05Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0.3\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"8d6fc0ad-aed2-5e94-9ce2-80b90d1f563f\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.5\",\"leaves_quantity_after\":\"50\",\"occurred_at\":\"2026-10-19T08:00:13Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":10,\"source_event_id\":\"b3000000-0000-4000-8000-000000000003\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"},{\"commission_voided\":\"0.3\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"6e9f15f1-6f63-5b45-9ac7-4fc4ecc7eb99\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerFillCorrectionFact.v1\",\"last_px\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:13Z\",\"order_side\":\"buy\",\"quantity_multiplier\":\"0.01\",\"seq\":11,\"source_event_id\":\"b3000000-0000-4000-8000-000000000003\",\"venue\":\"BINANCE\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"dd3b32bb3de26bbbceefa3df93fadb596cc521cf7cc43aed3e309d59e1f050b7\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"ppBfHtMjoG_fEfdyz_gm6DmO1Q-OF6cxGes7n_ikwBbVK8eoThKGczdimY79INw0VIQ0cFXdUPdJQGdQfbiVDQ\",\"source_seq_end\":11,\"source_seq_start\":10,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.5",
+            "commission_reversal_step": {
+              "amount": "0.3",
+              "currency": "USDT"
+            },
+            "settled_fill_void_base_quantity_step": "0",
+            "settled_commission_reversal_step": {
+              "amount": "0.3",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"336a8aeb-d295-46ea-a645-04a78c281486\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:06Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0.3\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"8d6fc0ad-aed2-5e94-9ce2-80b90d1f563f\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.5\",\"leaves_quantity_after\":\"50\",\"occurred_at\":\"2026-10-19T08:00:13Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":12,\"source_event_id\":\"b3000000-0000-4000-8000-000000000003\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"},{\"commission_voided\":\"0.3\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"6e9f15f1-6f63-5b45-9ac7-4fc4ecc7eb99\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerFillCorrectionFact.v1\",\"last_px\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:13Z\",\"order_side\":\"buy\",\"quantity_multiplier\":\"0.01\",\"seq\":13,\"source_event_id\":\"b3000000-0000-4000-8000-000000000003\",\"venue\":\"BINANCE\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"7393513a0dc221dab24dadc3821f0a06adf1d002f927c4776b93b5888bc7224b\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"WT6x7AW03D-YiZGUc8ju4_SeMkxsnyKxlUlwO7uo6xUuBpvyV5s-Zv8s1h7VApeeBrww9_tm2I2RuAmu8XeaDQ\",\"source_seq_end\":13,\"source_seq_start\":12,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "duplicate",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.5",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            },
+            "settled_fill_void_base_quantity_step": "0",
+            "settled_commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "settled-fill-correction-regressions",
+      "covers": [
+        "corrections of a settled fill the fold refuses apply nothing, and the next correction is measured from the version last applied"
+      ],
+      "steps": [
+        {
+          "raw": "{\"batch_id\":\"5cf0b7c0-d8be-4254-b054-cff83660a8c3\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:00Z\",\"facts\":[{\"attribution_source\":\"order_tag\",\"base_quantity\":\"1\",\"client_order_id\":\"O-1\",\"event_id\":\"89d255cf-1d4d-52b7-adf9-99d28420cb5f\",\"execution_relation\":\"original\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"RunnerOrderEventFact.v1\",\"limit_price\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:01Z\",\"order_event\":\"initialized\",\"order_purpose\":\"entry\",\"order_type\":\"limit\",\"quantity\":\"100\",\"quantity_multiplier\":\"0.01\",\"reduce_only\":false,\"seq\":1,\"side\":\"buy\",\"signal_id\":\"d0000000-0000-4000-8000-0000000000bb\",\"source_event_id\":\"b1000000-0000-4000-8000-000000000001\",\"time_in_force\":\"gtc\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"e2c23b9c8616239d1e253e7457f92c35a938a45773bf73a4b5d36478e02784b3\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"LoSIRm_gkDVGCfyVoxNaMjkln8MExx7yifOqzvw2GqWUbWYUh1j5hVjDEpeKICXWH3UHesE-OqiToKrCsd3DDg\",\"source_seq_end\":1,\"source_seq_start\":1,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "initialized"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"30999950-d8bb-4c74-9910-5d97e168ed7a\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:01Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"event_id\":\"5f38ae85-18d5-5d04-9e6f-1d24e2f97ba7\",\"kind\":\"RunnerOrderEventFact.v1\",\"occurred_at\":\"2026-10-19T08:00:02Z\",\"order_event\":\"submitted\",\"seq\":2,\"source_event_id\":\"b1000000-0000-4000-8000-000000000002\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"4980adf09e99b88b02da280a64794eac72165cf26f72e8e1d64a7d641b35feec\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"0VMTqFMNoWvk4dorpaZw2oLtSjzsobis-M0FseMggPWrIcm3rN51SAkqfepF49UwtQLI2wj8yE-9pFgFtEnKCg\",\"source_seq_end\":2,\"source_seq_start\":2,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "working"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"8f88d48a-1f3a-4e44-8b2f-5a23fcffac7e\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:02Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000003\",\"fee\":\"0.6\",\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"kind\":\"execution_fill\",\"occurred_at\":\"2026-10-19T08:00:03Z\",\"price\":\"60000\",\"quantity\":\"1\",\"seq\":3,\"side\":\"buy\",\"venue\":\"BINANCE\",\"venue_order_id\":\"V-1\",\"venue_trade_id\":\"T-1\"},{\"avg_fill_price\":\"60000\",\"category\":\"maker\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000005\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"filled_at\":\"2026-10-19T08:00:03Z\",\"kind\":\"fill\",\"order_type\":\"limit\",\"price\":\"60000\",\"seq\":4},{\"amount\":\"0.6\",\"assessed_at\":\"2026-10-19T08:00:03Z\",\"currency\":\"USDT\",\"event_id\":\"b2000000-0000-4000-8000-000000000006\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"kind\":\"fee\",\"seq\":5}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"7785f88c3394b0bde838b81cda94bf681421fc3c551d0487ee6d86b0567c6403\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"GBARDRtbe5X2C2H_rPY9NlKKFazS2m4p8am3XBSQzlLkyarewEIt8xwHMUV3cBOwPukCPqRrENwbCrzXuiDvCQ\",\"source_seq_end\":5,\"source_seq_start\":3,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "order_state": "filled",
+            "fill_effective_base_quantity": "1"
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"285672c6-8ff1-4ee8-b82a-36e21b045e2e\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:03Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0.3\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"d8d64cdc-445d-5dad-a2b5-75055b8a0c39\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.5\",\"leaves_quantity_after\":\"50\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":6,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"},{\"commission_voided\":\"0.3\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"35ce4eb3-958c-5c26-be27-187233515eb1\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerFillCorrectionFact.v1\",\"last_px\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:11Z\",\"order_side\":\"buy\",\"quantity_multiplier\":\"0.01\",\"seq\":7,\"source_event_id\":\"b3000000-0000-4000-8000-000000000001\",\"venue\":\"BINANCE\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"24c50a1a8567efd7d3d088b68e4c6ae2639d3e4422524bba6b620bfa81c9e752\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"R3H4juRLZv_D3DOtO07Acd5hQxJqjkfYSFzhWO1fhuJ2--8mk7Hz_fKxu5rLflWXcHKvVpQbL8yGZzNVkVC_CA\",\"source_seq_end\":7,\"source_seq_start\":6,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.5",
+            "commission_reversal_step": {
+              "amount": "0.3",
+              "currency": "USDT"
+            },
+            "settled_fill_void_base_quantity_step": "0.5",
+            "settled_commission_reversal_step": {
+              "amount": "0.3",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"969ab7e4-15b5-4c8c-b481-aa2ce86eed8a\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:04Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0.3\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"21d7d9e3-104d-53b4-a237-6f9c6bcaac4d\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.4\",\"leaves_quantity_after\":\"40\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":8,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"voided_base_quantity\":\"0.4\",\"voided_quantity\":\"40\",\"voided_venue_trade_id\":\"T-1\"},{\"commission_voided\":\"0.3\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"b7e1d748-3296-54b3-bdfe-8e9996c27870\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerFillCorrectionFact.v1\",\"last_px\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:12Z\",\"order_side\":\"buy\",\"quantity_multiplier\":\"0.01\",\"seq\":9,\"source_event_id\":\"b3000000-0000-4000-8000-000000000002\",\"venue\":\"BINANCE\",\"voided_base_quantity\":\"0.4\",\"voided_quantity\":\"40\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"73fb635cbfc9382bac2b66bc368e004d79cbe883a2fbd2d9f72119676b078b93\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"SBumwN5TNbNSQQUsZzEd9oBmMMTmEozWIvId8dOXhJiVZXoh_QJ2xImzgE6Q_gryfiJMUyfhwH3M25c3dLYSAA\",\"source_seq_end\":9,\"source_seq_start\":8,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "void_version": "regression",
+            "flags": [
+              "void_regression"
+            ],
+            "fill_effective_base_quantity": "0.5",
+            "settled_fill_void_base_quantity_step": "0",
+            "settled_commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"9c2da342-547c-4a60-9976-619430aee44b\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:05Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0.2\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"8d6fc0ad-aed2-5e94-9ce2-80b90d1f563f\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.5\",\"leaves_quantity_after\":\"50\",\"occurred_at\":\"2026-10-19T08:00:13Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":10,\"source_event_id\":\"b3000000-0000-4000-8000-000000000003\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"},{\"commission_voided\":\"0.2\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"6e9f15f1-6f63-5b45-9ac7-4fc4ecc7eb99\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerFillCorrectionFact.v1\",\"last_px\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:13Z\",\"order_side\":\"buy\",\"quantity_multiplier\":\"0.01\",\"seq\":11,\"source_event_id\":\"b3000000-0000-4000-8000-000000000003\",\"venue\":\"BINANCE\",\"voided_base_quantity\":\"0.5\",\"voided_quantity\":\"50\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"177442de5e0e51eb4f212eabe4437a90fa3b11dc6f911f77ccbfd1b5be381a5a\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"z4k9YytQpdwFYhHGgKdB4kQCZL1mjUVALvZZKiUFAWnSmxJBiiYt5k6oGBFceCvJWLvBXXeK-jxanOnxTNxhCQ\",\"source_seq_end\":11,\"source_seq_start\":10,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "void_version": "regression",
+            "flags": [
+              "void_regression"
+            ],
+            "fill_effective_base_quantity": "0.5",
+            "settled_fill_void_base_quantity_step": "0",
+            "settled_commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"f7e29c37-562f-4b0d-8f06-547d2459b598\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:06Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"correction_id\":\"C-1\",\"event_id\":\"d230668e-ab29-5e00-a70d-ec38d1c3f756\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.6\",\"leaves_quantity_after\":\"60\",\"occurred_at\":\"2026-10-19T08:00:14Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":12,\"source_event_id\":\"b3000000-0000-4000-8000-000000000004\",\"voided_base_quantity\":\"0.6\",\"voided_quantity\":\"60\",\"voided_venue_trade_id\":\"T-1\"},{\"correction_id\":\"C-1\",\"event_id\":\"7182bda1-4527-5886-912f-645932b9f747\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerFillCorrectionFact.v1\",\"last_px\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:14Z\",\"order_side\":\"buy\",\"quantity_multiplier\":\"0.01\",\"seq\":13,\"source_event_id\":\"b3000000-0000-4000-8000-000000000004\",\"venue\":\"BINANCE\",\"voided_base_quantity\":\"0.6\",\"voided_quantity\":\"60\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"f669da63a8c5f6355ee48588b54329ea59c91e840bd8571f7b6de164b2bedd80\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"TkHNkUVkfLcOoF4seVXVo-KMxjLpr9-0s48ZnC2v_atHJqddN4K36mu74fM1HAKvv7_XJ7m2gpQPOZVmCHlQBg\",\"source_seq_end\":13,\"source_seq_start\":12,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "reject",
+            "void_version": "regression",
+            "flags": [
+              "void_regression"
+            ],
+            "fill_effective_base_quantity": "0.5",
+            "settled_fill_void_base_quantity_step": "0",
+            "settled_commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        },
+        {
+          "raw": "{\"batch_id\":\"d21b409d-4a96-44d3-89df-e9997fbba82f\",\"capability_manifest_digest\":\"e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb\",\"capability_version\":1,\"capability_version_id\":\"50000000-0000-4000-8000-000000000015\",\"deployment_instance_id\":\"20000000-0000-4000-8000-000000000015\",\"deployment_spec_digest\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"deployment_spec_id\":\"30000000-0000-4000-8000-000000000003\",\"emitted_at\":\"2026-10-19T08:01:07Z\",\"facts\":[{\"client_order_id\":\"O-1\",\"commission_voided\":\"0.3\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"e9947aba-dcca-5125-a4bc-664ca9746f6f\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerOrderEventFact.v1\",\"leaves_base_quantity_after\":\"0.6\",\"leaves_quantity_after\":\"60\",\"occurred_at\":\"2026-10-19T08:00:15Z\",\"order_event\":\"fill_voided\",\"order_status_after\":\"partially_filled\",\"quantity_multiplier\":\"0.01\",\"seq\":14,\"source_event_id\":\"b3000000-0000-4000-8000-000000000005\",\"voided_base_quantity\":\"0.6\",\"voided_quantity\":\"60\",\"voided_venue_trade_id\":\"T-1\"},{\"commission_voided\":\"0.3\",\"commission_voided_currency\":\"USDT\",\"correction_id\":\"C-1\",\"event_id\":\"94d6f4bd-67f7-5bc4-87b6-1ae188eeccda\",\"fill_commission\":\"0.6\",\"fill_commission_currency\":\"USDT\",\"fill_id\":\"a0000000-0000-4000-8000-000000000011\",\"from_reconciliation\":false,\"instrument\":\"BTCUSDT-PERP.BINANCE\",\"is_reopened\":true,\"kind\":\"RunnerFillCorrectionFact.v1\",\"last_px\":\"60000\",\"occurred_at\":\"2026-10-19T08:00:15Z\",\"order_side\":\"buy\",\"quantity_multiplier\":\"0.01\",\"seq\":15,\"source_event_id\":\"b3000000-0000-4000-8000-000000000005\",\"venue\":\"BINANCE\",\"voided_base_quantity\":\"0.6\",\"voided_quantity\":\"60\",\"voided_venue_trade_id\":\"T-1\"}],\"generation\":1,\"key_id\":\"ed25519-65b60673d6ed884bf01c2c222d82ada0\",\"payload_digest\":\"a9ed188826900457fb6a107a8570706175c60c01cd95fb076da94128fd47ab02\",\"runner_id\":\"10000000-0000-4000-8000-000000000001\",\"schema_version\":1,\"signature\":\"y8znSD7KQLqoycHylba9sr56CXw1mRwKNMfeZcr2wYDKpor6mZFMBAhLYmalEwg5de1LOZct_nWsZn_-rlJeBg\",\"source_seq_end\":15,\"source_seq_start\":14,\"strategy_id\":\"40000000-0000-4000-8000-000000000004\",\"tenant_id\":\"acme\",\"trading_mode\":\"sandbox\"}",
+          "expected": {
+            "outcome": "accept",
+            "void_version": "new",
+            "order_state": "partially_filled",
+            "fill_effective_base_quantity": "0.4",
+            "commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            },
+            "settled_fill_void_base_quantity_step": "0.1",
+            "settled_commission_reversal_step": {
+              "amount": "0",
+              "currency": "USDT"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
