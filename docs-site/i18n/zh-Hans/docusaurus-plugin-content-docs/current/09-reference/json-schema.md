@@ -17,6 +17,7 @@ sidebar_position: 3
 | `strategy_artifact_ref_v1.schema.json` |
 | `strategy_execution_context_v1.schema.json` |
 | `strategy_manifest_v1.schema.json` |
+| `strategy_signal_fact_v1.schema.json` |
 
 <!-- /generated:schemas -->
 
@@ -26,6 +27,7 @@ sidebar_position: 3
 |---|---|
 | Enrollment | 本地注册材料 |
 | RunnerFact batch | 集成方消费的签名观测批次 |
+| 策略信号 | 单独签名、在自己的主题上发布的一次策略决策 |
 | 策略产物、manifest、context 和导入前收据 | 执行 ABI 与本地验证边界 |
 | Development source | 签名通道中显式的 sandbox 开发材料 |
 | Offline deployment spec | 操作者持有的未签名 sandbox/testnet 输入 |
@@ -48,4 +50,4 @@ uv run arx-runner deployment validate --spec-file "$SPEC_FILE" --mode sandbox
 make check-authority
 ```
 
-独立签名的策略信号 envelope 由其契约字段和测试定义，不是 `runner_fact_batch_v1` 中新增的 kind。详见[消费参考](/integration/consuming-runner-fact)。
+策略信号单独签名，与批次分开发布，由 `strategy_signal_fact_v1.schema.json` 描述，不是 `runner_fact_batch_v1` 中新增的 kind。详见[消费参考](/integration/consuming-runner-fact)。

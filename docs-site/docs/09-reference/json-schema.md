@@ -17,6 +17,7 @@ The following schemas describe supported operator and integration inputs and out
 | `strategy_artifact_ref_v1.schema.json` |
 | `strategy_execution_context_v1.schema.json` |
 | `strategy_manifest_v1.schema.json` |
+| `strategy_signal_fact_v1.schema.json` |
 
 <!-- /generated:schemas -->
 
@@ -26,6 +27,7 @@ The following schemas describe supported operator and integration inputs and out
 |---|---|
 | Enrollment | Local enrollment material |
 | RunnerFact batch | Signed observation batch consumed by integrations |
+| Strategy signal | One separately signed strategy decision, published on its own subject |
 | Strategy artifact, manifest, context and pre-import receipt | Execution ABI and local verification boundary |
 | Development source | Explicit sandbox-only signed-lane development material |
 | Offline deployment spec | Operator-owned unsigned sandbox/testnet input |
@@ -48,4 +50,4 @@ For a generic JSON Schema check, use a validator that supports the schema's decl
 make check-authority
 ```
 
-The separately signed strategy signal envelope is defined by its contract fields and tests; it is not an extra kind inside `runner_fact_batch_v1`. See [consumer reference](/integration/consuming-runner-fact).
+The strategy signal is signed on its own and published apart from the batch; `strategy_signal_fact_v1.schema.json` describes it, and it is not an extra kind inside `runner_fact_batch_v1`. See [consumer reference](/integration/consuming-runner-fact).
