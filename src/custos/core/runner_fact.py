@@ -2245,7 +2245,9 @@ def _void_commission(fields: Mapping[str, Any]) -> None:
     reversed_amount, original = Decimal(voided), Decimal(charged)
     if (reversed_amount > 0) != (original > 0) or (reversed_amount < 0) != (original < 0):
         raise RunnerFactContractError("commission_voided must keep the sign of fill_commission")
-    if abs(reversed_amount) > abs(original):
+    # copy_abs is exact; abs() rounds to the context's 28 digits, and both
+    # amounts may carry 29.
+    if reversed_amount.copy_abs() > original.copy_abs():
         raise RunnerFactContractError("commission_voided exceeds the fill's commission")
 
 
@@ -2346,7 +2348,8 @@ def order_event_fact(
         ("leaves_quantity_after", "leaves_base_quantity_after"),
     ):
         if native in normalized:
-            assert multiplier is not None
+            if multiplier is None:
+                raise RunnerFactContractError(f"{native} needs quantity_multiplier")
             normalized[base] = _base_quantity(normalized[native], multiplier, base)
     if event == "fill_voided":
         if normalized["order_status_after"] == "voided" and Decimal(

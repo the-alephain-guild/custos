@@ -378,6 +378,12 @@ ACCEPTED_FEES = [
     ("all of a charge reversed", "0.6", "0.6"),
     ("part of a rebate reversed", "-0.1", "-0.2"),
     ("a zero charge reversed by zero", "0", "0"),
+    # 29 significant digits: more than the default decimal context keeps.
+    (
+        "all of a charge, 29 digits",
+        "1.0000000000000000000000000001",
+        "1.0000000000000000000000000001",
+    ),
 ]
 REFUSED_FEES = [
     ("nothing charged, something reversed", "0.1", None, "USDT"),
@@ -389,6 +395,19 @@ REFUSED_FEES = [
     ("a zero charge reversed by something", "0.1", "0", "USDT"),
     ("more than the charge", "0.7", "0.6", "USDT"),
     ("more than the rebate", "-0.3", "-0.2", "USDT"),
+    # One unit in the 29th digit, which abs() in a 28-digit context rounds away.
+    (
+        "more than the charge, 29 digits",
+        "1.0000000000000000000000000002",
+        "1.0000000000000000000000000001",
+        "USDT",
+    ),
+    (
+        "more than the rebate, 29 digits",
+        "-1.0000000000000000000000000002",
+        "-1.0000000000000000000000000001",
+        "USDT",
+    ),
 ]
 
 
@@ -425,6 +444,21 @@ def test_a_commission_amount_and_its_currency_come_together(half: str) -> None:
     fee = {**_fee("0.3", "0.6"), half: None}
     with pytest.raises(RunnerFactContractError, match="come together"):
         _order("fill_voided", **_with("fill_voided", **fee))
+
+
+def test_a_native_quantity_without_its_multiplier_is_a_contract_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The request rule normally refuses this first; without it, the base
+    # quantity must still not be computed, and the refusal must survive python -O.
+    import custos.core.runner_fact as runner_fact
+
+    monkeypatch.setattr(runner_fact, "_require_order_request", lambda fields: None)
+    fields = _with("modify_refused", quantity_multiplier=None)
+    with pytest.raises(
+        RunnerFactContractError, match="requested_quantity needs quantity_multiplier"
+    ):
+        _order("modify_refused", **fields)
 
 
 def _correction(**changes: Any) -> dict[str, Any]:
