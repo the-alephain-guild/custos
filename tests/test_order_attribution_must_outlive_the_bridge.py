@@ -26,9 +26,9 @@ from custos.core.runner_fact import (
 )
 from custos.core.runner_fact_producer import RunnerFactEventBridge
 from tests.test_strategy_signal_bridge import (
-    OrderCanceled,
     OrderFilled,
     OrderInitialized,
+    OrderRejected,
     _deployment,
 )
 
@@ -135,11 +135,15 @@ async def test_another_instances_order_does_not_leak_across_the_store(
 
 
 @pytest.mark.asyncio
-async def test_a_terminal_order_is_forgotten_everywhere(tmp_path: Path) -> None:
+async def test_a_rejected_order_is_forgotten_everywhere(tmp_path: Path) -> None:
+    """A canceled order is only released, since a fill can still cross its cancel.
+
+    A rejected one was never accepted, so it is let go at once, durably too.
+    """
     path = tmp_path / "terminal.sqlite3"
     bridge = _bridge(_emitter(path))
     bridge._on_order_event(OrderInitialized())
-    bridge._on_order_event(OrderCanceled())
+    bridge._on_order_event(OrderRejected())
 
     restarted_emitter, replacement = _restarted(path)
     before = len(await restarted_emitter._outbox.pending(limit=100))

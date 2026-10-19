@@ -1061,6 +1061,12 @@ class _FactEmitterStub:
     def forget_order(self, **_identity) -> None:
         return None
 
+    def release_order(self, **_identity) -> None:
+        return None
+
+    def prune_released_orders(self, **_scope) -> tuple[str, ...]:
+        return ()
+
 
 def _fact_host() -> tuple[NtTradingNodeHost, _FactCapabilityReceipt]:
     receipt = _FactCapabilityReceipt()

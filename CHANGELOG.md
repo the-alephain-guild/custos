@@ -13,6 +13,30 @@ protocol — is published at
 
 ## [Unreleased]
 
+### Fixed
+
+- **A fill that crosses a cancel is still signed.** The runner let go of an order
+  the moment the venue reported it canceled or expired, so a fill that arrived
+  after that report was dropped without a trace, together with its execution and
+  settlement facts. The cancel acknowledgement and a fill can cross on the wire,
+  and NautilusTrader accepts a fill on an order it already holds as canceled. A
+  canceled or expired order now stays attributed to its instance for 24 hours,
+  durably and across a restart; a rejected order is still let go at once.
+  Attribution older than the window is removed when another order is released and
+  when the runner starts. A fill for an order the instance does not own is logged
+  as `runner_fact_fill_for_unowned_order_dropped` instead of being dropped
+  silently. The runner state database gains one table, created in place, so an
+  existing database does not need to be recreated. Attribution an earlier version
+  already removed before the upgrade cannot be recovered.
+- **A voided fill is reported.** When the engine voids part or all of a fill on
+  an order the instance owns, the runner logs
+  `runner_fact_fill_voided_not_corrected` with the client order id, the voided
+  trade id, the correction id, the cumulative voided quantity and whether the
+  order was reopened. No correction fact is signed yet, so the settlement and
+  reconciliation facts already sent for that fill still count the voided
+  quantity; the warning makes the gap visible until a correction fact exists. A
+  void on an order the instance does not own is still dropped.
+
 ## [0.8.0] - 2026-10-18
 
 It ships as the signed container image `ghcr.io/the-alephain-guild/custos:v0.8.0`

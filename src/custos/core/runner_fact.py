@@ -2335,6 +2335,12 @@ class RunnerFactOutbox:
                     remembered_at_ns INTEGER NOT NULL,
                     PRIMARY KEY (deployment_instance_id, client_order_id)
                 );
+                CREATE TABLE IF NOT EXISTS runner_order_identity_release (
+                    deployment_instance_id TEXT NOT NULL,
+                    client_order_id TEXT NOT NULL,
+                    released_at_ns INTEGER NOT NULL,
+                    PRIMARY KEY (deployment_instance_id, client_order_id)
+                );
                 CREATE TABLE IF NOT EXISTS strategy_signal_outbox (
                     fact_id TEXT PRIMARY KEY,
                     stream_key TEXT NOT NULL,
@@ -3348,17 +3354,76 @@ class RunnerFactOutbox:
         }
 
     def forget_order_sync(self, *, deployment_instance_id: str, client_order_id: str) -> None:
+        key = (
+            _non_empty(deployment_instance_id, "deployment_instance_id"),
+            _non_empty(client_order_id, "client_order_id"),
+        )
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for table in ("runner_order_identity", "runner_order_identity_release"):
+                connection.execute(
+                    f"DELETE FROM {table} WHERE deployment_instance_id = ? AND client_order_id = ?",
+                    key,
+                )
+
+    def release_order_sync(
+        self,
+        *,
+        deployment_instance_id: str,
+        client_order_id: str,
+        released_at_ns: int,
+    ) -> None:
+        """Record that the venue has finished with this order, without letting go of it.
+
+        A fill can still arrive after the cancel acknowledgement, so the order stays
+        attributed until ``prune_released_orders_sync`` removes it. A repeated release
+        keeps the first moment, so a later terminal report cannot extend the window.
+        """
+        if type(released_at_ns) is not int or released_at_ns < 0:
+            raise RunnerFactContractError("released_at_ns must be a non-negative integer")
         with self._connect() as connection:
             connection.execute(
                 """
-                DELETE FROM runner_order_identity
-                WHERE deployment_instance_id = ? AND client_order_id = ?
+                INSERT INTO runner_order_identity_release (
+                    deployment_instance_id, client_order_id, released_at_ns
+                ) VALUES (?, ?, ?)
+                ON CONFLICT(deployment_instance_id, client_order_id) DO NOTHING
                 """,
                 (
                     _non_empty(deployment_instance_id, "deployment_instance_id"),
                     _non_empty(client_order_id, "client_order_id"),
+                    released_at_ns,
                 ),
             )
+
+    def prune_released_orders_sync(
+        self, *, deployment_instance_id: str, released_before_ns: int
+    ) -> tuple[str, ...]:
+        """Let go of this instance's orders released before the cutoff; return their ids."""
+        if type(released_before_ns) is not int:
+            raise RunnerFactContractError("released_before_ns must be an integer")
+        instance = _non_empty(deployment_instance_id, "deployment_instance_id")
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            expired = tuple(
+                str(row["client_order_id"])
+                for row in connection.execute(
+                    """
+                    SELECT client_order_id FROM runner_order_identity_release
+                    WHERE deployment_instance_id = ? AND released_at_ns < ?
+                    ORDER BY client_order_id
+                    """,
+                    (instance, released_before_ns),
+                )
+            )
+            for order in expired:
+                for table in ("runner_order_identity", "runner_order_identity_release"):
+                    connection.execute(
+                        f"DELETE FROM {table} "
+                        "WHERE deployment_instance_id = ? AND client_order_id = ?",
+                        (instance, order),
+                    )
+        return expired
 
     async def pending_counts(self) -> tuple[int, int]:
         """Bound a publication round to the backlog present when it starts."""
@@ -8008,6 +8073,23 @@ class RunnerFactEmitter:
         self._outbox.forget_order_sync(
             deployment_instance_id=deployment_instance_id,
             client_order_id=client_order_id,
+        )
+
+    def release_order(
+        self, *, deployment_instance_id: str, client_order_id: str, released_at_ns: int
+    ) -> None:
+        self._outbox.release_order_sync(
+            deployment_instance_id=deployment_instance_id,
+            client_order_id=client_order_id,
+            released_at_ns=released_at_ns,
+        )
+
+    def prune_released_orders(
+        self, *, deployment_instance_id: str, released_before_ns: int
+    ) -> tuple[str, ...]:
+        return self._outbox.prune_released_orders_sync(
+            deployment_instance_id=deployment_instance_id,
+            released_before_ns=released_before_ns,
         )
 
     async def emit(

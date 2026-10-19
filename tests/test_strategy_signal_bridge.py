@@ -35,6 +35,7 @@ class _Emitter:
         self.signals: list[dict[str, object]] = []
         self.fact_batches: list[tuple[object, ...]] = []
         self.remembered: dict[tuple[str, str], tuple[str, str]] = {}
+        self.released: dict[tuple[str, str], int] = {}
 
     def remember_order(self, *, deployment_instance_id, client_order_id, direction, order_role):
         self.remembered[(deployment_instance_id, client_order_id)] = (direction, order_role)
@@ -48,6 +49,12 @@ class _Emitter:
 
     def forget_order(self, *, deployment_instance_id, client_order_id):
         self.remembered.pop((deployment_instance_id, client_order_id), None)
+
+    def release_order(self, *, deployment_instance_id, client_order_id, released_at_ns):
+        self.released[(deployment_instance_id, client_order_id)] = released_at_ns
+
+    def prune_released_orders(self, *, deployment_instance_id, released_before_ns):
+        return ()
 
     def emit_strategy_signal_sync(self, authority, **signal):
         assert authority == _authority()
