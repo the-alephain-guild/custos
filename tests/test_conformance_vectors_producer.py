@@ -42,6 +42,7 @@ from custos.core.runner_fact import (
 )
 from custos.core.runner_fact_producer import RunnerFactDeployment, RunnerFactEventBridge
 from custos.core.runtime_log_fact import RunnerRuntimeLogEmitter, RuntimeLogRedactor
+from tests import _lineage_frozen_tables as frozen
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFORMANCE = ROOT / "docs/authority/conformance"
@@ -128,9 +129,10 @@ def test_every_vector_meets_the_published_schema_as_expected(vector: dict[str, A
     batch = _batch(vector)
     expected = vector["expected"]
     if expected.get("schema_outcome") == "accept":
-        # A bound the schema states only approximately; the producer test below
-        # shows the runner refuses the value before signing.
-        assert expected["outcome"] == "reject"
+        # A bound the schema states only approximately, or a rule across fields it
+        # does not state; the producer test below shows the runner refuses the
+        # value before signing.
+        assert expected["outcome"] == "reject" and expected["stage"] == "decode"
         validator.validate(batch)
     elif expected["outcome"] == "reject" and expected["stage"] == "decode":
         assert list(validator.iter_errors(batch)), "schema accepts a vector refused at decode"
@@ -436,6 +438,110 @@ def test_the_runner_never_signs_a_refused_lineage_vector(vector: dict[str, Any])
     assert refused, "the runner would sign this refused vector"
 
 
+def test_every_refusal_names_a_defined_class_and_stage() -> None:
+    document = RUNNER_FACT_DOCUMENT
+    assert list(document["error_class_definitions"]) == document["error_classes"]
+    assert set(document["stages"]) == {"decode", "admission", "projection"}
+    for vector in VECTORS.values():
+        expected = vector["expected"]
+        if expected["outcome"] == "reject":
+            assert expected["error_class"] in document["error_classes"], vector["id"]
+            assert expected["stage"] in document["stages"], vector["id"]
+
+
+def test_a_capability_mismatch_is_decided_at_admission_and_nowhere_else() -> None:
+    # decode sees the batch bytes alone; the capability record is not in them.
+    stages = {
+        vector["expected"]["stage"]
+        for vector in VECTORS.values()
+        if vector["expected"].get("error_class") == "capability_mismatch"
+    }
+    assert stages == {"admission"}
+    assert all(
+        vector["expected"].get("error_class") == "capability_mismatch"
+        for vector in VECTORS.values()
+        if vector["expected"].get("stage") == "admission"
+    )
+
+
+def _matrix_vector(event: str, field: str, verdict: str) -> dict[str, Any]:
+    return VECTORS[f"order-event-{event}-{verdict}-{field.replace('_', '-')}"]
+
+
+FROZEN_FORBIDDEN = [
+    (event, field)
+    for event in frozen.EVENTS
+    for field in frozen.WIRE_FIELDS
+    if frozen.cell(event, field) == "-"
+]
+FROZEN_REQUIRED = [
+    (event, field)
+    for event in frozen.EVENTS
+    for field in frozen.WIRE_FIELDS
+    if frozen.cell(event, field) == "R"
+]
+
+
+@pytest.mark.parametrize(
+    ("event", "field"), FROZEN_FORBIDDEN, ids=[f"{e}-{f}" for e, f in FROZEN_FORBIDDEN]
+)
+def test_every_forbidden_cell_of_the_frozen_matrix_has_its_vector(event: str, field: str) -> None:
+    vector = _matrix_vector(event, field, "forbids")
+    assert vector["expected"] == {
+        "outcome": "reject",
+        "error_class": "schema_violation",
+        "stage": "decode",
+    }
+    (fact,) = _batch(vector)["facts"]
+    assert fact["order_event"] == event and field in fact
+
+
+@pytest.mark.parametrize(
+    ("event", "field"), FROZEN_REQUIRED, ids=[f"{e}-{f}" for e, f in FROZEN_REQUIRED]
+)
+def test_every_required_cell_of_the_frozen_matrix_has_its_vector(event: str, field: str) -> None:
+    vector = _matrix_vector(event, field, "needs")
+    assert vector["expected"]["outcome"] == "reject"
+    (fact,) = _batch(vector)["facts"]
+    assert fact["order_event"] == event and field not in fact
+
+
+def test_the_matrix_vectors_are_exactly_the_frozen_cells() -> None:
+    matrix = {
+        vector_id for vector_id in VECTORS if "-forbids-" in vector_id or "-needs-" in vector_id
+    }
+    matrix = {vector_id for vector_id in matrix if vector_id.startswith("order-event-")}
+    expected = {
+        _matrix_vector(event, field, "forbids")["id"] for event, field in FROZEN_FORBIDDEN
+    } | {_matrix_vector(event, field, "needs")["id"] for event, field in FROZEN_REQUIRED}
+    assert matrix == expected
+
+
+@pytest.mark.parametrize("order_type", sorted(frozen.PRICES))
+def test_creation_price_vectors_follow_the_frozen_price_table(order_type: str) -> None:
+    (limit, trigger), _ = frozen.PRICES[order_type]
+    accepted = _batch(VECTORS[f"order-price-{order_type}"])["facts"][0]
+    assert ("limit_price" in accepted) == (limit != "-")
+    assert ("trigger_price" in accepted) == (trigger != "-")
+    for field, rule in (("limit_price", limit), ("trigger_price", trigger)):
+        name = field.replace("_", "-")
+        verdicts = {
+            verdict
+            for verdict in ("needs", "forbids")
+            if f"order-price-{order_type}-{verdict}-{name}" in VECTORS
+        }
+        assert verdicts == {"R": {"needs"}, "-": {"forbids"}, "O": set()}[rule], field
+
+
+def test_capability_shape_verdicts_are_the_frozen_shape_table() -> None:
+    shapes = RUNNER_FACT_DOCUMENT["capability_shapes"]
+    assert len(shapes) == 16
+    for shape in shapes:
+        declared = tuple(shape["declares"][flag] for flag in frozen.CAPABILITY_FLAGS)
+        expected = "accept" if declared in frozen.ACCEPTED_CAPABILITY_SHAPES else "reject"
+        assert shape["expected"] == expected, shape["id"]
+
+
 def test_an_undeclared_capability_is_the_canonical_one() -> None:
     batch = _batch(VECTORS["lineage-kinds-under-the-canonical-capability"])
     manifest = _json(ROOT / "docs/authority/runner-fact-capability-manifest-v1.json")
@@ -467,10 +573,71 @@ def test_every_sequence_step_is_a_valid_message_on_its_own(
     sequence_id: str, index: int, step: dict[str, Any]
 ) -> None:
     # A step the fold refuses is still a well-formed message; only the history
-    # before it makes it wrong.
+    # before it makes it wrong. Well-formed means the runner would sign it: the
+    # schema admits it and the builders, which hold the rules a single fact can
+    # decide, rebuild it unchanged.
     batch = json.loads(step["raw"])
     Draft202012Validator(_json(SCHEMA)).validate(batch)
     assert batch["payload_digest"] == _sha256(_canonical(batch["facts"]))
+    for fact in _lineage_facts(batch):
+        stored = {name: value for name, value in fact.items() if name != "seq"}
+        assert _rebuild(fact, _authority(batch)) == stored, fact["event_id"]
+
+
+def test_an_order_once_voided_stays_voided() -> None:
+    # The engine keeps a voided order voided whatever later voids say, reopened
+    # or not; a sequence that brings it back would teach a consumer otherwise.
+    for sequence in SEQUENCES["sequences"]:
+        voided = False
+        for step in sequence["steps"]:
+            state = step["expected"].get("order_state")
+            if voided and step["expected"]["outcome"] == "accept":
+                assert state == "voided", sequence["id"]
+            voided = voided or state == "voided"
+
+
+def test_an_accepted_void_leaves_the_order_in_its_signed_state() -> None:
+    for sequence in SEQUENCES["sequences"]:
+        for step in sequence["steps"]:
+            voids = [
+                fact
+                for fact in json.loads(step["raw"])["facts"]
+                if fact.get("order_event") == "fill_voided"
+            ]
+            if voids and step["expected"]["outcome"] == "accept":
+                assert step["expected"]["order_state"] == voids[-1]["order_status_after"]
+
+
+def test_a_refused_amendment_step_names_the_values_it_keeps() -> None:
+    covered = set()
+    for sequence in SEQUENCES["sequences"]:
+        for step in sequence["steps"]:
+            for fact in json.loads(step["raw"])["facts"]:
+                if fact.get("order_event") not in {"modify_refused", "modify_rejected"}:
+                    continue
+                if "requested_quantity" in fact:
+                    assert "order_confirmed_base_quantity" in step["expected"], sequence["id"]
+                    covered.add("quantity")
+                if "requested_limit_price" in fact:
+                    assert "order_confirmed_limit_price" in step["expected"], sequence["id"]
+                    covered.add("limit_price")
+    assert covered == {"quantity", "limit_price"}
+
+
+def test_settlement_corrections_are_preceded_by_their_settled_fill() -> None:
+    covered = 0
+    for sequence in SEQUENCES["sequences"]:
+        settled: set[str] = set()
+        for step in sequence["steps"]:
+            for fact in json.loads(step["raw"])["facts"]:
+                if fact["kind"] == "fill":
+                    settled.add(fact["fill_id"])
+                if fact["kind"] == FILL_CORRECTION_KIND:
+                    assert fact["fill_id"] in settled, sequence["id"]
+                    assert "settled_fill_void_base_quantity_step" in step["expected"]
+                    assert "settled_commission_reversal_step" in step["expected"]
+                    covered += 1
+    assert covered >= 9
 
 
 def test_sequences_continue_one_stream() -> None:

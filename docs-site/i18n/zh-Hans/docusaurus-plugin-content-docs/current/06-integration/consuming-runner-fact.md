@@ -52,7 +52,7 @@ signed bytes = DOMAIN || canonical_json(header)
 | 对账 | `execution_fill`、`venue_ledger_snapshot_manifest`、`venue_ledger_snapshot_chunk`、`reconciliation_period_closed`、`RunnerValuationCheckpointFact.v1`、`RunnerOrderEventFact.v1` |
 | 部署生命周期 | `RunnerDeploymentLifecycleFact.v1` |
 
-有四种 kind 只在 runner 的能力清单声明了对应标志位时才出现：`RunnerInstanceTerminalValuationFact.v1` 对应 `settlement.terminal_valuation`，`RunnerValuationCheckpointFact.v1` 对应 `reconciliation.valuation_checkpoint`，`RunnerOrderEventFact.v1` 对应 `reconciliation.order_lineage`，`RunnerFillCorrectionFact.v1` 对应 `settlement.fill_correction`。批次带了能力清单未声明的 kind 时应拒收。一致性用例列出了四个标志位的全部组合及其结论，一致性序列给出了订单历史每一步之后折叠应得到的状态。
+有四种 kind 只在 runner 的能力清单声明了对应标志位时才出现：`RunnerInstanceTerminalValuationFact.v1` 对应 `settlement.terminal_valuation`，`RunnerValuationCheckpointFact.v1` 对应 `reconciliation.valuation_checkpoint`，`RunnerOrderEventFact.v1` 对应 `reconciliation.order_lineage`，`RunnerFillCorrectionFact.v1` 对应 `settlement.fill_correction`。批次带了能力清单未声明的 kind 时应拒收。单看批次字节判断不了这一点：它需要批次 `capability_manifest_digest` 所指的那份能力记录，所以在解码之后、接收批次之前检查。一致性用例列出了四个标志位的全部组合及其结论，并为每一条拒收写明错误类别与判定它的阶段，类别与阶段的定义都在用例文件里。一致性序列给出了订单历史每一步之后折叠应得到的状态，以及每条成交作废更正从已结算成交及其手续费上冲减多少。
 
 只有部署的引擎已就绪且状态可靠时，`heartbeat` 才报告 `online`。仍在启动中的部署，包括因连不上交易所而在重试的部署，报告 `degraded`。
 

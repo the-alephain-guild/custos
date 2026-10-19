@@ -2,19 +2,20 @@
   "index_schema_version": 1,
   "producer_repository": "tesseract-trading/custos",
   "canonicalization": "utf8-json-sort-keys-compact-v1",
-  "revision_rule": "raise a contract's revision by one when its wire fingerprint or its conformance vectors change; descriptive text alone keeps the revision",
+  "revision_rule": "raise a contract's revision by one when its wire fingerprint, its conformance vectors or its conformance sequences change; descriptive text alone keeps the revision",
   "contracts": {
     "alephain.custos.runner_fact_batch.v1": {
-      "revision": 4,
+      "revision": 5,
       "revision_carrier": "schema",
       "schema_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
       "wire_sha256": "eded38c3a402a2b661fc2ad15ab00787ddb9fed91de3a82218ae9da45f98cb82",
-      "vectors_sha256": "f7cd8a3ced1f3c2872e1c7aee6db29597fd852df394a145649707eeb98c5f61b",
+      "vectors_sha256": "982d27bb555f220583864b822abe473bb9e722551100336461112b9900113c21",
+      "sequences_sha256": "9d4afc7fdf923fad2dd110e5a25345764b1d66643cba73b44e58a233a26e514f",
       "vectors_path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
       "assets": [
         {
           "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-          "sha256": "9541b509a1d27d934cef646e50ba13469e58d3bf440595f6220b95d39c7bdcee",
+          "sha256": "1956948de07ade622a747bd5499fd50c4995d81d391df0565464c1b5ad7408ca",
           "size_bytes": 129188
         },
         {
@@ -54,27 +55,27 @@
         },
         {
           "path": "docs/authority/runner-fact-contract-assets-v1.json",
-          "sha256": "042d356609d2c97b31fc447c321a0eb68f52411adab1595392f7aac7ef18d4bd",
+          "sha256": "ee70ee6af83ccedfe624d4207fdccea8d059e8a510fca896bf24114445fe6e43",
           "size_bytes": 4568
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
-          "sha256": "f7cd8a3ced1f3c2872e1c7aee6db29597fd852df394a145649707eeb98c5f61b",
-          "size_bytes": 726818
+          "sha256": "982d27bb555f220583864b822abe473bb9e722551100336461112b9900113c21",
+          "size_bytes": 1301297
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json.sha256",
-          "sha256": "bdc160832f14c922423762e959e08eedc052663cda8fe42635647f6cb270eb5d",
+          "sha256": "2171f665283bf13e43bb6331b5456e945e85249c2a8460cecfe2bb78a2cf3c04",
           "size_bytes": 100
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json",
-          "sha256": "13dd399a384fafec34cfc3f12ba9378a16806c11105630ed416bab972dbc79b2",
-          "size_bytes": 134908
+          "sha256": "9d4afc7fdf923fad2dd110e5a25345764b1d66643cba73b44e58a233a26e514f",
+          "size_bytes": 183009
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json.sha256",
-          "sha256": "80b2cc73da2302ed336c92711585f09adf219e3934d765cf71a2c9429bf78e28",
+          "sha256": "fba795cdf720f58562a4d905399754a4f2e2dda880b4ecfc1616cfcd669f9aba",
           "size_bytes": 102
         }
       ],
@@ -101,6 +102,13 @@
           "revision": 4,
           "wire_sha256": "eded38c3a402a2b661fc2ad15ab00787ddb9fed91de3a82218ae9da45f98cb82",
           "vectors_sha256": "f7cd8a3ced1f3c2872e1c7aee6db29597fd852df394a145649707eeb98c5f61b",
+          "note": "raised"
+        },
+        {
+          "revision": 5,
+          "wire_sha256": "eded38c3a402a2b661fc2ad15ab00787ddb9fed91de3a82218ae9da45f98cb82",
+          "vectors_sha256": "982d27bb555f220583864b822abe473bb9e722551100336461112b9900113c21",
+          "sequences_sha256": "9d4afc7fdf923fad2dd110e5a25345764b1d66643cba73b44e58a233a26e514f",
           "note": "raised"
         }
       ]

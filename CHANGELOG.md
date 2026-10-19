@@ -13,11 +13,12 @@ protocol — is published at
 
 ## [Unreleased]
 
-The RunnerFact batch contract moves to revision 4 and the strategy signal fact
+The RunnerFact batch contract moves to revision 5 and the strategy signal fact
 gets its own contract, `alephain.custos.strategy_signal.v1`, at revision 2. No
 runner behaviour changes: the runner does not sign the new facts or fields yet,
 every capability published today keeps loading, and a signal signs the bytes it
-signed before.
+signed before. Revision 4 is in the revision index but was never released;
+revision 5 keeps its wire shape and replaces its vectors and sequences.
 
 ### Added
 
@@ -39,8 +40,20 @@ signed before.
   flags.
 - **`runner-fact-batch-v1.sequences.json`** publishes sequences of batches with
   the state a consumer's fold must reach after each step: cumulative voids,
-  repeated and refused versions, a void without a local fill, refused
-  amendments and prices on an update.
+  repeated and refused versions, a reopen on an open and on a voided order, a
+  void without a local fill, refused amendments with the quantity and price
+  they keep, prices on an update, and fill corrections of a settled fill with
+  the quantity and commission each one takes off it.
+- **Refusal classes and stages are defined in the vector file.** Each error
+  class has a one-line definition, and a third stage, `admission`, sits between
+  decoding and the inbox for the checks that need the capability record: a kind
+  the capability does not declare is refused there, not while decoding.
+- **The field matrix is covered cell by cell.** Every field an order event must
+  not carry, and every field it must, has its own vector, base quantities
+  included.
+- **The revision index fingerprints the sequences.** A changed sequence file
+  under an unchanged revision now fails the revision rule, as a changed vector
+  file does.
 - **Capability shape vectors.** The vector file lists all sixteen combinations
   of the four optional capability flags with the verdict both sides give.
 - **The strategy signal contract.** `strategy_signal_fact_v1.schema.json`, a

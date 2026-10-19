@@ -16,6 +16,7 @@ GENERATOR = runpy.run_path(
 RUNNER_FACT = "alephain.custos.runner_fact_batch.v1"
 RUNNER_FACT_SCHEMA = "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json"
 RUNNER_FACT_VECTORS = "docs/authority/conformance/runner-fact-batch-v1.vectors.json"
+RUNNER_FACT_SEQUENCES = "docs/authority/conformance/runner-fact-batch-v1.sequences.json"
 ARTIFACT_REF_SCHEMA = "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json"
 
 
@@ -63,7 +64,10 @@ def test_a_renamed_property_without_a_raised_revision_fails(root: Path, capsys) 
     _edit_schema(root, _rename_property)
     code, output = _run(root, "--check", capsys=capsys)
     assert code == 1
-    assert f"{RUNNER_FACT}: the wire fingerprint or the conformance vectors changed" in output
+    assert (
+        f"{RUNNER_FACT}: the wire fingerprint, the conformance vectors or the sequences changed"
+        in output
+    )
     assert f"still {_revision(root)}" in output
     # Regenerating does not launder the change into the index.
     assert _run(root, capsys=capsys)[0] == 1
@@ -73,10 +77,10 @@ def test_a_renamed_property_with_a_raised_revision_is_recorded(root: Path, capsy
     current = _revision(root)
     _edit_schema(root, _rename_property)
     _edit_schema(root, lambda schema: schema.update({"x-contract-revision": current + 1}))
-    vectors_path = root / RUNNER_FACT_VECTORS
-    vectors = json.loads(vectors_path.read_text(encoding="utf-8"))
-    vectors["contract_revision"] = current + 1
-    vectors_path.write_text(json.dumps(vectors, indent=2) + "\n", encoding="utf-8")
+    for relative in (RUNNER_FACT_VECTORS, RUNNER_FACT_SEQUENCES):
+        _edit_document(
+            root, relative, lambda document: document.update(contract_revision=current + 1)
+        )
     assert _run(root, "--check", capsys=capsys)[0] == 1
     assert _run(root, capsys=capsys)[0] == 0
     assert _run(root, "--check", capsys=capsys)[0] == 0
@@ -103,14 +107,48 @@ def test_descriptive_text_alone_keeps_the_revision(root: Path, capsys) -> None:
     assert index["contracts"][RUNNER_FACT]["revision"] == current
 
 
+def _edit_document(root: Path, relative: str, edit) -> None:
+    path = root / relative
+    document = json.loads(path.read_text(encoding="utf-8"))
+    edit(document)
+    path.write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
+
+
 def test_changed_vectors_without_a_raised_revision_fail(root: Path, capsys) -> None:
-    path = root / RUNNER_FACT_VECTORS
-    vectors = json.loads(path.read_text(encoding="utf-8"))
-    vectors["vectors"][0]["expected"]["typed_roundtrip_equal"] = False
-    path.write_text(json.dumps(vectors, indent=2) + "\n", encoding="utf-8")
+    _edit_document(
+        root,
+        RUNNER_FACT_VECTORS,
+        lambda vectors: vectors["vectors"][0]["expected"].update(typed_roundtrip_equal=False),
+    )
     code, output = _run(root, "--check", capsys=capsys)
     assert code == 1
-    assert "conformance vectors changed" in output
+    assert "the conformance vectors or the sequences changed" in output
+
+
+def test_one_changed_sequence_expectation_without_a_raised_revision_fails(
+    root: Path, capsys
+) -> None:
+    def edit(document: dict) -> None:
+        step = document["sequences"][0]["steps"][-1]["expected"]
+        step["order_state"] = "canceled"
+
+    _edit_document(root, RUNNER_FACT_SEQUENCES, edit)
+    code, output = _run(root, "--check", capsys=capsys)
+    assert code == 1
+    assert "the conformance vectors or the sequences changed" in output
+    assert f"still {_revision(root)}" in output
+    # Regenerating does not launder the change into the index either.
+    assert _run(root, capsys=capsys)[0] == 1
+
+
+def test_sequences_naming_another_revision_fail(root: Path, capsys) -> None:
+    raised = _revision(root) + 1
+    _edit_document(
+        root, RUNNER_FACT_SEQUENCES, lambda document: document.update(contract_revision=raised)
+    )
+    code, output = _run(root, "--check", capsys=capsys)
+    assert code == 1
+    assert f"{RUNNER_FACT_SEQUENCES} names {RUNNER_FACT} revision {raised}" in output
 
 
 def _set_artifact_ref_revision(root: Path, revision_from_current) -> int:

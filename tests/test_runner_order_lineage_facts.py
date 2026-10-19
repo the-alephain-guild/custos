@@ -1,7 +1,9 @@
 """The builders of RunnerOrderEventFact.v1 and RunnerFillCorrectionFact.v1.
 
 Every rule is tried on a fact that is otherwise valid, so a refusal can only come
-from the rule under test, and every rule has an accepted case first.
+from the rule under test, and every rule has an accepted case first. Which cells
+of the field and price tables to try comes from the frozen tables typed in by
+hand, not from the rule tables the builders read.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from custos.core.runner_fact import (
     order_event_fact,
     runner_fact_event_id,
 )
+from tests import _lineage_frozen_tables as frozen
 
 AUTHORITY = RunnerFactAuthority(
     tenant_id="acme",
@@ -169,10 +172,23 @@ def test_each_event_builds_from_its_smallest_input(event: str) -> None:
     assert None not in fact.values()
 
 
+def test_the_rule_tables_are_the_frozen_tables() -> None:
+    assert sorted(ORDER_EVENTS) == sorted(frozen.EVENTS)
+    for event, (required, optional) in ORDER_EVENT_FIELDS.items():
+        assert required == {f for f in frozen.INPUT_FIELDS if frozen.cell(event, f) == "R"}, event
+        assert optional == {f for f in frozen.INPUT_FIELDS if frozen.cell(event, f) == "O"}, event
+    assert set(SAMPLE) == set(frozen.INPUT_FIELDS)
+    for order_type, (creation, update) in frozen.PRICES.items():
+        rule = {"R": "required", "O": "optional", "-": "absent"}
+        assert ORDER_PRICE_RULES[order_type] == tuple(rule[c] for c in (*creation, *update))
+    assert set(ORDER_PRICE_RULES) == set(frozen.PRICES)
+
+
 FORBIDDEN = [
     (event, field)
-    for event, (required, optional) in ORDER_EVENT_FIELDS.items()
-    for field in sorted(set(SAMPLE) - required - optional)
+    for event in frozen.EVENTS
+    for field in frozen.INPUT_FIELDS
+    if frozen.cell(event, field) == "-"
 ]
 
 
@@ -183,7 +199,10 @@ def test_a_field_outside_an_events_column_is_refused(event: str, field: str) -> 
 
 
 REQUIRED = [
-    (event, field) for event, (required, _) in ORDER_EVENT_FIELDS.items() for field in required
+    (event, field)
+    for event in frozen.EVENTS
+    for field in frozen.INPUT_FIELDS
+    if frozen.cell(event, field) == "R"
 ]
 
 
@@ -199,10 +218,11 @@ def test_an_unknown_field_is_refused() -> None:
 
 
 # The creation columns of the price table, tried on both events that create an order.
+_RULE = {"R": "required", "O": "optional", "-": "absent"}
 PRICE_CASES = [
-    (event, order_type, limit, trigger)
+    (event, order_type, _RULE[limit], _RULE[trigger])
     for event in ("initialized", "refused")
-    for order_type, (limit, trigger, _, _) in ORDER_PRICE_RULES.items()
+    for order_type, ((limit, trigger), _) in frozen.PRICES.items()
 ]
 
 

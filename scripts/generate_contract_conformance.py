@@ -46,6 +46,8 @@ from custos.core.runner_fact import (
     runner_fact_capability_shape,
     runner_fact_signing_header,
     runner_fact_signing_preimage,
+    settlement_fee,
+    settlement_fill,
 )
 from custos.core.runner_fact_producer import RunnerFactDeployment, RunnerFactEventBridge
 from custos.core.runtime_log_fact import RunnerRuntimeLogEmitter, RuntimeLogRedactor
@@ -56,23 +58,57 @@ RUNNER_FACT_VECTORS_PATH = Path("docs/authority/conformance/runner-fact-batch-v1
 RUNNER_FACT_SEQUENCES_PATH = Path("docs/authority/conformance/runner-fact-batch-v1.sequences.json")
 LINEAGE_GOLDEN_PATH = Path("docs/authority/runner-fact-lineage-golden-v1.json")
 STRATEGY_VECTORS_PATH = Path("docs/authority/conformance/strategy-canonical-json-v1.vectors.json")
-RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 4)
+RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 5)
 STRATEGY_CANONICAL_CONTRACT = ("alephain.custos.strategy_canonical_json.v1", 1)
 CAPABILITY_MANIFEST_PATH = Path("docs/authority/runner-fact-capability-manifest-v1.json")
 
-ERROR_CLASSES = (
-    "unknown_field",
-    "non_canonical_decimal",
-    "binary_float",
-    "missing_timezone",
-    "digest_mismatch",
-    "identity_conflict",
-    "schema_violation",
-    "decimal_out_of_range",
-    "invariant_violation",
-    "unknown_reference",
-    "capability_mismatch",
-)
+# What each refusal means, and where in the consumer it is decided. A class is a
+# kind of wrongness; a stage is the earliest point that has what it takes to see it.
+ERROR_CLASS_DEFINITIONS = {
+    "unknown_field": "a member the published schema does not name for its object",
+    "non_canonical_decimal": (
+        "a decimal string in any spelling other than its one canonical form: no exponent, "
+        "no leading zero before other digits, no trailing fractional zero, no negative zero"
+    ),
+    "binary_float": "a JSON number where the contract carries a decimal string",
+    "missing_timezone": "a timestamp without its UTC designator",
+    "digest_mismatch": "a payload or envelope digest that does not match the bytes it covers",
+    "identity_conflict": (
+        "an identifier already bound to a different fact, such as one position_id under two "
+        "different closes"
+    ),
+    "schema_violation": (
+        "a message the published schema refuses: a missing or forbidden member, a wrong "
+        "type, a value outside its enum or pattern, a bound"
+    ),
+    "decimal_out_of_range": (
+        "a decimal the consumer cannot hold: a scale above 28 or a mantissa above 2**96 - 1"
+    ),
+    "invariant_violation": (
+        "a single fact the schema admits but a rule across its own fields refuses, such as a "
+        "commission reversal larger than the commission it reverses; the fact alone decides it"
+    ),
+    "unknown_reference": (
+        "a fact naming another fact the consumer never received, such as a fill correction "
+        "for a fill that was never signed"
+    ),
+    "capability_mismatch": "a fact of a kind the runner's capability record does not declare",
+}
+ERROR_CLASSES = tuple(ERROR_CLASS_DEFINITIONS)
+STAGES = {
+    "decode": (
+        "refused from the batch bytes alone, while parsing the envelope and each fact, "
+        "before any state changes"
+    ),
+    "admission": (
+        "refused after decode and before the inbox takes the batch, by a check that needs "
+        "the capability record the batch's capability_manifest_digest names; no state changes"
+    ),
+    "projection": (
+        "taken into the inbox, then refused by a projector because of state the batch "
+        "does not carry"
+    ),
+}
 # A test-only signing seed; it signs nothing outside these vectors.
 TEST_SIGNING_SEED = bytes(range(1, 33))
 TENANT_ID = "acme"
@@ -310,14 +346,24 @@ def accept(batch: Mapping[str, Any], *, typed_roundtrip_equal: bool) -> dict[str
 
 
 def reject(error_class: str, stage: str) -> dict[str, Any]:
-    assert error_class in ERROR_CLASSES
+    if error_class not in ERROR_CLASSES or stage not in STAGES:
+        raise ValueError(f"no error class {error_class} at stage {stage}")
     return {"outcome": "reject", "error_class": error_class, "stage": stage}
 
 
-# The schema states some bounds only approximately: maxLength counts characters
-# where the consumer counts UTF-8 bytes, and a pattern cannot compare a mantissa
-# with 2**96 - 1. A vector the consumer refuses but the schema admits says so.
+# A vector refused at decode that the published schema still admits says so: the
+# schema states some bounds only approximately (maxLength counts characters where
+# the consumer counts UTF-8 bytes, and a pattern cannot compare a mantissa with
+# 2**96 - 1) and states no rule across the fields of a fact.
 SCHEMA_COARSE = {"schema_outcome": "accept"}
+SCHEMA_OUTCOME = (
+    "present only on a vector refused at decode that the published schema admits: the "
+    "schema states some bounds only approximately (maxLength counts characters where the "
+    "consumer counts UTF-8 bytes, and a pattern cannot compare a mantissa with 2**96 - 1) "
+    "and states no rule across the fields of a fact (invariant_violation). Every other "
+    "vector refused at decode is refused by the schema too; vectors refused at admission "
+    "or projection, and accepted vectors, pass it"
+)
 
 
 def _closed(position_id: str, realized_pnl: Any, event_id: str) -> dict[str, Any]:
@@ -847,41 +893,6 @@ LINEAGE_MINIMAL: dict[str, dict[str, Any]] = {
         )
     },
 }
-# The rows of the field-by-event matrix; one field stands for its row.
-MATRIX_ROWS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("instrument", ("instrument",)),
-    ("order elements", ("side", "order_type", "time_in_force", "reduce_only")),
-    ("attribution", ("order_purpose", "execution_relation", "attribution_source")),
-    ("attribution links", ("signal_id", "unattributed_reason", "derived_signal_fact_id")),
-    (
-        "relations",
-        (
-            "closes_signal_id",
-            "parent_client_order_id",
-            "retry_of_client_order_id",
-            "replaces_client_order_id",
-        ),
-    ),
-    ("engine records", ("exec_spawn_id", "order_list_id", "venue_parent_order_id")),
-    ("confirmed quantity", ("quantity",)),
-    ("quantity multiplier", ("quantity_multiplier",)),
-    ("confirmed prices", ("limit_price", "trigger_price")),
-    ("request known", ("requested_values_known",)),
-    ("requested values", ("requested_limit_price", "requested_trigger_price")),
-    ("reason code", ("reason_code",)),
-    ("last trigger price", ("last_trigger_price",)),
-    (
-        "void",
-        (
-            "voided_venue_trade_id",
-            "correction_id",
-            "is_reopened",
-            "from_reconciliation",
-            "order_status_after",
-        ),
-    ),
-    ("void commission", ("commission_voided", "commission_voided_currency")),
-)
 _BASE_OF = {
     "quantity": "base_quantity",
     "requested_quantity": "requested_base_quantity",
@@ -962,7 +973,12 @@ def _lineage_vector(
 
 
 def _matrix_vectors() -> list[dict[str, Any]]:
+    """One vector per cell of the field-by-event matrix: every field an event must
+    not carry, and every field it must, a base quantity on its own included."""
+
     vectors = []
+    wire_fields = [*LINEAGE_SAMPLE, *_BASE_OF.values()]
+    native_of = {base: native for native, base in _BASE_OF.items()}
     for event in ORDER_EVENTS:
         vectors.append(
             _lineage_vector(
@@ -973,28 +989,33 @@ def _matrix_vectors() -> list[dict[str, Any]]:
             )
         )
         required, optional = ORDER_EVENT_FIELDS[event]
-        for row, fields in MATRIX_ROWS:
-            present = [name for name in fields if name in required | optional]
-            if not present:
+        for field in wire_fields:
+            allowed = native_of.get(field, field) in required | optional
+            needed = native_of.get(field, field) in required
+            name = field.replace("_", "-")
+            if not allowed:
                 fact = order_event(event)
-                _wire(fact, fields[0], LINEAGE_SAMPLE[fields[0]])
+                if field in native_of:
+                    fact[field] = "1"
+                else:
+                    _wire(fact, field, LINEAGE_SAMPLE[field])
                 vectors.append(
                     _lineage_vector(
-                        f"order-event-{event}-forbids-{row.replace(' ', '-')}",
-                        f"{event} carries no {row} ({fields[0]})",
+                        f"order-event-{event}-forbids-{name}",
+                        f"{event} carries no {field}",
                         [fact],
                         reject("schema_violation", "decode"),
                     )
                 )
-            needed = [name for name in fields if name in required]
             if needed:
                 fact = order_event(event)
-                fact.pop(needed[0])
-                fact.pop(_BASE_OF.get(needed[0], ""), None)
+                fact.pop(field)
+                if field not in native_of:
+                    fact.pop(_BASE_OF.get(field, ""), None)
                 vectors.append(
                     _lineage_vector(
-                        f"order-event-{event}-needs-{row.replace(' ', '-')}",
-                        f"{event} needs its {row} ({needed[0]})",
+                        f"order-event-{event}-needs-{name}",
+                        f"{event} needs its {field}",
                         [fact],
                         reject("schema_violation", "decode"),
                     )
@@ -1235,6 +1256,8 @@ VOID_FEES_ACCEPTED = (
     ("part-of-charge", "0.3", "0.6"),
     ("part-of-rebate", "-0.1", "-0.2"),
     ("zero-on-zero-charge", "0", "0"),
+    # 29 significant digits, more than a default 28-digit decimal context keeps.
+    ("all-of-charge-29-digits", "1.0000000000000000000000000001", "1.0000000000000000000000000001"),
 )
 VOID_FEES_REFUSED = (
     ("something-on-no-charge", "0.1", None, "USDT"),
@@ -1245,6 +1268,20 @@ VOID_FEES_REFUSED = (
     ("zero-on-rebate", "0", "-0.2", "USDT"),
     ("over-charge", "0.7", "0.6", "USDT"),
     ("over-rebate", "-0.3", "-0.2", "USDT"),
+    # One unit in the 29th significant digit: an absolute value taken in a
+    # 28-digit context rounds it away.
+    (
+        "over-charge-29-digits",
+        "1.0000000000000000000000000002",
+        "1.0000000000000000000000000001",
+        "USDT",
+    ),
+    (
+        "over-rebate-29-digits",
+        "-1.0000000000000000000000000002",
+        "-1.0000000000000000000000000001",
+        "USDT",
+    ),
 )
 
 
@@ -1525,7 +1562,7 @@ def _undeclared_capability_vector() -> dict[str, Any]:
         "origin": "tolerance",
         "covers": ["an order event under a capability that does not declare order lineage"],
         "raw": raw(batch),
-        "expected": {**reject("capability_mismatch", "decode"), **SCHEMA_COARSE},
+        "expected": reject("capability_mismatch", "admission"),
     }
 
 
@@ -1580,10 +1617,20 @@ SEQUENCE_KEYS = {
     ),
     "order_state": "the order's coarse state after the step",
     "order_confirmed_base_quantity": "the order quantity no refused request overrides",
+    "order_confirmed_limit_price": "the order's limit price, which no refused request overrides",
     "fill_effective_base_quantity": "the fill's quantity less its cumulative void",
     "commission_reversal_step": "the commission reversal this step adds, in its currency",
+    "settled_fill_void_base_quantity_step": (
+        "the base quantity a fill correction in this step removes from the settled fill its "
+        "fill_id names: the change since the version last applied"
+    ),
+    "settled_commission_reversal_step": (
+        "the reversal a fill correction in this step applies to that settled fill's "
+        "commission, in its currency: the change since the version last applied"
+    ),
     "flags": "integrity marks the consumer raises on the order",
 }
+SEQUENCE_SETTLED_FILL = "a0000000-0000-4000-8000-000000000011"
 
 
 def _sequence_events() -> dict[str, Any]:
@@ -1605,7 +1652,7 @@ def _sequence_events() -> dict[str, Any]:
             "submitted", source_event_id="b1000000-0000-4000-8000-000000000002", occurred_at=at(2)
         )
 
-    def fill(fee: str = "0.6") -> dict[str, Any]:
+    def fill(fee: str = "0.6", quantity: str = "1") -> dict[str, Any]:
         return execution_fill(
             event_id=UUID("b2000000-0000-4000-8000-000000000003"),
             venue="BINANCE",
@@ -1614,12 +1661,36 @@ def _sequence_events() -> dict[str, Any]:
             venue_order_id="V-1",
             instrument="BTCUSDT-PERP.BINANCE",
             side="buy",
-            quantity="1",
+            quantity=quantity,
             price="60000",
             fee=fee,
             currency="USDT",
             occurred_at=at(3),
         )
+
+    def settled_fill() -> list[dict[str, Any]]:
+        """A fill as the runner signs it: execution, settlement fill and its fee."""
+
+        return [
+            fill(),
+            settlement_fill(
+                event_id=UUID("b2000000-0000-4000-8000-000000000005"),
+                fill_id=SEQUENCE_SETTLED_FILL,
+                order_type="limit",
+                category="maker",
+                price="60000",
+                avg_fill_price="60000",
+                currency="USDT",
+                filled_at=at(3),
+            ),
+            settlement_fee(
+                event_id=UUID("b2000000-0000-4000-8000-000000000006"),
+                fill_id=SEQUENCE_SETTLED_FILL,
+                amount="0.6",
+                currency="USDT",
+                assessed_at=at(3),
+            ),
+        ]
 
     def void(step: int, voided: str, **fields: Any) -> dict[str, Any]:
         given = {
@@ -1640,7 +1711,37 @@ def _sequence_events() -> dict[str, Any]:
             **given,
         )
 
-    return {"initialized": initialized, "submitted": submitted, "fill": fill, "void": void}
+    def corrected(step: int, voided: str, **fields: Any) -> list[dict[str, Any]]:
+        """A fill void and its correction, signed together as the runner does when
+        both flags are declared."""
+
+        event = void(step, voided, **fields)
+        pair = correction(
+            fill_id=SEQUENCE_SETTLED_FILL,
+            voided_quantity=voided,
+            source_event_id=event["source_event_id"],
+            occurred_at=event["occurred_at"],
+            is_reopened=event["is_reopened"],
+            **{
+                name: event.get(name)
+                for name in (
+                    "commission_voided",
+                    "commission_voided_currency",
+                    "fill_commission",
+                    "fill_commission_currency",
+                )
+            },
+        )
+        return [event, pair]
+
+    return {
+        "initialized": initialized,
+        "submitted": submitted,
+        "fill": fill,
+        "settled_fill": settled_fill,
+        "void": void,
+        "corrected": corrected,
+    }
 
 
 def _sequence(
@@ -1664,6 +1765,7 @@ def _sequence(
 def runner_fact_sequences() -> list[dict[str, Any]]:
     e = _sequence_events()
     init, submit, fill, void = e["initialized"], e["submitted"], e["fill"], e["void"]
+    settled_fill, corrected = e["settled_fill"], e["corrected"]
     opened = [
         ([init()], {"outcome": "accept", "order_state": "initialized"}),
         ([submit()], {"outcome": "accept", "order_state": "working"}),
@@ -1730,7 +1832,43 @@ def runner_fact_sequences() -> list[dict[str, Any]]:
                     ],
                     {**applied("0.8", "voided"), **no_reversal},
                 ),
-                ([void(2, "20")], {**applied("0.8"), **no_reversal}),
+                (
+                    [void(2, "20", order_status_after="voided", leaves_quantity_after="0")],
+                    {**applied("0.8", "voided"), **no_reversal},
+                ),
+            ],
+        ),
+        _sequence(
+            "void-reopen-changed-before-voided",
+            "the reopen flag changed on an order still open: a new version, and the reopened "
+            "quantity can fill again",
+            [
+                opened[0],
+                opened[1],
+                (
+                    [fill(fee="0.3", quantity="0.5")],
+                    {
+                        "outcome": "accept",
+                        "order_state": "partially_filled",
+                        "fill_effective_base_quantity": "0.5",
+                    },
+                ),
+                (
+                    [
+                        void(
+                            1,
+                            "20",
+                            is_reopened=False,
+                            leaves_quantity_after="50",
+                            fill_commission="0.3",
+                        )
+                    ],
+                    {**applied("0.3"), **no_reversal},
+                ),
+                (
+                    [void(2, "20", leaves_quantity_after="70", fill_commission="0.3")],
+                    {**applied("0.3"), **no_reversal},
+                ),
             ],
         ),
         _sequence(
@@ -1912,13 +2050,14 @@ def runner_fact_sequences() -> list[dict[str, Any]]:
             "void_without_fill_reopened",
         ),
         (
+            # Legal on its own (the reversal stays within the commission it names);
+            # only the missing local fill makes any reversal wrong.
             "with-commission",
             {
-                "commission_voided": "0",
+                "commission_voided": "0.1",
                 "commission_voided_currency": "USDT",
-                "fill_commission": None,
-                "fill_commission_currency": None,
-                "commission_override": "0.1",
+                "fill_commission": "0.6",
+                "fill_commission_currency": "USDT",
             },
             "void_without_fill_commission",
         ),
@@ -1932,12 +2071,9 @@ def runner_fact_sequences() -> list[dict[str, Any]]:
             "fill_commission": None,
             "fill_commission_currency": None,
         }
-        commission = fields.pop("commission_override", None)
         quantity = fields.pop("voided_quantity_override", "100")
         overrides.update(fields)
         fact = void(1, "100", **overrides)
-        if commission is not None:
-            fact["commission_voided"] = commission
         if quantity != "100":
             _wire(fact, "voided_quantity", quantity)
         sequences.append(
@@ -2021,6 +2157,7 @@ def runner_fact_sequences() -> list[dict[str, Any]]:
                             "outcome": "accept",
                             "order_state": "working",
                             "order_confirmed_base_quantity": "1",
+                            "order_confirmed_limit_price": "60000",
                         },
                     ),
                 ],
@@ -2055,6 +2192,7 @@ def runner_fact_sequences() -> list[dict[str, Any]]:
                             "outcome": "accept",
                             "order_state": "initialized",
                             "order_confirmed_base_quantity": "1",
+                            "order_confirmed_limit_price": update["limit_price"],
                         }
                         if accepted
                         else {
@@ -2066,6 +2204,81 @@ def runner_fact_sequences() -> list[dict[str, Any]]:
                 ],
             )
         )
+    settled = [opened[0], opened[1]] + [
+        (
+            settled_fill(),
+            {"outcome": "accept", "order_state": "filled", "fill_effective_base_quantity": "1"},
+        )
+    ]
+
+    def settled_step(void_base: str, commission: str) -> dict[str, Any]:
+        return {
+            "settled_fill_void_base_quantity_step": void_base,
+            "settled_commission_reversal_step": {"amount": commission, "currency": "USDT"},
+        }
+
+    completed = corrected(3, "50", commission_voided="0.3", commission_voided_currency="USDT")
+    sequences.append(
+        _sequence(
+            "settled-fill-corrections",
+            "a settled fill corrected again and again: each correction applies the change "
+            "since the version last applied, and a correction delivered again applies nothing",
+            [
+                *settled,
+                (
+                    corrected(1, "20"),
+                    {**applied("0.8"), **no_reversal, **settled_step("0.2", "0")},
+                ),
+                (
+                    corrected(2, "50"),
+                    {**applied("0.5"), **no_reversal, **settled_step("0.3", "0")},
+                ),
+                (
+                    completed,
+                    {**applied("0.5"), **reversal("0.3"), **settled_step("0", "0.3")},
+                ),
+                (
+                    completed,
+                    {
+                        "outcome": "accept",
+                        "void_version": "duplicate",
+                        "order_state": "partially_filled",
+                        "fill_effective_base_quantity": "0.5",
+                        **no_reversal,
+                        **settled_step("0", "0"),
+                    },
+                ),
+            ],
+        )
+    )
+    refused = {**regression, "fill_effective_base_quantity": "0.5", **settled_step("0", "0")}
+    sequences.append(
+        _sequence(
+            "settled-fill-correction-regressions",
+            "corrections of a settled fill the fold refuses apply nothing, and the next "
+            "correction is measured from the version last applied",
+            [
+                *settled,
+                (
+                    corrected(1, "50", commission_voided="0.3", commission_voided_currency="USDT"),
+                    {**applied("0.5"), **reversal("0.3"), **settled_step("0.5", "0.3")},
+                ),
+                (
+                    corrected(2, "40", commission_voided="0.3", commission_voided_currency="USDT"),
+                    refused,
+                ),
+                (
+                    corrected(3, "50", commission_voided="0.2", commission_voided_currency="USDT"),
+                    refused,
+                ),
+                (corrected(4, "60"), refused),
+                (
+                    corrected(5, "60", commission_voided="0.3", commission_voided_currency="USDT"),
+                    {**applied("0.4"), **no_reversal, **settled_step("0.1", "0")},
+                ),
+            ],
+        )
+    )
     return sequences
 
 
@@ -2084,7 +2297,11 @@ def runner_fact_sequence_document() -> dict[str, Any]:
             "commission reversal, or, for a charged fill, no reversal after one was given "
             "is not applied",
             "a refused amendment never overrides the confirmed quantity or prices",
-            "the signed order_status_after decides the order's state after a void",
+            "the signed order_status_after decides the order's state after a void; an order "
+            "already voided stays voided, whatever its reopen flag",
+            "a fill correction applies to the settled fill its fill_id names the change since "
+            "the version last applied; a version the fold refuses applies nothing, and the "
+            "next version is measured from the one last applied",
         ],
         "test_only": True,
         "sequences": runner_fact_sequences(),
@@ -2101,15 +2318,9 @@ def runner_fact_vector_document() -> dict[str, Any]:
         "canonicalization": "utf8-json-sort-keys-compact-v1",
         "digest": "sha256-hex",
         "error_classes": list(ERROR_CLASSES),
-        "stages": {
-            "decode": "refused while parsing the envelope, before any state changes",
-            "projection": "accepted into the inbox, then refused by a projector",
-        },
-        "schema_outcome": (
-            "present only where the published schema admits a vector the consumer "
-            "refuses: maxLength counts characters where the consumer counts UTF-8 bytes, "
-            "and a pattern cannot compare a mantissa with 2**96 - 1"
-        ),
+        "error_class_definitions": ERROR_CLASS_DEFINITIONS,
+        "stages": STAGES,
+        "schema_outcome": SCHEMA_OUTCOME,
         "test_only": True,
         "test_signing_seed_hex": TEST_SIGNING_SEED.hex(),
         "test_public_key_hex": signer.public_key_bytes.hex(),
