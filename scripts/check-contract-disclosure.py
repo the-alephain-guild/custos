@@ -68,7 +68,10 @@ TERMS: tuple[tuple[str, re.Pattern[str]], ...] = (
 ACCEPTANCE_TERMS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("internal service name", re.compile(r"\bcrucible-rust\b")),
 )
-# Exact (path, term label) pairs left as they are, each with its reason.
+# Lines left as they are, by (path, term label), each group with its reason. A
+# line is exempt only while its text, stripped, is exactly one of these; a new
+# line with the same term in the same file is refused, and an exempt line that
+# is gone is reported, so the list only shrinks as the files are cleaned up.
 _SIGNED_ELSEWHERE = (
     "a receipt another repository signed, kept byte for byte as the record of an "
     "acceptance; it is not rewritten"
@@ -77,26 +80,86 @@ _PROVENANCE = (
     "provenance text written before this check; registered for the clean-up of the "
     "remaining internal references"
 )
-EXEMPTIONS: dict[tuple[str, str], str] = {
-    **{
-        (f"docs/authority/receipts/vendor/{name}", label): _SIGNED_ELSEWHERE
-        for name in (
-            "crucible-runner-capability-runtime-v1-consumer-receipt.json",
-            "crucible-runner-fact-position-lifecycle-v1-consumer-receipt.json",
-            "crucible-runner-fact-v1-consumer-receipt.json",
-        )
-        for label in ("private planning repository", "planning reference")
-    },
+_RECEIPTS = "docs/authority/receipts/vendor/"
+_CAPABILITY_RECEIPT = _RECEIPTS + "crucible-runner-capability-runtime-v1-consumer-receipt.json"
+_LIFECYCLE_RECEIPT = _RECEIPTS + "crucible-runner-fact-position-lifecycle-v1-consumer-receipt.json"
+_FACT_RECEIPT = _RECEIPTS + "crucible-runner-fact-v1-consumer-receipt.json"
+_PLANNING_REPOSITORY = '"repository": "the-alephain-guild/tabularium",'
+_CAPABILITY_EVIDENCE = (
+    '"evidence": "tabularium c025ea41, custos plan 03 decision record and Custos segment '
+    'implementation record"'
+)
+_LIFECYCLE_EVIDENCE = (
+    '"evidence": "DEV-03-9 approved by the decision maker on 2026-10-04 (tabularium '
+    '05c43abc, custos plan 03 deviation log)"'
+)
+EXEMPTIONS: dict[tuple[str, str], tuple[str, frozenset[str]]] = {
+    (_CAPABILITY_RECEIPT, "private planning repository"): (
+        _SIGNED_ELSEWHERE,
+        frozenset({_PLANNING_REPOSITORY, _CAPABILITY_EVIDENCE}),
+    ),
+    (_CAPABILITY_RECEIPT, "planning reference"): (
+        _SIGNED_ELSEWHERE,
+        frozenset(
+            {
+                '"dispatch": "main session dispatch for custos plan 03 T3 (crucible-rust '
+                'segment), decisions D1-D8 and DEV-03-1 ruled 2026-10-03",',
+                _CAPABILITY_EVIDENCE,
+            }
+        ),
+    ),
+    (_LIFECYCLE_RECEIPT, "private planning repository"): (
+        _SIGNED_ELSEWHERE,
+        frozenset({_PLANNING_REPOSITORY, _LIFECYCLE_EVIDENCE}),
+    ),
+    (_LIFECYCLE_RECEIPT, "planning reference"): (
+        _SIGNED_ELSEWHERE,
+        frozenset(
+            {
+                '"dispatch": "main session dispatch for custos plan 03 step 7 integration and '
+                'contract close-out",',
+                _LIFECYCLE_EVIDENCE,
+            }
+        ),
+    ),
+    (_FACT_RECEIPT, "private planning repository"): (
+        _SIGNED_ELSEWHERE,
+        frozenset(
+            {'"source": "tabularium .forge/fixes/2026-09/runner-fact-cash-flows-09-114-fixes.md",'}
+        ),
+    ),
     ("tests/test_runner_fact_contract_v1.py", "internal service name"): (
         "asserts the historical producer receipt, which names the repository that "
-        "accepted it; the receipt is not rewritten"
+        "accepted it; the receipt is not rewritten",
+        frozenset({'"repository": "tesseract-trading/crucible-rust",'}),
     ),
     ("Makefile", "internal service name"): (
         "the path of the sibling copy the vendoring script is compared with; renaming "
-        "it breaks the comparison"
+        "it breaks the comparison",
+        frozenset({"--sibling-copy ../crucible-rust/scripts/contract_vendor.py"}),
     ),
-    ("docs/authority/strategy-toolkit-contract.md", "planning reference"): _PROVENANCE,
-    ("docs/authority/strategy-toolkit-provenance.md", "planning reference"): _PROVENANCE,
+    ("docs/authority/strategy-toolkit-contract.md", "planning reference"): (
+        _PROVENANCE,
+        frozenset(
+            {
+                "Plan 18 T4 maps those inputs one-to-one into `custos_toolkit`,",
+                "Plan 18 T3 moves the exact reviewed execution-contract source bytes to",
+                "289 Nautilus-adapter errors are acknowledged debt, not a strict PASS. Plan 18",
+                "Crucible's owner-produced Plan 88 contract receipt is pinned by exact commit and",
+            }
+        ),
+    ),
+    ("docs/authority/strategy-toolkit-provenance.md", "planning reference"): (
+        _PROVENANCE,
+        frozenset(
+            {
+                "(philosophers-stone plan 64): the toolkit is the only implementation, and "
+                "there is no",
+                "Task 4 establishes package authority only. Runtime verifier activation and "
+                "consumer cutover remain later Plan 18 tasks.",
+            }
+        ),
+    ),
 }
 
 
@@ -136,10 +199,16 @@ def changed_scope(since: str) -> set[Path]:
     return {Path(name) for name in names if name}
 
 
-def scan(root: Path, scope: set[Path], terms: tuple[tuple[str, re.Pattern[str]], ...]) -> list[str]:
+def scan(
+    root: Path,
+    scope: set[Path],
+    terms: tuple[tuple[str, re.Pattern[str]], ...],
+    exemptions: dict[tuple[str, str], tuple[str, frozenset[str]]] = EXEMPTIONS,
+) -> list[str]:
     if not scope:
         raise SystemExit("contract disclosure: the scope is empty; nothing was read")
     findings = []
+    used: set[tuple[str, str, str]] = set()
     for path in sorted(scope - {SELF}):
         try:
             text = (root / path).read_text(encoding="utf-8")
@@ -147,11 +216,21 @@ def scan(root: Path, scope: set[Path], terms: tuple[tuple[str, re.Pattern[str]],
             continue
         for number, line in enumerate(text.splitlines(), start=1):
             for label, pattern in terms:
-                if (str(path), label) in EXEMPTIONS:
-                    continue
                 match = pattern.search(line)
-                if match:
-                    findings.append(f"{path}:{number}: {label}: {match.group(0)!r}")
+                if not match:
+                    continue
+                _, exempt = exemptions.get((str(path), label), ("", frozenset()))
+                if line.strip() in exempt:
+                    used.add((str(path), label, line.strip()))
+                    continue
+                findings.append(f"{path}:{number}: {label}: {match.group(0)!r}")
+    labels = {label for label, _ in terms}
+    for (path, label), (_, lines) in exemptions.items():
+        if Path(path) not in scope or label not in labels:
+            continue
+        for line in sorted(lines):
+            if (path, label, line) not in used:
+                findings.append(f"{path}: {label}: exempt line no longer present: {line!r}")
     return findings
 
 
@@ -174,6 +253,16 @@ def self_test() -> None:
         for harmless in ("plan15.json", "us-east-1", "VS1", "S10", "S1.5"):
             clean.write_text(harmless, encoding="utf-8")
             assert not scan(root, {Path("clean.json")}, TERMS), harmless
+        notes = root / "notes.md"
+        exempt = {("notes.md", "planning reference"): ("kept", frozenset({"see plan 18"}))}
+        notes.write_text("see plan 18\n", encoding="utf-8")
+        assert not scan(root, {Path("notes.md")}, TERMS, exempt), "an exempt line was refused"
+        notes.write_text("see plan 18\nsee plan 19\n", encoding="utf-8")
+        findings = scan(root, {Path("notes.md")}, TERMS, exempt)
+        assert [finding.split(": ")[0] for finding in findings] == ["notes.md:2"], findings
+        notes.write_text("cleaned up\n", encoding="utf-8")
+        findings = scan(root, {Path("notes.md")}, TERMS, exempt)
+        assert len(findings) == 1 and "no longer present" in findings[0], findings
         try:
             scan(root, set(), TERMS)
         except SystemExit:

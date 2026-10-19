@@ -210,8 +210,8 @@ check-toolkit-extraction:
 # Contracts other repositories vendor by revision: the vector files are what the
 # runner writes, the revision index follows its rule, and the vendoring script's
 # own tests pass under the system interpreter that consumers run it with. The
-# crucible-rust contracts Custos consumes are checked against their revision pins
-# offline; the canonical copy of the script lives in crucible-rust.
+# contracts Custos consumes are checked against their revision pins offline; the
+# canonical copy of the script is the sibling copy named below.
 check-contract-revisions:
 	uv run python scripts/generate_contract_conformance.py --check
 	uv run python scripts/generate_contract_revisions.py --check
