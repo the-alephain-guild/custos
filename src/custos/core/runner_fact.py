@@ -20,7 +20,7 @@ import unicodedata
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Context, Decimal, Inexact, InvalidOperation, Overflow, Rounded, localcontext
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
@@ -224,6 +224,172 @@ RUNNER_FACT_PROJECTOR_CONTRACTS: Final[Mapping[str, Mapping[str, object]]] = Map
     }
 )
 TERMINAL_VALUATION_KIND: Final = "RunnerInstanceTerminalValuationFact.v1"
+ORDER_EVENT_KIND: Final = "RunnerOrderEventFact.v1"
+FILL_CORRECTION_KIND: Final = "RunnerFillCorrectionFact.v1"
+ORDER_EVENTS: Final[tuple[str, ...]] = (
+    "initialized",
+    "submitted",
+    "updated",
+    "rejected",
+    "denied",
+    "refused",
+    "canceled",
+    "expired",
+    "modify_refused",
+    "modify_rejected",
+    "cancel_rejected",
+    "fill_voided",
+)
+ORDER_PURPOSES: Final[tuple[str, ...]] = (
+    "entry",
+    "scale_in",
+    "exit",
+    "reduce",
+    "protective_stop",
+    "take_profit",
+    "flatten",
+    "unspecified",
+)
+ORDER_EXECUTION_RELATIONS: Final[tuple[str, ...]] = ("original", "exec_slice", "retry", "replace")
+ORDER_ATTRIBUTION_SOURCES: Final[tuple[str, ...]] = ("order_tag", "derived", "none")
+ORDER_UNATTRIBUTED_REASONS: Final[tuple[str, ...]] = (
+    "runner_shutdown_flatten",
+    "runner_breaker_flatten",
+    "recovered_without_attribution",
+    "strategy_without_signal_hook",
+    "missing_signal_tag",
+    "legacy_without_signal",
+    "reserved_tag_forged",
+    "signal_rate_limited",
+)
+# The engine's order types, by their enum names in lower case.
+ORDER_TYPES: Final[tuple[str, ...]] = (
+    "market",
+    "limit",
+    "stop_market",
+    "stop_limit",
+    "market_to_limit",
+    "market_if_touched",
+    "limit_if_touched",
+    "trailing_stop_market",
+    "trailing_stop_limit",
+)
+ORDER_TIME_IN_FORCE: Final[tuple[str, ...]] = (
+    "gtc",
+    "ioc",
+    "fok",
+    "gtd",
+    "day",
+    "at_the_open",
+    "at_the_close",
+)
+ORDER_CONTINGENCY_TYPES: Final[tuple[str, ...]] = ("oco", "oto", "ouo")
+# The coarse order state a voided fill leaves; an engine void never ends in filled.
+ORDER_STATUS_AFTER_VOID: Final[tuple[str, ...]] = (
+    "working",
+    "partially_filled",
+    "canceled",
+    "expired",
+    "voided",
+)
+# Which prices an order carries, by type: (limit, trigger) when the order is
+# created, then (limit, trigger) an update may carry. Each entry is "required",
+# "optional" or "absent". An update does not name its type, so only the creation
+# columns can be checked on one fact; the update columns are checked against the
+# order's initialized fact.
+ORDER_PRICE_RULES: Final[Mapping[str, tuple[str, str, str, str]]] = MappingProxyType(
+    {
+        "market": ("absent", "absent", "absent", "absent"),
+        "market_to_limit": ("absent", "absent", "optional", "absent"),
+        "limit": ("required", "absent", "optional", "absent"),
+        "stop_market": ("absent", "required", "absent", "optional"),
+        "market_if_touched": ("absent", "required", "absent", "optional"),
+        "stop_limit": ("required", "required", "optional", "optional"),
+        "limit_if_touched": ("required", "required", "optional", "optional"),
+        "trailing_stop_market": ("absent", "optional", "absent", "optional"),
+        "trailing_stop_limit": ("optional", "optional", "optional", "optional"),
+    }
+)
+# Purposes a derived signal never covers: these orders predate decision signals.
+_PROTECTIVE_ORDER_PURPOSES: Final = frozenset({"protective_stop", "take_profit"})
+_REASON_CODE: Final = re.compile(r"[a-z][a-z0-9_]{0,63}")
+_WIRE_UUID: Final = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+)
+_ORDER_ELEMENTS: Final = frozenset(
+    {"instrument", "side", "order_type", "time_in_force", "reduce_only"}
+)
+_ORDER_ATTRIBUTION: Final = frozenset({"order_purpose", "execution_relation", "attribution_source"})
+_ORDER_ATTRIBUTION_LINKS: Final = frozenset(
+    {"signal_id", "unattributed_reason", "derived_signal_fact_id"}
+)
+_ORDER_RELATIONS: Final = frozenset(
+    {
+        "closes_signal_id",
+        "parent_client_order_id",
+        "retry_of_client_order_id",
+        "replaces_client_order_id",
+    }
+)
+_ORDER_ENGINE_RECORDS: Final = frozenset(
+    {"exec_spawn_id", "order_list_id", "venue_parent_order_id", "contingency_type"}
+)
+_ORDER_PRICES: Final = frozenset({"limit_price", "trigger_price"})
+_ORDER_REQUESTED: Final = frozenset(
+    {"requested_quantity", "requested_limit_price", "requested_trigger_price"}
+)
+_ORDER_VOID: Final = frozenset(
+    {
+        "voided_venue_trade_id",
+        "correction_id",
+        "voided_quantity",
+        "is_reopened",
+        "from_reconciliation",
+        "order_status_after",
+        "leaves_quantity_after",
+    }
+)
+_VOID_COMMISSION: Final = frozenset(
+    {
+        "commission_voided",
+        "commission_voided_currency",
+        "fill_commission",
+        "fill_commission_currency",
+    }
+)
+_ORDER_CREATION_REQUIRED: Final = (
+    _ORDER_ELEMENTS | _ORDER_ATTRIBUTION | {"quantity", "quantity_multiplier"}
+)
+_ORDER_CREATION_OPTIONAL: Final = (
+    _ORDER_ATTRIBUTION_LINKS | _ORDER_RELATIONS | _ORDER_ENGINE_RECORDS | _ORDER_PRICES
+)
+# The caller's fields each order event takes, as (required, optional). The
+# optional set also holds fields a rule below makes required for some inputs.
+ORDER_EVENT_FIELDS: Final[Mapping[str, tuple[frozenset[str], frozenset[str]]]] = MappingProxyType(
+    {
+        "initialized": (_ORDER_CREATION_REQUIRED, _ORDER_CREATION_OPTIONAL),
+        "refused": (_ORDER_CREATION_REQUIRED | {"reason_code"}, _ORDER_CREATION_OPTIONAL),
+        "submitted": (frozenset(), frozenset()),
+        "updated": (frozenset({"quantity", "quantity_multiplier"}), _ORDER_PRICES),
+        "rejected": (frozenset({"reason_code"}), frozenset()),
+        "denied": (frozenset({"reason_code"}), frozenset()),
+        "canceled": (frozenset(), frozenset({"last_trigger_price"})),
+        "expired": (frozenset(), frozenset({"last_trigger_price"})),
+        "modify_refused": (
+            frozenset({"requested_values_known", "reason_code"}),
+            _ORDER_REQUESTED | {"quantity_multiplier"},
+        ),
+        "modify_rejected": (
+            frozenset({"requested_values_known", "reason_code"}),
+            _ORDER_REQUESTED | {"quantity_multiplier"},
+        ),
+        "cancel_rejected": (frozenset({"reason_code"}), frozenset()),
+        "fill_voided": (
+            _ORDER_VOID | {"instrument", "quantity_multiplier"},
+            _VOID_COMMISSION,
+        ),
+    }
+)
 # A terminal valuation is only "same boundary" when its prices and the stop it
 # values are this close to the moment the portfolio was read.
 MAX_TERMINAL_VALUATION_GAP_SECONDS: Final = 60
@@ -1681,6 +1847,351 @@ def _require_terminal_valuation_batch(
         raise RunnerFactContractError("terminal valuation valuation_digest differs from its body")
     if dict(terminal) != rebuilt:
         raise RunnerFactContractError("terminal valuation is not in canonical wire form")
+
+
+def _wire_uuid(value: Any, field: str) -> str:
+    """A UUID written the one way the consumer parses: lower case, hyphenated, a
+    known version and the standard variant. Other spellings are normalised; a
+    value that cannot be written that way is refused rather than signed."""
+
+    rendered = _uuid(value, field)
+    if not _WIRE_UUID.fullmatch(rendered):
+        raise RunnerFactContractError(f"{field} must be a version 1-8 UUID of the standard variant")
+    return rendered
+
+
+def _enum(value: Any, allowed: tuple[str, ...], field: str) -> str:
+    if not isinstance(value, str) or value not in allowed:
+        raise RunnerFactContractError(f"{field} must be one of {', '.join(allowed)}")
+    return value
+
+
+def _reason_code(value: Any, field: str = "reason_code") -> str:
+    if not isinstance(value, str) or not _REASON_CODE.fullmatch(value):
+        raise RunnerFactContractError(f"{field} must be a normalised code, not free text")
+    return value
+
+
+def _base_quantity(native: str, multiplier: str, field: str) -> str:
+    """native * multiplier, exactly. Each factor already fits the consumer's
+    decimal (at most 29 digits), so a 60-digit context never rounds; a product
+    the consumer cannot hold is refused, never rounded into range."""
+
+    with localcontext(Context(prec=60, traps=[Inexact, Rounded, InvalidOperation, Overflow])):
+        product = Decimal(native) * Decimal(multiplier)
+    return _render_decimal(product, field, bounded=True)
+
+
+def _order_side(value: Any, field: str) -> str:
+    if value not in {"buy", "sell"}:
+        raise RunnerFactContractError(f"{field} must be buy or sell")
+    return value
+
+
+def _positive_quantity(value: Any, field: str) -> str:
+    return _decimal(value, field, positive=True, bounded=True)
+
+
+def _price(value: Any, field: str) -> str:
+    return _decimal(value, field, bounded=True)
+
+
+def _order_identifier(value: Any, field: str) -> str:
+    return _identifier(value, field, _MAX_VENUE_ID_BYTES)
+
+
+_ORDER_FIELD_RULES: Final[Mapping[str, Callable[[Any, str], Any]]] = MappingProxyType(
+    {
+        "instrument": lambda value, field: _identifier(value, field, _MAX_INSTRUMENT_BYTES),
+        "side": lambda value, field: _order_side(value, field),
+        "order_type": lambda value, field: _enum(value, ORDER_TYPES, field),
+        "time_in_force": lambda value, field: _enum(value, ORDER_TIME_IN_FORCE, field),
+        "reduce_only": lambda value, field: _required_bool(value, field),
+        "order_purpose": lambda value, field: _enum(value, ORDER_PURPOSES, field),
+        "execution_relation": lambda value, field: _enum(value, ORDER_EXECUTION_RELATIONS, field),
+        "attribution_source": lambda value, field: _enum(value, ORDER_ATTRIBUTION_SOURCES, field),
+        "signal_id": _wire_uuid,
+        "unattributed_reason": lambda value, field: _enum(value, ORDER_UNATTRIBUTED_REASONS, field),
+        "derived_signal_fact_id": _wire_uuid,
+        "closes_signal_id": _wire_uuid,
+        "parent_client_order_id": _order_identifier,
+        "retry_of_client_order_id": _order_identifier,
+        "replaces_client_order_id": _order_identifier,
+        "exec_spawn_id": _order_identifier,
+        "order_list_id": _order_identifier,
+        "venue_parent_order_id": _order_identifier,
+        "contingency_type": lambda value, field: _enum(value, ORDER_CONTINGENCY_TYPES, field),
+        "quantity": _positive_quantity,
+        "quantity_multiplier": _positive_quantity,
+        "limit_price": _price,
+        "trigger_price": _price,
+        "requested_values_known": lambda value, field: _required_bool(value, field),
+        "requested_quantity": _positive_quantity,
+        "requested_limit_price": _price,
+        "requested_trigger_price": _price,
+        "reason_code": _reason_code,
+        "last_trigger_price": _price,
+        "voided_venue_trade_id": _order_identifier,
+        "correction_id": _order_identifier,
+        "voided_quantity": _positive_quantity,
+        "is_reopened": lambda value, field: _required_bool(value, field),
+        "from_reconciliation": lambda value, field: _required_bool(value, field),
+        "order_status_after": lambda value, field: _enum(value, ORDER_STATUS_AFTER_VOID, field),
+        "leaves_quantity_after": lambda value, field: _decimal(value, field, bounded=True),
+        "commission_voided": lambda value, field: _signed_decimal(value, field, bounded=True),
+        "commission_voided_currency": lambda value, field: _currency(value),
+        "fill_commission": lambda value, field: _signed_decimal(value, field, bounded=True),
+        "fill_commission_currency": lambda value, field: _currency(value),
+    }
+)
+
+
+def _void_commission(fields: Mapping[str, Any]) -> None:
+    """The engine's rule for a fill's cumulative commission correction.
+
+    ``fill_commission`` is what the voided fill charged (absent when it charged
+    nothing); ``commission_voided`` is how much of it is reversed so far. Each
+    pair is present or absent as a whole. Checks that need the previous version
+    of the same fill (the reversal does not shrink, and does not vanish once
+    given) belong to the consumer's fold.
+    """
+
+    for amount, currency in (
+        ("commission_voided", "commission_voided_currency"),
+        ("fill_commission", "fill_commission_currency"),
+    ):
+        if (amount in fields) != (currency in fields):
+            raise RunnerFactContractError(f"{amount} and {currency} come together")
+    voided = fields.get("commission_voided")
+    charged = fields.get("fill_commission")
+    if charged is None:
+        if voided is not None and Decimal(voided) != 0:
+            raise RunnerFactContractError(
+                "commission_voided must be absent or zero when the fill charged no commission"
+            )
+        return
+    if voided is None:
+        return
+    if fields["commission_voided_currency"] != fields["fill_commission_currency"]:
+        raise RunnerFactContractError("commission_voided is in another currency than the fill")
+    reversed_amount, original = Decimal(voided), Decimal(charged)
+    if (reversed_amount > 0) != (original > 0) or (reversed_amount < 0) != (original < 0):
+        raise RunnerFactContractError("commission_voided must keep the sign of fill_commission")
+    if abs(reversed_amount) > abs(original):
+        raise RunnerFactContractError("commission_voided exceeds the fill's commission")
+
+
+def _require_order_prices(order_type: str, fields: Mapping[str, Any]) -> None:
+    limit_rule, trigger_rule, _, _ = ORDER_PRICE_RULES[order_type]
+    for field, rule in (("limit_price", limit_rule), ("trigger_price", trigger_rule)):
+        if rule == "required" and field not in fields:
+            raise RunnerFactContractError(f"a {order_type} order needs {field}")
+        if rule == "absent" and field in fields:
+            raise RunnerFactContractError(f"a {order_type} order has no {field}")
+
+
+def _require_order_attribution(fields: Mapping[str, Any]) -> None:
+    source = fields["attribution_source"]
+    if source == "order_tag":
+        expected = {"signal_id"}
+    elif source == "derived" and fields["order_purpose"] not in _PROTECTIVE_ORDER_PURPOSES:
+        expected = {"derived_signal_fact_id"}
+    else:
+        expected = {"unattributed_reason"}
+    present = _ORDER_ATTRIBUTION_LINKS & set(fields)
+    if present != expected:
+        raise RunnerFactContractError(
+            f"attribution {source} for a {fields['order_purpose']} order carries exactly "
+            + ", ".join(sorted(expected))
+        )
+    if (
+        source == "derived"
+        and fields["order_purpose"] in _PROTECTIVE_ORDER_PURPOSES
+        and fields["unattributed_reason"] != "legacy_without_signal"
+    ):
+        raise RunnerFactContractError(
+            "a protective order under a derived signal is legacy_without_signal"
+        )
+
+
+def _require_order_request(fields: Mapping[str, Any]) -> None:
+    requested = _ORDER_REQUESTED & set(fields)
+    if not fields["requested_values_known"]:
+        if requested or "quantity_multiplier" in fields:
+            raise RunnerFactContractError("an unknown request carries no requested values")
+        return
+    if not requested:
+        raise RunnerFactContractError("a known request names at least one requested value")
+    if ("requested_quantity" in fields) != ("quantity_multiplier" in fields):
+        raise RunnerFactContractError("requested_quantity comes with quantity_multiplier")
+
+
+def order_event_fact(
+    authority: RunnerFactAuthority,
+    *,
+    order_event: str,
+    client_order_id: str,
+    source_event_id: UUID | str,
+    occurred_at: datetime | str,
+    **fields: Any,
+) -> dict[str, Any]:
+    """Build one RunnerOrderEventFact.v1.
+
+    ``fields`` holds the event's own fields; a ``None`` value is the same as
+    leaving the field out, and an absent field is not written. Which fields an
+    event takes is ``ORDER_EVENT_FIELDS``. Native quantities come with the
+    multiplier that turns them into base-asset quantities; the base quantities
+    are computed here, exactly, so the runner has one place that converts.
+
+    The event id is derived from the stream, the order, the event and its
+    source event, so a replay of one engine event signs one fact.
+    """
+
+    if not isinstance(authority, RunnerFactAuthority):
+        raise RunnerFactContractError("order event authority must be a RunnerFactAuthority")
+    event = _enum(order_event, ORDER_EVENTS, "order_event")
+    given = {name: value for name, value in fields.items() if value is not None}
+    required, optional = ORDER_EVENT_FIELDS[event]
+    unknown = set(given) - set(_ORDER_FIELD_RULES)
+    if unknown:
+        raise RunnerFactContractError(
+            f"not {ORDER_EVENT_KIND} fields: {', '.join(sorted(unknown))}"
+        )
+    missing = required - set(given)
+    if missing:
+        raise RunnerFactContractError(f"{event} needs {', '.join(sorted(missing))}")
+    extra = set(given) - required - optional
+    if extra:
+        raise RunnerFactContractError(f"{event} does not carry {', '.join(sorted(extra))}")
+    normalized = {name: _ORDER_FIELD_RULES[name](value, name) for name, value in given.items()}
+
+    if event in {"initialized", "refused"}:
+        _require_order_prices(normalized["order_type"], normalized)
+        _require_order_attribution(normalized)
+    if event in {"modify_refused", "modify_rejected"}:
+        _require_order_request(normalized)
+    multiplier = normalized.get("quantity_multiplier")
+    for native, base in (
+        ("quantity", "base_quantity"),
+        ("requested_quantity", "requested_base_quantity"),
+        ("voided_quantity", "voided_base_quantity"),
+        ("leaves_quantity_after", "leaves_base_quantity_after"),
+    ):
+        if native in normalized:
+            assert multiplier is not None
+            normalized[base] = _base_quantity(normalized[native], multiplier, base)
+    if event == "fill_voided":
+        if normalized["order_status_after"] == "voided" and Decimal(
+            normalized["leaves_quantity_after"]
+        ):
+            raise RunnerFactContractError("a voided order has nothing left to fill")
+        _void_commission(normalized)
+
+    order_id = _order_identifier(client_order_id, "client_order_id")
+    source = _wire_uuid(source_event_id, "source_event_id")
+    return {
+        "kind": ORDER_EVENT_KIND,
+        "event_id": str(
+            runner_fact_event_id(authority.stream_key, "order_event", order_id, event, source)
+        ),
+        "order_event": event,
+        "client_order_id": order_id,
+        "source_event_id": source,
+        "occurred_at": _timestamp(occurred_at, "occurred_at"),
+        **normalized,
+    }
+
+
+def fill_correction_fact(
+    authority: RunnerFactAuthority,
+    *,
+    fill_id: UUID | str,
+    venue: str,
+    voided_venue_trade_id: str,
+    instrument: str,
+    order_side: str,
+    last_px: Decimal | str | int,
+    source_event_id: UUID | str,
+    correction_id: str,
+    voided_quantity: Decimal | str | int,
+    quantity_multiplier: Decimal | str | int,
+    is_reopened: bool,
+    from_reconciliation: bool,
+    occurred_at: datetime | str,
+    position_id: UUID | str | None = None,
+    commission_voided: Decimal | str | int | None = None,
+    commission_voided_currency: str | None = None,
+    fill_commission: Decimal | str | int | None = None,
+    fill_commission_currency: str | None = None,
+) -> dict[str, Any]:
+    """Build one RunnerFillCorrectionFact.v1: the settlement correction for a fill
+    this instance signed and the engine has since voided.
+
+    The quantities and commission are cumulative for the fill, as the engine
+    reports them; the consumer applies the change since the version it applied.
+    ``position_id`` names the position lifecycle the way ``position_closed`` does
+    and is left out when the runner cannot tell which lifecycle the fill belongs
+    to. Whether the fill was signed by this instance is the caller's check: any
+    trade id yields a ``fill_id``, so this builder cannot see it.
+    """
+
+    if not isinstance(authority, RunnerFactAuthority):
+        raise RunnerFactContractError("fill correction authority must be a RunnerFactAuthority")
+    trade_id = _order_identifier(voided_venue_trade_id, "voided_venue_trade_id")
+    # A reconciliation void without a local fill carries a synthetic trade id;
+    # no fill of this instance was ever signed under it.
+    if trade_id.startswith("VOID-"):
+        raise RunnerFactContractError("a synthetic void trade id has no signed fill to correct")
+    venue_name = _identifier(venue, "venue", _MAX_VENUE_BYTES)
+    instrument_name = _identifier(instrument, "instrument", _MAX_INSTRUMENT_BYTES)
+    source = _wire_uuid(source_event_id, "source_event_id")
+    multiplier = _positive_quantity(quantity_multiplier, "quantity_multiplier")
+    native = _positive_quantity(voided_quantity, "voided_quantity")
+    commission: dict[str, Any] = {}
+    for field, value, normalize in (
+        ("commission_voided", commission_voided, _signed_decimal),
+        ("fill_commission", fill_commission, _signed_decimal),
+    ):
+        if value is not None:
+            commission[field] = normalize(value, field, bounded=True)
+    for field, value in (
+        ("commission_voided_currency", commission_voided_currency),
+        ("fill_commission_currency", fill_commission_currency),
+    ):
+        if value is not None:
+            commission[field] = _currency(value)
+    _void_commission(commission)
+    fact: dict[str, Any] = {
+        "kind": FILL_CORRECTION_KIND,
+        "event_id": str(
+            runner_fact_event_id(
+                authority.stream_key,
+                "fill_correction",
+                venue_name,
+                instrument_name,
+                trade_id,
+                source,
+            )
+        ),
+        "fill_id": _wire_uuid(fill_id, "fill_id"),
+        "venue": venue_name,
+        "voided_venue_trade_id": trade_id,
+        "instrument": instrument_name,
+        "order_side": _order_side(order_side, "order_side"),
+        "last_px": _price(last_px, "last_px"),
+        "source_event_id": source,
+        "correction_id": _order_identifier(correction_id, "correction_id"),
+        "voided_quantity": native,
+        "voided_base_quantity": _base_quantity(native, multiplier, "voided_base_quantity"),
+        "quantity_multiplier": multiplier,
+        "is_reopened": _required_bool(is_reopened, "is_reopened"),
+        "from_reconciliation": _required_bool(from_reconciliation, "from_reconciliation"),
+        "occurred_at": _timestamp(occurred_at, "occurred_at"),
+        **commission,
+    }
+    if position_id is not None:
+        fact["position_id"] = _wire_uuid(position_id, "position_id")
+    return fact
 
 
 def venue_ledger_snapshot_facts(
