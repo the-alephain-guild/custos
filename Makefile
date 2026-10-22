@@ -126,6 +126,15 @@ dist: check-runtime-lock  ## Build the runner sdist and all three exact runtime 
 	uv build --package custos-strategy-toolkit --wheel --out-dir dist
 	uv build --package custos-strategy-toolkit-nautilus --wheel --out-dir dist
 
+# A release image carries the authorized toolkit rc, not the checkout's toolkit: the
+# runner is built from HEAD with its toolkit pins rewritten to the rc, the two toolkit
+# wheels are pulled from the registry by the rc's receipt, and toolkit-authority.json
+# records what the image build must find. Needs TOOLKIT_REGISTRY_ACTOR/TOKEN.
+.PHONY: dist-release
+dist-release: check-runtime-lock  ## Build the release inputs: runner from HEAD, toolkit as the authorized rc
+	rm -rf dist/
+	uv run python scripts/release_dist.py --out dist
+
 sign:  ## Sign every wheel under dist/ with sigstore keyless (requires OIDC; runs in CI)
 	bash .github/workflows/scripts/sign-wheel.sh
 
@@ -164,7 +173,27 @@ docker-sign:  ## Sign the built docker image with cosign keyless (requires OIDC;
 test-docker-existing:  ## Run runtime contracts against CUSTOS_TEST_IMAGE (default custos-runner:test)
 	uv run --extra dev pytest -m docker tests/test_docker_non_root.py tests/test_docker_entrypoint_help.py tests/test_docker_image_size.py tests/test_docker_runtime_contract.py -v
 
-test-docker: docker-build test-docker-existing  ## Build local image, then run complete runtime contracts
+test-docker: docker-build  ## Build local image, then run complete runtime contracts
+	CUSTOS_EXPECT_TOOLKIT_IDENTITY=0 $(MAKE) test-docker-existing
+
+# The release image path: build from release inputs (the authorized rc, see
+# dist-release), then run the same runtime contracts plus the toolkit identity
+# checks. test-docker above keeps checking the source-built image, which must
+# carry no identity. Neither pushes or tags anything for publication.
+RELEASE_LOCAL_IMAGE ?= custos-runner:release-local
+
+.PHONY: docker-build-release-local
+docker-build-release-local: dist-release  ## Build a local image from release inputs (toolkit = authorized rc)
+	docker build \
+		--build-arg SOURCE_REVISION=$(SOURCE_REVISION) \
+		--build-arg CUSTOS_RELEASE_BUILD=1 \
+		--label org.opencontainers.image.revision=$(SOURCE_REVISION) \
+		--tag $(RELEASE_LOCAL_IMAGE) \
+		.
+
+.PHONY: test-docker-release
+test-docker-release: docker-build-release-local  ## Build the release-input image, then run runtime and toolkit identity contracts
+	CUSTOS_TEST_IMAGE=$(RELEASE_LOCAL_IMAGE) CUSTOS_EXPECT_TOOLKIT_IDENTITY=1 $(MAKE) test-docker-existing
 
 # These gate the image contract only. The standalone deployment-wire acceptance
 # they used to run was deleted along with `arx-runner deployment publish`, which
@@ -225,6 +254,16 @@ check-authority: check-strategy-contract-assets check-toolkit-extraction check-c
 verify: check-authority
 
 verify: toolkit-typecheck
+
+# A runner image installs the authorized toolkit rc, so a release is refused while
+# the toolkit directories differ from that rc's source commit. Here the check only
+# reports: a branch may legitimately be ahead of the rc until the next rc is
+# promoted. The release workflow runs it with --release, where a difference fails.
+.PHONY: check-toolkit-release-pin
+check-toolkit-release-pin:  ## Report whether the toolkit source is the authorized rc
+	python3 scripts/check-toolkit-release-pin.py
+
+verify: check-toolkit-release-pin
 
 .PHONY: verify-development-artifact
 

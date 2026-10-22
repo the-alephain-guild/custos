@@ -801,6 +801,12 @@ def _verify_toolkit_rc_receipt(errors: list[str]) -> None:
         "promotion_run_id": 39037175327,
         "promotion_artifact_digest": "sha256:41e3960848aa7cf59a4e6e49bf9880bda3c7d10b141e7907ee4c5b6841060293",
         "receipt_sha256": receipt_digest,
+        # The record's identity is not covered by receipt_sha256, so it must repeat the receipt.
+        "candidate_version": receipt.get("candidate_version"),
+        "source_commit": receipt.get("source_commit"),
+        "manifest_digest": (
+            publication.get("manifest_digest") if isinstance(publication, dict) else None
+        ),
     }
     for key, value in expected_release.items():
         if release.get(key) != value:

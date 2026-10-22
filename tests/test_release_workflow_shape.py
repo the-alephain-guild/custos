@@ -81,7 +81,8 @@ def test_runtime_is_fully_tested_before_wheels_and_image_publication() -> None:
     contract_revisions = text.index("scripts/generate_contract_revisions.py --check", all_tests)
     authority = text.index("scripts/check-authority-docs.py", all_tests)
     assert all_tests < contract_vectors < contract_revisions < authority
-    wheel = text.index("make dist")
+    release_pin = text.index("scripts/check-toolkit-release-pin.py --release", authority)
+    wheel = text.index("make dist-release", release_pin)
     wheel_signature = text.index(".github/workflows/scripts/sign-wheel.sh")
     signature_tests = text.index("pytest tests/test_wheel_signature.py", wheel_signature)
     image = text.index("docker/build-push-action@")
@@ -90,6 +91,7 @@ def test_runtime_is_fully_tested_before_wheels_and_image_publication() -> None:
         < runtime_lock
         < all_tests
         < authority
+        < release_pin
         < wheel
         < wheel_signature
         < signature_tests
@@ -112,6 +114,16 @@ def test_image_is_multi_platform_with_sbom_and_provenance() -> None:
     assert "docker image inspect --platform" not in text
 
 
+def test_the_image_build_is_marked_as_a_release_build() -> None:
+    """Marked, the build fails without the toolkit authority file instead of skipping it."""
+
+    text = _read()
+    start = text.index("- name: Build and push exact multi-platform image")
+    step = text[start : text.index("- name:", start + 1)]
+    build_args = step[step.index("build-args: |") : step.index("labels: |")]
+    assert "CUSTOS_RELEASE_BUILD=1" in build_args
+
+
 def test_exact_digest_runtime_gate_precedes_signature() -> None:
     text = _read()
     build = text.index("Build and push exact multi-platform image")
@@ -121,6 +133,21 @@ def test_exact_digest_runtime_gate_precedes_signature() -> None:
     arm64_pull = text.index("docker pull --platform linux/arm64", local_cleanup)
     sign = text.index("cosign sign --yes", runtime)
     assert build < digest < runtime < local_cleanup < arm64_pull < sign
+
+
+def test_exact_digest_gate_requires_the_toolkit_identity_on_both_platforms() -> None:
+    """Unset, the identity tests skip, so the gate would pass an image without one."""
+
+    text = _read()
+    start = text.index("- name: Gate the exact candidate digest")
+    step = text[start : text.index("- name:", start + 1)]
+    env = step[: step.index("run: |")]
+    assert 'CUSTOS_EXPECT_TOOLKIT_IDENTITY: "1"' in env
+    identity = "/usr/local/share/custos/toolkit-identity.json"
+    amd64 = step.index(f"{identity} > toolkit-identity-amd64.json")
+    arm64_pull = step.index("docker pull --platform linux/arm64")
+    arm64 = step.index(f"{identity} | cmp - toolkit-identity-amd64.json")
+    assert step.index("make verify-runtime-existing") < amd64 < arm64_pull < arm64
 
 
 def test_discovery_tags_are_immutable_but_never_runtime_authority() -> None:

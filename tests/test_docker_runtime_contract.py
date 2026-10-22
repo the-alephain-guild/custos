@@ -229,3 +229,71 @@ def test_official_image_contains_vault_toolchain(binary: str) -> None:
         f"official image must provide `{binary} --version`; "
         f"stdout={proc.stdout!r}\nstderr={proc.stderr!r}"
     )
+
+
+# Which kind of image this run is checking: "1" for an image built from release
+# inputs (make test-docker-release), "0" for a source build (make test-docker).
+# Unset, the toolkit identity tests skip rather than guess.
+EXPECT_TOOLKIT_IDENTITY = os.environ.get("CUSTOS_EXPECT_TOOLKIT_IDENTITY")
+TOOLKIT_IDENTITY = "/usr/local/share/custos/toolkit-identity.json"
+
+
+def _authorized_rc() -> dict[str, object]:
+    root = Path(__file__).resolve().parent.parent
+    authority = json.loads((root / "docs/authority/ecosystem-authority.json").read_text())
+    release = authority["toolkit_rc_release"]
+    receipt = json.loads((root / release["receipt_path"]).read_text())
+    wheels = {
+        layer["role"]: layer["digest"].removeprefix("sha256:")
+        for layer in receipt["publication_receipt"]["layers"]
+        if layer["role"] in ("base_contracts_wheel.wheel", "nautilus_wheel.wheel")
+    }
+    # The identity is the receipt's; the record only locates it and pins its bytes.
+    return {
+        "candidate_version": receipt["candidate_version"],
+        "source_commit": receipt["source_commit"],
+        "manifest_digest": receipt["publication_receipt"]["manifest_digest"],
+        "receipt_sha256": release["receipt_sha256"],
+        "base": wheels["base_contracts_wheel.wheel"],
+        "nautilus": wheels["nautilus_wheel.wheel"],
+    }
+
+
+@pytest.mark.docker
+def test_a_release_image_carries_the_authorized_rc_and_its_identity() -> None:
+    if EXPECT_TOOLKIT_IDENTITY != "1":
+        pytest.skip("set CUSTOS_EXPECT_TOOLKIT_IDENTITY=1 for an image built from release inputs")
+    _require_image()
+    rc = _authorized_rc()
+
+    identity = _run_image(TOOLKIT_IDENTITY, entrypoint="cat")
+    assert identity.returncode == 0, f"release image has no toolkit identity: {identity.stderr!r}"
+    document = json.loads(identity.stdout)
+    assert document["candidate_version"] == rc["candidate_version"]
+    assert document["manifest_digest"] == rc["manifest_digest"]
+    assert document["source_commit"] == rc["source_commit"]
+    assert document["receipt_sha256"] == rc["receipt_sha256"]
+    assert document["base_contracts_wheel_sha256"] == rc["base"]
+    assert document["nautilus_wheel_sha256"] == rc["nautilus"]
+
+    mode = _run_image("-c", "%a", TOOLKIT_IDENTITY, entrypoint="stat")
+    assert mode.stdout.strip() == "444"
+
+    versions = _run_image(
+        "-c",
+        "from importlib.metadata import version; "
+        "print(version('custos-strategy-toolkit'), version('custos-strategy-toolkit-nautilus'))",
+        entrypoint="python",
+    )
+    assert versions.stdout.split() == [rc["candidate_version"], rc["candidate_version"]]
+
+
+@pytest.mark.docker
+def test_a_source_built_image_has_no_toolkit_identity() -> None:
+    if EXPECT_TOOLKIT_IDENTITY != "0":
+        pytest.skip("set CUSTOS_EXPECT_TOOLKIT_IDENTITY=0 for an image built from source")
+    _require_image()
+
+    probe = _run_image("-e", TOOLKIT_IDENTITY, entrypoint="test")
+
+    assert probe.returncode != 0, "a source-built image must not claim a toolkit identity"

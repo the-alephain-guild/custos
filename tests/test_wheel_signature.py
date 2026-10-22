@@ -2,9 +2,14 @@
 
 The signing itself needs a GitHub Actions OIDC token, so we cannot exercise
 the real signing flow locally. This test is deliberately ``@pytest.mark.ci_only``
-so it skips outside of CI. In CI, after ``sign-wheel.sh`` has run, every
+so it skips outside of CI. In CI, after ``sign-wheel.sh`` has run, the runner
 wheel under ``dist/`` must have a matching ``.sigstore`` bundle and pass
-``sigstore verify identity``.
+``sigstore verify identity`` against the runner release workflow.
+
+The two toolkit wheels beside it are the authorized rc's bytes (``make
+dist-release``). The toolkit rc workflow signed them when it published the rc;
+here they are checked against the rc receipt's digests instead, since the runner
+workflow's identity is not the identity that signed them.
 
 Two layers cover FM1:
 
@@ -16,6 +21,8 @@ Two layers cover FM1:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -25,6 +32,8 @@ import pytest
 
 DIST = Path(__file__).resolve().parent.parent / "dist"
 SIGN_SCRIPT = Path(__file__).resolve().parent.parent / ".github/workflows/scripts/sign-wheel.sh"
+RUNNER_WHEELS = "custos_runner-*.whl"
+TOOLKIT_AUTHORITY = DIST / "toolkit-authority.json"
 
 
 def _is_ci_with_oidc() -> bool:
@@ -73,14 +82,20 @@ def test_signing_script_emits_bundle_evidence_not_a_detached_signature() -> None
     assert "--output-signature" not in source
 
 
+def test_signing_script_signs_only_the_runner_wheel() -> None:
+    source = SIGN_SCRIPT.read_text(encoding="utf-8")
+    assert "wheels=(dist/custos_runner-*.whl)" in source
+    assert "wheels=(dist/*.whl)" not in source
+
+
 @pytest.mark.ci_only
 def test_every_wheel_has_sigstore_bundle():
     if not _is_ci_with_oidc():
         pytest.skip("sigstore keyless requires GitHub Actions OIDC (ACTIONS_ID_TOKEN_REQUEST_URL)")
     if not DIST.exists():
         pytest.fail("dist/ directory missing; run `make dist` (or `uv build`) first")
-    wheels = sorted(DIST.glob("*.whl"))
-    assert wheels, f"no wheels under {DIST}; run `make dist` (or `uv build`) first"
+    wheels = sorted(DIST.glob(RUNNER_WHEELS))
+    assert len(wheels) == 1, f"expected one runner wheel under {DIST}; run `make dist-release`"
     for whl in wheels:
         bundle = whl.with_suffix(whl.suffix + ".sigstore")
         assert bundle.exists(), (
@@ -95,8 +110,8 @@ def test_sigstore_verify_passes_for_every_wheel():
         pytest.skip("sigstore keyless requires GitHub Actions OIDC")
     if shutil.which("sigstore") is None:
         pytest.skip("sigstore CLI not on PATH (install with `uv sync`)")
-    wheels = sorted(DIST.glob("*.whl"))
-    assert wheels, f"no wheels under {DIST}"
+    wheels = sorted(DIST.glob(RUNNER_WHEELS))
+    assert len(wheels) == 1, f"expected one runner wheel under {DIST}"
     # sigstore-python 3.x default: bundle written as `<artifact>.sigstore`; the
     # ``verify identity`` subcommand walks the sibling bundle by convention.
     # `cert-identity` and `cert-oidc-issuer` must be pinned so the verify
@@ -129,4 +144,17 @@ def test_sigstore_verify_passes_for_every_wheel():
         )
         assert proc.returncode == 0, (
             f"sigstore verify failed for {whl.name}\nstdout={proc.stdout}\nstderr={proc.stderr}"
+        )
+
+
+@pytest.mark.ci_only
+def test_the_toolkit_wheels_are_the_authorized_rc_bytes():
+    if not _is_ci_with_oidc():
+        pytest.skip("runs in the release job, after make dist-release")
+    authority = json.loads(TOOLKIT_AUTHORITY.read_text(encoding="utf-8"))
+    for key, wheel in authority["wheels"].items():
+        path = DIST / wheel["filename"]
+        assert path.is_file(), f"the {key} {wheel['filename']} is missing from dist/"
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == wheel["sha256"], (
+            f"the {key} in dist/ is not the authorized rc's bytes"
         )

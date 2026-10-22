@@ -107,10 +107,16 @@ jobs:
 
       - name: Build reproducible wheel inputs
         shell: bash
+        env:
+          # The toolkit wheels are the authorized rc, read from the public package.
+          TOOLKIT_REGISTRY_ACTOR: ${{ github.actor }}
+          TOOLKIT_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          make dist
+          # A runner ships only while its toolkit is the authorized rc's source.
+          python3 scripts/check-toolkit-release-pin.py --release
+          make dist-release
           for file in dist/*.whl dist/*.tar.gz; do
             sha256sum "$file"
           done | tee dist/SHA256SUMS
@@ -166,6 +172,7 @@ jobs:
           sbom: true
           build-args: |
             SOURCE_REVISION=${{ github.sha }}
+            CUSTOS_RELEASE_BUILD=1
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -174,13 +181,19 @@ jobs:
       - name: Gate the exact candidate digest
         env:
           CUSTOS_TEST_IMAGE: ${{ env.IMAGE_NAME }}@${{ steps.push.outputs.digest }}
+          # Built from release inputs: the toolkit identity tests must run, not skip.
+          CUSTOS_EXPECT_TOOLKIT_IDENTITY: "1"
         run: |
           docker pull --platform linux/amd64 "${CUSTOS_TEST_IMAGE}"
           make install
           make verify-runtime-existing
+          docker run --rm --platform linux/amd64 --entrypoint cat "${CUSTOS_TEST_IMAGE}" \
+            /usr/local/share/custos/toolkit-identity.json > toolkit-identity-amd64.json
           docker image rm "${CUSTOS_TEST_IMAGE}"
           docker pull --platform linux/arm64 "${CUSTOS_TEST_IMAGE}"
           test "$(docker run --rm --platform linux/arm64 --entrypoint /usr/bin/id "${CUSTOS_TEST_IMAGE}" -u)" = 1000
+          docker run --rm --platform linux/arm64 --entrypoint cat "${CUSTOS_TEST_IMAGE}" \
+            /usr/local/share/custos/toolkit-identity.json | cmp - toolkit-identity-amd64.json
           docker run --rm --platform linux/arm64 "${CUSTOS_TEST_IMAGE}" --help
           for command in breaker credential deployment enroll health identity nats nats-transport publish-capability release-policy start vault; do
             docker run --rm --platform linux/arm64 "${CUSTOS_TEST_IMAGE}" "$command" --help
