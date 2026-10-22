@@ -84,16 +84,20 @@ sequences.
   toolkit built from the checkout.** The release refuses to build while either
   toolkit package differs from the source of the registered toolkit release
   candidate, so any toolkit change needs a new candidate published and promoted
-  first. `make dist-release` builds the runner from `HEAD` with its toolkit
-  requirements pinned to that candidate (the sdist carries the same pins), pulls
-  the candidate's two wheels by its receipt and checks them against the receipt
-  digests. The image hashes the toolkit wheels it installs, refuses to build
-  unless they are the candidate's bytes, and writes
-  `/usr/local/share/custos/toolkit-identity.json` (read-only) with those digests;
-  an image built from source has no such file. The runner release signs only the
-  runner wheel: the toolkit wheels keep the signature of the workflow that
-  published the candidate. Local targets `docker-build-release-local` and
-  `test-docker-release` build and check such an image without publishing it.
+  first. The candidate's version, source commit and manifest digest are read
+  from its receipt once the receipt bytes are checked, and the registered record
+  must repeat all three. `make dist-release` builds the runner from `HEAD` with
+  its toolkit requirements pinned to that candidate (the sdist carries the same
+  pins), pulls the candidate's two wheels by its receipt and checks them against
+  the receipt digests. The image hashes the toolkit wheels it installs, refuses
+  to build unless they are the candidate's bytes, and writes
+  `/usr/local/share/custos/toolkit-identity.json` (read-only) with those
+  digests; an image built from source has no such file. Before signing, the
+  release reads that file from the pushed image on both platforms. The runner
+  release signs only the runner wheel: the toolkit wheels keep the signature of
+  the workflow that published the candidate. Local targets
+  `docker-build-release-local` and `test-docker-release` build and check such an
+  image without publishing it.
 
 ### Fixed
 
