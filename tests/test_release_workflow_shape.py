@@ -81,7 +81,8 @@ def test_runtime_is_fully_tested_before_wheels_and_image_publication() -> None:
     contract_revisions = text.index("scripts/generate_contract_revisions.py --check", all_tests)
     authority = text.index("scripts/check-authority-docs.py", all_tests)
     assert all_tests < contract_vectors < contract_revisions < authority
-    wheel = text.index("make dist")
+    release_pin = text.index("scripts/check-toolkit-release-pin.py --release", authority)
+    wheel = text.index("make dist-release", release_pin)
     wheel_signature = text.index(".github/workflows/scripts/sign-wheel.sh")
     signature_tests = text.index("pytest tests/test_wheel_signature.py", wheel_signature)
     image = text.index("docker/build-push-action@")
@@ -90,6 +91,7 @@ def test_runtime_is_fully_tested_before_wheels_and_image_publication() -> None:
         < runtime_lock
         < all_tests
         < authority
+        < release_pin
         < wheel
         < wheel_signature
         < signature_tests

@@ -107,10 +107,16 @@ jobs:
 
       - name: Build reproducible wheel inputs
         shell: bash
+        env:
+          # The toolkit wheels are the authorized rc, read from the public package.
+          TOOLKIT_REGISTRY_ACTOR: ${{ github.actor }}
+          TOOLKIT_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           export SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          make dist
+          # A runner ships only while its toolkit is the authorized rc's source.
+          python3 scripts/check-toolkit-release-pin.py --release
+          make dist-release
           for file in dist/*.whl dist/*.tar.gz; do
             sha256sum "$file"
           done | tee dist/SHA256SUMS

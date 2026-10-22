@@ -67,4 +67,8 @@ def test_release_builds_all_runtime_wheels() -> None:
     build_steps = workflow["jobs"]["build-docker"]["steps"]
     build_script = "\n".join(str(step.get("run", "")) for step in build_steps)
 
-    assert "make dist" in build_script
+    assert "python3 scripts/check-toolkit-release-pin.py --release" in build_script
+    assert "make dist-release" in build_script
+    assert build_script.index("check-toolkit-release-pin.py --release") < build_script.index(
+        "make dist-release"
+    )
