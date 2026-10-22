@@ -17,7 +17,9 @@ FROM ${PYTHON_BASE_IMAGE} AS builder
 # packages are installed from exactly one local wheel apiece, without any
 # dependency resolution or fallback to an externally published package.
 COPY docker/runtime-requirements.lock /tmp/runtime-requirements.lock
-COPY dist/*.whl /tmp/wheels/
+# A release build also carries toolkit-authority.json (scripts/release_dist.py);
+# a source build does not. The whole directory is copied so either works.
+COPY dist/ /tmp/wheels/
 RUN set -eux; \
     pip install \
       --root-user-action=ignore \
@@ -53,6 +55,12 @@ COPY docker/install-local-nautilus-wheel.py /tmp/install-local-nautilus-wheel.py
 RUN python /tmp/install-local-nautilus-wheel.py /tmp/wheels \
     "${LOCAL_NAUTILUS_WHEEL}" "${LOCAL_NAUTILUS_WHEEL_SHA256}"
 
+# The toolkit identity is computed from the toolkit wheel bytes installed above and
+# checked against the authorized rc's receipt digests; a mismatch fails the build.
+# A source build has no authority file and gets no identity.
+COPY docker/write-toolkit-identity.py /tmp/write-toolkit-identity.py
+RUN python /tmp/write-toolkit-identity.py /tmp/wheels /tmp/toolkit-identity
+
 FROM ${PYTHON_BASE_IMAGE} AS runtime
 
 ARG SOURCE_REVISION=unversioned
@@ -63,6 +71,8 @@ LABEL com.alephain.nautilus.revision="${LOCAL_NAUTILUS_REVISION}" \
 RUN mkdir -p /usr/local/share/custos \
     && printf '%s\n' "$SOURCE_REVISION" > /usr/local/share/custos/source-revision \
     && chmod 0444 /usr/local/share/custos/source-revision
+# Present only in an image built from release inputs; it stays 0444 from the builder.
+COPY --from=builder /tmp/toolkit-identity/ /usr/local/share/custos/
 
 # The vault runtime shells out to age and sops. Keep curl and CA roots in the
 # final image for operator diagnostics and explicit standalone bootstrap use.
