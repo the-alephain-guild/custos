@@ -226,6 +226,16 @@ verify: check-authority
 
 verify: toolkit-typecheck
 
+# A runner image installs the authorized toolkit rc, so a release is refused while
+# the toolkit directories differ from that rc's source commit. Here the check only
+# reports: a branch may legitimately be ahead of the rc until the next rc is
+# promoted. The release workflow runs it with --release, where a difference fails.
+.PHONY: check-toolkit-release-pin
+check-toolkit-release-pin:  ## Report whether the toolkit source is the authorized rc
+	python3 scripts/check-toolkit-release-pin.py
+
+verify: check-toolkit-release-pin
+
 .PHONY: verify-development-artifact
 
 CUSTOS_DEVELOPMENT_ARTIFACT_ROOT ?= $(HOME)/.alephain/v1-team/strategy-artifacts
