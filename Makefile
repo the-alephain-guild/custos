@@ -172,7 +172,24 @@ docker-sign:  ## Sign the built docker image with cosign keyless (requires OIDC;
 test-docker-existing:  ## Run runtime contracts against CUSTOS_TEST_IMAGE (default custos-runner:test)
 	uv run --extra dev pytest -m docker tests/test_docker_non_root.py tests/test_docker_entrypoint_help.py tests/test_docker_image_size.py tests/test_docker_runtime_contract.py -v
 
-test-docker: docker-build test-docker-existing  ## Build local image, then run complete runtime contracts
+test-docker: docker-build  ## Build local image, then run complete runtime contracts
+	CUSTOS_EXPECT_TOOLKIT_IDENTITY=0 $(MAKE) test-docker-existing
+
+# The release image path: build from release inputs (the authorized rc, see
+# dist-release), then run the same runtime contracts plus the toolkit identity
+# checks. test-docker above keeps checking the source-built image, which must
+# carry no identity. Neither pushes or tags anything for publication.
+RELEASE_LOCAL_IMAGE ?= custos-runner:release-local
+
+docker-build-release-local: dist-release  ## Build a local image from release inputs (toolkit = authorized rc)
+	docker build \
+		--build-arg SOURCE_REVISION=$(SOURCE_REVISION) \
+		--label org.opencontainers.image.revision=$(SOURCE_REVISION) \
+		--tag $(RELEASE_LOCAL_IMAGE) \
+		.
+
+test-docker-release: docker-build-release-local  ## Build the release-input image, then run runtime and toolkit identity contracts
+	CUSTOS_TEST_IMAGE=$(RELEASE_LOCAL_IMAGE) CUSTOS_EXPECT_TOOLKIT_IDENTITY=1 $(MAKE) test-docker-existing
 
 # These gate the image contract only. The standalone deployment-wire acceptance
 # they used to run was deleted along with `arx-runner deployment publish`, which
