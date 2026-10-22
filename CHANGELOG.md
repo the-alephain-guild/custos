@@ -80,6 +80,20 @@ sequences.
 
 - The parity matrix names ARX, not an internal service, as the owner of a fact
   after ingest.
+- **A release image carries the authorized toolkit release candidate, not a
+  toolkit built from the checkout.** The release refuses to build while either
+  toolkit package differs from the source of the registered toolkit release
+  candidate, so any toolkit change needs a new candidate published and promoted
+  first. `make dist-release` builds the runner from `HEAD` with its toolkit
+  requirements pinned to that candidate (the sdist carries the same pins), pulls
+  the candidate's two wheels by its receipt and checks them against the receipt
+  digests. The image hashes the toolkit wheels it installs, refuses to build
+  unless they are the candidate's bytes, and writes
+  `/usr/local/share/custos/toolkit-identity.json` (read-only) with those digests;
+  an image built from source has no such file. The runner release signs only the
+  runner wheel: the toolkit wheels keep the signature of the workflow that
+  published the candidate. Local targets `docker-build-release-local` and
+  `test-docker-release` build and check such an image without publishing it.
 
 ### Fixed
 
