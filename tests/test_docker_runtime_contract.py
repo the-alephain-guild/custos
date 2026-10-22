@@ -248,9 +248,11 @@ def _authorized_rc() -> dict[str, object]:
         for layer in receipt["publication_receipt"]["layers"]
         if layer["role"] in ("base_contracts_wheel.wheel", "nautilus_wheel.wheel")
     }
+    # The identity is the receipt's; the record only locates it and pins its bytes.
     return {
-        "candidate_version": release["candidate_version"],
-        "manifest_digest": release["manifest_digest"],
+        "candidate_version": receipt["candidate_version"],
+        "source_commit": receipt["source_commit"],
+        "manifest_digest": receipt["publication_receipt"]["manifest_digest"],
         "receipt_sha256": release["receipt_sha256"],
         "base": wheels["base_contracts_wheel.wheel"],
         "nautilus": wheels["nautilus_wheel.wheel"],
@@ -269,6 +271,7 @@ def test_a_release_image_carries_the_authorized_rc_and_its_identity() -> None:
     document = json.loads(identity.stdout)
     assert document["candidate_version"] == rc["candidate_version"]
     assert document["manifest_digest"] == rc["manifest_digest"]
+    assert document["source_commit"] == rc["source_commit"]
     assert document["receipt_sha256"] == rc["receipt_sha256"]
     assert document["base_contracts_wheel_sha256"] == rc["base"]
     assert document["nautilus_wheel_sha256"] == rc["nautilus"]

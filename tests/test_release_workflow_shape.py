@@ -125,6 +125,21 @@ def test_exact_digest_runtime_gate_precedes_signature() -> None:
     assert build < digest < runtime < local_cleanup < arm64_pull < sign
 
 
+def test_exact_digest_gate_requires_the_toolkit_identity_on_both_platforms() -> None:
+    """Unset, the identity tests skip, so the gate would pass an image without one."""
+
+    text = _read()
+    start = text.index("- name: Gate the exact candidate digest")
+    step = text[start : text.index("- name:", start + 1)]
+    env = step[: step.index("run: |")]
+    assert 'CUSTOS_EXPECT_TOOLKIT_IDENTITY: "1"' in env
+    identity = "/usr/local/share/custos/toolkit-identity.json"
+    amd64 = step.index(f"{identity} > toolkit-identity-amd64.json")
+    arm64_pull = step.index("docker pull --platform linux/arm64")
+    arm64 = step.index(f"{identity} | cmp - toolkit-identity-amd64.json")
+    assert step.index("make verify-runtime-existing") < amd64 < arm64_pull < arm64
+
+
 def test_discovery_tags_are_immutable_but_never_runtime_authority() -> None:
     text = _read()
     assert "release tag already exists and cannot be repointed" in text
