@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Plan 12 T3: sigstore keyless wheel signing.
 #
-# Signs every wheel under `dist/*.whl` with sigstore-python 3.x, producing a
-# sibling `<wheel>.sigstore` bundle. The GitHub Actions OIDC token is picked
+# Signs the runner wheel under `dist/custos_runner-*.whl` with sigstore-python 3.x,
+# producing a sibling `<wheel>.sigstore` bundle. The two toolkit wheels beside it
+# are the authorized rc's own bytes, pulled by `make dist-release`: the toolkit rc
+# workflow signed them when it published the rc, and the release checks them
+# against the rc receipt's digests, so the runner workflow does not sign them again. The GitHub Actions OIDC token is picked
 # up automatically when this script runs in a workflow that grants
 # `id-token: write` (see .github/workflows/release.yml).
 #
@@ -27,9 +30,9 @@ if [[ ! -d dist ]]; then
 fi
 
 shopt -s nullglob
-wheels=(dist/*.whl)
-if (( ${#wheels[@]} == 0 )); then
-    echo "no wheels under dist/; run 'uv build' first" >&2
+wheels=(dist/custos_runner-*.whl)
+if (( ${#wheels[@]} != 1 )); then
+    echo "expected exactly one runner wheel under dist/; run 'make dist-release' first" >&2
     exit 2
 fi
 
