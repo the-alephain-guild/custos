@@ -14,6 +14,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "check-toolkit-release-pin.py"
 RECEIPT = "docs/authority/receipts/custos-toolkit-rcX-authority-v1.json"
+MANIFEST_DIGEST = "sha256:" + "a" * 64
 
 
 def _load() -> ModuleType:
@@ -58,10 +59,15 @@ def _repository(tmp_path: Path, *, receipt_digest_ok: bool = True) -> tuple[Path
     _git(root, "init", "-q")
     _write(root, "packages/custos-strategy-toolkit/src/base.py", "BASE = 1\n")
     _write(root, "packages/custos-strategy-toolkit-nautilus/src/adapter.py", "ADAPTER = 1\n")
-    _write(root, RECEIPT, '{"candidate_version": "0.1.0rcX"}\n')
     _git(root, "add", "-A")
     _git(root, "commit", "-q", "-m", "rc source")
     source = _git(root, "rev-parse", "HEAD")
+    receipt = {
+        "candidate_version": "0.1.0rcX",
+        "source_commit": source,
+        "publication_receipt": {"manifest_digest": MANIFEST_DIGEST},
+    }
+    _write(root, RECEIPT, json.dumps(receipt) + "\n")
     digest = hashlib.sha256((root / RECEIPT).read_bytes()).hexdigest()
     authority = {
         "toolkit_rc_release": {
@@ -71,7 +77,7 @@ def _repository(tmp_path: Path, *, receipt_digest_ok: bool = True) -> tuple[Path
             "receipt_sha256": digest if receipt_digest_ok else "0" * 64,
             "candidate_version": "0.1.0rcX",
             "source_commit": source,
-            "manifest_digest": "sha256:" + "a" * 64,
+            "manifest_digest": MANIFEST_DIGEST,
         }
     }
     _write(root, "docs/authority/ecosystem-authority.json", json.dumps(authority))
@@ -137,4 +143,38 @@ def test_an_rc_that_is_not_ready_is_refused(tmp_path: Path) -> None:
     path.write_text(json.dumps(document))
 
     with pytest.raises(pin.ReleasePinError, match="not READY_TOOLKIT_RC"):
+        pin.check(root)
+
+
+def test_a_record_retargeted_to_a_toolkit_change_is_refused(tmp_path: Path) -> None:
+    """The record is not covered by the receipt digest, so it cannot move the baseline."""
+
+    root, _ = _repository(tmp_path)
+    _write(root, "packages/custos-strategy-toolkit/src/base.py", "CHANGED = 2\n")
+    _git(root, "commit", "-q", "-am", "toolkit change")
+    changed = _git(root, "rev-parse", "HEAD")
+    path = root / "docs/authority/ecosystem-authority.json"
+    document = json.loads(path.read_text())
+    document["toolkit_rc_release"]["source_commit"] = changed
+    path.write_text(json.dumps(document))
+
+    with pytest.raises(pin.ReleasePinError, match="source_commit .* differs from its receipt"):
+        pin.check(root)
+    assert pin.main(["--root", str(root), "--release"]) == 2
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("candidate_version", "0.1.0rcY"), ("manifest_digest", "sha256:" + "b" * 64)],
+)
+def test_a_record_that_disagrees_with_its_receipt_is_refused(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    root, _ = _repository(tmp_path)
+    path = root / "docs/authority/ecosystem-authority.json"
+    document = json.loads(path.read_text())
+    document["toolkit_rc_release"][field] = value
+    path.write_text(json.dumps(document))
+
+    with pytest.raises(pin.ReleasePinError, match=f"{field} .* differs from its receipt"):
         pin.check(root)

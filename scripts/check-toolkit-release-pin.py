@@ -65,15 +65,30 @@ def authorized_rc(root: Path) -> dict[str, Any]:
     receipt_file = root / receipt_path
     if not receipt_file.is_file():
         raise ReleasePinError(f"the toolkit rc receipt {receipt_path} is missing")
-    if hashlib.sha256(receipt_file.read_bytes()).hexdigest() != receipt_sha256:
+    receipt_bytes = receipt_file.read_bytes()
+    if hashlib.sha256(receipt_bytes).hexdigest() != receipt_sha256:
         raise ReleasePinError("the toolkit rc receipt differs from its registered digest")
-    for field in ("candidate_version", "source_commit", "manifest_digest"):
-        if not isinstance(release.get(field), str) or not release[field]:
-            raise ReleasePinError(f"the registered toolkit rc has no {field}")
+    # The identity comes from the receipt, whose bytes were just checked; the record
+    # beside it is not bound by that digest, so it must repeat the same values.
+    receipt = json.loads(receipt_bytes)
+    publication = receipt.get("publication_receipt") if isinstance(receipt, dict) else None
+    if not isinstance(publication, dict):
+        raise ReleasePinError("the toolkit rc receipt has no publication_receipt")
+    identity = {
+        "candidate_version": receipt.get("candidate_version"),
+        "source_commit": receipt.get("source_commit"),
+        "manifest_digest": publication.get("manifest_digest"),
+    }
+    for field, value in identity.items():
+        if not isinstance(value, str) or not value:
+            raise ReleasePinError(f"the toolkit rc receipt has no {field}")
+        if release.get(field) != value:
+            raise ReleasePinError(
+                f"the registered toolkit rc {field} {release.get(field)!r} "
+                f"differs from its receipt {value!r}"
+            )
     return {
-        "candidate_version": release["candidate_version"],
-        "source_commit": release["source_commit"],
-        "manifest_digest": release["manifest_digest"],
+        **identity,
         "receipt_path": receipt_path,
         "receipt_sha256": receipt_sha256,
     }
