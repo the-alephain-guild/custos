@@ -182,6 +182,7 @@ test-docker: docker-build  ## Build local image, then run complete runtime contr
 # carry no identity. Neither pushes or tags anything for publication.
 RELEASE_LOCAL_IMAGE ?= custos-runner:release-local
 
+.PHONY: docker-build-release-local
 docker-build-release-local: dist-release  ## Build a local image from release inputs (toolkit = authorized rc)
 	docker build \
 		--build-arg SOURCE_REVISION=$(SOURCE_REVISION) \
@@ -189,6 +190,7 @@ docker-build-release-local: dist-release  ## Build a local image from release in
 		--tag $(RELEASE_LOCAL_IMAGE) \
 		.
 
+.PHONY: test-docker-release
 test-docker-release: docker-build-release-local  ## Build the release-input image, then run runtime and toolkit identity contracts
 	CUSTOS_TEST_IMAGE=$(RELEASE_LOCAL_IMAGE) CUSTOS_EXPECT_TOOLKIT_IDENTITY=1 $(MAKE) test-docker-existing
 
