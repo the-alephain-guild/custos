@@ -130,6 +130,7 @@ dist: check-runtime-lock  ## Build the runner sdist and all three exact runtime 
 # runner is built from HEAD with its toolkit pins rewritten to the rc, the two toolkit
 # wheels are pulled from the registry by the rc's receipt, and toolkit-authority.json
 # records what the image build must find. Needs TOOLKIT_REGISTRY_ACTOR/TOKEN.
+.PHONY: dist-release
 dist-release: check-runtime-lock  ## Build the release inputs: runner from HEAD, toolkit as the authorized rc
 	rm -rf dist/
 	uv run python scripts/release_dist.py --out dist
