@@ -172,6 +172,7 @@ jobs:
           sbom: true
           build-args: |
             SOURCE_REVISION=${{ github.sha }}
+            CUSTOS_RELEASE_BUILD=1
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}

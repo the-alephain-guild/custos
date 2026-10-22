@@ -4,15 +4,19 @@ A release build puts ``toolkit-authority.json`` beside the wheels (see
 ``scripts/release_dist.py``). This step hashes the two toolkit wheels the image
 installed, refuses the build unless they are the bytes the authorized rc's receipt
 registers and the installed distributions report the rc version, and writes
-``toolkit-identity.json`` with the digests it computed. Nothing here comes from a
-build argument, so a wrong argument cannot make the identity claim other bytes.
+``toolkit-identity.json`` with the digests it computed. No value in the identity
+comes from a build argument, so a wrong argument cannot make it claim other bytes.
 
 A source build has no authority file. Then nothing is written, and a runner in
 that image has no toolkit identity: it runs a toolkit built from the checkout.
+A release build passes ``--require`` (the ``CUSTOS_RELEASE_BUILD=1`` build
+argument), so a missing authority file fails it instead of producing an image
+that silently carries no identity.
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import importlib.metadata
 import json
@@ -66,12 +70,18 @@ def write_identity(
     wheels_directory: Path,
     output_directory: Path,
     installed_version: Callable[[str], str] = importlib.metadata.version,
+    *,
+    require: bool = False,
 ) -> dict[str, Any] | None:
     """Check the installed toolkit against the authority file and write the identity."""
 
     output_directory.mkdir(parents=True, exist_ok=True)
     authority = _authority(wheels_directory)
     if authority is None:
+        if require:
+            raise ToolkitIdentityError(
+                f"a release build needs {AUTHORITY_FILE} beside the wheels; it is missing"
+            )
         return None
     computed: dict[str, str] = {}
     for key, (pattern, distribution) in WHEELS.items():
@@ -105,11 +115,15 @@ def write_identity(
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
-        print("usage: write-toolkit-identity.py <wheels-dir> <output-dir>", file=sys.stderr)
-        return 2
+    parser = argparse.ArgumentParser(prog="write-toolkit-identity.py")
+    parser.add_argument("--require", action="store_true", help="fail without an authority file")
+    parser.add_argument("wheels_directory", type=Path)
+    parser.add_argument("output_directory", type=Path)
+    args = parser.parse_args(argv[1:])
     try:
-        identity = write_identity(Path(argv[1]), Path(argv[2]))
+        identity = write_identity(
+            args.wheels_directory, args.output_directory, require=args.require
+        )
     except (ToolkitIdentityError, OSError, ValueError) as error:
         print(f"toolkit identity: {error}", file=sys.stderr)
         return 1

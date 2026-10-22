@@ -57,9 +57,16 @@ RUN python /tmp/install-local-nautilus-wheel.py /tmp/wheels \
 
 # The toolkit identity is computed from the toolkit wheel bytes installed above and
 # checked against the authorized rc's receipt digests; a mismatch fails the build.
-# A source build has no authority file and gets no identity.
+# A source build has no authority file and gets no identity. A release build sets
+# CUSTOS_RELEASE_BUILD=1, and then a missing authority file fails the build.
+ARG CUSTOS_RELEASE_BUILD=0
 COPY docker/write-toolkit-identity.py /tmp/write-toolkit-identity.py
-RUN python /tmp/write-toolkit-identity.py /tmp/wheels /tmp/toolkit-identity
+RUN set -eu; \
+    case "${CUSTOS_RELEASE_BUILD}" in \
+      1) python /tmp/write-toolkit-identity.py --require /tmp/wheels /tmp/toolkit-identity ;; \
+      0) python /tmp/write-toolkit-identity.py /tmp/wheels /tmp/toolkit-identity ;; \
+      *) echo "CUSTOS_RELEASE_BUILD must be 0 or 1" >&2; exit 1 ;; \
+    esac
 
 FROM ${PYTHON_BASE_IMAGE} AS runtime
 

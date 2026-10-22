@@ -92,10 +92,12 @@ sequences.
   the receipt digests. The image hashes the toolkit wheels it installs, refuses
   to build unless they are the candidate's bytes, and writes
   `/usr/local/share/custos/toolkit-identity.json` (read-only) with those
-  digests; an image built from source has no such file. Before signing, the
-  release reads that file from the pushed image on both platforms. The runner
-  release signs only the runner wheel: the toolkit wheels keep the signature of
-  the workflow that published the candidate. Local targets
+  digests; an image built from source has no such file. A release build passes
+  the build argument `CUSTOS_RELEASE_BUILD=1`, which makes a missing authority
+  file fail the build instead of producing an image without an identity. Before
+  signing, the release reads that file from the pushed image on both platforms.
+  The runner release signs only the runner wheel: the toolkit wheels keep the
+  signature of the workflow that published the candidate. Local targets
   `docker-build-release-local` and `test-docker-release` build and check such an
   image without publishing it.
 

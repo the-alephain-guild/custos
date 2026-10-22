@@ -186,6 +186,7 @@ RELEASE_LOCAL_IMAGE ?= custos-runner:release-local
 docker-build-release-local: dist-release  ## Build a local image from release inputs (toolkit = authorized rc)
 	docker build \
 		--build-arg SOURCE_REVISION=$(SOURCE_REVISION) \
+		--build-arg CUSTOS_RELEASE_BUILD=1 \
 		--label org.opencontainers.image.revision=$(SOURCE_REVISION) \
 		--tag $(RELEASE_LOCAL_IMAGE) \
 		.

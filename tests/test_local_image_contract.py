@@ -33,3 +33,13 @@ def test_local_consumer_build_requires_clean_provenance() -> None:
 
     assert "git status --porcelain --untracked-files=normal" in block
     assert "CUSTOS_EXPECTED_REVISION=$(SOURCE_REVISION)" in text
+
+
+def test_only_the_release_input_build_requires_the_toolkit_identity() -> None:
+    text = MAKEFILE.read_text()
+    start = text.index("docker-build-release-local: dist-release")
+    release = text[start : text.index("test-docker-release:", start)]
+    source = text[text.index("docker-build: dist") : text.index("docker-sign:")]
+
+    assert "--build-arg CUSTOS_RELEASE_BUILD=1" in release
+    assert "CUSTOS_RELEASE_BUILD" not in source

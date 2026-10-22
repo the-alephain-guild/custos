@@ -126,3 +126,19 @@ def test_a_wheel_under_another_name_fails_the_build(tmp_path: Path) -> None:
 
     with pytest.raises(writer.ToolkitIdentityError, match="not the rc's wheel"):
         writer.write_identity(wheels, out, _rc_version)
+
+
+def test_a_release_build_without_the_authority_file_fails(tmp_path: Path) -> None:
+    """With --require a missing authority file is an error, not a source build."""
+
+    wheels, out = tmp_path / "wheels", tmp_path / "out"
+    wheels.mkdir()
+    _wheels(wheels)
+    (wheels / writer.AUTHORITY_FILE).unlink()
+
+    with pytest.raises(writer.ToolkitIdentityError, match="release build needs"):
+        writer.write_identity(wheels, out, _rc_version, require=True)
+    assert writer.main(["write-toolkit-identity.py", "--require", str(wheels), str(out)]) == 1
+    assert not (out / writer.IDENTITY_FILE).exists()
+    # The same directory without --require is a source build and passes.
+    assert writer.main(["write-toolkit-identity.py", str(wheels), str(out)]) == 0

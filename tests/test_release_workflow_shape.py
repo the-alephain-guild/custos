@@ -114,6 +114,16 @@ def test_image_is_multi_platform_with_sbom_and_provenance() -> None:
     assert "docker image inspect --platform" not in text
 
 
+def test_the_image_build_is_marked_as_a_release_build() -> None:
+    """Marked, the build fails without the toolkit authority file instead of skipping it."""
+
+    text = _read()
+    start = text.index("- name: Build and push exact multi-platform image")
+    step = text[start : text.index("- name:", start + 1)]
+    build_args = step[step.index("build-args: |") : step.index("labels: |")]
+    assert "CUSTOS_RELEASE_BUILD=1" in build_args
+
+
 def test_exact_digest_runtime_gate_precedes_signature() -> None:
     text = _read()
     build = text.index("Build and push exact multi-platform image")
