@@ -165,9 +165,80 @@ def test_delivery_receipt_is_distinct_from_acceptance(tmp_path: Path) -> None:
     inbox = ExternalSignalInbox(tmp_path / "inbox.sqlite")
     message = alert()
     inbox.accept(message, authority=AUTHORITY, received_at=NOW)
+    assert inbox.mark_delivered(message.event_id, authority=AUTHORITY, delivered_at=NOW) is False
+    assert inbox.begin_entry_delivery(message.event_id, authority=AUTHORITY, started_at=NOW)
     assert inbox.mark_delivered(message.event_id, authority=AUTHORITY, delivered_at=NOW) is True
     assert inbox.pending(AUTHORITY, now=NOW) == []
     assert inbox.mark_delivered(message.event_id, authority=AUTHORITY, delivered_at=NOW) is False
+
+
+def test_recovered_queued_entry_blocks_new_entries_until_flat_confirmed(tmp_path: Path) -> None:
+    path = tmp_path / "inbox.sqlite"
+    inbox = ExternalSignalInbox(path)
+    first = alert(bar_close_time=datetime(2026, 10, 27, 11, 0, tzinfo=UTC))
+    inbox.accept(first, authority=AUTHORITY, received_at=NOW)
+    assert inbox.begin_entry_delivery(first.event_id, authority=AUTHORITY, started_at=NOW)
+    assert inbox.begin_entry_delivery(first.event_id, authority=AUTHORITY, started_at=NOW) is False
+    assert inbox.mark_delivered(first.event_id, authority=AUTHORITY, delivered_at=NOW)
+
+    restarted = ExternalSignalInbox(path)
+    assert restarted.recover_uncertain_entries(INSTANCE_ID, at=NOW) == 1
+    assert restarted.recover_uncertain_entries(INSTANCE_ID, at=NOW) == 0
+    assert restarted.uncertain_entry_ids(INSTANCE_ID) == [first.event_id]
+    assert restarted.pending(AUTHORITY, now=NOW) == []
+    with pytest.raises(ExternalSignalInboxError, match="unresolved external entry"):
+        restarted.accept(alert(action="ENTER_SHORT"), authority=AUTHORITY, received_at=NOW)
+
+    risk = alert(
+        action="EXIT_LONG",
+        risk_action="FLATTEN",
+        bar_close_time=datetime(2026, 10, 27, 11, 30, tzinfo=UTC),
+    )
+    restarted.accept(risk, authority=AUTHORITY, received_at=NOW)
+    assert restarted.mark_delivered(risk.event_id, authority=AUTHORITY, delivered_at=NOW)
+    assert restarted.confirm_flat(risk.event_id, authority=AUTHORITY, confirmed_at=NOW)
+    assert restarted.uncertain_entry_ids(INSTANCE_ID) == []
+    assert (
+        restarted.accept(alert(action="ENTER_SHORT"), authority=AUTHORITY, received_at=NOW).status
+        == "accepted"
+    )
+
+
+def test_claimed_but_unqueued_entry_is_not_replayed_after_restart(tmp_path: Path) -> None:
+    path = tmp_path / "inbox.sqlite"
+    inbox = ExternalSignalInbox(path)
+    first = alert()
+    inbox.accept(first, authority=AUTHORITY, received_at=NOW)
+    assert inbox.begin_entry_delivery(first.event_id, authority=AUTHORITY, started_at=NOW)
+    assert inbox.pending(AUTHORITY, now=NOW) == []
+
+    restarted = ExternalSignalInbox(path)
+    assert restarted.recover_uncertain_entries(INSTANCE_ID, at=NOW) == 1
+    assert restarted.uncertain_entry_ids(INSTANCE_ID) == [first.event_id]
+    assert restarted.mark_delivered(first.event_id, authority=AUTHORITY, delivered_at=NOW) is False
+    assert restarted.pending(AUTHORITY, now=NOW) == []
+
+
+def test_risk_during_entry_dispatch_never_acknowledges_that_entry(tmp_path: Path) -> None:
+    path = tmp_path / "inbox.sqlite"
+    inbox = ExternalSignalInbox(path)
+    entry = alert(bar_close_time=datetime(2026, 10, 27, 11, 0, tzinfo=UTC))
+    risk = alert(
+        action="EXIT_LONG",
+        risk_action="FLATTEN",
+        bar_close_time=datetime(2026, 10, 27, 11, 30, tzinfo=UTC),
+    )
+    inbox.accept(entry, authority=AUTHORITY, received_at=NOW)
+    assert inbox.begin_entry_delivery(entry.event_id, authority=AUTHORITY, started_at=NOW)
+    inbox.accept(risk, authority=AUTHORITY, received_at=NOW)
+
+    assert inbox.mark_delivered(entry.event_id, authority=AUTHORITY, delivered_at=NOW) is False
+    restarted = ExternalSignalInbox(path)
+    assert restarted.recover_uncertain_entries(INSTANCE_ID, at=NOW) == 1
+    assert restarted.uncertain_entry_ids(INSTANCE_ID) == [entry.event_id]
+    assert restarted.mark_delivered(risk.event_id, authority=AUTHORITY, delivered_at=NOW)
+    assert restarted.confirm_flat(risk.event_id, authority=AUTHORITY, confirmed_at=NOW)
+    assert restarted.uncertain_entry_ids(INSTANCE_ID) == []
 
 
 def test_bounded_inbox_refuses_new_event_without_losing_existing_one(tmp_path: Path) -> None:

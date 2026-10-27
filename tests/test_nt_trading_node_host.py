@@ -242,6 +242,68 @@ async def test_external_signal_scope_refuses_a_non_okx_connector(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_external_risk_drops_queued_entries_before_requesting_flatten(monkeypatch):
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    spec = _spec("external-risk", connector="okx_perpetual", pairs=["ETH-USDT"])
+    steps: list[str] = []
+
+    class RiskStrategy(_SignalStrategyDouble):
+        def drop_pending_entries(self, pair=None) -> int:
+            steps.append("drop")
+            return 1
+
+    host = NtTradingNodeHost()
+    instance_id = spec["deployment_instance_id"]
+    await host.deploy(spec, _credential(), _Artifact(strategy=RiskStrategy(spec)))
+
+    async def flatten(instance: str, reason: str) -> None:
+        assert instance == instance_id
+        assert reason == "external_signal_risk"
+        steps.append("flatten")
+
+    monkeypatch.setattr(host, "flatten_positions", flatten)
+    try:
+        await asyncio.sleep(0)
+        authority = host.external_signal_runtime_scope(instance_id).authority
+        with pytest.raises(RuntimeError, match="authority"):
+            await host.request_external_risk_flatten(replace(authority, generation=2))
+        assert steps == []
+
+        assert await host.request_external_risk_flatten(authority) == 1
+        assert steps == ["drop", "flatten"]
+    finally:
+        await host.stop(instance_id)
+
+
+@pytest.mark.asyncio
+async def test_external_risk_still_requests_flatten_if_queue_removal_fails(monkeypatch):
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    spec = _spec("external-risk-failure", connector="okx_perpetual", pairs=["ETH-USDT"])
+
+    class BrokenQueueStrategy(_SignalStrategyDouble):
+        def drop_pending_entries(self, pair=None) -> int:
+            raise RuntimeError("queue broken")
+
+    host = NtTradingNodeHost()
+    instance_id = spec["deployment_instance_id"]
+    flattened: list[str] = []
+    await host.deploy(spec, _credential(), _Artifact(strategy=BrokenQueueStrategy(spec)))
+
+    async def flatten(instance: str, reason: str) -> None:
+        flattened.append(f"{instance}:{reason}")
+
+    monkeypatch.setattr(host, "flatten_positions", flatten)
+    try:
+        await asyncio.sleep(0)
+        authority = host.external_signal_runtime_scope(instance_id).authority
+        with pytest.raises(RuntimeError, match="pending-entry removal failed"):
+            await host.request_external_risk_flatten(authority)
+        assert flattened == [f"{instance_id}:external_signal_risk"]
+    finally:
+        await host.stop(instance_id)
+
+
+@pytest.mark.asyncio
 async def test_a_strategy_without_the_event_callbacks_is_refused(monkeypatch) -> None:
     """Red lines 0.2 and 0.3, and 'the reconciliation is never silent'.
 

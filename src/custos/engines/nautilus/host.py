@@ -848,6 +848,25 @@ class NtTradingNodeHost:
             authorized_leverage=int(trading.leverage),
         )
 
+    async def request_external_risk_flatten(self, authority: EngineLifecycleAuthority) -> int:
+        """Drop queued entries, then request containment for the same active node.
+
+        The result counts removed in-memory entries only. It does not confirm an
+        exchange fill or release the durable inbox's flat-confirmation fence.
+        """
+        instance_id = str(authority.deployment_instance_id)
+        scope = self.external_signal_runtime_scope(instance_id)
+        if scope.authority != authority:
+            raise RuntimeError("external risk authority differs from active deployment")
+        strategy = self._active_nodes[instance_id].strategies[0]
+        try:
+            removed = strategy.drop_pending_entries()
+        except Exception as error:  # noqa: BLE001 — closing remains the first safety duty
+            await self.flatten_positions(instance_id, "external_signal_risk")
+            raise RuntimeError("external risk pending-entry removal failed") from error
+        await self.flatten_positions(instance_id, "external_signal_risk")
+        return removed
+
     def _require_the_only_node(self, deployment_instance_id: str) -> None:
         """Refuse a second node in this runner process.
 

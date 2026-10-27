@@ -135,6 +135,19 @@ class ExternalSignalInbox:
                     PRIMARY KEY (source_id, deployment_instance_id,
                                  strategy_revision, instrument)
                 );
+                CREATE TABLE IF NOT EXISTS external_signal_entry_delivery (
+                    event_id TEXT PRIMARY KEY,
+                    deployment_instance_id TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK (
+                        state IN ('dispatching', 'queued', 'uncertain', 'resolved')
+                    ),
+                    started_at_ns INTEGER NOT NULL,
+                    queued_at_ns INTEGER,
+                    recovered_at_ns INTEGER,
+                    resolved_at_ns INTEGER
+                );
+                CREATE INDEX IF NOT EXISTS external_signal_uncertain_entry
+                    ON external_signal_entry_delivery(deployment_instance_id, state);
                 """
             )
             columns = {
@@ -227,6 +240,15 @@ class ExternalSignalInbox:
                 ):
                     raise ExternalSignalInboxError("external signal replay conflict")
                 return IntakeReceipt(alert.event_id, "duplicate")
+
+            if alert.trade.action.startswith("ENTER"):
+                uncertain = connection.execute(
+                    """SELECT 1 FROM external_signal_entry_delivery
+                       WHERE deployment_instance_id = ? AND state = 'uncertain' LIMIT 1""",
+                    (str(alert.deployment_instance_id),),
+                ).fetchone()
+                if uncertain is not None:
+                    raise ExternalSignalInboxError("unresolved external entry blocks new entry")
 
             fence = connection.execute(
                 """SELECT bar_close_ns, flat_confirmed_at_ns
@@ -331,11 +353,15 @@ class ExternalSignalInbox:
                 (str(deployment_instance_id), now_ns),
             )
             rows = connection.execute(
-                """SELECT * FROM external_signal_inbox
-                   WHERE deployment_instance_id = ? AND status = 'accepted'
-                     AND deployment_spec_id = ?
-                     AND deployment_spec_digest = ? AND generation = ?
-                   ORDER BY bar_close_ns, risk_action IS NULL, received_at_ns, event_id""",
+                """SELECT event.* FROM external_signal_inbox AS event
+                   LEFT JOIN external_signal_entry_delivery AS delivery
+                     ON delivery.event_id = event.event_id
+                   WHERE event.deployment_instance_id = ? AND event.status = 'accepted'
+                     AND event.deployment_spec_id = ?
+                     AND event.deployment_spec_digest = ? AND event.generation = ?
+                     AND delivery.event_id IS NULL
+                   ORDER BY event.bar_close_ns, event.risk_action IS NULL,
+                            event.received_at_ns, event.event_id""",
                 (
                     str(deployment_instance_id),
                     str(authority.deployment_spec_id),
@@ -360,6 +386,81 @@ class ExternalSignalInbox:
             for row in rows
         ]
 
+    def begin_entry_delivery(
+        self,
+        event_id: str,
+        *,
+        authority: EngineLifecycleAuthority,
+        started_at: datetime,
+    ) -> bool:
+        """Persist an at-most-once entry attempt before touching the strategy queue."""
+        if authority.trading_mode not in {"sandbox", "testnet"}:
+            raise ExternalSignalInboxError("external signal is outside non-live runtime scope")
+        started_ns = _epoch_ns(started_at)
+        with self._transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """SELECT 1 FROM external_signal_inbox
+                   WHERE event_id = ? AND status = 'accepted' AND action LIKE 'ENTER_%'
+                     AND deployment_instance_id = ? AND deployment_spec_id = ?
+                     AND deployment_spec_digest = ? AND generation = ?
+                     AND expires_at_ns >= ?""",
+                (
+                    event_id,
+                    str(authority.deployment_instance_id),
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                    started_ns,
+                ),
+            ).fetchone()
+            if row is None:
+                return False
+            cursor = connection.execute(
+                """INSERT OR IGNORE INTO external_signal_entry_delivery
+                   (event_id, deployment_instance_id, state, started_at_ns)
+                   VALUES (?, ?, 'dispatching', ?)""",
+                (event_id, str(authority.deployment_instance_id), started_ns),
+            )
+            return cursor.rowcount == 1
+
+    def recover_uncertain_entries(self, deployment_instance_id: UUID, *, at: datetime) -> int:
+        """Quarantine entries whose queue or order result is unknown after restart."""
+        instance = str(deployment_instance_id)
+        recovered_ns = _epoch_ns(at)
+        with self._transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """SELECT event_id FROM external_signal_entry_delivery
+                   WHERE deployment_instance_id = ? AND state IN ('dispatching', 'queued')""",
+                (instance,),
+            ).fetchall()
+            if not rows:
+                return 0
+            event_ids = [row["event_id"] for row in rows]
+            connection.executemany(
+                """UPDATE external_signal_entry_delivery
+                   SET state = 'uncertain', recovered_at_ns = ? WHERE event_id = ?""",
+                [(recovered_ns, event_id) for event_id in event_ids],
+            )
+            connection.executemany(
+                """UPDATE external_signal_inbox SET status = 'superseded'
+                   WHERE event_id = ? AND status = 'accepted'""",
+                [(event_id,) for event_id in event_ids],
+            )
+            return len(event_ids)
+
+    def uncertain_entry_ids(self, deployment_instance_id: UUID) -> list[str]:
+        """Name entry events requiring account and open-order reconciliation."""
+        with self._transaction() as connection:
+            rows = connection.execute(
+                """SELECT event_id FROM external_signal_entry_delivery
+                   WHERE deployment_instance_id = ? AND state = 'uncertain'
+                   ORDER BY started_at_ns, event_id""",
+                (str(deployment_instance_id),),
+            ).fetchall()
+        return [row["event_id"] for row in rows]
+
     def mark_delivered(
         self,
         event_id: str,
@@ -367,7 +468,34 @@ class ExternalSignalInbox:
         authority: EngineLifecycleAuthority,
         delivered_at: datetime,
     ) -> bool:
+        if authority.trading_mode not in {"sandbox", "testnet"}:
+            raise ExternalSignalInboxError("external signal is outside non-live runtime scope")
         with self._transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """SELECT action FROM external_signal_inbox
+                   WHERE event_id = ? AND deployment_instance_id = ?
+                     AND deployment_spec_id = ?
+                     AND deployment_spec_digest = ? AND generation = ?""",
+                (
+                    event_id,
+                    str(authority.deployment_instance_id),
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                ),
+            ).fetchone()
+            if row is None:
+                return False
+            entry = row["action"].startswith("ENTER")
+            if entry:
+                attempt = connection.execute(
+                    """SELECT state FROM external_signal_entry_delivery
+                       WHERE event_id = ? AND deployment_instance_id = ?""",
+                    (event_id, str(authority.deployment_instance_id)),
+                ).fetchone()
+                if attempt is None or attempt["state"] != "dispatching":
+                    return False
             cursor = connection.execute(
                 """UPDATE external_signal_inbox
                    SET status = 'delivered', delivered_at_ns = ?
@@ -384,7 +512,15 @@ class ExternalSignalInbox:
                     authority.generation,
                 ),
             )
-            return cursor.rowcount == 1
+            if cursor.rowcount != 1:
+                return False
+            if entry:
+                connection.execute(
+                    """UPDATE external_signal_entry_delivery
+                       SET state = 'queued', queued_at_ns = ? WHERE event_id = ?""",
+                    (_epoch_ns(delivered_at), event_id),
+                )
+            return True
 
     def confirm_flat(
         self,
@@ -398,7 +534,10 @@ class ExternalSignalInbox:
         The caller must first independently establish that the venue position and
         risk-increasing orders are clear. This method does not inspect the venue.
         """
+        if authority.trading_mode not in {"sandbox", "testnet"}:
+            raise ExternalSignalInboxError("external signal is outside non-live runtime scope")
         with self._transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
                 """UPDATE external_signal_risk_fence
                    SET flat_confirmed_at_ns = ?
@@ -421,4 +560,12 @@ class ExternalSignalInbox:
                     authority.generation,
                 ),
             )
-            return cursor.rowcount == 1
+            if cursor.rowcount != 1:
+                return False
+            connection.execute(
+                """UPDATE external_signal_entry_delivery
+                   SET state = 'resolved', resolved_at_ns = ?
+                   WHERE deployment_instance_id = ? AND state = 'uncertain'""",
+                (_epoch_ns(confirmed_at), str(authority.deployment_instance_id)),
+            )
+            return True

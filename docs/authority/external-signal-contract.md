@@ -104,6 +104,17 @@ database fence without a risk-event identity migrates conservatively and
 continues blocking entries. This is a durable safety primitive, not proof that
 the Nautilus bridge or venue confirmation exists yet.
 
+Ordinary entries now require a durable `begin_entry_delivery` claim before the
+strategy queue may receive them. `mark_delivered` records only that queue handoff,
+not an order or fill. On runner restart, `recover_uncertain_entries` moves any
+claimed or queued entry to `uncertain`; it is not replayed automatically, and
+new entries for that instance are refused. A later `FLATTEN` may still enter.
+Only after the caller has independently confirmed all positions and
+risk-increasing orders clear can `confirm_flat` resolve those uncertain entries.
+This is a fail-closed at-most-once boundary, not exactly-once order execution.
+The daemon does not yet call these methods; startup recovery and venue evidence
+must be wired and tested before enabling delivery.
+
 Acceptance now requires an `EngineLifecycleAuthority` supplied by the runner,
 which fixes the exact deployment instance, signed spec digest, generation, and
 non-live mode at the time of receipt. Reading pending events, marking delivery,
@@ -122,6 +133,14 @@ deployment at `deploy()`. This read-only scope does not authenticate a sender,
 prove that the daemon used the signed command lane, or turn on the HTTP
 listener. The daemon must recheck the active signed generation before each
 delivery; a scope captured before a stop or replacement is stale.
+
+`NtTradingNodeHost.request_external_risk_flatten()` checks that same active
+authority, removes queued entries before requesting the host's existing
+cancel-and-flatten containment path, and still requests flatten if queue
+removal fails. Its return value is only a count of removed in-memory entries.
+It does not attest a venue fill, prove final account flatness, or call the
+inbox's `confirm_flat()`; those require a separate position and order
+observation after containment.
 
 The ingress wire's `investmentType: "margin"` amount is quote-currency margin.
 The toolkit's `SignalExecutionCoordinator` instead treats `signal.amount` as
