@@ -42,12 +42,19 @@ from .producer import CleanProducerEvidence, produce_canonical_strategy_release_
 from .source_inventory import StrategySourceInventory, StrategySourceSnapshot
 from .toolkit_authority import CustosToolkitAuthorityV1, bind_contract_authority
 from .toolkit_registry import ToolkitRegistrySnapshotV1
-from .wheel_archive import VerifiedWheelV1, build_wheel, inspect_wheel
+from .wheel_archive import VerifiedWheelV1, WheelArchiveError, build_wheel, inspect_wheel
 
 ENTRY_POINT_GROUP = "alephain.strategy_runtime.v1"
 PYTHON_VERSION = "3.12.13"
 TYPING_RECEIPT_SCHEMA_VERSION = "alephain.strategy-artifact-typing-receipt.v1"
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+LOCAL_CONTEXT_SCHEMA_PATH = (
+    "custos_toolkit/contracts/assets/local_strategy_execution_context_v1.schema.json"
+)
+LOCAL_CONTEXT_SCHEMA_ID = (
+    "https://custos.the-alephain-guild/contracts/v1/local-strategy-execution-context-v1.schema.json"
+)
+LOCAL_CONTEXT_SUPPORT_NAME = "resources/local-context-support-v1.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,8 +84,11 @@ class StrategyReleaseSpec:
     characterization_parameters: tuple[str, ...] | None = None
     extra_dependencies: tuple[str, ...] = ("msgspec>=0.18,<1",)
     wheel_generator: str = "custos-strategy-publisher-v1"
+    local_context_support: bool = False
 
     def __post_init__(self) -> None:
+        if type(self.local_context_support) is not bool:
+            raise ArtifactBuildError("local context support must be an explicit boolean")
         for field in ("package", "adapter_class"):
             if _IDENTIFIER.fullmatch(getattr(self, field)) is None:
                 raise ArtifactBuildError(f"{field} must be a Python identifier")
@@ -270,6 +280,11 @@ def _rewrite_imports(path: str, content: bytes) -> tuple[bytes, dict[str, int]]:
 
 
 def _runtime_module(spec: StrategyReleaseSpec) -> bytes:
+    context_type = (
+        "StrategyRuntimeExecutionContextV1"
+        if spec.local_context_support
+        else "StrategyExecutionContextV1"
+    )
     return f'''"""Artifact-local Custos execution ABI adapter for {spec.display_name}."""
 
 from __future__ import annotations
@@ -282,7 +297,7 @@ from custos_toolkit.config import ConfigWrapper, deep_merge, load_yaml_file
 from custos_toolkit.config import loader as _config_loader
 from custos_toolkit.contracts.strategy_execution import (
     FrozenJsonObject,
-    StrategyExecutionContextV1,
+    {context_type},
 )
 from custos_toolkit_nautilus.adapter import create_strategy
 
@@ -310,7 +325,7 @@ class {spec.adapter_class}:
     def build_config(
         self,
         effective_config: FrozenJsonObject,
-        execution_context: StrategyExecutionContextV1,
+        execution_context: {context_type},
     ) -> ConfigWrapper:
         if execution_context.engine != "nautilus":
             raise ValueError("{spec.display_name} requires the Nautilus engine")
@@ -524,6 +539,57 @@ def _runtime_artifact(config_schema: bytes) -> dict[str, object]:
     }
 
 
+def _local_context_support(base_wheel: VerifiedWheelV1, contract_asset_index: bytes) -> bytes:
+    try:
+        schema = base_wheel.content(LOCAL_CONTEXT_SCHEMA_PATH)
+    except WheelArchiveError as error:
+        raise ArtifactBuildError("toolkit local context schema is absent") from error
+    value = _strict_json(schema, "toolkit local context schema")
+    if value.get("$id") != LOCAL_CONTEXT_SCHEMA_ID or canonical_json_bytes(value) != schema:
+        raise ArtifactBuildError("toolkit local context schema is not the canonical V1 schema")
+    index = _strict_json(contract_asset_index, "toolkit contract asset index")
+    assets = index.get("assets")
+    if not isinstance(assets, list):
+        raise ArtifactBuildError("toolkit local context schema index has no assets")
+    for path in (
+        "docs/gateway-contract/v1/local_strategy_execution_context_v1.schema.json",
+        f"packages/custos-strategy-toolkit/src/{LOCAL_CONTEXT_SCHEMA_PATH}",
+    ):
+        matches = [
+            asset for asset in assets if isinstance(asset, dict) and asset.get("path") == path
+        ]
+        expected = {"path": path, "sha256": _sha256(schema), "size_bytes": len(schema)}
+        if matches != [expected] or type(matches[0]["size_bytes"]) is not int:
+            raise ArtifactBuildError("toolkit local context schema differs from its asset index")
+    return canonical_json_bytes(
+        {
+            "schema_version": 1,
+            "execution_abi": ENTRY_POINT_GROUP,
+            "control_source": "local",
+            "context_schema_id": LOCAL_CONTEXT_SCHEMA_ID,
+            "context_schema_sha256": _sha256(schema),
+        }
+    )
+
+
+def _runtime_artifacts(
+    config_schema: bytes,
+    local_context_support: bytes | None,
+) -> list[dict[str, object]]:
+    artifacts = [_runtime_artifact(config_schema)]
+    if local_context_support is not None:
+        artifacts.append(
+            {
+                "media_type": "application/json",
+                "name": LOCAL_CONTEXT_SUPPORT_NAME,
+                "role": "runtime_artifact",
+                "sha256": _sha256(local_context_support),
+                "size_bytes": len(local_context_support),
+            }
+        )
+    return artifacts
+
+
 _CONNECTOR_NAME = re.compile(r"[a-z][a-z0-9_]{1,63}")
 
 
@@ -567,6 +633,7 @@ def _strategy_manifest(
     toolkit_version: str,
     trading_scope: Mapping[str, object],
     spec: StrategyReleaseSpec,
+    local_context_support: bytes | None = None,
 ) -> bytes:
     return canonical_json_bytes(
         {
@@ -580,7 +647,7 @@ def _strategy_manifest(
             "entry_point_group": ENTRY_POINT_GROUP,
             "execution_abi": ENTRY_POINT_GROUP,
             "requires_python": PYTHON_REQUIRES,
-            "runtime_artifacts": [_runtime_artifact(config_schema)],
+            "runtime_artifacts": _runtime_artifacts(config_schema, local_context_support),
             "schema_version": 1,
             "trading_scope": dict(trading_scope),
         }
@@ -600,6 +667,7 @@ def _strategy_artifact_ref(
     toolkit_version: str,
     build_lock: bytes,
     source_repository: str,
+    local_context_support: bytes | None = None,
 ) -> bytes:
     return canonical_json_bytes(
         {
@@ -622,7 +690,7 @@ def _strategy_artifact_ref(
             "manifest_size_bytes": len(strategy_manifest),
             "normalized_source_tree_sha256": source_tree_sha256,
             "python_version": PYTHON_VERSION,
-            "required_runtime_artifacts": [_runtime_artifact(config_schema)],
+            "required_runtime_artifacts": _runtime_artifacts(config_schema, local_context_support),
             "sbom_sha256": _sha256(strategy_sbom),
             "schema_version": 1,
             "source_commit": producer_commit,
@@ -791,6 +859,13 @@ def build_strategy_artifact_tree(
     base_config = base_wheel.content("custos_toolkit/config/base_config.yaml")
     config_schema = _config_schema(base_config, snapshot.content("config.yaml"), spec)
     package_files[f"{spec.package}/resources/strategy-config-v1.schema.json"] = config_schema
+    local_context_support = (
+        _local_context_support(base_wheel, toolkit.contract_asset_index)
+        if spec.local_context_support
+        else None
+    )
+    if local_context_support is not None:
+        package_files[f"{spec.package}/{LOCAL_CONTEXT_SUPPORT_NAME}"] = local_context_support
     typing_request = StrategyTypingRequestV1(
         package=spec.package,
         entry_point=spec.entry_point,
@@ -856,6 +931,7 @@ def build_strategy_artifact_tree(
         authority.candidate_version,
         _trading_scope(snapshot.content("config.yaml")),
         spec,
+        local_context_support,
     )
     strategy_sbom = _strategy_sbom(
         producer_commit=producer_commit,
@@ -900,6 +976,19 @@ def build_strategy_artifact_tree(
             "application/schema+json",
             config_schema,
             f"{spec.member_coordinate_prefix}/config-schema",
+        ),
+        *(
+            (
+                _member(
+                    ArtifactMemberRole.RUNTIME_ARTIFACT,
+                    LOCAL_CONTEXT_SUPPORT_NAME,
+                    "application/json",
+                    local_context_support,
+                    f"{spec.member_coordinate_prefix}/local-context-support",
+                ),
+            )
+            if local_context_support is not None
+            else ()
         ),
         _member(
             ArtifactMemberRole.TOOLKIT_SBOM,
@@ -979,6 +1068,8 @@ def build_strategy_artifact_tree(
         authority.contract_asset_index.title: toolkit.contract_asset_index,
         spec.source_tree_name: snapshot.canonical_bytes,
     }
+    if local_context_support is not None:
+        member_payloads_by_name[LOCAL_CONTEXT_SUPPORT_NAME] = local_context_support
     product = produce_canonical_strategy_release_bom(
         bom,
         {member: member_payloads_by_name[member.name] for member in members},
@@ -1001,6 +1092,7 @@ def build_strategy_artifact_tree(
         toolkit_version=authority.candidate_version,
         build_lock=build_lock,
         source_repository=producer.repository_url,
+        local_context_support=local_context_support,
     )
     predicate = StrategyReleasePredicateV1(
         schema_version=STRATEGY_RELEASE_PREDICATE_SCHEMA_VERSION,
