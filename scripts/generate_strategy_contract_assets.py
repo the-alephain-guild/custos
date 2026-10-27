@@ -12,10 +12,13 @@ from custos_toolkit.contracts.strategy_execution import (
     ArtifactMemberRole,
     ArtifactMemberV1,
     DigestBindingV1,
+    LocalStrategyExecutionContextV1,
     RunnerLocalArtifactPolicyDecisionV1,
     StrategyArtifactPreImportVerificationReceiptV1,
     StrategyArtifactRefV1,
+    StrategyLocalContextSupportV1,
     StrategyManifestV1,
+    canonical_json_bytes,
     canonical_model_digest,
 )
 from custos_toolkit.contracts.toolkit_rc import (
@@ -40,6 +43,17 @@ PRE_IMPORT_NEGATIVE_PATH = (
     "docs/authority/strategy-artifact-pre-import-verification-v1.negative.json"
 )
 STRATEGY_MANIFEST_SCHEMA_PATH = "docs/gateway-contract/v1/strategy_manifest_v1.schema.json"
+LOCAL_CONTEXT_SCHEMA_PATH = (
+    "docs/gateway-contract/v1/local_strategy_execution_context_v1.schema.json"
+)
+LOCAL_CONTEXT_PACKAGED_SCHEMA_PATH = (
+    "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/assets/"
+    "local_strategy_execution_context_v1.schema.json"
+)
+LOCAL_SUPPORT_SCHEMA_PATH = "docs/gateway-contract/v1/strategy_local_context_support_v1.schema.json"
+LOCAL_CONTEXT_GOLDEN_PATH = "docs/authority/local-strategy-execution-context-v1.golden.json"
+LOCAL_CONTEXT_NEGATIVE_PATH = "docs/authority/local-strategy-execution-context-v1.negative.json"
+LOCAL_SUPPORT_GOLDEN_PATH = "docs/authority/local-strategy-context-support-v1.golden.json"
 CONTRACT_RECEIPT_PATH = (
     "docs/authority/receipts/custos-strategy-contract-nautilus-2-v1-handoff-receipt.json"
 )
@@ -107,6 +121,64 @@ def with_contract_revision(schema: dict, contract: tuple[str, int]) -> dict:
 
 def _sidecar(path: str, content: bytes) -> bytes:
     return f"{sha256(content)}  {Path(path).name}\n".encode("ascii")
+
+
+def _build_local_context_assets() -> dict[str, bytes]:
+    context_schema = LocalStrategyExecutionContextV1.model_json_schema(mode="validation")
+    schema_bytes = canonical_json_bytes(context_schema)
+    context = LocalStrategyExecutionContextV1(
+        control_source="local",
+        engine="nautilus",
+        trading_mode="live",
+        run_id="11000000-0000-4000-8000-000000000001",
+        run_manifest_digest="a" * 64,
+        account_scope="b" * 64,
+        effective_config_digest="c" * 64,
+        configuration_revision=1,
+        authorization_epoch=1,
+        process_generation=2,
+    )
+    support = StrategyLocalContextSupportV1(
+        execution_abi="alephain.strategy_runtime.v1",
+        control_source="local",
+        context_schema_id=context_schema["$id"],
+        context_schema_sha256=sha256(schema_bytes),
+    )
+    context_bytes = canonical_json_bytes(context.model_dump(mode="json"))
+    support_bytes = canonical_json_bytes(support.model_dump(mode="json"))
+    negative = json_bytes(
+        {
+            "schema_version": 1,
+            "vectors": [
+                {
+                    "name": "platform-instance",
+                    "changes": {"deployment_instance_id": "22000000-0000-4000-8000-000000000002"},
+                },
+                {"name": "platform-generation", "changes": {"generation": 1}},
+                {"name": "wrong-source", "changes": {"control_source": "platform"}},
+                {"name": "boolean-version", "changes": {"schema_version": True}},
+                {"name": "boolean-epoch", "changes": {"authorization_epoch": True}},
+                {"name": "zero-generation", "changes": {"process_generation": 0}},
+                {"name": "text-revision", "changes": {"configuration_revision": "1"}},
+                {"name": "nil-run", "changes": {"run_id": "00000000-0000-0000-0000-000000000000"}},
+                {"name": "malformed-run", "changes": {"run_id": "not-a-uuid"}},
+                {"name": "unknown-field", "changes": {"allow_live": True}},
+            ],
+        }
+    )
+    return {
+        LOCAL_CONTEXT_SCHEMA_PATH: schema_bytes,
+        LOCAL_CONTEXT_PACKAGED_SCHEMA_PATH: schema_bytes,
+        LOCAL_SUPPORT_SCHEMA_PATH: canonical_json_bytes(
+            StrategyLocalContextSupportV1.model_json_schema(mode="validation")
+        ),
+        LOCAL_CONTEXT_GOLDEN_PATH: context_bytes,
+        f"{LOCAL_CONTEXT_GOLDEN_PATH}.sha256": _sidecar(LOCAL_CONTEXT_GOLDEN_PATH, context_bytes),
+        LOCAL_CONTEXT_NEGATIVE_PATH: negative,
+        f"{LOCAL_CONTEXT_NEGATIVE_PATH}.sha256": _sidecar(LOCAL_CONTEXT_NEGATIVE_PATH, negative),
+        LOCAL_SUPPORT_GOLDEN_PATH: support_bytes,
+        f"{LOCAL_SUPPORT_GOLDEN_PATH}.sha256": _sidecar(LOCAL_SUPPORT_GOLDEN_PATH, support_bytes),
+    }
 
 
 def _build_artifact_ref_assets() -> dict[str, bytes]:
@@ -377,6 +449,7 @@ def build_v1_contract_assets() -> dict[str, bytes]:
     )
     generated = {
         **artifact_assets,
+        **_build_local_context_assets(),
         PRE_IMPORT_SCHEMA_PATH: schema_bytes,
         PRE_IMPORT_GOLDEN_PATH: golden,
         f"{PRE_IMPORT_GOLDEN_PATH}.sha256": _sidecar(PRE_IMPORT_GOLDEN_PATH, golden),
@@ -393,6 +466,19 @@ def build_v1_contract_assets() -> dict[str, bytes]:
             "canonical_name": "Custos canonical first-production V1 strategy execution contracts",
             "status": "CANONICAL_V1_CONTRACT_ASSETS_PUBLISHED",
             "current_contracts": {
+                "local_strategy_execution_context": {
+                    "type": "LocalStrategyExecutionContextV1",
+                    "schema_path": LOCAL_CONTEXT_SCHEMA_PATH,
+                    "golden_path": LOCAL_CONTEXT_GOLDEN_PATH,
+                    "negative_path": LOCAL_CONTEXT_NEGATIVE_PATH,
+                    "contract_only": True,
+                },
+                "strategy_local_context_support": {
+                    "type": "StrategyLocalContextSupportV1",
+                    "schema_path": LOCAL_SUPPORT_SCHEMA_PATH,
+                    "golden_path": LOCAL_SUPPORT_GOLDEN_PATH,
+                    "contract_only": True,
+                },
                 "strategy_artifact_ref": {
                     "type": "StrategyArtifactRefV1",
                     "schema_path": ARTIFACT_REF_SCHEMA_PATH,

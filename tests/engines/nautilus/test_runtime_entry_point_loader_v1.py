@@ -28,6 +28,24 @@ def _context() -> StrategyExecutionContextV1:
     )
 
 
+def test_unknown_execution_context_is_rejected_before_python_import(tmp_path):
+    marker = tmp_path / "imported.txt"
+    (tmp_path / "context_probe.py").write_text(
+        f"from pathlib import Path\nPath({str(marker)!r}).write_text('imported')\n"
+        "class Runtime:\n"
+        "    def build_config(self, config, context): return config\n"
+        "    def build_strategy(self, config): return ('strategy', config)\n"
+    )
+    with pytest.raises(NautilusRuntimeEntryPointError, match="execution context"):
+        NautilusRuntimeEntryPointLoaderV1().load(
+            activation_root=tmp_path,
+            entry_point="context_probe:Runtime",
+            effective_config=deep_freeze_json({}),
+            execution_context=object(),
+        )
+    assert not marker.exists()
+
+
 def test_loader_builds_strategy_only_through_runtime_adapter_v1(tmp_path: Path) -> None:
     package = tmp_path / "team_runtime"
     package.mkdir()

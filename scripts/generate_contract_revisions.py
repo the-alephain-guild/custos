@@ -62,6 +62,26 @@ STRATEGY_SIGNAL_VECTORS = "docs/authority/conformance/strategy-signal-fact-v1.ve
 
 CONTRACTS = (
     Contract(
+        contract_id="alephain.custos.local_strategy_execution_context.v1",
+        schema_path="docs/gateway-contract/v1/local_strategy_execution_context_v1.schema.json",
+        assets=(
+            "docs/gateway-contract/v1/local_strategy_execution_context_v1.schema.json",
+            "docs/authority/local-strategy-execution-context-v1.golden.json",
+            "docs/authority/local-strategy-execution-context-v1.golden.json.sha256",
+            "docs/authority/local-strategy-execution-context-v1.negative.json",
+            "docs/authority/local-strategy-execution-context-v1.negative.json.sha256",
+        ),
+    ),
+    Contract(
+        contract_id="alephain.custos.strategy_local_context_support.v1",
+        schema_path="docs/gateway-contract/v1/strategy_local_context_support_v1.schema.json",
+        assets=(
+            "docs/gateway-contract/v1/strategy_local_context_support_v1.schema.json",
+            "docs/authority/local-strategy-context-support-v1.golden.json",
+            "docs/authority/local-strategy-context-support-v1.golden.json.sha256",
+        ),
+    ),
+    Contract(
         contract_id="alephain.custos.runner_fact_batch.v1",
         schema_path="docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
         vectors_path=RUNNER_FACT_VECTORS,

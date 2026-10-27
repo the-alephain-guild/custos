@@ -10,7 +10,9 @@ from pathlib import Path
 
 from custos_toolkit.contracts.strategy_execution import (
     FrozenJsonObject,
+    LocalStrategyExecutionContextV1,
     StrategyExecutionContextV1,
+    StrategyRuntimeExecutionContextV1,
 )
 
 
@@ -52,8 +54,14 @@ class NautilusRuntimeEntryPointLoaderV1:
         activation_root: Path,
         entry_point: str,
         effective_config: FrozenJsonObject,
-        execution_context: StrategyExecutionContextV1,
+        execution_context: StrategyRuntimeExecutionContextV1,
     ) -> object:
+        if isinstance(execution_context, LocalStrategyExecutionContextV1):
+            raise NautilusRuntimeEntryPointError(
+                "execution context requires verified local compatibility before import"
+            )
+        if not isinstance(execution_context, StrategyExecutionContextV1):
+            raise NautilusRuntimeEntryPointError("unsupported execution context type")
         module_name, separator, attribute_name = entry_point.partition(":")
         if not separator or not module_name or not attribute_name or ":" in attribute_name:
             raise NautilusRuntimeEntryPointError(
@@ -98,7 +106,7 @@ class NautilusRuntimeEntryPointLoaderV1:
         module_name: str,
         attribute_name: str,
         effective_config: FrozenJsonObject,
-        execution_context: StrategyExecutionContextV1,
+        execution_context: StrategyRuntimeExecutionContextV1,
     ) -> object:
         module = importlib.import_module(module_name)
         module_file = getattr(module, "__file__", None)

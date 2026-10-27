@@ -73,6 +73,69 @@ class StrategyExecutionContextV1(_StrictFrozenModel):
     generation: StrictInt = Field(ge=1)
 
 
+class LocalStrategyExecutionContextV1(_StrictFrozenModel):
+    """Local execution provenance without a platform deployment identity."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        title="LocalStrategyExecutionContextV1",
+        json_schema_extra={
+            "$id": "https://custos.the-alephain-guild/contracts/v1/local-strategy-execution-context-v1.schema.json",
+            "x-contract-id": "alephain.custos.local_strategy_execution_context.v1",
+            "x-contract-revision": 1,
+        },
+    )
+
+    schema_version: StrictInt = Field(default=1, ge=1, le=1)
+    control_source: Literal["local"]
+    engine: Literal["nautilus"]
+    trading_mode: Literal["sandbox", "testnet", "live"]
+    run_id: UUID = Field(
+        json_schema_extra={"not": {"const": "00000000-0000-0000-0000-000000000000"}}
+    )
+    run_manifest_digest: Sha256Hex
+    account_scope: Sha256Hex
+    effective_config_digest: Sha256Hex
+    configuration_revision: StrictInt = Field(ge=1, le=2**63 - 1)
+    authorization_epoch: StrictInt = Field(ge=1, le=2**63 - 1)
+    process_generation: StrictInt = Field(ge=1, le=2**63 - 1)
+
+    @model_validator(mode="after")
+    def validate_local_identity(self) -> Self:
+        if self.run_id.int == 0:
+            raise ValueError("local run identity must not be nil")
+        return self
+
+
+class StrategyLocalContextSupportV1(_StrictFrozenModel):
+    """Digest-bound compatibility metadata, never execution authorization."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        title="StrategyLocalContextSupportV1",
+        json_schema_extra={
+            "$id": "https://custos.the-alephain-guild/contracts/v1/strategy-local-context-support-v1.schema.json",
+            "x-contract-id": "alephain.custos.strategy_local_context_support.v1",
+            "x-contract-revision": 1,
+        },
+    )
+
+    schema_version: StrictInt = Field(default=1, ge=1, le=1)
+    execution_abi: Literal["alephain.strategy_runtime.v1"]
+    control_source: Literal["local"]
+    context_schema_id: Literal[
+        "https://custos.the-alephain-guild/contracts/v1/local-strategy-execution-context-v1.schema.json"
+    ]
+    context_schema_sha256: Sha256Hex
+
+
+StrategyRuntimeExecutionContextV1: TypeAlias = (
+    StrategyExecutionContextV1 | LocalStrategyExecutionContextV1
+)
+
+
 class StrategyRuntimeAdapterV1(Protocol[ConfigT, StrategyT_co]):
     """Typed adapter implemented by an engine-specific strategy wheel."""
 
@@ -80,6 +143,18 @@ class StrategyRuntimeAdapterV1(Protocol[ConfigT, StrategyT_co]):
         self,
         effective_config: FrozenJsonObject,
         execution_context: StrategyExecutionContextV1,
+    ) -> ConfigT: ...
+
+    def build_strategy(self, config: ConfigT) -> StrategyT_co: ...
+
+
+class LocalStrategyRuntimeAdapterV1(Protocol[ConfigT, StrategyT_co]):
+    """Adapter acceptance for an artifact that explicitly supports local context."""
+
+    def build_config(
+        self,
+        effective_config: FrozenJsonObject,
+        execution_context: LocalStrategyExecutionContextV1,
     ) -> ConfigT: ...
 
     def build_strategy(self, config: ConfigT) -> StrategyT_co: ...
@@ -909,6 +984,10 @@ __all__ = [
     "StrategyArtifactRefV1",
     "StrategyArtifactPreImportVerificationReceiptV1",
     "StrategyExecutionContextV1",
+    "LocalStrategyExecutionContextV1",
+    "LocalStrategyRuntimeAdapterV1",
+    "StrategyLocalContextSupportV1",
+    "StrategyRuntimeExecutionContextV1",
     "StrategyManifestV1",
     "TradingScopeV1",
     "StrategyRuntimeAdapterV1",

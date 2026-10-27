@@ -33,6 +33,12 @@ PUBLIC_SCHEMAS = frozenset(
     }
 )
 INTERNAL_SCHEMA_PREFIXES = ("toolkit_rc_", "runtime_candidate_")
+INTERNAL_SCHEMAS = frozenset(
+    {
+        "local_strategy_execution_context_v1.schema.json",
+        "strategy_local_context_support_v1.schema.json",
+    }
+)
 
 
 def parser_inventory() -> argparse.ArgumentParser:
@@ -168,7 +174,9 @@ def version_text(zh: bool) -> str:
 def schema_table(zh: bool) -> str:
     available = {p.name for p in (ROOT / "docs/gateway-contract/v1").glob("*.schema.json")}
     unclassified = {
-        name for name in available - PUBLIC_SCHEMAS if not name.startswith(INTERNAL_SCHEMA_PREFIXES)
+        name
+        for name in available - PUBLIC_SCHEMAS - INTERNAL_SCHEMAS
+        if not name.startswith(INTERNAL_SCHEMA_PREFIXES)
     }
     missing = PUBLIC_SCHEMAS - available
     if unclassified or missing:

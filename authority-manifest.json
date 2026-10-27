@@ -3,6 +3,16 @@
   "project": "custos",
   "authority_documents": [
     {
+      "role": "local_strategy_execution_context_schema_v1",
+      "path": "docs/gateway-contract/v1/local_strategy_execution_context_v1.schema.json",
+      "contract_only": true
+    },
+    {
+      "role": "strategy_local_context_support_schema_v1",
+      "path": "docs/gateway-contract/v1/strategy_local_context_support_v1.schema.json",
+      "contract_only": true
+    },
+    {
       "role": "local_runtime_contract_v1",
       "path": "docs/authority/local-runtime-contract.md",
       "contract_only": true

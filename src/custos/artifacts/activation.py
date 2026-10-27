@@ -13,6 +13,7 @@ from uuid import UUID
 from custos_toolkit.contracts.strategy_execution import (
     FrozenJsonObject,
     StrategyExecutionContextV1,
+    StrategyRuntimeExecutionContextV1,
 )
 
 from custos.contracts.crucible_runner_command import CrucibleRunnerDeploymentCommandV1
@@ -62,7 +63,7 @@ class RuntimeEntryPointLoader(Protocol):
         activation_root: Path,
         entry_point: str,
         effective_config: FrozenJsonObject,
-        execution_context: StrategyExecutionContextV1,
+        execution_context: StrategyRuntimeExecutionContextV1,
     ) -> object: ...
 
 

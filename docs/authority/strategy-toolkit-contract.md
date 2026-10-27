@@ -27,10 +27,30 @@ produce a v1.team receipt or act as a fallback for this contract.
 
 ## Runtime and configuration
 
-`deployment_instance_id` is the only runtime address. `deployment_spec_id`,
+For platform execution, `deployment_instance_id` is the runtime address. `deployment_spec_id`,
 `deployment_spec_digest`, and `generation` are provenance and ordering inputs.
 Catalog aliases never authorize or address execution. The fixed entry-point
 group is `alephain.strategy_runtime.v1`.
+
+`LocalStrategyExecutionContextV1` is a separate contract-only context for an
+independent local run. It carries a local run UUID, account scope, manifest and
+effective-config digests, configuration revision, authorization epoch and process
+generation. It has no platform deployment fields or generation alias. This
+context is provenance, not permission to execute.
+
+The existing `StrategyRuntimeAdapterV1` retains its platform context parameter.
+`LocalStrategyRuntimeAdapterV1` uses the local context; both keep the same two
+generic parameters and call shape. A dual-capable implementation may accept
+`StrategyRuntimeExecutionContextV1`, but the union does not require an existing
+platform-only adapter to claim local compatibility.
+
+`StrategyLocalContextSupportV1` describes explicit compatibility with the local
+context schema by fixed schema ID and canonical-schema SHA-256. Its declaration
+must be bound to the strategy artifact's verified runtime members. Schema and
+model availability do not prove artifact compatibility or live readiness; until
+that material verification is connected, the runtime loader rejects local and
+unknown contexts before importing strategy code. Existing platform context and
+artifact schemas retain their current shapes.
 
 The adapter receives final effective config from a verified signed Crucible
 command. Custos parses JSON numbers as `Decimal`, rejects duplicates and

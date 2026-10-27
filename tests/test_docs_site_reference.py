@@ -170,5 +170,10 @@ def test_internal_candidate_schemas_stay_out_of_public_inventory(
     table = checker.schema_table(False)
     assert "runtime_candidate" not in table
     assert "toolkit_rc" not in table
+    assert "local_strategy_execution_context_v1.schema.json" not in table
+    assert "strategy_local_context_support_v1.schema.json" not in table
     assert "offline_deployment_spec.schema.json" in table
     assert checker.main() == 0
+    (checker.ROOT / "docs/gateway-contract/v1/local_unreviewed.schema.json").write_text("{}\n")
+    with pytest.raises(ValueError, match="local_unreviewed"):
+        checker.schema_table(False)

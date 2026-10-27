@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "vectors": [
+    {
+      "changes": {
+        "deployment_instance_id": "22000000-0000-4000-8000-000000000002"
+      },
+      "name": "platform-instance"
+    },
+    {
+      "changes": {
+        "generation": 1
+      },
+      "name": "platform-generation"
+    },
+    {
+      "changes": {
+        "control_source": "platform"
+      },
+      "name": "wrong-source"
+    },
+    {
+      "changes": {
+        "schema_version": true
+      },
+      "name": "boolean-version"
+    },
+    {
+      "changes": {
+        "authorization_epoch": true
+      },
+      "name": "boolean-epoch"
+    },
+    {
+      "changes": {
+        "process_generation": 0
+      },
+      "name": "zero-generation"
+    },
+    {
+      "changes": {
+        "configuration_revision": "1"
+      },
+      "name": "text-revision"
+    },
+    {
+      "changes": {
+        "run_id": "00000000-0000-0000-0000-000000000000"
+      },
+      "name": "nil-run"
+    },
+    {
+      "changes": {
+        "run_id": "not-a-uuid"
+      },
+      "name": "malformed-run"
+    },
+    {
+      "changes": {
+        "allow_live": true
+      },
+      "name": "unknown-field"
+    }
+  ]
+}
