@@ -3,6 +3,16 @@
   "project": "custos",
   "authority_documents": [
     {
+      "role": "local_runtime_contract_v1",
+      "path": "docs/authority/local-runtime-contract.md",
+      "contract_only": true
+    },
+    {
+      "role": "runtime_handoff_contract_v1",
+      "path": "docs/authority/runtime-handoff-contract.md",
+      "contract_only": true
+    },
+    {
       "role": "ecosystem_snapshot",
       "path": "docs/authority/ecosystem-authority.json"
     },
