@@ -123,8 +123,18 @@ factory converts notional into contract quantity. Passing the wire amount
 unchanged would lose the requested leverage's sizing effect. The future bridge
 must use an exact Decimal conversion under the signed leverage and local
 maximum-exposure policy, and must define full-position exits separately.
-Until that conversion and event-to-order lineage are tested, the host does not
-deliver entry signals to the strategy.
+`external_signal.to_toolkit_signal()` now provides a pure, non-delivering
+conversion for the narrow `CUSTOS_V1` market-order shape: an entry's exact
+quote margin is multiplied by the active scope's leverage and refused above a
+caller-supplied maximum order notional; a 100% position exit has no toolkit
+`amount`, so the toolkit closes the actual position rather than 100 quote
+units. The caller must obtain that maximum from the active signed runner
+policy, not from the alert, and pass its explicit settlement currency. A
+different currency is refused; any required conversion needs an independent
+trusted price before calling this helper. The helper rejects risk `FLATTEN`, different
+deployment generations, unsupported order forms and inexact money input.
+Event-to-order lineage and the actual runtime policy source are still untested;
+neither this helper nor the host scope method queues a signal or confirms a fill.
 
 The source Nautilus `SignalProcessorStrategy` still consumes queued signals
 on its next configured bar. It now drops an event when that bar's event time is
