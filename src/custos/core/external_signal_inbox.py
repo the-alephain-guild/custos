@@ -123,11 +123,25 @@ class ExternalSignalInbox:
                     strategy_revision TEXT NOT NULL,
                     instrument TEXT NOT NULL,
                     bar_close_ns INTEGER NOT NULL,
+                    risk_event_id TEXT,
+                    flat_confirmed_at_ns INTEGER,
                     PRIMARY KEY (source_id, deployment_instance_id,
                                  strategy_revision, instrument)
                 );
                 """
             )
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(external_signal_risk_fence)")
+            }
+            if "risk_event_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE external_signal_risk_fence ADD COLUMN risk_event_id TEXT"
+                )
+            if "flat_confirmed_at_ns" not in columns:
+                connection.execute(
+                    "ALTER TABLE external_signal_risk_fence ADD COLUMN flat_confirmed_at_ns INTEGER"
+                )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10.0)
@@ -174,7 +188,8 @@ class ExternalSignalInbox:
                 return IntakeReceipt(alert.event_id, "duplicate")
 
             fence = connection.execute(
-                """SELECT bar_close_ns FROM external_signal_risk_fence
+                """SELECT bar_close_ns, flat_confirmed_at_ns
+                   FROM external_signal_risk_fence
                    WHERE source_id = ? AND deployment_instance_id = ?
                      AND strategy_revision = ? AND instrument = ?""",
                 stream,
@@ -182,6 +197,8 @@ class ExternalSignalInbox:
             if alert.trade.action.startswith("ENTER") and fence is not None:
                 if bar_ns <= fence["bar_close_ns"]:
                     raise ExternalSignalInboxError("entry precedes the latest risk flatten")
+                if fence["flat_confirmed_at_ns"] is None:
+                    raise ExternalSignalInboxError("entry awaits flat confirmation")
 
             head = connection.execute(
                 """SELECT MAX(bar_close_ns) AS bar_close_ns FROM external_signal_inbox
@@ -204,11 +221,14 @@ class ExternalSignalInbox:
                 connection.execute(
                     """INSERT INTO external_signal_risk_fence
                        (source_id, deployment_instance_id, strategy_revision,
-                        instrument, bar_close_ns) VALUES (?, ?, ?, ?, ?)
+                        instrument, bar_close_ns, risk_event_id, flat_confirmed_at_ns)
+                       VALUES (?, ?, ?, ?, ?, ?, NULL)
                        ON CONFLICT(source_id, deployment_instance_id,
                                    strategy_revision, instrument)
-                       DO UPDATE SET bar_close_ns = MAX(bar_close_ns, excluded.bar_close_ns)""",
-                    (*stream, bar_ns),
+                       DO UPDATE SET bar_close_ns = excluded.bar_close_ns,
+                                     risk_event_id = excluded.risk_event_id,
+                                     flat_confirmed_at_ns = NULL""",
+                    (*stream, bar_ns, alert.event_id),
                 )
 
             pending = connection.execute(
@@ -277,5 +297,25 @@ class ExternalSignalInbox:
                    SET status = 'delivered', delivered_at_ns = ?
                    WHERE event_id = ? AND status = 'accepted'""",
                 (_epoch_ns(delivered_at), event_id),
+            )
+            return cursor.rowcount == 1
+
+    def confirm_flat(self, risk_event_id: str, *, confirmed_at: datetime) -> bool:
+        """Release the entry fence only for the latest delivered risk event.
+
+        The caller must first independently establish that the venue position and
+        risk-increasing orders are clear. This method does not inspect the venue.
+        """
+        with self._transaction() as connection:
+            cursor = connection.execute(
+                """UPDATE external_signal_risk_fence
+                   SET flat_confirmed_at_ns = ?
+                   WHERE risk_event_id = ? AND flat_confirmed_at_ns IS NULL
+                     AND EXISTS (
+                       SELECT 1 FROM external_signal_inbox
+                       WHERE event_id = ? AND risk_action = 'FLATTEN'
+                         AND status = 'delivered'
+                     )""",
+                (_epoch_ns(confirmed_at), risk_event_id, risk_event_id),
             )
             return cursor.rowcount == 1

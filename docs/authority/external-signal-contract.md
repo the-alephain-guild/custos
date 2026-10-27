@@ -65,6 +65,18 @@ that merely claim an instance, instrument, and leverage. The inbox acceptance
 receipt is not a strategy-delivery or venue-fill receipt. No external signal
 path is active in the daemon at this stage.
 
+The handler requires an `X-Custos-Signature` HMAC header. TradingView's
+[webhook documentation](https://www.tradingview.com/support/solutions/43000529348-how-to-configure-webhook-alerts/)
+documents a POST body and its `Content-Type`, but does not offer a configurable
+HMAC header. Consequently, this handler is not a direct TradingView webhook
+endpoint. A future TradingView path needs a separately verified TLS edge which
+authenticates the sender, strips any inbound assertion headers, computes the
+HMAC over the exact forwarded body, and forwards only to the loopback listener.
+TradingView separately documents a client-certificate authentication option;
+its verification and edge configuration have not been implemented or tested.
+The `CUSTOS_V1` `signalToken` field is compatibility syntax, never ingress
+authentication and must carry no exchange secret.
+
 ## Boundaries still to implement
 
 The HTTP ingress in plan 42 T3 must authenticate the source independently of
@@ -76,6 +88,14 @@ Nautilus bridge in T4 must distinguish delivery and intent from a confirmed
 position change. For `FLATTEN`, a later entry is allowed only after the old
 entry orders are contained and the actual position is confirmed flat; the
 external event does not trip the runner's permanent breaker.
+
+The inbox persists the latest risk-event fence and blocks newer entries until
+`confirm_flat` is called for that exact delivered risk event. The method
+requires an independently verified venue-flat observation from its future
+runtime caller; marking delivery alone does not release the fence. An older
+database fence without a risk-event identity migrates conservatively and
+continues blocking entries. This is a durable safety primitive, not proof that
+the Nautilus bridge or venue confirmation exists yet.
 
 Neither message shape creates a signed desired-state command. The signed
 deployment and local risk policy remain the authority for venue, account,

@@ -1,8 +1,9 @@
-"""Bounded HTTP ingress for already authorized external signal sources.
+"""Bounded HTTP ingress behind an authenticated, HMAC-signing local edge.
 
 This module intentionally does not register a CLI command yet. The daemon must
 first provide a scope derived from its verified deployment and an activated
 runtime; operator-supplied scope flags are not sufficient authorization.
+TradingView cannot send the required HMAC header directly.
 """
 
 from __future__ import annotations

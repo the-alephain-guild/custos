@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID
@@ -93,6 +94,52 @@ def test_risk_exit_supersedes_unconsumed_entry_at_same_bar(tmp_path: Path) -> No
         inbox.accept(alert(action="ENTER_SHORT"), received_at=NOW)
 
 
+def test_newer_entry_waits_for_confirmed_flat_across_restart(tmp_path: Path) -> None:
+    path = tmp_path / "inbox.sqlite"
+    risk = alert(
+        action="EXIT_LONG",
+        risk_action="FLATTEN",
+        bar_close_time=datetime(2026, 10, 27, 11, 30, tzinfo=UTC),
+    )
+    newer_entry = alert(action="ENTER_SHORT")
+    inbox = ExternalSignalInbox(path)
+    inbox.accept(risk, received_at=NOW)
+    with pytest.raises(ExternalSignalInboxError, match="flat confirmation"):
+        inbox.accept(newer_entry, received_at=NOW)
+    assert inbox.mark_delivered(risk.event_id, delivered_at=NOW)
+
+    recovered = ExternalSignalInbox(path)
+    with pytest.raises(ExternalSignalInboxError, match="flat confirmation"):
+        recovered.accept(newer_entry, received_at=NOW)
+    assert recovered.confirm_flat(risk.event_id, confirmed_at=NOW) is True
+    assert recovered.confirm_flat(risk.event_id, confirmed_at=NOW) is False
+    assert ExternalSignalInbox(path).accept(newer_entry, received_at=NOW).status == "accepted"
+
+
+def test_flat_confirmation_requires_latest_delivered_risk_event(tmp_path: Path) -> None:
+    inbox = ExternalSignalInbox(tmp_path / "inbox.sqlite")
+    earlier = alert(
+        action="EXIT_LONG",
+        risk_action="FLATTEN",
+        bar_close_time=datetime(2026, 10, 27, 11, 0, tzinfo=UTC),
+    )
+    later = alert(
+        action="EXIT_LONG",
+        risk_action="FLATTEN",
+        bar_close_time=datetime(2026, 10, 27, 11, 30, tzinfo=UTC),
+    )
+    inbox.accept(earlier, received_at=NOW)
+    assert inbox.confirm_flat(earlier.event_id, confirmed_at=NOW) is False
+    assert inbox.mark_delivered(earlier.event_id, delivered_at=NOW)
+    inbox.accept(later, received_at=NOW)
+    assert inbox.confirm_flat(earlier.event_id, confirmed_at=NOW) is False
+    with pytest.raises(ExternalSignalInboxError, match="flat confirmation"):
+        inbox.accept(alert(action="ENTER_SHORT"), received_at=NOW)
+    assert inbox.mark_delivered(later.event_id, delivered_at=NOW)
+    assert inbox.confirm_flat(later.event_id, confirmed_at=NOW) is True
+    assert inbox.accept(alert(action="ENTER_SHORT"), received_at=NOW).status == "accepted"
+
+
 def test_expired_pending_entry_does_not_reopen_after_restart(tmp_path: Path) -> None:
     path = tmp_path / "inbox.sqlite"
     message = alert()
@@ -127,3 +174,26 @@ def test_inbox_refuses_symlink_and_permissive_existing_file(tmp_path: Path) -> N
         ExternalSignalInbox(link)
     with pytest.raises(ExternalSignalInboxError):
         ExternalSignalInbox(target)
+
+
+def test_existing_risk_fence_migrates_fail_closed(tmp_path: Path) -> None:
+    path = tmp_path / "inbox.sqlite"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """CREATE TABLE external_signal_risk_fence (
+                source_id TEXT NOT NULL,
+                deployment_instance_id TEXT NOT NULL,
+                strategy_revision TEXT NOT NULL,
+                instrument TEXT NOT NULL,
+                bar_close_ns INTEGER NOT NULL,
+                PRIMARY KEY (source_id, deployment_instance_id, strategy_revision, instrument)
+            )"""
+        )
+        connection.execute(
+            "INSERT INTO external_signal_risk_fence VALUES (?, ?, ?, ?, ?)",
+            ("independent-demo", str(INSTANCE_ID), "supertrend-v0.5", "ETH-USDT-SWAP", 1),
+        )
+    path.chmod(0o600)
+    inbox = ExternalSignalInbox(path)
+    with pytest.raises(ExternalSignalInboxError, match="flat confirmation"):
+        inbox.accept(alert(), received_at=NOW)
