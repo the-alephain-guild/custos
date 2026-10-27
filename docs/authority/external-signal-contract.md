@@ -97,6 +97,16 @@ database fence without a risk-event identity migrates conservatively and
 continues blocking entries. This is a durable safety primitive, not proof that
 the Nautilus bridge or venue confirmation exists yet.
 
+Acceptance now requires an `EngineLifecycleAuthority` supplied by the runner,
+which fixes the exact deployment instance, signed spec digest, generation, and
+non-live mode at the time of receipt. Reading pending events, marking delivery,
+and confirming flat require that same instance, spec ID, digest, and generation. A new
+generation cannot consume old events. Rows from an earlier database schema
+migrate with an empty digest and generation zero, so they cannot be delivered
+into any valid current generation. Constructing an authority object is not
+itself proof that the caller verified the signed command; the daemon must
+derive it from its active verified deployment before enabling this path.
+
 Neither message shape creates a signed desired-state command. The signed
 deployment and local risk policy remain the authority for venue, account,
 instrument, leverage, and maximum exposure. This contract permits local

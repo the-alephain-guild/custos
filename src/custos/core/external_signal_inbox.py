@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.core.external_signal_contract import CustosV1Alert
 
 
@@ -32,6 +33,9 @@ class StoredExternalSignal:
     event_id: str
     source_id: str
     deployment_instance_id: UUID
+    deployment_spec_id: UUID
+    deployment_spec_digest: str
+    generation: int
     instrument: str
     bar_close_time: datetime
     action: str
@@ -101,6 +105,9 @@ class ExternalSignalInbox:
                     event_id TEXT PRIMARY KEY,
                     source_id TEXT NOT NULL,
                     deployment_instance_id TEXT NOT NULL,
+                    deployment_spec_id TEXT NOT NULL DEFAULT '',
+                    deployment_spec_digest TEXT NOT NULL DEFAULT '',
+                    generation INTEGER NOT NULL DEFAULT 0,
                     strategy_revision TEXT NOT NULL,
                     instrument TEXT NOT NULL,
                     bar_close_ns INTEGER NOT NULL,
@@ -142,6 +149,24 @@ class ExternalSignalInbox:
                 connection.execute(
                     "ALTER TABLE external_signal_risk_fence ADD COLUMN flat_confirmed_at_ns INTEGER"
                 )
+            inbox_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(external_signal_inbox)")
+            }
+            if "deployment_spec_digest" not in inbox_columns:
+                connection.execute(
+                    "ALTER TABLE external_signal_inbox ADD COLUMN deployment_spec_digest TEXT "
+                    "NOT NULL DEFAULT ''"
+                )
+            if "deployment_spec_id" not in inbox_columns:
+                connection.execute(
+                    "ALTER TABLE external_signal_inbox ADD COLUMN deployment_spec_id TEXT "
+                    "NOT NULL DEFAULT ''"
+                )
+            if "generation" not in inbox_columns:
+                connection.execute(
+                    "ALTER TABLE external_signal_inbox ADD COLUMN generation INTEGER NOT NULL DEFAULT 0"
+                )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10.0)
@@ -160,7 +185,17 @@ class ExternalSignalInbox:
         finally:
             connection.close()
 
-    def accept(self, alert: CustosV1Alert, *, received_at: datetime) -> IntakeReceipt:
+    def accept(
+        self,
+        alert: CustosV1Alert,
+        *,
+        authority: EngineLifecycleAuthority,
+        received_at: datetime,
+    ) -> IntakeReceipt:
+        if authority.trading_mode not in {"sandbox", "testnet"}:
+            raise ExternalSignalInboxError("external signal is outside non-live runtime scope")
+        if alert.deployment_instance_id != authority.deployment_instance_id:
+            raise ExternalSignalInboxError("external signal instance differs from runtime")
         payload = _sanitized(alert)
         payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
@@ -179,11 +214,17 @@ class ExternalSignalInbox:
         with self._transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
             existing = connection.execute(
-                "SELECT payload_digest FROM external_signal_inbox WHERE event_id = ?",
+                """SELECT payload_digest, deployment_spec_id, deployment_spec_digest, generation
+                   FROM external_signal_inbox WHERE event_id = ?""",
                 (alert.event_id,),
             ).fetchone()
             if existing is not None:
-                if existing["payload_digest"] != digest:
+                if (
+                    existing["payload_digest"] != digest
+                    or existing["deployment_spec_id"] != str(authority.deployment_spec_id)
+                    or existing["deployment_spec_digest"] != authority.deployment_spec_digest
+                    or existing["generation"] != authority.generation
+                ):
                     raise ExternalSignalInboxError("external signal replay conflict")
                 return IntakeReceipt(alert.event_id, "duplicate")
 
@@ -233,8 +274,15 @@ class ExternalSignalInbox:
 
             pending = connection.execute(
                 """SELECT COUNT(*) FROM external_signal_inbox
-                   WHERE deployment_instance_id = ? AND status = 'accepted'""",
-                (str(alert.deployment_instance_id),),
+                   WHERE deployment_instance_id = ? AND status = 'accepted'
+                     AND deployment_spec_id = ?
+                     AND deployment_spec_digest = ? AND generation = ?""",
+                (
+                    str(alert.deployment_instance_id),
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                ),
             ).fetchone()[0]
             if pending >= self.max_pending:
                 raise ExternalSignalInboxError("external signal inbox is full")
@@ -242,13 +290,20 @@ class ExternalSignalInbox:
             connection.execute(
                 """INSERT INTO external_signal_inbox
                    (event_id, source_id, deployment_instance_id,
-                    strategy_revision, instrument, bar_close_ns,
+                    deployment_spec_id, deployment_spec_digest, generation, strategy_revision,
+                    instrument, bar_close_ns,
                     action, risk_action, payload_json, payload_digest,
                     expires_at_ns, received_at_ns, status)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'accepted')""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'accepted')""",
                 (
                     alert.event_id,
-                    *stream,
+                    alert.source_id,
+                    str(alert.deployment_instance_id),
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                    alert.strategy_revision,
+                    alert.trade.instrument,
                     bar_ns,
                     alert.trade.action,
                     alert.risk_action,
@@ -260,7 +315,12 @@ class ExternalSignalInbox:
             )
         return IntakeReceipt(alert.event_id, "accepted")
 
-    def pending(self, deployment_instance_id: UUID, *, now: datetime) -> list[StoredExternalSignal]:
+    def pending(
+        self, authority: EngineLifecycleAuthority, *, now: datetime
+    ) -> list[StoredExternalSignal]:
+        if authority.trading_mode not in {"sandbox", "testnet"}:
+            raise ExternalSignalInboxError("external signal is outside non-live runtime scope")
+        deployment_instance_id = authority.deployment_instance_id
         now_ns = _epoch_ns(now)
         with self._transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -273,14 +333,24 @@ class ExternalSignalInbox:
             rows = connection.execute(
                 """SELECT * FROM external_signal_inbox
                    WHERE deployment_instance_id = ? AND status = 'accepted'
+                     AND deployment_spec_id = ?
+                     AND deployment_spec_digest = ? AND generation = ?
                    ORDER BY bar_close_ns, risk_action IS NULL, received_at_ns, event_id""",
-                (str(deployment_instance_id),),
+                (
+                    str(deployment_instance_id),
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                ),
             ).fetchall()
         return [
             StoredExternalSignal(
                 event_id=row["event_id"],
                 source_id=row["source_id"],
                 deployment_instance_id=UUID(row["deployment_instance_id"]),
+                deployment_spec_id=UUID(row["deployment_spec_id"]),
+                deployment_spec_digest=row["deployment_spec_digest"],
+                generation=row["generation"],
                 instrument=row["instrument"],
                 bar_close_time=datetime.fromtimestamp(row["bar_close_ns"] / 1_000_000_000, UTC),
                 action=row["action"],
@@ -290,17 +360,39 @@ class ExternalSignalInbox:
             for row in rows
         ]
 
-    def mark_delivered(self, event_id: str, *, delivered_at: datetime) -> bool:
+    def mark_delivered(
+        self,
+        event_id: str,
+        *,
+        authority: EngineLifecycleAuthority,
+        delivered_at: datetime,
+    ) -> bool:
         with self._transaction() as connection:
             cursor = connection.execute(
                 """UPDATE external_signal_inbox
                    SET status = 'delivered', delivered_at_ns = ?
-                   WHERE event_id = ? AND status = 'accepted'""",
-                (_epoch_ns(delivered_at), event_id),
+                   WHERE event_id = ? AND status = 'accepted'
+                     AND deployment_instance_id = ?
+                     AND deployment_spec_id = ?
+                     AND deployment_spec_digest = ? AND generation = ?""",
+                (
+                    _epoch_ns(delivered_at),
+                    event_id,
+                    str(authority.deployment_instance_id),
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                ),
             )
             return cursor.rowcount == 1
 
-    def confirm_flat(self, risk_event_id: str, *, confirmed_at: datetime) -> bool:
+    def confirm_flat(
+        self,
+        risk_event_id: str,
+        *,
+        authority: EngineLifecycleAuthority,
+        confirmed_at: datetime,
+    ) -> bool:
         """Release the entry fence only for the latest delivered risk event.
 
         The caller must first independently establish that the venue position and
@@ -315,7 +407,18 @@ class ExternalSignalInbox:
                        SELECT 1 FROM external_signal_inbox
                        WHERE event_id = ? AND risk_action = 'FLATTEN'
                          AND status = 'delivered'
+                         AND deployment_instance_id = ?
+                         AND deployment_spec_id = ?
+                         AND deployment_spec_digest = ? AND generation = ?
                      )""",
-                (_epoch_ns(confirmed_at), risk_event_id, risk_event_id),
+                (
+                    _epoch_ns(confirmed_at),
+                    risk_event_id,
+                    risk_event_id,
+                    str(authority.deployment_instance_id),
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                ),
             )
             return cursor.rowcount == 1

@@ -9,11 +9,19 @@ from uuid import UUID
 
 import pytest
 
+from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.core.external_signal_contract import make_event_id, parse_custos_v1_alert
 from custos.core.external_signal_inbox import ExternalSignalInbox, ExternalSignalInboxError
 
 INSTANCE_ID = UUID("10000000-0000-4000-8000-000000000001")
 NOW = datetime(2026, 10, 27, 12, 0, 15, tzinfo=UTC)
+AUTHORITY = EngineLifecycleAuthority(
+    deployment_instance_id=INSTANCE_ID,
+    deployment_spec_id=UUID("20000000-0000-4000-8000-000000000001"),
+    deployment_spec_digest="a" * 64,
+    generation=1,
+    trading_mode="testnet",
+)
 
 
 def alert(
@@ -63,11 +71,11 @@ def alert(
 def test_successful_receipt_survives_restart_without_token(tmp_path: Path) -> None:
     path = tmp_path / "inbox.sqlite"
     message = alert()
-    receipt = ExternalSignalInbox(path).accept(message, received_at=NOW)
+    receipt = ExternalSignalInbox(path).accept(message, authority=AUTHORITY, received_at=NOW)
     assert receipt.status == "accepted"
     assert receipt.event_id == message.event_id
 
-    recovered = ExternalSignalInbox(path).pending(INSTANCE_ID, now=NOW)
+    recovered = ExternalSignalInbox(path).pending(AUTHORITY, now=NOW)
     assert [item.event_id for item in recovered] == [message.event_id]
     assert recovered[0].action == "ENTER_LONG"
     assert b"demo-secret-never-persist" not in path.read_bytes()
@@ -76,22 +84,22 @@ def test_successful_receipt_survives_restart_without_token(tmp_path: Path) -> No
 def test_exact_replay_is_idempotent_but_same_id_changed_amount_conflicts(tmp_path: Path) -> None:
     inbox = ExternalSignalInbox(tmp_path / "inbox.sqlite")
     first = alert()
-    assert inbox.accept(first, received_at=NOW).status == "accepted"
-    assert inbox.accept(first, received_at=NOW).status == "duplicate"
+    assert inbox.accept(first, authority=AUTHORITY, received_at=NOW).status == "accepted"
+    assert inbox.accept(first, authority=AUTHORITY, received_at=NOW).status == "duplicate"
     with pytest.raises(ExternalSignalInboxError, match="conflict"):
-        inbox.accept(alert(amount="12"), received_at=NOW)
-    assert len(inbox.pending(INSTANCE_ID, now=NOW)) == 1
+        inbox.accept(alert(amount="12"), authority=AUTHORITY, received_at=NOW)
+    assert len(inbox.pending(AUTHORITY, now=NOW)) == 1
 
 
 def test_risk_exit_supersedes_unconsumed_entry_at_same_bar(tmp_path: Path) -> None:
     inbox = ExternalSignalInbox(tmp_path / "inbox.sqlite")
     entry = alert()
     risk = alert(action="EXIT_LONG", risk_action="FLATTEN")
-    inbox.accept(entry, received_at=NOW)
-    inbox.accept(risk, received_at=NOW)
-    assert [item.event_id for item in inbox.pending(INSTANCE_ID, now=NOW)] == [risk.event_id]
+    inbox.accept(entry, authority=AUTHORITY, received_at=NOW)
+    inbox.accept(risk, authority=AUTHORITY, received_at=NOW)
+    assert [item.event_id for item in inbox.pending(AUTHORITY, now=NOW)] == [risk.event_id]
     with pytest.raises(ExternalSignalInboxError, match="risk"):
-        inbox.accept(alert(action="ENTER_SHORT"), received_at=NOW)
+        inbox.accept(alert(action="ENTER_SHORT"), authority=AUTHORITY, received_at=NOW)
 
 
 def test_newer_entry_waits_for_confirmed_flat_across_restart(tmp_path: Path) -> None:
@@ -103,17 +111,20 @@ def test_newer_entry_waits_for_confirmed_flat_across_restart(tmp_path: Path) -> 
     )
     newer_entry = alert(action="ENTER_SHORT")
     inbox = ExternalSignalInbox(path)
-    inbox.accept(risk, received_at=NOW)
+    inbox.accept(risk, authority=AUTHORITY, received_at=NOW)
     with pytest.raises(ExternalSignalInboxError, match="flat confirmation"):
-        inbox.accept(newer_entry, received_at=NOW)
-    assert inbox.mark_delivered(risk.event_id, delivered_at=NOW)
+        inbox.accept(newer_entry, authority=AUTHORITY, received_at=NOW)
+    assert inbox.mark_delivered(risk.event_id, authority=AUTHORITY, delivered_at=NOW)
 
     recovered = ExternalSignalInbox(path)
     with pytest.raises(ExternalSignalInboxError, match="flat confirmation"):
-        recovered.accept(newer_entry, received_at=NOW)
-    assert recovered.confirm_flat(risk.event_id, confirmed_at=NOW) is True
-    assert recovered.confirm_flat(risk.event_id, confirmed_at=NOW) is False
-    assert ExternalSignalInbox(path).accept(newer_entry, received_at=NOW).status == "accepted"
+        recovered.accept(newer_entry, authority=AUTHORITY, received_at=NOW)
+    assert recovered.confirm_flat(risk.event_id, authority=AUTHORITY, confirmed_at=NOW) is True
+    assert recovered.confirm_flat(risk.event_id, authority=AUTHORITY, confirmed_at=NOW) is False
+    assert (
+        ExternalSignalInbox(path).accept(newer_entry, authority=AUTHORITY, received_at=NOW).status
+        == "accepted"
+    )
 
 
 def test_flat_confirmation_requires_latest_delivered_risk_event(tmp_path: Path) -> None:
@@ -128,41 +139,44 @@ def test_flat_confirmation_requires_latest_delivered_risk_event(tmp_path: Path) 
         risk_action="FLATTEN",
         bar_close_time=datetime(2026, 10, 27, 11, 30, tzinfo=UTC),
     )
-    inbox.accept(earlier, received_at=NOW)
-    assert inbox.confirm_flat(earlier.event_id, confirmed_at=NOW) is False
-    assert inbox.mark_delivered(earlier.event_id, delivered_at=NOW)
-    inbox.accept(later, received_at=NOW)
-    assert inbox.confirm_flat(earlier.event_id, confirmed_at=NOW) is False
+    inbox.accept(earlier, authority=AUTHORITY, received_at=NOW)
+    assert inbox.confirm_flat(earlier.event_id, authority=AUTHORITY, confirmed_at=NOW) is False
+    assert inbox.mark_delivered(earlier.event_id, authority=AUTHORITY, delivered_at=NOW)
+    inbox.accept(later, authority=AUTHORITY, received_at=NOW)
+    assert inbox.confirm_flat(earlier.event_id, authority=AUTHORITY, confirmed_at=NOW) is False
     with pytest.raises(ExternalSignalInboxError, match="flat confirmation"):
-        inbox.accept(alert(action="ENTER_SHORT"), received_at=NOW)
-    assert inbox.mark_delivered(later.event_id, delivered_at=NOW)
-    assert inbox.confirm_flat(later.event_id, confirmed_at=NOW) is True
-    assert inbox.accept(alert(action="ENTER_SHORT"), received_at=NOW).status == "accepted"
+        inbox.accept(alert(action="ENTER_SHORT"), authority=AUTHORITY, received_at=NOW)
+    assert inbox.mark_delivered(later.event_id, authority=AUTHORITY, delivered_at=NOW)
+    assert inbox.confirm_flat(later.event_id, authority=AUTHORITY, confirmed_at=NOW) is True
+    assert (
+        inbox.accept(alert(action="ENTER_SHORT"), authority=AUTHORITY, received_at=NOW).status
+        == "accepted"
+    )
 
 
 def test_expired_pending_entry_does_not_reopen_after_restart(tmp_path: Path) -> None:
     path = tmp_path / "inbox.sqlite"
     message = alert()
-    ExternalSignalInbox(path).accept(message, received_at=NOW)
-    assert ExternalSignalInbox(path).pending(INSTANCE_ID, now=NOW + timedelta(seconds=61)) == []
+    ExternalSignalInbox(path).accept(message, authority=AUTHORITY, received_at=NOW)
+    assert ExternalSignalInbox(path).pending(AUTHORITY, now=NOW + timedelta(seconds=61)) == []
 
 
 def test_delivery_receipt_is_distinct_from_acceptance(tmp_path: Path) -> None:
     inbox = ExternalSignalInbox(tmp_path / "inbox.sqlite")
     message = alert()
-    inbox.accept(message, received_at=NOW)
-    assert inbox.mark_delivered(message.event_id, delivered_at=NOW) is True
-    assert inbox.pending(INSTANCE_ID, now=NOW) == []
-    assert inbox.mark_delivered(message.event_id, delivered_at=NOW) is False
+    inbox.accept(message, authority=AUTHORITY, received_at=NOW)
+    assert inbox.mark_delivered(message.event_id, authority=AUTHORITY, delivered_at=NOW) is True
+    assert inbox.pending(AUTHORITY, now=NOW) == []
+    assert inbox.mark_delivered(message.event_id, authority=AUTHORITY, delivered_at=NOW) is False
 
 
 def test_bounded_inbox_refuses_new_event_without_losing_existing_one(tmp_path: Path) -> None:
     inbox = ExternalSignalInbox(tmp_path / "inbox.sqlite", max_pending=1)
     first = alert()
-    inbox.accept(first, received_at=NOW)
+    inbox.accept(first, authority=AUTHORITY, received_at=NOW)
     with pytest.raises(ExternalSignalInboxError, match="full"):
-        inbox.accept(alert(action="ENTER_SHORT"), received_at=NOW)
-    assert [item.event_id for item in inbox.pending(INSTANCE_ID, now=NOW)] == [first.event_id]
+        inbox.accept(alert(action="ENTER_SHORT"), authority=AUTHORITY, received_at=NOW)
+    assert [item.event_id for item in inbox.pending(AUTHORITY, now=NOW)] == [first.event_id]
 
 
 def test_inbox_refuses_symlink_and_permissive_existing_file(tmp_path: Path) -> None:
@@ -196,4 +210,53 @@ def test_existing_risk_fence_migrates_fail_closed(tmp_path: Path) -> None:
     path.chmod(0o600)
     inbox = ExternalSignalInbox(path)
     with pytest.raises(ExternalSignalInboxError, match="flat confirmation"):
-        inbox.accept(alert(), received_at=NOW)
+        inbox.accept(alert(), authority=AUTHORITY, received_at=NOW)
+
+
+def test_pending_is_bound_to_exact_runtime_generation_and_digest(tmp_path: Path) -> None:
+    inbox = ExternalSignalInbox(tmp_path / "inbox.sqlite")
+    message = alert()
+    inbox.accept(message, authority=AUTHORITY, received_at=NOW)
+    changed_generation = EngineLifecycleAuthority(
+        deployment_instance_id=INSTANCE_ID,
+        deployment_spec_id=AUTHORITY.deployment_spec_id,
+        deployment_spec_digest=AUTHORITY.deployment_spec_digest,
+        generation=2,
+        trading_mode="testnet",
+    )
+    changed_digest = EngineLifecycleAuthority(
+        deployment_instance_id=INSTANCE_ID,
+        deployment_spec_id=AUTHORITY.deployment_spec_id,
+        deployment_spec_digest="b" * 64,
+        generation=1,
+        trading_mode="testnet",
+    )
+    changed_spec = EngineLifecycleAuthority(
+        deployment_instance_id=INSTANCE_ID,
+        deployment_spec_id=UUID("20000000-0000-4000-8000-000000000002"),
+        deployment_spec_digest=AUTHORITY.deployment_spec_digest,
+        generation=1,
+        trading_mode="testnet",
+    )
+    assert [item.event_id for item in inbox.pending(AUTHORITY, now=NOW)] == [message.event_id]
+    assert inbox.pending(changed_generation, now=NOW) == []
+    assert inbox.pending(changed_digest, now=NOW) == []
+    assert inbox.pending(changed_spec, now=NOW) == []
+
+
+def test_older_generation_pending_does_not_fill_current_generation_capacity(
+    tmp_path: Path,
+) -> None:
+    inbox = ExternalSignalInbox(tmp_path / "inbox.sqlite", max_pending=1)
+    inbox.accept(alert(), authority=AUTHORITY, received_at=NOW)
+    replacement = EngineLifecycleAuthority(
+        deployment_instance_id=INSTANCE_ID,
+        deployment_spec_id=AUTHORITY.deployment_spec_id,
+        deployment_spec_digest="b" * 64,
+        generation=2,
+        trading_mode="testnet",
+    )
+    current = alert(action="ENTER_SHORT")
+    assert inbox.accept(current, authority=replacement, received_at=NOW).status == "accepted"
+    assert [item.event_id for item in inbox.pending(replacement, now=NOW)] == [current.event_id]
+    assert inbox.mark_delivered(alert().event_id, authority=replacement, delivered_at=NOW) is False

@@ -21,12 +21,20 @@ from custos.cli.subcommands.webhook import (
     WebhookIngressConfig,
     create_webhook_server,
 )
+from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.core.external_signal_contract import make_event_id
 from custos.core.external_signal_inbox import ExternalSignalInbox
 
 INSTANCE_ID = UUID("10000000-0000-4000-8000-000000000001")
 NOW = datetime(2026, 10, 27, 12, 0, 15, tzinfo=UTC)
 KEY = b"local-fixture-key-never-commit-real-keys"
+AUTHORITY = EngineLifecycleAuthority(
+    deployment_instance_id=INSTANCE_ID,
+    deployment_spec_id=UUID("20000000-0000-4000-8000-000000000001"),
+    deployment_spec_digest="a" * 64,
+    generation=1,
+    trading_mode="testnet",
+)
 
 
 def body() -> bytes:
@@ -64,14 +72,20 @@ def signature(data: bytes) -> str:
 
 
 def ingress(tmp_path: Path, *, trading_mode: str = "testnet") -> WebhookIngress:
+    authority = EngineLifecycleAuthority(
+        deployment_instance_id=AUTHORITY.deployment_instance_id,
+        deployment_spec_id=AUTHORITY.deployment_spec_id,
+        deployment_spec_digest=AUTHORITY.deployment_spec_digest,
+        generation=AUTHORITY.generation,
+        trading_mode=trading_mode,
+    )
     return WebhookIngress(
         WebhookIngressConfig(
             source_id="independent-demo",
             hmac_key=KEY,
-            deployment_instance_id=INSTANCE_ID,
+            authority=authority,
             authorized_leverage=3,
             allowed_instruments=frozenset({"ETH-USDT-SWAP"}),
-            trading_mode=trading_mode,
         ),
         ExternalSignalInbox(tmp_path / "inbox.sqlite"),
     )
@@ -81,7 +95,7 @@ def test_valid_signed_body_is_durable_before_success(tmp_path: Path) -> None:
     receiver = ingress(tmp_path)
     receipt = receiver.accept(body(), signature(body()), received_at=NOW)
     assert receipt.status == "accepted"
-    assert len(ExternalSignalInbox(tmp_path / "inbox.sqlite").pending(INSTANCE_ID, now=NOW)) == 1
+    assert len(ExternalSignalInbox(tmp_path / "inbox.sqlite").pending(AUTHORITY, now=NOW)) == 1
     assert b"demo-secret-not-an-authenticator" not in (tmp_path / "inbox.sqlite").read_bytes()
 
 
@@ -89,7 +103,7 @@ def test_wrong_signature_and_live_mode_are_refused(tmp_path: Path) -> None:
     receiver = ingress(tmp_path)
     with pytest.raises(WebhookAuthenticationError):
         receiver.accept(body(), "sha256=" + "0" * 64, received_at=NOW)
-    assert receiver.inbox.pending(INSTANCE_ID, now=NOW) == []
+    assert receiver.inbox.pending(AUTHORITY, now=NOW) == []
     with pytest.raises(ValueError, match="live"):
         ingress(tmp_path, trading_mode="live")
 
@@ -114,7 +128,7 @@ def test_actual_http_post_has_bounded_body_and_idempotent_receipt(tmp_path: Path
         duplicate = connection.getresponse()
         assert duplicate.status == 200
         assert json.loads(duplicate.read())["status"] == "duplicate"
-        assert len(receiver.inbox.pending(INSTANCE_ID, now=NOW)) == 1
+        assert len(receiver.inbox.pending(AUTHORITY, now=NOW)) == 1
 
         with patch.object(
             receiver.inbox, "accept", side_effect=sqlite3.OperationalError("disk full")

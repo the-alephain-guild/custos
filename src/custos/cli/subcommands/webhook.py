@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from uuid import UUID
 
+from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.core.external_signal_contract import (
     ExternalSignalContractError,
     parse_custos_v1_alert,
@@ -38,14 +38,13 @@ class WebhookAuthenticationError(ValueError):
 class WebhookIngressConfig:
     source_id: str
     hmac_key: bytes = field(repr=False)
-    deployment_instance_id: UUID
+    authority: EngineLifecycleAuthority
     authorized_leverage: int
     allowed_instruments: frozenset[str]
-    trading_mode: str
     max_body_bytes: int = 4096
 
     def __post_init__(self) -> None:
-        if self.trading_mode not in {"sandbox", "testnet"}:
+        if self.authority.trading_mode not in {"sandbox", "testnet"}:
             raise ValueError("live external signal ingress is not admitted")
         if not self.source_id or not self.allowed_instruments:
             raise ValueError("source and instrument scope are required")
@@ -101,10 +100,10 @@ class WebhookIngress:
             payload,
             now=received_at,
             allowed_instruments=self.config.allowed_instruments,
-            expected_deployment_instance_id=self.config.deployment_instance_id,
+            expected_deployment_instance_id=self.config.authority.deployment_instance_id,
             authorized_leverage=self.config.authorized_leverage,
         )
-        return self.inbox.accept(alert, received_at=received_at)
+        return self.inbox.accept(alert, authority=self.config.authority, received_at=received_at)
 
 
 def create_webhook_server(
