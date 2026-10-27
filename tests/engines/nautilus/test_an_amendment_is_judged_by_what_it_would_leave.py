@@ -136,7 +136,7 @@ def _wired(position=None, *, frozen: bool = True):
         breaker.fail_closed("review_freeze")
     boundary = RunnerReservationBoundary(
         store=store,
-        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        runtime_id=DEPLOYMENT_INSTANCE_ID,
         policy_id=POLICY_ID,
         fallback_breaker=breaker,
         semantics=NautilusCachedOrderSemantics(cache),

@@ -18,13 +18,13 @@ class RunnerReservationStore(Protocol):
 
     def load_order_reservation_sync(
         self,
-        deployment_instance_id: UUID,
+        runtime_id: UUID,
         client_order_id: str,
     ) -> Any: ...
 
     def has_order_reservation_sync(
         self,
-        deployment_instance_id: UUID,
+        runtime_id: UUID,
         client_order_id: str,
     ) -> bool: ...
 
@@ -128,20 +128,20 @@ class _Modification:
 
 
 class RunnerReservationBoundary:
-    """Serialize order intent and execution facts through RunnerFact SQLite."""
+    """Serialize execution intent and observations through the bound reservation store."""
 
     def __init__(
         self,
         *,
         store: RunnerReservationStore,
-        deployment_instance_id: UUID,
+        runtime_id: UUID,
         policy_id: UUID,
         fallback_breaker: FallbackBreaker,
         trading_mode: str,
         semantics: OrderSemantics | None = None,
     ) -> None:
         self._store = store
-        self._deployment_instance_id = deployment_instance_id
+        self._runtime_id = runtime_id
         self._policy_id = policy_id
         # A deployment runs in exactly one mode, and a safety policy is signed per
         # mode. Keeping the mode here rather than in a second registry beside the
@@ -270,7 +270,7 @@ class RunnerReservationBoundary:
                         runner_command_id(command),
                         client_order_id,
                     ),
-                    deployment_instance_id=self._deployment_instance_id,
+                    runtime_id=self._runtime_id,
                     client_order_id=client_order_id,
                     reason="canceled",
                 )
@@ -295,7 +295,7 @@ class RunnerReservationBoundary:
         if had_reservation:
             self._store.replace_order_reservation_sync(
                 event_id=self._event_id("modify", runner_command_id(command), client_order_id),
-                deployment_instance_id=self._deployment_instance_id,
+                runtime_id=self._runtime_id,
                 client_order_id=client_order_id,
                 new_reserved_notional=new_notional,
             )
@@ -306,7 +306,7 @@ class RunnerReservationBoundary:
                     runner_command_id(command),
                     client_order_id,
                 ),
-                deployment_instance_id=self._deployment_instance_id,
+                runtime_id=self._runtime_id,
                 client_order_id=client_order_id,
                 policy_id=self._policy_id,
                 requested_notional=new_notional,
@@ -319,7 +319,7 @@ class RunnerReservationBoundary:
     def _reserved_notional(self, client_order_id: str) -> Decimal:
         return Decimal(
             self._store.load_order_reservation_sync(
-                self._deployment_instance_id,
+                self._runtime_id,
                 client_order_id,
             ).reserved_notional
         )
@@ -337,7 +337,7 @@ class RunnerReservationBoundary:
                     command_id,
                     reservation.client_order_id,
                 ),
-                deployment_instance_id=self._deployment_instance_id,
+                runtime_id=self._runtime_id,
                 client_order_id=reservation.client_order_id,
                 reason="rejected",
             )
@@ -363,7 +363,7 @@ class RunnerReservationBoundary:
                 # The amendment reserved for an order that held nothing before.
                 self._store.release_order_reservation_sync(
                     event_id=self._event_id("modify_rejected", event_id, client_order_id),
-                    deployment_instance_id=self._deployment_instance_id,
+                    runtime_id=self._runtime_id,
                     client_order_id=client_order_id,
                     reason="rejected",
                 )
@@ -372,7 +372,7 @@ class RunnerReservationBoundary:
             # The amendment released a reservation this order is holding again.
             self._store.reserve_order_notional_sync(
                 event_id=self._event_id("modify_rejected", event_id, client_order_id),
-                deployment_instance_id=self._deployment_instance_id,
+                runtime_id=self._runtime_id,
                 client_order_id=client_order_id,
                 policy_id=self._policy_id,
                 requested_notional=modification.prior_reserved_notional,
@@ -380,7 +380,7 @@ class RunnerReservationBoundary:
             return
         self._store.replace_order_reservation_sync(
             event_id=self._event_id("modify_rejected", event_id, client_order_id),
-            deployment_instance_id=self._deployment_instance_id,
+            runtime_id=self._runtime_id,
             client_order_id=client_order_id,
             new_reserved_notional=modification.prior_reserved_notional,
         )
@@ -425,7 +425,7 @@ class RunnerReservationBoundary:
                     if position_id is not None:
                         self._store.record_position_reduction_fifo_sync(
                             event_id=self._event_id("fill_reduce", stable_event_id, position_id),
-                            deployment_instance_id=self._deployment_instance_id,
+                            runtime_id=self._runtime_id,
                             position_id=position_id,
                             reduction_notional=notional,
                             reduction_quantity=quantity,
@@ -439,7 +439,7 @@ class RunnerReservationBoundary:
                             event_id=self._event_id(
                                 "fill_reduce", stable_event_id, source_order_id
                             ),
-                            deployment_instance_id=self._deployment_instance_id,
+                            runtime_id=self._runtime_id,
                             client_order_id=source_order_id,
                             reduction_notional=notional,
                             reduction_quantity=quantity,
@@ -447,7 +447,7 @@ class RunnerReservationBoundary:
                 else:
                     self._store.record_order_fill_sync(
                         event_id=self._event_id("fill", stable_event_id, client_order_id),
-                        deployment_instance_id=self._deployment_instance_id,
+                        runtime_id=self._runtime_id,
                         client_order_id=client_order_id,
                         fill_notional=notional,
                         fill_quantity=quantity,
@@ -464,7 +464,7 @@ class RunnerReservationBoundary:
                 self._fallback_breaker.fail_closed("runner_order_fill_accounting_failed")
                 _log.error(
                     "runner_order_fill_accounting_failed",
-                    deployment_instance_id=str(self._deployment_instance_id),
+                    runtime_id=str(self._runtime_id),
                     event_kind=event_name,
                     client_order_id=client_order_id,
                     error_type=type(exc).__name__,
@@ -480,7 +480,7 @@ class RunnerReservationBoundary:
                 return
             self._store.release_order_reservation_sync(
                 event_id=self._event_id("rejected", stable_event_id, client_order_id),
-                deployment_instance_id=self._deployment_instance_id,
+                runtime_id=self._runtime_id,
                 client_order_id=client_order_id,
                 reason="rejected",
             )
@@ -495,7 +495,7 @@ class RunnerReservationBoundary:
                 return
             self._store.release_order_reservation_sync(
                 event_id=self._event_id("canceled", stable_event_id, client_order_id),
-                deployment_instance_id=self._deployment_instance_id,
+                runtime_id=self._runtime_id,
                 client_order_id=client_order_id,
                 reason="canceled",
             )
@@ -535,7 +535,7 @@ class RunnerReservationBoundary:
                 client_order_id = str(order.client_order_id)
                 self._store.reserve_order_notional_sync(
                     event_id=self._event_id("submit", command_id, client_order_id),
-                    deployment_instance_id=self._deployment_instance_id,
+                    runtime_id=self._runtime_id,
                     client_order_id=client_order_id,
                     policy_id=self._policy_id,
                     requested_notional=semantics.order_notional(order),
@@ -552,13 +552,13 @@ class RunnerReservationBoundary:
 
     def _has_reservation(self, client_order_id: str) -> bool:
         return self._store.has_order_reservation_sync(
-            self._deployment_instance_id,
+            self._runtime_id,
             client_order_id,
         )
 
     @property
     def policy_id(self) -> UUID:
-        """The signed policy this boundary currently reserves under."""
+        """The risk authorization this boundary currently reserves under."""
         return self._policy_id
 
     @property
@@ -621,10 +621,7 @@ class RunnerReservationBoundary:
         return self._semantics
 
     def _event_id(self, action: str, source_id: Any, client_order_id: str) -> str:
-        return (
-            f"runner-order-reservation:{self._deployment_instance_id}:"
-            f"{action}:{source_id}:{client_order_id}"
-        )
+        return f"runner-order-reservation:{self._runtime_id}:{action}:{source_id}:{client_order_id}"
 
     @staticmethod
     def _event_data(event: Any) -> dict[str, Any]:

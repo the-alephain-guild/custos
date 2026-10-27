@@ -10,6 +10,7 @@ from uuid import UUID
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from custos.core.execution_reservation_store import PlatformReservationStore
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig
 from custos.core.order_reservation_boundary import RunnerReservationBoundary
 from custos.core.runner_fact import (
@@ -485,8 +486,8 @@ def test_boundary_freezes_after_persisting_an_executed_overlimit_fill(tmp_path: 
         event_id = "boundary-fill-overlimit"
 
     boundary = RunnerReservationBoundary(
-        store=store,
-        deployment_instance_id=INSTANCE_A,
+        store=PlatformReservationStore(store, deployment_instance_id=INSTANCE_A),
+        runtime_id=INSTANCE_A,
         policy_id=POLICY_ID,
         fallback_breaker=breaker,
         trading_mode="sandbox",

@@ -16,6 +16,7 @@ import pytest
 
 pytest.importorskip("nautilus_trader")
 
+from custos.core.execution_reservation_store import PlatformReservationStore
 from custos.core.fallback_breaker import (  # noqa: E402
     FallbackBreaker,
     FallbackBreakerConfig,
@@ -103,8 +104,8 @@ def _wired(position):
     store = _Store()
     cache = SimpleNamespace(positions_open=lambda **_kwargs: [position])
     boundary = RunnerReservationBoundary(
-        store=store,
-        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        store=PlatformReservationStore(store, deployment_instance_id=DEPLOYMENT_INSTANCE_ID),
+        runtime_id=DEPLOYMENT_INSTANCE_ID,
         policy_id=POLICY_ID,
         fallback_breaker=_frozen_breaker(),
         trading_mode="testnet",
@@ -186,8 +187,8 @@ class TestTheNativeCloseIsBehindTheGate:
         store = _Store()
         cache = SimpleNamespace(positions_open=lambda **_kwargs: [_long_position("1")])
         boundary = RunnerReservationBoundary(
-            store=store,
-            deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+            store=PlatformReservationStore(store, deployment_instance_id=DEPLOYMENT_INSTANCE_ID),
+            runtime_id=DEPLOYMENT_INSTANCE_ID,
             policy_id=POLICY_ID,
             fallback_breaker=_frozen_breaker(),
             trading_mode="testnet",

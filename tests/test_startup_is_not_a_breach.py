@@ -29,6 +29,7 @@ from structlog.testing import capture_logs
 
 from custos.cli._daemon import _run_signed_safety_supervision
 from custos.core.engine_protocol import EngineStatus
+from custos.core.execution_reservation_store import PlatformReservationStore
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig
 from custos.core.order_reservation_boundary import RunnerReservationBoundary
 
@@ -38,8 +39,8 @@ POLICY = UUID("22222222-2222-4222-8222-222222222222")
 
 def _boundary() -> RunnerReservationBoundary:
     return RunnerReservationBoundary(
-        store=NS(),
-        deployment_instance_id=INSTANCE,
+        store=PlatformReservationStore(NS(), deployment_instance_id=INSTANCE),
+        runtime_id=INSTANCE,
         policy_id=POLICY,
         fallback_breaker=FallbackBreaker(
             FallbackBreakerConfig(
@@ -213,8 +214,8 @@ async def test_a_startup_trip_does_not_become_a_durable_freeze(tmp_path) -> None
         ),
     )
     boundary = RunnerReservationBoundary(
-        store=NS(),
-        deployment_instance_id=INSTANCE,
+        store=PlatformReservationStore(NS(), deployment_instance_id=INSTANCE),
+        runtime_id=INSTANCE,
         policy_id=POLICY,
         fallback_breaker=breaker,
         trading_mode="testnet",

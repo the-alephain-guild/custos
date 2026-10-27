@@ -61,6 +61,7 @@ from custos.core.engine_protocol import (
     ExecutionEngineProtocol,
 )
 from custos.core.engine_safety import EngineSafetySupervisor
+from custos.core.execution_reservation_store import PlatformReservationStore
 from custos.core.fallback_breaker import FallbackBreaker
 from custos.core.log import get_logger
 from custos.core.machine_credential_vault import (
@@ -592,8 +593,8 @@ def _build_runner_safety_boundary_factory(
                     )
         breaker.apply_config(limits.breaker)
         boundary = RunnerReservationBoundary(
-            store=state_store,
-            deployment_instance_id=UUID(instance_id),
+            store=PlatformReservationStore(state_store, deployment_instance_id=UUID(instance_id)),
+            runtime_id=UUID(instance_id),
             policy_id=limits.policy_id,
             fallback_breaker=breaker,
             trading_mode=str(spec["trading_mode"]),

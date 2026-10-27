@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from structlog.testing import capture_logs
 
+from custos.core.execution_reservation_store import PlatformReservationStore
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig
 from custos.core.order_reservation_boundary import RunnerReservationBoundary
 from custos.core.runner_fact import RunnerStateAuthorityError
@@ -283,8 +284,8 @@ def test_the_boundary_reports_the_unfilled_quantity_to_the_store(tmp_path: Path)
         requested_notional=Decimal("100"),
     )
     boundary = RunnerReservationBoundary(
-        store=store,
-        deployment_instance_id=INSTANCE_A,
+        store=PlatformReservationStore(store, deployment_instance_id=INSTANCE_A),
+        runtime_id=INSTANCE_A,
         policy_id=POLICY_ID,
         fallback_breaker=FallbackBreaker(
             FallbackBreakerConfig(max_notional=Decimal("150"), max_drawdown_pct=Decimal("10"))

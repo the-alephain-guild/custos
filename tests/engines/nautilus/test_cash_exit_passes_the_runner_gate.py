@@ -36,6 +36,7 @@ from nautilus_trader.model import (  # noqa: E402
 from nautilus_trader.testkit.providers import TestInstrumentProvider  # noqa: E402
 from nautilus_trader.trading import Strategy, StrategyConfig  # noqa: E402
 
+from custos.core.execution_reservation_store import PlatformReservationStore
 from custos.core.fallback_breaker import (  # noqa: E402
     FallbackBreaker,
     FallbackBreakerConfig,
@@ -133,8 +134,10 @@ def test_a_frozen_gate_still_lets_the_cash_close_out(held) -> None:
     breaker.fail_closed("review_freeze")
     gate = RunnerSafetyOrderGate(
         boundary=RunnerReservationBoundary(
-            store=_Store(),
-            deployment_instance_id=UUID("20000000-0000-4000-8000-000000000001"),
+            store=PlatformReservationStore(
+                _Store(), deployment_instance_id=UUID("20000000-0000-4000-8000-000000000001")
+            ),
+            runtime_id=UUID("20000000-0000-4000-8000-000000000001"),
             policy_id="policy-1",
             fallback_breaker=breaker,
             trading_mode="testnet",

@@ -21,6 +21,7 @@ from uuid import UUID
 
 import pytest
 
+from custos.core.execution_reservation_store import PlatformReservationStore
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig
 from custos.core.order_reservation_boundary import RunnerReservationBoundary
 from custos.core.runner_fact import RunnerStateAuthorityError
@@ -79,8 +80,8 @@ def _config(max_notional: str = "1000") -> FallbackBreakerConfig:
 
 def _boundary(store, breaker: FallbackBreaker | None = None) -> RunnerReservationBoundary:
     return RunnerReservationBoundary(
-        store=store,
-        deployment_instance_id=INSTANCE_A,
+        store=PlatformReservationStore(store, deployment_instance_id=INSTANCE_A),
+        runtime_id=INSTANCE_A,
         policy_id=POLICY_ID,
         fallback_breaker=breaker or FallbackBreaker(_config()),
         trading_mode="sandbox",
@@ -191,8 +192,8 @@ def test_the_daemon_hands_a_renewal_to_the_boundary_of_that_mode() -> None:
 
     breaker = FallbackBreaker(_config())
     boundary = RunnerReservationBoundary(
-        store=NS(),
-        deployment_instance_id=INSTANCE_A,
+        store=PlatformReservationStore(NS(), deployment_instance_id=INSTANCE_A),
+        runtime_id=INSTANCE_A,
         policy_id=POLICY_ID,
         fallback_breaker=breaker,
         trading_mode="sandbox",
@@ -357,8 +358,8 @@ class TestARenewalStaysInsideItsOwnMode:
     def _live(trading_mode: str, max_notional: str):
         breaker = FallbackBreaker(_config(max_notional))
         return breaker, RunnerReservationBoundary(
-            store=NS(),
-            deployment_instance_id=INSTANCE_A,
+            store=PlatformReservationStore(NS(), deployment_instance_id=INSTANCE_A),
+            runtime_id=INSTANCE_A,
             policy_id=POLICY_ID,
             fallback_breaker=breaker,
             trading_mode=trading_mode,

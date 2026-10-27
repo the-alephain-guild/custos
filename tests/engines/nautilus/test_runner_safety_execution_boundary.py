@@ -47,12 +47,12 @@ class _Store:
         self.reservations[kwargs["client_order_id"]] = snapshot
         return snapshot
 
-    def load_order_reservation(self, deployment_instance_id, client_order_id):
-        del deployment_instance_id
+    def load_order_reservation(self, runtime_id, client_order_id):
+        del runtime_id
         return self.reservations[client_order_id]
 
-    def has_order_reservation(self, deployment_instance_id, client_order_id):
-        del deployment_instance_id
+    def has_order_reservation(self, runtime_id, client_order_id):
+        del runtime_id
         return client_order_id in self.reservations
 
     def replace_order_reservation(self, **kwargs):
@@ -433,7 +433,7 @@ def test_verified_plain_close_skips_new_risk_reservation_and_reports_dispatch() 
     cache = SimpleNamespace(positions_open=lambda **_kwargs: [position])
     boundary = RunnerReservationBoundary(
         store=store,
-        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        runtime_id=DEPLOYMENT_INSTANCE_ID,
         policy_id=POLICY_ID,
         fallback_breaker=_breaker(),
         trading_mode="testnet",
@@ -465,7 +465,7 @@ def _boundary(
 ) -> RunnerReservationBoundary:
     return RunnerReservationBoundary(
         store=store,
-        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        runtime_id=DEPLOYMENT_INSTANCE_ID,
         policy_id=POLICY_ID,
         fallback_breaker=fallback_breaker or _breaker(),
         trading_mode="testnet",
@@ -481,7 +481,7 @@ def test_direct_submit_reserves_before_the_order_leaves() -> None:
     gate.submit_order(downstream.submit_order, _order("order-1"))
 
     assert [entry[0] for entry in log] == ["reserve", "submit"]
-    assert log[0][1]["deployment_instance_id"] == DEPLOYMENT_INSTANCE_ID
+    assert log[0][1]["runtime_id"] == DEPLOYMENT_INSTANCE_ID
     assert log[0][1]["policy_id"] == POLICY_ID
     assert log[0][1]["requested_notional"] == Decimal("25")
 
@@ -602,7 +602,7 @@ def test_modify_reserves_new_notional_before_upstream() -> None:
     store = _Store(log)
     store.reserve_order_notional(
         event_id="seed",
-        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        runtime_id=DEPLOYMENT_INSTANCE_ID,
         client_order_id="order-2",
         policy_id=POLICY_ID,
         requested_notional=Decimal("10"),
@@ -677,7 +677,7 @@ def test_order_events_advance_fill_and_cancel_reservations() -> None:
     store = _Store(log)
     store.reserve_order_notional(
         event_id="seed",
-        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        runtime_id=DEPLOYMENT_INSTANCE_ID,
         client_order_id="order-3",
         policy_id=POLICY_ID,
         requested_notional=Decimal("25"),
@@ -711,7 +711,7 @@ def test_reduce_only_fill_releases_open_exposure_when_reservation_exists() -> No
     store = _Store(log)
     store.reserve_order_notional(
         event_id="seed",
-        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        runtime_id=DEPLOYMENT_INSTANCE_ID,
         client_order_id="order-3",
         policy_id=POLICY_ID,
         requested_notional=Decimal("0"),
@@ -749,7 +749,7 @@ def test_fill_accounting_failure_freezes_new_risk_without_killing_event_loop() -
     store = BrokenFillStore(log)
     store.reserve_order_notional(
         event_id="seed",
-        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        runtime_id=DEPLOYMENT_INSTANCE_ID,
         client_order_id="order-3",
         policy_id=POLICY_ID,
         requested_notional=Decimal("25"),
@@ -1166,7 +1166,7 @@ def _long_cache(position_quantity: str):
 def _long_boundary(cache, store: _Store) -> RunnerReservationBoundary:
     return RunnerReservationBoundary(
         store=store,
-        deployment_instance_id=DEPLOYMENT_INSTANCE_ID,
+        runtime_id=DEPLOYMENT_INSTANCE_ID,
         policy_id=POLICY_ID,
         fallback_breaker=_breaker(),
         trading_mode="testnet",

@@ -98,10 +98,10 @@ async def test_boundary_factory_uses_durable_owner_policy_identity() -> None:
     )
 
     assert resolver.modes == ["testnet"]
-    assert boundary._store is store
-    assert boundary._deployment_instance_id == DEPLOYMENT_INSTANCE_ID
-    assert boundary._policy_id == POLICY_ID
-    assert boundary._fallback_breaker.config.max_notional == Decimal("100")
+    assert boundary.policy_id == POLICY_ID
+    assert boundary.fallback_breaker.config.max_notional == Decimal("100")
+    assert (await boundary.exposure_snapshot()).policy_id == POLICY_ID
+    assert store.exposure_requests == [POLICY_ID]
     assert boundaries[str(DEPLOYMENT_INSTANCE_ID)] is boundary
 
     boundary.fallback_breaker.fail_closed("fixture_generation_trip")
@@ -127,6 +127,19 @@ class _EmptyBreakerStore:
 
     def __init__(self) -> None:
         self.recorded: list[tuple] = []
+        self.exposure_requests: list[UUID] = []
+
+    async def load_runner_exposure(self, policy_id):
+        self.exposure_requests.append(policy_id)
+        return SimpleNamespace(
+            policy_id=policy_id,
+            open_exposure=Decimal("0"),
+            reserved_notional=Decimal("0"),
+            total_exposure=Decimal("0"),
+            max_total_notional=Decimal("100"),
+            within_policy=True,
+            source_digest=None,
+        )
 
     def load_breaker_state_sync(self, _deployment_instance_id):
         return None
