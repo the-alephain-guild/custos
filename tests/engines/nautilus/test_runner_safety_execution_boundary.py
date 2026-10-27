@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+from contextlib import nullcontext
 from dataclasses import dataclass
 from decimal import Decimal
 from types import SimpleNamespace
@@ -12,7 +14,10 @@ pytest.importorskip("nautilus_trader")
 from nautilus_trader.model import PriceType  # noqa: E402
 
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig  # noqa: E402
-from custos.core.order_reservation_boundary import RunnerReservationBoundary  # noqa: E402
+from custos.core.order_reservation_boundary import (
+    ExecutionControlUnavailable,  # noqa: E402
+    RunnerReservationBoundary,  # noqa: E402
+)
 from custos.core.runner_fact import RunnerStateAuthorityError  # noqa: E402
 from custos.engines.nautilus.runner_safety import (  # noqa: E402
     NautilusCachedOrderSemantics,
@@ -372,7 +377,7 @@ def test_an_old_process_cannot_execute_even_reductions_or_cancellations(runtime_
         fallback_breaker=_breaker(),
         trading_mode="live",
         semantics=semantics,
-        control_check=runtime_lease.assert_control_current,
+        control_guard=runtime_lease,
     )
     install_order_gate(
         strategy, RunnerSafetyOrderGate(boundary=boundary, client_order_id_len_limit=None)
@@ -421,7 +426,7 @@ def test_a_current_controller_can_reduce_when_risk_storage_is_unavailable(runtim
         fallback_breaker=_breaker(),
         trading_mode="live",
         semantics=_Semantics(),
-        control_check=runtime_lease.assert_control_current,
+        control_guard=runtime_lease,
     )
     install_order_gate(
         strategy, RunnerSafetyOrderGate(boundary=boundary, client_order_id_len_limit=None)
@@ -429,6 +434,143 @@ def test_a_current_controller_can_reduce_when_risk_storage_is_unavailable(runtim
     strategy.submit_order(_order("exit", reduce_only=True))
     assert [str(order.client_order_id) for order in strategy.submitted] == ["exit"]
     assert store.reservations == {}
+
+
+def test_control_revoked_inside_reservation_cannot_reach_dispatch(runtime_lease):
+    class ClosingStore(_Store):
+        def reserve_order_notional_sync(self, **fields):
+            result = super().reserve_order_notional_sync(**fields)
+            runtime_lease.close()
+            return result
+
+    store = ClosingStore([])
+    boundary = RunnerReservationBoundary(
+        store=store,
+        runtime_id=runtime_lease.fence.run_id,
+        policy_id=POLICY_ID,
+        fallback_breaker=_breaker(),
+        trading_mode="live",
+        semantics=_Semantics(),
+        control_guard=runtime_lease,
+    )
+    submitted = []
+    assert _gate(boundary).submit_order(submitted.append, _order("entry")) is False
+    assert submitted == []
+    assert "entry" in store.reservations
+
+
+@pytest.mark.parametrize("retirement", ["retire", "close"])
+def test_retirement_waits_for_an_in_flight_dispatch(runtime_lease, retirement):
+    reserving, release, retiring, retired = (threading.Event() for _ in range(4))
+    calls, errors = [], []
+
+    class BlockingStore(_Store):
+        def reserve_order_notional_sync(self, **fields):
+            result = super().reserve_order_notional_sync(**fields)
+            reserving.set()
+            if not release.wait(5):
+                raise TimeoutError("test reservation was not released")
+            return result
+
+    boundary = RunnerReservationBoundary(
+        store=BlockingStore([]),
+        runtime_id=runtime_lease.fence.run_id,
+        policy_id=POLICY_ID,
+        fallback_breaker=_breaker(),
+        trading_mode="live",
+        semantics=_Semantics(),
+        control_guard=runtime_lease,
+    )
+
+    def submit():
+        try:
+            _gate(boundary).submit_order(lambda order: calls.append("dispatch"), _order("entry"))
+        except Exception as error:
+            errors.append(error)
+
+    def retire():
+        retiring.set()
+        try:
+            getattr(runtime_lease, retirement)()
+            calls.append("retired")
+        except Exception as error:
+            errors.append(error)
+        finally:
+            retired.set()
+
+    sender = threading.Thread(target=submit)
+    controller = threading.Thread(target=retire)
+    sender.start()
+    assert reserving.wait(3)
+    controller.start()
+    assert retiring.wait(3)
+    try:
+        assert not retired.wait(0.1)
+    finally:
+        release.set()
+        sender.join(5)
+        controller.join(5)
+    assert not sender.is_alive() and not controller.is_alive()
+    assert errors == []
+    assert calls == ["dispatch", "retired"]
+
+
+def test_an_execution_body_control_error_is_not_swallowed_as_pre_dispatch_refusal(runtime_lease):
+    boundary = RunnerReservationBoundary(
+        store=_Store([]),
+        runtime_id=runtime_lease.fence.run_id,
+        policy_id=POLICY_ID,
+        fallback_breaker=_breaker(),
+        trading_mode="live",
+        semantics=_Semantics(),
+        control_guard=runtime_lease,
+    )
+    failure = ExecutionControlUnavailable("execution body failed")
+
+    def failed_cancel():
+        raise failure
+
+    with pytest.raises(ExecutionControlUnavailable) as caught:
+        _gate(boundary).cancel(failed_cancel)
+    assert caught.value is failure
+    with runtime_lease.control_action():
+        runtime_lease.assert_current()
+
+
+@pytest.mark.parametrize("operation", ["submit", "list", "modify"])
+def test_a_failed_compensation_preserves_the_original_execution_error(runtime_lease, operation):
+    store = _Store([])
+    semantics = _Semantics()
+    order = _order("entry", notional="25")
+    semantics.cached_orders["entry"] = order
+    if operation == "modify":
+        store.reserve_order_notional_sync(client_order_id="entry", requested_notional=Decimal("25"))
+    boundary = RunnerReservationBoundary(
+        store=store,
+        runtime_id=runtime_lease.fence.run_id,
+        policy_id=POLICY_ID,
+        fallback_breaker=_breaker(),
+        trading_mode="live",
+        semantics=semantics,
+        control_guard=runtime_lease,
+    )
+    gate = _gate(boundary)
+    failure = OSError("submission result is unknown")
+
+    def uncertain(*args, **kwargs):
+        runtime_lease.close()
+        raise failure
+
+    with pytest.raises(OSError) as caught:
+        if operation == "submit":
+            gate.submit_order(uncertain, order)
+        elif operation == "list":
+            gate.submit_order_list(uncertain, SimpleNamespace(orders=[order]))
+        else:
+            gate.modify_order(uncertain, "entry", quantity=Decimal("30"))
+    assert caught.value is failure
+    assert "entry" in store.reservations
+    assert boundary.fallback_breaker.frozen
 
 
 def test_market_order_uses_the_subscribed_mark_when_mid_price_is_unavailable() -> None:
@@ -605,6 +747,9 @@ def test_a_capped_order_is_not_submitted_and_the_refusal_is_reported() -> None:
 
 def test_unexpected_safety_failure_is_not_mislabeled_as_a_notional_rejection() -> None:
     class BrokenBoundary:
+        def dispatch_control(self):
+            return nullcontext()
+
         @staticmethod
         def before_submit_order(_command):
             raise AttributeError("simulated boundary ABI failure")

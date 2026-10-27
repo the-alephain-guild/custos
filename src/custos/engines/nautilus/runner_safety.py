@@ -31,8 +31,10 @@ refusal is reported to the runner's own fact sink instead.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
+from functools import wraps
 from typing import Any
 from uuid import uuid4
 
@@ -41,6 +43,7 @@ from nautilus_trader.model import PriceType
 from custos.core.execution_events import ExecutionRefusalRecorder
 from custos.core.log import get_logger
 from custos.core.order_reservation_boundary import (
+    ExecutionControlUnavailable,
     RunnerReservationBoundary,
     RunnerRiskIncreaseFrozenError,
     runner_command_id,
@@ -424,6 +427,21 @@ class _ModifyIntent:
         self.id = uuid4()
 
 
+def _serialized_dispatch(method):
+    @wraps(method)
+    def dispatch(self, *args, **kwargs):
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(self._boundary.dispatch_control())
+            except ExecutionControlUnavailable:
+                _log.warning("runner_execution_control_refused", operation=method.__name__)
+                self._report(OrderRefusal("", "", "", _CONTROL_REJECTION_REASON))
+                return False if method.__name__ in {SUBMIT_ORDER, SUBMIT_ORDER_LIST} else None
+            return method(self, *args, **kwargs)
+
+    return dispatch
+
+
 class RunnerSafetyOrderGate:
     """Decides whether an order the strategy is sending may leave.
 
@@ -450,6 +468,7 @@ class RunnerSafetyOrderGate:
         self._client_order_id_validator = client_order_id_validator
         self._on_recording_failure = on_recording_failure
 
+    @_serialized_dispatch
     def submit_order(
         self,
         submit: Callable[..., None],
@@ -464,6 +483,7 @@ class RunnerSafetyOrderGate:
         intent = _SubmitIntent(order)
         try:
             reservations = self._boundary.before_submit_order(intent)
+            self._boundary.assert_control_current()
         except Exception as exc:  # noqa: BLE001 - every refusal reason is reported below
             self._refuse((order,), self._reservation_refusal_reason(exc), exc=exc)
             return False
@@ -471,9 +491,14 @@ class RunnerSafetyOrderGate:
             submit(order, *args, **kwargs)
             return True
         except Exception:
-            self._boundary.rollback_submit(reservations, command_id=runner_command_id(intent))
+            self._compensate(
+                lambda: self._boundary.rollback_submit(
+                    reservations, command_id=runner_command_id(intent)
+                )
+            )
             raise
 
+    @_serialized_dispatch
     def submit_order_list(
         self,
         submit: Callable[..., None],
@@ -492,6 +517,7 @@ class RunnerSafetyOrderGate:
         intent = _SubmitListIntent(order_list)
         try:
             reservations = self._boundary.before_submit_order_list(intent)
+            self._boundary.assert_control_current()
         except Exception as exc:  # noqa: BLE001 - every refusal reason is reported below
             self._refuse(orders, self._reservation_refusal_reason(exc), exc=exc)
             return False
@@ -499,9 +525,14 @@ class RunnerSafetyOrderGate:
             submit(order_list, *args, **kwargs)
             return True
         except Exception:
-            self._boundary.rollback_submit(reservations, command_id=runner_command_id(intent))
+            self._compensate(
+                lambda: self._boundary.rollback_submit(
+                    reservations, command_id=runner_command_id(intent)
+                )
+            )
             raise
 
+    @_serialized_dispatch
     def modify_order(
         self,
         modify: Callable[..., None],
@@ -519,6 +550,7 @@ class RunnerSafetyOrderGate:
         intent = _ModifyIntent(client_order_id, quantity, price, trigger_price)
         try:
             modification = self._boundary.before_modify_order(intent)
+            self._boundary.assert_control_current()
         except Exception as exc:  # noqa: BLE001 - every refusal reason is reported below
             # Symmetric with the submit path, which has always reported its refusals;
             # this one used to fall through to a nautilus rejection event and say
@@ -528,8 +560,19 @@ class RunnerSafetyOrderGate:
         try:
             return modify(client_order_id, quantity, price, trigger_price, *args, **kwargs)
         except Exception:
-            self._boundary.rollback_modify(modification, event_id=runner_command_id(intent))
+            self._compensate(
+                lambda: self._boundary.rollback_modify(
+                    modification, event_id=runner_command_id(intent)
+                )
+            )
             raise
+
+    def _compensate(self, rollback: Callable[[], None]) -> None:
+        try:
+            rollback()
+        except Exception as error:  # noqa: BLE001 - compensation must not replace execution failure
+            self._boundary.fallback_breaker.fail_closed("runner_dispatch_compensation_failed")
+            _log.error("runner_dispatch_compensation_failed", error_type=type(error).__name__)
 
     def modify_orders(self, _modify: Callable[..., None], *_args: Any, **_kwargs: Any):
         """Refuse batch modification outright.
@@ -564,6 +607,7 @@ class RunnerSafetyOrderGate:
         )
         return None
 
+    @_serialized_dispatch
     def close_position(self, close: Callable[..., None], *args: Any, **kwargs: Any):
         """Let a reduce-only close through; refuse a plain one.
 
@@ -580,6 +624,7 @@ class RunnerSafetyOrderGate:
             return close(*args, **kwargs)
         return self._refuse_plain_native_close(CLOSE_POSITION)
 
+    @_serialized_dispatch
     def close_all_positions(self, close: Callable[..., None], *args: Any, **kwargs: Any):
         """Same judgement as close_position, for the all-positions form."""
         if not self._control_allows_action():
@@ -599,6 +644,7 @@ class RunnerSafetyOrderGate:
         # The native API treats None as its true default; truthy values are not proof.
         return flag is None or flag is True
 
+    @_serialized_dispatch
     def cancel(self, cancel: Callable[..., None], *args: Any, **kwargs: Any):
         if not self._control_allows_action():
             return None

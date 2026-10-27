@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Protocol
 from uuid import UUID
 
 from custos.core.fallback_breaker import FallbackBreaker
+from custos.core.local_runtime_state import RuntimeLease
 from custos.core.log import get_logger
 
 _log = get_logger("custos.order_reservation_boundary")
@@ -82,6 +83,10 @@ class RunnerRiskIncreaseFrozenError(RuntimeError):
     """The local fallback breaker intentionally refused new exposure."""
 
 
+class ExecutionControlUnavailable(RuntimeError):
+    """The current controller cannot hold a serialized execution action."""
+
+
 def _non_empty_mode(trading_mode: str) -> str:
     """A blank mode would match no renewal and raise nothing while doing it."""
     mode = str(trading_mode).strip()
@@ -140,8 +145,10 @@ class RunnerReservationBoundary:
         fallback_breaker: FallbackBreaker,
         trading_mode: str,
         semantics: OrderSemantics | None = None,
-        control_check: Callable[[], None] | None = None,
+        control_guard: RuntimeLease | None = None,
     ) -> None:
+        if control_guard is not None and control_guard.fence.run_id != runtime_id:
+            raise ExecutionControlUnavailable("control guard belongs to another runtime")
         self._store = store
         self._runtime_id = runtime_id
         self._policy_id = policy_id
@@ -151,7 +158,7 @@ class RunnerReservationBoundary:
         self._trading_mode = _non_empty_mode(trading_mode)
         self._fallback_breaker = fallback_breaker
         self._semantics = semantics
-        self._control_check = control_check
+        self._control_guard = control_guard
         self._pending_modifications: dict[str, _Modification] = {}
         # Reduce-only orders deliberately bypass notional reservation so a frozen or
         # temporarily unavailable policy store can never block risk reduction. Keep
@@ -172,8 +179,25 @@ class RunnerReservationBoundary:
         return self._fallback_breaker
 
     def assert_control_current(self) -> None:
-        if self._control_check is not None:
-            self._control_check()
+        if self._control_guard is not None:
+            try:
+                self._control_guard.assert_control_current()
+            except Exception as error:
+                raise ExecutionControlUnavailable(
+                    "current execution control is unavailable"
+                ) from error
+
+    @contextmanager
+    def dispatch_control(self):
+        with ExitStack() as stack:
+            if self._control_guard is not None:
+                try:
+                    stack.enter_context(self._control_guard.control_action())
+                except Exception as error:
+                    raise ExecutionControlUnavailable(
+                        "current execution control is unavailable"
+                    ) from error
+            yield
 
     def bootstrap(self, forwarder: Any) -> None:
         """Register with the host's event forwarder.

@@ -466,6 +466,7 @@ class RuntimeLease:
         self._closed = False
         self._pid = os.getpid()
         self._lock_descriptor = lock_descriptor
+        self._action_guard = threading.RLock()
 
     def __enter__(self) -> RuntimeLease:
         return self
@@ -497,6 +498,14 @@ class RuntimeLease:
         with self._registry._transaction() as connection:
             self._assert_control(connection)
 
+    @contextmanager
+    def control_action(self):
+        # Reject fork copies before touching a lock another parent thread may hold.
+        self._require_open()
+        with self._action_guard:
+            self.assert_control_current()
+            yield
+
     def _assert_control(self, connection: sqlite3.Connection) -> sqlite3.Row:
         row = self._registry._current(connection, self.fence)
         identity = self._registry._lock_identity(self.fence.account_scope, self._lock_descriptor)
@@ -507,25 +516,30 @@ class RuntimeLease:
         return row
 
     def retire(self) -> None:
-        self.assert_current()
-        with self._registry._transaction() as connection:
-            self._registry._current(connection, self.fence)
-            connection.execute(
-                "UPDATE account_authority SET phase='retired' WHERE scope=?",
-                (self.fence.account_scope,),
-            )
-
-    def close(self) -> None:
-        if self._closed:
-            return
         self._require_open()
-        try:
+        with self._action_guard:
+            self.assert_current()
             with self._registry._transaction() as connection:
                 self._registry._current(connection, self.fence)
                 connection.execute(
-                    "UPDATE account_authority SET owner_id=NULL WHERE scope=?",
+                    "UPDATE account_authority SET phase='retired' WHERE scope=?",
                     (self.fence.account_scope,),
                 )
-        finally:
-            self._closed = True
-            _release_lock(self._lock_descriptor, unlock=True)
+
+    def close(self) -> None:
+        if os.getpid() != self._pid:
+            raise RuntimeFenceStale("runtime lease belongs to another process")
+        with self._action_guard:
+            if self._closed:
+                return
+            self._require_open()
+            try:
+                with self._registry._transaction() as connection:
+                    self._registry._current(connection, self.fence)
+                    connection.execute(
+                        "UPDATE account_authority SET owner_id=NULL WHERE scope=?",
+                        (self.fence.account_scope,),
+                    )
+            finally:
+                self._closed = True
+                _release_lock(self._lock_descriptor, unlock=True)

@@ -14,6 +14,7 @@ Failure-mode contract:
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from types import SimpleNamespace
 
 import pytest
@@ -136,6 +137,9 @@ def test_the_installed_gate_records_its_refusals_as_facts() -> None:
     strategy = _Strategy()
 
     class _RefusingBoundary:
+        def dispatch_control(self):
+            return nullcontext()
+
         def before_submit_order(self, _intent):
             raise RuntimeError("over the cap")
 

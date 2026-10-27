@@ -5,6 +5,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -72,6 +73,75 @@ def test_the_control_only_check_still_rejects_retirement_and_closed_owners(tmp_p
             lease.assert_control_current()
     with pytest.raises(RuntimeFenceStale):
         lease.assert_control_current()
+
+
+def test_control_actions_allow_reentrant_checks_and_release_after_exceptions(tmp_path):
+    registry = RuntimeAuthorityRegistry.initialize(tmp_path / "control", identity_probe=probe)
+    with registry.claim(
+        account(),
+        run_id=uuid4(),
+        permit_digest="a" * 64,
+        expected_authorization_epoch=0,
+        stores=stores(tmp_path / "run"),
+    ) as lease:
+        with pytest.raises(RuntimeError, match="operation failed"):
+            with lease.control_action():
+                lease.assert_current()
+                with lease.control_action():
+                    lease.assert_control_current()
+                raise RuntimeError("operation failed")
+        completed = threading.Event()
+        worker = threading.Thread(target=lambda: (lease.close(), completed.set()))
+        worker.start()
+        worker.join(3)
+        assert completed.is_set()
+
+
+@pytest.mark.filterwarnings("ignore:This process .*multi-threaded:DeprecationWarning")
+def test_a_fork_copy_is_rejected_before_acquiring_an_inherited_action_lock(tmp_path):
+    registry = RuntimeAuthorityRegistry.initialize(tmp_path / "control", identity_probe=probe)
+    with registry.claim(
+        account(),
+        run_id=uuid4(),
+        permit_digest="a" * 64,
+        expected_authorization_epoch=0,
+        stores=stores(tmp_path / "run"),
+    ) as lease:
+        entered, release = threading.Event(), threading.Event()
+
+        def hold():
+            with lease.control_action():
+                entered.set()
+                release.wait(5)
+
+        worker = threading.Thread(target=hold)
+        worker.start()
+        assert entered.wait(3)
+        reader, writer = os.pipe()
+        child = os.fork()
+        if child == 0:
+            os.close(reader)
+            try:
+                with lease.control_action():
+                    os.write(writer, b"unsafe")
+            except RuntimeFenceStale:
+                os.write(writer, b"fenced")
+            finally:
+                os._exit(0)
+        os.close(writer)
+        ready = []
+        try:
+            ready, _, _ = select.select([reader], [], [], 3)
+            assert ready, "fork copy waited on an inherited action lock"
+            assert os.read(reader, 16) == b"fenced"
+        finally:
+            release.set()
+            worker.join(3)
+            assert not worker.is_alive()
+            if not ready:
+                os.kill(child, signal.SIGKILL)
+            os.waitpid(child, 0)
+            os.close(reader)
 
 
 def test_a_reopened_registry_preserves_authorization_and_advances_process_generation(tmp_path):
