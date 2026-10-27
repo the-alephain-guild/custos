@@ -8,6 +8,7 @@ import http.client
 import json
 import sqlite3
 import threading
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -20,6 +21,7 @@ from custos.cli.subcommands.webhook import (
     WebhookAuthenticationError,
     WebhookIngress,
     WebhookIngressConfig,
+    WebhookRuntimeUnavailable,
     create_webhook_server,
 )
 from custos.core.engine_protocol import EngineLifecycleAuthority
@@ -75,7 +77,12 @@ def signature(data: bytes) -> str:
     return "sha256=" + hmac.new(KEY, data, hashlib.sha256).hexdigest()
 
 
-def ingress(tmp_path: Path, *, trading_mode: str = "testnet") -> WebhookIngress:
+def ingress(
+    tmp_path: Path,
+    *,
+    trading_mode: str = "testnet",
+    scope_provider=None,
+) -> WebhookIngress:
     authority = EngineLifecycleAuthority(
         deployment_instance_id=AUTHORITY.deployment_instance_id,
         deployment_spec_id=AUTHORITY.deployment_spec_id,
@@ -83,15 +90,24 @@ def ingress(tmp_path: Path, *, trading_mode: str = "testnet") -> WebhookIngress:
         generation=AUTHORITY.generation,
         trading_mode=trading_mode,
     )
+    config = WebhookIngressConfig(
+        source_id="independent-demo",
+        hmac_key=KEY,
+        authority=authority,
+        authorized_leverage=3,
+        allowed_instruments=frozenset({"ETH-USDT-SWAP"}),
+    )
     return WebhookIngress(
-        WebhookIngressConfig(
-            source_id="independent-demo",
-            hmac_key=KEY,
-            authority=authority,
-            authorized_leverage=3,
-            allowed_instruments=frozenset({"ETH-USDT-SWAP"}),
-        ),
+        config,
         ExternalSignalInbox(tmp_path / "inbox.sqlite"),
+        scope_provider=scope_provider
+        or (
+            lambda: ExternalSignalRuntimeScope(
+                authority=authority,
+                allowed_instruments=config.allowed_instruments,
+                authorized_leverage=config.authorized_leverage,
+            )
+        ),
     )
 
 
@@ -134,6 +150,47 @@ def test_wrong_signature_and_live_mode_are_refused(tmp_path: Path) -> None:
     assert receiver.inbox.pending(AUTHORITY, now=NOW) == []
     with pytest.raises(ValueError, match="live"):
         ingress(tmp_path, trading_mode="live")
+
+
+def test_signed_body_is_refused_after_active_generation_changes(tmp_path: Path) -> None:
+    new_generation = ExternalSignalRuntimeScope(
+        authority=replace(AUTHORITY, generation=AUTHORITY.generation + 1),
+        allowed_instruments=frozenset({"ETH-USDT-SWAP"}),
+        authorized_leverage=3,
+    )
+    receiver = ingress(tmp_path, scope_provider=lambda: new_generation)
+
+    with pytest.raises(WebhookRuntimeUnavailable, match="runtime scope"):
+        receiver.accept(body(), signature(body()), received_at=NOW)
+    assert receiver.inbox.pending(AUTHORITY, now=NOW) == []
+
+
+def test_unavailable_runtime_returns_503_without_accepting_event(tmp_path: Path) -> None:
+    def unavailable_scope():
+        raise RuntimeError("node stopped")
+
+    receiver = ingress(tmp_path, scope_provider=unavailable_scope)
+    server = create_webhook_server(("127.0.0.1", 0), receiver, clock=lambda: NOW)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+        data = body()
+        connection.request(
+            "POST",
+            "/v1/external-signals",
+            body=data,
+            headers={"Content-Type": "application/json", "X-Custos-Signature": signature(data)},
+        )
+        response = connection.getresponse()
+        assert response.status == 503
+        assert json.loads(response.read()) == {"error": "runtime_unavailable"}
+        connection.close()
+        assert receiver.inbox.pending(AUTHORITY, now=NOW) == []
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
 
 
 def test_actual_http_post_has_bounded_body_and_idempotent_receipt(tmp_path: Path) -> None:

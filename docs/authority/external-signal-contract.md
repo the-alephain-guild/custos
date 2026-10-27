@@ -77,6 +77,13 @@ its verification and edge configuration have not been implemented or tested.
 The `CUSTOS_V1` `signalToken` field is compatibility syntax, never ingress
 authentication and must carry no exchange secret.
 
+The loopback handler now requires a synchronous provider of the active runtime
+scope for every authenticated request. A stopped or replaced deployment, or
+changed leverage or instrument allowlist, returns a generic HTTP 503 before
+the event is persisted. HMAC possession alone cannot reactivate an older
+generation. The provider must be wired to the host's active scope by the
+signed-lane daemon; no listener or CLI command is enabled by this check.
+
 ## Boundaries still to implement
 
 The HTTP ingress in plan 42 T3 must authenticate the source independently of

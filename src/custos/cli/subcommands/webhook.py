@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import TYPE_CHECKING
 
 from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.core.external_signal_contract import (
@@ -29,9 +30,16 @@ from custos.core.external_signal_inbox import (
     IntakeReceipt,
 )
 
+if TYPE_CHECKING:
+    from custos.engines.nautilus.host import ExternalSignalRuntimeScope
+
 
 class WebhookAuthenticationError(ValueError):
     """The sender did not prove possession of this source's ingest secret."""
+
+
+class WebhookRuntimeUnavailable(RuntimeError):
+    """The configured ingest scope is no longer the active runtime scope."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,9 +78,16 @@ def _reject_nonfinite_constant(_: str) -> object:
 class WebhookIngress:
     """Authenticate raw bytes, parse in scope, then durably accept an event."""
 
-    def __init__(self, config: WebhookIngressConfig, inbox: ExternalSignalInbox) -> None:
+    def __init__(
+        self,
+        config: WebhookIngressConfig,
+        inbox: ExternalSignalInbox,
+        *,
+        scope_provider: Callable[[], ExternalSignalRuntimeScope],
+    ) -> None:
         self.config = config
         self.inbox = inbox
+        self.scope_provider = scope_provider
 
     def accept(self, body: bytes, signature: str | None, *, received_at: datetime) -> IntakeReceipt:
         if len(body) > self.config.max_body_bytes:
@@ -85,6 +100,17 @@ class WebhookIngress:
             or not hmac.compare_digest(signature, expected)
         ):
             raise WebhookAuthenticationError("external signal authentication failed")
+        try:
+            active_scope = self.scope_provider()
+            matches = (
+                active_scope.authority == self.config.authority
+                and active_scope.authorized_leverage == self.config.authorized_leverage
+                and active_scope.allowed_instruments == self.config.allowed_instruments
+            )
+        except Exception as error:  # noqa: BLE001 — an unavailable host fails closed
+            raise WebhookRuntimeUnavailable("active runtime scope is unavailable") from error
+        if not matches:
+            raise WebhookRuntimeUnavailable("active runtime scope differs from ingress")
         try:
             payload = json.loads(
                 body.decode("utf-8"),
@@ -157,6 +183,9 @@ def create_webhook_server(
                 )
             except WebhookAuthenticationError:
                 self._reply(401, {"error": "authentication_failed"})
+                return
+            except WebhookRuntimeUnavailable:
+                self._reply(503, {"error": "runtime_unavailable"})
                 return
             except ExternalSignalContractError:
                 self._reply(400, {"error": "contract_rejected"})
