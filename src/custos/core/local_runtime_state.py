@@ -483,14 +483,16 @@ class RuntimeAuthorityRegistry:
                         "registered runtime storage cannot be verified"
                     ) from error
             return PreparedRuntimeClaim(
-                prepared.get("state"),
-                prepared.get("journal"),
-                epoch,
-                run_id,
-                permit_digest,
-                expected_authorization_epoch,
-                control_source,
-                tuple(row) if row is not None else None,
+                control_registry_id=self.registry_id,
+                account_scope=account.scope_digest,
+                state=prepared.get("state"),
+                journal=prepared.get("journal"),
+                authorization_epoch=epoch,
+                run_id=run_id,
+                permit_digest=permit_digest,
+                expected_authorization_epoch=expected_authorization_epoch,
+                control_source=control_source,
+                registration=tuple(row) if row is not None else None,
             )
 
     def _claim_locked(

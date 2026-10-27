@@ -33,6 +33,8 @@ class PreparedRuntimeStore:
 
 @dataclass(frozen=True)
 class PreparedRuntimeClaim:
+    control_registry_id: UUID
+    account_scope: str
     state: PreparedRuntimeStore | None
     journal: PreparedRuntimeStore | None
     authorization_epoch: int

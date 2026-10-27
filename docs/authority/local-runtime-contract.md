@@ -25,6 +25,39 @@ Permits use explicit UTC instants. Expired, future-invalid, wrong-account, wrong
 
 Mutable source directories are not local live artifacts. Material is prepared and verified before activation; the existing toolkit/engine identity judge is reused after its normal review and integration. Local verification is not platform release approval or promotion evidence.
 
+The internal `custos.local` authorization adapter now defines immutable version-1
+run manifests and Ed25519 permits. Manifests bind the existing exact
+StrategyArtifactRefV1, release BOM and toolkit identity digests, effective config
+digest, entry point, native instruments, vault alias, account, data/stop policy
+and explicit USD limits. Amounts are canonical positive decimal strings; leverage
+is a strict integer. Order notional equals margin times leverage, and account
+exposure must fit the declared capital and leverage. Validation uses an isolated
+Decimal context. The loss amount is a risk freeze/exit trigger, not a bound on
+the final execution loss. Manifest validation does not establish venue minimums,
+funding, material integrity or installed-engine capability.
+
+A permit binds the manifest digest, run, account scope, canonical control registry
+UUID, target authorization epoch, operator and management-key fingerprint.
+Issued/not-before/expiry instants are explicit canonical UTC text with six
+fractional digits. The Ed25519 signing frame is
+`alephain.custos.local-run-permit.v1` followed by a NUL byte and the canonical
+permit JSON. `permit_digest` is the SHA-256 of the complete canonical signed
+envelope, including the signature; preparation, verification and recovery use
+that same identity. Both documents reject duplicate keys, unknown fields and
+noncanonical bytes. The signing function only consumes an explicitly supplied
+key object and does not load or generate management credentials.
+
+Verification consumes kernel-provisioned public keys and operator mappings, the
+actual adapter account, current registry UUID and the complete prepared claim.
+It compares the checkpoint's run, local source, account scope, registry UUID,
+target epoch and permit digest, then retains that exact checkpoint for the same
+guard's claim. It never grants ownership, imports strategy code or starts a
+client. The signed target epoch is distinct from the expected current epoch
+used by registry CAS; process generation is not signed. The same valid permit
+may therefore authorize recovery with a new process generation. Real daemon
+key/root isolation, material binding, lifecycle readiness and the native final
+send gate remain separate acceptance requirements.
+
 ## Account control store
 
 One durable account registry exists in the canonical guard directory. It records control source, run UUID, authorization_epoch, process_generation, opaque owner instance UUID, phase, permit digest and transfer identity. authorization_epoch changes only on operator-authorized run/configuration replacement or control-source transfer. process_generation increments whenever a new process acquires execution ownership, including crash recovery. Both counters survive stop and restart; deleting a run never resets them. PID is diagnostic only. Every outgoing action and callback checks the tuple (authorization_epoch, process_generation, owner UUID). A valid permit binds authorization_epoch, not process_generation; recovery never changes or re-signs its authorization.
