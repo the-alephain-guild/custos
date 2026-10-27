@@ -14,7 +14,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID, uuid4
 
 from custos.core.runtime_authority import (
@@ -25,6 +25,9 @@ from custos.core.runtime_authority import (
     RuntimeFenceStale,
     RuntimeStorageUnavailable,
 )
+
+if TYPE_CHECKING:
+    from custos.core.runtime_account_guard import PreparedRuntimeClaim
 
 _LOCK_DESCRIPTORS: set[int] = set()
 _LOCK_DESCRIPTOR_GUARD = threading.RLock()
@@ -229,7 +232,11 @@ class RuntimeAuthorityRegistry:
         finally:
             connection.close()
 
-    def _stores(self, bindings: RuntimeStorageBindings) -> str:
+    def _stores(
+        self,
+        bindings: RuntimeStorageBindings,
+        identity_probe: Callable[[Path], RuntimeStoreIdentity] | None = None,
+    ) -> str:
         if (
             bindings.state.store_id == bindings.journal.store_id
             or bindings.state.path.resolve() == bindings.journal.path.resolve()
@@ -241,7 +248,9 @@ class RuntimeAuthorityRegistry:
             if not path.is_file() or path.is_symlink():
                 raise RuntimeStorageUnavailable("registered runtime storage is missing or unsafe")
             try:
-                observed = self._probe(path.resolve())
+                observed = (self._probe if identity_probe is None else identity_probe)(
+                    path.resolve()
+                )
             except (OSError, ValueError) as error:
                 raise RuntimeStorageUnavailable("runtime store identity cannot be read") from error
             if (
@@ -295,6 +304,28 @@ class RuntimeAuthorityRegistry:
         stores: RuntimeStorageBindings,
         control_source: Literal["local", "platform"] = "local",
     ) -> RuntimeLease:
+        with self.account_guard(account) as guard:
+            checkpoint = guard.prepare_claim(
+                run_id=run_id,
+                permit_digest=permit_digest,
+                expected_authorization_epoch=expected_authorization_epoch,
+                control_source=control_source,
+            )
+            return guard.claim(checkpoint, stores=stores)
+
+    @contextmanager
+    def account_guard(self, account: RuntimeAccountIdentity):
+        from custos.core.runtime_account_guard import RuntimeAccountGuard
+
+        descriptor = self._acquire_account_lock(account)
+        guard = RuntimeAccountGuard(self, account, descriptor, _release_lock)
+        try:
+            with guard.preparation():
+                yield guard
+        finally:
+            guard.close()
+
+    def _acquire_account_lock(self, account: RuntimeAccountIdentity) -> int:
         with self._transaction() as connection:
             registered = connection.execute(
                 "SELECT lock_device,lock_inode FROM account_authority WHERE scope=?",
@@ -321,15 +352,7 @@ class RuntimeAuthorityRegistry:
                 fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as error:
                 raise RuntimeAccountOccupied("another process holds the venue account") from error
-            return self._claim_locked(
-                account,
-                run_id=run_id,
-                permit_digest=permit_digest,
-                expected_authorization_epoch=expected_authorization_epoch,
-                stores=stores,
-                control_source=control_source,
-                lock_descriptor=descriptor,
-            )
+            return descriptor
         except BaseException:
             _release_lock(descriptor)
             raise
@@ -349,17 +372,15 @@ class RuntimeAuthorityRegistry:
             raise RuntimeStorageUnavailable("account lock path no longer names the held file")
         return identity
 
-    def _claim_locked(
-        self,
-        account: RuntimeAccountIdentity,
+    @staticmethod
+    def _admit_claim(
+        row: sqlite3.Row | None,
         *,
         run_id: UUID,
         permit_digest: str,
         expected_authorization_epoch: int,
-        stores: RuntimeStorageBindings,
-        control_source: Literal["local", "platform"] = "local",
-        lock_descriptor: int,
-    ) -> RuntimeLease:
+        control_source: Literal["local", "platform"],
+    ) -> tuple[int, int]:
         if (
             not isinstance(run_id, UUID)
             or not isinstance(permit_digest, str)
@@ -369,37 +390,149 @@ class RuntimeAuthorityRegistry:
             or control_source not in {"local", "platform"}
         ):
             raise RuntimeAuthorityError("runtime ownership request is invalid")
-        metadata = self._stores(stores)
-        owner_id = uuid4()
+        if row is None:
+            if expected_authorization_epoch != 0:
+                raise RuntimeFenceStale("initial authorization must expect epoch zero")
+            return 1, 1
+        if expected_authorization_epoch != row["authorization_epoch"]:
+            raise RuntimeFenceStale("authorization epoch differs")
+        if control_source != row["control_source"]:
+            raise RuntimeAuthorityError("control-source change requires explicit handoff")
+        if any(
+            type(row[counter]) is not int or not 0 < row[counter] <= 2**63 - 1
+            for counter in ("authorization_epoch", "process_generation")
+        ):
+            raise RuntimeAuthorityError("runtime ownership counters are invalid")
+        authorization_epoch = row["authorization_epoch"]
+        if row["phase"] == "retired":
+            if str(run_id) == row["run_id"] or permit_digest == row["permit_digest"]:
+                raise RuntimeAuthorityError("retired runtime requires a new run and permit")
+            authorization_epoch += 1
+        elif row["phase"] == "recovery_required":
+            if str(run_id) != row["run_id"] or permit_digest != row["permit_digest"]:
+                raise RuntimeAuthorityError("runtime recovery authorization differs")
+        else:
+            raise RuntimeAuthorityError("runtime registration phase is invalid")
+        generation = row["process_generation"] + 1
+        if not (0 < authorization_epoch <= 2**63 - 1 and 0 < generation <= 2**63 - 1):
+            raise RuntimeAuthorityError("runtime ownership counters are exhausted or invalid")
+        return authorization_epoch, generation
+
+    def _prepare_claim_locked(
+        self,
+        account: RuntimeAccountIdentity,
+        *,
+        run_id: UUID,
+        permit_digest: str,
+        expected_authorization_epoch: int,
+        control_source: Literal["local", "platform"],
+        lock_descriptor: int,
+    ) -> PreparedRuntimeClaim:
+        from custos.core.runtime_account_guard import PreparedRuntimeClaim, PreparedRuntimeStore
+
         with self._transaction() as connection:
             row = connection.execute(
                 "SELECT * FROM account_authority WHERE scope=?", (account.scope_digest,)
             ).fetchone()
-            lock_identity = self._lock_identity(account.scope_digest, lock_descriptor)
-            if row is None:
-                if expected_authorization_epoch != 0:
-                    raise RuntimeFenceStale("initial authorization must expect epoch zero")
-                authorization_epoch = generation = 1
-            else:
-                if lock_identity != (row["lock_device"], row["lock_inode"]):
+            identity = self._lock_identity(account.scope_digest, lock_descriptor)
+            epoch, _generation = self._admit_claim(
+                row,
+                run_id=run_id,
+                permit_digest=permit_digest,
+                expected_authorization_epoch=expected_authorization_epoch,
+                control_source=control_source,
+            )
+            prepared = {}
+            if row is not None:
+                if identity != (row["lock_device"], row["lock_inode"]):
                     raise RuntimeStorageUnavailable("registered account lock was replaced")
-                if expected_authorization_epoch != row["authorization_epoch"]:
-                    raise RuntimeFenceStale("authorization epoch differs")
-                if control_source != row["control_source"]:
-                    raise RuntimeAuthorityError("control-source change requires explicit handoff")
-                if row["phase"] == "retired":
-                    if str(run_id) == row["run_id"] or permit_digest == row["permit_digest"]:
-                        raise RuntimeAuthorityError("retired runtime requires a new run and permit")
-                    authorization_epoch = row["authorization_epoch"] + 1
-                else:
+                try:
+                    metadata = json.loads(row["stores"])
+                    for role in ("state", "journal"):
+                        store = metadata[role]
+                        path = Path(store["path"])
+                        store_id = UUID(store["store_id"])
+                        floor = RuntimeStoreIdentity(store_id, store["sequence"])
+                        if not path.is_absolute() or not path.is_file() or path.is_symlink():
+                            raise RuntimeStorageUnavailable(
+                                "registered runtime storage is missing or unsafe"
+                            )
+                        if path.resolve() != path:
+                            raise RuntimeStorageUnavailable(
+                                "registered runtime storage path differs"
+                            )
+                        if role == "state":
+                            current = self._probe(path)
+                            if (
+                                not isinstance(current, RuntimeStoreIdentity)
+                                or current.store_id != store_id
+                                or current.sequence < floor.sequence
+                            ):
+                                raise RuntimeStorageUnavailable(
+                                    "registered state continuity differs"
+                                )
+                            floor = current
+                        prepared[role] = PreparedRuntimeStore(path, floor.store_id, floor.sequence)
                     if (
-                        str(run_id) != row["run_id"]
-                        or permit_digest != row["permit_digest"]
-                        or control_source != row["control_source"]
+                        prepared["state"].path == prepared["journal"].path
+                        or prepared["state"].store_id == prepared["journal"].store_id
                     ):
-                        raise RuntimeAuthorityError("runtime recovery authorization differs")
-                    authorization_epoch = row["authorization_epoch"]
-                generation = row["process_generation"] + 1
+                        raise RuntimeStorageUnavailable("registered stores must be distinct")
+                except (KeyError, TypeError, OSError, ValueError) as error:
+                    raise RuntimeStorageUnavailable(
+                        "registered runtime storage cannot be verified"
+                    ) from error
+            return PreparedRuntimeClaim(
+                prepared.get("state"),
+                prepared.get("journal"),
+                epoch,
+                run_id,
+                permit_digest,
+                expected_authorization_epoch,
+                control_source,
+                tuple(row) if row is not None else None,
+            )
+
+    def _claim_locked(
+        self,
+        account: RuntimeAccountIdentity,
+        *,
+        checkpoint: PreparedRuntimeClaim,
+        stores: RuntimeStorageBindings,
+        identity_probe: Callable[[Path], RuntimeStoreIdentity] | None,
+        lock_descriptor: int,
+    ) -> RuntimeLease:
+        active_probe = self._probe if identity_probe is None else identity_probe
+        metadata = self._stores(stores, active_probe)
+        if checkpoint.state is not None:
+            current = json.loads(metadata)
+            for role, floor in (("state", checkpoint.state), ("journal", checkpoint.journal)):
+                observed = current[role]
+                if (
+                    observed["path"] != str(floor.path)
+                    or observed["store_id"] != str(floor.store_id)
+                    or observed["sequence"] < floor.sequence
+                ):
+                    raise RuntimeStorageUnavailable("prepared runtime storage continuity differs")
+        owner_id = uuid4()
+        run_id, control_source = checkpoint.run_id, checkpoint.control_source
+        with self._transaction() as connection:
+            row = connection.execute(
+                "SELECT * FROM account_authority WHERE scope=?", (account.scope_digest,)
+            ).fetchone()
+            if (tuple(row) if row is not None else None) != checkpoint.registration:
+                raise RuntimeFenceStale("runtime registration changed after preparation")
+            lock_identity = self._lock_identity(account.scope_digest, lock_descriptor)
+            if row is not None and lock_identity != (row["lock_device"], row["lock_inode"]):
+                raise RuntimeStorageUnavailable("registered account lock was replaced")
+            authorization_epoch, generation = self._admit_claim(
+                row,
+                run_id=run_id,
+                permit_digest=checkpoint.permit_digest,
+                expected_authorization_epoch=checkpoint.expected_authorization_epoch,
+                control_source=control_source,
+            )
+            if row is not None:
                 self._require_continuity(metadata, row["stores"])
             fence = RuntimeFence(
                 account.scope_digest,
@@ -424,7 +557,7 @@ class RuntimeAuthorityRegistry:
                     account.scope_digest,
                     str(run_id),
                     control_source,
-                    permit_digest,
+                    checkpoint.permit_digest,
                     authorization_epoch,
                     generation,
                     str(owner_id),
@@ -432,7 +565,7 @@ class RuntimeAuthorityRegistry:
                     *lock_identity,
                 ),
             )
-        return RuntimeLease(self, fence, stores, lock_descriptor)
+        return RuntimeLease(self, fence, stores, lock_descriptor, active_probe)
 
     def _current(self, connection: sqlite3.Connection, fence: RuntimeFence) -> sqlite3.Row:
         row = connection.execute(
@@ -459,10 +592,12 @@ class RuntimeLease:
         fence: RuntimeFence,
         stores: RuntimeStorageBindings,
         lock_descriptor: int,
+        identity_probe: Callable[[Path], RuntimeStoreIdentity],
     ) -> None:
         self._registry = registry
         self.fence = fence
         self._stores = stores
+        self._probe = identity_probe
         self._closed = False
         self._pid = os.getpid()
         self._lock_descriptor = lock_descriptor
@@ -486,7 +621,7 @@ class RuntimeLease:
         self._require_open()
         with self._registry._transaction() as connection:
             row = self._assert_control(connection)
-            observed = self._registry._stores(self._stores)
+            observed = self._registry._stores(self._stores, self._probe)
             self._registry._require_continuity(observed, row["stores"])
             connection.execute(
                 "UPDATE account_authority SET stores=? WHERE scope=?",

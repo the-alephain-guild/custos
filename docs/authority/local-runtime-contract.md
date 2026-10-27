@@ -39,6 +39,27 @@ A process crash releases the OS lock but does not erase durable authority. A rep
 
 The internal registry's expected authorization epoch is a compare-and-update precondition on the current row (zero before first registration). It is distinct from the target epoch signed by the operator: first/new authorization creates the next target epoch, whereas same-run recovery retains it. The upper authorization adapter must validate the permit against the resulting target epoch. Registry acquisition alone never verifies a signature, proves flatness, performs a cross-source handoff or grants readiness. Retiring a registry run only prevents its reuse; it is not a venue stop receipt.
 
+The internal `account_guard` context now holds the canonical OS lock throughout
+synchronous preparation. `prepare_claim` applies the same admission rules as the
+final claim, checks the registered state store and returns the journal UUID and
+revision floor without opening the journal. The caller can then construct an
+unstarted, disconnected native client with strict registered recovery, capture
+its live probe, and claim with that probe before any execution starts. Final
+claim compares the entire registration with the prepared checkpoint and rejects
+watermark regression, including state progress observed during preparation.
+The checkpoint belongs to one guard and cannot authorize another account.
+
+Claim transfers the same lock descriptor once to the lease; closing the old
+guard cannot release that lease. A concurrent close waits for the complete
+preparation interval, and a fork copy is rejected before taking inherited
+thread locks or touching descriptors. Each lease retains its own identity probe.
+The compatibility `claim` call uses this same preparation path. This foundation
+does not yet wire the native factory, verify a permit, establish a fresh account
+boundary or grant live readiness. Native client cleanup before releasing a
+failed preparation guard remains a caller obligation to verify during wiring.
+If claim has committed but subsequent setup fails, retain recovery-required
+authority; do not erase registration or mark the account retired.
+
 ## Venue authorization and observation
 
 Read-only market/account/history/chain observation is a separate capability and does not require an unexpired trading session. It cannot sign or submit intents, renew keys or silently fall back to an execution connection that requires trading authorization. This path is required after key revocation to verify flat-transfer evidence.
