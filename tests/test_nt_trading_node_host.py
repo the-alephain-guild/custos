@@ -354,6 +354,48 @@ async def test_external_signal_queue_refusal_is_not_reported_as_delivery(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_target_neutral_source_can_queue_to_two_independent_perpetual_hosts(monkeypatch):
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    okx = _spec("source-okx", connector="okx_perpetual", pairs=["ETH-USDT"])
+    binance = _spec("source-binance", connector="binance_perpetual", pairs=["ETH-USDT"])
+    first_host, second_host = NtTradingNodeHost(), NtTradingNodeHost()
+    first_strategy, second_strategy = _SignalStrategyDouble(okx), _SignalStrategyDouble(binance)
+    await first_host.deploy(okx, _credential(), _Artifact(strategy=first_strategy))
+    await second_host.deploy(binance, _credential(), _Artifact(strategy=second_strategy))
+    try:
+        await asyncio.sleep(0)
+        first = first_host.external_source_runtime_scope(okx["deployment_instance_id"])
+        second = second_host.external_source_runtime_scope(binance["deployment_instance_id"])
+        assert first.connector == "okx_perpetual"
+        assert second.connector == "binance_perpetual"
+        assert first.allowed_pairs == second.allowed_pairs == frozenset({"ETH-USDT"})
+        first_host._lifecycle_authorities[okx["deployment_instance_id"]] = replace(
+            first.authority, trading_mode="live"
+        )
+        with pytest.raises(RuntimeError, match="live"):
+            first_host.external_source_runtime_scope(okx["deployment_instance_id"])
+        first_host._lifecycle_authorities[okx["deployment_instance_id"]] = first.authority
+        signal = Signal.enter_long(100, pair="ETH-USDT")
+        assert first_host.queue_external_source_signal(first.authority, signal)
+        assert second_host.queue_external_source_signal(second.authority, signal)
+        assert first_strategy.received_signals == [signal]
+        assert second_strategy.received_signals == [signal]
+        with pytest.raises(RuntimeError, match="pair"):
+            second_host.queue_external_source_signal(
+                second.authority, Signal.enter_long(100, pair="BTC-USDT")
+            )
+        with pytest.raises(RuntimeError, match="amount"):
+            first_host.queue_external_source_signal(
+                first.authority, Signal.enter_long(100, pair="ETH-USDT", amount=100)
+            )
+        with pytest.raises(RuntimeError, match="authority"):
+            first_host.queue_external_source_signal(replace(first.authority, generation=2), signal)
+    finally:
+        await first_host.stop(okx["deployment_instance_id"])
+        await second_host.stop(binance["deployment_instance_id"])
+
+
+@pytest.mark.asyncio
 async def test_a_strategy_without_the_event_callbacks_is_refused(monkeypatch) -> None:
     """Red lines 0.2 and 0.3, and 'the reconciliation is never silent'.
 

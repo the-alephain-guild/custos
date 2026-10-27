@@ -53,3 +53,14 @@ verify that two distinct durables receive the same sanitized event against an
 isolated local NATS server. Broker JWT issuance, shared-environment provisioning,
 runner consumption and venue execution have not occurred. Live mode and real
 TradingView egress remain outside the current acceptance scope.
+
+`NtTradingNodeHost.external_source_runtime_scope()` is a separate read-only
+scope from the older OKX-only `external_signal_runtime_scope()`. It requires a
+running sandbox/testnet deployment with one signal-capable strategy and currently
+admits OKX and Binance perpetual connectors. Its pair list comes from the
+strategy declaration already checked against the deployment during `deploy()`.
+`queue_external_source_signal()` rechecks the exact active authority and pair,
+and rejects any source-supplied amount, investment type, token or non-market
+order override before calling the strategy queue. A successful return proves
+only in-memory acceptance. Neither method binds a broker subscriber to the
+verified signed command lane or reports an order or venue fill.

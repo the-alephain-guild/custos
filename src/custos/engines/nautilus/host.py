@@ -313,6 +313,16 @@ class ExternalSignalRuntimeScope:
 
 
 @dataclass(frozen=True, slots=True)
+class ExternalSourceRuntimeScope:
+    """Venue-specific target scope of one active non-live signal subscriber."""
+
+    authority: EngineLifecycleAuthority
+    connector: str
+    allowed_pairs: frozenset[str]
+    authorized_leverage: int
+
+
+@dataclass(frozen=True, slots=True)
 class _ShutdownPolicy:
     position_policy: str
     confirmation_timeout_secs: float
@@ -883,6 +893,66 @@ class NtTradingNodeHost:
         strategy = self._active_nodes[instance_id].strategies[0]
         if strategy.receive_external_signal(signal) is not True:
             raise RuntimeError("active strategy refused the external signal")
+        return True
+
+    def external_source_runtime_scope(
+        self, deployment_instance_id: str
+    ) -> ExternalSourceRuntimeScope:
+        """Read a subscriber's scope from an already admitted running strategy."""
+        runtime = self._active_nodes.get(deployment_instance_id)
+        authority = self._lifecycle_authorities.get(deployment_instance_id)
+        if (
+            runtime is None
+            or authority is None
+            or deployment_instance_id in self._stopping
+            or runtime.task.done()
+            or not runtime.is_running
+        ):
+            raise RuntimeError("external source scope requires a running deployment")
+        if str(authority.deployment_instance_id) != deployment_instance_id:
+            raise RuntimeError("external source scope differs from deployment identity")
+        if authority.trading_mode not in {"sandbox", "testnet"}:
+            raise RuntimeError("external source scope refuses live deployment")
+        if len(runtime.strategies) != 1:
+            raise RuntimeError("external source scope requires exactly one strategy")
+        strategy = runtime.strategies[0]
+        if not callable(getattr(strategy, "receive_external_signal", None)) or not callable(
+            getattr(strategy, "drop_pending_entries", None)
+        ):
+            raise RuntimeError("strategy has no external source and containment interface")
+        trading = strategy.config.trading
+        connector = str(trading.connector)
+        if connector not in {"okx_perpetual", "binance_perpetual"}:
+            raise RuntimeError("external source scope requires an admitted perpetual connector")
+        allowed_pairs = frozenset(str(pair) for pair in trading.pairs)
+        if not allowed_pairs or not strategy.config.external_order_instrument_ids:
+            raise RuntimeError("external source scope has no configured instruments")
+        return ExternalSourceRuntimeScope(
+            authority=authority,
+            connector=connector,
+            allowed_pairs=allowed_pairs,
+            authorized_leverage=int(trading.leverage),
+        )
+
+    def queue_external_source_signal(
+        self, authority: EngineLifecycleAuthority, signal: object
+    ) -> bool:
+        """Queue an already bounded source intent; this is not an order receipt."""
+        instance_id = str(authority.deployment_instance_id)
+        scope = self.external_source_runtime_scope(instance_id)
+        if scope.authority != authority:
+            raise RuntimeError("external source authority differs from active deployment")
+        pair = getattr(signal, "pair", None)
+        if not isinstance(pair, str) or pair not in scope.allowed_pairs:
+            raise RuntimeError("external source pair differs from active deployment")
+        if any(
+            getattr(signal, field, None) is not None
+            for field in ("amount", "investment_type", "order_price_offset", "signal_token")
+        ) or getattr(signal, "order_type", None) not in (None, "market"):
+            raise RuntimeError("external source amount or order override is not admitted")
+        strategy = self._active_nodes[instance_id].strategies[0]
+        if strategy.receive_external_signal(signal) is not True:
+            raise RuntimeError("active strategy refused the external source signal")
         return True
 
     def _require_the_only_node(self, deployment_instance_id: str) -> None:
