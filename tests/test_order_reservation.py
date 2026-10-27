@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from decimal import Decimal
 from pathlib import Path
 from uuid import UUID
@@ -28,7 +29,7 @@ INSTANCE_B = UUID("30000000-0000-4000-8000-000000000002")
 SPEC_ID = UUID("40000000-0000-4000-8000-000000000001")
 
 
-def _store(path: Path) -> RunnerStateStore:
+def _store(path: Path, *, seed_policy: bool = True) -> RunnerStateStore:
     outbox = RunnerFactOutbox(path)
     store = RunnerStateStore(
         outbox=outbox,
@@ -67,6 +68,8 @@ def _store(path: Path) -> RunnerStateStore:
                     b"{}",
                 ),
             )
+        if not seed_policy:
+            return store
         connection.execute(
             """
             INSERT OR IGNORE INTO runner_cap_policy (
@@ -139,6 +142,127 @@ def test_synchronous_engine_callback_api_commits_the_reservation_lifecycle(
     assert filled.filled_exposure == Decimal("10")
     assert released.state == "filled"
     assert released.reserved_notional == Decimal("0")
+
+
+def test_an_executed_fill_is_recorded_after_the_policy_expires(tmp_path, monkeypatch):
+    store = _store(tmp_path / "late-fill.sqlite3")
+    store.reserve_order_notional_sync(
+        event_id="reserve-before-expiry",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="late-entry",
+        policy_id=POLICY_ID,
+        requested_notional=Decimal("90"),
+    )
+    monkeypatch.setattr("custos.core.runner_fact.time.time_ns", lambda: 4102444800000000001)
+    fill = store.record_order_fill_sync(
+        event_id="executed-after-expiry",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="late-entry",
+        fill_notional=Decimal("95"),
+        fill_quantity=Decimal("1"),
+        leaves_quantity=Decimal("0"),
+    )
+    assert fill.reserved_notional == 0
+    assert fill.filled_exposure == Decimal("95")
+    assert store.load_order_reservation_sync(INSTANCE_A, "late-entry") == fill
+    assert (
+        store.record_order_fill_sync(
+            event_id="executed-after-expiry",
+            deployment_instance_id=INSTANCE_A,
+            client_order_id="late-entry",
+            fill_notional=Decimal("95"),
+            fill_quantity=Decimal("1"),
+            leaves_quantity=Decimal("0"),
+        )
+        == fill
+    )
+    with pytest.raises(RunnerStateAuthorityError, match="current effective"):
+        store.reserve_order_notional_sync(
+            event_id="new-after-expiry",
+            deployment_instance_id=INSTANCE_A,
+            client_order_id="new-entry",
+            policy_id=POLICY_ID,
+            requested_notional=Decimal("1"),
+        )
+
+
+@pytest.mark.parametrize("status", ["revoked", "expired"])
+@pytest.mark.parametrize("notional", ["95", "120"])
+async def test_signed_policy_termination_cannot_discard_an_executed_fill(
+    tmp_path, status, notional
+):
+    from tests.test_runner_policy_runtime import _prior, _verified_policy
+
+    path = tmp_path / "terminated-policy-fill.sqlite3"
+    store = _store(path, seed_policy=False)
+    signer = Ed25519PrivateKey.generate()
+    first = _verified_policy(signer, expires_at="2100-01-01T00:00:00Z")
+    await store.record_verified_runner_safety_policy(first)
+    store.reserve_order_notional_sync(
+        event_id="reserve-active",
+        deployment_instance_id=INSTANCE_A,
+        client_order_id="pending-entry",
+        policy_id=first.policy.policy_id,
+        requested_notional=Decimal("90"),
+    )
+    terminated = _verified_policy(
+        signer,
+        revision=2,
+        previous=_prior(first),
+        status=status,
+        expires_at="2100-01-01T00:00:00Z",
+        actor_assertion_jti=None if status == "expired" else "30000000-0000-4000-8000-000000000003",
+    )
+    await store.record_verified_runner_safety_policy(terminated)
+    context = pytest.raises(RunnerPostTradeRiskBreach) if notional == "120" else nullcontext()
+    with context:
+        store.record_order_fill_sync(
+            event_id="late-fill",
+            deployment_instance_id=INSTANCE_A,
+            client_order_id="pending-entry",
+            fill_notional=Decimal(notional),
+            fill_quantity=Decimal("1"),
+            leaves_quantity=Decimal("0"),
+        )
+    reopened = _store(path, seed_policy=False)
+    fill = reopened.load_order_reservation_sync(INSTANCE_A, "pending-entry")
+    assert fill.filled_exposure == Decimal(notional)
+    assert fill.reserved_notional == 0
+    assert (
+        reopened.record_order_fill_sync(
+            event_id="late-fill",
+            deployment_instance_id=INSTANCE_A,
+            client_order_id="pending-entry",
+            fill_notional=Decimal(notional),
+            fill_quantity=Decimal("1"),
+            leaves_quantity=Decimal("0"),
+        )
+        == fill
+    )
+    with pytest.raises(RunnerStateAuthorityError):
+        reopened.reserve_order_notional_sync(
+            event_id="after-termination",
+            deployment_instance_id=INSTANCE_A,
+            client_order_id="blocked",
+            policy_id=terminated.policy.policy_id,
+            requested_notional=Decimal("1"),
+        )
+    resumed = _verified_policy(
+        signer, revision=3, previous=_prior(terminated), expires_at="2100-01-01T00:00:00Z"
+    )
+    await reopened.record_verified_runner_safety_policy(resumed)
+    assert (
+        await reopened.load_runner_exposure(resumed.policy.policy_id)
+    ).total_exposure == Decimal(notional)
+    if notional == "120":
+        with pytest.raises(RunnerStateAuthorityError, match="risk latch"):
+            reopened.reserve_order_notional_sync(
+                event_id="after-renewal",
+                deployment_instance_id=INSTANCE_A,
+                client_order_id="still-blocked",
+                policy_id=resumed.policy.policy_id,
+                requested_notional=Decimal("1"),
+            )
 
 
 @pytest.mark.asyncio

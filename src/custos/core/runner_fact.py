@@ -36,6 +36,13 @@ from custos.contracts.crucible_runner_safety_policy import (
 )
 from custos.core.engine_protocol import EngineStopBoundary
 from custos.core.log import get_logger
+from custos.core.reservation_math import (
+    PositionCostLot,
+    allocate_fifo_cost,
+    notional_limit_breach,
+    released_position_cost,
+    remaining_order_reservation,
+)
 from custos.core.runner_command_intake import (
     CommandIdentityDecision,
     CommandTerminalOutcome,
@@ -6597,7 +6604,14 @@ class RunnerStateStore:
                 deployment_instance_id=instance,
             )
             self._require_runner_risk_unlatched(connection, policy_row)
-            if requested > Decimal(str(policy_row["max_order_notional"])):
+            exposure = self._runner_exposure(connection, policy_row)
+            breach = notional_limit_breach(
+                requested,
+                exposure.total_exposure + requested,
+                Decimal(str(policy_row["max_order_notional"])),
+                exposure.max_total_notional,
+            )
+            if breach == "per_order":
                 raise RunnerStateAuthorityError("runner policy per-order cap exceeded")
             existing = connection.execute(
                 """
@@ -6608,8 +6622,7 @@ class RunnerStateStore:
             ).fetchone()
             if existing is not None:
                 raise RunnerStateAuthorityError("client order reservation already exists")
-            exposure = self._runner_exposure(connection, policy_row)
-            if exposure.total_exposure + requested > exposure.max_total_notional:
+            if breach == "aggregate":
                 raise RunnerStateAuthorityError("runner aggregate cap exceeded")
             recorded_at_ns = time.time_ns()
             connection.execute(
@@ -6703,13 +6716,19 @@ class RunnerStateStore:
             )
             policy_row = self._current_policy_for_scope(connection, reservation_policy)
             filled = Decimal(str(row["filled_exposure"]))
-            if filled + new_reserved > Decimal(str(policy_row["max_order_notional"])):
-                raise RunnerStateAuthorityError("runner policy per-order cap exceeded")
             exposure = self._runner_exposure(connection, policy_row)
             old_reserved = Decimal(str(row["reserved_notional"]))
+            breach = notional_limit_breach(
+                filled + new_reserved,
+                exposure.total_exposure - old_reserved + new_reserved,
+                Decimal(str(policy_row["max_order_notional"])),
+                exposure.max_total_notional,
+            )
+            if breach == "per_order":
+                raise RunnerStateAuthorityError("runner policy per-order cap exceeded")
             if new_reserved > old_reserved:
                 self._require_runner_risk_unlatched(connection, policy_row)
-            if exposure.total_exposure - old_reserved + new_reserved > exposure.max_total_notional:
+            if breach == "aggregate":
                 raise RunnerStateAuthorityError("runner aggregate cap exceeded")
             if new_reserved > 0:
                 state = "partially_filled" if filled > 0 else "reserved"
@@ -6873,19 +6892,14 @@ class RunnerStateStore:
         order is cancelled or rejected; it is the safe direction for a cap, but it
         does not clear itself.
         """
-        if leaves is None:
-            remaining = max(reserved - fill, Decimal("0"))
-            if remaining > 0:
-                _log.warning(
-                    "order_reservation_unfilled_quantity_unknown",
-                    client_order_id=client_order_id,
-                    retained_notional=str(remaining),
-                )
-            return remaining
-        if leaves <= 0:
-            return Decimal("0")
-        outstanding_before = leaves + quantity
-        return max(reserved * leaves / outstanding_before, Decimal("0"))
+        remaining = remaining_order_reservation(reserved, fill, quantity, leaves)
+        if leaves is None and remaining > 0:
+            _log.warning(
+                "order_reservation_unfilled_quantity_unknown",
+                client_order_id=client_order_id,
+                retained_notional=str(remaining),
+            )
+        return remaining
 
     def record_order_fill_sync(
         self,
@@ -6967,7 +6981,10 @@ class RunnerStateStore:
                 deployment_instance_id=instance,
                 require_current=False,
             )
-            policy_row = self._current_policy_for_scope(connection, reservation_policy)
+            # Expiry governs new intent admission, never an already executed fill.
+            policy_row = self._current_policy_for_scope(
+                connection, reservation_policy, require_admission=False
+            )
             reserved = Decimal(str(row["reserved_notional"]))
             opening_quantity = quantity
             opening_notional = fill
@@ -7001,18 +7018,24 @@ class RunnerStateStore:
                         Decimal("0"),
                     ),
                 )
-                remaining_close = closing_quantity
-                for opposite_row in opposite_rows:
-                    if remaining_close <= 0:
-                        break
+                reductions = allocate_fifo_cost(
+                    tuple(
+                        PositionCostLot(
+                            str(item["client_order_id"]),
+                            Decimal(str(item["filled_quantity"])),
+                            Decimal(str(item["filled_exposure"])),
+                        )
+                        for item in opposite_rows
+                    ),
+                    closing_quantity,
+                )
+                opposite_by_id = {str(item["client_order_id"]): item for item in opposite_rows}
+                for reduction in reductions:
+                    opposite_row = opposite_by_id[reduction.lot_id]
                     opposite_quantity = Decimal(str(opposite_row["filled_quantity"]))
-                    allocated = min(remaining_close, opposite_quantity)
+                    allocated = reduction.quantity
                     opposite_filled = Decimal(str(opposite_row["filled_exposure"]))
-                    released = (
-                        opposite_filled
-                        if allocated == opposite_quantity
-                        else opposite_filled * allocated / opposite_quantity
-                    )
+                    released = reduction.cost
                     remaining_opposite_quantity = opposite_quantity - allocated
                     remaining_opposite_filled = opposite_filled - released
                     opposite_reserved = Decimal(str(opposite_row["reserved_notional"]))
@@ -7043,20 +7066,23 @@ class RunnerStateStore:
                         time.time_ns(),
                         source_digest=self._reservation_event_fingerprint(payload),
                     )
-                    remaining_close -= allocated
                 opening_quantity = quantity - closing_quantity
                 opening_notional = (
                     Decimal("0") if opening_quantity == 0 else fill * opening_quantity / quantity
                 )
             filled = Decimal(str(row["filled_exposure"])) + opening_notional
             filled_quantity = Decimal(str(row["filled_quantity"])) + opening_quantity
-            per_order_breach = filled > Decimal(str(policy_row["max_order_notional"]))
             exposure = self._runner_exposure(connection, policy_row)
             remaining = self._reservation_after_fill(
                 reserved, fill, quantity, leaves, client_order_id=order
             )
             settled_total = exposure.total_exposure + opening_notional - (reserved - remaining)
-            aggregate_breach = settled_total > exposure.max_total_notional
+            breach = notional_limit_breach(
+                filled,
+                settled_total,
+                Decimal(str(policy_row["max_order_notional"])),
+                exposure.max_total_notional,
+            )
             state = (
                 "partially_filled"
                 if remaining > 0
@@ -7114,10 +7140,10 @@ class RunnerStateStore:
                 snapshot,
                 recorded_at_ns,
             )
-            if per_order_breach or aggregate_breach:
+            if breach is not None:
                 reason = (
                     "per-order fill cap exceeded"
-                    if per_order_breach
+                    if breach == "per_order"
                     else "aggregate fill cap exceeded"
                 )
                 self._latch_runner_risk(
@@ -7176,12 +7202,22 @@ class RunnerStateStore:
                 raise RunnerStateAuthorityError(
                     "position reduction exceeds durable position lot quantity"
                 )
-            remaining = quantity
+            reductions = allocate_fifo_cost(
+                tuple(
+                    PositionCostLot(
+                        str(row["client_order_id"]),
+                        Decimal(str(row["filled_quantity"])),
+                        Decimal(str(row["filled_exposure"])),
+                    )
+                    for row in rows
+                ),
+                quantity,
+            )
+            rows_by_id = {str(row["client_order_id"]): row for row in rows}
             recorded_at_ns = time.time_ns()
             last_snapshot: OrderReservationSnapshot | None = None
-            for row in rows:
-                if remaining <= 0:
-                    break
+            for reduction in reductions:
+                row = rows_by_id[reduction.lot_id]
                 self._reservation_policy(
                     connection,
                     str(row["policy_id"]),
@@ -7189,11 +7225,9 @@ class RunnerStateStore:
                     require_current=False,
                 )
                 filled_quantity = Decimal(str(row["filled_quantity"]))
-                allocated = min(remaining, filled_quantity)
+                allocated = reduction.quantity
                 filled = Decimal(str(row["filled_exposure"]))
-                released = (
-                    filled if allocated == filled_quantity else filled * allocated / filled_quantity
-                )
+                released = reduction.cost
                 remaining_quantity = filled_quantity - allocated
                 remaining_filled = filled - released
                 reserved = Decimal(str(row["reserved_notional"]))
@@ -7231,7 +7265,6 @@ class RunnerStateStore:
                     filled_quantity=remaining_quantity,
                     state=state,
                 )
-                remaining -= allocated
             if last_snapshot is None:
                 raise RunnerStateAuthorityError("position reduction has no durable position lots")
             self._record_reservation_event(
@@ -7319,9 +7352,7 @@ class RunnerStateStore:
                     "position reduction exceeds durable filled quantity"
                 )
             remaining_quantity = filled_quantity - quantity
-            released_exposure = (
-                filled if remaining_quantity == 0 else filled * quantity / filled_quantity
-            )
+            released_exposure = released_position_cost(filled, filled_quantity, quantity)
             remaining_filled = filled - released_exposure
             reserved = Decimal(str(row["reserved_notional"]))
             state = (
@@ -7627,7 +7658,8 @@ class RunnerStateStore:
             row is None
             or row["tenant_scope"] != self._tenant_id
             or row["runner_id"] != str(self._runner_id)
-            or row["policy_status"] != "active"
+            or row["policy_status"] not in {"active", "revoked", "expired"}
+            or (require_current and row["policy_status"] != "active")
         ):
             raise RunnerStateAuthorityError("reservation policy is outside runner authority")
         if require_current:
@@ -7663,6 +7695,8 @@ class RunnerStateStore:
     def _current_policy_for_scope(
         connection: sqlite3.Connection,
         policy_row: Mapping[str, Any],
+        *,
+        require_admission: bool = True,
     ) -> sqlite3.Row:
         row = connection.execute(
             """
@@ -7679,9 +7713,15 @@ class RunnerStateStore:
         now_ns = time.time_ns()
         if (
             row is None
-            or row["policy_status"] != "active"
-            or now_ns < int(row["effective_at_ns"])
-            or now_ns >= int(row["expires_at_ns"])
+            or row["policy_status"] not in {"active", "revoked", "expired"}
+            or (
+                require_admission
+                and (
+                    row["policy_status"] != "active"
+                    or now_ns < int(row["effective_at_ns"])
+                    or now_ns >= int(row["expires_at_ns"])
+                )
+            )
         ):
             raise RunnerStateAuthorityError(
                 "reservation requires the current effective runner policy"

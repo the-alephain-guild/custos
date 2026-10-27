@@ -15,6 +15,7 @@ from uuid import UUID
 
 from custos.contracts.crucible_runner_safety_policy import RunnerAggregateCapPolicyV1
 from custos.core.log import get_logger
+from custos.core.reservation_math import notional_limit_breach
 
 _log = get_logger("custos.local_cap")
 
@@ -79,8 +80,13 @@ def check_cap(
     if risk_reducing:
         return True
     return (
-        new_order_notional <= config.max_order_notional
-        and current_open + new_order_notional <= config.max_total_notional
+        notional_limit_breach(
+            new_order_notional,
+            current_open + new_order_notional,
+            config.max_order_notional,
+            config.max_total_notional,
+        )
+        is None
     )
 
 
