@@ -9,6 +9,7 @@ import json
 import sqlite3
 import threading
 from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID
@@ -24,6 +25,8 @@ from custos.cli.subcommands.webhook import (
 from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.core.external_signal_contract import make_event_id
 from custos.core.external_signal_inbox import ExternalSignalInbox
+from custos.engines.nautilus.external_signal import to_toolkit_signal
+from custos.engines.nautilus.host import ExternalSignalRuntimeScope
 
 INSTANCE_ID = UUID("10000000-0000-4000-8000-000000000001")
 NOW = datetime(2026, 10, 27, 12, 0, 15, tzinfo=UTC)
@@ -47,6 +50,7 @@ def body() -> bytes:
         "maxLag": "60",
         "investmentType": "margin",
         "amount": "10.25",
+        "orderType": "market",
         "schemaVersion": 1,
         "sourceId": "independent-demo",
         "strategyRevision": "supertrend-v0.5",
@@ -97,6 +101,30 @@ def test_valid_signed_body_is_durable_before_success(tmp_path: Path) -> None:
     assert receipt.status == "accepted"
     assert len(ExternalSignalInbox(tmp_path / "inbox.sqlite").pending(AUTHORITY, now=NOW)) == 1
     assert b"demo-secret-not-an-authenticator" not in (tmp_path / "inbox.sqlite").read_bytes()
+
+
+def test_signed_intake_reaches_bounded_non_delivering_toolkit_intent(tmp_path: Path) -> None:
+    receiver = ingress(tmp_path)
+    receiver.accept(body(), signature(body()), received_at=NOW)
+    pending = receiver.inbox.pending(AUTHORITY, now=NOW)
+
+    assert len(pending) == 1
+    scope = ExternalSignalRuntimeScope(
+        authority=AUTHORITY,
+        allowed_instruments=frozenset({"ETH-USDT-SWAP"}),
+        authorized_leverage=3,
+    )
+    signal = to_toolkit_signal(
+        pending[0],
+        scope,
+        max_order_notional=Decimal("40"),
+        limit_currency="USDT",
+    )
+
+    assert signal.amount == Decimal("30.75")
+    assert signal.signal_token is None
+    assert signal.metadata["external_event_id"] == pending[0].event_id
+    assert len(receiver.inbox.pending(AUTHORITY, now=NOW)) == 1
 
 
 def test_wrong_signature_and_live_mode_are_refused(tmp_path: Path) -> None:
