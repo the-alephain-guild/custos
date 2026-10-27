@@ -28,6 +28,16 @@ must retain distinct acceptance, intent, venue-fill and flat-confirmation
 states. The source parser alone does not publish, subscribe or trade.
 
 This contract is currently exercised with synthetic source events in
-`tests/test_external_source_signal.py`. No source publisher, NATS signal stream,
-runner consumer or TradingView alert is activated by this file. Live mode and
-real TradingView egress remain outside the current acceptance scope.
+`tests/test_external_source_signal.py`. The local
+`src/custos/core/external_source_outbox.py` stores sanitized events in a private
+SQLite outbox. A claim returns the immutable canonical JSON bytes, a bounded
+lease and a stable publication ID; a crash
+may cause another publish attempt after the lease expires. Only a caller that
+has received a positive broker PubAck may record its sequence using
+`mark_published`. An older claim cannot acknowledge a newer claim. This gives
+at-least-once publication attempts, not exactly-once downstream execution.
+Expired source events are not published, and expiration frees outbox capacity.
+
+No broker publisher adapter, NATS signal stream, runner consumer or TradingView
+alert is activated by these files. Live mode and real TradingView egress remain
+outside the current acceptance scope.
