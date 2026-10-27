@@ -107,6 +107,16 @@ into any valid current generation. Constructing an authority object is not
 itself proof that the caller verified the signed command; the daemon must
 derive it from its active verified deployment before enabling this path.
 
+The source Nautilus `SignalProcessorStrategy` still consumes queued signals
+on its next configured bar. It now drops an event when that bar's event time is
+past `timestamp + maxLag`, waits if the bar precedes the event, and can remove
+queued entries when runtime containment begins. This prevents a 30-minute
+execution bar from silently trading a 60-second alert on the next bar, but
+does not make execution immediate. A future deployment must use a tested
+execution-bar cadence and latency budget, and its runtime must call the queue
+removal plus independently cancel orders and confirm venue flat. This source
+change is not part of the authorized rc10 wheel. No daemon delivery is wired yet.
+
 Neither message shape creates a signed desired-state command. The signed
 deployment and local risk policy remain the authority for venue, account,
 instrument, leverage, and maximum exposure. This contract permits local

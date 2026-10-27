@@ -120,7 +120,15 @@ class SignalProcessorStrategy(NautilusTradingStrategy):
         """
         pair = ctx.pair
         queue = self._pending_signals.get(pair)
-        if queue and len(queue) > 0:
+        while queue:
+            candidate = queue[0]
+            if candidate.timestamp is not None and candidate.max_lag is not None:
+                if bar.ts_event < candidate.timestamp:
+                    break
+                if bar.ts_event > candidate.timestamp + candidate.max_lag * 1_000_000_000:
+                    queue.popleft()
+                    self.log.warning(f"[{pair}] Expired external signal discarded")
+                    continue
             signal = queue.popleft()
             # Ensure pair matches
             if signal.pair == pair or not signal.pair:
@@ -152,7 +160,7 @@ class SignalProcessorStrategy(NautilusTradingStrategy):
 
     # EXTERNAL SIGNAL INTERFACE
 
-    def receive_external_signal(self, signal: Signal) -> None:
+    def receive_external_signal(self, signal: Signal) -> bool:
         """
         Receive an external signal for processing.
 
@@ -175,13 +183,35 @@ class SignalProcessorStrategy(NautilusTradingStrategy):
 
         if pair not in self._pending_signals:
             self.log.warning(f"Received signal for unconfigured pair: {pair}")
-            return
+            return False
 
         self._pending_signals[pair].append(signal)
         self.log.info(
             f"[{pair}] External signal queued: {signal.direction.name}, "
             f"queue_size={len(self._pending_signals[pair])}"
         )
+        return True
+
+    def drop_pending_entries(self, pair: str | None = None) -> int:
+        """Remove queued entries after containment without hiding queued exits.
+
+        Call only on the strategy's event loop. The runtime must still cancel
+        venue orders and confirm the actual position independently.
+        """
+        pairs = (pair,) if pair is not None else tuple(self._pending_signals)
+        removed = 0
+        for current_pair in pairs:
+            queue = self._pending_signals.get(current_pair)
+            if queue is None:
+                continue
+            retained: deque[Signal] = deque()
+            for signal in queue:
+                if signal.is_enter_long() or signal.is_enter_short():
+                    removed += 1
+                else:
+                    retained.append(signal)
+            self._pending_signals[current_pair] = retained
+        return removed
 
     def receive_okx_signal(self, data: dict[str, object]) -> None:
         """

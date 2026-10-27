@@ -77,6 +77,7 @@ def _create_signal_processor(pairs=None):
         "_configured_pairs",
         "calculate_signal",
         "receive_external_signal",
+        "drop_pending_entries",
         "receive_okx_signal",
         "emit_signal",
         "get_last_emitted_signal",
@@ -152,8 +153,9 @@ class TestReceiveExternalSignal:
         strategy = _create_signal_processor(pairs=["BTC-USDT"])
         signal = Signal.enter_long(price=Decimal("100"), pair="SOL-USDT")
 
-        strategy.receive_external_signal(signal)
+        accepted = strategy.receive_external_signal(signal)
 
+        assert accepted is False
         strategy.log.warning.assert_called_once()
         assert "SOL-USDT" not in strategy._pending_signals
 
@@ -184,6 +186,47 @@ class TestCalculateSignal:
         result = strategy.calculate_signal(SimpleNamespace(pair="BTC-USDT"), bar)
 
         assert result.direction == SignalDirection.NEUTRAL
+
+    def test_expired_entry_is_dropped_before_next_bar(self):
+        strategy = _create_signal_processor()
+        signal = Signal.enter_long(price=Decimal("50000"), pair="BTC-USDT")
+        signal.timestamp = 1_000_000_000
+        signal.max_lag = 60
+        strategy.receive_external_signal(signal)
+        bar = SimpleNamespace(close=Decimal("50000"), ts_event=62_000_000_000)
+
+        result = strategy.calculate_signal(SimpleNamespace(pair="BTC-USDT"), bar)
+
+        assert result.direction == SignalDirection.NEUTRAL
+        assert strategy.get_pending_signal_count("BTC-USDT") == 0
+
+    def test_signal_waits_for_bar_at_or_after_its_event_time(self):
+        strategy = _create_signal_processor()
+        signal = Signal.enter_long(price=Decimal("50000"), pair="BTC-USDT")
+        signal.timestamp = 60_000_000_000
+        signal.max_lag = 120
+        strategy.receive_external_signal(signal)
+        early_bar = SimpleNamespace(close=Decimal("50000"), ts_event=59_000_000_000)
+        ready_bar = SimpleNamespace(close=Decimal("50000"), ts_event=61_000_000_000)
+
+        assert (
+            strategy.calculate_signal(SimpleNamespace(pair="BTC-USDT"), early_bar).direction
+            == SignalDirection.NEUTRAL
+        )
+        assert strategy.get_pending_signal_count("BTC-USDT") == 1
+        assert (
+            strategy.calculate_signal(SimpleNamespace(pair="BTC-USDT"), ready_bar).direction
+            == SignalDirection.ENTER_LONG
+        )
+
+    def test_risk_containment_drops_queued_entries_but_retains_exits(self):
+        strategy = _create_signal_processor()
+        strategy.receive_external_signal(Signal.enter_long(Decimal("100"), pair="BTC-USDT"))
+        strategy.receive_external_signal(Signal.exit_long(Decimal("100"), pair="BTC-USDT"))
+
+        assert strategy.drop_pending_entries("BTC-USDT") == 1
+        assert strategy.get_pending_signal_count("BTC-USDT") == 1
+        assert strategy._pending_signals["BTC-USDT"][0].direction == SignalDirection.EXIT_LONG
 
 
 class TestReceiveOkxSignal:
