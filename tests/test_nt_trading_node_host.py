@@ -395,6 +395,43 @@ async def test_target_neutral_source_can_queue_to_two_independent_perpetual_host
         await second_host.stop(binance["deployment_instance_id"])
 
 
+@pytest.mark.parametrize("connector", ["okx_perpetual", "binance_perpetual"])
+@pytest.mark.asyncio
+async def test_external_source_flatten_requests_containment_for_exact_host(monkeypatch, connector):
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    spec = _spec(f"source-flat-{connector}", connector=connector, pairs=["ETH-USDT"])
+    steps: list[str] = []
+
+    class SourceStrategy(_SignalStrategyDouble):
+        def drop_pending_entries(self, pair=None) -> int:
+            steps.append("drop")
+            return 2
+
+    host = NtTradingNodeHost()
+    instance_id = spec["deployment_instance_id"]
+    await host.deploy(spec, _credential(), _Artifact(strategy=SourceStrategy(spec)))
+
+    async def flatten(instance: str, reason: str) -> None:
+        assert instance == instance_id
+        steps.append(reason)
+
+    monkeypatch.setattr(host, "flatten_positions", flatten)
+    try:
+        await asyncio.sleep(0)
+        authority = host.external_source_runtime_scope(instance_id).authority
+        with pytest.raises(RuntimeError, match="authority"):
+            await host.request_external_source_flatten(replace(authority, generation=2))
+        assert steps == []
+        assert await host.request_external_source_flatten(authority) == 2
+        assert steps == ["drop", "external_source_flat"]
+        assert await host.request_external_source_flatten(authority, risk_action="FLATTEN") == 2
+        assert steps[-2:] == ["drop", "external_source_risk"]
+        with pytest.raises(RuntimeError, match="risk action"):
+            await host.request_external_source_flatten(authority, risk_action="PAUSE")
+    finally:
+        await host.stop(instance_id)
+
+
 @pytest.mark.asyncio
 async def test_a_strategy_without_the_event_callbacks_is_refused(monkeypatch) -> None:
     """Red lines 0.2 and 0.3, and 'the reconciliation is never silent'.

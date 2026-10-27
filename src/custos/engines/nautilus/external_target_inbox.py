@@ -253,15 +253,28 @@ class ExternalTargetInbox:
                 if existing["payload_digest"] != digest:
                     raise ExternalTargetInboxError("target delivery replay conflict")
                 return TargetIntakeReceipt(delivery.delivery_id, "duplicate")
+            registered_source = connection.execute(
+                """SELECT tenant_id, source_id FROM external_target_delivery
+                   WHERE deployment_instance_id = ? LIMIT 1""",
+                (instance,),
+            ).fetchone()
+            if registered_source is not None and (
+                registered_source["tenant_id"] != delivery.tenant_id
+                or registered_source["source_id"] != delivery.source_id
+            ):
+                raise ExternalTargetInboxError("deployment is bound to another signal source")
             if delivery.target in {"LONG", "SHORT"}:
                 uncertain = connection.execute(
                     """SELECT 1 FROM external_target_delivery
-                       WHERE deployment_instance_id = ? AND status = 'uncertain'
+                       WHERE deployment_instance_id = ?
+                         AND status IN ('dispatching', 'uncertain')
                          AND resolved_at_ns IS NULL LIMIT 1""",
                     (instance,),
                 ).fetchone()
                 if uncertain is not None:
-                    raise ExternalTargetInboxError("uncertain target delivery blocks entry")
+                    raise ExternalTargetInboxError(
+                        "unresolved or uncertain target delivery blocks entry"
+                    )
                 fence = connection.execute(
                     """SELECT bar_close_ns, confirmed_at_ns FROM external_target_flat_fence
                        WHERE tenant_id = ? AND source_id = ?
@@ -382,7 +395,7 @@ class ExternalTargetInbox:
                        NOT EXISTS (
                          SELECT 1 FROM external_target_delivery AS unknown
                          WHERE unknown.deployment_instance_id = event.deployment_instance_id
-                           AND unknown.status = 'uncertain'
+                           AND unknown.status IN ('dispatching', 'uncertain')
                            AND unknown.resolved_at_ns IS NULL
                        ) AND NOT EXISTS (
                          SELECT 1 FROM external_target_flat_fence AS fence
@@ -420,7 +433,7 @@ class ExternalTargetInbox:
                        NOT EXISTS (
                          SELECT 1 FROM external_target_delivery AS unknown
                          WHERE unknown.deployment_instance_id = event.deployment_instance_id
-                           AND unknown.status = 'uncertain'
+                           AND unknown.status IN ('dispatching', 'uncertain')
                            AND unknown.resolved_at_ns IS NULL
                        ) AND NOT EXISTS (
                          SELECT 1 FROM external_target_flat_fence AS fence

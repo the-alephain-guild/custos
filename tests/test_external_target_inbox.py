@@ -43,12 +43,12 @@ SECOND = EngineLifecycleAuthority(
 def directive(
     authority: EngineLifecycleAuthority,
     *,
+    source_id: str = "synthetic-supertrend",
     target: str = "SHORT",
     risk_action: str | None = None,
     bar: datetime = BAR,
     received_at: datetime = NOW,
 ):
-    source_id = "synthetic-supertrend"
     payload = {
         "schemaVersion": 1,
         "sourceId": source_id,
@@ -116,6 +116,13 @@ def test_one_source_event_has_two_independent_target_receipts(tmp_path: Path) ->
     assert inbox.mark_handoff(first.delivery_id, authority=FIRST, at=NOW)
     assert [item.delivery_id for item in inbox.pending(SECOND, at=NOW)] == [second.delivery_id]
     assert inbox.mark_handoff(second.delivery_id, authority=SECOND, at=NOW) is False
+
+
+def test_one_deployment_cannot_mix_unrelated_signal_sources(tmp_path: Path) -> None:
+    inbox = ExternalTargetInbox(tmp_path / "target.sqlite")
+    inbox.accept(directive(FIRST), received_at=NOW)
+    with pytest.raises(ExternalTargetInboxError, match="source"):
+        inbox.accept(directive(FIRST, source_id="other-source"), received_at=NOW)
 
 
 def test_flat_containment_replaces_a_full_pending_entry_queue(tmp_path: Path) -> None:
@@ -204,6 +211,19 @@ def test_restart_does_not_dispatch_an_already_accepted_new_entry(tmp_path: Path)
     assert restarted.recover_uncertain(FIRST.deployment_instance_id, at=later_time) == 1
     assert restarted.pending(FIRST, at=later_time) == []
     assert restarted.begin_delivery(later.delivery_id, authority=FIRST, at=later_time) is False
+
+
+def test_entry_cannot_pass_an_inflight_handoff_even_before_recovery(tmp_path: Path) -> None:
+    inbox = ExternalTargetInbox(tmp_path / "target.sqlite")
+    first = directive(FIRST)
+    inbox.accept(first, received_at=NOW)
+    assert inbox.begin_delivery(first.delivery_id, authority=FIRST, at=NOW)
+    later_time = NOW + timedelta(minutes=30)
+    later = directive(FIRST, target="LONG", bar=BAR + timedelta(minutes=30), received_at=later_time)
+    with pytest.raises(ExternalTargetInboxError, match="unresolved"):
+        inbox.accept(later, received_at=later_time)
+    assert inbox.mark_handoff(first.delivery_id, authority=FIRST, at=NOW)
+    assert inbox.accept(later, received_at=later_time).status == "accepted"
 
 
 def test_wrong_generation_and_expired_events_never_dispatch(tmp_path: Path) -> None:

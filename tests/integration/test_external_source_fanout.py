@@ -24,6 +24,7 @@ from custos.core.external_source_transport import (
 )
 from custos.engines.nautilus.external_source_delivery import SourceSubscriptionBinding
 from custos.engines.nautilus.external_source_subscriber import ExternalSourceSubscriber
+from custos.engines.nautilus.external_target_dispatcher import ExternalTargetDispatcher
 from custos.engines.nautilus.external_target_inbox import ExternalTargetInbox
 from custos.engines.nautilus.host import ExternalSourceRuntimeScope
 
@@ -128,6 +129,7 @@ async def test_two_deployments_receive_one_source_event(tmp_path: Path) -> None:
                     ),
                     target_inbox,
                     authority,
+                    scope,
                 )
             )
 
@@ -147,12 +149,37 @@ async def test_two_deployments_receive_one_source_event(tmp_path: Path) -> None:
         )
         assert received.event_id == event_id
         delivery_ids = []
-        for message, (receiver, target_inbox, authority) in zip(messages, receivers, strict=True):
+        for message, (receiver, target_inbox, authority, scope) in zip(
+            messages, receivers, strict=True
+        ):
             receipt = await receiver.handle_message(message, at=datetime.now(UTC))
             assert receipt is not None and receipt.status == "accepted"
             pending = target_inbox.pending(authority, at=datetime.now(UTC))
             assert len(pending) == 1 and pending[0].source_event_id == event_id
             delivery_ids.append(pending[0].delivery_id)
+
+            class QueueOnlyHost:
+                def __init__(self, authority, scope) -> None:
+                    self.authority = authority
+                    self.scope = scope
+                    self.queued = []
+
+                def external_source_runtime_scope(self, instance_id):
+                    assert instance_id == str(self.authority.deployment_instance_id)
+                    return self.scope
+
+                def queue_external_source_signal(self, active_authority, signal):
+                    assert active_authority == self.authority
+                    self.queued.append(signal)
+                    return True
+
+            host = QueueOnlyHost(authority, scope)
+            dispatched = await ExternalTargetDispatcher(target_inbox, host).process_once(
+                authority, at=datetime.now(UTC)
+            )
+            assert dispatched is not None and dispatched.status == "queued"
+            assert len(host.queued) == 1 and host.queued[0].amount is None
+            assert host.queued[0].metadata["target_delivery_id"] == pending[0].delivery_id
         assert delivery_ids[0] != delivery_ids[1]
         for sub in subscriptions:
             await sub.unsubscribe()

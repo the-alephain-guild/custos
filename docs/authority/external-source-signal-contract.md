@@ -75,7 +75,9 @@ persist the target delivery state, and prove final flatness separately. This
 pure conversion does not touch a runner queue or the venue.
 
 `ExternalTargetInbox` stores each derived delivery under its own deployment
-instance, spec ID/digest and generation. A normal entry must be durably claimed
+instance, spec ID/digest and generation. A deployment's inbox is bound to one
+tenant and one source; a second source cannot share its account or flat fence.
+A normal entry must be durably claimed
 before the host queue is touched; a persisted handoff means only that the
 in-memory queue accepted it. The inbox also persists the source timestamp and
 `maxLag`, so a restarted consumer can check expiry without recovering the
@@ -93,4 +95,11 @@ without an execution receipt; storage or runtime unavailability leaves the
 message unacknowledged for recovery. An isolated local NATS integration test
 exercises two independent target inboxes for OKX and Binance scopes. The
 subscriber is not yet composed into the signed-lane daemon and does not call
-the host's trading methods.
+the host's trading methods. `ExternalTargetDispatcher` now reads an active
+host scope, claims one pending target, and hands a bounded entry to that
+host's strategy queue or requests containment for `FLAT`/`FLATTEN`. It then
+records only `queued` or `flat_requested`; failures and cancellation quarantine
+the claimed result so new entries cannot pass an unknown outcome. Startup must
+invoke its recovery method before any new dispatch. The dispatcher is not yet
+composed into the daemon, and no queue receipt attests an order, fill or flat
+account.

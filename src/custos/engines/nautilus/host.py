@@ -955,6 +955,26 @@ class NtTradingNodeHost:
             raise RuntimeError("active strategy refused the external source signal")
         return True
 
+    async def request_external_source_flatten(
+        self, authority: EngineLifecycleAuthority, *, risk_action: str | None = None
+    ) -> int:
+        """Drop queued entries and request containment without claiming venue flatness."""
+        if risk_action not in (None, "FLATTEN"):
+            raise RuntimeError("external source risk action is unsupported")
+        instance_id = str(authority.deployment_instance_id)
+        scope = self.external_source_runtime_scope(instance_id)
+        if scope.authority != authority:
+            raise RuntimeError("external source authority differs from active deployment")
+        reason = "external_source_risk" if risk_action == "FLATTEN" else "external_source_flat"
+        strategy = self._active_nodes[instance_id].strategies[0]
+        try:
+            removed = strategy.drop_pending_entries()
+        except Exception as error:  # noqa: BLE001 — flatten is still required
+            await self.flatten_positions(instance_id, reason)
+            raise RuntimeError("external source pending-entry removal failed") from error
+        await self.flatten_positions(instance_id, reason)
+        return removed
+
     def _require_the_only_node(self, deployment_instance_id: str) -> None:
         """Refuse a second node in this runner process.
 
