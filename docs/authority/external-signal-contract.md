@@ -107,6 +107,15 @@ into any valid current generation. Constructing an authority object is not
 itself proof that the caller verified the signed command; the daemon must
 derive it from its active verified deployment before enabling this path.
 
+`NtTradingNodeHost.external_signal_runtime_scope()` now exposes only the
+non-live OKX perpetual instruments and leverage of a currently running
+strategy that implements both signal receipt and pending-entry removal. The
+host has already checked that strategy's trading declaration against its
+deployment at `deploy()`. This read-only scope does not authenticate a sender,
+prove that the daemon used the signed command lane, or turn on the HTTP
+listener. The daemon must recheck the active signed generation before each
+delivery; a scope captured before a stop or replacement is stale.
+
 The source Nautilus `SignalProcessorStrategy` still consumes queued signals
 on its next configured bar. It now drops an event when that bar's event time is
 past `timestamp + maxLag`, waits if the bar precedes the event, and can remove

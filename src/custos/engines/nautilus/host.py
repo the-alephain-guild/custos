@@ -304,6 +304,15 @@ class _NodeRuntime:
 
 
 @dataclass(frozen=True, slots=True)
+class ExternalSignalRuntimeScope:
+    """The non-live signal scope of one currently running deployment."""
+
+    authority: EngineLifecycleAuthority
+    allowed_instruments: frozenset[str]
+    authorized_leverage: int
+
+
+@dataclass(frozen=True, slots=True)
 class _ShutdownPolicy:
     position_policy: str
     confirmation_timeout_secs: float
@@ -795,6 +804,49 @@ class NtTradingNodeHost:
                     releasing=instance in self._stopping,
                 )
         return None
+
+    def external_signal_runtime_scope(
+        self, deployment_instance_id: str
+    ) -> ExternalSignalRuntimeScope:
+        """Read signal limits from the active node's already-checked strategy.
+
+        This does not authenticate a webhook sender or enable intake. Deploy has
+        checked the strategy's declared trading scope against its desired spec;
+        only the command coordinator can establish the signed-lane provenance.
+        """
+        runtime = self._active_nodes.get(deployment_instance_id)
+        authority = self._lifecycle_authorities.get(deployment_instance_id)
+        if (
+            runtime is None
+            or authority is None
+            or deployment_instance_id in self._stopping
+            or runtime.task.done()
+            or not runtime.is_running
+        ):
+            raise RuntimeError("external signal scope requires a running deployment")
+        if str(authority.deployment_instance_id) != deployment_instance_id:
+            raise RuntimeError("external signal scope differs from deployment identity")
+        if authority.trading_mode not in {"sandbox", "testnet"}:
+            raise RuntimeError("external signal scope refuses live deployment")
+        if len(runtime.strategies) != 1:
+            raise RuntimeError("external signal scope requires exactly one strategy")
+        strategy = runtime.strategies[0]
+        if not callable(getattr(strategy, "receive_external_signal", None)) or not callable(
+            getattr(strategy, "drop_pending_entries", None)
+        ):
+            raise RuntimeError("strategy has no external signal and containment interface")
+        config = strategy.config
+        trading = config.trading
+        if str(trading.connector) != "okx_perpetual":
+            raise RuntimeError("external signal scope requires OKX perpetual")
+        instrument_ids = tuple(str(value) for value in config.external_order_instrument_ids)
+        if not instrument_ids or any(not value.endswith("-SWAP.OKX") for value in instrument_ids):
+            raise RuntimeError("external signal scope has no OKX perpetual instruments")
+        return ExternalSignalRuntimeScope(
+            authority=authority,
+            allowed_instruments=frozenset(value.removesuffix(".OKX") for value in instrument_ids),
+            authorized_leverage=int(trading.leverage),
+        )
 
     def _require_the_only_node(self, deployment_instance_id: str) -> None:
         """Refuse a second node in this runner process.

@@ -16,7 +16,7 @@ Failure-mode contract (plan §failure-mode coverage table):
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import SimpleNamespace
 from uuid import NAMESPACE_URL, UUID, uuid5
 
@@ -100,6 +100,14 @@ class _StrategyDouble:
         self.position_events.append(event)
 
 
+class _SignalStrategyDouble(_StrategyDouble):
+    def receive_external_signal(self, signal) -> bool:
+        return True
+
+    def drop_pending_entries(self, pair=None) -> int:
+        return 0
+
+
 @dataclass(frozen=True, slots=True)
 class _Artifact:
     activation_id: str = "activation-test"
@@ -171,6 +179,66 @@ async def test_deploy_sandbox_success(monkeypatch) -> None:
         assert node.builder.exec_clients == []
     finally:
         await host.stop(deployment_instance_id)
+
+
+@pytest.mark.asyncio
+async def test_external_signal_scope_comes_from_running_okx_perpetual_deployment(monkeypatch):
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    spec = _spec(
+        "external-scope",
+        connector="okx_perpetual",
+        pairs=["ETH-USDT"],
+    )
+    host = NtTradingNodeHost()
+    instance_id = spec["deployment_instance_id"]
+    strategy = _SignalStrategyDouble(spec)
+    with pytest.raises(RuntimeError, match="running"):
+        host.external_signal_runtime_scope(instance_id)
+    await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
+    try:
+        await asyncio.sleep(0)
+        scope = host.external_signal_runtime_scope(instance_id)
+        assert scope.authority == host._lifecycle_authorities[instance_id]
+        assert scope.allowed_instruments == frozenset({"ETH-USDT-SWAP"})
+        assert scope.authorized_leverage == 3
+        host._lifecycle_authorities[instance_id] = replace(scope.authority, trading_mode="live")
+        with pytest.raises(RuntimeError, match="live"):
+            host.external_signal_runtime_scope(instance_id)
+        host._lifecycle_authorities[instance_id] = scope.authority
+    finally:
+        await host.stop(instance_id)
+    with pytest.raises(RuntimeError, match="running"):
+        host.external_signal_runtime_scope(instance_id)
+
+
+@pytest.mark.asyncio
+async def test_external_signal_scope_refuses_an_unrelated_strategy(monkeypatch):
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    spec = _spec("non-signal-scope", connector="okx_perpetual", pairs=["ETH-USDT"])
+    host = NtTradingNodeHost()
+    instance_id = spec["deployment_instance_id"]
+    await host.deploy(spec, _credential(), _Artifact(strategy=_StrategyDouble(spec)))
+    try:
+        await asyncio.sleep(0)
+        with pytest.raises(RuntimeError, match="external signal"):
+            host.external_signal_runtime_scope(instance_id)
+    finally:
+        await host.stop(instance_id)
+
+
+@pytest.mark.asyncio
+async def test_external_signal_scope_refuses_a_non_okx_connector(monkeypatch):
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    spec = _spec("non-okx-signal")
+    host = NtTradingNodeHost()
+    instance_id = spec["deployment_instance_id"]
+    await host.deploy(spec, _credential(), _Artifact(strategy=_SignalStrategyDouble(spec)))
+    try:
+        await asyncio.sleep(0)
+        with pytest.raises(RuntimeError, match="OKX perpetual"):
+            host.external_signal_runtime_scope(instance_id)
+    finally:
+        await host.stop(instance_id)
 
 
 @pytest.mark.asyncio
