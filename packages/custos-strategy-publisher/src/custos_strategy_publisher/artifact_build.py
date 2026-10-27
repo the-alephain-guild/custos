@@ -968,19 +968,20 @@ def build_strategy_artifact_tree(
         zero_rewrite_characterization_sha256=_sha256(characterization),
         members=members,
     )
+    member_payloads_by_name = {
+        authority.base_contracts_wheel.title: toolkit.base_contracts_wheel,
+        authority.nautilus_wheel.title: toolkit.nautilus_wheel,
+        layer_names["strategy_artifact"]: strategy_wheel,
+        layer_names["strategy_manifest"]: strategy_manifest,
+        "resources/strategy-config-v1.schema.json": config_schema,
+        authority.nautilus_sbom.title: toolkit.nautilus_sbom,
+        layer_names["strategy_sbom"]: strategy_sbom,
+        authority.contract_asset_index.title: toolkit.contract_asset_index,
+        spec.source_tree_name: snapshot.canonical_bytes,
+    }
     product = produce_canonical_strategy_release_bom(
         bom,
-        {
-            ArtifactMemberRole.BASE_CONTRACTS_WHEEL: toolkit.base_contracts_wheel,
-            ArtifactMemberRole.NAUTILUS_WHEEL: toolkit.nautilus_wheel,
-            ArtifactMemberRole.STRATEGY_WHEEL: strategy_wheel,
-            ArtifactMemberRole.STRATEGY_MANIFEST: strategy_manifest,
-            ArtifactMemberRole.RUNTIME_ARTIFACT: config_schema,
-            ArtifactMemberRole.TOOLKIT_SBOM: toolkit.nautilus_sbom,
-            ArtifactMemberRole.STRATEGY_SBOM: strategy_sbom,
-            ArtifactMemberRole.CONTRACT_SCHEMA: toolkit.contract_asset_index,
-            ArtifactMemberRole.SOURCE_TREE: snapshot.canonical_bytes,
-        },
+        {member: member_payloads_by_name[member.name] for member in members},
         producer=CleanProducerEvidence(
             repository=producer.repository_url,
             commit=producer_commit,

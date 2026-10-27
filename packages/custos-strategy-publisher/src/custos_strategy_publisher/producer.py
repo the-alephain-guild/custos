@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from .model import (
     ArtifactMemberRole,
+    BomMemberV1,
     StrategyReleaseBomReceiptV1,
     StrategyReleaseBomV1,
     canonical_json_bytes,
@@ -148,10 +149,13 @@ def _require_immutable_member_coordinate(
 
 def _require_cross_field_bindings(
     bom: StrategyReleaseBomV1,
-    by_role: Mapping[ArtifactMemberRole, object],
     authority: CustosContractAuthorityV1,
 ) -> None:
-    members = {role: bom.member(role) for role in by_role}
+    members = {
+        role: bom.member(role)
+        for role in REQUIRED_BOM_MEMBER_ROLES
+        if role is not ArtifactMemberRole.RUNTIME_ARTIFACT
+    }
     required = {
         "contract asset index digest": (
             bom.contract_asset_index_sha256,
@@ -205,19 +209,18 @@ def _require_cross_field_bindings(
 
 def _validate_member_bytes(
     bom: StrategyReleaseBomV1,
-    member_payloads: Mapping[ArtifactMemberRole, bytes],
+    member_payloads: Mapping[BomMemberV1, bytes],
     *,
     allow_test_fixtures: bool,
 ) -> None:
     bom_roles = {member.role for member in bom.members}
-    payload_roles = set(member_payloads)
     if bom_roles != REQUIRED_BOM_MEMBER_ROLES:
         raise BomProductionError(
             f"BOM member roles mismatch: expected {sorted(role.value for role in REQUIRED_BOM_MEMBER_ROLES)}"
         )
-    if payload_roles != REQUIRED_BOM_MEMBER_ROLES:
+    if set(member_payloads) != set(bom.members):
         raise BomProductionError(
-            "member payload roles must exactly match the canonical BOM member roles"
+            "member payload identities must exactly match the canonical BOM members"
         )
     coordinates: set[str] = set()
     names: set[str] = set()
@@ -226,7 +229,7 @@ def _validate_member_bytes(
             raise BomProductionError("duplicate member coordinate or name")
         coordinates.add(member.coordinate)
         names.add(member.name)
-        payload = member_payloads[member.role]
+        payload = member_payloads[member]
         if not isinstance(payload, bytes):
             raise BomProductionError(f"member payload must be bytes: {member.role.value}")
         actual_digest = sha256_hex(payload)
@@ -247,7 +250,7 @@ def _validate_member_bytes(
 
 def produce_canonical_strategy_release_bom(
     bom: StrategyReleaseBomV1,
-    member_payloads: Mapping[ArtifactMemberRole, bytes],
+    member_payloads: Mapping[BomMemberV1, bytes],
     *,
     producer: CleanProducerEvidence,
     custos_authority: CustosContractAuthorityV1,
@@ -265,7 +268,7 @@ def produce_canonical_strategy_release_bom(
         member_payloads,
         allow_test_fixtures=allow_test_fixtures,
     )
-    _require_cross_field_bindings(bom, member_payloads, custos_authority)
+    _require_cross_field_bindings(bom, custos_authority)
     normalized = StrategyReleaseBomV1.from_mapping(bom.to_mapping())
     payload = canonical_json_bytes(normalized.to_mapping())
     return CanonicalStrategyReleaseBom(
@@ -277,7 +280,7 @@ def produce_canonical_strategy_release_bom(
 
 def verify_canonical_strategy_release_bom(
     payload: bytes,
-    member_payloads: Mapping[ArtifactMemberRole, bytes],
+    member_payloads: Mapping[BomMemberV1, bytes],
     *,
     producer: CleanProducerEvidence,
     custos_authority: CustosContractAuthorityV1,
