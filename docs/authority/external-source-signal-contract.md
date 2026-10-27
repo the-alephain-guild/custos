@@ -38,6 +38,16 @@ has received a positive broker PubAck may record its sequence using
 at-least-once publication attempts, not exactly-once downstream execution.
 Expired source events are not published, and expiration frees outbox capacity.
 
-No broker publisher adapter, NATS signal stream, runner consumer or TradingView
-alert is activated by these files. Live mode and real TradingView egress remain
-outside the current acceptance scope.
+No NATS signal stream, runner consumer or TradingView alert is activated by
+these files. `external_source_transport.py` provides an adapter for
+isolated JetStream lane, exact source subjects, a stable `Nats-Msg-Id`, and one
+pre-provisioned durable per runner and deployment. Its worker marks the outbox
+published only after the expected stream returns a positive PubAck. Broker
+failure or an unexpected PubAck leaves the lease retryable. A consumer bind
+checks the existing durable's filter and delivery subject instead of creating
+or widening it. Publisher and subscriber permission profiles are generated for
+these exact subjects. `tests/integration/test_external_source_fanout.py` can
+verify that two distinct durables receive the same sanitized event against an
+isolated local NATS server. Broker JWT issuance, shared-environment provisioning,
+runner consumption and venue execution have not occurred. Live mode and real
+TradingView egress remain outside the current acceptance scope.
