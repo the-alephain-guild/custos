@@ -867,6 +867,24 @@ class NtTradingNodeHost:
         await self.flatten_positions(instance_id, "external_signal_risk")
         return removed
 
+    def queue_external_signal(self, authority: EngineLifecycleAuthority, signal: object) -> bool:
+        """Hand a bounded signal to the active strategy on the host event loop.
+
+        Success means only that the in-memory queue accepted it. The next bar
+        may expire or refuse it; this method reports no order or fill fact.
+        """
+        instance_id = str(authority.deployment_instance_id)
+        scope = self.external_signal_runtime_scope(instance_id)
+        if scope.authority != authority:
+            raise RuntimeError("external signal authority differs from active deployment")
+        pair = getattr(signal, "pair", None)
+        if not isinstance(pair, str) or f"{pair}-SWAP" not in scope.allowed_instruments:
+            raise RuntimeError("external signal pair differs from active deployment")
+        strategy = self._active_nodes[instance_id].strategies[0]
+        if strategy.receive_external_signal(signal) is not True:
+            raise RuntimeError("active strategy refused the external signal")
+        return True
+
     def _require_the_only_node(self, deployment_instance_id: str) -> None:
         """Refuse a second node in this runner process.
 

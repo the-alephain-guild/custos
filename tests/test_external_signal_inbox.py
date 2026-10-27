@@ -166,10 +166,29 @@ def test_delivery_receipt_is_distinct_from_acceptance(tmp_path: Path) -> None:
     message = alert()
     inbox.accept(message, authority=AUTHORITY, received_at=NOW)
     assert inbox.mark_delivered(message.event_id, authority=AUTHORITY, delivered_at=NOW) is False
-    assert inbox.begin_entry_delivery(message.event_id, authority=AUTHORITY, started_at=NOW)
+    assert inbox.begin_signal_delivery(message.event_id, authority=AUTHORITY, started_at=NOW)
     assert inbox.mark_delivered(message.event_id, authority=AUTHORITY, delivered_at=NOW) is True
     assert inbox.pending(AUTHORITY, now=NOW) == []
     assert inbox.mark_delivered(message.event_id, authority=AUTHORITY, delivered_at=NOW) is False
+
+
+def test_ordinary_exit_has_durable_attempt_and_uncertain_restart(tmp_path: Path) -> None:
+    path = tmp_path / "inbox.sqlite"
+    inbox = ExternalSignalInbox(path)
+    exit_event = alert(
+        action="EXIT_LONG",
+        bar_close_time=datetime(2026, 10, 27, 11, 0, tzinfo=UTC),
+    )
+    inbox.accept(exit_event, authority=AUTHORITY, received_at=NOW)
+    assert inbox.mark_delivered(exit_event.event_id, authority=AUTHORITY, delivered_at=NOW) is False
+    assert inbox.begin_signal_delivery(exit_event.event_id, authority=AUTHORITY, started_at=NOW)
+    assert inbox.mark_delivered(exit_event.event_id, authority=AUTHORITY, delivered_at=NOW)
+
+    restarted = ExternalSignalInbox(path)
+    assert restarted.recover_uncertain_deliveries(INSTANCE_ID, at=NOW) == 1
+    assert restarted.uncertain_signal_ids(INSTANCE_ID) == [exit_event.event_id]
+    with pytest.raises(ExternalSignalInboxError, match="unresolved external entry"):
+        restarted.accept(alert(action="ENTER_SHORT"), authority=AUTHORITY, received_at=NOW)
 
 
 def test_recovered_queued_entry_blocks_new_entries_until_flat_confirmed(tmp_path: Path) -> None:
@@ -177,14 +196,14 @@ def test_recovered_queued_entry_blocks_new_entries_until_flat_confirmed(tmp_path
     inbox = ExternalSignalInbox(path)
     first = alert(bar_close_time=datetime(2026, 10, 27, 11, 0, tzinfo=UTC))
     inbox.accept(first, authority=AUTHORITY, received_at=NOW)
-    assert inbox.begin_entry_delivery(first.event_id, authority=AUTHORITY, started_at=NOW)
-    assert inbox.begin_entry_delivery(first.event_id, authority=AUTHORITY, started_at=NOW) is False
+    assert inbox.begin_signal_delivery(first.event_id, authority=AUTHORITY, started_at=NOW)
+    assert inbox.begin_signal_delivery(first.event_id, authority=AUTHORITY, started_at=NOW) is False
     assert inbox.mark_delivered(first.event_id, authority=AUTHORITY, delivered_at=NOW)
 
     restarted = ExternalSignalInbox(path)
-    assert restarted.recover_uncertain_entries(INSTANCE_ID, at=NOW) == 1
-    assert restarted.recover_uncertain_entries(INSTANCE_ID, at=NOW) == 0
-    assert restarted.uncertain_entry_ids(INSTANCE_ID) == [first.event_id]
+    assert restarted.recover_uncertain_deliveries(INSTANCE_ID, at=NOW) == 1
+    assert restarted.recover_uncertain_deliveries(INSTANCE_ID, at=NOW) == 0
+    assert restarted.uncertain_signal_ids(INSTANCE_ID) == [first.event_id]
     assert restarted.pending(AUTHORITY, now=NOW) == []
     with pytest.raises(ExternalSignalInboxError, match="unresolved external entry"):
         restarted.accept(alert(action="ENTER_SHORT"), authority=AUTHORITY, received_at=NOW)
@@ -197,7 +216,7 @@ def test_recovered_queued_entry_blocks_new_entries_until_flat_confirmed(tmp_path
     restarted.accept(risk, authority=AUTHORITY, received_at=NOW)
     assert restarted.mark_delivered(risk.event_id, authority=AUTHORITY, delivered_at=NOW)
     assert restarted.confirm_flat(risk.event_id, authority=AUTHORITY, confirmed_at=NOW)
-    assert restarted.uncertain_entry_ids(INSTANCE_ID) == []
+    assert restarted.uncertain_signal_ids(INSTANCE_ID) == []
     assert (
         restarted.accept(alert(action="ENTER_SHORT"), authority=AUTHORITY, received_at=NOW).status
         == "accepted"
@@ -209,12 +228,12 @@ def test_claimed_but_unqueued_entry_is_not_replayed_after_restart(tmp_path: Path
     inbox = ExternalSignalInbox(path)
     first = alert()
     inbox.accept(first, authority=AUTHORITY, received_at=NOW)
-    assert inbox.begin_entry_delivery(first.event_id, authority=AUTHORITY, started_at=NOW)
+    assert inbox.begin_signal_delivery(first.event_id, authority=AUTHORITY, started_at=NOW)
     assert inbox.pending(AUTHORITY, now=NOW) == []
 
     restarted = ExternalSignalInbox(path)
-    assert restarted.recover_uncertain_entries(INSTANCE_ID, at=NOW) == 1
-    assert restarted.uncertain_entry_ids(INSTANCE_ID) == [first.event_id]
+    assert restarted.recover_uncertain_deliveries(INSTANCE_ID, at=NOW) == 1
+    assert restarted.uncertain_signal_ids(INSTANCE_ID) == [first.event_id]
     assert restarted.mark_delivered(first.event_id, authority=AUTHORITY, delivered_at=NOW) is False
     assert restarted.pending(AUTHORITY, now=NOW) == []
 
@@ -229,16 +248,16 @@ def test_risk_during_entry_dispatch_never_acknowledges_that_entry(tmp_path: Path
         bar_close_time=datetime(2026, 10, 27, 11, 30, tzinfo=UTC),
     )
     inbox.accept(entry, authority=AUTHORITY, received_at=NOW)
-    assert inbox.begin_entry_delivery(entry.event_id, authority=AUTHORITY, started_at=NOW)
+    assert inbox.begin_signal_delivery(entry.event_id, authority=AUTHORITY, started_at=NOW)
     inbox.accept(risk, authority=AUTHORITY, received_at=NOW)
 
     assert inbox.mark_delivered(entry.event_id, authority=AUTHORITY, delivered_at=NOW) is False
     restarted = ExternalSignalInbox(path)
-    assert restarted.recover_uncertain_entries(INSTANCE_ID, at=NOW) == 1
-    assert restarted.uncertain_entry_ids(INSTANCE_ID) == [entry.event_id]
+    assert restarted.recover_uncertain_deliveries(INSTANCE_ID, at=NOW) == 1
+    assert restarted.uncertain_signal_ids(INSTANCE_ID) == [entry.event_id]
     assert restarted.mark_delivered(risk.event_id, authority=AUTHORITY, delivered_at=NOW)
     assert restarted.confirm_flat(risk.event_id, authority=AUTHORITY, confirmed_at=NOW)
-    assert restarted.uncertain_entry_ids(INSTANCE_ID) == []
+    assert restarted.uncertain_signal_ids(INSTANCE_ID) == []
 
 
 def test_bounded_inbox_refuses_new_event_without_losing_existing_one(tmp_path: Path) -> None:
@@ -282,6 +301,33 @@ def test_existing_risk_fence_migrates_fail_closed(tmp_path: Path) -> None:
     inbox = ExternalSignalInbox(path)
     with pytest.raises(ExternalSignalInboxError, match="flat confirmation"):
         inbox.accept(alert(), authority=AUTHORITY, received_at=NOW)
+
+
+def test_previous_entry_attempt_table_migrates_without_losing_uncertainty(tmp_path: Path) -> None:
+    path = tmp_path / "inbox.sqlite"
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """CREATE TABLE external_signal_entry_delivery (
+                event_id TEXT PRIMARY KEY,
+                deployment_instance_id TEXT NOT NULL,
+                state TEXT NOT NULL,
+                started_at_ns INTEGER NOT NULL,
+                queued_at_ns INTEGER,
+                recovered_at_ns INTEGER,
+                resolved_at_ns INTEGER
+            )"""
+        )
+        connection.execute(
+            """INSERT INTO external_signal_entry_delivery
+               (event_id, deployment_instance_id, state, started_at_ns)
+               VALUES (?, ?, 'uncertain', 1)""",
+            ("prior-entry", str(INSTANCE_ID)),
+        )
+    path.chmod(0o600)
+
+    inbox = ExternalSignalInbox(path)
+
+    assert inbox.uncertain_signal_ids(INSTANCE_ID) == ["prior-entry"]
 
 
 def test_pending_is_bound_to_exact_runtime_generation_and_digest(tmp_path: Path) -> None:

@@ -135,7 +135,7 @@ class ExternalSignalInbox:
                     PRIMARY KEY (source_id, deployment_instance_id,
                                  strategy_revision, instrument)
                 );
-                CREATE TABLE IF NOT EXISTS external_signal_entry_delivery (
+                CREATE TABLE IF NOT EXISTS external_signal_delivery_attempt (
                     event_id TEXT PRIMARY KEY,
                     deployment_instance_id TEXT NOT NULL,
                     state TEXT NOT NULL CHECK (
@@ -146,10 +146,24 @@ class ExternalSignalInbox:
                     recovered_at_ns INTEGER,
                     resolved_at_ns INTEGER
                 );
-                CREATE INDEX IF NOT EXISTS external_signal_uncertain_entry
-                    ON external_signal_entry_delivery(deployment_instance_id, state);
+                CREATE INDEX IF NOT EXISTS external_signal_attempt_state
+                    ON external_signal_delivery_attempt(deployment_instance_id, state);
                 """
             )
+            legacy_attempts = connection.execute(
+                """SELECT 1 FROM sqlite_master
+                   WHERE type = 'table' AND name = 'external_signal_entry_delivery'"""
+            ).fetchone()
+            if legacy_attempts is not None:
+                connection.execute(
+                    """INSERT INTO external_signal_delivery_attempt
+                       (event_id, deployment_instance_id, state, started_at_ns,
+                        queued_at_ns, recovered_at_ns, resolved_at_ns)
+                       SELECT event_id, deployment_instance_id, state, started_at_ns,
+                              queued_at_ns, recovered_at_ns, resolved_at_ns
+                       FROM external_signal_entry_delivery"""
+                )
+                connection.execute("DROP TABLE external_signal_entry_delivery")
             columns = {
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(external_signal_risk_fence)")
@@ -243,7 +257,7 @@ class ExternalSignalInbox:
 
             if alert.trade.action.startswith("ENTER"):
                 uncertain = connection.execute(
-                    """SELECT 1 FROM external_signal_entry_delivery
+                    """SELECT 1 FROM external_signal_delivery_attempt
                        WHERE deployment_instance_id = ? AND state = 'uncertain' LIMIT 1""",
                     (str(alert.deployment_instance_id),),
                 ).fetchone()
@@ -354,7 +368,7 @@ class ExternalSignalInbox:
             )
             rows = connection.execute(
                 """SELECT event.* FROM external_signal_inbox AS event
-                   LEFT JOIN external_signal_entry_delivery AS delivery
+                   LEFT JOIN external_signal_delivery_attempt AS delivery
                      ON delivery.event_id = event.event_id
                    WHERE event.deployment_instance_id = ? AND event.status = 'accepted'
                      AND event.deployment_spec_id = ?
@@ -386,14 +400,14 @@ class ExternalSignalInbox:
             for row in rows
         ]
 
-    def begin_entry_delivery(
+    def begin_signal_delivery(
         self,
         event_id: str,
         *,
         authority: EngineLifecycleAuthority,
         started_at: datetime,
     ) -> bool:
-        """Persist an at-most-once entry attempt before touching the strategy queue."""
+        """Persist a normal signal attempt before touching the strategy queue."""
         if authority.trading_mode not in {"sandbox", "testnet"}:
             raise ExternalSignalInboxError("external signal is outside non-live runtime scope")
         started_ns = _epoch_ns(started_at)
@@ -401,7 +415,7 @@ class ExternalSignalInbox:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 """SELECT 1 FROM external_signal_inbox
-                   WHERE event_id = ? AND status = 'accepted' AND action LIKE 'ENTER_%'
+                   WHERE event_id = ? AND status = 'accepted' AND risk_action IS NULL
                      AND deployment_instance_id = ? AND deployment_spec_id = ?
                      AND deployment_spec_digest = ? AND generation = ?
                      AND expires_at_ns >= ?""",
@@ -417,21 +431,21 @@ class ExternalSignalInbox:
             if row is None:
                 return False
             cursor = connection.execute(
-                """INSERT OR IGNORE INTO external_signal_entry_delivery
+                """INSERT OR IGNORE INTO external_signal_delivery_attempt
                    (event_id, deployment_instance_id, state, started_at_ns)
                    VALUES (?, ?, 'dispatching', ?)""",
                 (event_id, str(authority.deployment_instance_id), started_ns),
             )
             return cursor.rowcount == 1
 
-    def recover_uncertain_entries(self, deployment_instance_id: UUID, *, at: datetime) -> int:
-        """Quarantine entries whose queue or order result is unknown after restart."""
+    def recover_uncertain_deliveries(self, deployment_instance_id: UUID, *, at: datetime) -> int:
+        """Quarantine normal signals with unknown outcomes after restart."""
         instance = str(deployment_instance_id)
         recovered_ns = _epoch_ns(at)
         with self._transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
             rows = connection.execute(
-                """SELECT event_id FROM external_signal_entry_delivery
+                """SELECT event_id FROM external_signal_delivery_attempt
                    WHERE deployment_instance_id = ? AND state IN ('dispatching', 'queued')""",
                 (instance,),
             ).fetchall()
@@ -439,7 +453,7 @@ class ExternalSignalInbox:
                 return 0
             event_ids = [row["event_id"] for row in rows]
             connection.executemany(
-                """UPDATE external_signal_entry_delivery
+                """UPDATE external_signal_delivery_attempt
                    SET state = 'uncertain', recovered_at_ns = ? WHERE event_id = ?""",
                 [(recovered_ns, event_id) for event_id in event_ids],
             )
@@ -450,11 +464,11 @@ class ExternalSignalInbox:
             )
             return len(event_ids)
 
-    def uncertain_entry_ids(self, deployment_instance_id: UUID) -> list[str]:
-        """Name entry events requiring account and open-order reconciliation."""
+    def uncertain_signal_ids(self, deployment_instance_id: UUID) -> list[str]:
+        """Name signals requiring account and open-order reconciliation."""
         with self._transaction() as connection:
             rows = connection.execute(
-                """SELECT event_id FROM external_signal_entry_delivery
+                """SELECT event_id FROM external_signal_delivery_attempt
                    WHERE deployment_instance_id = ? AND state = 'uncertain'
                    ORDER BY started_at_ns, event_id""",
                 (str(deployment_instance_id),),
@@ -473,7 +487,7 @@ class ExternalSignalInbox:
         with self._transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                """SELECT action FROM external_signal_inbox
+                """SELECT action, risk_action FROM external_signal_inbox
                    WHERE event_id = ? AND deployment_instance_id = ?
                      AND deployment_spec_id = ?
                      AND deployment_spec_digest = ? AND generation = ?""",
@@ -487,10 +501,10 @@ class ExternalSignalInbox:
             ).fetchone()
             if row is None:
                 return False
-            entry = row["action"].startswith("ENTER")
-            if entry:
+            normal_signal = row["risk_action"] is None
+            if normal_signal:
                 attempt = connection.execute(
-                    """SELECT state FROM external_signal_entry_delivery
+                    """SELECT state FROM external_signal_delivery_attempt
                        WHERE event_id = ? AND deployment_instance_id = ?""",
                     (event_id, str(authority.deployment_instance_id)),
                 ).fetchone()
@@ -514,9 +528,9 @@ class ExternalSignalInbox:
             )
             if cursor.rowcount != 1:
                 return False
-            if entry:
+            if normal_signal:
                 connection.execute(
-                    """UPDATE external_signal_entry_delivery
+                    """UPDATE external_signal_delivery_attempt
                        SET state = 'queued', queued_at_ns = ? WHERE event_id = ?""",
                     (_epoch_ns(delivered_at), event_id),
                 )
@@ -563,7 +577,7 @@ class ExternalSignalInbox:
             if cursor.rowcount != 1:
                 return False
             connection.execute(
-                """UPDATE external_signal_entry_delivery
+                """UPDATE external_signal_delivery_attempt
                    SET state = 'resolved', resolved_at_ns = ?
                    WHERE deployment_instance_id = ? AND state = 'uncertain'""",
                 (_epoch_ns(confirmed_at), str(authority.deployment_instance_id)),

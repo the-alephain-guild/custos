@@ -22,6 +22,7 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 import pytest
 import structlog
+from custos_toolkit.signals.types import Signal
 
 pytest.importorskip("nautilus_trader")
 
@@ -101,7 +102,12 @@ class _StrategyDouble:
 
 
 class _SignalStrategyDouble(_StrategyDouble):
+    def __init__(self, spec: dict | None = None) -> None:
+        super().__init__(spec)
+        self.received_signals: list[Signal] = []
+
     def receive_external_signal(self, signal) -> bool:
+        self.received_signals.append(signal)
         return True
 
     def drop_pending_entries(self, pair=None) -> int:
@@ -299,6 +305,50 @@ async def test_external_risk_still_requests_flatten_if_queue_removal_fails(monke
         with pytest.raises(RuntimeError, match="pending-entry removal failed"):
             await host.request_external_risk_flatten(authority)
         assert flattened == [f"{instance_id}:external_signal_risk"]
+    finally:
+        await host.stop(instance_id)
+
+
+@pytest.mark.asyncio
+async def test_external_signal_queue_requires_same_running_deployment(monkeypatch):
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    spec = _spec("external-queue", connector="okx_perpetual", pairs=["ETH-USDT"])
+    host = NtTradingNodeHost()
+    strategy = _SignalStrategyDouble(spec)
+    instance_id = spec["deployment_instance_id"]
+    await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
+    try:
+        await asyncio.sleep(0)
+        authority = host.external_signal_runtime_scope(instance_id).authority
+        signal = Signal.enter_long(100, pair="ETH-USDT")
+        with pytest.raises(RuntimeError, match="authority"):
+            host.queue_external_signal(replace(authority, generation=2), signal)
+        with pytest.raises(RuntimeError, match="pair"):
+            host.queue_external_signal(authority, Signal.enter_long(100, pair="BTC-USDT"))
+        assert strategy.received_signals == []
+        assert host.queue_external_signal(authority, signal)
+        assert strategy.received_signals == [signal]
+    finally:
+        await host.stop(instance_id)
+
+
+@pytest.mark.asyncio
+async def test_external_signal_queue_refusal_is_not_reported_as_delivery(monkeypatch):
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    spec = _spec("external-queue-refused", connector="okx_perpetual", pairs=["ETH-USDT"])
+
+    class RefusingStrategy(_SignalStrategyDouble):
+        def receive_external_signal(self, signal) -> bool:
+            return False
+
+    host = NtTradingNodeHost()
+    instance_id = spec["deployment_instance_id"]
+    await host.deploy(spec, _credential(), _Artifact(strategy=RefusingStrategy(spec)))
+    try:
+        await asyncio.sleep(0)
+        authority = host.external_signal_runtime_scope(instance_id).authority
+        with pytest.raises(RuntimeError, match="refused"):
+            host.queue_external_signal(authority, Signal.enter_long(100, pair="ETH-USDT"))
     finally:
         await host.stop(instance_id)
 

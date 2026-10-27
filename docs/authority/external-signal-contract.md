@@ -104,11 +104,12 @@ database fence without a risk-event identity migrates conservatively and
 continues blocking entries. This is a durable safety primitive, not proof that
 the Nautilus bridge or venue confirmation exists yet.
 
-Ordinary entries now require a durable `begin_entry_delivery` claim before the
-strategy queue may receive them. `mark_delivered` records only that queue handoff,
-not an order or fill. On runner restart, `recover_uncertain_entries` moves any
-claimed or queued entry to `uncertain`; it is not replayed automatically, and
-new entries for that instance are refused. A later `FLATTEN` may still enter.
+Ordinary entries and exits now require a durable `begin_signal_delivery` claim
+before the strategy queue may receive them. `mark_delivered` records only that
+queue handoff, not an order or fill. On runner restart,
+`recover_uncertain_deliveries` moves any claimed or queued normal signal to
+`uncertain`; it is not replayed automatically, and new entries for that
+instance are refused. A later `FLATTEN` may still enter.
 Only after the caller has independently confirmed all positions and
 risk-increasing orders clear can `confirm_flat` resolve those uncertain entries.
 This is a fail-closed at-most-once boundary, not exactly-once order execution.
@@ -141,6 +142,12 @@ removal fails. Its return value is only a count of removed in-memory entries.
 It does not attest a venue fill, prove final account flatness, or call the
 inbox's `confirm_flat()`; those require a separate position and order
 observation after containment.
+
+`NtTradingNodeHost.queue_external_signal()` checks the exact active authority
+and allowlisted OKX pair before calling the strategy's receipt method. A
+strategy refusal is an error, not a delivery receipt. A successful call proves
+only acceptance by the in-memory queue; expiry at the next bar, order intent,
+exchange fill and persistence across restart remain separate facts.
 
 The ingress wire's `investmentType: "margin"` amount is quote-currency margin.
 The toolkit's `SignalExecutionCoordinator` instead treats `signal.amount` as
