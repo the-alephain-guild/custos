@@ -58,36 +58,49 @@ compare the supplied ID with the value recomputed from the other fields.
 ## Implementation state
 
 The Section B and runner-extension parser, a token-free SQLite inbox, and an
-HMAC-authenticated loopback HTTP handler have local tests. The HTTP handler is
+authenticated loopback HTTP handler have local tests. The HTTP handler is
 deliberately not registered as a runnable `arx-runner` subcommand yet: its
 scope must be supplied by a verified active deployment, not by operator flags
 that merely claim an instance, instrument, and leverage. The inbox acceptance
 receipt is not a strategy-delivery or venue-fill receipt. No external signal
 path is active in the daemon at this stage.
 
-The handler requires an `X-Custos-Signature` HMAC header. TradingView's
-[webhook documentation](https://www.tradingview.com/support/solutions/43000529348-how-to-configure-webhook-alerts/)
-documents a POST body and its `Content-Type`, but does not offer a configurable
-HMAC header. Consequently, this handler is not a direct TradingView webhook
-endpoint. A future TradingView path needs a separately verified TLS edge which
-authenticates the sender, strips any inbound assertion headers, computes the
-HMAC over the exact forwarded body, and forwards only to the loopback listener.
-TradingView separately documents a client-certificate authentication option;
-its verification and edge configuration have not been implemented or tested.
-The `CUSTOS_V1` `signalToken` field is compatibility syntax, never ingress
-authentication and must carry no exchange secret.
+The handler now supports two explicitly configured authentication paths. The
+existing path verifies `X-Custos-Signature` as an HMAC over the exact request
+body. If the header is absent, the second path requires a configured SHA-256
+digest of a dedicated `CUSTOS_V1` `signalToken` and compares digests in constant
+time. At least one credential must be configured; a present but invalid HMAC
+cannot fall back to token authentication. Neither path persists the token or
+accepts it as a venue credential. The token must be distinct from any OKX bot
+token or exchange API key and generated as at least 32 random ASCII characters.
+
+TradingView's [webhook documentation](https://www.tradingview.com/support/solutions/43000529348-how-to-configure-webhook-alerts/)
+publishes sender IP addresses for allowlisting but does not offer a configurable
+HMAC header. Its [credential guidance](https://www.tradingview.com/support/solutions/43000722015-using-credentials-for-webhooks/)
+warns against sensitive information in webhook bodies. Token authentication
+therefore carries an explicit bearer-secret exposure risk: restrict the public
+TLS edge to TradingView's current documented IP addresses, protect its logs,
+rotate a leaked token, and keep the Custos listener bound to loopback. IP
+allowlisting must use the actual network peer at the TLS edge, not untrusted
+`X-Forwarded-For` or other caller-supplied headers. The allowlist proves a
+TradingView sender infrastructure address, not which TradingView account sent
+the alert; the dedicated token proves only possession of the shared token, not
+account identity. TLS edge configuration,
+IP filtering and actual TradingView delivery have not been implemented or tested
+here. TradingView separately documents a client-certificate authentication
+option; that remains an alternative edge design, not an active feature.
 
 The loopback handler now requires a synchronous provider of the active runtime
 scope for every authenticated request. A stopped or replaced deployment, or
 changed leverage or instrument allowlist, returns a generic HTTP 503 before
-the event is persisted. HMAC possession alone cannot reactivate an older
+the event is persisted. Either credential alone cannot reactivate an older
 generation. The provider must be wired to the host's active scope by the
 signed-lane daemon; no listener or CLI command is enabled by this check.
 
 ## Boundaries still to implement
 
-The HTTP ingress in plan 42 T3 must authenticate the source independently of
-`signalToken`, enforce size and rate limits, bind the instance and instrument
+The remaining runtime integration in plan 42 T3 must enforce the network-peer
+allowlist and rate limit at the TLS edge, bind the instance and instrument
 allowlist, and persist a sanitized event before acknowledging it. It must not
 persist the raw token or let the alert choose credentials. Its durable inbox
 will decide duplicate, conflicting, out-of-order, and restart behavior. The

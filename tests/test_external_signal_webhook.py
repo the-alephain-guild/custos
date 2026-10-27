@@ -33,6 +33,7 @@ from custos.engines.nautilus.host import ExternalSignalRuntimeScope
 INSTANCE_ID = UUID("10000000-0000-4000-8000-000000000001")
 NOW = datetime(2026, 10, 27, 12, 0, 15, tzinfo=UTC)
 KEY = b"local-fixture-key-never-commit-real-keys"
+INBOUND_TOKEN = "local-fixture-dedicated-custos-token-0123456789"
 AUTHORITY = EngineLifecycleAuthority(
     deployment_instance_id=INSTANCE_ID,
     deployment_spec_id=UUID("20000000-0000-4000-8000-000000000001"),
@@ -75,6 +76,12 @@ def body() -> bytes:
 
 def signature(data: bytes) -> str:
     return "sha256=" + hmac.new(KEY, data, hashlib.sha256).hexdigest()
+
+
+def token_body(token: str = INBOUND_TOKEN) -> bytes:
+    payload = json.loads(body())
+    payload["signalToken"] = token
+    return json.dumps(payload, sort_keys=True).encode("utf-8")
 
 
 def ingress(
@@ -147,6 +154,8 @@ def test_wrong_signature_and_live_mode_are_refused(tmp_path: Path) -> None:
     receiver = ingress(tmp_path)
     with pytest.raises(WebhookAuthenticationError):
         receiver.accept(body(), "sha256=" + "0" * 64, received_at=NOW)
+    with pytest.raises(WebhookAuthenticationError):
+        receiver.accept(body(), None, received_at=NOW)
     assert receiver.inbox.pending(AUTHORITY, now=NOW) == []
     with pytest.raises(ValueError, match="live"):
         ingress(tmp_path, trading_mode="live")
@@ -250,3 +259,69 @@ def test_actual_http_post_has_bounded_body_and_idempotent_receipt(tmp_path: Path
         server.shutdown()
         server.server_close()
         worker.join(timeout=2)
+
+
+def test_token_mode_accepts_http_without_signature_and_rejects_wrong_token(
+    tmp_path: Path,
+) -> None:
+    receiver = ingress(tmp_path)
+    receiver.config = replace(
+        receiver.config,
+        hmac_key=None,
+        signal_token_sha256=hashlib.sha256(INBOUND_TOKEN.encode("utf-8")).digest(),
+    )
+    server = create_webhook_server(("127.0.0.1", 0), receiver, clock=lambda: NOW)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+        headers = {"Content-Type": "application/json"}
+        data = token_body()
+        connection.request("POST", "/v1/external-signals", body=data, headers=headers)
+        response = connection.getresponse()
+        assert response.status == 202
+        assert json.loads(response.read())["status"] == "accepted"
+
+        connection.request("POST", "/v1/external-signals", body=data, headers=headers)
+        duplicate = connection.getresponse()
+        assert duplicate.status == 200
+        duplicate.read()
+
+        connection.request(
+            "POST", "/v1/external-signals", body=token_body("wrong-token"), headers=headers
+        )
+        refused = connection.getresponse()
+        assert refused.status == 401
+        refused.read()
+        connection.request(
+            "POST", "/v1/external-signals", body=token_body("\ud800"), headers=headers
+        )
+        malformed_token = connection.getresponse()
+        assert malformed_token.status == 401
+        malformed_token.read()
+        assert len(receiver.inbox.pending(AUTHORITY, now=NOW)) == 1
+        assert INBOUND_TOKEN.encode("utf-8") not in (tmp_path / "inbox.sqlite").read_bytes()
+        connection.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=2)
+
+
+def test_authentication_cannot_be_disabled(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="authentication"):
+        replace(ingress(tmp_path).config, hmac_key=None)
+    with pytest.raises(ValueError, match="digest"):
+        replace(ingress(tmp_path).config, signal_token_sha256=b"short")
+
+
+def test_invalid_supplied_signature_cannot_fall_back_to_valid_token(tmp_path: Path) -> None:
+    receiver = ingress(tmp_path)
+    receiver.config = replace(
+        receiver.config,
+        signal_token_sha256=hashlib.sha256(INBOUND_TOKEN.encode("utf-8")).digest(),
+    )
+    data = token_body()
+    with pytest.raises(WebhookAuthenticationError):
+        receiver.accept(data, "sha256=" + "0" * 64, received_at=NOW)
+    assert receiver.accept(data, None, received_at=NOW).status == "accepted"
