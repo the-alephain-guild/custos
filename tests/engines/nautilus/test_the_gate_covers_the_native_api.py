@@ -34,11 +34,6 @@ nautilus_trading = pytest.importorskip("nautilus_trader.trading")
 # reason. Anything the enumeration finds that is neither wrapped nor listed here is
 # a hole, and the test says so.
 _DELIBERATELY_UNGATED = {
-    # Cancelling removes working orders; it cannot add exposure, and refusing it
-    # could strand a position with orders the strategy is trying to withdraw.
-    "cancel_order": "cancelling cannot increase exposure",
-    "cancel_orders": "cancelling cannot increase exposure",
-    "cancel_all_orders": "cancelling cannot increase exposure",
     "cancel_gtd_expiry": "withdraws a local expiry timer, never reaches the venue",
     # Queries, not actions.
     "query_order": "read-only",
@@ -86,6 +81,9 @@ def test_every_native_outbound_action_is_gated_or_declared() -> None:
         runner_safety.MARKET_EXIT,
         runner_safety.CLOSE_POSITION,
         runner_safety.CLOSE_ALL_POSITIONS,
+        runner_safety.CANCEL_ORDER,
+        runner_safety.CANCEL_ORDERS,
+        runner_safety.CANCEL_ALL_ORDERS,
     }
 
     uncovered = _native_outbound_actions() - gated - set(_DELIBERATELY_UNGATED)
@@ -118,6 +116,9 @@ def test_the_declared_coverage_is_what_actually_gets_installed() -> None:
         runner_safety.MARKET_EXIT,
         runner_safety.CLOSE_POSITION,
         runner_safety.CLOSE_ALL_POSITIONS,
+        runner_safety.CANCEL_ORDER,
+        runner_safety.CANCEL_ORDERS,
+        runner_safety.CANCEL_ALL_ORDERS,
     }
     strategy = _GatedStrategy()
     # install_hook does setattr on the instance, so a hooked method shows up in

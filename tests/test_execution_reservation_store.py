@@ -6,9 +6,28 @@ import pytest
 
 from custos.core.execution_reservation_store import PlatformReservationStore
 from custos.core.fallback_breaker import FallbackBreaker, FallbackBreakerConfig
+from custos.core.local_runtime_state import RuntimeAuthorityRegistry
 from custos.core.order_reservation_boundary import RunnerReservationBoundary
 from custos.core.runner_fact import RunnerStateAuthorityError
+from tests.test_local_runtime_state import probe, stores
 from tests.test_order_reservation import INSTANCE_A, INSTANCE_B, POLICY_ID, _store
+from tests.test_runtime_authority import account
+
+
+@pytest.fixture
+def runtime_lease(tmp_path):
+    registry = RuntimeAuthorityRegistry.initialize(tmp_path / "control", identity_probe=probe)
+    lease = registry.claim(
+        account(),
+        run_id=uuid4(),
+        permit_digest="a" * 64,
+        expected_authorization_epoch=0,
+        stores=stores(tmp_path / "run"),
+    )
+    try:
+        yield lease
+    finally:
+        lease.close()
 
 
 def test_a_local_reservation_port_receives_a_runtime_without_platform_fields():

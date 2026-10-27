@@ -484,20 +484,27 @@ class RuntimeLease:
     def assert_current(self) -> None:
         self._require_open()
         with self._registry._transaction() as connection:
-            row = self._registry._current(connection, self.fence)
-            identity = self._registry._lock_identity(
-                self.fence.account_scope, self._lock_descriptor
-            )
-            if identity != (row["lock_device"], row["lock_inode"]):
-                raise RuntimeStorageUnavailable("registered account lock identity differs")
-            if row["phase"] == "retired":
-                raise RuntimeFenceStale("runtime has been retired")
+            row = self._assert_control(connection)
             observed = self._registry._stores(self._stores)
             self._registry._require_continuity(observed, row["stores"])
             connection.execute(
                 "UPDATE account_authority SET stores=? WHERE scope=?",
                 (observed, self.fence.account_scope),
             )
+
+    def assert_control_current(self) -> None:
+        self._require_open()
+        with self._registry._transaction() as connection:
+            self._assert_control(connection)
+
+    def _assert_control(self, connection: sqlite3.Connection) -> sqlite3.Row:
+        row = self._registry._current(connection, self.fence)
+        identity = self._registry._lock_identity(self.fence.account_scope, self._lock_descriptor)
+        if identity != (row["lock_device"], row["lock_inode"]):
+            raise RuntimeStorageUnavailable("registered account lock identity differs")
+        if row["phase"] == "retired":
+            raise RuntimeFenceStale("runtime has been retired")
+        return row
 
     def retire(self) -> None:
         self.assert_current()

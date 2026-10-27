@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Protocol
@@ -139,6 +140,7 @@ class RunnerReservationBoundary:
         fallback_breaker: FallbackBreaker,
         trading_mode: str,
         semantics: OrderSemantics | None = None,
+        control_check: Callable[[], None] | None = None,
     ) -> None:
         self._store = store
         self._runtime_id = runtime_id
@@ -149,6 +151,7 @@ class RunnerReservationBoundary:
         self._trading_mode = _non_empty_mode(trading_mode)
         self._fallback_breaker = fallback_breaker
         self._semantics = semantics
+        self._control_check = control_check
         self._pending_modifications: dict[str, _Modification] = {}
         # Reduce-only orders deliberately bypass notional reservation so a frozen or
         # temporarily unavailable policy store can never block risk reduction. Keep
@@ -167,6 +170,10 @@ class RunnerReservationBoundary:
     @property
     def fallback_breaker(self) -> FallbackBreaker:
         return self._fallback_breaker
+
+    def assert_control_current(self) -> None:
+        if self._control_check is not None:
+            self._control_check()
 
     def bootstrap(self, forwarder: Any) -> None:
         """Register with the host's event forwarder.
@@ -230,6 +237,7 @@ class RunnerReservationBoundary:
         back, so both are settled here. The durable book is written first: an order
         left in neither book, or in both, is worse than a refused amendment.
         """
+        self.assert_control_current()
         semantics = self._require_semantics()
         client_order_id = str(command.client_order_id)
         order = self.cached_order(command.client_order_id)
@@ -330,6 +338,7 @@ class RunnerReservationBoundary:
         *,
         command_id: Any,
     ) -> None:
+        self.assert_control_current()
         for reservation in reservations:
             self._store.release_order_reservation_sync(
                 event_id=self._event_id(
@@ -348,6 +357,7 @@ class RunnerReservationBoundary:
         The venue refused, so the resting order is the one that was there before --
         including the room it claims on the position and the notional it reserves.
         """
+        self.assert_control_current()
         client_order_id = modification.client_order_id
         self._pending_modifications.pop(client_order_id, None)
 
@@ -386,6 +396,7 @@ class RunnerReservationBoundary:
         )
 
     def on_order_event(self, event: Any) -> None:
+        self.assert_control_current()
         event_name = type(event).__name__
         data = self._event_data(event)
         client_order_id = str(
@@ -516,6 +527,7 @@ class RunnerReservationBoundary:
         *,
         command_id: Any,
     ) -> tuple[_Reservation, ...]:
+        self.assert_control_current()
         semantics = self._require_semantics()
         reservations: list[_Reservation] = []
         try:

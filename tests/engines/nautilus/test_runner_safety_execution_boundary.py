@@ -25,6 +25,7 @@ from custos.engines.nautilus.strategy_hooks import StrategyHookUnsupported  # no
 from custos.engines.nautilus.venue_binance import (  # noqa: E402
     BINANCE_CLIENT_ORDER_ID_LEN_LIMIT,
 )
+from tests.test_execution_reservation_store import runtime_lease as runtime_lease  # noqa: E402
 
 DEPLOYMENT_INSTANCE_ID = UUID("11111111-1111-4111-8111-111111111111")
 POLICY_ID = UUID("22222222-2222-4222-8222-222222222222")
@@ -243,6 +244,8 @@ class _GatedStrategy:
 
     def cancel_order(self, order, *_args, **_kwargs) -> None: ...
 
+    def cancel_orders(self, orders, *_args, **_kwargs) -> None: ...
+
     def cancel_all_orders(self, instrument_id, *_args, **_kwargs) -> None: ...
 
     def close_position(self, position, *_args, **_kwargs) -> None: ...
@@ -334,6 +337,98 @@ def test_installing_an_unrecorded_gate_is_refused() -> None:
             on_recording_failure=lambda reason: pytest.fail(reason),
             client_order_id_len_limit=None,
         )
+
+
+@pytest.mark.parametrize(
+    "method",
+    [
+        "submit_order",
+        "submit_order_list",
+        "modify_order",
+        "close_position",
+        "close_all_positions",
+        "cancel_order",
+        "cancel_orders",
+        "cancel_all_orders",
+    ],
+)
+def test_an_old_process_cannot_execute_even_reductions_or_cancellations(runtime_lease, method):
+    strategy = _GatedStrategy()
+    for name in (
+        "close_position",
+        "close_all_positions",
+        "cancel_order",
+        "cancel_orders",
+        "cancel_all_orders",
+    ):
+        setattr(strategy, name, lambda *args, **kwargs: strategy.submitted.append("dispatched"))
+    order = _order("exit", reduce_only=True)
+    semantics = _Semantics()
+    semantics.cached_orders["exit"] = order
+    boundary = RunnerReservationBoundary(
+        store=_Store([]),
+        runtime_id=runtime_lease.fence.run_id,
+        policy_id=POLICY_ID,
+        fallback_breaker=_breaker(),
+        trading_mode="live",
+        semantics=semantics,
+        control_check=runtime_lease.assert_control_current,
+    )
+    install_order_gate(
+        strategy, RunnerSafetyOrderGate(boundary=boundary, client_order_id_len_limit=None)
+    )
+    runtime_lease.close()
+    arguments = {
+        "submit_order": (order,),
+        "submit_order_list": (SimpleNamespace(orders=[order]),),
+        "modify_order": ("exit",),
+        "close_position": (object(),),
+        "close_all_positions": ("BTCUSD.PAPERTRADE",),
+        "cancel_order": ("exit",),
+        "cancel_orders": (["exit"],),
+        "cancel_all_orders": ("BTCUSD.PAPERTRADE",),
+    }
+    getattr(strategy, method)(*arguments[method])
+    assert strategy.submitted == []
+
+
+@pytest.mark.parametrize(
+    "method,prefix",
+    [
+        ("close_position", (object(), None, None, None)),
+        ("close_all_positions", ("BTCUSD.PAPERTRADE", None, None, None, None)),
+    ],
+)
+def test_positional_false_cannot_turn_a_native_close_into_new_risk(method, prefix):
+    gate = _gate(_boundary(_Store([])))
+    dispatched = []
+    getattr(gate, method)(lambda *args, **kwargs: dispatched.append(args), *prefix, False)
+    assert dispatched == []
+
+
+def test_a_current_controller_can_reduce_when_risk_storage_is_unavailable(runtime_lease):
+    from custos.core.runtime_authority import RuntimeStorageUnavailable
+
+    runtime_lease.state_store.path.unlink()
+    with pytest.raises(RuntimeStorageUnavailable):
+        runtime_lease.assert_current()
+    strategy = _GatedStrategy()
+    store = _Store([])
+    boundary = RunnerReservationBoundary(
+        store=store,
+        runtime_id=runtime_lease.fence.run_id,
+        policy_id=POLICY_ID,
+        fallback_breaker=_breaker(),
+        trading_mode="live",
+        semantics=_Semantics(),
+        control_check=runtime_lease.assert_control_current,
+    )
+    install_order_gate(
+        strategy, RunnerSafetyOrderGate(boundary=boundary, client_order_id_len_limit=None)
+    )
+    strategy.submit_order(_order("exit", reduce_only=True))
+    assert [str(order.client_order_id) for order in strategy.submitted] == ["exit"]
+    assert store.reservations == {}
 
 
 def test_market_order_uses_the_subscribed_mark_when_mid_price_is_unavailable() -> None:
@@ -538,27 +633,18 @@ def test_a_risk_reducing_order_is_never_blocked() -> None:
     assert refusals == []
 
 
-def test_cancelling_is_not_something_the_gate_can_refuse() -> None:
-    """Cancels reduce exposure, so the gate does not sit on them at all.
-
-    1.x passed them straight through a client it had wrapped. Here they are simply
-    not wrapped, which says the same thing in a way that cannot be got wrong: there
-    is no code path on which a cancel could be refused.
-
-    ``close_position`` used to be on this list. It is wrapped now: it is compiled,
-    so the order it builds reaches the venue without passing the submit_order
-    hook, and a plain close through it could open the opposite side with nothing
-    judging it. Being wrapped does not make it refusable as a cancel is not -- a
-    reduce-only close still passes untouched; only the plain form is sent back to
-    submit_order to be measured.
-    """
+def test_a_frozen_breaker_preserves_cancellation_for_the_current_controller() -> None:
     strategy = _GatedStrategy()
-    install_order_gate(strategy, _gate(_boundary(_Store([]))))
-
-    for untouched in ("cancel_order", "cancel_all_orders"):
-        assert untouched not in vars(strategy), (
-            f"{untouched} was wrapped, so a cancel could be refused"
-        )
+    calls = []
+    for name in ("cancel_order", "cancel_orders", "cancel_all_orders"):
+        setattr(strategy, name, lambda *args, **kwargs: calls.append(args))
+    breaker = _breaker()
+    breaker.fail_closed("portfolio_snapshot_unreliable")
+    install_order_gate(strategy, _gate(_boundary(_Store([]), fallback_breaker=breaker)))
+    strategy.cancel_order("order-1")
+    strategy.cancel_orders(["order-1"])
+    strategy.cancel_all_orders("BTCUSD.PAPERTRADE")
+    assert len(calls) == 3
 
 
 def test_frozen_breaker_refuses_risk_increasing_but_not_reduce_only() -> None:

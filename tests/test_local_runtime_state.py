@@ -41,6 +41,39 @@ def stores(root: Path) -> RuntimeStorageBindings:
     )
 
 
+def test_control_ownership_does_not_depend_on_readable_risk_storage(tmp_path):
+    registry = RuntimeAuthorityRegistry.initialize(tmp_path / "control", identity_probe=probe)
+    bindings = stores(tmp_path / "run")
+    with registry.claim(
+        account(),
+        run_id=uuid4(),
+        permit_digest="a" * 64,
+        expected_authorization_epoch=0,
+        stores=bindings,
+    ) as lease:
+        bindings.state.path.unlink()
+        with pytest.raises(RuntimeStorageUnavailable):
+            lease.assert_current()
+        lease.assert_control_current()
+
+
+def test_the_control_only_check_still_rejects_retirement_and_closed_owners(tmp_path):
+    registry = RuntimeAuthorityRegistry.initialize(tmp_path / "control", identity_probe=probe)
+    with registry.claim(
+        account(),
+        run_id=uuid4(),
+        permit_digest="a" * 64,
+        expected_authorization_epoch=0,
+        stores=stores(tmp_path / "run"),
+    ) as lease:
+        lease.assert_control_current()
+        lease.retire()
+        with pytest.raises(RuntimeFenceStale):
+            lease.assert_control_current()
+    with pytest.raises(RuntimeFenceStale):
+        lease.assert_control_current()
+
+
 def test_a_reopened_registry_preserves_authorization_and_advances_process_generation(tmp_path):
     root = tmp_path / "control"
     bindings = stores(tmp_path / "run")

@@ -57,6 +57,7 @@ _ROUTED_AWAY_REJECTION_REASON = "custos_runner_order_would_bypass_the_gate"
 _MARKET_EXIT_REJECTION_REASON = "custos_runner_market_exit_bypasses_the_gate"
 _NATIVE_PLAIN_CLOSE_REJECTION_REASON = "custos_runner_native_plain_close_bypasses_the_gate"
 _BATCH_MODIFY_REJECTION_REASON = "custos_runner_batch_modify_has_no_atomic_reservation"
+_CONTROL_REJECTION_REASON = "custos_runtime_control_unavailable"
 
 # The strategy methods the gate wraps. submit_order / submit_order_list / modify_order
 # carry risk and are decided on; market_exit is refused outright because nautilus
@@ -68,6 +69,9 @@ MODIFY_ORDERS = "modify_orders"
 MARKET_EXIT = "market_exit"
 CLOSE_POSITION = "close_position"
 CLOSE_ALL_POSITIONS = "close_all_positions"
+CANCEL_ORDER = "cancel_order"
+CANCEL_ORDERS = "cancel_orders"
+CANCEL_ALL_ORDERS = "cancel_all_orders"
 
 # Config switches that let the order manager submit on the strategy's behalf, which
 # would go around this gate entirely. All three default to False in 2.0.
@@ -570,15 +574,44 @@ class RunnerSafetyOrderGate:
         and the strategy already has a path for that: submit the order, where it
         is measured against the room actually left on the position.
         """
-        if kwargs.get("reduce_only", True):
+        if not self._control_allows_action():
+            return None
+        if self._native_close_reduces(args, kwargs, flag_index=4):
             return close(*args, **kwargs)
         return self._refuse_plain_native_close(CLOSE_POSITION)
 
     def close_all_positions(self, close: Callable[..., None], *args: Any, **kwargs: Any):
         """Same judgement as close_position, for the all-positions form."""
-        if kwargs.get("reduce_only", True):
+        if not self._control_allows_action():
+            return None
+        if self._native_close_reduces(args, kwargs, flag_index=5):
             return close(*args, **kwargs)
         return self._refuse_plain_native_close(CLOSE_ALL_POSITIONS)
+
+    @staticmethod
+    def _native_close_reduces(args: tuple, kwargs: dict, *, flag_index: int) -> bool:
+        if len(args) > flag_index:
+            if "reduce_only" in kwargs:
+                return False
+            flag = args[flag_index]
+        else:
+            flag = kwargs.get("reduce_only")
+        # The native API treats None as its true default; truthy values are not proof.
+        return flag is None or flag is True
+
+    def cancel(self, cancel: Callable[..., None], *args: Any, **kwargs: Any):
+        if not self._control_allows_action():
+            return None
+        return cancel(*args, **kwargs)
+
+    def _control_allows_action(self) -> bool:
+        try:
+            self._boundary.assert_control_current()
+            return True
+        except Exception as exc:  # noqa: BLE001 - unknown authority must never reach execution
+            _log.warning("runner_execution_control_refused", error_type=type(exc).__name__)
+            self._report(OrderRefusal("", "", "", _CONTROL_REJECTION_REASON))
+            return False
 
     def _refuse_plain_native_close(self, method_name: str):
         _log.warning(
@@ -737,7 +770,7 @@ def require_no_bypass_config(strategy: Any) -> None:
 def install_order_gate(strategy: Any, gate: RunnerSafetyOrderGate) -> None:
     """Put the gate in front of every way this strategy can reach the venue."""
     require_no_bypass_config(strategy)
-    for method_name, decide in (
+    methods = (
         (SUBMIT_ORDER, gate.submit_order),
         (SUBMIT_ORDER_LIST, gate.submit_order_list),
         (MODIFY_ORDER, gate.modify_order),
@@ -745,7 +778,11 @@ def install_order_gate(strategy: Any, gate: RunnerSafetyOrderGate) -> None:
         (MARKET_EXIT, gate.market_exit),
         (CLOSE_POSITION, gate.close_position),
         (CLOSE_ALL_POSITIONS, gate.close_all_positions),
-    ):
+        (CANCEL_ORDER, gate.cancel),
+        (CANCEL_ORDERS, gate.cancel),
+        (CANCEL_ALL_ORDERS, gate.cancel),
+    )
+    for method_name, decide in methods:
         install_hook(
             strategy,
             method_name,
@@ -756,14 +793,7 @@ def install_order_gate(strategy: Any, gate: RunnerSafetyOrderGate) -> None:
     _log.info(
         "runner_order_gate_installed",
         strategy=type(strategy).__name__,
-        methods=[
-            SUBMIT_ORDER,
-            SUBMIT_ORDER_LIST,
-            MODIFY_ORDER,
-            MARKET_EXIT,
-            CLOSE_POSITION,
-            CLOSE_ALL_POSITIONS,
-        ],
+        methods=[name for name, _decide in methods],
     )
 
 
