@@ -64,3 +64,12 @@ and rejects any source-supplied amount, investment type, token or non-market
 order override before calling the strategy queue. A successful return proves
 only in-memory acceptance. Neither method binds a broker subscriber to the
 verified signed command lane or reports an order or venue fill.
+
+`external_source_delivery.plan_target_delivery()` derives a distinct target
+delivery ID from the source event and exact subscriber authority, connector and
+pair. `LONG` and `SHORT` become toolkit entry signals with no amount override;
+the strategy's own signed configuration and runner safety gate still determine
+size. A normal `FLAT` or risk `FLATTEN` becomes a containment directive without
+an entry signal. The caller must observe each target's position and orders,
+persist the target delivery state, and prove final flatness separately. This
+pure conversion does not touch a runner queue or the venue.
