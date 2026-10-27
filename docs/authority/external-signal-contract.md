@@ -116,6 +116,16 @@ prove that the daemon used the signed command lane, or turn on the HTTP
 listener. The daemon must recheck the active signed generation before each
 delivery; a scope captured before a stop or replacement is stale.
 
+The ingress wire's `investmentType: "margin"` amount is quote-currency margin.
+The toolkit's `SignalExecutionCoordinator` instead treats `signal.amount` as
+quote-currency order notional, overriding its calculated size before the order
+factory converts notional into contract quantity. Passing the wire amount
+unchanged would lose the requested leverage's sizing effect. The future bridge
+must use an exact Decimal conversion under the signed leverage and local
+maximum-exposure policy, and must define full-position exits separately.
+Until that conversion and event-to-order lineage are tested, the host does not
+deliver entry signals to the strategy.
+
 The source Nautilus `SignalProcessorStrategy` still consumes queued signals
 on its next configured bar. It now drops an event when that bar's event time is
 past `timestamp + maxLag`, waits if the bar precedes the event, and can remove
