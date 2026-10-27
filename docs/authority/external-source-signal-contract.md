@@ -73,3 +73,17 @@ size. A normal `FLAT` or risk `FLATTEN` becomes a containment directive without
 an entry signal. The caller must observe each target's position and orders,
 persist the target delivery state, and prove final flatness separately. This
 pure conversion does not touch a runner queue or the venue.
+
+`ExternalTargetInbox` stores each derived delivery under its own deployment
+instance, spec ID/digest and generation. A normal entry must be durably claimed
+before the host queue is touched; a persisted handoff means only that the
+in-memory queue accepted it. The inbox also persists the source timestamp and
+`maxLag`, so a restarted consumer can check expiry without recovering the
+bearer token. Restart moves claimed, queued or requested-flat results to
+`uncertain` and blocks new entries for that deployment. A `FLAT` or `FLATTEN`
+event has its own per-deployment fence, supersedes older unqueued entries, and
+does not free reentry until a caller independently observes flat positions and
+no risk-increasing orders and calls `confirm_flat`. A different deployment's
+confirmation cannot release this fence. Broker message receipt and target
+inbox acceptance are therefore still distinct from strategy handoff and venue
+fill. No runner subscriber currently calls these methods.

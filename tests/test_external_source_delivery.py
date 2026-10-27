@@ -95,6 +95,12 @@ def test_two_venues_get_distinct_delivery_ids_without_source_sizing() -> None:
     )
     assert first.delivery_id != second.delivery_id
     assert first.source_event_id == second.source_event_id == event.event_id
+    assert first.tenant_id == second.tenant_id == "tenant-a"
+    assert first.source_id == second.source_id == "synthetic-supertrend"
+    assert first.bar_close_time == BAR
+    assert first.emitted_at == BAR
+    assert first.max_lag == 60
+    assert first.expires_at == datetime(2026, 10, 27, 12, 1, tzinfo=UTC)
     for directive in (first, second):
         assert directive.signal is not None
         assert directive.signal.direction == SignalDirection.ENTER_SHORT

@@ -31,7 +31,14 @@ class SourceSubscriptionBinding:
 class PlannedTargetDelivery:
     delivery_id: str
     source_event_id: str
+    tenant_id: str
+    source_id: str
+    bar_close_time: datetime
+    emitted_at: datetime
+    max_lag: int
+    expires_at: datetime
     authority: EngineLifecycleAuthority
+    connector: str
     pair: str
     target: str
     risk_action: str | None
@@ -41,6 +48,30 @@ class PlannedTargetDelivery:
 def _epoch_ns(value: datetime) -> int:
     utc = value.astimezone(UTC)
     return int(utc.timestamp()) * 1_000_000_000 + utc.microsecond * 1_000
+
+
+def make_target_delivery_id(
+    *,
+    tenant_id: str,
+    source_event_id: str,
+    authority: EngineLifecycleAuthority,
+    connector: str,
+    pair: str,
+) -> str:
+    """Bind one source fact to an exact subscriber generation and venue pair."""
+    identity = "\0".join(
+        (
+            tenant_id,
+            source_event_id,
+            str(authority.deployment_instance_id),
+            str(authority.deployment_spec_id),
+            authority.deployment_spec_digest,
+            str(authority.generation),
+            connector,
+            pair,
+        )
+    )
+    return hashlib.sha256(identity.encode()).hexdigest()
 
 
 def plan_target_delivery(
@@ -84,19 +115,13 @@ def plan_target_delivery(
         raise ExternalSourceDeliveryError("source event is future dated")
     if at > event.expires_at:
         raise ExternalSourceDeliveryError("source event is expired")
-    identity = "\0".join(
-        (
-            binding.tenant_id,
-            event.event_id,
-            str(authority.deployment_instance_id),
-            str(authority.deployment_spec_id),
-            authority.deployment_spec_digest,
-            str(authority.generation),
-            scope.connector,
-            binding.target_pair,
-        )
+    delivery_id = make_target_delivery_id(
+        tenant_id=binding.tenant_id,
+        source_event_id=event.event_id,
+        authority=authority,
+        connector=scope.connector,
+        pair=binding.target_pair,
     )
-    delivery_id = hashlib.sha256(identity.encode()).hexdigest()
     signal: Signal | None = None
     if event.target in {"LONG", "SHORT"}:
         direction = (
@@ -115,7 +140,14 @@ def plan_target_delivery(
     return PlannedTargetDelivery(
         delivery_id=delivery_id,
         source_event_id=event.event_id,
+        tenant_id=event.tenant_id,
+        source_id=event.source_id,
+        bar_close_time=event.bar_close_time,
+        emitted_at=event.timestamp,
+        max_lag=event.max_lag,
+        expires_at=event.expires_at,
         authority=authority,
+        connector=scope.connector,
         pair=binding.target_pair,
         target=event.target,
         risk_action=event.risk_action,
