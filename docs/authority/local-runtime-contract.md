@@ -57,6 +57,14 @@ Persistence failure, unreliable equity, stale account stream, incomplete fill hi
 
 Platform RunnerFact production is a sink with real platform authority, not a prerequisite for local event recording. Local records never become synthetic platform facts, historical eligibility, NAV or settlement inputs.
 
+The internal `ExecutionEventStore` currently persists refusal observations in the
+account-registered state database. Immutable records bind local run identity,
+configuration revision and authorization epoch; process attempts are separate.
+`LocalExecutionRecorder` implements the same synchronous refusal interface used
+by the platform order gate. A refused record freezes further risk increases.
+This foundation does not yet provide the local reservation transaction, runtime
+entry point or live admission described above.
+
 ## Readiness, restart and stop
 
 Readiness requires an alive node, actual data and execution connectivity, initialized reliable account/portfolio state, completed account reconciliation, active risk enforcement and durable current authority. The current blanket live refusal may be replaced only by proved checks, not a mode-based true value.

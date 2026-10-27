@@ -470,6 +470,10 @@ class RuntimeLease:
     def __enter__(self) -> RuntimeLease:
         return self
 
+    @property
+    def state_store(self) -> BoundRuntimeStore:
+        return self._stores.state
+
     def __exit__(self, *_exc) -> None:
         self.close()
 

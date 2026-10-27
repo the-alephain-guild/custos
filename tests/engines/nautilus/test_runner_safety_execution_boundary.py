@@ -19,6 +19,7 @@ from custos.engines.nautilus.runner_safety import (  # noqa: E402
     OrderRefusal,
     RunnerSafetyOrderGate,
     install_order_gate,
+    install_recorded_order_gate,
 )
 from custos.engines.nautilus.strategy_hooks import StrategyHookUnsupported  # noqa: E402
 from custos.engines.nautilus.venue_binance import (  # noqa: E402
@@ -278,6 +279,61 @@ def _breaker() -> FallbackBreaker:
             max_drawdown_pct=Decimal("10"),
         )
     )
+
+
+def test_a_failed_refusal_record_freezes_subsequent_risk_but_preserves_reduction() -> None:
+    store = _Store([])
+    breaker = _breaker()
+
+    def unavailable(_refusal: OrderRefusal) -> None:
+        raise OSError("execution records unavailable")
+
+    gate = RunnerSafetyOrderGate(
+        boundary=_boundary(store, fallback_breaker=breaker),
+        client_order_id_len_limit=5,
+        on_refusal=unavailable,
+    )
+    submitted: list = []
+    assert gate.submit_order(submitted.append, _order("too-long")) is False
+    assert breaker.frozen
+    assert gate.submit_order(submitted.append, _order("next")) is False
+    assert gate.submit_order(submitted.append, _order("exit", reduce_only=True)) is True
+    assert [str(order.client_order_id) for order in submitted] == ["exit"]
+
+
+def test_the_installed_gate_records_refusals_without_a_platform_bridge() -> None:
+    records: list[dict] = []
+
+    class Recorder:
+        def record_local_refusal(self, **fields):
+            records.append(fields)
+
+    strategy = _GatedStrategy()
+    install_recorded_order_gate(
+        strategy,
+        cache=None,
+        boundary=_boundary(_Store([])),
+        recorder=Recorder(),
+        on_recording_failure=lambda reason: pytest.fail(reason),
+        client_order_id_len_limit=5,
+    )
+    strategy.submit_order(_order("too-long"))
+    assert strategy.submitted == []
+    assert records[0]["client_order_id"] == "too-long"
+    strategy.submit_order(_order("ok"))
+    assert [str(order.client_order_id) for order in strategy.submitted] == ["ok"]
+
+
+def test_installing_an_unrecorded_gate_is_refused() -> None:
+    with pytest.raises(RuntimeError, match="execution record"):
+        install_recorded_order_gate(
+            _GatedStrategy(),
+            cache=None,
+            boundary=_boundary(_Store([])),
+            recorder=None,
+            on_recording_failure=lambda reason: pytest.fail(reason),
+            client_order_id_len_limit=None,
+        )
 
 
 def test_market_order_uses_the_subscribed_mark_when_mid_price_is_unavailable() -> None:

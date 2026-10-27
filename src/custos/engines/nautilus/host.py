@@ -1199,6 +1199,7 @@ class NtTradingNodeHost:
                 fact_bridge,
                 client_order_id_len_limit,
                 client_order_id_validator,
+                deployment_instance_id=deployment_instance_id,
             )
 
     def _install_order_gate(
@@ -1209,6 +1210,8 @@ class NtTradingNodeHost:
         fact_bridge,
         client_order_id_len_limit: int | None,
         client_order_id_validator=None,
+        *,
+        deployment_instance_id: str,
     ) -> None:
         """Put the reservation gate in front of the strategy's outbound orders.
 
@@ -1218,31 +1221,23 @@ class NtTradingNodeHost:
         for it to go, and the deploy is refused rather than run with a gate that
         contains silently.
         """
-        from custos.engines.nautilus.runner_safety import (
-            NautilusCachedOrderSemantics,
-            RunnerSafetyOrderGate,
-            install_order_gate,
-        )
+        from custos.engines.nautilus.runner_safety import install_recorded_order_gate
 
         if fact_bridge is None:
             raise RuntimeError(
                 "runner safety gate requires the signed fact stream: a refusal it does "
                 "not record is exposure contained without evidence"
             )
-        boundary.bind_runtime(semantics=NautilusCachedOrderSemantics(cache))
-        install_order_gate(
+        install_recorded_order_gate(
             strategy,
-            RunnerSafetyOrderGate(
-                boundary=boundary,
-                client_order_id_len_limit=client_order_id_len_limit,
-                client_order_id_validator=client_order_id_validator,
-                on_refusal=lambda refusal: fact_bridge.record_local_refusal(
-                    client_order_id=refusal.client_order_id,
-                    instrument_id=refusal.instrument_id,
-                    side=refusal.side,
-                    reason_code=refusal.reason_code,
-                ),
+            cache=cache,
+            boundary=boundary,
+            recorder=fact_bridge,
+            on_recording_failure=lambda reason: self._record_forwarding_failure(
+                deployment_instance_id, "execution_records", reason
             ),
+            client_order_id_len_limit=client_order_id_len_limit,
+            client_order_id_validator=client_order_id_validator,
         )
 
     def _record_forwarding_failure(

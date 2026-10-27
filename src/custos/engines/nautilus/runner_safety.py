@@ -38,6 +38,7 @@ from uuid import uuid4
 
 from nautilus_trader.model import PriceType
 
+from custos.core.execution_events import ExecutionRefusalRecorder
 from custos.core.log import get_logger
 from custos.core.order_reservation_boundary import (
     RunnerReservationBoundary,
@@ -434,6 +435,7 @@ class RunnerSafetyOrderGate:
         client_order_id_len_limit: int | None,
         on_refusal: Callable[[OrderRefusal], None] | None = None,
         client_order_id_validator: Callable[[str], bool] | None = None,
+        on_recording_failure: Callable[[str], None] | None = None,
     ) -> None:
         self._boundary = boundary
         # Required rather than defaulted: the cap belongs to the venue this deployment
@@ -442,6 +444,7 @@ class RunnerSafetyOrderGate:
         self._client_order_id_len_limit = client_order_id_len_limit
         self._on_refusal = on_refusal
         self._client_order_id_validator = client_order_id_validator
+        self._on_recording_failure = on_recording_failure
 
     def submit_order(
         self,
@@ -686,7 +689,15 @@ class RunnerSafetyOrderGate:
             return
         try:
             self._on_refusal(refusal)
-        except Exception:  # noqa: BLE001 - a refusal must not be undone by its own reporting
+        except Exception as exc:  # noqa: BLE001 - a refusal must not be undone by its own reporting
+            self._boundary.fallback_breaker.fail_closed("execution_refusal_recording_failed")
+            if self._on_recording_failure is not None:
+                try:
+                    self._on_recording_failure(
+                        f"execution_refusal_recording_failed:{type(exc).__name__}"
+                    )
+                except Exception:  # noqa: BLE001 - the freeze must survive a broken health sink
+                    _log.error("runner_order_refusal_health_unreported")
             _log.error(
                 "runner_order_refusal_unreported",
                 reason_code=refusal.reason_code,
@@ -753,4 +764,38 @@ def install_order_gate(strategy: Any, gate: RunnerSafetyOrderGate) -> None:
             CLOSE_POSITION,
             CLOSE_ALL_POSITIONS,
         ],
+    )
+
+
+def install_recorded_order_gate(
+    strategy: Any,
+    *,
+    cache: Any,
+    boundary: RunnerReservationBoundary,
+    recorder: ExecutionRefusalRecorder | None,
+    on_recording_failure: Callable[[str], None],
+    client_order_id_len_limit: int | None,
+    client_order_id_validator: Callable[[str], bool] | None = None,
+) -> None:
+    if recorder is None:
+        raise RuntimeError("runner safety gate requires an execution recorder")
+    boundary.bind_runtime(semantics=NautilusCachedOrderSemantics(cache))
+
+    def record(refusal: OrderRefusal) -> None:
+        recorder.record_local_refusal(
+            client_order_id=refusal.client_order_id,
+            instrument_id=refusal.instrument_id,
+            side=refusal.side,
+            reason_code=refusal.reason_code,
+        )
+
+    install_order_gate(
+        strategy,
+        RunnerSafetyOrderGate(
+            boundary=boundary,
+            client_order_id_len_limit=client_order_id_len_limit,
+            client_order_id_validator=client_order_id_validator,
+            on_refusal=record,
+            on_recording_failure=on_recording_failure,
+        ),
     )
