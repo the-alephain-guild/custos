@@ -55,6 +55,16 @@ The final component is `FLATTEN` only when `riskAction` is present. A changed
 action or risk reason therefore has a different identity. The receiver must
 compare the supplied ID with the value recomputed from the other fields.
 
+## Implementation state
+
+The Section B and runner-extension parser, a token-free SQLite inbox, and an
+HMAC-authenticated loopback HTTP handler have local tests. The HTTP handler is
+deliberately not registered as a runnable `arx-runner` subcommand yet: its
+scope must be supplied by a verified active deployment, not by operator flags
+that merely claim an instance, instrument, and leverage. The inbox acceptance
+receipt is not a strategy-delivery or venue-fill receipt. No external signal
+path is active in the daemon at this stage.
+
 ## Boundaries still to implement
 
 The HTTP ingress in plan 42 T3 must authenticate the source independently of
