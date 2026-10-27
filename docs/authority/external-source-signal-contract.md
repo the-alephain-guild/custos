@@ -4,7 +4,9 @@
 direction observation from one configured source. It is not a deployment
 command, a venue order, or a subscriber authorization. Its parser receives
 `tenant_id`, `expected_source_id` and `allowed_symbols` from trusted local
-configuration; the alert body cannot select a tenant or a deployment.
+configuration; the alert body cannot select a tenant or a deployment. The
+publisher's sanitized broker envelope adds `tenantId`, which the subscriber
+accepts only when it equals that trusted tenant scope.
 
 The closed `schemaVersion: 1` wire shape contains `sourceId`,
 `strategyRevision`, `symbol`, `timeframe: "30"`, `barCloseTime`, `timestamp`,

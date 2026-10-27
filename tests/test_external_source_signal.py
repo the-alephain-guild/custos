@@ -88,6 +88,15 @@ def test_bearer_token_is_accepted_as_wire_syntax_but_not_retained() -> None:
     assert not hasattr(signal, "signal_token")
 
 
+def test_published_tenant_must_match_trusted_subscription_scope() -> None:
+    payload = source_payload()
+    payload["tenantId"] = "tenant-a"
+    assert parse(payload).tenant_id == "tenant-a"
+    payload["tenantId"] = "tenant-b"
+    with pytest.raises(ExternalSourceSignalError, match="tenantId"):
+        parse(payload)
+
+
 @pytest.mark.parametrize(
     "target,risk_action",
     [

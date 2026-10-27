@@ -28,7 +28,7 @@ _REQUIRED = frozenset(
         "eventId",
     }
 )
-_OPTIONAL = frozenset({"riskAction", "signalToken"})
+_OPTIONAL = frozenset({"riskAction", "signalToken", "tenantId"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +119,8 @@ def parse_external_source_signal(
     if type(payload["schemaVersion"]) is not int or payload["schemaVersion"] != 1:
         raise ExternalSourceSignalError("source signal schemaVersion is unsupported")
     tenant = _label(tenant_id, "tenantId")
+    if "tenantId" in payload and payload["tenantId"] != tenant:
+        raise ExternalSourceSignalError("tenantId differs from trusted scope")
     source = _label(payload["sourceId"], "sourceId")
     if source != _label(expected_source_id, "expected sourceId"):
         raise ExternalSourceSignalError("sourceId is outside configured scope")

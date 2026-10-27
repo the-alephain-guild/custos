@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -107,6 +108,14 @@ async def test_two_deployments_receive_one_source_event(tmp_path: Path) -> None:
         assert messages[0].data == messages[1].data
         assert b"signalToken" not in messages[0].data
         assert event_id.encode() in messages[0].data
+        received = parse_external_source_signal(
+            json.loads(messages[0].data),
+            tenant_id=tenant_id,
+            expected_source_id=source_id,
+            allowed_symbols=frozenset({"ETH-USDT"}),
+            now=datetime.now(UTC),
+        )
+        assert received.event_id == event_id
         for message in messages:
             await message.ack()
         for sub in subscriptions:
