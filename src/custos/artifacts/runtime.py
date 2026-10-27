@@ -5,6 +5,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from dataclasses import field as dataclass_field
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Protocol, TypeAlias, cast
@@ -17,9 +18,11 @@ from custos_toolkit.contracts.strategy_execution import (
     StrategyArtifactPreImportVerificationReceiptV1,
     StrategyArtifactRefV1,
     StrategyExecutionContextV1,
+    StrategyManifestV1,
     canonical_json_bytes,
     canonical_json_digest,
     deep_freeze_json,
+    verify_strategy_artifact_bom_bindings,
 )
 
 from custos.artifacts.activation import (
@@ -154,6 +157,79 @@ class VerifiedArtifactMemberV1:
     size_bytes: int
     sha256: str
     path: Path
+    verified_content: bytes = dataclass_field(default=b"", repr=False)
+
+
+def verify_release_execution_bindings(
+    release_bom: Mapping[str, object],
+    artifact_ref: StrategyArtifactRefV1,
+    *,
+    manifest: StrategyManifestV1 | None = None,
+) -> None:
+    """Share execution metadata consistency without accepting release authority."""
+    if manifest is not None:
+        verify_strategy_artifact_bom_bindings(release_bom, artifact_ref)
+    members = release_bom.get("members")
+    if not isinstance(members, list):
+        raise ValueError("release BOM members must be an array")
+    if manifest is not None and any(not isinstance(member, Mapping) for member in members):
+        raise ValueError("release BOM members must be objects")
+    strategy_members = [
+        member
+        for member in members
+        if isinstance(member, Mapping) and member.get("role") == "strategy_wheel"
+    ]
+    if len(strategy_members) != 1:
+        raise ValueError("release BOM must contain one strategy wheel")
+    strategy_member = strategy_members[0]
+    if (
+        strategy_member.get("coordinate") != artifact_ref.artifact_coordinate
+        or strategy_member.get("sha256") != artifact_ref.artifact_sha256
+        or strategy_member.get("size_bytes") != artifact_ref.artifact_size_bytes
+    ):
+        raise ValueError("release BOM strategy wheel differs from StrategyArtifactRefV1")
+    bom_runtime_artifacts = sorted(
+        (
+            {key: member.get(key) for key in ("role", "name", "media_type", "size_bytes", "sha256")}
+            for member in members
+            if isinstance(member, Mapping) and member.get("role") == "runtime_artifact"
+        ),
+        key=lambda member: str(member.get("name")),
+    )
+    artifact_ref_runtime_artifacts = sorted(
+        (member.model_dump(mode="json") for member in artifact_ref.required_runtime_artifacts),
+        key=lambda member: str(member.get("name")),
+    )
+    if bom_runtime_artifacts != artifact_ref_runtime_artifacts:
+        raise ValueError("release BOM runtime artifacts differ from StrategyArtifactRefV1")
+    if manifest is not None:
+        manifest_runtime_artifacts = sorted(
+            (member.model_dump(mode="json") for member in manifest.runtime_artifacts),
+            key=lambda member: str(member.get("name")),
+        )
+        if manifest_runtime_artifacts != artifact_ref_runtime_artifacts:
+            raise ValueError("manifest runtime artifacts differ from StrategyArtifactRefV1")
+        for name in (
+            "engine",
+            "engine_version",
+            "base_contracts_version",
+            "engine_toolkit_version",
+        ):
+            if getattr(manifest, name) != getattr(artifact_ref, name):
+                raise ValueError(f"manifest {name} differs from StrategyArtifactRefV1")
+        if any(
+            release_bom.get(name) != value
+            for name, value in (
+                ("engine", manifest.engine),
+                ("engine_version", manifest.engine_version),
+                ("entry_point_group", manifest.entry_point_group),
+                ("entry_point_name", manifest.entry_point),
+                ("python_requires", manifest.requires_python),
+                ("strategy_artifact_sha256", artifact_ref.artifact_sha256),
+                ("strategy_artifact_coordinate", artifact_ref.artifact_coordinate),
+            )
+        ):
+            raise ValueError("manifest execution identity differs from release BOM")
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,43 +272,7 @@ class StrategyReleaseArtifactAuthorityV1:
             != self.artifact_ref_digest
         ):
             raise ValueError("artifact_ref_digest differs from StrategyArtifactRefV1")
-        members = self.release_bom.get("members")
-        if not isinstance(members, list):
-            raise ValueError("release BOM members must be an array")
-        strategy_members = [
-            member
-            for member in members
-            if isinstance(member, Mapping) and member.get("role") == "strategy_wheel"
-        ]
-        if len(strategy_members) != 1:
-            raise ValueError("release BOM must contain one strategy wheel")
-        strategy_member = strategy_members[0]
-        if (
-            strategy_member.get("coordinate") != self.artifact_ref.artifact_coordinate
-            or strategy_member.get("sha256") != self.artifact_ref.artifact_sha256
-            or strategy_member.get("size_bytes") != self.artifact_ref.artifact_size_bytes
-        ):
-            raise ValueError("release BOM strategy wheel differs from StrategyArtifactRefV1")
-        bom_runtime_artifacts = sorted(
-            (
-                {
-                    field: member.get(field)
-                    for field in ("role", "name", "media_type", "size_bytes", "sha256")
-                }
-                for member in members
-                if isinstance(member, Mapping) and member.get("role") == "runtime_artifact"
-            ),
-            key=lambda member: str(member.get("name")),
-        )
-        artifact_ref_runtime_artifacts = sorted(
-            (
-                member.model_dump(mode="json")
-                for member in self.artifact_ref.required_runtime_artifacts
-            ),
-            key=lambda member: str(member.get("name")),
-        )
-        if bom_runtime_artifacts != artifact_ref_runtime_artifacts:
-            raise ValueError("release BOM runtime artifacts differ from StrategyArtifactRefV1")
+        verify_release_execution_bindings(self.release_bom, self.artifact_ref)
         if (
             hashlib.sha256(self.crucible_artifact_evidence_digest_input_bytes).hexdigest()
             != self.crucible_artifact_evidence_digest
@@ -481,6 +521,7 @@ def verify_execution_member_files(
                 size_bytes=size_bytes,
                 sha256=digest,
                 path=path,
+                verified_content=payload,
             )
         )
     return tuple(verified)

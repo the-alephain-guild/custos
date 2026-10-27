@@ -353,6 +353,151 @@ def _require_single_build_lock_binding(
         raise ValueError("producer BOM build_lock_sha256 differs from ArtifactRefV1")
 
 
+def verify_strategy_artifact_bom_bindings(
+    release_bom: Mapping[str, object],
+    artifact_ref: StrategyArtifactRefV1,
+) -> None:
+    """Verify producer material bindings without accepting approval or runtime authority."""
+    bom_fields = {
+        "build_lock_sha256",
+        "canonicalization",
+        "contract_asset_index_coordinate",
+        "contract_asset_index_sha256",
+        "engine",
+        "engine_version",
+        "entry_point_group",
+        "entry_point_name",
+        "execution_abi_golden_coordinate",
+        "execution_abi_golden_sha256",
+        "execution_abi_schema_coordinate",
+        "execution_abi_schema_sha256",
+        "members",
+        "producer_commit",
+        "producer_repository",
+        "python_requires",
+        "schema_version",
+        "strategy_artifact_coordinate",
+        "strategy_artifact_sha256",
+        "strategy_coordinate",
+        "strategy_manifest_sha256",
+        "strategy_sbom_sha256",
+        "strategy_source_commit",
+        "strategy_source_tree_sha256",
+        "toolkit_coordinate",
+        "toolkit_sbom_sha256",
+        "toolkit_wheel_sha256",
+        "zero_rewrite_characterization_sha256",
+        "zero_rewrite_semantic_diff_sha256",
+    }
+    if set(release_bom) != bom_fields:
+        raise ValueError("producer BOM shape is not exact V1")
+    if release_bom.get("schema_version") != "alephain.strategy-release-bom.v1":
+        raise ValueError("producer BOM schema_version is not exact V1")
+    if release_bom.get("canonicalization") != "sha256-canonical-json-v1":
+        raise ValueError("producer BOM canonicalization differs")
+
+    bom_bindings = {
+        "strategy_artifact_coordinate": artifact_ref.artifact_coordinate,
+        "strategy_artifact_sha256": artifact_ref.artifact_sha256,
+        "strategy_manifest_sha256": artifact_ref.manifest_sha256,
+        "strategy_sbom_sha256": artifact_ref.sbom_sha256,
+        "strategy_source_tree_sha256": artifact_ref.normalized_source_tree_sha256,
+        "producer_repository": artifact_ref.source_repository,
+        "strategy_source_commit": artifact_ref.source_commit,
+        "execution_abi_schema_sha256": artifact_ref.contract_schema_sha256,
+        "engine": artifact_ref.engine,
+        "engine_version": artifact_ref.engine_version,
+    }
+    for name, expected in bom_bindings.items():
+        if release_bom.get(name) != expected:
+            raise ValueError(f"producer BOM {name} differs from ArtifactRefV1")
+
+    _require_single_build_lock_binding(
+        artifact_ref,
+        release_bom.get("build_lock_sha256"),
+    )
+
+    members = release_bom.get("members")
+    if not isinstance(members, list) or not members:
+        raise ValueError("producer BOM members must be a non-empty array")
+    member_fields = {"coordinate", "media_type", "name", "role", "sha256", "size_bytes"}
+    members_by_role: dict[str, list[Mapping[str, object]]] = {}
+    member_names: set[str] = set()
+    for bom_member in members:
+        if not isinstance(bom_member, Mapping) or set(bom_member) != member_fields:
+            raise ValueError("producer BOM member shape is not exact V1")
+        role = bom_member.get("role")
+        member_name = bom_member.get("name")
+        if (
+            not isinstance(role, str)
+            or not isinstance(member_name, str)
+            or member_name in member_names
+        ):
+            raise ValueError("producer BOM member identity is invalid or duplicated")
+        member_names.add(member_name)
+        members_by_role.setdefault(role, []).append(bom_member)
+    singleton_roles = {
+        "base_contracts_wheel",
+        "contract_schema",
+        "nautilus_wheel",
+        "source_tree",
+        "strategy_manifest",
+        "strategy_sbom",
+        "strategy_wheel",
+        "toolkit_sbom",
+    }
+    expected_member_roles = set(singleton_roles)
+    if artifact_ref.required_runtime_artifacts:
+        expected_member_roles.add("runtime_artifact")
+    if set(members_by_role) != expected_member_roles:
+        raise ValueError("producer BOM member roles are not exact V1")
+    if any(len(members_by_role[role]) != 1 for role in singleton_roles):
+        raise ValueError("producer BOM singleton member role is duplicated")
+
+    def member_for_role(role: str) -> Mapping[str, object]:
+        return members_by_role[role][0]
+
+    member_bindings = {
+        "strategy_wheel": (
+            artifact_ref.artifact_sha256,
+            artifact_ref.artifact_size_bytes,
+        ),
+        "strategy_manifest": (
+            artifact_ref.manifest_sha256,
+            artifact_ref.manifest_size_bytes,
+        ),
+        "strategy_sbom": (artifact_ref.sbom_sha256, None),
+        "source_tree": (artifact_ref.normalized_source_tree_sha256, None),
+        "contract_schema": (
+            release_bom.get("contract_asset_index_sha256"),
+            None,
+        ),
+        "nautilus_wheel": (release_bom.get("toolkit_wheel_sha256"), None),
+        "toolkit_sbom": (release_bom.get("toolkit_sbom_sha256"), None),
+    }
+    for role, (digest, size) in member_bindings.items():
+        bom_member = member_for_role(role)
+        if bom_member.get("sha256") != digest:
+            raise ValueError(f"producer BOM {role} digest differs")
+        if size is not None and bom_member.get("size_bytes") != size:
+            raise ValueError(f"producer BOM {role} size differs")
+    runtime_members = {
+        (
+            item.get("name"),
+            item.get("media_type"),
+            item.get("sha256"),
+            item.get("size_bytes"),
+        )
+        for item in members_by_role.get("runtime_artifact", [])
+    }
+    runtime_refs = {
+        (item.name, item.media_type, item.sha256, item.size_bytes)
+        for item in artifact_ref.required_runtime_artifacts
+    }
+    if runtime_members != runtime_refs:
+        raise ValueError("producer BOM runtime artifacts differ from ArtifactRefV1")
+
+
 class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
     """Contract-consumer proof over producer-owned evidence objects."""
 
@@ -400,144 +545,7 @@ class StrategyArtifactPreImportVerificationReceiptV1(_StrictFrozenModel):
                 "detached_attestation_ref_digest differs from the detached producer reference"
             )
 
-        bom_fields = {
-            "build_lock_sha256",
-            "canonicalization",
-            "contract_asset_index_coordinate",
-            "contract_asset_index_sha256",
-            "engine",
-            "engine_version",
-            "entry_point_group",
-            "entry_point_name",
-            "execution_abi_golden_coordinate",
-            "execution_abi_golden_sha256",
-            "execution_abi_schema_coordinate",
-            "execution_abi_schema_sha256",
-            "members",
-            "producer_commit",
-            "producer_repository",
-            "python_requires",
-            "schema_version",
-            "strategy_artifact_coordinate",
-            "strategy_artifact_sha256",
-            "strategy_coordinate",
-            "strategy_manifest_sha256",
-            "strategy_sbom_sha256",
-            "strategy_source_commit",
-            "strategy_source_tree_sha256",
-            "toolkit_coordinate",
-            "toolkit_sbom_sha256",
-            "toolkit_wheel_sha256",
-            "zero_rewrite_characterization_sha256",
-            "zero_rewrite_semantic_diff_sha256",
-        }
-        if set(self.release_bom) != bom_fields:
-            raise ValueError("producer BOM shape is not exact V1")
-        if self.release_bom.get("schema_version") != "alephain.strategy-release-bom.v1":
-            raise ValueError("producer BOM schema_version is not exact V1")
-        if self.release_bom.get("canonicalization") != "sha256-canonical-json-v1":
-            raise ValueError("producer BOM canonicalization differs")
-
-        bom_bindings = {
-            "strategy_artifact_coordinate": self.artifact_ref.artifact_coordinate,
-            "strategy_artifact_sha256": self.artifact_ref.artifact_sha256,
-            "strategy_manifest_sha256": self.artifact_ref.manifest_sha256,
-            "strategy_sbom_sha256": self.artifact_ref.sbom_sha256,
-            "strategy_source_tree_sha256": self.artifact_ref.normalized_source_tree_sha256,
-            "producer_repository": self.artifact_ref.source_repository,
-            "strategy_source_commit": self.artifact_ref.source_commit,
-            "execution_abi_schema_sha256": self.artifact_ref.contract_schema_sha256,
-            "engine": self.artifact_ref.engine,
-            "engine_version": self.artifact_ref.engine_version,
-        }
-        for name, expected in bom_bindings.items():
-            if self.release_bom.get(name) != expected:
-                raise ValueError(f"producer BOM {name} differs from ArtifactRefV1")
-
-        _require_single_build_lock_binding(
-            self.artifact_ref,
-            self.release_bom.get("build_lock_sha256"),
-        )
-
-        members = self.release_bom.get("members")
-        if not isinstance(members, list) or not members:
-            raise ValueError("producer BOM members must be a non-empty array")
-        member_fields = {"coordinate", "media_type", "name", "role", "sha256", "size_bytes"}
-        members_by_role: dict[str, list[Mapping[str, object]]] = {}
-        member_names: set[str] = set()
-        for bom_member in members:
-            if not isinstance(bom_member, Mapping) or set(bom_member) != member_fields:
-                raise ValueError("producer BOM member shape is not exact V1")
-            role = bom_member.get("role")
-            member_name = bom_member.get("name")
-            if (
-                not isinstance(role, str)
-                or not isinstance(member_name, str)
-                or member_name in member_names
-            ):
-                raise ValueError("producer BOM member identity is invalid or duplicated")
-            member_names.add(member_name)
-            members_by_role.setdefault(role, []).append(bom_member)
-        singleton_roles = {
-            "base_contracts_wheel",
-            "contract_schema",
-            "nautilus_wheel",
-            "source_tree",
-            "strategy_manifest",
-            "strategy_sbom",
-            "strategy_wheel",
-            "toolkit_sbom",
-        }
-        expected_member_roles = set(singleton_roles)
-        if self.artifact_ref.required_runtime_artifacts:
-            expected_member_roles.add("runtime_artifact")
-        if set(members_by_role) != expected_member_roles:
-            raise ValueError("producer BOM member roles are not exact V1")
-        if any(len(members_by_role[role]) != 1 for role in singleton_roles):
-            raise ValueError("producer BOM singleton member role is duplicated")
-
-        def member_for_role(role: str) -> Mapping[str, object]:
-            return members_by_role[role][0]
-
-        member_bindings = {
-            "strategy_wheel": (
-                self.artifact_ref.artifact_sha256,
-                self.artifact_ref.artifact_size_bytes,
-            ),
-            "strategy_manifest": (
-                self.artifact_ref.manifest_sha256,
-                self.artifact_ref.manifest_size_bytes,
-            ),
-            "strategy_sbom": (self.artifact_ref.sbom_sha256, None),
-            "source_tree": (self.artifact_ref.normalized_source_tree_sha256, None),
-            "contract_schema": (
-                self.release_bom.get("contract_asset_index_sha256"),
-                None,
-            ),
-            "nautilus_wheel": (self.release_bom.get("toolkit_wheel_sha256"), None),
-            "toolkit_sbom": (self.release_bom.get("toolkit_sbom_sha256"), None),
-        }
-        for role, (digest, size) in member_bindings.items():
-            bom_member = member_for_role(role)
-            if bom_member.get("sha256") != digest:
-                raise ValueError(f"producer BOM {role} digest differs")
-            if size is not None and bom_member.get("size_bytes") != size:
-                raise ValueError(f"producer BOM {role} size differs")
-        runtime_members = {
-            (
-                item.get("name"),
-                item.get("media_type"),
-                item.get("sha256"),
-                item.get("size_bytes"),
-            )
-            for item in members_by_role.get("runtime_artifact", [])
-        }
-        runtime_refs = {
-            (item.name, item.media_type, item.sha256, item.size_bytes)
-            for item in self.artifact_ref.required_runtime_artifacts
-        }
-        if runtime_members != runtime_refs:
-            raise ValueError("producer BOM runtime artifacts differ from ArtifactRefV1")
+        verify_strategy_artifact_bom_bindings(self.release_bom, self.artifact_ref)
 
         statement_fields = {"_type", "subject", "predicateType", "predicate"}
         if set(self.release_statement) != statement_fields:
@@ -997,4 +1005,5 @@ __all__ = [
     "deep_freeze_json",
     "parse_and_freeze_json_object",
     "verify_effective_config_digest",
+    "verify_strategy_artifact_bom_bindings",
 ]

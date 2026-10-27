@@ -39,6 +39,30 @@ def _validate(document: dict[str, object]) -> None:
     StrategyArtifactPreImportVerificationReceiptV1.model_validate(document)
 
 
+def test_bom_material_validation_does_not_require_platform_approval():
+    document = json.loads(GOLDEN.read_text(encoding="utf-8"))["receipt"]
+    artifact_ref = StrategyArtifactRefV1.model_validate(document["artifact_ref"])
+    assert (
+        strategy_execution.verify_strategy_artifact_bom_bindings(
+            document["release_bom"], artifact_ref
+        )
+        is None
+    )
+
+
+def test_platform_receipt_uses_the_same_material_binding_validator(monkeypatch):
+    document = json.loads(GOLDEN.read_text(encoding="utf-8"))["receipt"]
+
+    def reject_material(bom, artifact_ref):
+        raise ValueError("shared material rejection")
+
+    monkeypatch.setattr(
+        strategy_execution, "verify_strategy_artifact_bom_bindings", reject_material
+    )
+    with pytest.raises(PydanticValidationError, match="shared material rejection"):
+        _validate(document)
+
+
 def _apply_mutation(document: dict[str, object], mutation: dict[str, object]) -> None:
     path = mutation["path"]
     assert isinstance(path, list) and path

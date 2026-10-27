@@ -126,6 +126,8 @@ def test_execution_member_verifier_binds_exact_strategy_bytes(tmp_path: Path) ->
     assert len(verified) == 1
     assert verified[0].sha256 == digest
     assert verified[0].path == wheel
+    wheel.write_bytes(b"replacement-wheel")
+    assert verified[0].verified_content == b"verified-wheel"
 
 
 def test_execution_member_verifier_rejects_unlisted_member(tmp_path: Path) -> None:

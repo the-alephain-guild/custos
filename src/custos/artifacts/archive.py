@@ -5,6 +5,7 @@ import base64
 import configparser
 import csv
 import hashlib
+import io
 import os
 import re
 import shutil
@@ -13,11 +14,18 @@ import tempfile
 import unicodedata
 import zipfile
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 from custos.artifacts.errors import ArtifactVerificationCode, ArtifactVerificationError
 from custos.artifacts.policy import ArchiveLimitsV1
+
+
+@dataclass(frozen=True, slots=True)
+class QuarantinedRuntimeArtifact:
+    name: str
+    archive_path: str
+    content: bytes = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +34,7 @@ class QuarantinedWheel:
     verified_entry_point: str
     archive_member_count: int
     total_uncompressed_bytes: int
+    runtime_artifacts: tuple[QuarantinedRuntimeArtifact, ...] = ()
 
     def destroy(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
@@ -291,8 +300,9 @@ def _verify_required_runtime_artifacts(
     root: Path,
     file_names: set[str],
     required_runtime_artifacts: Sequence[Mapping[str, object]],
-) -> None:
+) -> tuple[QuarantinedRuntimeArtifact, ...]:
     seen_names: set[str] = set()
+    verified: list[QuarantinedRuntimeArtifact] = []
     for artifact in required_runtime_artifacts:
         name = artifact.get("name")
         role = artifact.get("role")
@@ -329,10 +339,12 @@ def _verify_required_runtime_artifacts(
                 ArtifactVerificationCode.MEMBER_SET_MISMATCH,
                 f"wheel runtime artifact bytes differ: {name}",
             )
+        verified.append(QuarantinedRuntimeArtifact(name, candidates[0], payload))
+    return tuple(verified)
 
 
 def quarantine_wheel(
-    wheel_path: Path,
+    wheel_path: Path | bytes,
     *,
     entry_point_group: str,
     entry_point: str,
@@ -340,9 +352,11 @@ def quarantine_wheel(
     quarantine_parent: Path,
     required_runtime_artifacts: Sequence[Mapping[str, object]] = (),
 ) -> QuarantinedWheel:
+    """Inspect a path or an already verified immutable wheel byte snapshot."""
     root: Path | None = None
     try:
-        with zipfile.ZipFile(wheel_path, "r") as archive:
+        source = io.BytesIO(wheel_path) if isinstance(wheel_path, bytes) else wheel_path
+        with zipfile.ZipFile(source, "r") as archive:
             inventory, total = _validate_inventory(archive.infolist(), limits)
             if quarantine_parent.is_symlink():
                 raise _unsafe("quarantine parent cannot be a symlink")
@@ -352,7 +366,7 @@ def quarantine_wheel(
             _extract_to_quarantine(archive, inventory, root)
         file_names = {name for name, info in inventory.items() if not info.is_dir()}
         _verify_wheel_record(root, file_names)
-        _verify_required_runtime_artifacts(
+        runtime_artifacts = _verify_required_runtime_artifacts(
             root,
             file_names,
             required_runtime_artifacts,
@@ -367,7 +381,7 @@ def quarantine_wheel(
                 ArtifactVerificationCode.ENTRY_POINT_INVALID,
                 "verified strategy entry point is absent from wheel source",
             )
-        return QuarantinedWheel(root, entry_point, len(inventory), total)
+        return QuarantinedWheel(root, entry_point, len(inventory), total, runtime_artifacts)
     except ArtifactVerificationError:
         if root is not None:
             shutil.rmtree(root, ignore_errors=True)

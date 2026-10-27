@@ -32,6 +32,28 @@ def test_valid_wheel_is_quarantined_without_importing_entry_point(tmp_path) -> N
     assert (verified.root / "strategies/supertrend.py").is_file()
 
 
+def test_verified_byte_input_does_not_reopen_the_original_wheel_path(tmp_path) -> None:
+    wheel = tmp_path / "supertrend.whl"
+    write_test_wheel(wheel)
+    content = wheel.read_bytes()
+    wheel.unlink()
+    verified = quarantine_wheel(
+        content,
+        entry_point_group="alephain.strategy_runtime.v1",
+        entry_point="strategies.supertrend:RuntimeAdapter",
+        limits=ArchiveLimitsV1(),
+        quarantine_parent=tmp_path / "quarantine",
+    )
+    assert (
+        verified.root.joinpath("strategies/supertrend.py")
+        .read_bytes()
+        .startswith(b"class RuntimeAdapter")
+    )
+    assert verified.verified_entry_point == "strategies.supertrend:RuntimeAdapter"
+    assert "strategies.supertrend" not in sys.modules
+    assert (verified.root / "strategies/supertrend.py").is_file()
+
+
 def test_required_runtime_artifact_is_verified_after_safe_extraction(tmp_path) -> None:
     wheel = tmp_path / "supertrend.whl"
     schema = b'{"type":"object"}'
@@ -63,6 +85,10 @@ def test_required_runtime_artifact_is_verified_after_safe_extraction(tmp_path) -
     )
 
     assert verified.root.is_dir()
+    assert len(verified.runtime_artifacts) == 1
+    assert verified.runtime_artifacts[0].name == "resources/config.schema.json"
+    assert verified.runtime_artifacts[0].archive_path == "strategies/resources/config.schema.json"
+    assert verified.runtime_artifacts[0].content == schema
 
 
 def test_required_runtime_artifact_drift_fails_closed(tmp_path) -> None:
