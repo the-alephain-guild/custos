@@ -51,7 +51,7 @@ or widening it. Publisher and subscriber permission profiles are generated for
 these exact subjects. `tests/integration/test_external_source_fanout.py` can
 verify that two distinct durables receive the same sanitized event against an
 isolated local NATS server. Broker JWT issuance, shared-environment provisioning,
-runner consumption and venue execution have not occurred. Live mode and real
+daemon composition and venue execution have not occurred. Live mode and real
 TradingView egress remain outside the current acceptance scope.
 
 `NtTradingNodeHost.external_source_runtime_scope()` is a separate read-only
@@ -86,4 +86,11 @@ does not free reentry until a caller independently observes flat positions and
 no risk-increasing orders and calls `confirm_flat`. A different deployment's
 confirmation cannot release this fence. Broker message receipt and target
 inbox acceptance are therefore still distinct from strategy handoff and venue
-fill. No runner subscriber currently calls these methods.
+fill. `ExternalSourceSubscriber` validates broker subject and trusted tenant,
+source, symbol and active deployment scope, then acknowledges a message only
+after this target inbox durably accepts it. Malformed broker messages terminate
+without an execution receipt; storage or runtime unavailability leaves the
+message unacknowledged for recovery. An isolated local NATS integration test
+exercises two independent target inboxes for OKX and Binance scopes. The
+subscriber is not yet composed into the signed-lane daemon and does not call
+the host's trading methods.

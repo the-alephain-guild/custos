@@ -22,6 +22,10 @@ from custos.core.external_source_transport import (
     bind_signal_consumer,
     subscription_spec,
 )
+from custos.engines.nautilus.external_source_delivery import SourceSubscriptionBinding
+from custos.engines.nautilus.external_source_subscriber import ExternalSourceSubscriber
+from custos.engines.nautilus.external_target_inbox import ExternalTargetInbox
+from custos.engines.nautilus.host import ExternalSourceRuntimeScope
 
 
 @pytest.mark.asyncio
@@ -84,7 +88,8 @@ async def test_two_deployments_receive_one_source_event(tmp_path: Path) -> None:
         )
         created = True
         subscriptions = []
-        for _ in range(2):
+        receivers = []
+        for connector in ("okx_perpetual", "binance_perpetual"):
             authority = EngineLifecycleAuthority(
                 deployment_instance_id=uuid4(),
                 deployment_spec_id=uuid4(),
@@ -100,6 +105,31 @@ async def test_two_deployments_receive_one_source_event(tmp_path: Path) -> None:
             )
             await stream.add_consumer(SIGNAL_STREAM_NAME, config=spec.consumer_config)
             subscriptions.append(await bind_signal_consumer(stream, spec))
+            binding = SourceSubscriptionBinding(
+                tenant_id=tenant_id,
+                source_id=source_id,
+                source_symbol="ETH-USDT",
+                target_pair="ETH-USDT",
+                authority=authority,
+            )
+            scope = ExternalSourceRuntimeScope(
+                authority=authority,
+                connector=connector,
+                allowed_pairs=frozenset({"ETH-USDT"}),
+                authorized_leverage=3,
+            )
+            target_inbox = ExternalTargetInbox(
+                tmp_path / f"target-{authority.deployment_instance_id}.sqlite"
+            )
+            receivers.append(
+                (
+                    ExternalSourceSubscriber(
+                        spec, binding, target_inbox, scope_provider=lambda scope=scope: scope
+                    ),
+                    target_inbox,
+                    authority,
+                )
+            )
 
         assert await SourcePublicationWorker(outbox, stream, tenant_id=tenant_id).publish_once(
             at=now
@@ -116,8 +146,14 @@ async def test_two_deployments_receive_one_source_event(tmp_path: Path) -> None:
             now=datetime.now(UTC),
         )
         assert received.event_id == event_id
-        for message in messages:
-            await message.ack()
+        delivery_ids = []
+        for message, (receiver, target_inbox, authority) in zip(messages, receivers, strict=True):
+            receipt = await receiver.handle_message(message, at=datetime.now(UTC))
+            assert receipt is not None and receipt.status == "accepted"
+            pending = target_inbox.pending(authority, at=datetime.now(UTC))
+            assert len(pending) == 1 and pending[0].source_event_id == event_id
+            delivery_ids.append(pending[0].delivery_id)
+        assert delivery_ids[0] != delivery_ids[1]
         for sub in subscriptions:
             await sub.unsubscribe()
     finally:
