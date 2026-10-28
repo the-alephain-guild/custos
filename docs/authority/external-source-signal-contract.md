@@ -74,6 +74,22 @@ authenticated loopback HTTP source event through the private outbox to two
 distinct JWT subscribers and verifies their independent inbox handoffs. It
 does not provision a shared broker or exercise a real TradingView alert or
 venue account.
+The local-only integration harness
+`tests/integration/provision_external_source_broker.py` can prepare a persistent
+loopback Docker broker under ignored `dist/`, with one publisher JWT, two distinct
+subscriber JWTs, an owner-only source token, exact stream/durables, and TLS.
+`prepare --output dist/plan44-source-broker --synthetic` creates disposable
+identities for a connectivity rehearsal; `start --output ...` starts the
+container, provisions the stream and both consumers, and verifies all three
+restricted clients can bind. A later `prepare --manifest <path>` requires the
+two exact signed testnet deployment identities and distinct account aliases;
+the tool does not verify a manifest's signature or activate a runner. User JWTs
+expire after two days, the self-signed TLS certificate after seven days, and
+re-preparation requires a new output directory. The issuer seeds are never
+written to disk and are not retained for rotation. No secret under `dist/`
+may be committed, copied to a receipt, or used as a production broker identity.
+This local harness does not provide the external TLS/IP allowlist edge, real
+venue credentials, or a shared-environment issuance/revocation receipt.
 For local acceptance, `python -m custos.cli.subcommands.source_signal_sender`
 reads a 32–512 character ASCII token from a separate owner-only file,
 constructs the reproducible `CUSTOS_SOURCE_V1` event ID and posts one synthetic
