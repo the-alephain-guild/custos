@@ -43,6 +43,15 @@ require conditional venue stops are refused at config construction. This toolkit
 mapping does not enable the host's live venue capability or prove strategy sizing,
 loss exits, recovery, artifact compatibility or production readiness.
 
+Native bulk historical bars complete the toolkit warmup gate only after the
+engine has updated registered indicators. The callback never sends those bars
+through live signal decisions or updates indicators a second time. Empty or
+uninitialized history does not mark readiness, and completion failures stop the
+strategy. Intermediate snapshot checkpoints are refused on this bulk path:
+their historical indicator values are unavailable after the engine has already
+processed the complete batch. Refusal preserves the checkpoint requirement;
+comparing every checkpoint with the final indicator value would not validate it.
+
 The internal `custos.local` authorization adapter now defines immutable version-1
 run manifests and Ed25519 permits. Manifests bind the existing exact
 StrategyArtifactRefV1, release BOM and toolkit identity digests, effective config

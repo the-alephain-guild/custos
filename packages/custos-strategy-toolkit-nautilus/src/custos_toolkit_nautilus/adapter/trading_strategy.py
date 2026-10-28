@@ -27,11 +27,10 @@ rule 5, may only carry the pair string).
 """
 
 import inspect
-import os
 from abc import abstractmethod
+from collections.abc import Sequence
 from decimal import Decimal
 from pathlib import Path as _Path
-from typing import Protocol, cast
 
 import msgspec
 from custos_toolkit.position import PositionSizer
@@ -44,14 +43,12 @@ from nautilus_trader.model import (
     Bar,
     BarType,
     InstrumentId,
-    OrderAccepted,
+    OrderCanceled,
     OrderCancelRejected,
     OrderDenied,
-    OrderCanceled,
     OrderFilled,
     OrderRejected,
     PositionClosed,
-    PositionOpened,
     QuoteTick,
     TradeTick,
 )
@@ -78,12 +75,12 @@ from custos_toolkit_nautilus.adapter.coordinators import (
     TradeEventHandler,
     WarmupCoordinator,
 )
-from custos_toolkit_nautilus.adapter.signal_correlation import (
-    generate_signal_id,
-)
 from custos_toolkit_nautilus.adapter.filter_manager import FilterManager
 from custos_toolkit_nautilus.adapter.orders import OrderTracker
 from custos_toolkit_nautilus.adapter.pair_context import PairContext
+from custos_toolkit_nautilus.adapter.signal_correlation import (
+    generate_signal_id,
+)
 from custos_toolkit_nautilus.adapter.sltp_mode import SLTPMode
 from custos_toolkit_nautilus.adapter.strategy_core import (
     NautilusStrategyCore,
@@ -904,6 +901,28 @@ class NautilusTradingStrategy(NautilusStrategyCore):
                 f"Exception in on_historical_data: {type(exc).__name__}: {exc}",
                 color=LogColor.RED,
             )
+
+    def on_historical_bars(self, bars: Sequence[Bar]) -> None:
+        """Complete native bulk warmup after the engine updates registered indicators."""
+        if not bars:
+            return
+        warmup = self._get_warmup_config()
+        if warmup and warmup.checkpoints and warmup.checkpoints.points:
+            self.log.error(
+                "Historical bulk delivery cannot validate intermediate checkpoint values; "
+                "refusing warmup instead of comparing them with final indicator values",
+                color=LogColor.RED,
+            )
+            self.stop()
+            return
+        try:
+            self._warmup_coordinator.maybe_mark_complete()
+        except Exception as error:  # noqa: BLE001 - readiness failure stops strategy decisions
+            self.log.error(
+                f"Historical bulk warmup completion failed: {type(error).__name__}",
+                color=LogColor.RED,
+            )
+            self.stop()
 
     def on_warmup_complete(self) -> None:
         """Hook: Called when historical data warmup is complete."""
