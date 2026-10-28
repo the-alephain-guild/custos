@@ -33,6 +33,16 @@ This observation does not prove installed wheel contents, management-key
 isolation, filesystem ownership, permit validity or activation readiness. The
 local host must independently enforce those boundaries before strategy import.
 
+The Nautilus strategy toolkit maps Papertrade's configured native symbols, such
+as `BTC-USD-PERP`, directly to the `PAPERTRADE` venue for both pair contexts and
+external-order claims. Foreign pair aliases are refused rather than translated.
+Papertrade is a derivative connector, but its strategy pricing subscribes only
+reference quotes; those observations are not venue trades or native mark-price
+events. Optional tick monitoring must explicitly choose quote ticks. Modes that
+require conditional venue stops are refused at config construction. This toolkit
+mapping does not enable the host's live venue capability or prove strategy sizing,
+loss exits, recovery, artifact compatibility or production readiness.
+
 The internal `custos.local` authorization adapter now defines immutable version-1
 run manifests and Ed25519 permits. Manifests bind the existing exact
 StrategyArtifactRefV1, release BOM and toolkit identity digests, effective config

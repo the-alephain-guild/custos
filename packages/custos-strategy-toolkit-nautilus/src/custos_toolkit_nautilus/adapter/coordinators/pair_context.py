@@ -158,6 +158,11 @@ class PairContextCoordinator:
         stream subscribed here for pricing does not drive exits.
         """
         s = self._strategy
+        if s.config.trading.connector == "papertrade":
+            for ctx in s._contexts.values():
+                self._subscribe("quotes", ctx.instrument_id)
+            s.log.info(f"Reference quotes subscribed for {len(s._contexts)} pairs")
+            return
         perpetual = is_futures_connector(str(s.config.trading.connector))
         for ctx in s._contexts.values():
             if perpetual:

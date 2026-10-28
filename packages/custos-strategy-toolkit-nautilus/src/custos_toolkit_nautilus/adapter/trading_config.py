@@ -212,10 +212,16 @@ class NautilusTradingStrategyConfig(StrategyConfig):
         # them choose it.
         connector = self.trading.connector
         sl_tp_mode = self.risk.trade.sl_tp_mode
+        if (
+            connector == "papertrade"
+            and self.risk.tick_monitoring.enabled
+            and self.risk.tick_monitoring.tick_type != "quote"
+        ):
+            raise ValueError("Papertrade tick monitoring requires explicit quote ticks")
         if connector in NO_EXCHANGE_STOP_CONNECTORS and sl_tp_mode != "tick":
             raise ValueError(
                 f"[STARTUP] connector={connector!r} cannot hold a stop order on the venue "
-                f"(it accepts market and limit orders only), so sl_tp_mode={sl_tp_mode!r} "
+                f"(conditional stops are unsupported), so sl_tp_mode={sl_tp_mode!r} "
                 "would leave every position without the stop that mode relies on. "
                 "Set risk.trade.sl_tp_mode to 'tick' and accept what it means: tick mode "
                 "has no stop loss; it monitors take-profit and the trailing exit on ticks."

@@ -6,6 +6,7 @@ Provides helper functions for deriving runtime values from configuration:
 - BarType from platforms config
 """
 
+import re
 from typing import TYPE_CHECKING, Protocol, cast, overload
 
 import msgspec
@@ -32,6 +33,7 @@ VENUE_MAP = {
     # price, and the adapter models them apart for that reason.
     "sodex": "SODEX_SPOT",
     "sodex_perpetual": "SODEX_PERPS",
+    "papertrade": "PAPERTRADE",
 }
 
 # Connectors whose configured pairs are already the venue's own symbols.
@@ -45,7 +47,8 @@ VENUE_MAP = {
 #
 # Getting this wrong does not raise. It builds an instrument id the venue has never
 # listed, and the instrument set simply loads empty.
-PAIRS_ARE_VENUE_SYMBOLS = frozenset({"sodex", "sodex_perpetual"})
+# Papertrade also uses its native symbol, such as BTC-USD-PERP.
+PAIRS_ARE_VENUE_SYMBOLS = frozenset({"sodex", "sodex_perpetual", "papertrade"})
 
 # Connectors whose venue cannot hold a stop order.
 #
@@ -54,7 +57,8 @@ PAIRS_ARE_VENUE_SYMBOLS = frozenset({"sodex", "sodex_perpetual"})
 # else locally: "StopMarket orders is not supported by SoDEX". A stop-loss mode there
 # re-submits a denied stop forever while the position stays unprotected. A connector
 # not listed here is treated as able to hold a stop.
-NO_EXCHANGE_STOP_CONNECTORS = frozenset({"sodex", "sodex_perpetual"})
+# Papertrade exposes market execution and no conditional venue stop.
+NO_EXCHANGE_STOP_CONNECTORS = frozenset({"sodex", "sodex_perpetual", "papertrade"})
 
 
 def derive_instrument_id(trading_config: "TradingConfig") -> InstrumentId:
@@ -83,6 +87,8 @@ def instrument_id_str(pair: str, connector: str) -> str:
     where a venue whose symbols do not follow the Binance convention gets missed.
     """
     venue = get_venue_from_connector(connector)
+    if connector == "papertrade" and not re.fullmatch(r"[A-Z0-9]+-USD-PERP", pair):
+        raise ValueError("Papertrade pairs must use the native BASE-USD-PERP symbol")
     if connector in PAIRS_ARE_VENUE_SYMBOLS:
         return f"{pair}.{venue}"
     if connector in {"okx", "okx_perpetual"}:
@@ -172,7 +178,7 @@ def is_futures_connector(connector: str) -> bool:
     Returns:
         True if futures/perpetual connector
     """
-    return "perpetual" in connector.lower()
+    return connector == "papertrade" or "perpetual" in connector.lower()
 
 
 class _StructLike(Protocol):
