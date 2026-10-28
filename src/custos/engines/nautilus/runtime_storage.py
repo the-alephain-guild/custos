@@ -19,6 +19,11 @@ from custos.core.runtime_authority import (
     RuntimeFenceStale,
     RuntimeStorageUnavailable,
 )
+from custos.engines.nautilus.account_observation import (
+    NativeAccountObservation,
+    account_observation,
+    require_account_progress,
+)
 from custos.engines.nautilus.order_evidence import (
     NativeOrderEvidence,
     decode_document,
@@ -31,6 +36,7 @@ from custos.engines.nautilus.order_evidence import (
 class NativeJournalProbe(Protocol):
     def snapshot_json(self) -> str: ...
     def order_evidence_json(self, client_order_id: str) -> str: ...
+    def account_observation_json(self) -> str: ...
 
 
 class PapertradeRuntimeStorageProbe:
@@ -74,6 +80,7 @@ class PapertradeRuntimeStorageProbe:
             f"{account.chain_id}:{account.exchange}:{account.wallet_address}:{adapter_account_id}"
         )
         self._journal_identity = self._read_native()
+        self._account_observation: NativeAccountObservation | None = None
         self._bindings = RuntimeStorageBindings(
             BoundRuntimeStore(state.path, state.store_id),
             BoundRuntimeStore(self._journal, self._journal_identity.store_id),
@@ -129,6 +136,29 @@ class PapertradeRuntimeStorageProbe:
             except Exception:
                 raise RuntimeStorageUnavailable(
                     "held native order evidence cannot be verified"
+                ) from None
+
+    def account_observation(self) -> NativeAccountObservation:
+        self._require_process()
+        with self._lock:
+            try:
+                self._regular(self._journal)
+                observed = account_observation(
+                    self._native.account_observation_json(),
+                    owner=self._owner,
+                    path=self._journal,
+                    account_id=self._account_id,
+                    client_id=self._client_id,
+                )
+                self._regular(self._journal)
+                self._advance_identity(observed.journal)
+                if self._account_observation is not None:
+                    require_account_progress(self._account_observation, observed)
+                self._account_observation = observed
+                return observed
+            except Exception:
+                raise RuntimeStorageUnavailable(
+                    "held Native account observation cannot be verified"
                 ) from None
 
     def require_route(self, *, account_id: str, client_id: str) -> None:

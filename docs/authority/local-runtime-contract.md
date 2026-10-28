@@ -125,6 +125,26 @@ before upgrading its weak owner reference or touching redb. Constructing a new
 Python bridge or capturing another probe from a fork copy cannot refresh that
 native owner process identity.
 
+The bridge also decodes the original held journal's account checkpoint. It
+retains raw integer collateral, prices, cash-flow counters, source timestamps,
+per-position identities, and unresolved intent IDs in immutable observations.
+Closed fields, duplicate keys, bounded collections, route identity and original
+journal identity are checked before publishing an observation. Its checkpoint
+revision cannot exceed the journal revision; source coverage cannot regress.
+Within one journal revision the complete observation is immutable. Later journal
+writes may change pending intents without changing the account checkpoint, but
+cannot change that checkpoint's source contents. A new source epoch can reset a
+connection-local account revision, while global coverage and equal-coverage
+material checks remain in force. Reading never refreshes source time.
+
+The account consumer supports at most 64 positions, 256 venue operations and
+256 pending intents, within a 262144-byte document. Pending IDs retain the
+existing 512-character Native protocol bound. These are observation limits,
+not permission to treat unconsumed positions or intents as absent. Unsupported
+or unavailable evidence refuses the read. This does not establish freshness,
+cache/ledger cohort agreement, a loss baseline, or execution readiness; those
+checks remain necessary in the runtime composition.
+
 This bridge is a storage-evidence capability, not a permit verifier or execution
 host. Its callback must be passed to the same guard's claim and retained by that
 lease. Native clients must still be constructed under that guard, disconnected,

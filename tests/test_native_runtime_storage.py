@@ -172,7 +172,7 @@ def test_only_two_bound_paths_can_be_read(storage, tmp_path):
 
 
 @pytest.mark.filterwarnings("ignore:This process .*multi-threaded:DeprecationWarning")
-@pytest.mark.parametrize("operation", ["identity", "order"])
+@pytest.mark.parametrize("operation", ["identity", "order", "account"])
 def test_fork_copy_refuses_before_native_calls_or_inherited_lock(storage, operation):
     _, journal, _, build = storage
     reader = build()
@@ -191,7 +191,9 @@ def test_fork_copy_refuses_before_native_calls_or_inherited_lock(storage, operat
     if child == 0:
         os.close(read_fd)
         try:
-            if operation == "order":
+            if operation == "account":
+                reader.account_observation()
+            elif operation == "order":
                 reader.order_evidence("close-7")
             else:
                 reader(journal)
