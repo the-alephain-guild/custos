@@ -27,9 +27,12 @@ __all__ = [
     "extract_signal_id_from_tags",
     "generate_signal_id",
     "make_signal_tag",
+    "make_target_delivery_tag",
+    "extract_target_delivery_id_from_tags",
 ]
 
 SIGNAL_ID_TAG_PREFIX = "signal_id:"
+TARGET_DELIVERY_ID_TAG_PREFIX = "target_delivery_id:"
 
 
 def generate_signal_id() -> str:
@@ -40,6 +43,31 @@ def generate_signal_id() -> str:
 def make_signal_tag(signal_id: str) -> str:
     """The order tag carrying a signal id."""
     return f"{SIGNAL_ID_TAG_PREFIX}{signal_id}"
+
+
+def make_target_delivery_tag(delivery_id: str) -> str:
+    """Carry only a canonical target digest onto an order's local tags."""
+    if len(delivery_id) != 64 or any(char not in "0123456789abcdef" for char in delivery_id):
+        raise ValueError("target delivery ID is not a lowercase SHA-256 digest")
+    return f"{TARGET_DELIVERY_ID_TAG_PREFIX}{delivery_id}"
+
+
+def extract_target_delivery_id_from_tags(tags: Iterable[object] | None) -> str | None:
+    """Read one unambiguous target digest from an order's local tags."""
+    if not tags:
+        return None
+    matches = [
+        str(tag)[len(TARGET_DELIVERY_ID_TAG_PREFIX) :]
+        for tag in tags
+        if str(tag).startswith(TARGET_DELIVERY_ID_TAG_PREFIX)
+    ]
+    if len(matches) != 1:
+        return None
+    try:
+        make_target_delivery_tag(matches[0])
+    except ValueError:
+        return None
+    return matches[0]
 
 
 def extract_signal_id_from_tags(tags: Iterable[object] | None) -> str | None:

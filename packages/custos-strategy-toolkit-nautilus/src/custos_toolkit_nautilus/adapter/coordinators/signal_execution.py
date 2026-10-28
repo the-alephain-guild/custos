@@ -23,9 +23,12 @@ from nautilus_trader.common import LogColor
 from nautilus_trader.model import Bar
 
 from custos_toolkit_nautilus.adapter.execution import ExecutionManager
-from custos_toolkit_nautilus.adapter.runtime_types import Indicator, Order
 from custos_toolkit_nautilus.adapter.orders import _CLOSE_INFLIGHT_TIMEOUT_NS
-from custos_toolkit_nautilus.adapter.signal_correlation import make_signal_tag
+from custos_toolkit_nautilus.adapter.runtime_types import Indicator, Order
+from custos_toolkit_nautilus.adapter.signal_correlation import (
+    make_signal_tag,
+    make_target_delivery_tag,
+)
 from custos_toolkit_nautilus.adapter.sizing import notional_from_quantity, quantity_from_notional
 from custos_toolkit_nautilus.adapter.spot_inventory import read_tradable_minimum, size_spot_exit
 from custos_toolkit_nautilus.adapter.strategy_core import (
@@ -216,6 +219,17 @@ class SignalExecutionCoordinator:
         _sig_id = cast(str | None, signal.metadata.get("_signal_id") if signal.metadata else None)
         if _sig_id:
             _tags = [make_signal_tag(_sig_id)]
+        target_delivery_id = signal.metadata.get("target_delivery_id") if signal.metadata else None
+        if target_delivery_id is not None:
+            if not isinstance(target_delivery_id, str):
+                s.log.warning(f"[{ctx.pair}] Refusing malformed external target delivery ID")
+                return None
+            try:
+                target_tag = make_target_delivery_tag(target_delivery_id)
+            except ValueError:
+                s.log.warning(f"[{ctx.pair}] Refusing malformed external target delivery ID")
+                return None
+            _tags = [*_tags, target_tag] if _tags else [target_tag]
 
         # Use context's execution_manager
         execution_manager = cast(ExecutionManager, ctx.execution_manager)
