@@ -50,11 +50,15 @@ duplicate JSON fields, nonfinite values and oversized bodies before durable
 acceptance. A 202 response means the redacted event reached the private source
 outbox; a duplicate returns 200. Neither response says a broker published it
 or a subscriber traded. The HTTP server binds to IPv4 loopback only and is not
-registered as a daemon command yet. `SourcePublisherService` can run that
+composed into the signed runner daemon. `SourcePublisherService` runs that
 receiver alongside the outbox publication worker with an injected JetStream
 client; a broker publication failure ends the service and closes HTTP intake.
-An external TLS and source-IP edge and a separately authorized broker
-credential remain uncomposed.
+The internal `python -m custos.cli.subcommands.source_publisher_sandbox` tool runs this service
+only against unauthenticated IPv4 loopback NATS, with a pre-existing signal
+stream, a private source-token digest file, and a private outbox. It is a
+non-promotable synthetic harness; it does not issue a broker JWT or install a
+source-IP/TLS edge. An independently authorized broker credential, the shared
+stream/ACL provisioning, and runner daemon subscription remain uncomposed.
 
 `external_source_transport.py` provides an adapter for
 isolated JetStream lane, exact source subjects, a stable `Nats-Msg-Id`, and one
