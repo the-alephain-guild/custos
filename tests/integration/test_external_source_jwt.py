@@ -95,6 +95,7 @@ class Host:
     def __init__(self, scope: ExternalSourceRuntimeScope) -> None:
         self.scope = scope
         self.queued = []
+        self.flattened = []
 
     def external_source_runtime_scope(self, instance_id: str) -> ExternalSourceRuntimeScope:
         assert instance_id == str(self.scope.authority.deployment_instance_id)
@@ -114,7 +115,9 @@ class Host:
         return True
 
     async def request_external_source_flatten(self, authority, *, risk_action=None) -> int:
-        raise AssertionError("entry must not flatten")
+        assert authority == self.scope.authority
+        self.flattened.append((authority, risk_action))
+        return 0
 
 
 async def _exercise(
@@ -305,6 +308,45 @@ async def _exercise(
             deliveries.append(receipt.delivery_id)
         assert len(set(deliveries)) == 2
         assert (await stream.stream_info(SIGNAL_STREAM_NAME)).state.messages == 1
+        risk_sender = build_sender_settings(
+            sender_parser().parse_args(
+                [
+                    "--url",
+                    f"http://127.0.0.1:{server.server_port}/v1/external-source-signals",
+                    "--source-id",
+                    source,
+                    "--strategy-revision",
+                    "v1",
+                    "--symbol",
+                    "ETH-USDT-SWAP",
+                    "--bar-close",
+                    bar.isoformat(),
+                    "--target",
+                    "FLAT",
+                    "--risk-action",
+                    "FLATTEN",
+                    "--token-file",
+                    str(token_file),
+                    "--max-lag",
+                    "3600",
+                ]
+            ),
+            now=now,
+        )
+        assert (await asyncio.to_thread(send_synthetic_signal, risk_sender)).status_code == 202
+        flat_deliveries = []
+        for _connection, session, host in subscribers:
+            message = await session.subscription.next_msg(timeout=3)
+            receipt = await session.handle_message(message, at=datetime.now(UTC))
+            assert receipt is not None and receipt.status == "flat_requested"
+            assert host.flattened == [(session.authority, "FLATTEN")]
+            stored = session.inbox.target_execution(session.authority, receipt.delivery_id)
+            assert stored is not None and stored.status == "flat_requested"
+            assert stored.flat_confirmation_source is None
+            flat_deliveries.append(receipt.delivery_id)
+        assert len(set(flat_deliveries)) == 2
+        assert set(flat_deliveries).isdisjoint(deliveries)
+        assert (await stream.stream_info(SIGNAL_STREAM_NAME)).state.messages == 2
         with pytest.raises((nats.errors.Error, TimeoutError)):
             await (
                 subscribers[0][0]
@@ -316,7 +358,7 @@ async def _exercise(
                     stream=SIGNAL_STREAM_NAME,
                 )
             )
-        assert (await stream.stream_info(SIGNAL_STREAM_NAME)).state.messages == 1
+        assert (await stream.stream_info(SIGNAL_STREAM_NAME)).state.messages == 2
     finally:
         publisher_stop.set()
         if publisher_task is not None:
