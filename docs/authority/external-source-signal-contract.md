@@ -141,9 +141,14 @@ opt-in for an exact instance, private authorization file and separate NATS
 credential. It reuses the signed SIM broker endpoint and TLS trust but not the
 runner-control connection or JWT, and rejects offline, live, unauthenticated
 development NATS and non-Nautilus hosts. The daemon logs state changes without
-including credentials or raw messages. This composition has local unit and
-full-repository verification only; a real JWT/ACL, two runner processes and
-venue execution still require separate receipts.
+including credentials or raw messages. An opt-in isolated NATS integration test
+generates short-lived publisher and two distinct subscriber JWTs with exact
+subject permissions, provisions two separate durables, publishes one sanitized
+source event and verifies two independent inbox/host handoffs. A subscriber's
+attempt to publish on the source subject is rejected by the real broker. This
+proves the synthetic broker ACL path, not issuance or revocation in the shared
+environment; two real runner processes, account fills and venue execution still
+require separate receipts.
 
 A normal entry must be durably claimed
 before the host queue is touched; a persisted handoff means only that the

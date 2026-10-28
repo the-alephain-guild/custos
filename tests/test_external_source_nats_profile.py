@@ -65,6 +65,15 @@ async def test_connect_uses_exact_private_creds_and_verified_tls(
     assert isinstance(calls[0]["user_credentials"], RawCredentials)
     assert "synthetic-separate-nats-jwt-and-seed" in calls[0]["user_credentials"].data
 
+    secure = ExternalSourceNatsProfile(
+        grant=authorized,
+        url="tls://broker.example:4222",
+        ca_path=ca,
+        server_name="broker.example",
+    )
+    await secure.connect()
+    assert calls[1]["servers"] == ["tls://broker.example:4222"]
+
 
 @pytest.mark.asyncio
 async def test_changed_credential_or_url_is_refused_before_connection(

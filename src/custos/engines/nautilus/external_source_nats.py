@@ -29,7 +29,7 @@ class ExternalSourceNatsProfile:
     def __post_init__(self) -> None:
         parsed = urlparse(self.url)
         if (
-            parsed.scheme != "nats"
+            parsed.scheme not in {"nats", "tls"}
             or not parsed.hostname
             or parsed.port is None
             or parsed.username is not None
