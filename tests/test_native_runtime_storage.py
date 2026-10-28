@@ -52,6 +52,7 @@ def storage(tmp_path):
             journal_path=journal,
             account=identity,
             adapter_account_id="PAPERTRADE-001",
+            adapter_client_id="PAPERTRADE",
             native_probe=native,
         )
 
@@ -154,7 +155,8 @@ def test_only_two_bound_paths_can_be_read(storage, tmp_path):
 
 
 @pytest.mark.filterwarnings("ignore:This process .*multi-threaded:DeprecationWarning")
-def test_fork_copy_refuses_before_native_calls_or_inherited_lock(storage):
+@pytest.mark.parametrize("operation", ["identity", "order"])
+def test_fork_copy_refuses_before_native_calls_or_inherited_lock(storage, operation):
     _, journal, _, build = storage
     reader = build()
     entered, release = threading.Event(), threading.Event()
@@ -172,7 +174,10 @@ def test_fork_copy_refuses_before_native_calls_or_inherited_lock(storage):
     if child == 0:
         os.close(read_fd)
         try:
-            reader(journal)
+            if operation == "order":
+                reader.order_evidence("close-7")
+            else:
+                reader(journal)
         except RuntimeFenceStale:
             os.write(write_fd, b"fenced")
         except Exception:

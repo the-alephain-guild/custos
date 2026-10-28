@@ -326,9 +326,27 @@ The execution manager can synthesize rejection or cancellation after query
 timeouts while the original signed intent may still execute. These observations
 retain unknown state and a durable latch; a later verified fill remains
 recordable. Release after terminal non-execution still requires a dedicated
-adapter-held per-intent proof. The journal UUID/revision probe cannot provide
+adapter-held per-intent proof. A journal UUID/revision alone does not provide
 that proof. Actual node integration, complete risk enforcement and local runtime
 entry remain unaccepted; these components do not enable live admission.
+
+PapertradeRuntimeStorageProbe additionally reads per-order evidence through the
+same held Native probe, bound to the configured adapter account and client. The
+closed, bounded JSON result carries one transaction's journal identity and one
+of missing, unproven, filled or proven_no_fill. Duplicate or unknown fields,
+conflicting routing, changed UUID/path/owner and regressing revision are refused.
+Process fencing precedes both the Python lock and Native call; no successful
+observation is cached as a substitute for the next read.
+
+The immutable no-fill result checks the original binding, proof journal UUID,
+command Keccak and sealed revision. never_submitted and expired_with_coverage
+have separate closed source shapes. Expiry requires continuous scan and account
+coverage past the original deadline, with exact positive account revision. The
+Native producer verifies the private historical snapshot witness in its same
+read transaction; this reader neither exports that snapshot nor runs another
+chain scanner. Consumer protocol tests use fixture JSON and do not substitute
+for actual Native acceptance. This read-only seam changes no risk schema or
+settlement and grants no reservation release, execution or live admission.
 
 ## Readiness, restart and stop
 

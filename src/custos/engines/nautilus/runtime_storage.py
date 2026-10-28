@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import os
 import threading
 from pathlib import Path
 from typing import Protocol
-from uuid import UUID
 
 from custos.core.execution_events import ExecutionEventStore
 from custos.core.local_runtime_state import (
@@ -20,19 +18,18 @@ from custos.core.runtime_authority import (
     RuntimeFenceStale,
     RuntimeStorageUnavailable,
 )
+from custos.engines.nautilus.order_evidence import (
+    NativeOrderEvidence,
+    decode_document,
+    journal_identity,
+    order_evidence,
+    require_client_order_id,
+)
 
 
 class NativeJournalProbe(Protocol):
     def snapshot_json(self) -> str: ...
-
-
-def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
-    result: dict[str, object] = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("duplicate journal identity field")
-        result[key] = value
-    return result
+    def order_evidence_json(self, client_order_id: str) -> str: ...
 
 
 class PapertradeRuntimeStorageProbe:
@@ -43,6 +40,7 @@ class PapertradeRuntimeStorageProbe:
         journal_path: Path,
         account: RuntimeAccountIdentity,
         adapter_account_id: str,
+        adapter_client_id: str,
         native_probe: NativeJournalProbe,
     ) -> None:
         if not isinstance(state, ExecutionEventStore) or not isinstance(
@@ -56,10 +54,16 @@ class PapertradeRuntimeStorageProbe:
             or any(ord(char) < 33 or ord(char) == 127 or char == ":" for char in adapter_account_id)
         ):
             raise RuntimeStorageUnavailable("native adapter account identifier is invalid")
+        try:
+            require_client_order_id(adapter_client_id)
+        except Exception:
+            raise RuntimeStorageUnavailable("native adapter client identifier is invalid") from None
         self._pid = os.getpid()
         self._lock = threading.RLock()
         self._state = state
         self._native = native_probe
+        self._account_id = adapter_account_id
+        self._client_id = adapter_client_id
         self._journal = Path(journal_path).absolute()
         self._regular(self._journal)
         self._journal = self._journal.resolve()
@@ -91,38 +95,40 @@ class PapertradeRuntimeStorageProbe:
 
     def _read_native(self) -> RuntimeStoreIdentity:
         try:
-            raw = self._native.snapshot_json()
-            if type(raw) is not str or not 0 < len(raw.encode("utf-8")) <= 4096:
-                raise ValueError("invalid journal identity payload")
-            value = json.loads(raw, object_pairs_hook=_unique_object)
-            if type(value) is not dict or set(value) != {
-                "schema_version",
-                "journal_id",
-                "revision",
-                "owner",
-                "canonical_path",
-            }:
-                raise ValueError("invalid journal identity fields")
-            if type(value["schema_version"]) is not int or value["schema_version"] != 1:
-                raise ValueError("invalid journal identity schema")
-            if type(value["revision"]) is not int or not 1 <= value["revision"] <= 2**63 - 1:
-                raise ValueError("invalid journal identity revision")
-            if type(value["journal_id"]) is not str:
-                raise ValueError("invalid journal UUID")
-            identity = UUID(value["journal_id"])
-            if identity.version != 4 or str(identity) != value["journal_id"]:
-                raise ValueError("invalid journal UUID")
-            if type(value["canonical_path"]) is not str or value["canonical_path"] != str(
-                self._journal
-            ):
-                raise ValueError("native journal path differs")
-            if value["owner"] != self._owner:
-                raise ValueError("native journal owner differs")
-            return RuntimeStoreIdentity(identity, value["revision"])
+            value = decode_document(self._native.snapshot_json(), maximum_bytes=4096)
+            return journal_identity(value, owner=self._owner, path=self._journal)
         except Exception:
             raise RuntimeStorageUnavailable(
                 "held native journal identity cannot be verified"
             ) from None
+
+    def _advance_identity(self, current: RuntimeStoreIdentity) -> None:
+        previous = self._journal_identity
+        if current.store_id != previous.store_id or current.sequence < previous.sequence:
+            raise RuntimeStorageUnavailable("held native journal identity regressed or changed")
+        self._journal_identity = current
+
+    def order_evidence(self, client_order_id: str) -> NativeOrderEvidence:
+        self._require_process()
+        with self._lock:
+            try:
+                require_client_order_id(client_order_id)
+                self._regular(self._journal)
+                observed = order_evidence(
+                    self._native.order_evidence_json(client_order_id),
+                    owner=self._owner,
+                    path=self._journal,
+                    account_id=self._account_id,
+                    client_id=self._client_id,
+                    client_order_id=client_order_id,
+                )
+                self._regular(self._journal)
+                self._advance_identity(observed.journal)
+                return observed
+            except Exception:
+                raise RuntimeStorageUnavailable(
+                    "held native order evidence cannot be verified"
+                ) from None
 
     def __call__(self, path: Path) -> RuntimeStoreIdentity:
         self._require_process()
@@ -137,8 +143,5 @@ class PapertradeRuntimeStorageProbe:
             if path != self._journal:
                 raise RuntimeStorageUnavailable("runtime store path is not bound")
             current = self._read_native()
-            previous = self._journal_identity
-            if current.store_id != previous.store_id or current.sequence < previous.sequence:
-                raise RuntimeStorageUnavailable("held native journal identity regressed or changed")
-            self._journal_identity = current
+            self._advance_identity(current)
             return current
