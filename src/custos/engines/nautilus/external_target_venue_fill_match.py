@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from custos.core.runner_fact_producer import VenueLedgerEvidence
@@ -19,6 +20,8 @@ class TargetVenueFillComparison:
     matched_trade_ids: tuple[str, ...] = ()
     local_only_trade_ids: tuple[str, ...] = ()
     venue_only_trade_ids: tuple[str, ...] = ()
+    fee_status: Literal["unknown", "disagreement", "matched_venue_commission"] = "unknown"
+    venue_fee_totals: tuple[tuple[str, str], ...] = ()
     reason: str | None = None
 
 
@@ -27,6 +30,60 @@ def _utc_ns(value: datetime) -> int | None:
         return None
     utc = value.astimezone(UTC)
     return int(utc.timestamp()) * 1_000_000_000 + utc.microsecond * 1_000
+
+
+def _exact_decimal(value: object) -> Decimal | None:
+    if isinstance(value, bool | float) or value is None:
+        return None
+    try:
+        amount = Decimal(str(value))
+    except InvalidOperation:
+        return None
+    return amount if amount.is_finite() else None
+
+
+def _commission_for_known_fills(
+    evidence: VenueLedgerEvidence,
+    local: set[tuple[str, str, str]],
+    venue_rows: Mapping[tuple[str, str, str], Mapping[str, object]],
+    connector: str,
+) -> tuple[
+    Literal["unknown", "disagreement", "matched_venue_commission"], tuple[tuple[str, str], ...]
+]:
+    if evidence.completeness.get("fees_complete") is not True:
+        return "unknown", ()
+    fee_rows: dict[str, list[Mapping[str, object]]] = {}
+    for fee in evidence.fees:
+        if not isinstance(fee, Mapping):
+            return "disagreement", ()
+        identity = fee.get("fee_id")
+        if isinstance(identity, str):
+            fee_rows.setdefault(identity, []).append(fee)
+    totals: dict[str, Decimal] = {}
+    for instrument, order_id, trade_id in local:
+        fill = venue_rows[(instrument, order_id, trade_id)]
+        symbol = (
+            instrument.removesuffix(".OKX")
+            if connector == "okx_perpetual"
+            else instrument.removesuffix("-PERP.BINANCE")
+        )
+        fee_id = f"trade:{symbol}:{trade_id}:commission"
+        rows = fee_rows.get(fee_id, [])
+        amount = _exact_decimal(fill.get("fee"))
+        currency = fill.get("fee_currency")
+        if len(rows) != 1 or amount is None or not isinstance(currency, str) or not currency:
+            return "disagreement", ()
+        fee = rows[0]
+        if (
+            fee.get("kind") != "commission"
+            or fee.get("currency") != currency
+            or _exact_decimal(fee.get("amount")) != amount
+        ):
+            return "disagreement", ()
+        totals[currency] = totals.get(currency, Decimal(0)) + amount
+    return "matched_venue_commission", tuple(
+        (currency, str(amount)) for currency, amount in sorted(totals.items())
+    )
 
 
 def compare_known_order_fills(
@@ -77,6 +134,7 @@ def compare_known_order_fills(
         return TargetVenueFillComparison("disagreement", reason="duplicate_local_trade")
     known_orders = {(instrument, order_id) for instrument, order_id, _ in local}
     venue: list[tuple[str, str, str]] = []
+    venue_rows: dict[tuple[str, str, str], Mapping[str, object]] = {}
     for row in evidence.fills:
         if not isinstance(row, Mapping):
             return TargetVenueFillComparison("unknown", reason="malformed_venue_fills")
@@ -86,7 +144,9 @@ def compare_known_order_fills(
         if not all(isinstance(value, str) and value for value in (instrument, order_id, trade_id)):
             return TargetVenueFillComparison("unknown", reason="malformed_venue_fills")
         if (instrument, order_id) in known_orders:
-            venue.append((instrument, order_id, trade_id))
+            key = (instrument, order_id, trade_id)
+            venue.append(key)
+            venue_rows[key] = row
     if len(set(venue)) != len(venue):
         return TargetVenueFillComparison("disagreement", reason="duplicate_venue_trade")
     local_only = set(local) - set(venue)
@@ -99,7 +159,12 @@ def compare_known_order_fills(
             local_only_trade_ids=tuple(sorted(key[2] for key in local_only)),
             venue_only_trade_ids=tuple(sorted(key[2] for key in venue_only)),
         )
+    fee_status, fee_totals = _commission_for_known_fills(
+        evidence, set(local), venue_rows, target.connector
+    )
     return TargetVenueFillComparison(
         "matched_known_order_fills",
         matched_trade_ids=tuple(sorted(key[2] for key in matched)),
+        fee_status=fee_status,
+        venue_fee_totals=fee_totals,
     )

@@ -239,9 +239,14 @@ testnet deployment's independent ledger for a caller-specified interval and
 compare all fills on the known venue order IDs. The comparison returns
 `matched_known_order_fills`, `disagreement` or `unknown`; an unfilled order,
 incomplete interval or missing venue account view remains `unknown`. A match
-does not attest final order state, position flatness, fees or quantity
+does not attest final order state, position flatness or quantity
 equivalence: OKX reports contract quantities on native fills while the ledger
 converts them to base units. No real account has yet produced a comparison.
+When the independent ledger declares fee coverage complete, the comparison
+also checks each known trade's commission against the separate venue fee row
+and reports a per-currency total. Its fee status remains `unknown` without
+complete coverage and `disagreement` on mismatched rows. This is commission
+attribution for known fills, not funding, realized PnL or final settlement.
 The internal `python -m custos.cli.subcommands.source_execution_report`
 command opens an existing owner-only target inbox in SQLite read-only mode and
 exports one exact deployment generation's local target/order/fill rows as JSON.

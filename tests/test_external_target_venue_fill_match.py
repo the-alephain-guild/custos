@@ -68,6 +68,7 @@ def test_known_order_fills_match_independent_venue_ids(tmp_path: Path) -> None:
         report(tmp_path), ledger(), closed_at=NOW + timedelta(seconds=30)
     )
     assert comparison.status == "matched_known_order_fills"
+    assert comparison.fee_status == "unknown"
     assert comparison.matched_trade_ids == ("T-1",)
     assert comparison.local_only_trade_ids == comparison.venue_only_trade_ids == ()
 
@@ -124,3 +125,64 @@ def test_unfilled_order_cannot_be_called_matched(tmp_path: Path) -> None:
         report(tmp_path, filled=False), ledger(fills=[]), closed_at=NOW + timedelta(seconds=30)
     )
     assert comparison.status == "unknown"
+
+
+def test_known_fill_commission_is_checked_against_separate_venue_fee_row(tmp_path: Path) -> None:
+    evidence = replace(
+        ledger(),
+        completeness={"fills_complete": True, "fees_complete": True},
+        fills=[
+            {
+                "venue_order_id": "V-1",
+                "venue_trade_id": "T-1",
+                "instrument": "ETH-USDT-SWAP.OKX",
+                "quantity": "0.2",
+                "fee": "0.03",
+                "fee_currency": "USDT",
+            }
+        ],
+        fees=[
+            {
+                "fee_id": "trade:ETH-USDT-SWAP:T-1:commission",
+                "kind": "commission",
+                "currency": "USDT",
+                "amount": "0.03",
+            }
+        ],
+    )
+    comparison = compare_known_order_fills(
+        report(tmp_path), evidence, closed_at=NOW + timedelta(seconds=30)
+    )
+    assert comparison.status == "matched_known_order_fills"
+    assert comparison.fee_status == "matched_venue_commission"
+    assert comparison.venue_fee_totals == (("USDT", "0.03"),)
+
+
+def test_fee_disagreement_is_not_hidden_by_matching_trade_ids(tmp_path: Path) -> None:
+    evidence = replace(
+        ledger(),
+        completeness={"fills_complete": True, "fees_complete": True},
+        fills=[
+            {
+                "venue_order_id": "V-1",
+                "venue_trade_id": "T-1",
+                "instrument": "ETH-USDT-SWAP.OKX",
+                "fee": "0.03",
+                "fee_currency": "USDT",
+            }
+        ],
+        fees=[
+            {
+                "fee_id": "trade:ETH-USDT-SWAP:T-1:commission",
+                "kind": "commission",
+                "currency": "USDT",
+                "amount": "0.04",
+            }
+        ],
+    )
+    comparison = compare_known_order_fills(
+        report(tmp_path), evidence, closed_at=NOW + timedelta(seconds=30)
+    )
+    assert comparison.status == "matched_known_order_fills"
+    assert comparison.fee_status == "disagreement"
+    assert comparison.venue_fee_totals == ()
