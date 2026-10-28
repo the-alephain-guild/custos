@@ -87,6 +87,14 @@ class Host:
         assert instance_id == str(self.scope.authority.deployment_instance_id)
         return self.scope
 
+    def external_source_flat_reader(self, authority):
+        assert authority == self.scope.authority
+        return None
+
+    async def external_source_flat_local_clear(self, authority, pair):
+        assert authority == self.scope.authority and pair in self.scope.allowed_pairs
+        return True
+
     def queue_external_source_signal(self, authority, signal) -> bool:
         assert authority == self.scope.authority
         self.queued.append(signal)
