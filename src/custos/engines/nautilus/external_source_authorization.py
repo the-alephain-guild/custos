@@ -50,6 +50,7 @@ class AuthorizedSourceSubscription:
     spec: SignalSubscriptionSpec
     binding: SourceSubscriptionBinding
     credentials_path: Path
+    credentials_sha256: str
 
 
 def _private_file(path: Path, *, max_bytes: int) -> bytes:
@@ -175,4 +176,5 @@ def load_source_subscription(
             authority=authority,
         ),
         credentials_path=credentials_path,
+        credentials_sha256=digest,
     )

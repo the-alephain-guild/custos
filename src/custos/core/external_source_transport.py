@@ -132,6 +132,7 @@ async def bind_signal_consumer(broker: Any, spec: SignalSubscriptionSpec) -> Any
         "filter_subject",
         "deliver_policy",
         "ack_policy",
+        "replay_policy",
         "max_ack_pending",
     )
     if any(getattr(actual, field, None) != getattr(expected, field) for field in fields):

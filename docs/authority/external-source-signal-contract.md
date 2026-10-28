@@ -113,9 +113,14 @@ Only sandbox/testnet and the admitted OKX/Binance perpetual scopes can bind.
 This file grants a subscription choice, not deployment authority, size or a
 venue credential. The broker must separately enforce an exact pre-provisioned
 durable and least-privilege JWT ACL; a file/digest comparison alone cannot prove
-those broker permissions. The loader is currently tested as a pure admission
-gate; runtime revalidation, independent broker connection and daemon composition
-remain open.
+those broker permissions. `ExternalSourceRunnerSession` reopens the private
+authorization and credential files against the active host before broker intake
+and again before handoff. A changed generation, source mapping or credential
+digest leaves the broker message unacknowledged and prevents host handoff. It
+binds only an existing consumer whose delivery, filter, ack and replay policy
+match the computed subscription. This one-shot session is tested with an
+injected broker and host; independent JWT connection, daemon lifecycle
+composition and venue execution remain open.
 
 A normal entry must be durably claimed
 before the host queue is touched; a persisted handoff means only that the
