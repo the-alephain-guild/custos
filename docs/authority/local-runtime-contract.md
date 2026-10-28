@@ -38,14 +38,29 @@ funding, material integrity or installed-engine capability.
 
 A permit binds the manifest digest, run, account scope, canonical control registry
 UUID, target authorization epoch, operator and management-key fingerprint.
-Issued/not-before/expiry instants are explicit canonical UTC text with six
-fractional digits. The Ed25519 signing frame is
+Issued/not-before/expiry and the required `exit_until_utc` instants are explicit
+canonical UTC text with six fractional digits. The exit instant must be no
+earlier than expiry. Both bounds must project to strictly positive UTC seconds
+in the native AtomicTime nanosecond range. The Ed25519 signing frame is
 `alephain.custos.local-run-permit.v1` followed by a NUL byte and the canonical
 permit JSON. `permit_digest` is the SHA-256 of the complete canonical signed
 envelope, including the signature; preparation, verification and recovery use
 that same identity. Both documents reject duplicate keys, unknown fields and
 noncanonical bytes. The signing function only consumes an explicitly supplied
 key object and does not load or generate management credentials.
+
+`VerifiedLocalRunAuthorization.execution_window` projects the signed expiry and
+exit instant into an immutable pair of exclusive native bounds. Integer
+timedelta division floors each bound independently, without float conversion or
+adding the manifest's stop confirmation timeout. Different microseconds in one
+second may produce equal bounds. Native intent admission still requires the
+actual signed deadline strictly before the selected bound and enough remaining
+venue-session lifetime; signature validity alone proves neither. Activation
+verification still requires the current instant strictly before expiry. This
+projection does not implement an expired-permit activation path or a separate
+observation/exit service. Such a service must independently verify the same
+signature and durable owner, then authorize only checked reductions; it must
+not use an `allow_expired` flag to reactivate strategy decisions.
 
 Verification consumes kernel-provisioned public keys and operator mappings, the
 actual adapter account, current registry UUID and the complete prepared claim.

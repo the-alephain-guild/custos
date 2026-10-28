@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import importlib
+import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
@@ -30,7 +31,7 @@ def utc(value):
     return value.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
-def materials(tmp_path):
+def materials(tmp_path, *, permit_changes=None):
     authority = api()
     manifest = manifest_api().parse_local_manifest(canonical_json_bytes(manifest_document()))
     key = Ed25519PrivateKey.generate()
@@ -50,7 +51,9 @@ def materials(tmp_path):
         "issued_at_utc": utc(NOW - timedelta(seconds=1)),
         "not_before_utc": utc(NOW),
         "expires_at_utc": utc(NOW + timedelta(hours=1)),
+        "exit_until_utc": utc(NOW + timedelta(hours=3)),
     }
+    document.update(permit_changes or {})
     permit = authority.LocalRunPermitV1.model_validate(document)
     trusted = authority.LocalOperatorAuthority("competition-operator", key.public_key())
     verifier = authority.LocalPermitAuthenticator({key_id: trusted})
@@ -69,6 +72,136 @@ def materials(tmp_path):
             expected_authorization_epoch=0,
         )
     return manifest, permit, key, verifier, args
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        None,
+        "",
+        True,
+        123,
+        "2026-10-27T14:00:00Z",
+        "2026-10-27T14:00:00.000000+00:00",
+        "2026-10-27T12:59:59.999999Z",
+        "9999-12-31T23:59:59.000000Z",
+    ],
+)
+def test_exit_deadline_rejects_missing_noncanonical_early_or_unrepresentable_values(
+    value, tmp_path
+):
+    _manifest, permit, _key, _verifier, _args = materials(tmp_path)
+    document = permit.model_dump(mode="json")
+    if value is None:
+        document.pop("exit_until_utc")
+    else:
+        document["exit_until_utc"] = value
+    with pytest.raises(ValueError):
+        api().LocalRunPermitV1.model_validate(document)
+
+
+@pytest.mark.parametrize("field", ["expires_at_utc", "exit_until_utc"])
+@pytest.mark.parametrize("value", ["1970-01-01T00:00:00.999999Z", "9999-12-31T23:59:59.000000Z"])
+def test_exit_deadline_rejects_bounds_outside_native_seconds(field, value, tmp_path):
+    _manifest, permit, _key, _verifier, _args = materials(tmp_path)
+    document = permit.model_dump(mode="json")
+    document[field] = value
+    if field == "expires_at_utc" and value.startswith("1970"):
+        document["issued_at_utc"] = "1970-01-01T00:00:00.000000Z"
+        document["not_before_utc"] = "1970-01-01T00:00:00.000001Z"
+    with pytest.raises(ValueError):
+        api().LocalRunPermitV1.model_validate(document)
+
+
+@pytest.mark.parametrize("same", [False, True])
+def test_exit_deadline_projects_verified_instants_by_exact_floor_without_timeout(same, tmp_path):
+    expiry = NOW + timedelta(hours=2, microseconds=999999)
+    exit_at = expiry if same else expiry + timedelta(minutes=7)
+    manifest, permit, _key, verifier, args = materials(
+        tmp_path,
+        permit_changes={
+            "expires_at_utc": utc(expiry),
+            "exit_until_utc": utc(exit_at),
+        },
+    )
+    verified = verifier.verify(**args)
+    window = verified.execution_window
+    epoch = datetime(1970, 1, 1, tzinfo=UTC)
+    assert window.risk_increase_until == (expiry - epoch) // timedelta(seconds=1)
+    assert window.exit_until == (exit_at - epoch) // timedelta(seconds=1)
+    assert (
+        window.exit_until
+        != window.risk_increase_until + manifest.stop_policy.confirmation_timeout_seconds
+    )
+    assert permit.exit_until_utc == utc(exit_at)
+    with pytest.raises(AttributeError):
+        window.exit_until = 1
+    args["now"] = expiry
+    with pytest.raises(ValueError, match="not currently valid"):
+        verifier.verify(**args)
+
+
+def test_exit_deadline_is_inside_signature_and_complete_envelope_identity(tmp_path):
+    _manifest, permit, key, verifier, args = materials(tmp_path)
+
+    envelope = json.loads(args["signed_permit_bytes"])
+    envelope["permit"]["exit_until_utc"] = utc(NOW + timedelta(hours=4))
+    args["signed_permit_bytes"] = canonical_json_bytes(envelope)
+    with pytest.raises(ValueError, match="signature is invalid"):
+        verifier.verify(**args)
+    changed = permit.model_dump(mode="json")
+    changed["exit_until_utc"] = envelope["permit"]["exit_until_utc"]
+    newly_signed = api().sign_local_permit(api().LocalRunPermitV1.model_validate(changed), key)
+    assert api().local_permit_digest(newly_signed) != args["checkpoint"].permit_digest
+    args["signed_permit_bytes"] = newly_signed
+    with pytest.raises(ValueError, match="prepared runtime authority"):
+        verifier.verify(**args)
+
+
+@pytest.mark.parametrize("offset,allowed", [(-2, True), (-1, True), (0, True), (1, False)])
+def test_exit_deadline_native_maximum_second(offset, allowed, tmp_path):
+    _manifest, permit, _key, _verifier, _args = materials(tmp_path)
+    document = permit.model_dump(mode="json")
+    bound = datetime(1970, 1, 1, tzinfo=UTC) + timedelta(
+        seconds=(2**64 - 1) // 1_000_000_000 + offset
+    )
+    document["expires_at_utc"] = utc(bound)
+    document["exit_until_utc"] = utc(bound)
+    if allowed:
+        api().LocalRunPermitV1.model_validate(document)
+    else:
+        with pytest.raises(ValueError, match="native execution time range"):
+            api().LocalRunPermitV1.model_validate(document)
+
+
+def test_exit_deadline_compares_instants_before_flooring(tmp_path):
+    manifest, permit, _key, verifier, args = materials(
+        tmp_path,
+        permit_changes={
+            "expires_at_utc": "2026-10-27T14:00:00.100000Z",
+            "exit_until_utc": "2026-10-27T14:00:00.900000Z",
+        },
+    )
+    window = verifier.verify(**args).execution_window
+    assert window.risk_increase_until == window.exit_until
+    assert manifest.stop_policy.confirmation_timeout_seconds > 0
+    document = permit.model_dump(mode="json")
+    document["exit_until_utc"] = "2026-10-27T14:00:00.099999Z"
+    with pytest.raises(ValueError, match="validity interval"):
+        api().LocalRunPermitV1.model_validate(document)
+
+
+@pytest.mark.parametrize("expiry", ["1969-12-31T23:59:59.999999Z", "1970-01-01T00:00:00.000000Z"])
+def test_exit_deadline_refuses_nonpositive_native_projection(expiry, tmp_path):
+    _manifest, permit, _key, _verifier, _args = materials(tmp_path)
+    document = permit.model_dump(mode="json")
+    document.update(
+        issued_at_utc="1969-12-30T00:00:00.000000Z",
+        not_before_utc="1969-12-31T00:00:00.000000Z",
+        expires_at_utc=expiry,
+    )
+    with pytest.raises(ValueError, match="native execution time range"):
+        api().LocalRunPermitV1.model_validate(document)
 
 
 def test_valid_local_permit_binds_target_epoch_and_durable_registry_not_process_generation(

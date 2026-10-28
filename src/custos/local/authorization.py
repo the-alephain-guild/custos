@@ -31,6 +31,8 @@ from custos.local.manifest import (
 )
 
 LOCAL_PERMIT_SIGNING_DOMAIN = b"alephain.custos.local-run-permit.v1\x00"
+_NATIVE_MAX_SECONDS = (2**64 - 1) // 1_000_000_000
+_UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _operator_id(value: str) -> str:
@@ -48,6 +50,13 @@ def _utc_instant(value: str) -> datetime:
 def _utc_text(value: str) -> str:
     _utc_instant(value)
     return value
+
+
+def _native_seconds(value: str) -> int:
+    seconds = (_utc_instant(value) - _UNIX_EPOCH) // timedelta(seconds=1)
+    if not 0 < seconds <= _NATIVE_MAX_SECONDS:
+        raise ValueError("permit deadline is outside native execution time range")
+    return seconds
 
 
 def local_operator_key_id(key: Ed25519PublicKey) -> str:
@@ -68,6 +77,7 @@ class LocalRunPermitV1(LocalVersionedDocument):
     issued_at_utc: Annotated[StrictStr, AfterValidator(_utc_text)]
     not_before_utc: Annotated[StrictStr, AfterValidator(_utc_text)]
     expires_at_utc: Annotated[StrictStr, AfterValidator(_utc_text)]
+    exit_until_utc: Annotated[StrictStr, AfterValidator(_utc_text)]
 
     @field_validator("key_id")
     @classmethod
@@ -82,8 +92,11 @@ class LocalRunPermitV1(LocalVersionedDocument):
             _utc_instant(self.issued_at_utc)
             <= _utc_instant(self.not_before_utc)
             < _utc_instant(self.expires_at_utc)
+            <= _utc_instant(self.exit_until_utc)
         ):
             raise ValueError("permit validity interval is invalid")
+        _native_seconds(self.expires_at_utc)
+        _native_seconds(self.exit_until_utc)
         return self
 
 
@@ -135,11 +148,24 @@ class LocalOperatorAuthority:
 
 
 @dataclass(frozen=True)
+class LocalExecutionWindow:
+    risk_increase_until: int
+    exit_until: int
+
+
+@dataclass(frozen=True)
 class VerifiedLocalRunAuthorization:
     manifest: LocalRunManifestV1
     permit: LocalRunPermitV1
     permit_digest: str
     checkpoint: PreparedRuntimeClaim
+
+    @property
+    def execution_window(self) -> LocalExecutionWindow:
+        return LocalExecutionWindow(
+            risk_increase_until=_native_seconds(self.permit.expires_at_utc),
+            exit_until=_native_seconds(self.permit.exit_until_utc),
+        )
 
 
 @dataclass(frozen=True)
