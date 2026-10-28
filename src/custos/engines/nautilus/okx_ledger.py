@@ -14,6 +14,7 @@ from decimal import Decimal
 from custos.core.runner_fact import SUPPORTED_CURRENCIES
 from custos.core.runner_fact_producer import VenueLedgerEvidence
 from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory, scoped_balances
+from custos.engines.nautilus.external_target_flat_observation import VenueFlatObservation
 from custos.engines.nautilus.ledger_http import (
     ReadOnlyVenueHttp,
     VenueLedgerError,
@@ -98,6 +99,46 @@ class OkxVenueLedgerSource:
         if self._demo:
             headers["x-simulated-trading"] = "1"
         return self._http.get(path, params, headers)
+
+    async def observe_flat(self, *, connector: str, pair: str) -> VenueFlatObservation:
+        symbol = pair + "-SWAP"
+        if not self._perpetual or connector != "okx_perpetual" or symbol not in self._symbols:
+            raise VenueLedgerError("OKX flat observation differs from ledger scope")
+        return await asyncio.to_thread(self._observe_flat, symbol, pair)
+
+    def _observe_flat(self, symbol: str, pair: str) -> VenueFlatObservation:
+        positions = rows(self._get("/api/v5/account/positions", {"instId": symbol}))
+        ordinary = rows(
+            self._get(
+                "/api/v5/trade/orders-pending",
+                {"instType": "SWAP", "instId": symbol, "limit": 100},
+            )
+        )
+        conditional = []
+        for order_type in ("conditional", "oco", "trigger", "move_order_stop"):
+            conditional.extend(
+                rows(
+                    self._get(
+                        "/api/v5/trade/orders-algo-pending",
+                        {"ordType": order_type, "instId": symbol, "limit": 100},
+                    )
+                )
+            )
+        if any(row.get("instId") != symbol for row in positions + ordinary + conditional):
+            raise VenueLedgerError("OKX flat observation contains another instrument")
+        observed = rows(self._get("/api/v5/public/time", {}, private=False))
+        if len(observed) != 1:
+            raise VenueLedgerError("OKX flat observation time is ambiguous")
+        return VenueFlatObservation(
+            source="venue_api",
+            connector="okx_perpetual",
+            pair=pair,
+            observed_at=timestamp_ms(observed[0].get("ts")),
+            positions_complete=True,
+            orders_complete=True,
+            open_positions=sum(bool(decimal(row.get("pos"), "position")) for row in positions),
+            open_orders=len(ordinary) + len(conditional),
+        )
 
     def _history(self, path: str, params: dict[str, object], start: int, end: int) -> list[dict]:
         result = {}
