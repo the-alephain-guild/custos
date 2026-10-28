@@ -548,7 +548,15 @@ async def test_retry_exhaustion_commit_failure_still_naks_and_never_terms() -> N
 @pytest.mark.asyncio
 async def test_long_operation_renews_inbound_lease_without_ack_or_puback() -> None:
     envelope_bytes, subject = _signed_fixture()
-    delivery = _Delivery(envelope_bytes, subject)
+    renewed_twice = asyncio.Event()
+
+    class ProgressDelivery(_Delivery):
+        async def in_progress(self) -> None:
+            await super().in_progress()
+            if self.events.count("in_progress") >= 2:
+                renewed_twice.set()
+
+    delivery = ProgressDelivery(envelope_bytes, subject)
     policy = CommandDeliveryPolicy(
         ack_wait_seconds=0.1,
         max_deliver=2,
@@ -558,7 +566,7 @@ async def test_long_operation_renews_inbound_lease_without_ack_or_puback() -> No
     )
 
     async def operation() -> str:
-        await asyncio.sleep(0.018)
+        await asyncio.wait_for(renewed_twice.wait(), timeout=1)
         return "ready"
 
     result = await _coordinator(_DurabilityPort(), policy=policy).run_with_in_progress(
