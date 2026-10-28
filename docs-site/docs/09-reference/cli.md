@@ -27,6 +27,8 @@ Signed deployment consumption requires `--reconcile`, enrolled identity, capabil
 
 Offline operation requires `--reconcile-strategy-id`, an existing local identity and `--nats-url`. It reads mode from the spec, uses `--offline-state` for its own database and reports under `--runner-label` (runner UUID by default). It rejects live. `--production-state-root` is for the signed lane and cannot select offline composition.
 
+Experimental external-source intake on the signed sandbox/testnet lane requires all three `--external-source-*` options together, a running admitted Nautilus deployment, and a separate pre-provisioned NATS credential. It is off by default and unavailable in live or the offline lane. If source authorization or transport fails, new source entries stop while existing positions remain under local protection; check the runner's source-subscription fault log.
+
 See [signed sandbox](/getting-started/first-sandbox-run), [standalone sandbox](/getting-started/standalone-sandbox) and [configuration](/reference/configuration).
 
 ## Publishing a capability
@@ -342,6 +344,9 @@ The following tables are generated from the actual parser. Defaults are shown wi
 | `--runtime-image-digest` | optional | — | — |
 | `--runtime-source-revision` | optional | — | — |
 | `--production-state-root` | optional | — | — |
+| `--external-source-instance-id` | optional | — | — |
+| `--external-source-authorization` | optional | — | — |
+| `--external-source-nats-credentials` | optional | — | — |
 
 ### vault
 

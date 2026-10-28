@@ -136,8 +136,14 @@ and uses a separate connection. Invalid local authorization or broker loss
 closes source intake and leaves messages unacknowledged; it retries after a
 bounded delay. It never requests flatten on a transport or authorization
 fault, so the existing position remains under the deployment's local safety
-policy and venue protection. This is a tested runtime component, not yet a
-configured `arx-runner start` path or an operator-visible status receipt.
+policy and venue protection. `arx-runner start` now has an explicit three-flag
+opt-in for an exact instance, private authorization file and separate NATS
+credential. It reuses the signed SIM broker endpoint and TLS trust but not the
+runner-control connection or JWT, and rejects offline, live, unauthenticated
+development NATS and non-Nautilus hosts. The daemon logs state changes without
+including credentials or raw messages. This composition has local unit and
+full-repository verification only; a real JWT/ACL, two runner processes and
+venue execution still require separate receipts.
 
 A normal entry must be durably claimed
 before the host queue is touched; a persisted handoff means only that the

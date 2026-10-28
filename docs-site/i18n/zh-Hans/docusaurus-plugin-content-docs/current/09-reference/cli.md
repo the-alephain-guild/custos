@@ -27,6 +27,8 @@ sidebar_position: 1
 
 离线操作要求 `--reconcile-strategy-id`、已有本地身份和 `--nats-url`。它从 spec 读取模式，用 `--offline-state` 保存独立数据库，并以 `--runner-label` 报告状态，默认 label 为 runner UUID。离线通道拒绝 live。`--production-state-root` 用于签名通道，不能选择离线组合。
 
+签名 sandbox/testnet 通道的实验性外部来源接收，需要同时提供三个 `--external-source-*` 参数、正在运行且已准入的 Nautilus 部署，以及独立预配置的 NATS 凭据。该功能默认关闭，不用于 live 或离线通道。若来源授权或传输失效，新的来源入场将停止，已有仓位继续受本地保护；可查看 runner 的来源订阅故障日志。
+
 详见[签名 sandbox](/getting-started/first-sandbox-run)、[独立 sandbox](/getting-started/standalone-sandbox)和[配置参考](/reference/configuration)。
 
 ## 发布能力
@@ -342,6 +344,9 @@ sidebar_position: 1
 | `--runtime-image-digest` | 可选 | — | — |
 | `--runtime-source-revision` | 可选 | — | — |
 | `--production-state-root` | 可选 | — | — |
+| `--external-source-instance-id` | 可选 | — | — |
+| `--external-source-authorization` | 可选 | — | — |
+| `--external-source-nats-credentials` | 可选 | — | — |
 
 ### vault
 

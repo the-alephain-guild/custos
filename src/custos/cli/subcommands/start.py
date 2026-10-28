@@ -8,7 +8,11 @@ import os
 import stat
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+from uuid import UUID
+
+if TYPE_CHECKING:
+    from custos.engines.nautilus.external_source_runner_runtime import SourceRunnerOptions
 
 from custos.core.machine_credential_vault import (
     MachineCredentialError,
@@ -218,6 +222,21 @@ def register(subparsers: argparse._SubParsersAction) -> None:
             "one persistent root. Offline development uses its separate composition."
         ),
     )
+    parser.add_argument(
+        "--external-source-instance-id",
+        type=UUID,
+        help="Select an active signed instance for optional sandbox/testnet source intake.",
+    )
+    parser.add_argument(
+        "--external-source-authorization",
+        type=Path,
+        help="Owner-only local source subscription authorization JSON.",
+    )
+    parser.add_argument(
+        "--external-source-nats-credentials",
+        type=Path,
+        help="Separate owner-only NATS JWT credential file bound by that authorization.",
+    )
     parser.set_defaults(
         artifact_registry_token=os.environ.get("CUSTOS_ARTIFACT_REGISTRY_TOKEN", ""),
         handler=run,
@@ -321,6 +340,51 @@ def _require_production_state_root(args: argparse.Namespace) -> Path | None:
     return root
 
 
+def _source_runner_options(args: argparse.Namespace) -> SourceRunnerOptions | None:
+    selected = (
+        getattr(args, "external_source_instance_id", None),
+        getattr(args, "external_source_authorization", None),
+        getattr(args, "external_source_nats_credentials", None),
+    )
+    if not any(value is not None for value in selected):
+        return None
+    if not all(value is not None for value in selected):
+        raise ValueError("external source subscription requires all three explicit flags")
+    if (
+        getattr(args, "reconcile_strategy_id", None)
+        or not getattr(args, "reconcile", False)
+        or getattr(args, "engine", "nautilus") != "nautilus"
+        or not getattr(args, "enabled_mode", None)
+        or "live" in args.enabled_mode
+        or getattr(args, "development_local_nats_url", "")
+    ):
+        raise ValueError("external source requires the signed non-live Nautilus lane")
+    if (
+        not getattr(args, "nats_sim_url", "")
+        or not getattr(args, "nats_sim_server_name", "")
+        or getattr(args, "nats_sim_ca", None) is None
+    ):
+        raise ValueError("external source requires the signed SIM NATS TLS endpoint")
+    root = getattr(args, "production_state_root", None)
+    if root is not None:
+        for value in selected[1:]:
+            candidate = Path(value).expanduser().resolve()
+            if candidate != root and root not in candidate.parents:
+                raise ValueError("external source files must be under production state root")
+    from custos.engines.nautilus.external_source_runner_runtime import SourceRunnerOptions
+
+    instance_id = selected[0]
+    return SourceRunnerOptions(
+        instance_id=instance_id,
+        authorization_path=selected[1],
+        credentials_path=selected[2],
+        inbox_path=args.runner_fact_outbox.parent / f"external-source-{instance_id}.db",
+        nats_url=args.nats_sim_url,
+        nats_ca=args.nats_sim_ca,
+        nats_server_name=args.nats_sim_server_name,
+    )
+
+
 def run(args: argparse.Namespace) -> int:
     try:
         if args.reconcile_strategy_id and any(
@@ -335,6 +399,7 @@ def run(args: argparse.Namespace) -> int:
         ):
             raise ValueError("runtime promotion evidence applies only to the signed lane")
         production_state_root = _require_production_state_root(args)
+        source_runner_options = _source_runner_options(args)
         args.ready_file.expanduser().resolve().unlink(missing_ok=True)
         metadata = RunnerToml.read(args.runner_toml_path)
         bound_vault_path = Path(metadata.machine_vault_path).expanduser().resolve()
@@ -421,6 +486,7 @@ def run(args: argparse.Namespace) -> int:
         runtime_sigstore_trusted_root=args.runtime_sigstore_trusted_root,
         runtime_image_digest=args.runtime_image_digest,
         runtime_source_revision=args.runtime_source_revision,
+        source_runner_options=source_runner_options,
     )
     from custos.cli._daemon import run_daemon
 

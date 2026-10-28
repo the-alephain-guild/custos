@@ -915,6 +915,37 @@ async def _publish_runtime_readiness(
             pass
 
 
+async def _run_external_source_subscription(
+    stop: asyncio.Event,
+    *,
+    options: object,
+    tenant_id: str,
+    runner_id: UUID,
+    host: object,
+) -> None:
+    """Keep optional source failures outside the authoritative signed lane."""
+    from custos.engines.nautilus.external_source_runner_runtime import ExternalSourceRunnerRuntime
+
+    def report(state: str, reason: str | None) -> None:
+        fields = {
+            "deployment_instance_id": str(options.instance_id),  # type: ignore[attr-defined]
+        }
+        if state == "fault":
+            _slog.warning("external_source_subscription_fault", reason_code=reason, **fields)
+        elif state == "active":
+            _slog.info("external_source_subscription_active", **fields)
+        else:
+            _slog.info("external_source_subscription_waiting", reason_code=reason, **fields)
+
+    await ExternalSourceRunnerRuntime(
+        options=options,
+        tenant_id=tenant_id,
+        runner_id=runner_id,
+        host=host,
+        report=report,
+    ).run(stop)
+
+
 def _collect_runtime_environment_metrics(
     *,
     artifact_cache_dir: Path,
@@ -1015,12 +1046,26 @@ def _direct_child_directory_count(
     return count
 
 
+def _require_source_runner_lane(args: argparse.Namespace) -> None:
+    if getattr(args, "source_runner_options", None) is None:
+        return
+    if (
+        not args.reconcile
+        or not args.enabled_modes
+        or "live" in args.enabled_modes
+        or args.engine != "nautilus"
+        or getattr(args, "development_local_nats_url", "")
+    ):
+        raise RuntimeError("external source requires the signed non-live Nautilus lane")
+
+
 async def run_daemon(args: argparse.Namespace) -> int:
     """Start signed-command reconciliation and signed RunnerFact publication.
 
     Body is verbatim from the pre-Plan-11 flat CLI ``_run`` coroutine
     aside from the vault selection (see ``_build_vault``).
     """
+    _require_source_runner_lane(args)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     args.ready_file.expanduser().resolve().unlink(missing_ok=True)
     from custos.core.runtime_admission import load_runtime_admission
@@ -1326,6 +1371,22 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 command_runtime=command_runtime,
                 capability=capability,
             )
+            source_options = getattr(args, "source_runner_options", None)
+            if source_options is not None:
+                if not callable(getattr(host, "external_source_runtime_scope", None)):
+                    raise RuntimeError("external source requires an admitted Nautilus host")
+                tasks.append(
+                    asyncio.create_task(
+                        _run_external_source_subscription(
+                            stop,
+                            options=source_options,
+                            tenant_id=args.tenant_id,
+                            runner_id=runner_id,
+                            host=host,
+                        ),
+                        name="runner-external-source-subscription",
+                    )
+                )
             deployment_subscription = True
         tasks.append(
             asyncio.create_task(
