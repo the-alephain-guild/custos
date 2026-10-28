@@ -49,6 +49,7 @@ class ExternalSourceRunnerSession:
         self.broker = broker
         self.dispatcher = ExternalTargetDispatcher(inbox, host)
         self.bound: AuthorizedSourceSubscription | None = None
+        self.bound_scope: ExternalSourceRuntimeScope | None = None
         self.subscription: Any = None
         self.subscriber: ExternalSourceSubscriber | None = None
 
@@ -56,6 +57,8 @@ class ExternalSourceRunnerSession:
         scope = self.host.external_source_runtime_scope(str(self.authority.deployment_instance_id))
         if scope.authority != self.authority:
             raise ExternalSourceAuthorizationError("source session differs from active deployment")
+        if self.bound_scope is not None and scope != self.bound_scope:
+            raise ExternalSourceAuthorizationError("source session differs from active venue scope")
         current = load_source_subscription(
             self.authorization_path,
             credentials_path=self.credentials_path,
@@ -88,6 +91,7 @@ class ExternalSourceRunnerSession:
         await self.dispatcher.recover_on_startup(self.authority, at=at)
         subscription = await bind_signal_consumer(self.broker, grant.spec)
         self.bound = grant
+        self.bound_scope = scope
         self.subscription = subscription
         self.subscriber = ExternalSourceSubscriber(
             grant.spec,

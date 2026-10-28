@@ -115,7 +115,8 @@ venue credential. The broker must separately enforce an exact pre-provisioned
 durable and least-privilege JWT ACL; a file/digest comparison alone cannot prove
 those broker permissions. `ExternalSourceRunnerSession` reopens the private
 authorization and credential files against the active host before broker intake
-and again before handoff. A changed generation, source mapping or credential
+and again before handoff. It also pins the active connector, pair set and
+leverage observed at bind time. A changed generation, venue scope, source mapping or credential
 digest leaves the broker message unacknowledged and prevents host handoff. It
 binds only an existing consumer whose delivery, filter, ack and replay policy
 match the computed subscription. This one-shot session is tested with an

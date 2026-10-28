@@ -20,6 +20,7 @@ from custos.engines.nautilus.external_source_authorization import (
 )
 from custos.engines.nautilus.external_source_runner_session import ExternalSourceRunnerSession
 from custos.engines.nautilus.external_target_inbox import ExternalTargetInbox
+from custos.engines.nautilus.host import ExternalSourceRuntimeScope
 from tests.test_external_source_authorization import (
     AUTHORITY,
     INSTANCE,
@@ -128,6 +129,24 @@ async def test_changed_grant_or_credential_stops_ack_and_handoff(tmp_path: Path)
     with pytest.raises(ExternalSourceAuthorizationError, match="changed"):
         await session.handle_message(rebinding, at=NOW)
     assert rebinding.acked == rebinding.termed == 0 and host.queued == []
+
+
+@pytest.mark.asyncio
+async def test_venue_scope_change_stops_intake_even_if_signed_identity_is_same(
+    tmp_path: Path,
+) -> None:
+    session, _, _, host, _, _ = setup(tmp_path)
+    await session.bind(at=NOW)
+    host.scope = ExternalSourceRuntimeScope(
+        authority=AUTHORITY,
+        connector="binance_perpetual",
+        allowed_pairs=frozenset({"ETH-USDT"}),
+        authorized_leverage=3,
+    )
+    message = Message(published_bytes(tmp_path), signal_subject("tenant-a", "synthetic-supertrend"))
+    with pytest.raises(ExternalSourceAuthorizationError, match="active"):
+        await session.handle_message(message, at=NOW)
+    assert message.acked == message.termed == 0 and host.queued == []
 
 
 @pytest.mark.asyncio
