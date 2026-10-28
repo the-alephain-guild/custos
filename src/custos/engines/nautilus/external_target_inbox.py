@@ -35,6 +35,14 @@ class TargetIntakeReceipt:
 
 
 @dataclass(frozen=True, slots=True)
+class PendingFlatRequest:
+    delivery_id: str
+    connector: str
+    pair: str
+    handoff_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
 class StoredTargetDelivery:
     delivery_id: str
     source_event_id: str
@@ -498,6 +506,45 @@ class ExternalTargetInbox:
                 (recovered_ns, str(deployment_instance_id)),
             )
             return result.rowcount
+
+    def pending_flat_request(
+        self, delivery_id: str, *, authority: EngineLifecycleAuthority
+    ) -> PendingFlatRequest | None:
+        """Return the exact active flat fence and its persisted host handoff time."""
+        _require_non_live(authority)
+        with self._transaction() as connection:
+            row = connection.execute(
+                """SELECT event.connector, event.pair, event.handoff_at_ns
+                   FROM external_target_delivery AS event
+                   JOIN external_target_flat_fence AS fence
+                     ON fence.flat_delivery_id = event.delivery_id
+                    AND fence.deployment_instance_id = event.deployment_instance_id
+                    AND fence.pair = event.pair
+                    AND fence.source_id = event.source_id
+                    AND fence.tenant_id = event.tenant_id
+                   WHERE event.delivery_id = ? AND event.deployment_instance_id = ?
+                     AND event.deployment_spec_id = ? AND event.deployment_spec_digest = ?
+                     AND event.generation = ? AND event.target = 'FLAT'
+                     AND event.status IN ('flat_requested', 'uncertain')
+                     AND event.handoff_at_ns IS NOT NULL
+                     AND fence.confirmed_at_ns IS NULL""",
+                (
+                    delivery_id,
+                    str(authority.deployment_instance_id),
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                ),
+            ).fetchone()
+        if row is None:
+            return None
+        return PendingFlatRequest(
+            delivery_id=delivery_id,
+            connector=row["connector"],
+            pair=row["pair"],
+            handoff_at=datetime(1970, 1, 1, tzinfo=UTC)
+            + timedelta(microseconds=row["handoff_at_ns"] // 1_000),
+        )
 
     def confirm_flat(
         self, delivery_id: str, *, authority: EngineLifecycleAuthority, at: datetime
