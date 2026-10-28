@@ -40,6 +40,9 @@ def observation(risk, **changes):
         "cohort_ready": True,
         "adverse_pnl": (),
         "mark_timestamps_ns": (),
+        "market_timestamps_ns": tuple(
+            (identifier, timestamp(risk)) for identifier in risk.manifest.instrument_ids
+        ),
     }
     values.update(changes)
     return module.CashRiskObservation(**values)

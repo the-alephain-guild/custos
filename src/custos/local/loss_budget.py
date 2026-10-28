@@ -179,6 +179,7 @@ class LocalLossBudget:
                     "adverse_pnl",
                     "mark_timestamps_ns",
                     "unresolved_intent_ids",
+                    "market_timestamps_ns",
                 }
             }
             current = observation.source()
@@ -191,6 +192,29 @@ class LocalLossBudget:
                 current.pop("checkpoint_sequence")
                 if canonical(source) != canonical(current):
                     return "local_loss_source_conflict"
+        return None
+
+    def _market_complete(self, observation: CashRiskObservation) -> bool:
+        return {identifier for identifier, _ in observation.market_timestamps_ns} == set(
+            self._ledger._authorization.manifest.instrument_ids
+        )
+
+    def _market_reason(
+        self, observation: CashRiskObservation, now: int, watermarks: Mapping[str, int]
+    ) -> str | None:
+        maximum_age = self._ledger._authorization.manifest.data_policy.max_quote_age_seconds * 10**9
+        if (
+            len(
+                set(watermarks) | {identifier for identifier, _ in observation.market_timestamps_ns}
+            )
+            > 1024
+        ):
+            return "local_loss_market_capacity_exceeded"
+        if any(
+            stamp > now or now >= stamp + maximum_age or stamp < watermarks.get(identifier, 0)
+            for identifier, stamp in observation.market_timestamps_ns
+        ):
+            return "local_loss_market_unreliable"
         return None
 
     def initialize(self, observation: CashRiskObservation) -> LossBudgetSnapshot:
@@ -215,6 +239,9 @@ class LocalLossBudget:
             ):
                 raise RuntimeAuthorityError("cash baseline requires a current operator permit")
             reason = self._source_reason(observation, now, None, None)
+            reason = reason or self._market_reason(observation, now, {})
+            if not self._market_complete(observation):
+                reason = reason or "local_loss_market_coverage_missing"
             history = connection.execute(
                 "SELECT 1 FROM local_order_reservation UNION ALL SELECT 1 FROM local_native_dispatch UNION ALL SELECT 1 FROM local_venue_fill UNION ALL SELECT 1 FROM local_reduction_claim LIMIT 1"
             ).fetchone()
@@ -264,8 +291,17 @@ class LocalLossBudget:
                 state="ready",
                 loss=Fraction(0),
                 pending=None,
-                until=observation.source_timestamp_ns
-                + self._ledger._authorization.manifest.data_policy.max_account_age_seconds * 10**9,
+                until=min(
+                    observation.source_timestamp_ns
+                    + self._ledger._authorization.manifest.data_policy.max_account_age_seconds
+                    * 10**9,
+                    *(
+                        stamp
+                        + self._ledger._authorization.manifest.data_policy.max_quote_age_seconds
+                        * 10**9
+                        for _, stamp in observation.market_timestamps_ns
+                    ),
+                ),
                 reason=None,
             )
             return self._snapshot(connection)
@@ -282,6 +318,7 @@ class LocalLossBudget:
         until: int | None,
         reason: str | None,
         previous_watermarks: Mapping[str, int] | None = None,
+        previous_market_watermarks: Mapping[str, int] | None = None,
     ) -> None:
         numerator, denominator = fraction_text(loss)
         watermarks = {
@@ -293,9 +330,12 @@ class LocalLossBudget:
             watermarks.update(
                 zip(observation.position_ids, observation.mark_timestamps_ns, strict=True)
             )
+        market_watermarks = dict(previous_market_watermarks or {})
+        if reason is None:
+            market_watermarks.update(observation.market_timestamps_ns)
         body = canonical(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "budget_id": self._budget_id,
                 "observation": observation.body(),
                 "observed_at_ns": now,
@@ -306,6 +346,7 @@ class LocalLossBudget:
                 "ready_until_ns": until,
                 "reason_code": reason,
                 "mark_watermarks_ns": watermarks,
+                "market_watermarks_ns": market_watermarks,
             }
         )
         outcome = {"state": state}
@@ -370,6 +411,9 @@ class LocalLossBudget:
                 self._ledger._authorization.manifest.data_policy.max_quote_age_seconds * 10**9
             )
             watermarks = previous["mark_watermarks_ns"]
+            market_watermarks = previous["market_watermarks_ns"]
+            if reason is None:
+                reason = self._market_reason(observation, now, market_watermarks)
             if reason is None and observation.cohort_ready:
                 if any(
                     stamp > now
@@ -381,7 +425,9 @@ class LocalLossBudget:
                 ):
                     reason = "local_loss_mark_unreliable"
             if reason is None and (
-                not observation.cohort_ready or observation.unresolved_intent_ids
+                not observation.cohort_ready
+                or observation.unresolved_intent_ids
+                or not self._market_complete(observation)
             ):
                 pending = now if pending is None else pending
                 if (
@@ -406,6 +452,10 @@ class LocalLossBudget:
                                 stamp + maximum_quote_age
                                 for stamp in observation.mark_timestamps_ns
                             ),
+                            *(
+                                stamp + maximum_quote_age
+                                for _, stamp in observation.market_timestamps_ns
+                            ),
                         )
                     )
                     pending = None
@@ -425,5 +475,6 @@ class LocalLossBudget:
                 until=until,
                 reason=reason,
                 previous_watermarks=watermarks,
+                previous_market_watermarks=market_watermarks,
             )
             return self._snapshot(connection)

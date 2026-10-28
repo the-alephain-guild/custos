@@ -72,6 +72,7 @@ class CashRiskObservation:
     cohort_ready: bool
     adverse_pnl: tuple[Fraction, ...]
     mark_timestamps_ns: tuple[int, ...]
+    market_timestamps_ns: tuple[tuple[str, int], ...]
 
     def __post_init__(self) -> None:
         if type(self.journal_id) is not UUID or self.journal_id.version != 4:
@@ -123,9 +124,34 @@ class CashRiskObservation:
         for stamp in self.mark_timestamps_ns:
             uint(stamp)
 
+        if type(self.market_timestamps_ns) is not tuple or len(self.market_timestamps_ns) > 64:
+            raise RuntimeAuthorityError("market observations must be a bounded immutable tuple")
+        markets = set()
+        for row in self.market_timestamps_ns:
+            if type(row) is not tuple or len(row) != 2:
+                raise RuntimeAuthorityError(
+                    "market observations require immutable identity/time pairs"
+                )
+            identifier, stamp = row
+            if (
+                type(identifier) is not str
+                or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}\.PAPERTRADE", identifier)
+                is None
+                or identifier in markets
+            ):
+                raise RuntimeAuthorityError("market observation identity is invalid or duplicated")
+            markets.add(identifier)
+            uint(stamp)
+
     def source(self) -> dict[str, Any]:
         body = asdict(self)
-        for key in ("cohort_ready", "adverse_pnl", "mark_timestamps_ns", "unresolved_intent_ids"):
+        for key in (
+            "cohort_ready",
+            "adverse_pnl",
+            "mark_timestamps_ns",
+            "unresolved_intent_ids",
+            "market_timestamps_ns",
+        ):
             del body[key]
         body["journal_id"] = str(self.journal_id)
         body["cash_equity_raw"] = str(self.cash_equity_raw)
@@ -141,6 +167,7 @@ class CashRiskObservation:
             "cohort_ready": self.cohort_ready,
             "adverse_pnl": [fraction_text(pnl) for pnl in self.adverse_pnl],
             "mark_timestamps_ns": self.mark_timestamps_ns,
+            "market_timestamps_ns": self.market_timestamps_ns,
         }
 
 
@@ -192,7 +219,7 @@ def loss_row(connection: sqlite3.Connection, account_scope: str) -> sqlite3.Row 
     ).fetchall()
     if (
         len(metadata) != 1
-        or metadata[0][0] != 4
+        or metadata[0][0] != 5
         or metadata[0][1] != account_scope
         or metadata[0][2] not in (0, 1)
     ):
@@ -300,6 +327,7 @@ def loss_admission(
     maximum_account_age_ns: int,
     maximum_quote_age_ns: int,
     maximum_loss: Fraction,
+    required_markets: tuple[str, ...],
 ) -> CashAdmissionRefusal | None:
     row = loss_row(connection, account_scope)
     if row is None:
@@ -307,7 +335,7 @@ def loss_admission(
     if row["baseline_json"] is None:
         return CashAdmissionRefusal("local_loss_baseline_missing", True, row["budget_id"])
     state = json.loads(row["observation_json"])
-    if state["schema_version"] != 1 or state["state"] not in {"ready", "pending", "latched"}:
+    if state["schema_version"] != 2 or state["state"] not in {"ready", "pending", "latched"}:
         raise RuntimeStorageUnavailable("cash budget observation state is invalid")
     if now < uint(state["observed_at_ns"]):
         return CashAdmissionRefusal("local_loss_clock_regressed", False, row["budget_id"])
@@ -321,6 +349,14 @@ def loss_admission(
         pending = uint(state["pending_since_ns"])
         if now < pending or now >= pending + maximum_account_age_ns:
             return CashAdmissionRefusal("local_loss_pending_timeout", False, row["budget_id"])
+    market_quotes = dict(state["observation"]["market_timestamps_ns"])
+    if set(market_quotes) != set(required_markets):
+        return CashAdmissionRefusal("local_loss_market_coverage_pending", True, row["budget_id"])
+    if any(
+        now < uint(stamp) or now >= stamp + maximum_quote_age_ns for stamp in market_quotes.values()
+    ):
+        return CashAdmissionRefusal("local_loss_market_unreliable", False, row["budget_id"])
+    if state["pending_since_ns"] is not None:
         return CashAdmissionRefusal("local_loss_observation_pending", True, row["budget_id"])
     if state["state"] != "ready" or now >= uint(state["ready_until_ns"]):
         return CashAdmissionRefusal("local_loss_observation_stale", False, row["budget_id"])

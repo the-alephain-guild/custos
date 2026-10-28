@@ -116,7 +116,7 @@ class ExecutionEventStore:
                     PRIMARY KEY(sequence,process_generation,owner_id)
                 );
                 CREATE TABLE local_risk_meta (
-                    schema_version INTEGER NOT NULL CHECK(schema_version=4),
+                    schema_version INTEGER NOT NULL CHECK(schema_version=5),
                     account_scope TEXT,
                     native_account_id TEXT,
                     client_id TEXT,
@@ -124,7 +124,7 @@ class ExecutionEventStore:
                     loss_budget_required INTEGER NOT NULL CHECK(loss_budget_required IN (0,1)),
                     loss_budget_id TEXT
                 );
-                INSERT INTO local_risk_meta VALUES (4,NULL,NULL,NULL,NULL,0,NULL);
+                INSERT INTO local_risk_meta VALUES (5,NULL,NULL,NULL,NULL,0,NULL);
                 CREATE TABLE local_account_risk (
                     account_scope TEXT PRIMARY KEY,
                     reason_code TEXT,

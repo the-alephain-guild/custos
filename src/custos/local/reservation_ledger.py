@@ -204,7 +204,7 @@ class LocalReservationLedger:
                 metadata = connection.execute(
                     "SELECT schema_version,account_scope,native_account_id,client_id,native_journal_id FROM local_risk_meta"
                 ).fetchall()
-                if len(metadata) != 1 or metadata[0][0] != 4:
+                if len(metadata) != 1 or metadata[0][0] != 5:
                     raise RuntimeStorageUnavailable("local risk schema is unavailable")
                 connection.execute("SELECT * FROM local_venue_fill LIMIT 0")
                 connection.execute("SELECT * FROM local_order_reservation LIMIT 0")
@@ -379,6 +379,7 @@ class LocalReservationLedger:
             maximum_quote_age_ns=self._authorization.manifest.data_policy.max_quote_age_seconds
             * 10**9,
             maximum_loss=Fraction(Decimal(self._authorization.manifest.limits.max_loss_usd)),
+            required_markets=self._authorization.manifest.instrument_ids,
         ):
             return _Refused(
                 refusal.code, retryable=refusal.retryable, loss_budget_id=refusal.budget_id

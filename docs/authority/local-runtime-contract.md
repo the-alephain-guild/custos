@@ -459,6 +459,26 @@ removing it. Component fixtures do not prove that topology. Actual LiveNode
 acceptance, host admission and complete risk enforcement remain unfinished;
 these components grant no local live entry.
 
+## 全部声明市场的行情覆盖
+
+持久现金预算的内部观测同时保存逐仓估值和独立的
+`market_timestamps_ns`。后者是最多 64 个市场身份与原报价时间的不可变集合，
+完整 ready 必须精确覆盖当前已验签 manifest 的 `instrument_ids`；空仓也必须
+具备这些报价。初始 baseline 检查报价，ready 截止取账户、逐仓 mark 和全部市场
+报价截止的最小值。每次准入都重新核对当前市场集合和报价年龄，新许可新增市场
+时旧 ready 只产生临时拒绝，完整新观测之前不得开仓，账户 baseline 不重设。
+
+市场行情独立于账户 checkpoint，不进入账户来源内容一致性比较，但进入完整
+观测、风险审计和独立的持久市场水位。正常 pending 中收到的合法新水位也保留，
+缺项不能删除它；重启后仍拒绝回退。账户预算生命周期最多保存 1,024 个不同
+市场水位，超过边界时拒绝并冻结，不丢弃旧水位来继续运行。已有 pending 的时钟
+回退和超时检查优先于市场缺项的临时返回；超时走原持久故障和 latch 路径。
+
+风险数据库 schema 5 和观测状态 schema 2 明确要求这部分历史。旧 schema 4
+不自动迁移为已具备市场行情的 ready，必须按明确恢复流程处理；这里不修改历史
+验收收据。本节只定义内部观测与持久准入，实际行情采集、同 node cache 核对和
+Native 截止更新仍须由宿主接入，不能仅凭构造该 DTO 启用实盘。
+
 ## Readiness, restart and stop
 
 原执行 client 的 held account probe 返回 `account_source_healthy`、
