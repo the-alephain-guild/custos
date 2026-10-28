@@ -90,6 +90,20 @@ class LocalPapertradeReductions:
             raise RuntimeAuthorityError("local reductions have no bound Native cache")
         return self._semantics
 
+    def require_observation_source(
+        self,
+        *,
+        storage_probe: PapertradeRuntimeStorageProbe,
+        semantics: NautilusCachedOrderSemantics,
+    ) -> tuple[str, str]:
+        with self.runtime_lease.control_action():
+            if storage_probe is not self._storage or semantics is not self._bound_semantics():
+                raise RuntimeAuthorityError(
+                    "risk observation requires the same original cache and held probe"
+                )
+            storage_probe.require_route(account_id=self._account_id, client_id=self._client_id)
+            return self._account_id, self._client_id
+
     def prepare_submit(self, intent: Any) -> bool:
         self.runtime_lease.assert_control_current()
         semantics = self._bound_semantics()

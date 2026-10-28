@@ -95,6 +95,10 @@ class LocalReservationStore:
         return self._reductions
 
     @property
+    def authorization(self) -> VerifiedLocalRunAuthorization:
+        return self._authorization
+
+    @property
     def runtime_id(self) -> UUID:
         return self._run
 

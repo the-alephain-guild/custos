@@ -516,6 +516,20 @@ Python int。零截止临时关闭增险，更新截止不能撤销永久 freeze
 开仓保留原减险分类，继续受原账户来源、签名、session key 和退出窗口约束。
 Host 尚未接入这条约束；这些原语本身不授予本机 live 准入。
 
+`PapertradeRiskSource` 从原绑定 held probe、SQLite cohort 和一次捕获的
+Native cache 采集现金输入。前后两次账户读取及缓存经济身份比对，防止把较新
+账户现金与较旧仓位成本拼接。缓存交付间隙保留最新单个 checkpoint 的现金，
+同时标记估值未完成。所有 manifest 市场均需本轮运行期间收到的报价。
+负浮盈使用原始 margin 和 entry 计算；缓存精确数量、Native opening 证据及
+原 SQLite 成本必须一致。首版不支持 `useDebt`。session 注册期限必须覆盖完整
+的声明退出窗口。
+
+采集本身不初始化预算、不更新 Native 准入，也不授予 Host readiness。当前
+Papertrade QuoteTick 表示 reference mid，bid 与 ask 相等；减去或加上一个 tick
+只是参考标记的保守量化，不代表场所 BBO 或保证可成交的退出价格。适配器目前对
+terminal 市场使用冻结中价及本地时间戳，单靠采集器不能证明其行情仍在更新。
+生产启动之前仍需明确拒绝 terminal 市场，并完成实际数据流验收。
+
 Readiness requires an alive node, actual data and execution connectivity, initialized reliable account/portfolio state, completed account reconciliation, active risk enforcement and durable current authority. The current blanket live refusal may be replaced only by proved checks, not a mode-based true value.
 
 Adapter recovery proves order/position identity and execution evidence; it does not prove the strategy's algorithm state. After unclean exit, recover in a no-new-risk state. If decision state cannot be reconstructed, expose recovery/exit controls, reconcile and flatten as authorized, then require a new manifest/permit for a new run. Do not restart the algorithm from an empty state against inherited exposure.
