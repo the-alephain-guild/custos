@@ -109,6 +109,7 @@ class ExternalSourceRunnerRuntime:
                     host=self.host,
                     inbox=ExternalTargetInbox(self.options.inbox_path),
                     broker=connection.jetstream(),
+                    clock=self.clock,
                 )
                 await session.bind(at=self.clock())
                 self._status("active")

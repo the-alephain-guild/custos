@@ -22,6 +22,7 @@ from custos.engines.nautilus.external_target_dispatcher import (
     ExternalTargetHost,
     TargetDispatchReceipt,
 )
+from custos.engines.nautilus.external_target_flat_verifier import ExternalTargetFlatVerifier
 from custos.engines.nautilus.external_target_inbox import ExternalTargetInbox
 from custos.engines.nautilus.host import ExternalSourceRuntimeScope
 
@@ -40,6 +41,7 @@ class ExternalSourceRunnerSession:
         host: ExternalTargetHost,
         inbox: ExternalTargetInbox,
         broker: Any,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.authorization_path = authorization_path
         self.credentials_path = credentials_path
@@ -49,11 +51,13 @@ class ExternalSourceRunnerSession:
         self.host = host
         self.inbox = inbox
         self.broker = broker
+        self.clock = clock or (lambda: datetime.now(UTC))
         self.dispatcher = ExternalTargetDispatcher(inbox, host)
         self.bound: AuthorizedSourceSubscription | None = None
         self.bound_scope: ExternalSourceRuntimeScope | None = None
         self.subscription: Any = None
         self.subscriber: ExternalSourceSubscriber | None = None
+        self.flat_verifier: ExternalTargetFlatVerifier | None = None
 
     def _revalidated_scope(self) -> ExternalSourceRuntimeScope:
         scope = self.host.external_source_runtime_scope(str(self.authority.deployment_instance_id))
@@ -91,6 +95,7 @@ class ExternalSourceRunnerSession:
             active_scope=scope,
         )
         await self.dispatcher.recover_on_startup(self.authority, at=at)
+        reader = self.host.external_source_flat_reader(self.authority)
         subscription = await bind_signal_consumer(self.broker, grant.spec)
         self.bound = grant
         self.bound_scope = scope
@@ -101,6 +106,14 @@ class ExternalSourceRunnerSession:
             self.inbox,
             scope_provider=self._revalidated_scope,
         )
+        if reader is not None:
+            self.flat_verifier = ExternalTargetFlatVerifier(
+                self.inbox,
+                self.host,
+                reader,
+                clock=self.clock,
+                revalidate=self._revalidated_scope,
+            )
 
     async def handle_message(self, message: Any, *, at: datetime) -> TargetDispatchReceipt | None:
         if self.subscriber is None:
@@ -122,13 +135,26 @@ class ExternalSourceRunnerSession:
         """Drain durable targets and consume one exact broker subscription."""
         if not 0 < poll_seconds <= 5:
             raise ValueError("source subscription poll interval is invalid")
-        now = clock or (lambda: datetime.now(UTC))
+        now = clock or self.clock
+        if self.flat_verifier is not None:
+            self.flat_verifier.clock = now
         try:
             if self.subscription is None:
+                self.clock = now
                 await self.bind(at=now())
             while not stop.is_set():
                 self._revalidated_scope()
                 await self.dispatcher.process_once(self.authority, at=now())
+                if self.flat_verifier is not None and self.bound is not None:
+                    pending = await asyncio.to_thread(
+                        self.inbox.pending_flat_requests,
+                        self.authority,
+                        source_id=self.bound.binding.source_id,
+                    )
+                    for request in pending:
+                        await self.flat_verifier.confirm_if_flat(
+                            request.delivery_id, authority=self.authority
+                        )
                 try:
                     message = await self.subscription.next_msg(timeout=poll_seconds)
                 except TimeoutError:

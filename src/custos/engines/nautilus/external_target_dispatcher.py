@@ -28,6 +28,12 @@ class ExternalTargetHost(Protocol):
         self, authority: EngineLifecycleAuthority, *, risk_action: str | None = None
     ) -> int: ...
 
+    async def external_source_flat_local_clear(
+        self, authority: EngineLifecycleAuthority, pair: str
+    ) -> bool: ...
+
+    def external_source_flat_reader(self, authority: EngineLifecycleAuthority) -> object | None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class TargetDispatchReceipt:

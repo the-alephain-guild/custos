@@ -57,14 +57,12 @@ def requested_inbox(tmp_path: Path):
 async def test_fresh_venue_flat_observation_releases_only_its_target(tmp_path: Path) -> None:
     inbox, risk = requested_inbox(tmp_path)
     reader = Reader(observation())
-    verifier = ExternalTargetFlatVerifier(inbox, host(), reader)
-    assert await verifier.confirm_if_flat(
-        risk.delivery_id, authority=FIRST, at=NOW + timedelta(seconds=2)
+    verifier = ExternalTargetFlatVerifier(
+        inbox, host(), reader, clock=lambda: NOW + timedelta(seconds=2)
     )
+    assert await verifier.confirm_if_flat(risk.delivery_id, authority=FIRST)
     assert reader.calls == [("okx_perpetual", "ETH-USDT")]
-    assert not await verifier.confirm_if_flat(
-        risk.delivery_id, authority=FIRST, at=NOW + timedelta(seconds=2)
-    )
+    assert not await verifier.confirm_if_flat(risk.delivery_id, authority=FIRST)
     later = directive(
         FIRST,
         target="LONG",
@@ -91,10 +89,10 @@ async def test_fresh_venue_flat_observation_releases_only_its_target(tmp_path: P
 )
 async def test_incomplete_or_nonflat_observation_keeps_fence(tmp_path: Path, changes) -> None:
     inbox, risk = requested_inbox(tmp_path)
-    verifier = ExternalTargetFlatVerifier(inbox, host(), Reader(observation(**changes)))
-    assert not await verifier.confirm_if_flat(
-        risk.delivery_id, authority=FIRST, at=NOW + timedelta(seconds=2)
+    verifier = ExternalTargetFlatVerifier(
+        inbox, host(), Reader(observation(**changes)), clock=lambda: NOW + timedelta(seconds=2)
     )
+    assert not await verifier.confirm_if_flat(risk.delivery_id, authority=FIRST)
     later = directive(
         FIRST,
         target="LONG",
@@ -109,9 +107,66 @@ async def test_incomplete_or_nonflat_observation_keeps_fence(tmp_path: Path, cha
 async def test_stale_authority_cannot_query_or_release_flat(tmp_path: Path) -> None:
     inbox, risk = requested_inbox(tmp_path)
     reader = Reader(observation())
-    verifier = ExternalTargetFlatVerifier(inbox, host(replace(FIRST, generation=2)), reader)
+    verifier = ExternalTargetFlatVerifier(
+        inbox,
+        host(replace(FIRST, generation=2)),
+        reader,
+        clock=lambda: NOW + timedelta(seconds=2),
+    )
     with pytest.raises(RuntimeError, match="authority"):
-        await verifier.confirm_if_flat(
-            risk.delivery_id, authority=FIRST, at=NOW + timedelta(seconds=2)
-        )
+        await verifier.confirm_if_flat(risk.delivery_id, authority=FIRST)
     assert reader.calls == []
+
+
+@pytest.mark.asyncio
+async def test_clock_is_read_after_venue_observation(tmp_path: Path) -> None:
+    inbox, risk = requested_inbox(tmp_path)
+    sequence = []
+
+    class SequencedReader(Reader):
+        async def observe_flat(self, *, connector: str, pair: str) -> VenueFlatObservation:
+            sequence.append("venue")
+            return await super().observe_flat(connector=connector, pair=pair)
+
+    def clock():
+        sequence.append("clock")
+        return NOW + timedelta(seconds=2)
+
+    verifier = ExternalTargetFlatVerifier(
+        inbox, host(), SequencedReader(observation()), clock=clock
+    )
+    assert await verifier.confirm_if_flat(risk.delivery_id, authority=FIRST)
+    assert sequence == ["venue", "clock"]
+
+
+@pytest.mark.asyncio
+async def test_local_order_or_position_vetoes_venue_flat(tmp_path: Path) -> None:
+    inbox, risk = requested_inbox(tmp_path)
+    runtime = host()
+    runtime.flat_local_clear = False
+    reader = Reader(observation())
+    verifier = ExternalTargetFlatVerifier(
+        inbox, runtime, reader, clock=lambda: NOW + timedelta(seconds=2)
+    )
+    assert not await verifier.confirm_if_flat(risk.delivery_id, authority=FIRST)
+    assert reader.calls == []
+    assert runtime.flat_local_checks == [(FIRST, "ETH-USDT")]
+    assert inbox.pending_flat_request(risk.delivery_id, authority=FIRST) is not None
+
+
+@pytest.mark.asyncio
+async def test_local_state_is_rechecked_after_venue_read(tmp_path: Path) -> None:
+    inbox, risk = requested_inbox(tmp_path)
+    runtime = host()
+
+    class MovingReader(Reader):
+        async def observe_flat(self, *, connector: str, pair: str) -> VenueFlatObservation:
+            runtime.flat_local_clear = False
+            return await super().observe_flat(connector=connector, pair=pair)
+
+    verifier = ExternalTargetFlatVerifier(
+        inbox, runtime, MovingReader(observation()), clock=lambda: NOW + timedelta(seconds=2)
+    )
+    assert not await verifier.confirm_if_flat(risk.delivery_id, authority=FIRST)
+    assert runtime.flat_local_checks == [(FIRST, "ETH-USDT"), (FIRST, "ETH-USDT")]
+    assert inbox.pending_flat_request(risk.delivery_id, authority=FIRST) is not None

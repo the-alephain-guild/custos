@@ -24,6 +24,8 @@ class Host:
         self.queued = []
         self.flattened = []
         self.refuse_queue = False
+        self.flat_local_clear = True
+        self.flat_local_checks = []
 
     def external_source_runtime_scope(self, instance_id: str) -> ExternalSourceRuntimeScope:
         assert instance_id == str(self.scope.authority.deployment_instance_id)
@@ -38,6 +40,10 @@ class Host:
     async def request_external_source_flatten(self, authority, *, risk_action=None) -> int:
         self.flattened.append((authority, risk_action))
         return 0
+
+    async def external_source_flat_local_clear(self, authority, pair: str) -> bool:
+        self.flat_local_checks.append((authority, pair))
+        return self.flat_local_clear
 
 
 def host(authority=FIRST) -> Host:

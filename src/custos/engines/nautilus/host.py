@@ -975,6 +975,41 @@ class NtTradingNodeHost:
         await self.flatten_positions(instance_id, reason)
         return removed
 
+    def external_source_flat_reader(self, authority: EngineLifecycleAuthority) -> object | None:
+        """Return only this signed testnet deployment's independent REST reader."""
+        instance_id = str(authority.deployment_instance_id)
+        scope = self.external_source_runtime_scope(instance_id)
+        if scope.authority != authority:
+            raise RuntimeError("external flat reader differs from active deployment")
+        if authority.trading_mode != "testnet":
+            return None
+        context = self._runner_fact_contexts.get(instance_id)
+        if (
+            context is None
+            or context[1] is None
+            or not callable(getattr(context[1], "observe_flat", None))
+        ):
+            raise RuntimeError("independent external flat reader is unavailable")
+        return context[1]
+
+    async def external_source_flat_local_clear(
+        self, authority: EngineLifecycleAuthority, pair: str
+    ) -> bool:
+        """Veto a venue-flat claim while the local node still owns exposure or orders."""
+        instance_id = str(authority.deployment_instance_id)
+        scope = self.external_source_runtime_scope(instance_id)
+        if scope.authority != authority or pair not in scope.allowed_pairs:
+            raise RuntimeError("external flat local scope differs from active deployment")
+        runtime = self._active_nodes[instance_id]
+        boundary = self._runner_safety_boundaries.get(instance_id)
+        if boundary is None:
+            return False
+        positions, orders = self._open_venue_state(runtime)
+        if positions or orders:
+            return False
+        exposure = await boundary.exposure_snapshot()
+        return exposure.reserved_notional == 0 and exposure.open_exposure == 0
+
     def _require_the_only_node(self, deployment_instance_id: str) -> None:
         """Refuse a second node in this runner process.
 

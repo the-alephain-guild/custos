@@ -196,6 +196,26 @@ def test_restart_unknown_entry_blocks_reentry_until_new_flat(tmp_path: Path) -> 
     assert restarted.accept(newest, received_at=newest_time).status == "accepted"
 
 
+def test_pending_flat_requests_are_scoped_to_source_and_active_generation(tmp_path: Path) -> None:
+    inbox = ExternalTargetInbox(tmp_path / "target.sqlite")
+    risk = directive(FIRST, target="FLAT", risk_action="FLATTEN")
+    inbox.accept(risk, received_at=NOW)
+    assert inbox.pending_flat_requests(FIRST, source_id="synthetic-supertrend") == []
+    assert inbox.begin_delivery(risk.delivery_id, authority=FIRST, at=NOW)
+    assert inbox.mark_handoff(risk.delivery_id, authority=FIRST, at=NOW)
+    pending = inbox.pending_flat_requests(FIRST, source_id="synthetic-supertrend")
+    assert [(item.delivery_id, item.pair, item.handoff_at) for item in pending] == [
+        (risk.delivery_id, "ETH-USDT", NOW)
+    ]
+    assert inbox.pending_flat_requests(FIRST, source_id="another-source") == []
+    assert (
+        inbox.pending_flat_requests(replace(FIRST, generation=2), source_id="synthetic-supertrend")
+        == []
+    )
+    assert inbox.confirm_flat(risk.delivery_id, authority=FIRST, at=NOW)
+    assert inbox.pending_flat_requests(FIRST, source_id="synthetic-supertrend") == []
+
+
 def test_restart_does_not_dispatch_an_already_accepted_new_entry(tmp_path: Path) -> None:
     path = tmp_path / "target.sqlite"
     inbox = ExternalTargetInbox(path)

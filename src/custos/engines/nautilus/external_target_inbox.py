@@ -546,6 +546,47 @@ class ExternalTargetInbox:
             + timedelta(microseconds=row["handoff_at_ns"] // 1_000),
         )
 
+    def pending_flat_requests(
+        self, authority: EngineLifecycleAuthority, *, source_id: str
+    ) -> list[PendingFlatRequest]:
+        """List only this subscriber's handed-off, unresolved flat fences."""
+        _require_non_live(authority)
+        with self._transaction() as connection:
+            rows = connection.execute(
+                """SELECT event.delivery_id, event.connector, event.pair, event.handoff_at_ns
+                   FROM external_target_delivery AS event
+                   JOIN external_target_flat_fence AS fence
+                     ON fence.flat_delivery_id = event.delivery_id
+                    AND fence.deployment_instance_id = event.deployment_instance_id
+                    AND fence.pair = event.pair
+                    AND fence.source_id = event.source_id
+                    AND fence.tenant_id = event.tenant_id
+                   WHERE event.deployment_instance_id = ? AND event.deployment_spec_id = ?
+                     AND event.deployment_spec_digest = ? AND event.generation = ?
+                     AND event.source_id = ? AND event.target = 'FLAT'
+                     AND event.status IN ('flat_requested', 'uncertain')
+                     AND event.handoff_at_ns IS NOT NULL
+                     AND fence.confirmed_at_ns IS NULL
+                   ORDER BY event.handoff_at_ns, event.delivery_id""",
+                (
+                    str(authority.deployment_instance_id),
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                    source_id,
+                ),
+            ).fetchall()
+        origin = datetime(1970, 1, 1, tzinfo=UTC)
+        return [
+            PendingFlatRequest(
+                delivery_id=row["delivery_id"],
+                connector=row["connector"],
+                pair=row["pair"],
+                handoff_at=origin + timedelta(microseconds=row["handoff_at_ns"] // 1_000),
+            )
+            for row in rows
+        ]
+
     def confirm_flat(
         self, delivery_id: str, *, authority: EngineLifecycleAuthority, at: datetime
     ) -> bool:

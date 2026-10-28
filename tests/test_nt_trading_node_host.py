@@ -433,6 +433,47 @@ async def test_external_source_flatten_requests_containment_for_exact_host(monke
 
 
 @pytest.mark.asyncio
+async def test_external_source_flat_reader_and_local_clear_require_guarded_active_host(monkeypatch):
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    spec = _spec("source-flat-reader", connector="okx_perpetual", pairs=["ETH-USDT"])
+    host = NtTradingNodeHost()
+    instance_id = spec["deployment_instance_id"]
+    await host.deploy(spec, _credential(), _Artifact(strategy=_SignalStrategyDouble(spec)))
+    try:
+        await asyncio.sleep(0)
+        sandbox = host.external_source_runtime_scope(instance_id).authority
+        assert host.external_source_flat_reader(sandbox) is None
+        assert not await host.external_source_flat_local_clear(sandbox, "ETH-USDT")
+        testnet = replace(sandbox, trading_mode="testnet")
+        host._lifecycle_authorities[instance_id] = testnet
+        with pytest.raises(RuntimeError, match="unavailable"):
+            host.external_source_flat_reader(testnet)
+
+        reader = SimpleNamespace(observe_flat=lambda **kwargs: None)
+        host._runner_fact_contexts[instance_id] = (object(), reader)
+        assert host.external_source_flat_reader(testnet) is reader
+
+        exposure = SimpleNamespace(reserved_notional=0, open_exposure=0)
+
+        class Boundary:
+            async def exposure_snapshot(self):
+                return exposure
+
+        host._runner_safety_boundaries[instance_id] = Boundary()
+        assert await host.external_source_flat_local_clear(testnet, "ETH-USDT")
+        host._active_nodes[instance_id].cache.orders.append(object())
+        assert not await host.external_source_flat_local_clear(testnet, "ETH-USDT")
+        host._active_nodes[instance_id].cache.orders.clear()
+        exposure.reserved_notional = 1
+        assert not await host.external_source_flat_local_clear(testnet, "ETH-USDT")
+        with pytest.raises(RuntimeError, match="scope"):
+            await host.external_source_flat_local_clear(testnet, "BTC-USDT")
+    finally:
+        host._runner_fact_contexts.pop(instance_id, None)
+        await host.stop(instance_id)
+
+
+@pytest.mark.asyncio
 async def test_a_strategy_without_the_event_callbacks_is_refused(monkeypatch) -> None:
     """Red lines 0.2 and 0.3, and 'the reconciliation is never silent'.
 
