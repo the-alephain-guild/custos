@@ -74,6 +74,13 @@ authenticated loopback HTTP source event through the private outbox to two
 distinct JWT subscribers and verifies their independent inbox handoffs. It
 does not provision a shared broker or exercise a real TradingView alert or
 venue account.
+For local acceptance, `python -m custos.cli.subcommands.source_signal_sender`
+reads a 32–512 character ASCII token from a separate owner-only file,
+constructs the reproducible `CUSTOS_SOURCE_V1` event ID and posts one synthetic
+`LONG`, `SHORT` or `FLAT` event to the loopback receiver. Its URL is restricted
+to `http://127.0.0.1`; stdout contains only the event ID and HTTP receipt,
+never the token. This tool simulates the source contract and does not claim a
+TradingView alert or a venue fill.
 
 `external_source_transport.py` provides an adapter for
 isolated JetStream lane, exact source subjects, a stable `Nats-Msg-Id`, and one

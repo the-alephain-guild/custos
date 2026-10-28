@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import http.client
 import json
 import os
 import shutil
@@ -30,6 +29,15 @@ from test_nats_revocation import (
 )
 
 from custos.cli.subcommands.source_publisher_tls import _AuthorizedPublicationWorker, build_settings
+from custos.cli.subcommands.source_signal_sender import (
+    _build_parser as sender_parser,
+)
+from custos.cli.subcommands.source_signal_sender import (
+    build_settings as build_sender_settings,
+)
+from custos.cli.subcommands.source_signal_sender import (
+    send as send_synthetic_signal,
+)
 from custos.cli.subcommands.source_webhook import (
     SourcePublisherService,
     SourceWebhookIngress,
@@ -37,7 +45,6 @@ from custos.cli.subcommands.source_webhook import (
 )
 from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.core.external_source_outbox import ExternalSourceOutbox
-from custos.core.external_source_signal import make_source_event_id
 from custos.core.external_source_transport import (
     SIGNAL_STREAM_NAME,
     SourcePublicationWorker,
@@ -250,28 +257,6 @@ async def _exercise(
             await session.bind(at=now)
             subscribers.append((connection, session, host))
 
-        event_id = make_source_event_id(
-            source_id=source,
-            strategy_revision="v1",
-            symbol="ETH-USDT-SWAP",
-            timeframe="30",
-            bar_close_time=bar,
-            target="LONG",
-            risk_action=None,
-        )
-        payload = {
-            "schemaVersion": 1,
-            "sourceId": source,
-            "strategyRevision": "v1",
-            "symbol": "ETH-USDT-SWAP",
-            "timeframe": "30",
-            "barCloseTime": bar.isoformat(),
-            "timestamp": now.isoformat(),
-            "maxLag": 3600,
-            "target": "LONG",
-            "eventId": event_id,
-            "signalToken": "synthetic-only-never-brokered-0123456789",
-        }
         outbox = ExternalSourceOutbox(root / "source.sqlite")
         ingress = SourceWebhookIngress(publisher_settings.ingress, outbox)
         server = create_source_webhook_server(("127.0.0.1", 0), ingress, clock=lambda: now)
@@ -283,22 +268,33 @@ async def _exercise(
         publisher_task = asyncio.create_task(service.run(publisher_stop))
         await service.started.wait()
 
-        def post() -> int:
-            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
-            try:
-                connection.request(
-                    "POST",
-                    "/v1/external-source-signals",
-                    json.dumps(payload).encode(),
-                    {"Content-Type": "application/json"},
-                )
-                response = connection.getresponse()
-                response.read()
-                return response.status
-            finally:
-                connection.close()
-
-        assert await asyncio.to_thread(post) == 202
+        token_file = root / "source-token"
+        token_file.write_text("synthetic-only-never-brokered-0123456789")
+        token_file.chmod(0o600)
+        sender = build_sender_settings(
+            sender_parser().parse_args(
+                [
+                    "--url",
+                    f"http://127.0.0.1:{server.server_port}/v1/external-source-signals",
+                    "--source-id",
+                    source,
+                    "--strategy-revision",
+                    "v1",
+                    "--symbol",
+                    "ETH-USDT-SWAP",
+                    "--bar-close",
+                    bar.isoformat(),
+                    "--target",
+                    "LONG",
+                    "--token-file",
+                    str(token_file),
+                    "--max-lag",
+                    "3600",
+                ]
+            ),
+            now=now,
+        )
+        assert (await asyncio.to_thread(send_synthetic_signal, sender)).status_code == 202
         deliveries = []
         for _connection, session, host in subscribers:
             message = await session.subscription.next_msg(timeout=3)
