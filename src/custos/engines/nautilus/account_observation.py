@@ -42,6 +42,9 @@ class NativeAccountObservation:
     account_material_keccak256: str
     account_id: str
     client_id: str
+    account_source_healthy: bool
+    session_key_address: str | None
+    session_key_expiry_raw: int | None
     account_revision: int
     source_block: int
     source_timestamp: int
@@ -140,6 +143,9 @@ def account_observation(
             "account_material_keccak256",
             "account_id",
             "client_id",
+            "account_source_healthy",
+            "session_key_address",
+            "session_key_expiry_raw",
             "account_revision",
             "source_block",
             "source_timestamp",
@@ -162,6 +168,14 @@ def account_observation(
         raise ValueError("unsupported Native account observation schema")
     if fields["account_id"] != account_id or fields["client_id"] != client_id:
         raise ValueError("Native account observation route differs")
+    selected = fields["session_key_address"]
+    if selected is not None and (
+        type(selected) is not str or re.fullmatch(r"0x[0-9a-f]{40}", selected) is None
+    ):
+        raise ValueError("Native selected session address is not canonical")
+    expiry = fields["session_key_expiry_raw"]
+    if selected is None and expiry is not None:
+        raise ValueError("Native session expiry has no selected address")
     journal = journal_identity(fields["journal"], owner=owner, path=path)
     source_block = _uint(fields["source_block"])
     timestamp = _uint(fields["source_timestamp"], maximum=(2**64 - 1) // 10**9)
@@ -191,6 +205,9 @@ def account_observation(
         _hash(fields["account_material_keccak256"]),
         account_id,
         client_id,
+        _flag(fields["account_source_healthy"]),
+        selected,
+        None if expiry is None else _raw(expiry),
         _uint(fields["account_revision"], minimum=1),
         source_block,
         timestamp,
@@ -218,7 +235,10 @@ def require_account_progress(
     previous: NativeAccountObservation,
     current: NativeAccountObservation,
 ) -> None:
-    if current.journal.sequence == previous.journal.sequence and current != previous:
+    if current.session_key_address != previous.session_key_address:
+        raise ValueError("Native execution client selected session changed")
+    account_contents = replace(current, account_source_healthy=previous.account_source_healthy)
+    if current.journal.sequence == previous.journal.sequence and account_contents != previous:
         raise ValueError("Native account contents changed without journal progress")
     if (
         current.checkpoint_revision < previous.checkpoint_revision
@@ -232,7 +252,7 @@ def require_account_progress(
     if (
         current.checkpoint_revision == previous.checkpoint_revision
         and replace(
-            current,
+            account_contents,
             journal=previous.journal,
             pending_client_order_ids=previous.pending_client_order_ids,
         )

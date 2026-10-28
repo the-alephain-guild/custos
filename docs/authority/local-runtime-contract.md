@@ -461,6 +461,25 @@ these components grant no local live entry.
 
 ## Readiness, restart and stop
 
+原执行 client 的 held account probe 返回 `account_source_healthy`、
+`session_key_address` 和 `session_key_expiry_raw`。所选地址来自该 client 的
+实际 signer；注册期限来自同一账户 checkpoint 的 session 注册表。无 signer
+时地址和期限均为空，未注册的所选 key 保留地址且期限为空。它们都是公开元数据，
+不包含私钥、签名或完整注册表。消费者保持闭集解码和原整数精度，不能以这些字段
+代替 key 可用性、退出储备或真实下单授权。
+
+通道健康在持久账户读取后另行采样，不属于账户 checkpoint 的原子内容，允许在
+同一个 journal revision 内变化。消费者只对该字段豁免内容一致性检查；所选地址
+必须在同一个 held probe 生命周期内保持不变，注册期限只能随新 checkpoint
+更新。通道健康不证明 indexed 来源时间仍新鲜，也不能延长风险截止。
+
+Native risk blocker 的 `require_fresh_observation()` 单向启用增险新鲜度约束，
+初始截止为零；`set_observation_valid_until_ns()` 仅在启用后接受精确的无符号
+Python int。零截止临时关闭增险，更新截止不能撤销永久 freeze。实际 Native
+发送在所有阻塞读取之后重新采样纳秒时钟，严格要求当前时间早于截止。平仓和撤销
+开仓保留原减险分类，继续受原账户来源、签名、session key 和退出窗口约束。
+Host 尚未接入这条约束；这些原语本身不授予本机 live 准入。
+
 Readiness requires an alive node, actual data and execution connectivity, initialized reliable account/portfolio state, completed account reconciliation, active risk enforcement and durable current authority. The current blanket live refusal may be replaced only by proved checks, not a mode-based true value.
 
 Adapter recovery proves order/position identity and execution evidence; it does not prove the strategy's algorithm state. After unclean exit, recover in a no-new-risk state. If decision state cannot be reconstructed, expose recovery/exit controls, reconcile and flatten as authorized, then require a new manifest/permit for a new run. Do not restart the algorithm from an empty state against inherited exposure.

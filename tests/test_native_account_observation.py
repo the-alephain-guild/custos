@@ -27,6 +27,9 @@ def observation(storage):
         "account_material_keccak256": "0x" + "22" * 32,
         "account_id": native.account_id,
         "client_id": native.client_id,
+        "account_source_healthy": True,
+        "session_key_address": "0x" + "ab" * 20,
+        "session_key_expiry_raw": "1700020000",
         "account_revision": 2,
         "source_block": 100,
         "source_timestamp": 1700000000,
@@ -293,3 +296,100 @@ def test_refuses_malformed_nested_source(observation, change):
         native.raw = json.dumps(document).replace('"deposited_raw":', '"withdrawn_raw":')
     with pytest.raises(RuntimeStorageUnavailable):
         reader.account_observation()
+
+
+@pytest.mark.parametrize("progress", [False, True])
+def test_current_channel_health_can_change_without_an_account_checkpoint(observation, progress):
+    reader, _, document = observation
+    first = reader.account_observation()
+    if progress:
+        document["journal"]["revision"] += 1
+    document["account_source_healthy"] = False
+    second = reader.account_observation()
+    assert first.account_source_healthy is True
+    assert second.account_source_healthy is False
+    assert second.session_key_address == "0x" + "ab" * 20
+    assert second.session_key_expiry_raw == 1700020000
+    document["account_source_healthy"] = True
+    assert reader.account_observation().account_source_healthy is True
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("session_key_address", "0x" + "cd" * 20), ("session_key_expiry_raw", "1700020001")],
+)
+@pytest.mark.parametrize("progress", [False, True])
+def test_selected_session_metadata_cannot_change_without_a_new_checkpoint(
+    observation, field, value, progress
+):
+    reader, _, document = observation
+    reader.account_observation()
+    if progress:
+        document["journal"]["revision"] += 1
+    document[field] = value
+    with pytest.raises(RuntimeStorageUnavailable):
+        reader.account_observation()
+
+
+@pytest.mark.parametrize(
+    "address,expiry", [(None, None), ("0x" + "ab" * 20, None), ("0x" + "ab" * 20, "0")]
+)
+def test_unselected_or_unregistered_sessions_do_not_invent_a_deadline(observation, address, expiry):
+    reader, _, document = observation
+    document["session_key_address"] = address
+    document["session_key_expiry_raw"] = expiry
+    observed = reader.account_observation()
+    assert observed.session_key_address == address
+    assert observed.session_key_expiry_raw == (None if expiry is None else int(expiry))
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("account_source_healthy", 1),
+        ("session_key_address", "0xAB" + "ab" * 19),
+        ("session_key_address", "0x12"),
+        ("session_key_address", 1),
+        ("session_key_expiry_raw", "01"),
+        ("session_key_expiry_raw", str(2**256)),
+        ("session_key_expiry_raw", 1),
+    ],
+)
+def test_selected_session_metadata_is_closed_and_canonical(observation, field, value):
+    reader, _, document = observation
+    document[field] = value
+    with pytest.raises(RuntimeStorageUnavailable):
+        reader.account_observation()
+
+
+def test_a_session_expiry_requires_a_selected_address(observation):
+    reader, _, document = observation
+    document["session_key_address"] = None
+    with pytest.raises(RuntimeStorageUnavailable):
+        reader.account_observation()
+
+
+def test_selected_address_is_bound_to_the_original_client_even_after_checkpoint_progress(
+    observation,
+):
+    reader, _, document = observation
+    reader.account_observation()
+    document["journal"]["revision"] += 1
+    document["checkpoint_revision"] += 1
+    document["session_key_address"] = "0x" + "cd" * 20
+    with pytest.raises(RuntimeStorageUnavailable):
+        reader.account_observation()
+
+
+def test_registered_session_expiry_can_advance_with_a_new_source_checkpoint(observation):
+    reader, _, document = observation
+    first = reader.account_observation()
+    document["journal"]["revision"] += 1
+    document["checkpoint_revision"] += 1
+    document["account_revision"] += 1
+    document["account_snapshot_keccak256"] = "0x" + "44" * 32
+    document["account_material_keccak256"] = "0x" + "55" * 32
+    document["session_key_expiry_raw"] = "1700030000"
+    current = reader.account_observation()
+    assert current.session_key_address == first.session_key_address
+    assert current.session_key_expiry_raw == 1700030000
