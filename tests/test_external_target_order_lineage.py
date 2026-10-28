@@ -64,12 +64,16 @@ def test_two_deployments_keep_same_client_order_id_separate(tmp_path: Path) -> N
     assert first_link.filled_quantity == "0.4"
     assert first_link.venue_trade_ids == ("T-1",)
     assert first_link.venue_order_ids == ("V-1",)
+    assert first_link.initialized_at_ns == int(NOW.timestamp() * 1_000_000_000)
+    assert first_link.fill_at_ns == (int((NOW + timedelta(seconds=1)).timestamp() * 1_000_000_000),)
     assert second_link.filled_quantity == "0"
 
     first_report = restarted.target_execution(FIRST, first.delivery_id)
     second_report = restarted.target_execution(SECOND, second.delivery_id)
     assert first_report is not None and second_report is not None
     assert first_report.status == second_report.status == "queued"
+    assert first_report.connector == "okx_perpetual"
+    assert second_report.connector == "binance_perpetual"
     assert first_report.local_fill_count == 1
     assert second_report.local_fill_count == 0
     assert first_report.orders == (first_link,)

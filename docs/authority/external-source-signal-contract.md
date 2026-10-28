@@ -207,3 +207,13 @@ fault; it does not stop the signed host or remove local protection. The
 current mapping covers tagged entry orders and their fills. Flat-containment
 orders, protective orders, fees and final target outcome are not yet linked
 to the source delivery, and no real venue execution receipt has been captured.
+`ExternalTargetInbox.target_execution()` returns a deployment-scoped local
+snapshot with the target handoff status and linked client order, fill event,
+venue order and venue trade IDs. `NtTradingNodeHost` can collect its own signed
+testnet deployment's independent ledger for a caller-specified interval and
+compare all fills on the known venue order IDs. The comparison returns
+`matched_known_order_fills`, `disagreement` or `unknown`; an unfilled order,
+incomplete interval or missing venue account view remains `unknown`. A match
+does not attest final order state, position flatness, fees or quantity
+equivalence: OKX reports contract quantities on native fills while the ledger
+converts them to base units. No real account has yet produced a comparison.

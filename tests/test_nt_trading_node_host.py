@@ -480,7 +480,12 @@ async def test_source_order_callbacks_persist_target_lineage_before_fill(monkeyp
     from tests.test_external_target_order_recorder import OrderFilled, OrderInitialized
 
     monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
-    spec = _spec("source-order-lineage", connector="binance_perpetual", pairs=["ETH-USDT"])
+    spec = _spec(
+        "source-order-lineage",
+        connector="binance_perpetual",
+        pairs=["ETH-USDT"],
+        trading_mode="testnet",
+    )
     path = tmp_path / "source-target.sqlite"
     host = NtTradingNodeHost(source_inbox_path=path)
     strategy = _SignalStrategyDouble(spec)
@@ -516,6 +521,43 @@ async def test_source_order_callbacks_persist_target_lineage_before_fill(monkeyp
         assert linked is not None
         assert linked.delivery_id == delivery.delivery_id
         assert linked.filled_quantity == "0.4"
+
+        from datetime import timedelta
+
+        from custos.core.runner_fact_producer import VenueLedgerEvidence
+
+        class Provider:
+            async def observe_flat(self, **kwargs):
+                raise AssertionError("fill comparison does not read flat state")
+
+            async def collect(self, coverage_from, closed_at):
+                return VenueLedgerEvidence(
+                    venue="BINANCE",
+                    source="venue_api",
+                    watermark="test-ledger",
+                    coverage_from=coverage_from,
+                    observed_through=closed_at,
+                    completeness={"fills_complete": True},
+                    balances=(),
+                    positions=(),
+                    fees=(),
+                    fills=(
+                        {
+                            "venue_order_id": "V-1",
+                            "venue_trade_id": "trade-1",
+                            "instrument": "ETHUSDT-PERP.BINANCE",
+                        },
+                    ),
+                )
+
+        host._runner_fact_contexts[spec["deployment_instance_id"]] = (object(), Provider())
+        comparison = await host.external_source_compare_known_fills(
+            authority,
+            delivery.delivery_id,
+            coverage_from=NOW - timedelta(seconds=1),
+            closed_at=NOW + timedelta(seconds=30),
+        )
+        assert comparison.status == "matched_known_order_fills"
     finally:
         await host.stop(spec["deployment_instance_id"])
 

@@ -1022,6 +1022,42 @@ class NtTradingNodeHost:
         exposure = await boundary.exposure_snapshot()
         return exposure.reserved_notional == 0 and exposure.open_exposure == 0
 
+    async def external_source_compare_known_fills(
+        self,
+        authority: EngineLifecycleAuthority,
+        delivery_id: str,
+        *,
+        coverage_from: datetime,
+        closed_at: datetime,
+    ):
+        """Compare one target with this signed testnet account's independent ledger."""
+        if authority.trading_mode != "testnet":
+            raise RuntimeError("source venue fill comparison requires testnet")
+        instance_id = str(authority.deployment_instance_id)
+        scope = self.external_source_runtime_scope(instance_id)
+        if scope.authority != authority or self._source_inbox_path is None:
+            raise RuntimeError("source venue fill comparison differs from active deployment")
+        provider = self.external_source_flat_reader(authority)
+        if provider is None or not callable(getattr(provider, "collect", None)):
+            raise RuntimeError("independent source venue ledger is unavailable")
+
+        from custos.engines.nautilus.external_target_inbox import ExternalTargetInbox
+        from custos.engines.nautilus.external_target_venue_fill_match import (
+            compare_known_order_fills,
+        )
+
+        if self._source_order_inbox is None:
+            self._source_order_inbox = ExternalTargetInbox(self._source_inbox_path)
+        target = await asyncio.to_thread(
+            self._source_order_inbox.target_execution, authority, delivery_id
+        )
+        if target is None or target.connector != scope.connector:
+            raise RuntimeError("source target differs from active venue scope")
+        evidence = await provider.collect(coverage_from, closed_at)
+        if self.external_source_runtime_scope(instance_id) != scope:
+            raise RuntimeError("source venue scope changed during fill comparison")
+        return compare_known_order_fills(target, evidence, closed_at=closed_at)
+
     def _require_the_only_node(self, deployment_instance_id: str) -> None:
         """Refuse a second node in this runner process.
 

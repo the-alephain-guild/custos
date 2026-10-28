@@ -49,7 +49,9 @@ class TargetOrderExecution:
     source_event_id: str
     client_order_id: str
     instrument: str
+    initialized_at_ns: int
     filled_quantity: str
+    fill_at_ns: tuple[int, ...]
     fill_event_ids: tuple[str, ...]
     venue_order_ids: tuple[str, ...]
     venue_trade_ids: tuple[str, ...]
@@ -61,6 +63,7 @@ class TargetDeliveryExecution:
 
     delivery_id: str
     source_event_id: str
+    connector: str
     target: str
     status: str
     orders: tuple[TargetOrderExecution, ...]
@@ -838,7 +841,8 @@ class ExternalTargetInbox:
     ) -> TargetOrderExecution | None:
         instance_id = str(authority.deployment_instance_id)
         row = connection.execute(
-            """SELECT link.delivery_id, target.source_event_id, link.instrument
+            """SELECT link.delivery_id, target.source_event_id, link.instrument,
+                      link.initialized_at_ns
                    FROM external_target_order_link AS link
                    JOIN external_target_delivery AS target ON target.delivery_id = link.delivery_id
                    WHERE link.deployment_instance_id = ? AND link.client_order_id = ?
@@ -855,7 +859,7 @@ class ExternalTargetInbox:
         if row is None:
             return None
         fills = connection.execute(
-            """SELECT fill_event_id, venue_order_id, venue_trade_id, quantity
+            """SELECT fill_event_id, venue_order_id, venue_trade_id, quantity, filled_at_ns
                FROM external_target_fill_link
                    WHERE deployment_instance_id = ? AND client_order_id = ?
                    ORDER BY filled_at_ns, fill_event_id""",
@@ -866,7 +870,9 @@ class ExternalTargetInbox:
             source_event_id=row["source_event_id"],
             client_order_id=client_order_id,
             instrument=row["instrument"],
+            initialized_at_ns=row["initialized_at_ns"],
             filled_quantity=str(sum((Decimal(fill["quantity"]) for fill in fills), Decimal(0))),
+            fill_at_ns=tuple(fill["filled_at_ns"] for fill in fills),
             fill_event_ids=tuple(fill["fill_event_id"] for fill in fills),
             venue_order_ids=tuple(fill["venue_order_id"] for fill in fills),
             venue_trade_ids=tuple(fill["venue_trade_id"] for fill in fills),
@@ -881,7 +887,8 @@ class ExternalTargetInbox:
         with self._transaction() as connection:
             connection.execute("BEGIN")
             target = connection.execute(
-                """SELECT source_event_id, target, status FROM external_target_delivery
+                """SELECT source_event_id, connector, target, status
+                   FROM external_target_delivery
                    WHERE delivery_id = ? AND deployment_instance_id = ?
                      AND deployment_spec_id = ? AND deployment_spec_digest = ?
                      AND generation = ?""",
@@ -910,6 +917,7 @@ class ExternalTargetInbox:
         return TargetDeliveryExecution(
             delivery_id=delivery_id,
             source_event_id=target["source_event_id"],
+            connector=target["connector"],
             target=target["target"],
             status=target["status"],
             orders=orders,
