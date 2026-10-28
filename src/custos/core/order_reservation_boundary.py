@@ -275,18 +275,20 @@ class RunnerReservationBoundary:
         if self._durable_reductions is not None:
             self.assert_control_current()
             if self._durable_reductions.prepare_submit(command):
-                return (_Reservation(str(command.order.client_order_id), reduction=True),)
-            return self._reserve_orders(
-                (command.order,), command_id=runner_command_id(command), allow_reductions=False
-            )
+                reservations = (_Reservation(str(command.order.client_order_id), reduction=True),)
+            else:
+                reservations = self._reserve_orders(
+                    (command.order,), command_id=runner_command_id(command), allow_reductions=False
+                )
+            self._durable_reductions.record_prepared(command)
+            return reservations
         return self._reserve_orders((command.order,), command_id=runner_command_id(command))
 
     def before_dispatch(self, reservations: tuple[_Reservation, ...]) -> bool:
         if self._durable_reductions is None:
             return True
         return all(
-            not item.reduction or self._durable_reductions.begin_dispatch(item.client_order_id)
-            for item in reservations
+            self._durable_reductions.begin_dispatch(item.client_order_id) for item in reservations
         )
 
     def dispatch_failed(self, reservations: tuple[_Reservation, ...], *, command_id: Any) -> None:
@@ -423,7 +425,7 @@ class RunnerReservationBoundary:
     ) -> None:
         self.assert_control_current()
         for reservation in reservations:
-            if self._durable_reductions is not None and reservation.reduction:
+            if self._durable_reductions is not None:
                 self._durable_reductions.mark_not_sent(reservation.client_order_id)
                 continue
             self._store.release_order_reservation_sync(

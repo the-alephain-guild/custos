@@ -2,25 +2,60 @@
 
 from __future__ import annotations
 
-from typing import Any
+import hashlib
+import json
+import re
+from dataclasses import asdict
+from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
 from nautilus_trader.model import ClientId, InstrumentId, OrderFilled
 
 from custos.core.local_runtime_state import RuntimeLease
+from custos.core.order_nonexecution import NativeDispatchBinding, NativeNoFillSettlement
 from custos.core.runtime_authority import RuntimeAuthorityError
 from custos.engines.nautilus.runner_safety import NautilusCachedOrderSemantics
+from custos.engines.nautilus.runtime_storage import PapertradeRuntimeStorageProbe
 from custos.local.reservations import LocalReservationStore
 
 
+class NativeParamsFactory(Protocol):
+    def submission_params_keccak256(self, params: dict[str, Any] | None = None) -> str: ...
+
+
 class LocalPapertradeReductions:
-    def __init__(self, *, store: LocalReservationStore, account_id: str, client_id: str) -> None:
+    def __init__(
+        self,
+        *,
+        store: LocalReservationStore,
+        account_id: str,
+        client_id: str,
+        storage_probe: PapertradeRuntimeStorageProbe,
+        native_factory: NativeParamsFactory,
+    ) -> None:
         if not isinstance(store, LocalReservationStore):
             raise RuntimeAuthorityError(
                 "local reductions require the concrete registered risk store"
             )
+        if not isinstance(storage_probe, PapertradeRuntimeStorageProbe) or (
+            storage_probe.bindings.state != store.runtime_lease.state_store
+            or storage_probe.bindings.journal != store.runtime_lease.journal_store
+        ):
+            raise RuntimeAuthorityError(
+                "local reductions require the actual registered Native stores"
+            )
         self._store = store
+        with self.runtime_lease.control_action():
+            storage_probe.require_route(account_id=account_id, client_id=client_id)
+            self._params_digest = native_factory.submission_params_keccak256
+            digest = self._params_digest(None)
+            if type(digest) is not str or re.fullmatch(r"0x[0-9a-f]{64}", digest) is None:
+                raise RuntimeAuthorityError(
+                    "Native factory does not provide a valid parameter bridge"
+                )
         self._claims = store.bind_reductions(account_id=account_id, client_id=client_id)
+        self._storage = storage_probe
+        self._dispatch = store.bind_native_dispatch(journal=storage_probe.bindings.journal)
         self._account_id = account_id
         self._client_id = client_id
         self._semantics: NautilusCachedOrderSemantics | None = None
@@ -42,6 +77,7 @@ class LocalPapertradeReductions:
         return self._store.policy_id
 
     def bind_runtime(self, semantics: Any) -> None:
+        self.runtime_lease.assert_control_current()
         if not isinstance(semantics, NautilusCachedOrderSemantics) or (
             self._semantics is not None
             and self._semantics.canonical_cache is not semantics.canonical_cache
@@ -55,11 +91,13 @@ class LocalPapertradeReductions:
         return self._semantics
 
     def prepare_submit(self, intent: Any) -> bool:
+        self.runtime_lease.assert_control_current()
         semantics = self._bound_semantics()
         if intent.client_id is not None and (
             not isinstance(intent.client_id, ClientId) or str(intent.client_id) != self._client_id
         ):
             raise RuntimeAuthorityError("local submit selects another Native execution client")
+        intent.bind_client_id(ClientId(self._client_id))
         if intent.order.is_reduce_only is True:
             target = semantics.papertrade_reduction_target(
                 intent, account_id=self._account_id, client_id=self._client_id
@@ -84,11 +122,111 @@ class LocalPapertradeReductions:
         self._store.require_opening_instrument(str(intent.order.instrument_id))
         return False
 
+    def record_prepared(self, intent: Any) -> None:
+        identifier = str(intent.order.client_order_id)
+        try:
+            with self.runtime_lease.control_action():
+                claim = self._claims.load(identifier)
+                side = str(intent.order.side)
+                if side not in {"BUY", "SELL"}:
+                    raise RuntimeAuthorityError("Native dispatch order direction is invalid")
+                binding = NativeDispatchBinding(
+                    client_order_id=identifier,
+                    native_account_id=self._account_id,
+                    client_id=self._client_id,
+                    instrument_id=str(intent.order.instrument_id),
+                    side=cast(Literal["BUY", "SELL"], side),
+                    quantity=intent.order.quantity.as_decimal(),
+                    quote_quantity=intent.order.is_quote_quantity,
+                    reduce_only=intent.order.is_reduce_only,
+                    target=claim.target.position_id.removeprefix("PT-") if claim else None,
+                    submission_params_keccak256=self._params_digest(intent.params),
+                )
+                previous = self._dispatch.load(identifier)
+                if previous is None:
+                    observed = self._storage.order_evidence(identifier)
+                    if (
+                        observed.account_id != self._account_id
+                        or observed.client_id != self._client_id
+                    ):
+                        raise RuntimeAuthorityError(
+                            "Native Missing observation names another execution route"
+                        )
+                    if observed.kind != "missing":
+                        raise RuntimeAuthorityError(
+                            "Native client order ID already exists in the original journal"
+                        )
+                    missing_revision = observed.journal.sequence
+                else:
+                    missing_revision = previous.missing_revision
+                self._dispatch.prepare(binding=binding, missing_revision=missing_revision)
+        except Exception:
+            self._store.record_dispatch_unknown(
+                identifier, reason="native_dispatch_binding_unverified"
+            )
+            raise
+
     def begin_dispatch(self, client_order_id: str) -> bool:
-        return self._claims.begin_dispatch(client_order_id)
+        return self._dispatch.begin_dispatch(client_order_id)
 
     def mark_not_sent(self, client_order_id: str) -> None:
-        self._claims.mark_not_sent(client_order_id)
+        self._dispatch.withdraw_unsent(client_order_id)
+
+    def reconcile_no_fill(self, client_order_id: str) -> bool:
+        try:
+            with self.runtime_lease.control_action():
+                observed = self._storage.order_evidence(client_order_id)
+                if observed.kind != "proven_no_fill":
+                    return False
+                binding, proof = observed.binding, observed.proof
+                if (
+                    binding is None
+                    or proof is None
+                    or binding.action
+                    != ("closePositions" if binding.reduce_only else "openPosition")
+                ):
+                    raise RuntimeAuthorityError(
+                        "Native no-fill observation has no consistent intent"
+                    )
+                original = NativeDispatchBinding(
+                    client_order_id=client_order_id,
+                    native_account_id=observed.account_id,
+                    client_id=observed.client_id,
+                    instrument_id=binding.instrument_id,
+                    side=binding.side,
+                    quantity=binding.quantity,
+                    quote_quantity=binding.quote_quantity,
+                    reduce_only=binding.reduce_only,
+                    target=binding.target,
+                    submission_params_keccak256=binding.submission_params_keccak256,
+                )
+                digest = hashlib.sha256(
+                    json.dumps(
+                        {"schema_version": 1, **asdict(proof)},
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=str,
+                        allow_nan=False,
+                    ).encode()
+                ).hexdigest()
+                self._dispatch.settle_no_fill(
+                    NativeNoFillSettlement(
+                        binding=original,
+                        journal_id=observed.journal.store_id,
+                        journal_revision=observed.journal.sequence,
+                        sealed_at_revision=proof.sealed_at_revision,
+                        intent_id=binding.intent_id,
+                        command_keccak256=binding.command_keccak256,
+                        proof_digest=digest,
+                        source=proof.source,
+                    )
+                )
+                return True
+        except Exception:
+            self._store.record_dispatch_unknown(
+                client_order_id, reason="native_nonexecution_evidence_unverified"
+            )
+            raise
 
     def dispatch_failed(self, client_order_id: str) -> None:
         if self._claims.load(client_order_id) is not None:
@@ -106,12 +244,12 @@ class LocalPapertradeReductions:
         return None
 
     def on_order_event(self, event: Any, *, stable_event_id: str) -> None:
+        self.runtime_lease.assert_control_current()
         client_order_id = str(event.client_order_id)
         event_name = type(event).__name__
         if event_name in {"OrderRejected", "OrderDenied", "OrderCanceled", "OrderExpired"}:
-            # The generic manager can synthesize terminal events after a timeout.
-            # Only adapter-held per-intent evidence can release this risk later.
-            self.dispatch_failed(client_order_id)
+            if not self.reconcile_no_fill(client_order_id):
+                self.dispatch_failed(client_order_id)
             return
         if event_name != "OrderFilled":
             return

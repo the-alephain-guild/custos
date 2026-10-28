@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import json
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
@@ -14,6 +15,7 @@ pytest.importorskip("nautilus_trader")
 from nautilus_trader.core import UUID4
 from nautilus_trader.model import (
     AccountId,
+    ClientId,
     ClientOrderId,
     Currency,
     InstrumentId,
@@ -42,9 +44,89 @@ from custos.engines.nautilus.runner_safety import (
 from tests.test_local_reduction_claims import bind_actual_routing as bind_actual_routing
 from tests.test_local_reservations import local_risk as local_risk
 from tests.test_local_reservations import reserve, snapshot
+from tests.test_runtime_authority import account
 
 INSTRUMENT = InstrumentId.from_str("BTC-USD-PERP.PAPERTRADE")
 ACCOUNT = "PAPERTRADE-001"
+
+
+class FixtureNativeFactory:
+    @staticmethod
+    def submission_params_keccak256(params=None):
+        # A deterministic test token; actual Keccak conversion needs the new Native wheel.
+        raw = json.dumps(params or None, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        return "0x" + hashlib.sha256(raw.encode()).hexdigest()
+
+
+class FixtureHeldJournal:
+    def __init__(self, risk):
+        self.risk = risk
+        self.revision = 10
+        self.closed = False
+        self.orders = {}
+        self._save_revision()
+
+    def _save_revision(self):
+        self.risk.bindings.journal.path.write_text(
+            f"{self.risk.bindings.journal.store_id}:{self.revision}"
+        )
+
+    def identity(self):
+        identity = account()
+        return {
+            "schema_version": 1,
+            "journal_id": str(self.risk.bindings.journal.store_id),
+            "revision": self.revision,
+            "owner": f"{identity.chain_id}:{identity.exchange}:{identity.wallet_address}:{ACCOUNT}",
+            "canonical_path": str(self.risk.bindings.journal.path.resolve()),
+        }
+
+    def snapshot_json(self):
+        if self.closed:
+            raise RuntimeError("fixture Native owner released")
+        return json.dumps(self.identity())
+
+    def order_evidence_json(self, identifier):
+        if self.closed:
+            raise RuntimeError("fixture Native owner released")
+        return json.dumps(
+            {
+                "schema_version": 1,
+                "journal": self.identity(),
+                "client_id": "PAPERTRADE",
+                "account_id": ACCOUNT,
+                "client_order_id": identifier,
+                **self.orders.get(identifier, {"kind": "missing"}),
+            }
+        )
+
+    def prove_no_fill(self, identifier):
+        binding = self.risk.store._native_dispatch.load(identifier).binding
+        self.revision += 1
+        self._save_revision()
+        self.orders[identifier] = {
+            "kind": "proven_no_fill",
+            "binding": {
+                "intent_id": "0x" + "11" * 32,
+                "command_keccak256": "0x" + "22" * 32,
+                "submission_params_keccak256": binding.submission_params_keccak256,
+                "action": "closePositions" if binding.reduce_only else "openPosition",
+                "target": binding.target,
+                "instrument_id": binding.instrument_id,
+                "side": binding.side,
+                "quantity": str(binding.quantity),
+                "quote_quantity": binding.quote_quantity,
+                "reduce_only": binding.reduce_only,
+                "deadline": 100,
+            },
+            "proof": {
+                "schema_version": 1,
+                "journal_id": str(self.risk.bindings.journal.store_id),
+                "command_keccak256": "0x" + "22" * 32,
+                "sealed_at_revision": self.revision,
+                "source": {"kind": "never_submitted"},
+            },
+        }
 
 
 def close_order(identifier="close-7", *, reduce_only=True):
@@ -122,10 +204,23 @@ def gated(local_risk):
         order=lambda _: None,
     )
     api = importlib.import_module("custos.engines.nautilus.local_reductions")
+    native_journal = FixtureHeldJournal(risk)
+    storage = importlib.import_module(
+        "custos.engines.nautilus.runtime_storage"
+    ).PapertradeRuntimeStorageProbe(
+        state=risk.events,
+        journal_path=risk.bindings.journal.path,
+        account=account(),
+        adapter_account_id=ACCOUNT,
+        adapter_client_id="PAPERTRADE",
+        native_probe=native_journal,
+    )
     port = api.LocalPapertradeReductions(
         store=risk.store,
         account_id=ACCOUNT,
         client_id="PAPERTRADE",
+        storage_probe=storage,
+        native_factory=FixtureNativeFactory,
     )
     breaker = FallbackBreaker(FallbackBreakerConfig(Decimal("2000"), Decimal("10")))
     boundary = RunnerReservationBoundary(
@@ -140,7 +235,14 @@ def gated(local_risk):
     )
     gate = RunnerSafetyOrderGate(boundary=boundary, client_order_id_len_limit=None)
     return SimpleNamespace(
-        risk=risk, gate=gate, boundary=boundary, positions=positions, port=port, cache=cache
+        risk=risk,
+        gate=gate,
+        boundary=boundary,
+        positions=positions,
+        port=port,
+        cache=cache,
+        native_journal=native_journal,
+        storage=storage,
     )
 
 
@@ -155,6 +257,48 @@ def test_a_local_control_lease_cannot_select_platform_memory_reductions(local_ri
             control_guard=local_risk.lease,
             reduction_claims="platform_memory",
         )
+
+
+@pytest.mark.parametrize("mismatch", ["account", "client"])
+def test_port_route_mismatch_is_refused_before_native_risk_binding(local_risk, mismatch):
+    import sqlite3
+
+    risk = local_risk
+    with sqlite3.connect(risk.events.path) as connection:
+        connection.execute(
+            "UPDATE local_risk_meta SET native_account_id=NULL,client_id=NULL,native_journal_id=NULL"
+        )
+    native_journal = FixtureHeldJournal(risk)
+    storage = importlib.import_module(
+        "custos.engines.nautilus.runtime_storage"
+    ).PapertradeRuntimeStorageProbe(
+        state=risk.events,
+        journal_path=risk.bindings.journal.path,
+        account=account(),
+        adapter_account_id=ACCOUNT,
+        adapter_client_id="PAPERTRADE",
+        native_probe=native_journal,
+    )
+    calls = []
+    factory = SimpleNamespace(
+        submission_params_keccak256=lambda params: calls.append(params) or "0x" + "11" * 32
+    )
+    with pytest.raises(RuntimeAuthorityError):
+        importlib.import_module(
+            "custos.engines.nautilus.local_reductions"
+        ).LocalPapertradeReductions(
+            store=risk.store,
+            account_id="OTHER-001" if mismatch == "account" else ACCOUNT,
+            client_id="OTHER" if mismatch == "client" else "PAPERTRADE",
+            storage_probe=storage,
+            native_factory=factory,
+        )
+    assert calls == []
+    with sqlite3.connect(risk.events.path) as connection:
+        assert connection.execute(
+            "SELECT native_account_id,client_id,native_journal_id FROM local_risk_meta"
+        ).fetchone() == (None, None, None)
+        assert connection.execute("SELECT COUNT(*) FROM local_native_dispatch").fetchone()[0] == 0
 
 
 def test_native_dispatch_observes_committed_marker_and_duplicate_never_sends(gated):
@@ -311,6 +455,155 @@ def test_opening_exception_keeps_reserved_notional_and_a_durable_latch(gated):
     assert gated.risk.blocker.is_frozen()
 
 
+def test_close_no_fill_evidence_is_read_from_the_same_bound_native_handle(gated):
+    assert gated.gate.submit_order(
+        lambda *a, **kw: None, close_order(), position_id=PositionId("PT-7")
+    )
+    gated.native_journal.prove_no_fill("close-7")
+    assert gated.port.reconcile_no_fill("close-7") is True
+    assert gated.risk.store.reductions.load("close-7").state == "proven_no_fill"
+    assert snapshot(gated.risk).filled_exposure == Decimal("500")
+
+
+def test_missing_native_order_does_not_release_an_unknown_opening(gated):
+    opening = close_order("new-entry", reduce_only=False)
+    opening.quantity = Quantity.from_str("500")
+    opening.is_quote_quantity = True
+    assert gated.gate.submit_order(lambda *a, **kw: None, opening)
+    assert gated.port.reconcile_no_fill("new-entry") is False
+    assert snapshot(gated.risk, "new-entry").reserved_notional == Decimal("500")
+
+
+def test_native_opening_call_observes_the_durable_dispatch_marker(gated):
+    opening = close_order("new-entry", reduce_only=False)
+    opening.quantity = Quantity.from_str("500")
+    opening.is_quote_quantity = True
+    seen = []
+
+    def native(order, **kwargs):
+        seen.append(gated.risk.store._native_dispatch.load(str(order.client_order_id)).state)
+
+    assert gated.gate.submit_order(native, opening)
+    assert seen == ["dispatched"]
+
+
+def test_opening_no_fill_proof_releases_only_that_order_reservation(gated):
+    opening = close_order("new-entry", reduce_only=False)
+    opening.quantity = Quantity.from_str("500")
+    opening.is_quote_quantity = True
+    assert gated.gate.submit_order(lambda *a, **kw: None, opening)
+    gated.native_journal.prove_no_fill("new-entry")
+    assert gated.port.reconcile_no_fill("new-entry")
+    assert snapshot(gated.risk, "new-entry").reserved_notional == 0
+    assert snapshot(gated.risk).filled_exposure == Decimal("500")
+
+
+def test_an_existing_native_identifier_cannot_be_reused_before_dispatch(gated):
+    gated.native_journal.orders["close-7"] = {
+        "kind": "unproven",
+        "binding": {
+            "intent_id": "0x" + "11" * 32,
+            "command_keccak256": "0x" + "22" * 32,
+            "submission_params_keccak256": FixtureNativeFactory.submission_params_keccak256(),
+            "action": "closePositions",
+            "target": "7",
+            "instrument_id": str(INSTRUMENT),
+            "side": "SELL",
+            "quantity": "0.005",
+            "quote_quantity": False,
+            "reduce_only": True,
+            "deadline": 100,
+        },
+    }
+    seen = []
+    assert (
+        gated.gate.submit_order(
+            lambda *a, **kw: seen.append(True), close_order(), position_id=PositionId("PT-7")
+        )
+        is False
+    )
+    assert seen == []
+    assert gated.risk.store.reductions.load("close-7").state == "prepared"
+    assert gated.risk.blocker.is_frozen()
+
+
+def test_corrupt_params_proof_keeps_the_claim_and_position_cost(gated):
+    assert gated.gate.submit_order(
+        lambda *a, **kw: None, close_order(), position_id=PositionId("PT-7")
+    )
+    gated.native_journal.prove_no_fill("close-7")
+    gated.native_journal.orders["close-7"]["binding"]["submission_params_keccak256"] = (
+        "0x" + "ff" * 32
+    )
+    with pytest.raises(RuntimeAuthorityError):
+        gated.port.reconcile_no_fill("close-7")
+    assert gated.risk.store.reductions.load("close-7").state == "dispatching"
+    assert snapshot(gated.risk).filled_exposure == Decimal("500")
+    assert gated.risk.blocker.is_frozen()
+
+
+def test_lost_native_owner_cannot_be_replaced_by_an_old_no_fill_observation(gated):
+    assert gated.gate.submit_order(
+        lambda *a, **kw: None, close_order(), position_id=PositionId("PT-7")
+    )
+    gated.native_journal.prove_no_fill("close-7")
+    gated.native_journal.closed = True
+    with pytest.raises(RuntimeAuthorityError):
+        gated.port.reconcile_no_fill("close-7")
+    assert snapshot(gated.risk).filled_exposure == Decimal("500")
+    assert gated.risk.store.reductions.load("close-7").state == "dispatching"
+
+
+def test_local_pre_dispatch_rollback_uses_the_specific_withdrawal_path(gated):
+    from custos.engines.nautilus.runner_safety import _SubmitIntent
+
+    opening = close_order("new-entry", reduce_only=False)
+    opening.quantity = Quantity.from_str("500")
+    opening.is_quote_quantity = True
+    command = _SubmitIntent(opening, (), {})
+    reservations = gated.boundary.before_submit_order(command)
+    gated.boundary.rollback_submit(reservations, command_id="not-entered-native")
+    assert gated.risk.store._native_dispatch.load("new-entry").state == "not_sent"
+    assert snapshot(gated.risk, "new-entry").reserved_notional == 0
+
+
+@pytest.mark.parametrize("style", ["omitted", "keyword_none", "positional_none", "explicit"])
+def test_local_submit_pins_the_observed_client_in_the_actual_forwarded_arguments(gated, style):
+    seen = []
+    params = {"papertrade_position_id": "7", "extra": {"tags": ["original"]}}
+
+    def native(order, *args, **kwargs):
+        client = args[1] if len(args) >= 2 else kwargs.get("client_id")
+        forwarded = args[2] if len(args) >= 3 else kwargs.get("params")
+        seen.append((client, forwarded))
+
+    if style == "positional_none":
+        result = gated.gate.submit_order(native, close_order(), PositionId("PT-7"), None, params)
+    else:
+        fields = {"position_id": PositionId("PT-7"), "params": params}
+        if style != "omitted":
+            fields["client_id"] = None if style == "keyword_none" else ClientId("PAPERTRADE")
+        result = gated.gate.submit_order(native, close_order(), **fields)
+    assert result is True
+    assert seen == [(ClientId("PAPERTRADE"), params)]
+
+
+@pytest.mark.parametrize("client", ["PAPERTRADE", ClientId("OTHER")])
+def test_local_submit_refuses_an_explicit_unverified_execution_route_before_claiming(gated, client):
+    seen = []
+    assert (
+        gated.gate.submit_order(
+            lambda *a, **kw: seen.append(True),
+            close_order(),
+            position_id=PositionId("PT-7"),
+            client_id=client,
+        )
+        is False
+    )
+    assert seen == []
+    assert gated.risk.store.reductions.load("close-7") is None
+
+
 def test_close_classification_comes_from_the_persistent_claim(gated):
     assert gated.gate.submit_order(
         lambda *a, **kw: None, close_order(), position_id=PositionId("PT-7")
@@ -359,8 +652,23 @@ def test_reopened_boundary_accounts_for_late_fill_without_old_memory_sets(gated)
     recovered = risk.make(previous=risk, recover=True)
     gated.positions.clear()
     api = importlib.import_module("custos.engines.nautilus.local_reductions")
+    native_journal = FixtureHeldJournal(recovered)
+    storage = importlib.import_module(
+        "custos.engines.nautilus.runtime_storage"
+    ).PapertradeRuntimeStorageProbe(
+        state=recovered.events,
+        journal_path=recovered.bindings.journal.path,
+        account=account(),
+        adapter_account_id=ACCOUNT,
+        adapter_client_id="PAPERTRADE",
+        native_probe=native_journal,
+    )
     port = api.LocalPapertradeReductions(
-        store=recovered.store, account_id=ACCOUNT, client_id="PAPERTRADE"
+        store=recovered.store,
+        account_id=ACCOUNT,
+        client_id="PAPERTRADE",
+        storage_probe=storage,
+        native_factory=FixtureNativeFactory,
     )
     boundary = RunnerReservationBoundary(
         store=recovered.store,

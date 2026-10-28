@@ -42,7 +42,7 @@ from functools import wraps
 from typing import Any
 from uuid import uuid4
 
-from nautilus_trader.model import PositionId, PriceType, Quantity
+from nautilus_trader.model import ClientId, PositionId, PriceType, Quantity
 
 from custos.core.execution_events import ExecutionRefusalRecorder
 from custos.core.log import get_logger
@@ -548,6 +548,20 @@ class _SubmitIntent:
         self.dispatch_kwargs = {name: values[name] for name in kwargs}
         self.order = order
         self.id = uuid4()
+
+    def bind_client_id(self, client_id: ClientId) -> None:
+        if not isinstance(client_id, ClientId) or (
+            self.client_id is not None
+            and (not isinstance(self.client_id, ClientId) or self.client_id != client_id)
+        ):
+            raise RuntimeAuthorityError("submit selects another Native execution client")
+        self.client_id = client_id
+        if len(self.dispatch_args) >= 2:
+            values = list(self.dispatch_args)
+            values[1] = client_id
+            self.dispatch_args = tuple(values)
+        else:
+            self.dispatch_kwargs["client_id"] = client_id
 
 
 class _SubmitListIntent:

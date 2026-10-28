@@ -29,6 +29,7 @@ def evidence(storage):
         "binding": {
             "intent_id": "0x" + "11" * 32,
             "command_keccak256": "0x" + "22" * 32,
+            "submission_params_keccak256": "0x" + "55" * 32,
             "action": "closePositions",
             "target": "7",
             "instrument_id": "BTC-USD-PERP.PAPERTRADE",
@@ -130,6 +131,7 @@ def test_nonproof_observations_cannot_be_upgraded_by_the_consumer(evidence, kind
         (("binding", "deadline"), True),
         (("binding", "deadline"), 2**64),
         (("binding", "command_keccak256"), "0x" + "AB" * 32),
+        (("binding", "submission_params_keccak256"), "wrong"),
         (("binding", "unknown"), "extra"),
         (("proof", "schema_version"), True),
         (("proof", "journal_id"), str(uuid4())),
@@ -180,6 +182,13 @@ def test_expiry_requires_complete_strictly_past_deadline_coverage(evidence, fiel
 def test_refuses_nonobject_duplicate_or_unbounded_payloads(evidence, raw):
     reader, native, _, _ = evidence
     native.raw = raw
+    with pytest.raises(RuntimeStorageUnavailable):
+        reader.order_evidence("close-7")
+
+
+def test_old_binding_without_the_native_submission_params_digest_is_refused(evidence):
+    reader, _, document, _ = evidence
+    del document["binding"]["submission_params_keccak256"]
     with pytest.raises(RuntimeStorageUnavailable):
         reader.order_evidence("close-7")
 

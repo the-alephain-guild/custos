@@ -6,6 +6,7 @@ import os
 import threading
 from pathlib import Path
 from typing import Protocol
+from uuid import uuid4
 
 from custos.core.execution_events import ExecutionEventStore
 from custos.core.local_runtime_state import (
@@ -129,6 +130,18 @@ class PapertradeRuntimeStorageProbe:
                 raise RuntimeStorageUnavailable(
                     "held native order evidence cannot be verified"
                 ) from None
+
+    def require_route(self, *, account_id: str, client_id: str) -> None:
+        self._require_process()
+        if (
+            type(account_id) is not str
+            or type(client_id) is not str
+            or account_id != self._account_id
+            or client_id != self._client_id
+        ):
+            raise RuntimeStorageUnavailable("Native execution route differs from its held probe")
+        # A read-only query also checks the producer's actual route, not only constructor input.
+        self.order_evidence("custos-route-" + str(uuid4()))
 
     def __call__(self, path: Path) -> RuntimeStoreIdentity:
         self._require_process()

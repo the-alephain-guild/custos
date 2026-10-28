@@ -28,12 +28,29 @@ class NativeProbe:
         self.raw = None
         self.calls = 0
         self.closed = False
+        self.client_id = "PAPERTRADE"
+        self.account_id = "PAPERTRADE-001"
 
     def snapshot_json(self):
         self.calls += 1
         if self.closed:
             raise RuntimeError("injected expired native owner")
         return self.raw if self.raw is not None else json.dumps(self.document)
+
+    def order_evidence_json(self, identifier):
+        self.calls += 1
+        if self.closed:
+            raise RuntimeError("injected expired native owner")
+        return json.dumps(
+            {
+                "schema_version": 1,
+                "journal": self.document,
+                "client_id": self.client_id,
+                "account_id": self.account_id,
+                "client_order_id": identifier,
+                "kind": "missing",
+            }
+        )
 
 
 @pytest.fixture
@@ -204,3 +221,36 @@ def test_legacy_native_snapshot_without_path_is_insufficient(storage):
     del native.document["canonical_path"]
     with pytest.raises(RuntimeStorageUnavailable):
         build()
+
+
+@pytest.mark.parametrize(
+    "account_id,client_id", [("OTHER-001", "PAPERTRADE"), ("PAPERTRADE-001", "OTHER")]
+)
+def test_route_assertion_refuses_declared_mismatch_before_native_read(
+    storage, account_id, client_id
+):
+    _, _, native, build = storage
+    reader = build()
+    before = native.calls
+    with pytest.raises(RuntimeStorageUnavailable):
+        reader.require_route(account_id=account_id, client_id=client_id)
+    assert native.calls == before
+
+
+@pytest.mark.parametrize("field", ["client_id", "account_id"])
+def test_route_assertion_checks_the_actual_native_response_not_just_its_constructor(storage, field):
+    _, _, native, build = storage
+    reader = build()
+    setattr(native, field, "OTHER-001")
+    with pytest.raises(RuntimeStorageUnavailable):
+        reader.require_route(account_id="PAPERTRADE-001", client_id="PAPERTRADE")
+
+
+def test_matching_route_assertion_uses_the_original_held_probe(storage):
+    _, _, native, build = storage
+    reader = build()
+    reader.require_route(account_id="PAPERTRADE-001", client_id="PAPERTRADE")
+    assert native.calls == 2
+    native.closed = True
+    with pytest.raises(RuntimeStorageUnavailable):
+        reader.require_route(account_id="PAPERTRADE-001", client_id="PAPERTRADE")

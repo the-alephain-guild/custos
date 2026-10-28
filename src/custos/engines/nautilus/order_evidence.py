@@ -17,6 +17,7 @@ from custos.core.local_runtime_state import RuntimeStoreIdentity
 class NativeIntentBinding:
     intent_id: str
     command_keccak256: str
+    submission_params_keccak256: str
     action: Literal["openPosition", "closePositions"]
     target: str | None
     instrument_id: str
@@ -133,6 +134,7 @@ def _binding(value: object) -> NativeIntentBinding:
         {
             "intent_id",
             "command_keccak256",
+            "submission_params_keccak256",
             "action",
             "target",
             "instrument_id",
@@ -169,6 +171,7 @@ def _binding(value: object) -> NativeIntentBinding:
     return NativeIntentBinding(
         _hash(fields["intent_id"]),
         _hash(fields["command_keccak256"]),
+        _hash(fields["submission_params_keccak256"]),
         fields["action"],
         target,
         _token(fields["instrument_id"]),

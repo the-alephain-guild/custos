@@ -382,10 +382,22 @@ settlement. A later contradictory opening fill keeps its actual economics and
 stable venue identity and latches risk. Existing latches are never cleared by
 proof settlement. Audit or marker failure rolls back all related mutations.
 
-These persistence APIs do not themselves verify Native proof provenance or wire
-the outbound gate. The adapter must supply observations from the same held
-client and compare its pre-dispatch Native parameter digest. That wiring,
-actual LiveNode acceptance and complete risk enforcement remain unfinished;
+The local outbound port now consumes observations from the registered held
+probe and compares the Native factory's parameter Keccak against the same
+captured submission. Construction checks the producer's actual account and
+execution client through a fresh read-only Missing query. An omitted client is
+bound explicitly in the captured dispatch arguments before risk preparation;
+another explicit client is refused. Preparing requires a previously absent
+Native client order ID. Both opening and reduction dispatch commit their marker
+before calling Native. A terminal callback only requests a fresh proof read;
+Missing, Unproven and Filled observations never release capacity. Rollback uses
+the dedicated current-process pre-dispatch withdrawal, not generic release.
+
+The Native engine may fall back when an explicitly named execution client is
+missing. Local host admission must therefore prove that the same engine has
+exactly the registered execution client and seal the outbound gate before
+removing it. Component fixtures do not prove that topology. Actual LiveNode
+acceptance, host admission and complete risk enforcement remain unfinished;
 these components grant no local live entry.
 
 ## Readiness, restart and stop
