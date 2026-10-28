@@ -122,6 +122,31 @@ Record immutable local command/event identity, configuration revision, authoriza
 
 Local event and reservation changes use their local transaction boundary. The Papertrade redb journal and the runner SQLite database are not one atomic transaction: stable command IDs, idempotent replay and reconciliation must cover crashes between their commits. A missing record must remain unresolved, not interpreted as an absent order or free risk capacity.
 
+The shared reservation boundary prioritizes the venue `trade_id` for fills,
+including the native object's identity when its serialized event omits that
+field. Rebuilding an engine event envelope must not create a second accounting
+mutation for one venue fill. Fill source tokens carry the explicit
+`fill-source-v1` frame, separate venue and engine domains, and a fixed-length
+digest so delimiters in trade and order IDs cannot create the same reservation
+event identity for different pairs. Non-fill events retain their engine event
+identity; fills without a venue identity retain engine-identity fallback semantics
+inside that explicit frame.
+This key selection does not prove venue-history coverage, implement local risk
+transactions or persist in-flight reductions. Those remain separate acceptance
+requirements before independent live execution.
+Historical engine-only event keys cannot be guessed into venue fill identities;
+recovery must establish coverage before new exposure, rather than treating this
+key change as a seamless historical ledger migration.
+The real reservation store checks the instance's existing boundary fill history
+inside the same SQLite transaction before replay or mutation. An older boundary
+fill frame refuses reserve, replace, fill and both reduction paths, preserving
+committed values instead of silently applying the same execution twice. Changing
+policy or the new request's event ID does not clear this instance isolation.
+Observations remain readable, and unrelated instances are not reclassified.
+This is a fail-closed refusal boundary, not a migration or history-repair tool;
+the affected runtime requires an explicit reconciliation decision before it can
+continue, while unaccounted venue evidence remains unresolved.
+
 Persistence failure, unreliable equity, stale account stream, incomplete fill history, ambiguous intent, changed identity or failed risk state blocks new exposure. Risk reduction requires confirmed current quantity and in-flight reduction accounting, or the venue's independently verified reduction guarantee; unavailable proof is not a reason to submit an unchecked reverse trade. Venue-accepted protective action and its unconfirmed outcome must be reported truthfully.
 
 Platform RunnerFact production is a sink with real platform authority, not a prerequisite for local event recording. Local records never become synthetic platform facts, historical eligibility, NAV or settlement inputs.

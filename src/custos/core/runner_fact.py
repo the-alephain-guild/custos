@@ -7935,6 +7935,14 @@ class RunnerStateStore:
         payload: Mapping[str, Any],
     ) -> Mapping[str, Any] | None:
         event = _non_empty(event_id, "event_id")
+        if payload.get("event_kind") in {
+            "reserve",
+            "replace",
+            "fill",
+            "position_reduction",
+            "position_reduction_fifo",
+        }:
+            self._require_current_fill_identity(connection, str(payload["deployment_instance_id"]))
         fingerprint = self._reservation_event_fingerprint(payload)
         row = connection.execute(
             """
@@ -7951,6 +7959,30 @@ class RunnerStateStore:
         if not isinstance(outcome, dict):
             raise RunnerStateDurabilityError("order reservation event outcome is corrupt")
         return outcome
+
+    @staticmethod
+    def _require_current_fill_identity(connection: sqlite3.Connection, instance: str) -> None:
+        prefix = f"runner-order-reservation:{instance}:"
+        rows = connection.execute(
+            """
+            SELECT event_id FROM runner_order_reservation_event
+            WHERE deployment_instance_id = ?
+              AND event_kind IN ('fill','position_reduction','position_reduction_fifo')
+              AND event_id GLOB ?
+            """,
+            (instance, prefix + "*"),
+        )
+        for row in rows:
+            source = str(row["event_id"])[len(prefix) :]
+            if (
+                re.fullmatch(
+                    r"(?:fill|fill_reduce):fill-source-v1:(?:venue|engine):[0-9a-f]{64}:.+", source
+                )
+                is None
+            ):
+                raise RunnerStateAuthorityError(
+                    "reservation fill identity requires reconciliation before continuing"
+                )
 
     def _record_reservation_event(
         self,

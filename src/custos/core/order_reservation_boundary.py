@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
@@ -431,6 +432,16 @@ class RunnerReservationBoundary:
         stable_event_id = (
             data.get("event_id") or data.get("trade_id") or getattr(event, "event_id", None)
         )
+        if event_name == "OrderFilled":
+            # Venue executions survive reconstruction of the engine event envelope.
+            trade_id = data.get("trade_id") or getattr(event, "trade_id", None)
+            if trade_id or stable_event_id is not None:
+                source_kind = "venue" if trade_id else "engine"
+                source_id = trade_id or stable_event_id
+                stable_event_id = (
+                    f"fill-source-v1:{source_kind}:"
+                    + hashlib.sha256(str(source_id).encode("utf-8")).hexdigest()
+                )
         if stable_event_id is None:
             raise RuntimeError(f"{event_name} has no stable event identity")
 
