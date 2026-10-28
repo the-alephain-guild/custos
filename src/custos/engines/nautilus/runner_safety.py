@@ -30,6 +30,10 @@ refusal is reported to the runner's own fact sink instead.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import math
+import re
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import dataclass
@@ -38,7 +42,7 @@ from functools import wraps
 from typing import Any
 from uuid import uuid4
 
-from nautilus_trader.model import PriceType
+from nautilus_trader.model import PositionId, PriceType, Quantity
 
 from custos.core.execution_events import ExecutionRefusalRecorder
 from custos.core.log import get_logger
@@ -48,7 +52,9 @@ from custos.core.order_reservation_boundary import (
     RunnerRiskIncreaseFrozenError,
     runner_command_id,
 )
+from custos.core.reduction_claims import ReductionTarget
 from custos.core.runner_fact import RunnerStateAuthorityError
+from custos.core.runtime_authority import RuntimeAuthorityError
 from custos.engines.nautilus.strategy_hooks import StrategyHookUnsupported, install_hook
 
 _log = get_logger("custos.runner_safety")
@@ -145,6 +151,102 @@ class NautilusCachedOrderSemantics:
             order.quantity,
             self._order_price(order),
         )
+
+    def papertrade_reduction_target(
+        self, intent: Any, *, account_id: str, client_id: str
+    ) -> ReductionTarget:
+        order = intent.order
+        if order.is_reduce_only is not True or order.is_quote_quantity is not False:
+            raise RuntimeAuthorityError(
+                "Papertrade reduction requires a base-quantity reduce-only order"
+            )
+        if intent.client_id is not None and str(intent.client_id) != client_id:
+            raise RuntimeAuthorityError("reduction routes to another execution client")
+        params = intent.params
+        explicit = intent.position_id
+        explicit_target = None
+        if explicit is not None:
+            if not isinstance(explicit, PositionId):
+                raise RuntimeAuthorityError(
+                    "reduction position requires the Native position identifier"
+                )
+            value = str(explicit)
+            if not value.startswith("PT-"):
+                raise RuntimeAuthorityError("reduction position is not a Papertrade position")
+            explicit_target = self._papertrade_position_number(value[3:])
+        parameter_target = (
+            self._papertrade_position_number(params["papertrade_position_id"])
+            if params is not None and "papertrade_position_id" in params
+            else None
+        )
+        if (
+            explicit_target is not None
+            and parameter_target is not None
+            and explicit_target != parameter_target
+        ):
+            raise RuntimeAuthorityError("reduction target parameters disagree")
+        target = explicit_target if explicit_target is not None else parameter_target
+        if target is None:
+            raise RuntimeAuthorityError("Papertrade reduction requires an explicit position")
+        instrument = str(order.instrument_id)
+        if not instrument.endswith(".PAPERTRADE"):
+            raise RuntimeAuthorityError("reduction instrument is not on Papertrade")
+        position_id = "PT-" + target
+        matches = [
+            position
+            for position in self._cache.positions_open(instrument_id=order.instrument_id)
+            if str(position.id) == position_id
+        ]
+        if len(matches) != 1:
+            raise RuntimeAuthorityError("reduction target is missing or ambiguous")
+        position = matches[0]
+        side = _order_side(order)
+        if (
+            str(position.account_id) != account_id
+            or str(position.instrument_id) != instrument
+            or position.is_closed is not False
+            or type(position.is_long) is not bool
+            or type(position.is_short) is not bool
+            or position.is_long == position.is_short
+            or side != ("sell" if position.is_long else "buy")
+        ):
+            raise RuntimeAuthorityError("reduction target account, instrument or direction differs")
+        quantity = self._exact_reduction_quantity(order.quantity)
+        if quantity != self._exact_reduction_quantity(position.quantity):
+            raise RuntimeAuthorityError(
+                "Papertrade reduction requires the complete position quantity"
+            )
+        try:
+            encoded = json.dumps(
+                params, sort_keys=True, separators=(",", ":"), allow_nan=False
+            ).encode()
+        except (TypeError, ValueError):
+            raise RuntimeAuthorityError("reduction parameters require finite JSON values") from None
+        return ReductionTarget(
+            account_id,
+            client_id,
+            position_id,
+            instrument,
+            "SELL" if side == "sell" else "BUY",
+            quantity,
+            hashlib.sha256(encoded).hexdigest(),
+        )
+
+    @staticmethod
+    def _papertrade_position_number(value: object) -> str:
+        if type(value) is not str or re.fullmatch(r"(?:0|[1-9][0-9]{0,77})", value) is None:
+            raise RuntimeAuthorityError("Papertrade position number is not canonical")
+        if int(value) >= 2**256:
+            raise RuntimeAuthorityError("Papertrade position number exceeds uint256")
+        return value
+
+    @staticmethod
+    def _exact_reduction_quantity(value: object) -> Decimal:
+        if isinstance(value, Quantity):
+            value = value.as_decimal()
+        if type(value) is not Decimal or not value.is_finite() or value <= 0:
+            raise RuntimeAuthorityError("reduction quantity requires a positive exact Decimal")
+        return value
 
     def modified_order_quantity(self, intent: Any) -> Decimal:
         """The quantity a modification would leave in force.
@@ -384,18 +486,62 @@ class OrderRefusal:
     reason_code: str
 
 
-class _SubmitIntent:
-    """One order the strategy is trying to send, in the shape the boundary reads.
+def _copy_native_json(value: Any, *, depth: int = 0) -> Any:
+    # Exact builtins exclude custom copy/iteration hooks. The Native API later
+    # serializes this tree again, so caller-owned container aliases cannot remain.
+    kind = type(value)
+    if depth >= 128:
+        raise RuntimeAuthorityError("submit params exceed the Native JSON nesting limit")
+    if value is None or kind in (str, bool, int):
+        return value
+    if kind is float and math.isfinite(value):
+        return value
+    if kind in (list, tuple):
+        return [_copy_native_json(item, depth=depth + 1) for item in value]
+    if kind is dict and all(type(key) is str for key in value):
+        return {key: _copy_native_json(item, depth=depth + 1) for key, item in value.items()}
+    raise RuntimeAuthorityError("submit params require plain finite JSON values")
 
-    The reservation boundary was written against nautilus command objects. At the
-    strategy edge there is no command yet -- it is built inside submit, past this
-    point -- so this carries the same three things the boundary asks of one:
-    the order, an identity to key the reservation by, and nothing else.
+
+class _SubmitIntent:
+    """Capture the Native submit context before reserving or dispatching.
+
+    The detached parameter content and routing arguments are the same values
+    passed downstream; mutable caller-owned params cannot change the target
+    between the boundary's judgement and Native dispatch.
     """
 
-    __slots__ = ("id", "order")
+    __slots__ = (
+        "id",
+        "order",
+        "position_id",
+        "client_id",
+        "params",
+        "dispatch_args",
+        "dispatch_kwargs",
+    )
 
-    def __init__(self, order: Any) -> None:
+    def __init__(
+        self, order: Any, args: tuple[Any, ...] = (), kwargs: dict[str, Any] | None = None
+    ) -> None:
+        kwargs = dict(kwargs or {})
+        names = ("position_id", "client_id", "params")
+        if len(args) > len(names) or not kwargs.keys() <= set(names):
+            raise RuntimeAuthorityError("submit arguments differ from the Native API")
+        if any(name in kwargs for name in names[: len(args)]):
+            raise RuntimeAuthorityError("submit argument was supplied twice")
+        values = {
+            name: args[index] if index < len(args) else kwargs.get(name)
+            for index, name in enumerate(names)
+        }
+        if values["params"] is not None and type(values["params"]) is not dict:
+            raise RuntimeAuthorityError("submit params must be a Native JSON dictionary")
+        values["params"] = _copy_native_json(values["params"])
+        self.position_id = values["position_id"]
+        self.client_id = values["client_id"]
+        self.params = values["params"]
+        self.dispatch_args = tuple(values[name] for name in names[: len(args)])
+        self.dispatch_kwargs = {name: values[name] for name in kwargs}
         self.order = order
         self.id = uuid4()
 
@@ -480,15 +626,15 @@ class RunnerSafetyOrderGate:
         if refusal is not None:
             self._refuse((order,), refusal)
             return False
-        intent = _SubmitIntent(order)
         try:
+            intent = _SubmitIntent(order, args, kwargs)
             reservations = self._boundary.before_submit_order(intent)
             self._boundary.assert_control_current()
         except Exception as exc:  # noqa: BLE001 - every refusal reason is reported below
             self._refuse((order,), self._reservation_refusal_reason(exc), exc=exc)
             return False
         try:
-            submit(order, *args, **kwargs)
+            submit(order, *intent.dispatch_args, **intent.dispatch_kwargs)
             return True
         except Exception:
             self._compensate(

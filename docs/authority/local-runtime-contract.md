@@ -239,6 +239,34 @@ trigger, durable in-flight reductions, native blocker wiring, runtime entry or
 live admission. Its unfrozen state is not readiness. These remain necessary
 before independent production execution can be enabled.
 
+The common submit gate now retains the Native position_id, client_id and params
+arguments before judging an order, including their positional calling form. It
+rejects duplicate or unsupported argument names before reserving, detaches the
+parameter dictionary from caller-owned mutable values and forwards that same
+captured content to Native. This preserves target evidence without changing an
+ordinary call that supplied no optional arguments.
+Parameters must contain only plain JSON builtin values, finite floats and
+string dictionary keys. Container subclasses and custom scalar values are
+refused before reservation because user-defined copying hooks could preserve
+mutable aliases. Tuples are captured as JSON arrays; nesting at 128 levels and
+cycles are refused before Native serialization.
+
+The Papertrade reduction-target parser requires an explicit canonical uint256
+venue position, matching any simultaneous Native position ID and params target.
+An explicitly null or malformed params target cannot silently fall back to a
+second target. It reads one current hedged cache position and verifies the
+configured Native account/client, instrument, opposite direction, reduce_only
+and full exact base quantity. It does not infer flatness or close quantity from
+a netted pair of positions. The returned ReductionTarget is immutable evidence
+and includes a deterministic params digest. Configured routing identities come
+from the kernel's actual factory binding; they do not select another wallet.
+
+This parsing capability does not grant authorization, establish original-run
+ownership, create a durable close claim or submit an order. Those checks must be
+combined with the signed permit and the existing entry-cost rows in the later
+persistent reduction transaction. Native direct-close, list and modify handling
+remain separate integration work before any local live entry can be enabled.
+
 ## Readiness, restart and stop
 
 Readiness requires an alive node, actual data and execution connectivity, initialized reliable account/portfolio state, completed account reconciliation, active risk enforcement and durable current authority. The current blanket live refusal may be replaced only by proved checks, not a mode-based true value.
