@@ -130,6 +130,15 @@ arguments and changed-file refusal, not issuance or broker acceptance of a real
 JWT. Daemon lifecycle composition, exact broker ACL and venue execution remain
 open.
 
+`ExternalSourceRunnerRuntime` is the optional lifecycle wrapper for this
+session. It waits for an active signed deployment, reports only state changes,
+and uses a separate connection. Invalid local authorization or broker loss
+closes source intake and leaves messages unacknowledged; it retries after a
+bounded delay. It never requests flatten on a transport or authorization
+fault, so the existing position remains under the deployment's local safety
+policy and venue protection. This is a tested runtime component, not yet a
+configured `arx-runner start` path or an operator-visible status receipt.
+
 A normal entry must be durably claimed
 before the host queue is touched; a persisted handoff means only that the
 in-memory queue accepted it. The inbox also persists the source timestamp and

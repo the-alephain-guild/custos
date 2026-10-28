@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ssl
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -41,7 +42,11 @@ class ExternalSourceNatsProfile:
         if not self.server_name or any(c.isspace() or c == "/" for c in self.server_name):
             raise ValueError("source subscriber TLS server name is invalid")
 
-    async def connect(self) -> Any:
+    async def connect(
+        self,
+        *,
+        disconnected_cb: Callable[[], Awaitable[None]] | None = None,
+    ) -> Any:
         """Never reuse runner-control transport or connect with changed credentials."""
         credentials = read_bound_nats_credentials(self.grant)
         try:
@@ -59,4 +64,6 @@ class ExternalSourceNatsProfile:
             tls_hostname=self.server_name,
             connect_timeout=2,
             allow_reconnect=False,
+            disconnected_cb=disconnected_cb,
+            closed_cb=disconnected_cb,
         )

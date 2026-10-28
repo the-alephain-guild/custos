@@ -124,7 +124,8 @@ class ExternalSourceRunnerSession:
             raise ValueError("source subscription poll interval is invalid")
         now = clock or (lambda: datetime.now(UTC))
         try:
-            await self.bind(at=now())
+            if self.subscription is None:
+                await self.bind(at=now())
             while not stop.is_set():
                 self._revalidated_scope()
                 await self.dispatcher.process_once(self.authority, at=now())
