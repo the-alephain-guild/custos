@@ -9,6 +9,7 @@ host gates, or grant execution authority.
 
 from __future__ import annotations
 
+import hashlib
 import importlib.metadata
 import json
 import os
@@ -72,6 +73,18 @@ class RuntimeToolkitIdentity:
     manifest_digest: str | None
     nautilus_wheel_sha256: str | None
     engine_version: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeToolkitSnapshot:
+    """An identity and the digest of the same verified file read.
+
+    An untrusted observation has no digest that local authorization can bind.
+    This observation does not prove operating-system identity isolation.
+    """
+
+    identity: RuntimeToolkitIdentity
+    identity_sha256: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,13 +220,26 @@ def observe_runtime_toolkit_identity(
     ERROR log. A command whose standard output is its result passes its own.
     """
 
+    return observe_runtime_toolkit_snapshot(path, installed_version, report).identity
+
+
+def observe_runtime_toolkit_snapshot(
+    path: Path = TOOLKIT_IDENTITY_FILE,
+    installed_version: Callable[[str], str] = importlib.metadata.version,
+    report: Report = _log_error,
+) -> RuntimeToolkitSnapshot:
+    """Bind identity validation and its digest to one stable byte snapshot."""
+
     engine_version = _installed_engine_version(installed_version, report)
-    untrusted = RuntimeToolkitIdentity(
-        trusted=False,
-        candidate_version=None,
-        manifest_digest=None,
-        nautilus_wheel_sha256=None,
-        engine_version=engine_version,
+    untrusted = RuntimeToolkitSnapshot(
+        identity=RuntimeToolkitIdentity(
+            trusted=False,
+            candidate_version=None,
+            manifest_digest=None,
+            nautilus_wheel_sha256=None,
+            engine_version=engine_version,
+        ),
+        identity_sha256=None,
     )
     try:
         payload = _read_identity_file(path)
@@ -263,12 +289,15 @@ def observe_runtime_toolkit_identity(
             },
         )
         return untrusted
-    return RuntimeToolkitIdentity(
-        trusted=True,
-        candidate_version=candidate,
-        manifest_digest=manifest,
-        nautilus_wheel_sha256=wheel,
-        engine_version=engine_version,
+    return RuntimeToolkitSnapshot(
+        identity=RuntimeToolkitIdentity(
+            trusted=True,
+            candidate_version=candidate,
+            manifest_digest=manifest,
+            nautilus_wheel_sha256=wheel,
+            engine_version=engine_version,
+        ),
+        identity_sha256=hashlib.sha256(payload).hexdigest(),
     )
 
 

@@ -25,6 +25,14 @@ Permits use explicit UTC instants. Expired, future-invalid, wrong-account, wrong
 
 Mutable source directories are not local live artifacts. Material is prepared and verified before activation; the existing toolkit/engine identity judge is reused after its normal review and integration. Local verification is not platform release approval or promotion evidence.
 
+The runtime toolkit observer can return an identity and the SHA-256 of the exact
+file bytes used for that same observation. It performs one stable regular-file
+read, then validates and hashes that byte snapshot. An untrusted observation
+supplies no bindable digest; the existing identity-only API retains its behavior.
+This observation does not prove installed wheel contents, management-key
+isolation, filesystem ownership, permit validity or activation readiness. The
+local host must independently enforce those boundaries before strategy import.
+
 The internal `custos.local` authorization adapter now defines immutable version-1
 run manifests and Ed25519 permits. Manifests bind the existing exact
 StrategyArtifactRefV1, release BOM and toolkit identity digests, effective config

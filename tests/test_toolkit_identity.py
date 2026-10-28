@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.metadata
 import json
 import os
@@ -94,6 +95,71 @@ def test_an_identity_that_agrees_with_the_installed_toolkit_is_the_runtime_rc(
     runtime = observe_runtime_toolkit_identity(_identity_file(tmp_path), INSTALLED_RC)
 
     assert runtime == _runtime()
+
+
+def test_runtime_snapshot_binds_the_exact_bytes_from_one_verified_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from custos.core import toolkit_identity
+
+    path = _identity_file(tmp_path)
+    payload = path.read_bytes()
+    original_read = toolkit_identity._read_identity_file
+    reads = []
+
+    def replace_after_read(identity_path: Path) -> bytes:
+        reads.append(identity_path)
+        observed = original_read(identity_path)
+        path.write_bytes(b"untrusted replacement")
+        return observed
+
+    monkeypatch.setattr(toolkit_identity, "_read_identity_file", replace_after_read)
+    snapshot = toolkit_identity.observe_runtime_toolkit_snapshot(path, INSTALLED_RC)
+
+    assert snapshot.identity == _runtime()
+    assert snapshot.identity_sha256 == hashlib.sha256(payload).hexdigest()
+    assert reads == [path]
+    assert snapshot.identity_sha256 != hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.mark.parametrize("damage", ["missing", "invalid-json", "version", "symlink"])
+def test_untrusted_runtime_snapshot_never_supplies_a_bindable_digest(
+    tmp_path: Path, damage: str
+) -> None:
+    from custos.core import toolkit_identity
+
+    path = _identity_file(tmp_path)
+    if damage == "missing":
+        path.unlink()
+    elif damage == "invalid-json":
+        path.write_bytes(b"invalid JSON")
+    elif damage == "version":
+        document = json.loads(path.read_bytes())
+        document["candidate_version"] = "0.1.0rc1"
+        path.write_text(json.dumps(document), encoding="utf-8")
+    else:
+        linked = tmp_path / "linked.json"
+        linked.symlink_to(path)
+        path = linked
+
+    snapshot = toolkit_identity.observe_runtime_toolkit_snapshot(path, INSTALLED_RC)
+
+    assert snapshot.identity.trusted is False
+    assert snapshot.identity_sha256 is None
+    assert snapshot.identity.engine_version == ENGINE
+
+
+def test_runtime_snapshot_digest_identifies_bytes_not_reserialized_json(tmp_path: Path) -> None:
+    from custos.core import toolkit_identity
+
+    path = _identity_file(tmp_path)
+    original = toolkit_identity.observe_runtime_toolkit_snapshot(path, INSTALLED_RC)
+    path.write_text(json.dumps(json.loads(path.read_bytes()), indent=2) + "\n", encoding="utf-8")
+    reformatted = toolkit_identity.observe_runtime_toolkit_snapshot(path, INSTALLED_RC)
+
+    assert original.identity == reformatted.identity == _runtime()
+    assert original.identity_sha256 != reformatted.identity_sha256
+    assert reformatted.identity_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_no_identity_file_is_a_source_build(tmp_path: Path) -> None:
