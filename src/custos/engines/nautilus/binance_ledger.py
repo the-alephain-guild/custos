@@ -114,25 +114,16 @@ class BinanceVenueLedgerSource:
 
     def _observe_flat(self, pair: str) -> VenueFlatObservation:
         symbol = pair.replace("-", "")
-        account = self._signed_get("/fapi/v3/account", {})
-        if not isinstance(account, dict):
-            raise BinanceVenueLedgerError("Binance account response must be an object")
-        account_positions = self._expect_list(account.get("positions"))
-        risk_positions = self._expect_list(
-            self._signed_get("/fapi/v3/positionRisk", {"symbol": symbol})
-        )
-        account_active = self._active_position_quantities(account_positions)
-        risk_active = self._active_position_quantities(risk_positions)
-        account_pair = {key: value for key, value in account_active.items() if key[0] == symbol}
-        risk_pair = {key: value for key, value in risk_active.items() if key[0] == symbol}
-        if account_pair != risk_pair:
-            raise BinanceVenueLedgerError("Binance account and position-risk quantity differs")
+        first_positions = self._flat_pair_positions(symbol)
         ordinary = self._expect_list(self._signed_get("/fapi/v1/openOrders", {"symbol": symbol}))
         conditional = self._expect_list(
             self._signed_get("/fapi/v1/openAlgoOrders", {"symbol": symbol})
         )
         if any(str(row.get("symbol") or "") != symbol for row in ordinary + conditional):
             raise BinanceVenueLedgerError("Binance open order response escaped its symbol")
+        last_positions = self._flat_pair_positions(symbol)
+        if first_positions != last_positions:
+            raise BinanceVenueLedgerError("Binance position changed during flat observation")
         return VenueFlatObservation(
             source="venue_api",
             connector="binance_perpetual",
@@ -140,9 +131,27 @@ class BinanceVenueLedgerSource:
             observed_at=datetime.fromtimestamp(self._server_time_ms() / 1000, UTC),
             positions_complete=True,
             orders_complete=True,
-            open_positions=len(risk_pair),
+            open_positions=len(last_positions),
             open_orders=len(ordinary) + len(conditional),
         )
+
+    def _flat_pair_positions(self, symbol: str) -> dict[tuple[str, str], Decimal]:
+        account = self._signed_get("/fapi/v3/account", {})
+        if not isinstance(account, dict):
+            raise BinanceVenueLedgerError("Binance account response must be an object")
+        account_positions = self._expect_list(account.get("positions"))
+        risk_positions = self._expect_list(
+            self._signed_get("/fapi/v3/positionRisk", {"symbol": symbol})
+        )
+        if any(str(row.get("symbol") or "") != symbol for row in risk_positions):
+            raise BinanceVenueLedgerError("Binance position-risk response escaped its symbol")
+        account_active = self._active_position_quantities(account_positions)
+        risk_active = self._active_position_quantities(risk_positions)
+        account_pair = {key: value for key, value in account_active.items() if key[0] == symbol}
+        risk_pair = {key: value for key, value in risk_active.items() if key[0] == symbol}
+        if account_pair != risk_pair:
+            raise BinanceVenueLedgerError("Binance account and position-risk quantity differs")
+        return risk_pair
 
     def _collect(self, coverage_from: datetime, closed_at: datetime) -> VenueLedgerEvidence:
         coverage_from = coverage_from.astimezone(UTC)

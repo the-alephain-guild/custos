@@ -73,3 +73,35 @@ async def test_observe_flat_rejects_mismatched_scope_or_position_views(monkeypat
     monkeypatch.setattr(BinanceVenueLedgerSource, "_signed_get", get)
     with pytest.raises(BinanceVenueLedgerError, match="differs"):
         await source_reader.observe_flat(connector="binance_perpetual", pair="ETH-USDT")
+
+
+@pytest.mark.asyncio
+async def test_observe_flat_rejects_wrong_symbol_or_fill_between_reads(monkeypatch) -> None:
+    reader = source()
+    monkeypatch.setattr(BinanceVenueLedgerSource, "_server_time_ms", lambda self: 1_760_000_000_000)
+
+    def wrong_symbol(self, path, params):
+        if path == "/fapi/v3/account":
+            return {"positions": []}
+        if path == "/fapi/v3/positionRisk":
+            return [{"symbol": "BTCUSDT", "positionAmt": "0"}]
+        return []
+
+    monkeypatch.setattr(BinanceVenueLedgerSource, "_signed_get", wrong_symbol)
+    with pytest.raises(BinanceVenueLedgerError, match="symbol"):
+        await reader.observe_flat(connector="binance_perpetual", pair="ETH-USDT")
+
+    reads = 0
+
+    def fills_during_orders(self, path, params):
+        nonlocal reads
+        if path == "/fapi/v3/account":
+            reads += 1
+            return {"positions": [{"symbol": "ETHUSDT", "positionAmt": "0" if reads == 1 else "1"}]}
+        if path == "/fapi/v3/positionRisk":
+            return [{"symbol": "ETHUSDT", "positionAmt": "0" if reads == 1 else "1"}]
+        return []
+
+    monkeypatch.setattr(BinanceVenueLedgerSource, "_signed_get", fills_during_orders)
+    with pytest.raises(BinanceVenueLedgerError, match="changed"):
+        await reader.observe_flat(connector="binance_perpetual", pair="ETH-USDT")

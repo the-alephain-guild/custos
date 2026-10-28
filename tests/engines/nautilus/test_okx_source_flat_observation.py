@@ -77,3 +77,22 @@ async def test_observe_flat_rejects_wrong_scope_and_cross_instrument_rows(monkey
     monkeypatch.setattr(OkxVenueLedgerSource, "_get", get)
     with pytest.raises(VenueLedgerError, match="instrument"):
         await reader.observe_flat(connector="okx_perpetual", pair="ETH-USDT")
+
+
+@pytest.mark.asyncio
+async def test_observe_flat_refuses_position_change_during_order_reads(monkeypatch) -> None:
+    reader = source()
+    positions_read = 0
+
+    def get(self, path, params, *, private=True):
+        nonlocal positions_read
+        if path == "/api/v5/account/positions":
+            positions_read += 1
+            return [{"instId": "ETH-USDT-SWAP", "pos": "0" if positions_read == 1 else "2"}]
+        if path == "/api/v5/public/time":
+            return [{"ts": "1760000000000"}]
+        return []
+
+    monkeypatch.setattr(OkxVenueLedgerSource, "_get", get)
+    with pytest.raises(VenueLedgerError, match="changed"):
+        await reader.observe_flat(connector="okx_perpetual", pair="ETH-USDT")

@@ -207,7 +207,10 @@ flatten handoff. It checks the local node and operator authorization again
 before persisting `flat_confirmed`. OKX reads positions, ordinary pending
 orders and all four documented pending algo types. Binance reads the account
 and position-risk views plus ordinary and algo open orders; inconsistent views
-fail closed. Sandbox has no independent venue REST reader; its flat fence may
+fail closed. Both adapters read positions again after the pending-order reads
+and refuse a changed position view; Binance also rejects a position-risk
+response for another symbol. Sandbox has no independent venue REST reader;
+its flat fence may
 instead clear only after two guarded reads of the simulated engine's local
 positions, orders and reservation exposure. That is simulation state, not an
 independent venue receipt. Unit tests use injected

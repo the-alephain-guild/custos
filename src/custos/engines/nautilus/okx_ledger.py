@@ -107,7 +107,7 @@ class OkxVenueLedgerSource:
         return await asyncio.to_thread(self._observe_flat, symbol, pair)
 
     def _observe_flat(self, symbol: str, pair: str) -> VenueFlatObservation:
-        positions = rows(self._get("/api/v5/account/positions", {"instId": symbol}))
+        positions = self._flat_positions(symbol)
         ordinary = rows(
             self._get(
                 "/api/v5/trade/orders-pending",
@@ -124,8 +124,11 @@ class OkxVenueLedgerSource:
                     )
                 )
             )
-        if any(row.get("instId") != symbol for row in positions + ordinary + conditional):
+        if any(row.get("instId") != symbol for row in ordinary + conditional):
             raise VenueLedgerError("OKX flat observation contains another instrument")
+        last_positions = self._flat_positions(symbol)
+        if positions != last_positions:
+            raise VenueLedgerError("OKX position changed during flat observation")
         observed = rows(self._get("/api/v5/public/time", {}, private=False))
         if len(observed) != 1:
             raise VenueLedgerError("OKX flat observation time is ambiguous")
@@ -136,8 +139,20 @@ class OkxVenueLedgerSource:
             observed_at=timestamp_ms(observed[0].get("ts")),
             positions_complete=True,
             orders_complete=True,
-            open_positions=sum(bool(decimal(row.get("pos"), "position")) for row in positions),
+            open_positions=len(last_positions),
             open_orders=len(ordinary) + len(conditional),
+        )
+
+    def _flat_positions(self, symbol: str) -> tuple[tuple[str, str, Decimal], ...]:
+        positions = rows(self._get("/api/v5/account/positions", {"instId": symbol}))
+        if any(row.get("instId") != symbol for row in positions):
+            raise VenueLedgerError("OKX flat observation contains another instrument")
+        return tuple(
+            sorted(
+                (str(row.get("posId") or ""), str(row.get("posSide") or ""), quantity)
+                for row in positions
+                if (quantity := decimal(row.get("pos"), "position")) != 0
+            )
         )
 
     def _history(self, path: str, params: dict[str, object], start: int, end: int) -> list[dict]:
