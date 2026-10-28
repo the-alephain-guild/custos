@@ -8,12 +8,14 @@ import os
 import re
 import sqlite3
 import time
+from collections.abc import Iterator
 from contextlib import closing, contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Protocol
 from uuid import UUID, uuid4
 
+from custos.core.execution_risk_events import RiskMutationRecord, _token
 from custos.core.local_runtime_state import RuntimeLease, RuntimeStoreIdentity
 from custos.core.runtime_authority import RuntimeAuthorityError, RuntimeStorageUnavailable
 
@@ -22,13 +24,6 @@ class ExecutionRefusalRecorder(Protocol):
     def record_local_refusal(
         self, *, client_order_id: str, instrument_id: str, side: str, reason_code: str
     ) -> None: ...
-
-
-def _token(value: str, name: str, *, empty: bool = False) -> None:
-    if not isinstance(value, str) or len(value.encode("utf-8")) > 512:
-        raise RuntimeAuthorityError(f"{name} must be a bounded string")
-    if (not value and not empty) or any(ord(char) < 32 or ord(char) == 127 for char in value):
-        raise RuntimeAuthorityError(f"{name} must not contain control characters")
 
 
 @dataclass(frozen=True)
@@ -70,6 +65,14 @@ class RecordedExecutionEvent:
     refusal: OrderRefusalRecord
 
 
+@dataclass(frozen=True)
+class RecordedRiskEvent:
+    sequence: int
+    event_id: str
+    identity: ExecutionRunIdentity
+    risk: RiskMutationRecord
+
+
 class ExecutionEventStore:
     def __init__(self, path: Path, store_id: UUID) -> None:
         self.path = path.resolve()
@@ -99,10 +102,10 @@ class ExecutionEventStore:
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     run_id TEXT NOT NULL REFERENCES execution_run(run_id),
                     event_id TEXT NOT NULL,
-                    kind TEXT NOT NULL CHECK(kind='order_refused'),
+                    kind TEXT NOT NULL CHECK(kind IN ('order_refused','risk_mutation')),
                     payload TEXT NOT NULL,
                     source_time_ns INTEGER,
-                    result TEXT NOT NULL CHECK(result='refused'),
+                    result TEXT NOT NULL CHECK(result IN ('refused','applied')),
                     UNIQUE(run_id,event_id)
                 );
                 CREATE TABLE execution_attempt (
@@ -111,6 +114,40 @@ class ExecutionEventStore:
                     owner_id TEXT NOT NULL,
                     recorded_at_ns INTEGER NOT NULL,
                     PRIMARY KEY(sequence,process_generation,owner_id)
+                );
+                CREATE TABLE local_risk_meta (
+                    schema_version INTEGER NOT NULL CHECK(schema_version=1),
+                    account_scope TEXT
+                );
+                INSERT INTO local_risk_meta VALUES (1,NULL);
+                CREATE TABLE local_account_risk (
+                    account_scope TEXT PRIMARY KEY,
+                    reason_code TEXT,
+                    source_event_id TEXT
+                );
+                CREATE TABLE local_order_reservation (
+                    account_scope TEXT NOT NULL REFERENCES local_account_risk(account_scope),
+                    client_order_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL REFERENCES execution_run(run_id),
+                    policy_id TEXT NOT NULL,
+                    reserved_notional TEXT NOT NULL,
+                    filled_exposure TEXT NOT NULL,
+                    filled_quantity TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN ('reserved','partially_filled','filled','released','closed')),
+                    position_id TEXT,
+                    instrument_id TEXT,
+                    side TEXT,
+                    PRIMARY KEY(account_scope,client_order_id)
+                );
+                CREATE TABLE local_venue_fill (
+                    account_scope TEXT NOT NULL REFERENCES local_account_risk(account_scope),
+                    fill_identity TEXT NOT NULL,
+                    original_run_id TEXT REFERENCES execution_run(run_id),
+                    action TEXT NOT NULL CHECK(action IN ('fill','reduce')),
+                    request_json TEXT NOT NULL,
+                    outcome_json TEXT NOT NULL,
+                    audit_sequence INTEGER NOT NULL REFERENCES execution_event(sequence),
+                    PRIMARY KEY(account_scope,fill_identity)
                 );
                 """
             )
@@ -183,8 +220,34 @@ class ExecutionEventStore:
         event_id: str,
         refusal: OrderRefusalRecord,
     ) -> RecordedExecutionEvent:
-        lease.assert_current()
         _token(event_id, "event_id")
+        payload = json.dumps(asdict(refusal), sort_keys=True, separators=(",", ":"))
+        with self._runtime_transaction(lease=lease, identity=identity) as connection:
+            sequence = self._append_record(
+                connection,
+                lease=lease,
+                identity=identity,
+                event_id=event_id,
+                kind="order_refused",
+                payload=payload,
+                result="refused",
+            )
+        return RecordedExecutionEvent(sequence, event_id, identity, refusal)
+
+    @contextmanager
+    def _runtime_transaction(
+        self, *, lease: RuntimeLease, identity: ExecutionRunIdentity
+    ) -> Iterator[sqlite3.Connection]:
+        with lease.control_action():
+            lease.assert_current()
+            self._require_runtime_binding(lease, identity)
+            with self._transaction() as connection:
+                self._bind_run(connection, identity)
+                yield connection
+            # Never hold the risk connection while the registry probes this store.
+            lease.assert_current()
+
+    def _require_runtime_binding(self, lease: RuntimeLease, identity: ExecutionRunIdentity) -> None:
         fence = lease.fence
         if (
             identity.run_id != fence.run_id
@@ -198,49 +261,95 @@ class ExecutionEventStore:
             or lease.state_store.store_id != self.store_id
         ):
             raise RuntimeStorageUnavailable("execution database is outside registered storage")
-        run_document = json.dumps(
-            asdict(identity), default=str, sort_keys=True, separators=(",", ":")
+
+    @staticmethod
+    def _bind_run(connection: sqlite3.Connection, identity: ExecutionRunIdentity) -> None:
+        document = json.dumps(asdict(identity), default=str, sort_keys=True, separators=(",", ":"))
+        connection.execute(
+            "INSERT OR IGNORE INTO execution_run VALUES (?,?)", (str(identity.run_id), document)
         )
-        payload = json.dumps(asdict(refusal), sort_keys=True, separators=(",", ":"))
-        with self._transaction() as connection:
+        if (
             connection.execute(
-                "INSERT OR IGNORE INTO execution_run VALUES (?,?)",
-                (str(identity.run_id), run_document),
+                "SELECT identity FROM execution_run WHERE run_id=?", (str(identity.run_id),)
+            ).fetchone()[0]
+            != document
+        ):
+            raise RuntimeAuthorityError("execution run identity conflicts with durable history")
+
+    @staticmethod
+    def _append_record(
+        connection: sqlite3.Connection,
+        *,
+        lease: RuntimeLease,
+        identity: ExecutionRunIdentity,
+        event_id: str,
+        kind: str,
+        payload: str,
+        result: str,
+    ) -> int:
+        _token(event_id, "event_id")
+        row = connection.execute(
+            "SELECT * FROM execution_event WHERE run_id=? AND event_id=?",
+            (str(identity.run_id), event_id),
+        ).fetchone()
+        if row is not None and (
+            row["payload"] != payload or row["kind"] != kind or row["result"] != result
+        ):
+            raise RuntimeAuthorityError("execution event identity conflicts with durable history")
+        if row is None:
+            cursor = connection.execute(
+                "INSERT INTO execution_event(run_id,event_id,kind,payload,source_time_ns,result) VALUES (?,?,?,?,NULL,?)",
+                (str(identity.run_id), event_id, kind, payload, result),
             )
-            if (
-                connection.execute(
-                    "SELECT identity FROM execution_run WHERE run_id=?", (str(identity.run_id),)
-                ).fetchone()[0]
-                != run_document
-            ):
-                raise RuntimeAuthorityError("execution run identity conflicts with durable history")
-            row = connection.execute(
-                "SELECT * FROM execution_event WHERE run_id=? AND event_id=?",
-                (str(identity.run_id), event_id),
-            ).fetchone()
-            if row is not None and row["payload"] != payload:
-                raise RuntimeAuthorityError(
-                    "execution event identity conflicts with durable history"
-                )
-            if row is None:
-                cursor = connection.execute(
-                    "INSERT INTO execution_event(run_id,event_id,kind,payload,source_time_ns,result) VALUES (?,?,'order_refused',?,NULL,'refused')",
-                    (str(identity.run_id), event_id, payload),
-                )
-                sequence = cursor.lastrowid
-            else:
-                sequence = row["sequence"]
-            connection.execute(
-                "INSERT OR IGNORE INTO execution_attempt VALUES (?,?,?,?)",
-                (sequence, fence.process_generation, str(fence.owner_id), time.time_ns()),
-            )
-        lease.assert_current()
-        return RecordedExecutionEvent(sequence, event_id, identity, refusal)
+            sequence = cursor.lastrowid
+            if sequence is None:
+                raise RuntimeStorageUnavailable("execution event has no durable sequence")
+        else:
+            sequence = row["sequence"]
+        fence = lease.fence
+        connection.execute(
+            "INSERT OR IGNORE INTO execution_attempt VALUES (?,?,?,?)",
+            (sequence, fence.process_generation, str(fence.owner_id), time.time_ns()),
+        )
+        return sequence
+
+    def _append_risk(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        lease: RuntimeLease,
+        identity: ExecutionRunIdentity,
+        event_id: str,
+        risk: RiskMutationRecord,
+    ) -> int:
+        return self._append_record(
+            connection,
+            lease=lease,
+            identity=identity,
+            event_id=event_id,
+            kind="risk_mutation",
+            payload=risk.payload(),
+            result="refused" if risk.outcome.get("error_code") else "applied",
+        )
+
+    @staticmethod
+    def _find_risk(
+        connection: sqlite3.Connection, *, run_id: UUID, event_id: str
+    ) -> RiskMutationRecord | None:
+        row = connection.execute(
+            "SELECT kind,payload FROM execution_event WHERE run_id=? AND event_id=?",
+            (str(run_id), event_id),
+        ).fetchone()
+        if row is None:
+            return None
+        if row["kind"] != "risk_mutation":
+            raise RuntimeAuthorityError("risk event identity belongs to another event kind")
+        return RiskMutationRecord(**json.loads(row["payload"]))
 
     def events(self, run_id: UUID) -> tuple[RecordedExecutionEvent, ...]:
         with self._transaction() as connection:
             rows = connection.execute(
-                "SELECT event.*,run.identity FROM execution_event AS event JOIN execution_run AS run USING(run_id) WHERE run_id=? ORDER BY sequence",
+                "SELECT event.*,run.identity FROM execution_event AS event JOIN execution_run AS run USING(run_id) WHERE run_id=? AND kind='order_refused' ORDER BY sequence",
                 (str(run_id),),
             ).fetchall()
             events = []
@@ -256,6 +365,26 @@ class ExecutionEventStore:
                     )
                 )
             return tuple(events)
+
+    def risk_events(self, run_id: UUID) -> tuple[RecordedRiskEvent, ...]:
+        with self._transaction() as connection:
+            rows = connection.execute(
+                "SELECT event.*,run.identity FROM execution_event AS event JOIN execution_run AS run USING(run_id) WHERE run_id=? AND kind='risk_mutation' ORDER BY sequence",
+                (str(run_id),),
+            ).fetchall()
+            records = []
+            for row in rows:
+                fields = json.loads(row["identity"])
+                fields["run_id"] = UUID(fields["run_id"])
+                records.append(
+                    RecordedRiskEvent(
+                        row["sequence"],
+                        row["event_id"],
+                        ExecutionRunIdentity(**fields),
+                        RiskMutationRecord(**json.loads(row["payload"])),
+                    )
+                )
+            return tuple(records)
 
 
 class LocalExecutionRecorder:

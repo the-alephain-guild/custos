@@ -20,6 +20,8 @@ from custos.core.runtime_authority import (
     RuntimeFenceStale,
     RuntimeStorageUnavailable,
 )
+from tests.test_local_reservations import fill, reserve
+from tests.test_local_reservations import local_risk as local_risk
 from tests.test_local_runtime_state import probe
 from tests.test_runtime_authority import account
 
@@ -190,6 +192,33 @@ for _ in range(200):
         timeout=20,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_refusals_and_risk_mutations_share_one_durable_watermark(local_risk):
+    risk = local_risk
+    reserve(risk)
+    record(LocalExecutionRecorder(risk.events, risk.lease, configuration_revision=1))
+    fill(risk)
+    reopened = ExecutionEventStore.open(risk.events.path)
+    assert reopened.identity().sequence == 3
+    assert [item.sequence for item in reopened.risk_events(risk.manifest.run_id)] == [1, 3]
+    assert [item.sequence for item in reopened.events(risk.manifest.run_id)] == [2]
+
+
+@pytest.mark.parametrize("field", ["session_private_key", "signed_intent", "raw_exception"])
+def test_risk_audit_never_accepts_unfiltered_fields(field):
+    from custos.core.execution_risk_events import RiskMutationRecord
+
+    with pytest.raises(RuntimeAuthorityError, match="allowlisted"):
+        RiskMutationRecord("reserve", {field: "must-not-be-stored"}, {})
+
+
+@pytest.mark.parametrize("error", [None, "", "unfiltered exception message", "secret\nvalue"])
+def test_refused_risk_audit_requires_a_structured_error(error):
+    from custos.core.execution_risk_events import RiskMutationRecord
+
+    with pytest.raises(RuntimeAuthorityError):
+        RiskMutationRecord("risk_refused", {}, {"error_code": error})
 
 
 async def test_a_refusal_record_failure_reaches_host_health(monkeypatch):

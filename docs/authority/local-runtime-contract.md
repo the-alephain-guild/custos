@@ -151,13 +151,69 @@ Persistence failure, unreliable equity, stale account stream, incomplete fill hi
 
 Platform RunnerFact production is a sink with real platform authority, not a prerequisite for local event recording. Local records never become synthetic platform facts, historical eligibility, NAV or settlement inputs.
 
-The internal `ExecutionEventStore` currently persists refusal observations in the
-account-registered state database. Immutable records bind local run identity,
-configuration revision and authorization epoch; process attempts are separate.
-`LocalExecutionRecorder` implements the same synchronous refusal interface used
-by the platform order gate. A refused record freezes further risk increases.
-This foundation does not yet provide the local reservation transaction, runtime
-entry point or live admission described above.
+The internal `ExecutionEventStore` persists refusal observations and local risk
+mutations in the same account-registered state database. Immutable records bind
+local run identity, configuration revision and authorization epoch; process
+attempts are separate. The refusal `events` view and `risk_events` view share one
+sequence and watermark. A complete audit export must include both views rather
+than interpreting gaps in either filtered view as missing committed events.
+`LocalExecutionRecorder` implements the synchronous refusal interface used by
+the platform order gate. A refused record freezes further risk increases.
+
+`LocalReservationStore` implements the existing reservation port and reuses the
+common reservation and FIFO cost calculations. It accepts a genuinely verified
+local authorization only when its complete signed permit digest equals the
+actual claimed lease's durable permit digest. Prepared but unclaimed material
+cannot supply different limits for the same run or epoch. Each operation checks
+the current lease and registered state identity. Registry and journal probes
+complete before acquiring the risk database write transaction; the risk lock
+must not be held while calling back into those identity probes. Failure of the
+post-commit lease check freezes risk but cannot reverse a committed venue fact.
+
+The first local-risk binding atomically binds one account scope in metadata and
+creates its risk latch in this registered database. This first-release database
+serves one account. After binding, a missing latch row, missing table, conflicting
+account or unavailable metadata is storage failure, never permission to insert an
+empty replacement. There is no compatibility parser or automatic migration for
+an earlier local-risk schema. The account-wide latch is one-way and survives
+owner replacement, run changes and permit renewal. Unreconciled reservations or
+cost exposure from an earlier run freeze a new owner rather than authorizing it
+to continue an inherited strategy.
+
+Reservation and cost exposure mutations, their immutable audit records and any
+account latch commit in one SQLite transaction. Reserve and replace require a
+current permit and an unfrozen blocker; executed fill and complete-reduction
+facts remain recordable after permit expiry. Post-trade limit breaches preserve
+the executed amount and latch before reporting refusal of further risk. A nested
+savepoint protects each attempted economic mutation: if semantic or supported
+numeric validation fails while applying a venue fact, its partial changes roll
+back before the outer transaction records unapplied evidence and freezes the
+account. This is unresolved execution evidence, not an applied fill or free
+capacity. Storage or audit failure freezes the in-process blocker and propagates;
+reads use the same failure handling rather than returning an empty portfolio.
+
+Venue fill identities are unique across the account, independently of run,
+permit and process generation. Replays retain the original economic result and
+append process-attempt evidence. A conflicting identity or a fact owned by an
+earlier run is retained as a refusal and freezes the account. Unusable input is
+represented by a bounded digest and structured reason; a stable venue identity,
+when available, remains pending so corrected input cannot silently reapply it.
+Unknown original ownership remains null. Fills without stable venue identity
+cannot be silently treated as complete local-risk history.
+
+External monetary and quantity inputs require finite exact Decimal values in
+the supported domain. Calculations use an explicit isolated context, independent
+of ambient and default Decimal settings. Proportional residual reservations with
+more than 120 fractional places round upward to 1e-120; this never releases extra
+capacity. A confirmed complete close releases its recorded entry cost even when
+exit notional differs. Partial closes remain unapplied and freeze risk in this
+first release; the backend never invents a reverse trade or a position quantity.
+
+This component accounts for reserved notional and entry-cost exposure. It does
+not yet implement marked exposure, reliable equity, fees or the maximum-loss
+trigger, durable in-flight reductions, native blocker wiring, runtime entry or
+live admission. Its unfrozen state is not readiness. These remain necessary
+before independent production execution can be enabled.
 
 ## Readiness, restart and stop
 

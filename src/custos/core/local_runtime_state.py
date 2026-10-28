@@ -612,6 +612,16 @@ class RuntimeLease:
     def state_store(self) -> BoundRuntimeStore:
         return self._stores.state
 
+    @property
+    def control_registry_id(self) -> UUID:
+        return self._registry.registry_id
+
+    @property
+    def permit_digest(self) -> str:
+        self._require_open()
+        with self._action_guard, self._registry._transaction() as connection:
+            return str(self._assert_control(connection)["permit_digest"])
+
     def __exit__(self, *_exc) -> None:
         self.close()
 
