@@ -57,8 +57,9 @@ The internal `python -m custos.cli.subcommands.source_publisher_sandbox` tool ru
 only against unauthenticated IPv4 loopback NATS, with a pre-existing signal
 stream, a private source-token digest file, and a private outbox. It is a
 non-promotable synthetic harness; it does not issue a broker JWT or install a
-source-IP/TLS edge. An independently authorized broker credential, the shared
-stream/ACL provisioning, and runner daemon subscription remain uncomposed.
+source-IP/TLS edge. The shared stream/ACL provisioning and independent broker
+credential issuance remain operator work. The signed runner can opt into a
+separate subscriber.
 
 `external_source_transport.py` provides an adapter for
 isolated JetStream lane, exact source subjects, a stable `Nats-Msg-Id`, and one
@@ -69,8 +70,8 @@ checks the existing durable's filter and delivery subject instead of creating
 or widening it. Publisher and subscriber permission profiles are generated for
 these exact subjects. `tests/integration/test_external_source_fanout.py` can
 verify that two distinct durables receive the same sanitized event against an
-isolated local NATS server. Broker JWT issuance, shared-environment provisioning,
-daemon composition and venue execution have not occurred. Live mode and real
+isolated local NATS server. Broker JWT issuance in the shared environment,
+provisioning and venue execution have not occurred. Live mode and real
 TradingView egress remain outside the current acceptance scope.
 
 `NtTradingNodeHost.external_source_runtime_scope()` is a separate read-only
@@ -127,8 +128,7 @@ exact owner-only credential bytes, rechecks their digest, and connects with
 TLS certificate validation and a dedicated NATS user credential; it never
 reuses the runner-control transport. A mocked connection test proves its
 arguments and changed-file refusal, not issuance or broker acceptance of a real
-JWT. Daemon lifecycle composition, exact broker ACL and venue execution remain
-open.
+JWT. Shared-environment broker ACL and venue execution remain open.
 
 `ExternalSourceRunnerRuntime` is the optional lifecycle wrapper for this
 session. It waits for an active signed deployment, reports only state changes,
@@ -157,8 +157,8 @@ in-memory queue accepted it. The inbox also persists the source timestamp and
 bearer token. Restart moves claimed, queued or requested-flat results to
 `uncertain` and blocks new entries for that deployment. A `FLAT` or `FLATTEN`
 event has its own per-deployment fence, supersedes older unqueued entries, and
-does not free reentry until a caller independently observes flat positions and
-no risk-increasing orders and calls `confirm_flat`. A different deployment's
+does not free reentry until the exact deployment independently observes zero
+positions and zero open orders and calls `confirm_flat`. A different deployment's
 confirmation cannot release this fence. Broker message receipt and target
 inbox acceptance are therefore still distinct from strategy handoff and venue
 fill. `ExternalSourceSubscriber` validates broker subject and trusted tenant,
@@ -166,13 +166,28 @@ source, symbol and active deployment scope, then acknowledges a message only
 after this target inbox durably accepts it. Malformed broker messages terminate
 without an execution receipt; storage or runtime unavailability leaves the
 message unacknowledged for recovery. An isolated local NATS integration test
-exercises two independent target inboxes for OKX and Binance scopes. The
-subscriber is not yet composed into the signed-lane daemon and does not call
-the host's trading methods. `ExternalTargetDispatcher` now reads an active
+exercises two independent target inboxes for OKX and Binance scopes.
+`ExternalTargetDispatcher` reads an active
 host scope, claims one pending target, and hands a bounded entry to that
 host's strategy queue or requests containment for `FLAT`/`FLATTEN`. It then
 records only `queued` or `flat_requested`; failures and cancellation quarantine
 the claimed result so new entries cannot pass an unknown outcome. Startup must
-invoke its recovery method before any new dispatch. The dispatcher is not yet
-composed into the daemon, and no queue receipt attests an order, fill or flat
-account.
+invoke its recovery method before any new dispatch. The optional signed runner
+source session composes this dispatcher; no queue receipt attests an order or fill.
+
+For testnet, `ExternalSourceRunnerSession` obtains the independent REST reader
+already attached to the active signed deployment. Its loop finds unresolved
+flat fences for the bound source after startup recovery. The
+`ExternalTargetFlatVerifier` first vetoes a claim if the local node still has
+positions, open orders or reserved/open exposure. It then reads the venue and
+requires the exact connector and pair, complete position and order views,
+zero positions and zero orders, and a fresh venue timestamp after the persisted
+flatten handoff. It checks the local node and operator authorization again
+before persisting `flat_confirmed`. OKX reads positions, ordinary pending
+orders and all four documented pending algo types. Binance reads the account
+and position-risk views plus ordinary and algo open orders; inconsistent views
+fail closed. Sandbox has no independent venue REST reader, so this automatic
+confirmation path does not release its flat fence. Unit tests use injected
+responses and a fake host; no real testnet account has yet supplied a flat
+receipt. A venue API snapshot is also not an atomic order/fill history, so
+order lineage and a two-account venue acceptance run remain outstanding.
