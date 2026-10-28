@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import http.client
@@ -15,6 +16,7 @@ from unittest.mock import patch
 import pytest
 
 from custos.cli.subcommands.source_webhook import (
+    SourcePublisherService,
     SourceWebhookAuthenticationError,
     SourceWebhookConfig,
     SourceWebhookIngress,
@@ -22,6 +24,7 @@ from custos.cli.subcommands.source_webhook import (
 )
 from custos.core.external_source_outbox import ExternalSourceOutbox
 from custos.core.external_source_signal import make_source_event_id
+from custos.core.external_source_transport import SIGNAL_STREAM_NAME, SourcePublicationWorker
 
 BAR_CLOSE = datetime(2026, 10, 28, 12, 0, tzinfo=UTC)
 NOW = datetime(2026, 10, 28, 12, 0, 15, tzinfo=UTC)
@@ -166,3 +169,67 @@ def test_config_requires_authentication_and_loopback(tmp_path: Path) -> None:
         SourceWebhookConfig("tenant-a", "fixture-source", frozenset({"ETH-USDT-SWAP"}))
     with pytest.raises(ValueError, match="loopback"):
         create_source_webhook_server(("0.0.0.0", 0), ingress(tmp_path))
+
+
+@pytest.mark.asyncio
+async def test_service_publishes_only_after_http_persistence_and_stops_cleanly(
+    tmp_path: Path,
+) -> None:
+    receiver = ingress(tmp_path)
+    server = create_source_webhook_server(("127.0.0.1", 0), receiver, clock=lambda: NOW)
+    published = asyncio.Event()
+
+    class FakeJetStream:
+        async def publish(self, subject, payload, **kwargs):
+            assert json.loads(payload)["target"] == "FLAT"
+            assert b"signalToken" not in payload
+            published.set()
+            return type("Ack", (), {"stream": SIGNAL_STREAM_NAME, "seq": 1})()
+
+    service = SourcePublisherService(
+        server,
+        SourcePublicationWorker(receiver.outbox, FakeJetStream(), tenant_id="tenant-a"),
+        clock=lambda: NOW,
+        idle_seconds=0.01,
+    )
+    stop = asyncio.Event()
+    task = asyncio.create_task(service.run(stop))
+    try:
+        await asyncio.wait_for(service.started.wait(), timeout=2)
+
+        def send() -> tuple[int, dict[str, object]]:
+            client = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+            client.request(
+                "POST",
+                "/v1/external-source-signals",
+                body=body(),
+                headers={"Content-Type": "application/json"},
+            )
+            response = client.getresponse()
+            result = response.status, json.loads(response.read())
+            client.close()
+            return result
+
+        status, receipt = await asyncio.to_thread(send)
+        assert status == 202 and receipt["status"] == "accepted"
+        await asyncio.wait_for(published.wait(), timeout=2)
+        assert receiver.outbox.claim_next("tenant-a", at=NOW) is None
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, timeout=2)
+    assert not service.server_thread.is_alive()
+
+
+@pytest.mark.asyncio
+async def test_service_closes_ingress_when_publication_fails(tmp_path: Path) -> None:
+    receiver = ingress(tmp_path)
+    server = create_source_webhook_server(("127.0.0.1", 0), receiver, clock=lambda: NOW)
+
+    class FailingPublisher:
+        async def publish_once(self, *, at: datetime) -> bool:
+            raise RuntimeError("broker unavailable")
+
+    service = SourcePublisherService(server, FailingPublisher(), clock=lambda: NOW)
+    with pytest.raises(RuntimeError, match="broker unavailable"):
+        await asyncio.wait_for(service.run(asyncio.Event()), timeout=2)
+    assert not service.server_thread.is_alive()

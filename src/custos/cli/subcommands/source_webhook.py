@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import hmac
 import json
 import sqlite3
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Protocol
 
 from custos.core.external_source_outbox import (
     ExternalSourceOutbox,
@@ -21,6 +24,10 @@ from custos.core.external_source_signal import (
     ExternalSourceSignalError,
     parse_external_source_signal,
 )
+
+
+class SourcePublicationPort(Protocol):
+    async def publish_once(self, *, at: datetime) -> bool: ...
 
 
 class SourceWebhookAuthenticationError(ValueError):
@@ -195,3 +202,48 @@ def create_source_webhook_server(
     server = ThreadingHTTPServer(address, Handler)
     server.daemon_threads = True
     return server
+
+
+class SourcePublisherService:
+    """Run the bounded HTTP intake and durable publication as one process unit."""
+
+    def __init__(
+        self,
+        server: ThreadingHTTPServer,
+        publisher: SourcePublicationPort,
+        *,
+        clock: Callable[[], datetime] | None = None,
+        idle_seconds: float = 0.2,
+    ) -> None:
+        if not 0 < idle_seconds <= 5:
+            raise ValueError("source publisher poll interval is invalid")
+        self.server = server
+        self.publisher = publisher
+        self.clock = clock or (lambda: datetime.now(UTC))
+        self.idle_seconds = idle_seconds
+        self.started = asyncio.Event()
+        self.server_thread = threading.Thread(
+            target=lambda: server.serve_forever(poll_interval=0.05),
+            name="source-webhook-loopback",
+            daemon=True,
+        )
+        self._run_started = False
+
+    async def run(self, stop: asyncio.Event) -> None:
+        if self._run_started:
+            raise RuntimeError("source publisher service already started")
+        self._run_started = True
+        self.server_thread.start()
+        self.started.set()
+        try:
+            while not stop.is_set():
+                if await self.publisher.publish_once(at=self.clock()):
+                    continue
+                try:
+                    await asyncio.wait_for(stop.wait(), timeout=self.idle_seconds)
+                except TimeoutError:
+                    pass
+        finally:
+            await asyncio.to_thread(self.server.shutdown)
+            self.server.server_close()
+            await asyncio.to_thread(self.server_thread.join)

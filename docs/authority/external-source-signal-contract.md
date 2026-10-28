@@ -50,8 +50,11 @@ duplicate JSON fields, nonfinite values and oversized bodies before durable
 acceptance. A 202 response means the redacted event reached the private source
 outbox; a duplicate returns 200. Neither response says a broker published it
 or a subscriber traded. The HTTP server binds to IPv4 loopback only and is not
-registered as a daemon command yet. An external TLS and source-IP edge and a
-separately authorized publisher process remain uncomposed.
+registered as a daemon command yet. `SourcePublisherService` can run that
+receiver alongside the outbox publication worker with an injected JetStream
+client; a broker publication failure ends the service and closes HTTP intake.
+An external TLS and source-IP edge and a separately authorized broker
+credential remain uncomposed.
 
 `external_source_transport.py` provides an adapter for
 isolated JetStream lane, exact source subjects, a stable `Nats-Msg-Id`, and one

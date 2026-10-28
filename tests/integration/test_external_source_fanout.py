@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import http.client
 import json
 import os
 from datetime import UTC, datetime, timedelta
@@ -13,6 +16,12 @@ import nats
 import pytest
 from nats.js.errors import NotFoundError
 
+from custos.cli.subcommands.source_webhook import (
+    SourcePublisherService,
+    SourceWebhookConfig,
+    SourceWebhookIngress,
+    create_source_webhook_server,
+)
 from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.core.external_source_outbox import ExternalSourceOutbox
 from custos.core.external_source_signal import make_source_event_id, parse_external_source_signal
@@ -51,7 +60,8 @@ async def test_two_deployments_receive_one_source_event(tmp_path: Path) -> None:
         target="SHORT",
         risk_action=None,
     )
-    signal = parse_external_source_signal(
+    token = "synthetic-token-never-published-0123456789"
+    body = json.dumps(
         {
             "schemaVersion": 1,
             "sourceId": source_id,
@@ -60,22 +70,20 @@ async def test_two_deployments_receive_one_source_event(tmp_path: Path) -> None:
             "timeframe": "30",
             "barCloseTime": bar_close.isoformat(),
             "timestamp": emitted.isoformat(),
-            "maxLag": 60,
+            "maxLag": 3600,
             "target": "SHORT",
             "eventId": event_id,
-            "signalToken": "synthetic-token-never-published-0123456789",
+            "signalToken": token,
         },
-        tenant_id=tenant_id,
-        expected_source_id=source_id,
-        allowed_symbols=frozenset({"ETH-USDT"}),
-        now=now,
-    )
+        sort_keys=True,
+    ).encode()
     outbox = ExternalSourceOutbox(tmp_path / "source.sqlite")
-    outbox.accept(signal, received_at=now)
 
     client = await nats.connect(url, connect_timeout=2)
     stream = client.jetstream()
     created = False
+    service_task = None
+    service_stop = asyncio.Event()
     try:
         try:
             await stream.stream_info(SIGNAL_STREAM_NAME)
@@ -133,9 +141,37 @@ async def test_two_deployments_receive_one_source_event(tmp_path: Path) -> None:
                 )
             )
 
-        assert await SourcePublicationWorker(outbox, stream, tenant_id=tenant_id).publish_once(
-            at=now
+        ingress = SourceWebhookIngress(
+            SourceWebhookConfig(
+                tenant_id=tenant_id,
+                source_id=source_id,
+                allowed_symbols=frozenset({"ETH-USDT"}),
+                signal_token_sha256=hashlib.sha256(token.encode()).digest(),
+            ),
+            outbox,
         )
+        server = create_source_webhook_server(("127.0.0.1", 0), ingress)
+        service = SourcePublisherService(
+            server, SourcePublicationWorker(outbox, stream, tenant_id=tenant_id)
+        )
+        service_task = asyncio.create_task(service.run(service_stop))
+        await asyncio.wait_for(service.started.wait(), timeout=2)
+
+        def send() -> tuple[int, dict[str, object]]:
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+            connection.request(
+                "POST",
+                "/v1/external-source-signals",
+                body=body,
+                headers={"Content-Type": "application/json"},
+            )
+            response = connection.getresponse()
+            result = response.status, json.loads(response.read())
+            connection.close()
+            return result
+
+        status, intake = await asyncio.to_thread(send)
+        assert status == 202 and intake["eventId"] == event_id
         messages = [await sub.next_msg(timeout=3) for sub in subscriptions]
         assert messages[0].data == messages[1].data
         assert b"signalToken" not in messages[0].data
@@ -184,6 +220,9 @@ async def test_two_deployments_receive_one_source_event(tmp_path: Path) -> None:
         for sub in subscriptions:
             await sub.unsubscribe()
     finally:
+        if service_task is not None:
+            service_stop.set()
+            await service_task
         if created:
             await stream.delete_stream(SIGNAL_STREAM_NAME)
         await client.close()
