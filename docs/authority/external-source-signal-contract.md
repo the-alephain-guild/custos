@@ -238,3 +238,9 @@ incomplete interval or missing venue account view remains `unknown`. A match
 does not attest final order state, position flatness, fees or quantity
 equivalence: OKX reports contract quantities on native fills while the ledger
 converts them to base units. No real account has yet produced a comparison.
+The internal `python -m custos.cli.subcommands.source_execution_report`
+command opens an existing owner-only target inbox in SQLite read-only mode and
+exports one exact deployment generation's local target/order/fill rows as JSON.
+Its identity arguments are caller supplied and only matched to the local
+inbox; the output labels itself `local_callbacks_only` and is not a signed
+RunnerFact or independent venue receipt. A missing inbox is not created.
