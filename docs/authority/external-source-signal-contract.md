@@ -96,6 +96,27 @@ pure conversion does not touch a runner queue or the venue.
 `ExternalTargetInbox` stores each derived delivery under its own deployment
 instance, spec ID/digest and generation. A deployment's inbox is bound to one
 tenant and one source; a second source cannot share its account or flat fence.
+
+The first sandbox/testnet subscriber is selected by a private operator file,
+not by a field in the source alert. `external_source_authorization.py` accepts
+only this closed `schemaVersion: 1` JSON shape: `tenantId`, `runnerId`,
+`deploymentInstanceId`, `deploymentSpecId`, `deploymentSpecDigest`, `generation`,
+`tradingMode`, `sourceId`, `sourceSymbol`, `targetPair`, and
+`natsCredentialsSha256`. The file and its separate NATS `.creds` file must be
+regular files owned by the current user with no group or world access; symlinks
+and oversized files are refused. The credential digest binds the exact local
+broker identity without putting its JWT or seed into the authorization JSON.
+Trusted tenant and runner IDs come from verified machine metadata. The active
+host supplies the signed deployment authority and admitted strategy pair; the
+operator file must match them exactly, including generation and spec digest.
+Only sandbox/testnet and the admitted OKX/Binance perpetual scopes can bind.
+This file grants a subscription choice, not deployment authority, size or a
+venue credential. The broker must separately enforce an exact pre-provisioned
+durable and least-privilege JWT ACL; a file/digest comparison alone cannot prove
+those broker permissions. The loader is currently tested as a pure admission
+gate; runtime revalidation, independent broker connection and daemon composition
+remain open.
+
 A normal entry must be durably claimed
 before the host queue is touched; a persisted handoff means only that the
 in-memory queue accepted it. The inbox also persists the source timestamp and
