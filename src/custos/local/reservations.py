@@ -30,6 +30,7 @@ from custos.core.reservation_math import (
 from custos.core.runtime_authority import RuntimeAuthorityError
 from custos.local.authorization import VerifiedLocalRunAuthorization
 from custos.local.loss_budget import LocalLossBudget
+from custos.local.loss_state import epoch_ns
 from custos.local.native_dispatch import LocalNativeDispatch
 from custos.local.reduction_claims import LocalReductionClaims
 from custos.local.reservation_ledger import (
@@ -97,6 +98,13 @@ class LocalReservationStore:
     @property
     def authorization(self) -> VerifiedLocalRunAuthorization:
         return self._authorization
+
+    @property
+    def risk_blocker(self) -> RiskBlocker:
+        return self._blocker
+
+    def current_time_ns(self) -> int:
+        return epoch_ns(self._ledger._clock())
 
     @property
     def runtime_id(self) -> UUID:

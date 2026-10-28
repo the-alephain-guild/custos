@@ -6,7 +6,7 @@ import hashlib
 import json
 import re
 from dataclasses import asdict
-from typing import Any, Literal, Protocol, cast
+from typing import TYPE_CHECKING, Any, Literal, Protocol, cast
 from uuid import UUID
 
 from nautilus_trader.model import ClientId, InstrumentId, OrderFilled
@@ -17,6 +17,9 @@ from custos.core.runtime_authority import RuntimeAuthorityError
 from custos.engines.nautilus.runner_safety import NautilusCachedOrderSemantics
 from custos.engines.nautilus.runtime_storage import PapertradeRuntimeStorageProbe
 from custos.local.reservations import LocalReservationStore
+
+if TYPE_CHECKING:
+    from custos.engines.nautilus.local_risk_supervisor import PapertradeRiskSupervisor
 
 
 class NativeParamsFactory(Protocol):
@@ -59,6 +62,7 @@ class LocalPapertradeReductions:
         self._account_id = account_id
         self._client_id = client_id
         self._semantics: NautilusCachedOrderSemantics | None = None
+        self._risk_supervisor: PapertradeRiskSupervisor | None = None
 
     @property
     def reservation_store(self) -> LocalReservationStore:
@@ -104,6 +108,19 @@ class LocalPapertradeReductions:
             storage_probe.require_route(account_id=self._account_id, client_id=self._client_id)
             return self._account_id, self._client_id
 
+    def bind_risk_supervisor(self, supervisor: PapertradeRiskSupervisor) -> None:
+        from custos.engines.nautilus.local_risk_supervisor import PapertradeRiskSupervisor
+
+        with self.runtime_lease.control_action():
+            if (
+                type(supervisor) is not PapertradeRiskSupervisor
+                or supervisor.reservation_store is not self._store
+                or (self._risk_supervisor is not None and supervisor is not self._risk_supervisor)
+            ):
+                raise RuntimeAuthorityError("local risk supervisor cannot be replaced")
+            supervisor.require_port(self)
+            self._risk_supervisor = supervisor
+
     def prepare_submit(self, intent: Any) -> bool:
         self.runtime_lease.assert_control_current()
         semantics = self._bound_semantics()
@@ -134,6 +151,8 @@ class LocalPapertradeReductions:
         ).endswith(".PAPERTRADE"):
             raise RuntimeAuthorityError("local opening requires a Native Papertrade instrument")
         self._store.require_opening_instrument(str(intent.order.instrument_id))
+        if self._risk_supervisor is not None:
+            self._risk_supervisor.require_increase_ready()
         return False
 
     def record_prepared(self, intent: Any) -> None:
@@ -181,6 +200,12 @@ class LocalPapertradeReductions:
             raise
 
     def begin_dispatch(self, client_order_id: str) -> bool:
+        if self._risk_supervisor is not None:
+            marker = self._dispatch.load(client_order_id)
+            if marker is None:
+                raise RuntimeAuthorityError("risk refresh requires the original prepared marker")
+            if not marker.binding.reduce_only:
+                self._risk_supervisor.require_increase_ready()
         return self._dispatch.begin_dispatch(client_order_id)
 
     def mark_not_sent(self, client_order_id: str) -> None:

@@ -530,6 +530,19 @@ Papertrade QuoteTick 表示 reference mid，bid 与 ask 相等；减去或加上
 terminal 市场使用冻结中价及本地时间戳，单靠采集器不能证明其行情仍在更新。
 生产启动之前仍需明确拒绝 terminal 市场，并完成实际数据流验收。
 
+`PapertradeRiskSupervisor` 将原采集器与同一个 store、blocker 和时钟绑定。
+构造时单向启用 Native 账户摘要约束并把截止置零；只有原持久现金预算 ready，
+才更新对应账户摘要及预算截止。缓存或标记来源故障之前先核已知现金亏损，达到
+阈值优先记录原损失故障。永久 freeze 不会被新摘要、重新创建监督器或旧 ready
+观测解除。首次 baseline 仍只能取可靠交易前空仓，缺行情的启动等待有界。
+
+原执行 port 一次绑定该监督器，开仓预留前和 prepared marker 之后同步刷新。
+仅本代尚未进入 Native 的 prepared/Missing 可不算未决；临时 pending 走原
+未发送撤回，Native 调用后仍保留未知。定向完整平仓不附加这层开仓估值刷新。
+异步 watchdog 独立于行情回调运行；异常、owner 丢失或停止关闭增险，停止同时
+永久冻结同一个 Native blocker。Host 必须管理 watchdog 生命周期和失败状态，
+包括任务尚未启动就被取消时显式 close；单独创建模块不构成 Host readiness。
+
 Readiness requires an alive node, actual data and execution connectivity, initialized reliable account/portfolio state, completed account reconciliation, active risk enforcement and durable current authority. The current blanket live refusal may be replaced only by proved checks, not a mode-based true value.
 
 Adapter recovery proves order/position identity and execution evidence; it does not prove the strategy's algorithm state. After unclean exit, recover in a no-new-risk state. If decision state cannot be reconstructed, expose recovery/exit controls, reconcile and flatten as authorized, then require a new manifest/permit for a new run. Do not restart the algorithm from an empty state against inherited exposure.

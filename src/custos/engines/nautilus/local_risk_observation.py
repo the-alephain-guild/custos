@@ -23,6 +23,7 @@ from custos.engines.nautilus.order_evidence import NativeOrderEvidence
 from custos.engines.nautilus.runner_safety import NautilusCachedOrderSemantics
 from custos.engines.nautilus.runtime_storage import PapertradeRuntimeStorageProbe
 from custos.local.loss_state import CashRiskObservation, uint
+from custos.local.reservations import LocalReservationStore
 from custos.local.risk_cohort import LocalRiskCohort
 
 FaultReason = Literal["account", "marks", "cohort"]
@@ -106,6 +107,14 @@ class PapertradeRiskSource:
     @property
     def runtime_lease(self) -> RuntimeLease:
         return self._port.runtime_lease
+
+    @property
+    def reservation_store(self) -> LocalReservationStore:
+        return self._port.reservation_store
+
+    @property
+    def reduction_port(self) -> LocalPapertradeReductions:
+        return self._port
 
     def _cache_frame(self) -> CacheRiskFrame:
         return cache_risk_frame(
