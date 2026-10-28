@@ -170,3 +170,37 @@ async def test_local_state_is_rechecked_after_venue_read(tmp_path: Path) -> None
     assert not await verifier.confirm_if_flat(risk.delivery_id, authority=FIRST)
     assert runtime.flat_local_checks == [(FIRST, "ETH-USDT"), (FIRST, "ETH-USDT")]
     assert inbox.pending_flat_request(risk.delivery_id, authority=FIRST) is not None
+
+
+@pytest.mark.asyncio
+async def test_sandbox_can_release_flat_only_from_guarded_local_engine(tmp_path: Path) -> None:
+    sandbox = replace(FIRST, trading_mode="sandbox")
+    inbox = ExternalTargetInbox(tmp_path / "target.sqlite")
+    risk = directive(sandbox, target="FLAT", risk_action="FLATTEN")
+    inbox.accept(risk, received_at=NOW)
+    assert inbox.begin_delivery(risk.delivery_id, authority=sandbox, at=NOW)
+    assert inbox.mark_handoff(risk.delivery_id, authority=sandbox, at=NOW)
+    runtime = host(sandbox)
+    runtime.scope = replace(runtime.scope, connector="binance_perpetual")
+    verifier = ExternalTargetFlatVerifier(
+        inbox, runtime, None, clock=lambda: NOW + timedelta(seconds=2)
+    )
+    runtime.flat_local_clear = False
+    assert not await verifier.confirm_if_flat(risk.delivery_id, authority=sandbox)
+    runtime.flat_local_clear = True
+    assert await verifier.confirm_if_flat(risk.delivery_id, authority=sandbox)
+    assert runtime.flat_local_checks == [
+        (sandbox, "ETH-USDT"),
+        (sandbox, "ETH-USDT"),
+        (sandbox, "ETH-USDT"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_testnet_without_independent_reader_never_releases_flat(tmp_path: Path) -> None:
+    inbox, risk = requested_inbox(tmp_path)
+    verifier = ExternalTargetFlatVerifier(
+        inbox, host(), None, clock=lambda: NOW + timedelta(seconds=2)
+    )
+    assert not await verifier.confirm_if_flat(risk.delivery_id, authority=FIRST)
+    assert inbox.pending_flat_request(risk.delivery_id, authority=FIRST) is not None

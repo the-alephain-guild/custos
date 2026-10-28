@@ -106,14 +106,13 @@ class ExternalSourceRunnerSession:
             self.inbox,
             scope_provider=self._revalidated_scope,
         )
-        if reader is not None:
-            self.flat_verifier = ExternalTargetFlatVerifier(
-                self.inbox,
-                self.host,
-                reader,
-                clock=self.clock,
-                revalidate=self._revalidated_scope,
-            )
+        self.flat_verifier = ExternalTargetFlatVerifier(
+            self.inbox,
+            self.host,
+            reader,
+            clock=self.clock,
+            revalidate=self._revalidated_scope,
+        )
 
     async def handle_message(self, message: Any, *, at: datetime) -> TargetDispatchReceipt | None:
         if self.subscriber is None:

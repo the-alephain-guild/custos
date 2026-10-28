@@ -24,7 +24,7 @@ class ExternalTargetFlatVerifier:
         self,
         inbox: ExternalTargetInbox,
         host: ExternalTargetHost,
-        reader: VenueFlatReader,
+        reader: VenueFlatReader | None,
         *,
         clock: Callable[[], datetime] | None = None,
         revalidate: Callable[[], object] | None = None,
@@ -48,29 +48,42 @@ class ExternalTargetFlatVerifier:
             return False
         if request.connector != scope.connector or request.pair not in scope.allowed_pairs:
             raise RuntimeError("flat request differs from active venue scope")
+        if self.reader is None and authority.trading_mode != "sandbox":
+            return False
         if await self.host.external_source_flat_local_clear(authority, request.pair) is not True:
             return False
-        observed = await self.reader.observe_flat(connector=request.connector, pair=request.pair)
-        if observed.observed_at.tzinfo is None:
-            return False
-        observed_at = observed.observed_at.astimezone(UTC)
+        observed = None
+        if self.reader is None:
+            # The simulated engine has no independent venue API. Give already
+            # queued callbacks a turn before reading its local state again.
+            await asyncio.sleep(0)
+        else:
+            observed = await self.reader.observe_flat(
+                connector=request.connector, pair=request.pair
+            )
         at = self.clock()
         if at.tzinfo is None or at.utcoffset() != timedelta(0):
             raise RuntimeError("flat confirmation clock must be UTC")
-        if (
-            observed.source != "venue_api"
-            or observed.connector != request.connector
-            or observed.pair != request.pair
-            or not observed.positions_complete
-            or not observed.orders_complete
-            or type(observed.open_positions) is not int
-            or type(observed.open_orders) is not int
-            or observed.open_positions != 0
-            or observed.open_orders != 0
-            or observed_at < request.handoff_at
-            or not observed_at <= at <= observed_at + timedelta(seconds=30)
-        ):
+        if at < request.handoff_at:
             return False
+        if observed is not None:
+            if observed.observed_at.tzinfo is None:
+                return False
+            observed_at = observed.observed_at.astimezone(UTC)
+            if (
+                observed.source != "venue_api"
+                or observed.connector != request.connector
+                or observed.pair != request.pair
+                or not observed.positions_complete
+                or not observed.orders_complete
+                or type(observed.open_positions) is not int
+                or type(observed.open_orders) is not int
+                or observed.open_positions != 0
+                or observed.open_orders != 0
+                or observed_at < request.handoff_at
+                or not observed_at <= at <= observed_at + timedelta(seconds=30)
+            ):
+                return False
         current = self.host.external_source_runtime_scope(str(authority.deployment_instance_id))
         if current != scope:
             raise RuntimeError("active venue scope changed during flat observation")
