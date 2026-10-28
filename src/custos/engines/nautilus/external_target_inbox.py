@@ -7,6 +7,7 @@ import json
 import os
 import sqlite3
 import stat
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -50,6 +51,7 @@ class TargetOrderExecution:
     instrument: str
     filled_quantity: str
     fill_event_ids: tuple[str, ...]
+    venue_order_ids: tuple[str, ...]
     venue_trade_ids: tuple[str, ...]
 
 
@@ -193,6 +195,7 @@ class ExternalTargetInbox:
                     fill_event_id TEXT NOT NULL,
                     client_order_id TEXT NOT NULL,
                     delivery_id TEXT NOT NULL,
+                    venue_order_id TEXT NOT NULL DEFAULT '',
                     venue_trade_id TEXT NOT NULL,
                     quantity TEXT NOT NULL,
                     filled_at_ns INTEGER NOT NULL,
@@ -202,12 +205,34 @@ class ExternalTargetInbox:
                     ON external_target_fill_link(deployment_instance_id, client_order_id);
                 """
             )
+            connection.execute("BEGIN IMMEDIATE")
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(external_target_fill_link)")
+            }
+            if "venue_order_id" not in columns:
+                connection.execute(
+                    "ALTER TABLE external_target_fill_link "
+                    "ADD COLUMN venue_order_id TEXT NOT NULL DEFAULT ''"
+                )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=10.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA busy_timeout=10000")
-        connection.execute("PRAGMA journal_mode=WAL")
+        deadline = time.monotonic() + 10.0
+        while True:
+            try:
+                connection.execute("PRAGMA journal_mode=WAL")
+                break
+            except sqlite3.OperationalError as error:
+                if error.sqlite_errorcode not in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+                    connection.close()
+                    raise
+                if time.monotonic() >= deadline:
+                    connection.close()
+                    raise ExternalTargetInboxError("target inbox WAL setup is locked") from error
+                time.sleep(0.01)
         connection.execute("PRAGMA synchronous=FULL")
         return connection
 
@@ -715,15 +740,19 @@ class ExternalTargetInbox:
         *,
         client_order_id: str,
         event_id: str,
+        venue_order_id: str,
         venue_trade_id: str,
         quantity: str,
         at: datetime,
     ) -> bool:
         """Record one attributed fill; unknown orders remain unattributed."""
         _require_non_live(authority)
-        if not client_order_id or not event_id or not venue_trade_id:
+        if not client_order_id or not event_id or not venue_order_id or not venue_trade_id:
             raise ExternalTargetInboxError("fill identity is invalid")
-        if len(client_order_id) > 128 or len(event_id) > 128 or len(venue_trade_id) > 128:
+        if any(
+            len(value) > 128
+            for value in (client_order_id, event_id, venue_order_id, venue_trade_id)
+        ):
             raise ExternalTargetInboxError("fill identity is too long")
         if not isinstance(quantity, str):
             raise ExternalTargetInboxError("fill quantity must be exact text")
@@ -757,7 +786,8 @@ class ExternalTargetInbox:
             if at_ns < link["initialized_at_ns"]:
                 raise ExternalTargetInboxError("fill predates linked order")
             existing = connection.execute(
-                """SELECT client_order_id, delivery_id, venue_trade_id, quantity, filled_at_ns
+                """SELECT client_order_id, delivery_id, venue_order_id, venue_trade_id,
+                          quantity, filled_at_ns
                    FROM external_target_fill_link
                    WHERE deployment_instance_id = ? AND fill_event_id = ?""",
                 (instance_id, event_id),
@@ -766,6 +796,7 @@ class ExternalTargetInbox:
                 if (
                     existing["client_order_id"] == client_order_id
                     and existing["delivery_id"] == link["delivery_id"]
+                    and existing["venue_order_id"] == venue_order_id
                     and existing["venue_trade_id"] == venue_trade_id
                     and Decimal(existing["quantity"]) == amount
                     and existing["filled_at_ns"] == at_ns
@@ -775,13 +806,14 @@ class ExternalTargetInbox:
             connection.execute(
                 """INSERT INTO external_target_fill_link
                    (deployment_instance_id, fill_event_id, client_order_id, delivery_id,
-                    venue_trade_id, quantity, filled_at_ns)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    venue_order_id, venue_trade_id, quantity, filled_at_ns)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     instance_id,
                     event_id,
                     client_order_id,
                     link["delivery_id"],
+                    venue_order_id,
                     venue_trade_id,
                     str(amount),
                     at_ns,
@@ -823,7 +855,8 @@ class ExternalTargetInbox:
         if row is None:
             return None
         fills = connection.execute(
-            """SELECT fill_event_id, venue_trade_id, quantity FROM external_target_fill_link
+            """SELECT fill_event_id, venue_order_id, venue_trade_id, quantity
+               FROM external_target_fill_link
                    WHERE deployment_instance_id = ? AND client_order_id = ?
                    ORDER BY filled_at_ns, fill_event_id""",
             (instance_id, client_order_id),
@@ -835,6 +868,7 @@ class ExternalTargetInbox:
             instrument=row["instrument"],
             filled_quantity=str(sum((Decimal(fill["quantity"]) for fill in fills), Decimal(0))),
             fill_event_ids=tuple(fill["fill_event_id"] for fill in fills),
+            venue_order_ids=tuple(fill["venue_order_id"] for fill in fills),
             venue_trade_ids=tuple(fill["venue_trade_id"] for fill in fills),
         )
 

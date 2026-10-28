@@ -506,6 +506,7 @@ async def test_source_order_callbacks_persist_target_lineage_before_fill(monkeyp
             OrderFilled(
                 client_order_id="O-1",
                 event_id="fill-1",
+                venue_order_id="V-1",
                 trade_id="trade-1",
                 last_qty="0.4",
                 ts_event=int(NOW.timestamp() * 1_000_000_000) + 1_000_000_000,

@@ -60,6 +60,7 @@ class ExternalTargetOrderRecorder:
                 self.authority,
                 client_order_id=str(event.client_order_id),
                 event_id=str(event.event_id),
+                venue_order_id=str(event.venue_order_id),
                 venue_trade_id=str(event.trade_id),
                 quantity=str(event.last_qty),
                 at=_event_time(event),

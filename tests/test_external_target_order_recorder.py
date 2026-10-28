@@ -27,6 +27,7 @@ class OrderInitialized:
 class OrderFilled:
     client_order_id: str
     event_id: str
+    venue_order_id: str
     trade_id: str
     last_qty: str
     ts_event: int
@@ -60,6 +61,7 @@ def test_order_callbacks_persist_source_to_fill_lineage(tmp_path: Path) -> None:
     fill = OrderFilled(
         client_order_id="O-1",
         event_id="fill-1",
+        venue_order_id="V-1",
         trade_id="trade-1",
         last_qty="0.4",
         ts_event=int((NOW + timedelta(seconds=1)).timestamp() * 1_000_000_000),
@@ -72,6 +74,7 @@ def test_order_callbacks_persist_source_to_fill_lineage(tmp_path: Path) -> None:
     assert linked.delivery_id == delivery.delivery_id
     assert linked.filled_quantity == "0.4"
     assert linked.fill_event_ids == ("fill-1",)
+    assert linked.venue_order_ids == ("V-1",)
 
 
 def test_untagged_order_is_not_attributed_and_bad_target_tag_faults(tmp_path: Path) -> None:
