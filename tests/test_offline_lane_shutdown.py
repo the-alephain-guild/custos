@@ -19,6 +19,7 @@ from typing import Any
 from structlog.testing import capture_logs
 
 from custos.offline.daemon import run_offline_lane
+from custos.offline.safety import OfflineExposureGuard
 from custos.offline.spec import OfflineDeploymentMessage
 from tests.test_offline_lane_daemon import (
     RUNNER,
@@ -267,7 +268,19 @@ def _summaries(logs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [entry for entry in logs if entry["event"] == "offline_shutdown_summary"]
 
 
-async def test_shutdown_waits_for_the_guards_stop_and_summarises_it(tmp_path: Path) -> None:
+async def test_shutdown_waits_for_the_guards_stop_and_summarises_it(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    joined_guard_stop = asyncio.Event()
+    original = OfflineExposureGuard.stop_in_progress
+
+    def observe_join(self, spec_id):
+        in_progress = original(self, spec_id)
+        if in_progress is not None:
+            joined_guard_stop.set()
+        return in_progress
+
+    monkeypatch.setattr(OfflineExposureGuard, "stop_in_progress", observe_join)
     lane, stop, engine, jetstream, _ = await _start(
         tmp_path,
         [_message()],
@@ -280,7 +293,8 @@ async def test_shutdown_waits_for_the_guards_stop_and_summarises_it(tmp_path: Pa
 
     with capture_logs() as logs:
         stop.set()
-        await asyncio.sleep(0.05)
+        await asyncio.wait_for(joined_guard_stop.wait(), timeout=2)
+        assert not lane.done(), "shutdown must still wait for the guard's in-flight stop"
         engine.released.set()
         assert await asyncio.wait_for(lane, timeout=2) == 0
 
