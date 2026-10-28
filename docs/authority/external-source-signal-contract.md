@@ -40,8 +40,20 @@ has received a positive broker PubAck may record its sequence using
 at-least-once publication attempts, not exactly-once downstream execution.
 Expired source events are not published, and expiration frees outbox capacity.
 
-No NATS signal stream, runner consumer or TradingView alert is activated by
-these files. `external_source_transport.py` provides an adapter for
+`src/custos/cli/subcommands/source_webhook.py` provides a separate loopback
+`POST /v1/external-source-signals` receiver for this contract. Its configured
+tenant, source and symbol allowlist are trusted local scope, never taken from
+the alert. The receiver requires either an exact HMAC request signature or a
+preconfigured digest of a dedicated 32–512 character ASCII `signalToken`;
+an invalid supplied signature cannot fall back to the token. It rejects
+duplicate JSON fields, nonfinite values and oversized bodies before durable
+acceptance. A 202 response means the redacted event reached the private source
+outbox; a duplicate returns 200. Neither response says a broker published it
+or a subscriber traded. The HTTP server binds to IPv4 loopback only and is not
+registered as a daemon command yet. An external TLS and source-IP edge and a
+separately authorized publisher process remain uncomposed.
+
+`external_source_transport.py` provides an adapter for
 isolated JetStream lane, exact source subjects, a stable `Nats-Msg-Id`, and one
 pre-provisioned durable per runner and deployment. Its worker marks the outbox
 published only after the expected stream returns a positive PubAck. Broker
