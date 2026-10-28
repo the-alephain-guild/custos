@@ -235,7 +235,7 @@ first release; the backend never invents a reverse trade or a position quantity.
 
 This component accounts for reserved notional and entry-cost exposure. It does
 not yet implement marked exposure, reliable equity, fees or the maximum-loss
-trigger, durable in-flight reductions, native blocker wiring, runtime entry or
+trigger, native blocker wiring, runtime entry or
 live admission. Its unfrozen state is not readiness. These remain necessary
 before independent production execution can be enabled.
 
@@ -261,11 +261,46 @@ a netted pair of positions. The returned ReductionTarget is immutable evidence
 and includes a deterministic params digest. Configured routing identities come
 from the kernel's actual factory binding; they do not select another wallet.
 
-This parsing capability does not grant authorization, establish original-run
-ownership, create a durable close claim or submit an order. Those checks must be
-combined with the signed permit and the existing entry-cost rows in the later
-persistent reduction transaction. Native direct-close, list and modify handling
-remain separate integration work before any local live entry can be enabled.
+This parsing capability does not itself grant authorization or establish
+original-run ownership. LocalReductionClaims now combines that evidence with the
+actual claimed permit digest, authorization epoch, process generation and
+original entry-cost rows in the registered SQLite. Native routing must be bound
+explicitly from the actual factory, once, before this capability can be used.
+The account metadata persists that Native route: rebuilding a Python store
+cannot return to claim-free accounting or select another factory identity.
+Incomplete binding, or missing binding with existing claim history, is refused.
+Target account/client, instrument, opposite direction and full position quantity
+must match. Outstanding entry reservation also prevents a full-close claim.
+
+Active claims are unique by account and venue position, while closing client
+order IDs retain immutable target and ownership across all states. Two hedged
+positions may each close in full. A prepared claim commits before a separate
+single-use dispatch marker; that marker means Native may have been called, not
+that an order was accepted. A Native exception must retain an unknown claim and
+freeze new risk. Only a current-process prepared claim may be marked not-sent.
+Neither an acknowledgement nor an empty cache releases an active claim.
+
+Recovery retains all active claims and latches new risk. An inherited prepared
+claim cannot be dispatched or marked not-sent by the next process. The current
+verified permit may authorize a full exit after entry expiry until its separate
+exclusive exit deadline, while late actual facts remain recordable afterwards.
+This does not add a new strategy activation path for expired permits.
+
+The claimed-reduction fill API requires the closing client ID, actual position,
+instrument, side and exact full quantity. Stable venue identity is checked
+before applying its cost release. Original entry-cost release, claim settlement,
+the immutable fact, audit and any necessary latch share the same transaction.
+Repeated facts do not settle again; conflicting or unusable facts retain a
+pending venue identity and freeze risk. A synchronous fill already recorded as
+terminal cannot be overwritten by a subsequent dispatch exception.
+
+Local risk schema 2 requires the claim table and refuses historical schema 1 or
+missing state without rebuilding an empty ledger. The old cost-accounting APIs
+remain usable in unbound component tests; once Native reduction routing is
+bound they refuse claim-free reductions. They are not a local live admission
+path. Native terminal rejection/cancellation proof, direct-close, list and
+modify handling, and the shared outbound boundary integration remain necessary
+before any local live entry can be enabled.
 
 ## Readiness, restart and stop
 

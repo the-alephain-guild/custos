@@ -35,6 +35,10 @@ class RiskMutationRecord:
             "fact_conflict",
             "cross_run_fact",
             "recovery_required",
+            "close_prepare",
+            "close_dispatch",
+            "close_unknown",
+            "close_not_sent",
         }:
             raise RuntimeAuthorityError("unknown local risk operation")
         fields = {
@@ -62,6 +66,15 @@ class RiskMutationRecord:
             "error_code",
             "source_event_id",
             "input_digest",
+            "closing_client_order_id",
+            "authorization_epoch",
+            "process_generation",
+            "permit_digest",
+            "native_account_id",
+            "client_id",
+            "quantity",
+            "params_digest",
+            "claim_state",
         }
         for name in ("request", "outcome"):
             value = dict(getattr(self, name))

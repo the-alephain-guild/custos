@@ -116,10 +116,12 @@ class ExecutionEventStore:
                     PRIMARY KEY(sequence,process_generation,owner_id)
                 );
                 CREATE TABLE local_risk_meta (
-                    schema_version INTEGER NOT NULL CHECK(schema_version=1),
-                    account_scope TEXT
+                    schema_version INTEGER NOT NULL CHECK(schema_version=2),
+                    account_scope TEXT,
+                    native_account_id TEXT,
+                    client_id TEXT
                 );
-                INSERT INTO local_risk_meta VALUES (1,NULL);
+                INSERT INTO local_risk_meta VALUES (2,NULL,NULL,NULL);
                 CREATE TABLE local_account_risk (
                     account_scope TEXT PRIMARY KEY,
                     reason_code TEXT,
@@ -149,6 +151,26 @@ class ExecutionEventStore:
                     audit_sequence INTEGER NOT NULL REFERENCES execution_event(sequence),
                     PRIMARY KEY(account_scope,fill_identity)
                 );
+                CREATE TABLE local_reduction_claim (
+                    account_scope TEXT NOT NULL REFERENCES local_account_risk(account_scope),
+                    closing_client_order_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL REFERENCES execution_run(run_id),
+                    authorization_epoch INTEGER NOT NULL,
+                    process_generation INTEGER NOT NULL,
+                    permit_digest TEXT NOT NULL,
+                    native_account_id TEXT NOT NULL,
+                    client_id TEXT NOT NULL,
+                    position_id TEXT NOT NULL,
+                    instrument_id TEXT NOT NULL,
+                    side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
+                    quantity TEXT NOT NULL,
+                    params_digest TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN ('prepared','dispatching','unknown','not_sent','filled')),
+                    PRIMARY KEY(account_scope,closing_client_order_id)
+                );
+                CREATE UNIQUE INDEX local_active_position_close
+                    ON local_reduction_claim(account_scope,position_id)
+                    WHERE state IN ('prepared','dispatching','unknown');
                 """
             )
             connection.execute("INSERT INTO execution_meta VALUES (1,?)", (str(store_id),))

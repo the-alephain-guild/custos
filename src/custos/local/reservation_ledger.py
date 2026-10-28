@@ -191,15 +191,25 @@ class LocalReservationLedger:
                 lease=lease, identity=self._identity
             ) as connection:
                 metadata = connection.execute(
-                    "SELECT schema_version,account_scope FROM local_risk_meta"
+                    "SELECT schema_version,account_scope,native_account_id,client_id FROM local_risk_meta"
                 ).fetchall()
-                if len(metadata) != 1 or metadata[0][0] != 1:
+                if len(metadata) != 1 or metadata[0][0] != 2:
                     raise RuntimeStorageUnavailable("local risk schema is unavailable")
                 connection.execute("SELECT * FROM local_venue_fill LIMIT 0")
                 connection.execute("SELECT * FROM local_order_reservation LIMIT 0")
+                connection.execute("SELECT * FROM local_reduction_claim LIMIT 0")
+                if (metadata[0][2] is None) != (metadata[0][3] is None):
+                    raise RuntimeStorageUnavailable(
+                        "local reduction routing metadata is incomplete"
+                    )
+                if (
+                    metadata[0][2] is None
+                    and connection.execute("SELECT 1 FROM local_reduction_claim LIMIT 1").fetchone()
+                ):
+                    raise RuntimeStorageUnavailable("local reduction routing history is unbound")
                 if metadata[0][1] is None:
                     history = connection.execute(
-                        "SELECT 1 FROM local_account_risk UNION ALL SELECT 1 FROM local_order_reservation UNION ALL SELECT 1 FROM local_venue_fill UNION ALL SELECT 1 FROM execution_event WHERE kind='risk_mutation' LIMIT 1"
+                        "SELECT 1 FROM local_account_risk UNION ALL SELECT 1 FROM local_order_reservation UNION ALL SELECT 1 FROM local_venue_fill UNION ALL SELECT 1 FROM local_reduction_claim UNION ALL SELECT 1 FROM execution_event WHERE kind='risk_mutation' LIMIT 1"
                     ).fetchone()
                     identities = connection.execute("SELECT identity FROM execution_run").fetchall()
                     if history is not None or any(
@@ -235,6 +245,18 @@ class LocalReservationLedger:
                         "recovery_required",
                         {},
                         "inherited_risk_requires_reconciliation",
+                    )
+                pending = connection.execute(
+                    "SELECT 1 FROM local_reduction_claim WHERE account_scope=? AND state IN ('prepared','dispatching','unknown') AND (run_id<>? OR process_generation<>?) LIMIT 1",
+                    (self._account, str(self._run), lease.fence.process_generation),
+                ).fetchone()
+                if pending:
+                    self._fault(
+                        connection,
+                        "inherited-close",
+                        "recovery_required",
+                        {},
+                        "inherited_close_requires_reconciliation",
                     )
         except Exception:
             self._blocker.freeze()
@@ -391,7 +413,7 @@ class LocalReservationLedger:
             "client_order_id": _audit_identifier(context) if not reducing else None,
         }
         try:
-            identity = self.fill_identity(event_id, reducing=reducing, context=context)
+            identity = self.fill_identity(event_id, reducing=reducing, context=None)
         except RuntimeAuthorityError:
             identity = None
         if identity:
@@ -578,7 +600,7 @@ class LocalReservationLedger:
             raise RuntimeStorageUnavailable("risk operation completed without an outcome")
         return decision.snapshot
 
-    def fill_identity(self, event_id: str, *, reducing: bool, context: str) -> str:
+    def fill_identity(self, event_id: str, *, reducing: bool, context: str | None) -> str:
         _token(event_id, "event_id")
         action = "fill_reduce" if reducing else "fill"
         prefix = f"runner-order-reservation:{self._run}:{action}:fill-source-v1:venue:"
@@ -586,7 +608,7 @@ class LocalReservationLedger:
             self._blocker.freeze()
             raise RuntimeAuthorityError("local fills require stable venue identity")
         match = re.fullmatch(r"([0-9a-f]{64}):(.+)", event_id[len(prefix) :])
-        if match is None or match[2] != context:
+        if match is None or (context is not None and match[2] != context):
             self._blocker.freeze()
             raise RuntimeAuthorityError("venue fill identity has invalid context")
         return match[1]

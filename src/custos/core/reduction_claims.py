@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
+from uuid import UUID
 
 from custos.core.execution_risk_events import _token
 from custos.core.runtime_authority import RuntimeAuthorityError
@@ -33,3 +34,37 @@ class ReductionTarget:
             char not in "0123456789abcdef" for char in self.params_digest
         ):
             raise RuntimeAuthorityError("reduction parameters require a SHA-256 digest")
+
+
+ReductionClaimState = Literal["prepared", "dispatching", "unknown", "not_sent", "filled"]
+
+
+@dataclass(frozen=True)
+class ReductionClaimSnapshot:
+    runtime_id: UUID
+    authorization_epoch: int
+    process_generation: int
+    permit_digest: str
+    closing_client_order_id: str
+    target: ReductionTarget
+    state: ReductionClaimState
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.runtime_id, UUID) or self.runtime_id.int == 0:
+            raise RuntimeAuthorityError("reduction claim requires a runtime identity")
+        for value in (self.authorization_epoch, self.process_generation):
+            if type(value) is not int or not 1 <= value <= 2**63 - 1:
+                raise RuntimeAuthorityError("reduction claim revisions must be positive integers")
+        _token(self.closing_client_order_id, "closing_client_order_id")
+        if len(self.permit_digest) != 64 or any(
+            char not in "0123456789abcdef" for char in self.permit_digest
+        ):
+            raise RuntimeAuthorityError("reduction claim requires its actual permit digest")
+        if not isinstance(self.target, ReductionTarget) or self.state not in {
+            "prepared",
+            "dispatching",
+            "unknown",
+            "not_sent",
+            "filled",
+        }:
+            raise RuntimeAuthorityError("reduction claim target or state is invalid")

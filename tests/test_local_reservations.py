@@ -565,7 +565,8 @@ def test_registry_probe_never_runs_while_risk_sqlite_transaction_is_held(local_r
 
 
 @pytest.mark.parametrize(
-    "table", ["local_risk_meta", "local_order_reservation", "local_venue_fill"]
+    "table",
+    ["local_risk_meta", "local_order_reservation", "local_venue_fill", "local_reduction_claim"],
 )
 def test_missing_risk_schema_is_refused_without_recreation(local_risk, table):
     from custos.core.execution_events import LocalExecutionRecorder

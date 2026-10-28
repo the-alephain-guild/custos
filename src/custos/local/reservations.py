@@ -29,6 +29,7 @@ from custos.core.reservation_math import (
 )
 from custos.core.runtime_authority import RuntimeAuthorityError
 from custos.local.authorization import VerifiedLocalRunAuthorization
+from custos.local.reduction_claims import LocalReductionClaims
 from custos.local.reservation_ledger import (
     _MATH,
     LocalReservationLedger,
@@ -64,6 +65,23 @@ class LocalReservationStore:
         self._account = authorization.permit.account_scope
         self._policy = authorization.permit.permit_id
         self._limits = authorization.manifest.limits
+        self._reductions: LocalReductionClaims | None = None
+
+    def bind_reductions(self, *, account_id: str, client_id: str) -> None:
+        if self._reductions is not None:
+            raise RuntimeAuthorityError("local reduction routing is already bound")
+        self._reductions = LocalReductionClaims(
+            ledger=self._ledger, account_id=account_id, client_id=client_id
+        )
+
+    @property
+    def reductions(self) -> LocalReductionClaims:
+        if self._reductions is None:
+            self._blocker.freeze()
+            raise RuntimeAuthorityError(
+                "local reductions require the actual Native routing binding"
+            )
+        return self._reductions
 
     def reserve_order_notional_sync(
         self,
@@ -340,12 +358,22 @@ class LocalReservationStore:
         position_id: str | None,
         notional: Decimal,
         quantity: Decimal,
+        closing_client_order_id: str | None = None,
+        instrument_id: str | None = None,
+        side: str | None = None,
     ) -> ExecutionReservationSnapshot:
         self._ledger.check_runtime(runtime_id)
         try:
             identity = self._ledger.fill_identity(event_id, reducing=True, context=context)
             amount = _number(notional, positive=True)
             closing = _number(quantity, positive=True)
+            for name, value in (
+                ("closing_client_order_id", closing_client_order_id),
+                ("instrument_id", instrument_id),
+                ("side", side),
+            ):
+                if value is not None:
+                    _token(value, name)
         except RuntimeAuthorityError:
             self._ledger.retain_unapplied(
                 event_id=event_id,
@@ -356,6 +384,7 @@ class LocalReservationStore:
                     "reduction_notional": notional,
                     "reduction_quantity": quantity,
                     "position_id": position_id,
+                    "closing_client_order_id": closing_client_order_id,
                 },
             )
             raise RuntimeAuthorityError("local_venue_fact_unusable") from None
@@ -366,8 +395,30 @@ class LocalReservationStore:
             "reduction_notional": _text(amount),
             "reduction_quantity": _text(closing),
         }
+        if closing_client_order_id is not None:
+            request.update(
+                closing_client_order_id=closing_client_order_id,
+                instrument_id=instrument_id,
+                side=side,
+            )
 
         def change(connection: sqlite3.Connection) -> _Decision:
+            bound_route = connection.execute(
+                "SELECT native_account_id FROM local_risk_meta"
+            ).fetchone()[0]
+            if bound_route is not None and closing_client_order_id is None:
+                raise _Refused("local_close_requires_persistent_claim")
+            if closing_client_order_id is not None:
+                if position_id is None or instrument_id is None or side is None:
+                    raise _Refused("local_close_fill_identity_incomplete")
+                self.reductions.validate_fill(
+                    connection,
+                    closing_client_order_id=closing_client_order_id,
+                    position_id=position_id,
+                    quantity=closing,
+                    instrument_id=instrument_id,
+                    side=side,
+                )
             rows = (
                 connection.execute(
                     "SELECT * FROM local_order_reservation WHERE account_scope=? AND run_id=? AND position_id=? ORDER BY client_order_id",
@@ -414,11 +465,37 @@ class LocalReservationStore:
                         row["client_order_id"],
                     ),
                 )
+            if closing_client_order_id is not None:
+                self.reductions.settle_fill(connection, closing_client_order_id)
             return _Decision(
                 self._ledger.snapshot(self._ledger.row(connection, rows[-1]["client_order_id"]))
             )
 
         return self._ledger.apply("reduce", event_id, request, change, fill_identity=identity)
+
+    def record_claimed_reduction_sync(
+        self,
+        *,
+        event_id: str,
+        runtime_id: UUID,
+        closing_client_order_id: str,
+        position_id: str,
+        instrument_id: str,
+        side: str,
+        reduction_notional: Decimal,
+        reduction_quantity: Decimal,
+    ) -> ExecutionReservationSnapshot:
+        return self._reduce(
+            event_id=event_id,
+            runtime_id=runtime_id,
+            context=closing_client_order_id,
+            position_id=position_id,
+            notional=reduction_notional,
+            quantity=reduction_quantity,
+            closing_client_order_id=closing_client_order_id,
+            instrument_id=instrument_id,
+            side=side,
+        )
 
     async def load_runner_exposure(self, policy_id: UUID) -> ExecutionExposureSnapshot:
         if policy_id != self._policy:
