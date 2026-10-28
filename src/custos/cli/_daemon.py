@@ -376,6 +376,11 @@ def _build_host(
             capability_receipt=capability_receipt,
             runner_safety_boundary_factory=runner_safety_boundary_factory,
             venue_proxy=venue_proxy,
+            source_inbox_path=(
+                args.source_runner_options.inbox_path
+                if getattr(args, "source_runner_options", None) is not None
+                else None
+            ),
         )
     if engine == "sandbox-sim":
         from custos.engines.nautilus.sandbox_runner_fact_host import (

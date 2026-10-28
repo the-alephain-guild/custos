@@ -192,4 +192,18 @@ positions, orders and reservation exposure. That is simulation state, not an
 independent venue receipt. Unit tests use injected
 responses and a fake host; no real testnet account has yet supplied a flat
 receipt. A venue API snapshot is also not an atomic order/fill history, so
-order lineage and a two-account venue acceptance run remain outstanding.
+full order lineage and a two-account venue acceptance run remain outstanding.
+
+For entry targets, the strategy adds the canonical target delivery digest to
+the entry order's local Nautilus tags without changing the signal-generated
+order size. The optional source inbox path is passed to the host before node
+startup, so its order-event sink can persist a tagged `OrderInitialized` and
+subsequent `OrderFilled` events even before the source subscriber reconnects.
+The private inbox binds each client order ID and fill event ID to the exact
+deployment generation and target delivery, and refuses conflicting replays or
+a different instrument. Unrelated, untagged orders remain unattributed. A
+source lineage storage failure suspends new source intake and reports a source
+fault; it does not stop the signed host or remove local protection. The
+current mapping covers tagged entry orders and their fills. Flat-containment
+orders, protective orders, fees and final target outcome are not yet linked
+to the source delivery, and no real venue execution receipt has been captured.

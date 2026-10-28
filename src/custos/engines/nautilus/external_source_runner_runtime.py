@@ -18,6 +18,7 @@ from custos.engines.nautilus.external_source_nats import ExternalSourceNatsProfi
 from custos.engines.nautilus.external_source_runner_session import ExternalSourceRunnerSession
 from custos.engines.nautilus.external_target_dispatcher import ExternalTargetHost
 from custos.engines.nautilus.external_target_inbox import ExternalTargetInbox
+from custos.engines.nautilus.host import ExternalSourceLineageUnavailable
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +73,10 @@ class ExternalSourceRunnerRuntime:
         while not stop.is_set():
             try:
                 scope = self.host.external_source_runtime_scope(str(self.options.instance_id))
+            except ExternalSourceLineageUnavailable:
+                self._status("fault", "source_lineage_unavailable")
+                await self._retry_or_stop(stop)
+                continue
             except RuntimeError:
                 self._status("waiting", "deployment_inactive")
                 await self._retry_or_stop(stop)
@@ -127,6 +132,8 @@ class ExternalSourceRunnerRuntime:
                 self._status("fault", "authorization_invalid")
             except ExternalSourceTransportError:
                 self._status("fault", "broker_binding_invalid")
+            except ExternalSourceLineageUnavailable:
+                self._status("fault", "source_lineage_unavailable")
             except Exception:  # noqa: BLE001 — report without leaking credential or payload text
                 self._status("fault", "source_unavailable")
             finally:

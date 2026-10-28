@@ -11,7 +11,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import UUID
 
@@ -40,6 +40,16 @@ class PendingFlatRequest:
     connector: str
     pair: str
     handoff_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class TargetOrderExecution:
+    delivery_id: str
+    source_event_id: str
+    client_order_id: str
+    instrument: str
+    filled_quantity: str
+    fill_event_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +161,29 @@ class ExternalTargetInbox:
                     confirmed_at_ns INTEGER,
                     PRIMARY KEY (tenant_id, source_id, deployment_instance_id, pair)
                 );
+                CREATE TABLE IF NOT EXISTS external_target_order_link (
+                    deployment_instance_id TEXT NOT NULL,
+                    client_order_id TEXT NOT NULL,
+                    delivery_id TEXT NOT NULL,
+                    instrument TEXT NOT NULL,
+                    init_event_id TEXT NOT NULL,
+                    initialized_at_ns INTEGER NOT NULL,
+                    PRIMARY KEY (deployment_instance_id, client_order_id)
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS external_target_order_init_event
+                    ON external_target_order_link(deployment_instance_id, init_event_id);
+                CREATE TABLE IF NOT EXISTS external_target_fill_link (
+                    deployment_instance_id TEXT NOT NULL,
+                    fill_event_id TEXT NOT NULL,
+                    client_order_id TEXT NOT NULL,
+                    delivery_id TEXT NOT NULL,
+                    venue_trade_id TEXT NOT NULL,
+                    quantity TEXT NOT NULL,
+                    filled_at_ns INTEGER NOT NULL,
+                    PRIMARY KEY (deployment_instance_id, fill_event_id)
+                );
+                CREATE INDEX IF NOT EXISTS external_target_fill_order
+                    ON external_target_fill_link(deployment_instance_id, client_order_id);
                 """
             )
 
@@ -586,6 +619,198 @@ class ExternalTargetInbox:
             )
             for row in rows
         ]
+
+    def record_order_initialized(
+        self,
+        authority: EngineLifecycleAuthority,
+        delivery_id: str,
+        *,
+        client_order_id: str,
+        instrument: str,
+        event_id: str,
+        at: datetime,
+    ) -> bool:
+        """Persist an entry order's exact target before any fill is attributed."""
+        _require_non_live(authority)
+        if not client_order_id or not event_id or len(client_order_id) > 128 or len(event_id) > 128:
+            raise ExternalTargetInboxError("order identity is invalid")
+        at_ns = _epoch_ns(at)
+        instance_id = str(authority.deployment_instance_id)
+        with self._transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            target = connection.execute(
+                """SELECT connector, pair, target, status, handoff_at_ns
+                   FROM external_target_delivery
+                   WHERE delivery_id = ? AND deployment_instance_id = ?
+                     AND deployment_spec_id = ? AND deployment_spec_digest = ?
+                     AND generation = ?""",
+                (
+                    delivery_id,
+                    instance_id,
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                ),
+            ).fetchone()
+            if target is None:
+                raise ExternalTargetInboxError("order target differs from active deployment scope")
+            if target["target"] not in {"LONG", "SHORT"}:
+                raise ExternalTargetInboxError("flat target is not an entry order")
+            if target["status"] not in {"queued", "uncertain"} or target["handoff_at_ns"] is None:
+                raise ExternalTargetInboxError("entry order has no persisted strategy handoff")
+            if at_ns < target["handoff_at_ns"]:
+                raise ExternalTargetInboxError("order predates its target handoff")
+            expected = (
+                f"{target['pair']}-SWAP.OKX"
+                if target["connector"] == "okx_perpetual"
+                else f"{target['pair'].replace('-', '')}-PERP.BINANCE"
+                if target["connector"] == "binance_perpetual"
+                else None
+            )
+            if instrument != expected:
+                raise ExternalTargetInboxError("entry order instrument differs from target")
+            existing = connection.execute(
+                """SELECT delivery_id, instrument, init_event_id, initialized_at_ns
+                   FROM external_target_order_link
+                   WHERE deployment_instance_id = ? AND client_order_id = ?""",
+                (instance_id, client_order_id),
+            ).fetchone()
+            if existing is not None:
+                if tuple(existing) == (delivery_id, instrument, event_id, at_ns):
+                    return False
+                raise ExternalTargetInboxError("order replay conflicts with recorded target")
+            try:
+                connection.execute(
+                    """INSERT INTO external_target_order_link
+                       (deployment_instance_id, client_order_id, delivery_id, instrument,
+                        init_event_id, initialized_at_ns)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (instance_id, client_order_id, delivery_id, instrument, event_id, at_ns),
+                )
+            except sqlite3.IntegrityError as error:
+                raise ExternalTargetInboxError(
+                    "order event conflicts with recorded target"
+                ) from error
+        return True
+
+    def record_order_fill(
+        self,
+        authority: EngineLifecycleAuthority,
+        *,
+        client_order_id: str,
+        event_id: str,
+        venue_trade_id: str,
+        quantity: str,
+        at: datetime,
+    ) -> bool:
+        """Record one attributed fill; unknown orders remain unattributed."""
+        _require_non_live(authority)
+        if not client_order_id or not event_id or not venue_trade_id:
+            raise ExternalTargetInboxError("fill identity is invalid")
+        if len(client_order_id) > 128 or len(event_id) > 128 or len(venue_trade_id) > 128:
+            raise ExternalTargetInboxError("fill identity is too long")
+        if not isinstance(quantity, str):
+            raise ExternalTargetInboxError("fill quantity must be exact text")
+        try:
+            amount = Decimal(quantity)
+        except InvalidOperation as error:
+            raise ExternalTargetInboxError("fill quantity is invalid") from error
+        if not amount.is_finite() or amount <= 0:
+            raise ExternalTargetInboxError("fill quantity must be positive")
+        at_ns = _epoch_ns(at)
+        instance_id = str(authority.deployment_instance_id)
+        with self._transaction() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            link = connection.execute(
+                """SELECT link.delivery_id, link.initialized_at_ns
+                   FROM external_target_order_link AS link
+                   JOIN external_target_delivery AS target ON target.delivery_id = link.delivery_id
+                   WHERE link.deployment_instance_id = ? AND link.client_order_id = ?
+                     AND target.deployment_spec_id = ? AND target.deployment_spec_digest = ?
+                     AND target.generation = ?""",
+                (
+                    instance_id,
+                    client_order_id,
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                ),
+            ).fetchone()
+            if link is None:
+                return False
+            if at_ns < link["initialized_at_ns"]:
+                raise ExternalTargetInboxError("fill predates linked order")
+            existing = connection.execute(
+                """SELECT client_order_id, delivery_id, venue_trade_id, quantity, filled_at_ns
+                   FROM external_target_fill_link
+                   WHERE deployment_instance_id = ? AND fill_event_id = ?""",
+                (instance_id, event_id),
+            ).fetchone()
+            if existing is not None:
+                if (
+                    existing["client_order_id"] == client_order_id
+                    and existing["delivery_id"] == link["delivery_id"]
+                    and existing["venue_trade_id"] == venue_trade_id
+                    and Decimal(existing["quantity"]) == amount
+                    and existing["filled_at_ns"] == at_ns
+                ):
+                    return False
+                raise ExternalTargetInboxError("fill replay conflicts with recorded target")
+            connection.execute(
+                """INSERT INTO external_target_fill_link
+                   (deployment_instance_id, fill_event_id, client_order_id, delivery_id,
+                    venue_trade_id, quantity, filled_at_ns)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    instance_id,
+                    event_id,
+                    client_order_id,
+                    link["delivery_id"],
+                    venue_trade_id,
+                    str(amount),
+                    at_ns,
+                ),
+            )
+        return True
+
+    def order_execution(
+        self, authority: EngineLifecycleAuthority, client_order_id: str
+    ) -> TargetOrderExecution | None:
+        """Read one deployment's durable order and fill lineage."""
+        _require_non_live(authority)
+        instance_id = str(authority.deployment_instance_id)
+        with self._transaction() as connection:
+            row = connection.execute(
+                """SELECT link.delivery_id, target.source_event_id, link.instrument
+                   FROM external_target_order_link AS link
+                   JOIN external_target_delivery AS target ON target.delivery_id = link.delivery_id
+                   WHERE link.deployment_instance_id = ? AND link.client_order_id = ?
+                     AND target.deployment_spec_id = ? AND target.deployment_spec_digest = ?
+                     AND target.generation = ?""",
+                (
+                    instance_id,
+                    client_order_id,
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                ),
+            ).fetchone()
+            if row is None:
+                return None
+            fills = connection.execute(
+                """SELECT fill_event_id, quantity FROM external_target_fill_link
+                   WHERE deployment_instance_id = ? AND client_order_id = ?
+                   ORDER BY filled_at_ns, fill_event_id""",
+                (instance_id, client_order_id),
+            ).fetchall()
+        return TargetOrderExecution(
+            delivery_id=row["delivery_id"],
+            source_event_id=row["source_event_id"],
+            client_order_id=client_order_id,
+            instrument=row["instrument"],
+            filled_quantity=str(sum((Decimal(fill["quantity"]) for fill in fills), Decimal(0))),
+            fill_event_ids=tuple(fill["fill_event_id"] for fill in fills),
+        )
 
     def confirm_flat(
         self, delivery_id: str, *, authority: EngineLifecycleAuthority, at: datetime

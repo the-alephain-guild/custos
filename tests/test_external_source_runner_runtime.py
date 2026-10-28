@@ -13,6 +13,7 @@ from custos.engines.nautilus.external_source_runner_runtime import (
     ExternalSourceRunnerRuntime,
     SourceRunnerOptions,
 )
+from custos.engines.nautilus.host import ExternalSourceLineageUnavailable
 from tests.test_external_source_authorization import RUNNER, local_files, rewrite, scope
 from tests.test_external_source_runner_session import Broker, Host
 
@@ -72,6 +73,27 @@ async def test_invalid_local_grant_reports_fault_without_host_flatten(
     assert states == [("fault", "authorization_invalid")]
     assert host.queued == []
     assert broker.bound is False
+
+
+@pytest.mark.asyncio
+async def test_source_lineage_fault_suspends_intake_without_stopping_host(tmp_path: Path) -> None:
+    config, _ = options(tmp_path)
+    stop = asyncio.Event()
+    states = []
+
+    class FaultHost(Host):
+        def external_source_runtime_scope(self, instance_id):
+            raise ExternalSourceLineageUnavailable("source order lineage unavailable")
+
+    runtime = ExternalSourceRunnerRuntime(
+        options=config,
+        tenant_id="tenant-a",
+        runner_id=RUNNER,
+        host=FaultHost(),
+        report=lambda state, reason: (states.append((state, reason)), stop.set()),
+    )
+    await asyncio.wait_for(runtime.run(stop), timeout=2)
+    assert states == [("fault", "source_lineage_unavailable")]
 
 
 @pytest.mark.asyncio

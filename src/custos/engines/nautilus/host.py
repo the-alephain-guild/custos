@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from inspect import isawaitable
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -72,6 +73,11 @@ from custos.engines.nautilus.venues import (
     venue_module_name_for,
     venue_module_name_for_venue,
 )
+
+
+class ExternalSourceLineageUnavailable(RuntimeError):
+    """A source order event could not be durably attributed on this host."""
+
 
 try:
     from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory
@@ -619,6 +625,7 @@ class NtTradingNodeHost:
         portfolio_snapshot_provider: NautilusPortfolioSnapshotProvider | None = None,
         runner_safety_boundary_factory: Callable[[dict], object] | None = None,
         venue_proxy: VenueProxy | None = None,
+        source_inbox_path: Path | None = None,
     ) -> None:
         # deployment_instance_id -> its running node and the state captured with it.
         # Never holds credentials.
@@ -690,6 +697,9 @@ class NtTradingNodeHost:
         self._capability_receipt = capability_receipt
         self._runner_safety_boundary_factory = runner_safety_boundary_factory
         self._venue_proxy = venue_proxy
+        self._source_inbox_path = Path(source_inbox_path) if source_inbox_path is not None else None
+        self._source_order_inbox: object | None = None
+        self._source_lineage_faults: set[str] = set()
         # Receivers of every order and position event, given the instance they
         # belong to. Installed after the safety and fact sinks, and never a source
         # of anything this host decides.
@@ -911,6 +921,8 @@ class NtTradingNodeHost:
             raise RuntimeError("external source scope requires a running deployment")
         if str(authority.deployment_instance_id) != deployment_instance_id:
             raise RuntimeError("external source scope differs from deployment identity")
+        if deployment_instance_id in self._source_lineage_faults:
+            raise ExternalSourceLineageUnavailable("external source order lineage unavailable")
         if authority.trading_mode not in {"sandbox", "testnet"}:
             raise RuntimeError("external source scope refuses live deployment")
         if len(runtime.strategies) != 1:
@@ -1156,6 +1168,7 @@ class NtTradingNodeHost:
                 client_order_id_len_limit=venue.client_order_id_len_limit(),
                 client_order_id_validator=venue.client_order_id_is_valid,
                 cancel_discipline=discipline,
+                source_authority=lifecycle_authority,
             )
         except Exception:
             self._release_execution_account_partition(deployment_instance_id)
@@ -1295,6 +1308,7 @@ class NtTradingNodeHost:
         client_order_id_len_limit: int | None = None,
         client_order_id_validator=None,
         cancel_discipline: CancelDiscipline | None = None,
+        source_authority: EngineLifecycleAuthority | None = None,
     ) -> None:
         """Wire the runner onto the strategy, or refuse the deploy.
 
@@ -1344,6 +1358,15 @@ class NtTradingNodeHost:
             # Never raises: the discipline reports its own failures, so a broken
             # classifier does not mark the deployment's observations unreliable.
             forwarder.add_order_sink("cancel_discipline", cancel_discipline.on_order_event)
+        if self._source_inbox_path is not None and source_authority is not None:
+            forwarder.add_order_sink(
+                "external_source_lineage",
+                functools.partial(
+                    self._record_external_source_order_event,
+                    deployment_instance_id,
+                    source_authority,
+                ),
+            )
         if self._observation_sinks is not None:
             order_sink, position_sink = self._observation_sinks
             forwarder.add_order_sink(
@@ -1362,6 +1385,36 @@ class NtTradingNodeHost:
                 client_order_id_len_limit,
                 client_order_id_validator,
                 deployment_instance_id=deployment_instance_id,
+            )
+
+    def _record_external_source_order_event(
+        self, deployment_instance_id: str, authority: EngineLifecycleAuthority, event: Any
+    ) -> None:
+        """A source mapping failure suspends source intake, not signed host protection."""
+        kind = type(event).__name__
+        if kind == "OrderInitialized":
+            tags = getattr(event, "tags", None)
+            if not tags or not any(str(tag).startswith("target_delivery_id:") for tag in tags):
+                return
+        elif kind != "OrderFilled":
+            return
+        if deployment_instance_id in self._source_lineage_faults:
+            return
+        try:
+            from custos.engines.nautilus.external_target_inbox import ExternalTargetInbox
+            from custos.engines.nautilus.external_target_order_recorder import (
+                ExternalTargetOrderRecorder,
+            )
+
+            if self._source_order_inbox is None:
+                self._source_order_inbox = ExternalTargetInbox(self._source_inbox_path)
+            ExternalTargetOrderRecorder(self._source_order_inbox, authority).on_order_event(event)
+        except Exception as exc:  # noqa: BLE001 — source fault cannot stop signed host
+            self._source_lineage_faults.add(deployment_instance_id)
+            _log.error(
+                "external_source_order_lineage_fault",
+                deployment_instance_id=deployment_instance_id,
+                error_type=type(exc).__name__,
             )
 
     def _install_order_gate(

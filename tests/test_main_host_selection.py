@@ -12,6 +12,7 @@ directly rather than routing through a legacy parser.
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -30,6 +31,13 @@ def _host_args(*, engine: str = "nautilus") -> argparse.Namespace:
 
 def test_build_host_defaults_to_nautilus() -> None:
     assert type(_build_host(_host_args())).__name__ == "NtTradingNodeHost"
+
+
+def test_source_opt_in_gives_host_the_same_durable_inbox_path(tmp_path: Path) -> None:
+    args = _host_args()
+    args.source_runner_options = SimpleNamespace(inbox_path=tmp_path / "target.sqlite")
+    host = _build_host(args)
+    assert host._source_inbox_path == args.source_runner_options.inbox_path
 
 
 def test_build_host_uses_runner_fact_sandbox_when_explicit() -> None:

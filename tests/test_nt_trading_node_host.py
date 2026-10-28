@@ -474,6 +474,84 @@ async def test_external_source_flat_reader_and_local_clear_require_guarded_activ
 
 
 @pytest.mark.asyncio
+async def test_source_order_callbacks_persist_target_lineage_before_fill(monkeypatch, tmp_path):
+    from custos.engines.nautilus.external_target_inbox import ExternalTargetInbox
+    from tests.test_external_target_inbox import NOW, directive
+    from tests.test_external_target_order_recorder import OrderFilled, OrderInitialized
+
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    spec = _spec("source-order-lineage", connector="binance_perpetual", pairs=["ETH-USDT"])
+    path = tmp_path / "source-target.sqlite"
+    host = NtTradingNodeHost(source_inbox_path=path)
+    strategy = _SignalStrategyDouble(spec)
+    await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
+    try:
+        await asyncio.sleep(0)
+        authority = host.external_source_runtime_scope(spec["deployment_instance_id"]).authority
+        inbox = ExternalTargetInbox(path)
+        delivery = directive(authority)
+        inbox.accept(delivery, received_at=NOW)
+        assert inbox.begin_delivery(delivery.delivery_id, authority=authority, at=NOW)
+        assert inbox.mark_handoff(delivery.delivery_id, authority=authority, at=NOW)
+        strategy.on_order_event(
+            OrderInitialized(
+                client_order_id="O-1",
+                instrument_id="ETHUSDT-PERP.BINANCE",
+                event_id="init-1",
+                ts_event=int(NOW.timestamp() * 1_000_000_000),
+                tags=[f"target_delivery_id:{delivery.delivery_id}"],
+            )
+        )
+        strategy.on_order_event(
+            OrderFilled(
+                client_order_id="O-1",
+                event_id="fill-1",
+                trade_id="trade-1",
+                last_qty="0.4",
+                ts_event=int(NOW.timestamp() * 1_000_000_000) + 1_000_000_000,
+            )
+        )
+        linked = ExternalTargetInbox(path).order_execution(authority, "O-1")
+        assert linked is not None
+        assert linked.delivery_id == delivery.delivery_id
+        assert linked.filled_quantity == "0.4"
+    finally:
+        await host.stop(spec["deployment_instance_id"])
+
+
+@pytest.mark.asyncio
+async def test_source_lineage_storage_fault_only_suspends_source_scope(monkeypatch, tmp_path):
+    from custos.engines.nautilus.host import ExternalSourceLineageUnavailable
+    from tests.test_external_target_order_recorder import OrderInitialized
+
+    monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
+    spec = _spec("source-lineage-fault", connector="binance_perpetual", pairs=["ETH-USDT"])
+    target = tmp_path / "other.sqlite"
+    target.write_bytes(b"")
+    unsafe = tmp_path / "source-target.sqlite"
+    unsafe.symlink_to(target)
+    host = NtTradingNodeHost(source_inbox_path=unsafe)
+    strategy = _SignalStrategyDouble(spec)
+    await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
+    try:
+        await asyncio.sleep(0)
+        strategy.on_order_event(
+            OrderInitialized(
+                client_order_id="O-1",
+                instrument_id="ETHUSDT-PERP.BINANCE",
+                event_id="init-1",
+                ts_event=1_760_000_000_000_000_000,
+                tags=["target_delivery_id:" + "a" * 64],
+            )
+        )
+        assert host._active_nodes[spec["deployment_instance_id"]].is_running
+        with pytest.raises(ExternalSourceLineageUnavailable):
+            host.external_source_runtime_scope(spec["deployment_instance_id"])
+    finally:
+        await host.stop(spec["deployment_instance_id"])
+
+
+@pytest.mark.asyncio
 async def test_a_strategy_without_the_event_callbacks_is_refused(monkeypatch) -> None:
     """Red lines 0.2 and 0.3, and 'the reconciliation is never silent'.
 
