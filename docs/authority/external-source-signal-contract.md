@@ -119,8 +119,13 @@ and again before handoff. A changed generation, source mapping or credential
 digest leaves the broker message unacknowledged and prevents host handoff. It
 binds only an existing consumer whose delivery, filter, ack and replay policy
 match the computed subscription. This one-shot session is tested with an
-injected broker and host; independent JWT connection, daemon lifecycle
-composition and venue execution remain open.
+injected broker and host. `ExternalSourceNatsProfile` separately reads the
+exact owner-only credential bytes, rechecks their digest, and connects with
+TLS certificate validation and a dedicated NATS user credential; it never
+reuses the runner-control transport. A mocked connection test proves its
+arguments and changed-file refusal, not issuance or broker acceptance of a real
+JWT. Daemon lifecycle composition, exact broker ACL and venue execution remain
+open.
 
 A normal entry must be durably claimed
 before the host queue is touched; a persisted handoff means only that the

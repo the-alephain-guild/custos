@@ -53,6 +53,14 @@ class AuthorizedSourceSubscription:
     credentials_sha256: str
 
 
+def read_bound_nats_credentials(grant: AuthorizedSourceSubscription) -> bytes:
+    """Read the exact owner-only credential bytes accepted by this grant."""
+    credentials = _private_file(grant.credentials_path, max_bytes=65536)
+    if not hmac.compare_digest(hashlib.sha256(credentials).hexdigest(), grant.credentials_sha256):
+        raise ExternalSourceAuthorizationError("source credential differs from authorization")
+    return credentials
+
+
 def _private_file(path: Path, *, max_bytes: int) -> bytes:
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
