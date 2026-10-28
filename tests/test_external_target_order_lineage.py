@@ -57,7 +57,18 @@ def test_two_deployments_keep_same_client_order_id_separate(tmp_path: Path) -> N
     assert second_link.delivery_id == second.delivery_id
     assert first_link.source_event_id == second_link.source_event_id
     assert first_link.filled_quantity == "0.4"
+    assert first_link.venue_trade_ids == ("T-1",)
     assert second_link.filled_quantity == "0"
+
+    first_report = restarted.target_execution(FIRST, first.delivery_id)
+    second_report = restarted.target_execution(SECOND, second.delivery_id)
+    assert first_report is not None and second_report is not None
+    assert first_report.status == second_report.status == "queued"
+    assert first_report.local_fill_count == 1
+    assert second_report.local_fill_count == 0
+    assert first_report.orders == (first_link,)
+    assert second_report.orders == (second_link,)
+    assert restarted.target_execution(SECOND, first.delivery_id) is None
 
 
 def test_replay_is_idempotent_but_conflicting_order_or_fill_is_refused(tmp_path: Path) -> None:

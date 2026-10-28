@@ -50,6 +50,22 @@ class TargetOrderExecution:
     instrument: str
     filled_quantity: str
     fill_event_ids: tuple[str, ...]
+    venue_trade_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TargetDeliveryExecution:
+    """Local callbacks only; status and fills are not independent venue facts."""
+
+    delivery_id: str
+    source_event_id: str
+    target: str
+    status: str
+    orders: tuple[TargetOrderExecution, ...]
+
+    @property
+    def local_fill_count(self) -> int:
+        return sum(len(order.fill_event_ids) for order in self.orders)
 
 
 @dataclass(frozen=True, slots=True)
@@ -778,31 +794,40 @@ class ExternalTargetInbox:
     ) -> TargetOrderExecution | None:
         """Read one deployment's durable order and fill lineage."""
         _require_non_live(authority)
-        instance_id = str(authority.deployment_instance_id)
         with self._transaction() as connection:
-            row = connection.execute(
-                """SELECT link.delivery_id, target.source_event_id, link.instrument
+            connection.execute("BEGIN")
+            return self._order_execution_from_connection(connection, authority, client_order_id)
+
+    @staticmethod
+    def _order_execution_from_connection(
+        connection: sqlite3.Connection,
+        authority: EngineLifecycleAuthority,
+        client_order_id: str,
+    ) -> TargetOrderExecution | None:
+        instance_id = str(authority.deployment_instance_id)
+        row = connection.execute(
+            """SELECT link.delivery_id, target.source_event_id, link.instrument
                    FROM external_target_order_link AS link
                    JOIN external_target_delivery AS target ON target.delivery_id = link.delivery_id
                    WHERE link.deployment_instance_id = ? AND link.client_order_id = ?
                      AND target.deployment_spec_id = ? AND target.deployment_spec_digest = ?
                      AND target.generation = ?""",
-                (
-                    instance_id,
-                    client_order_id,
-                    str(authority.deployment_spec_id),
-                    authority.deployment_spec_digest,
-                    authority.generation,
-                ),
-            ).fetchone()
-            if row is None:
-                return None
-            fills = connection.execute(
-                """SELECT fill_event_id, quantity FROM external_target_fill_link
+            (
+                instance_id,
+                client_order_id,
+                str(authority.deployment_spec_id),
+                authority.deployment_spec_digest,
+                authority.generation,
+            ),
+        ).fetchone()
+        if row is None:
+            return None
+        fills = connection.execute(
+            """SELECT fill_event_id, venue_trade_id, quantity FROM external_target_fill_link
                    WHERE deployment_instance_id = ? AND client_order_id = ?
                    ORDER BY filled_at_ns, fill_event_id""",
-                (instance_id, client_order_id),
-            ).fetchall()
+            (instance_id, client_order_id),
+        ).fetchall()
         return TargetOrderExecution(
             delivery_id=row["delivery_id"],
             source_event_id=row["source_event_id"],
@@ -810,6 +835,50 @@ class ExternalTargetInbox:
             instrument=row["instrument"],
             filled_quantity=str(sum((Decimal(fill["quantity"]) for fill in fills), Decimal(0))),
             fill_event_ids=tuple(fill["fill_event_id"] for fill in fills),
+            venue_trade_ids=tuple(fill["venue_trade_id"] for fill in fills),
+        )
+
+    def target_execution(
+        self, authority: EngineLifecycleAuthority, delivery_id: str
+    ) -> TargetDeliveryExecution | None:
+        """Read one target's local handoff and tagged order/fill callbacks."""
+        _require_non_live(authority)
+        instance_id = str(authority.deployment_instance_id)
+        with self._transaction() as connection:
+            connection.execute("BEGIN")
+            target = connection.execute(
+                """SELECT source_event_id, target, status FROM external_target_delivery
+                   WHERE delivery_id = ? AND deployment_instance_id = ?
+                     AND deployment_spec_id = ? AND deployment_spec_digest = ?
+                     AND generation = ?""",
+                (
+                    delivery_id,
+                    instance_id,
+                    str(authority.deployment_spec_id),
+                    authority.deployment_spec_digest,
+                    authority.generation,
+                ),
+            ).fetchone()
+            if target is None:
+                return None
+            order_ids = connection.execute(
+                """SELECT client_order_id FROM external_target_order_link
+                   WHERE deployment_instance_id = ? AND delivery_id = ?
+                   ORDER BY initialized_at_ns, client_order_id""",
+                (instance_id, delivery_id),
+            ).fetchall()
+            orders = tuple(
+                self._order_execution_from_connection(connection, authority, row["client_order_id"])
+                for row in order_ids
+            )
+        if any(order is None for order in orders):
+            raise ExternalTargetInboxError("target order lineage changed during read")
+        return TargetDeliveryExecution(
+            delivery_id=delivery_id,
+            source_event_id=target["source_event_id"],
+            target=target["target"],
+            status=target["status"],
+            orders=orders,
         )
 
     def confirm_flat(
