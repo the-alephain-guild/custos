@@ -3,25 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.engines.nautilus.external_target_dispatcher import ExternalTargetHost
+from custos.engines.nautilus.external_target_flat_observation import VenueFlatObservation
 from custos.engines.nautilus.external_target_inbox import ExternalTargetInbox
-
-
-@dataclass(frozen=True, slots=True)
-class VenueFlatObservation:
-    source: str
-    connector: str
-    pair: str
-    observed_at: datetime
-    positions_complete: bool
-    orders_complete: bool
-    open_positions: int
-    open_orders: int
 
 
 class VenueFlatReader(Protocol):

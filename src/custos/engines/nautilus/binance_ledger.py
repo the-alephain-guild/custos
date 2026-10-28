@@ -23,6 +23,7 @@ from custos.core.runner_fact import SUPPORTED_CURRENCIES
 from custos.core.runner_fact_producer import VenueLedgerEvidence
 from custos.core.venue_proxy import VenueProxy
 from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory, scoped_balances
+from custos.engines.nautilus.external_target_flat_observation import VenueFlatObservation
 from custos.engines.nautilus.ledger_http import USER_AGENT
 
 _SPOT_LIVE = "https://api.binance.com"
@@ -101,6 +102,47 @@ class BinanceVenueLedgerSource:
 
     async def collect(self, coverage_from: datetime, closed_at: datetime) -> VenueLedgerEvidence:
         return await asyncio.to_thread(self._collect, coverage_from, closed_at)
+
+    async def observe_flat(self, *, connector: str, pair: str) -> VenueFlatObservation:
+        if (
+            not self._futures
+            or connector != "binance_perpetual"
+            or pair not in {f"{base}-{quote}" for base, quote in self._pairs}
+        ):
+            raise BinanceVenueLedgerError("Binance flat observation differs from ledger scope")
+        return await asyncio.to_thread(self._observe_flat, pair)
+
+    def _observe_flat(self, pair: str) -> VenueFlatObservation:
+        symbol = pair.replace("-", "")
+        account = self._signed_get("/fapi/v3/account", {})
+        if not isinstance(account, dict):
+            raise BinanceVenueLedgerError("Binance account response must be an object")
+        account_positions = self._expect_list(account.get("positions"))
+        risk_positions = self._expect_list(
+            self._signed_get("/fapi/v3/positionRisk", {"symbol": symbol})
+        )
+        account_active = self._active_position_quantities(account_positions)
+        risk_active = self._active_position_quantities(risk_positions)
+        account_pair = {key: value for key, value in account_active.items() if key[0] == symbol}
+        risk_pair = {key: value for key, value in risk_active.items() if key[0] == symbol}
+        if account_pair != risk_pair:
+            raise BinanceVenueLedgerError("Binance account and position-risk quantity differs")
+        ordinary = self._expect_list(self._signed_get("/fapi/v1/openOrders", {"symbol": symbol}))
+        conditional = self._expect_list(
+            self._signed_get("/fapi/v1/openAlgoOrders", {"symbol": symbol})
+        )
+        if any(str(row.get("symbol") or "") != symbol for row in ordinary + conditional):
+            raise BinanceVenueLedgerError("Binance open order response escaped its symbol")
+        return VenueFlatObservation(
+            source="venue_api",
+            connector="binance_perpetual",
+            pair=pair,
+            observed_at=datetime.fromtimestamp(self._server_time_ms() / 1000, UTC),
+            positions_complete=True,
+            orders_complete=True,
+            open_positions=len(risk_pair),
+            open_orders=len(ordinary) + len(conditional),
+        )
 
     def _collect(self, coverage_from: datetime, closed_at: datetime) -> VenueLedgerEvidence:
         coverage_from = coverage_from.astimezone(UTC)
