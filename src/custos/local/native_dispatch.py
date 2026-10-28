@@ -18,7 +18,11 @@ from custos.core.order_nonexecution import (
     NativeNoFillSettlement,
     _revision,
 )
-from custos.core.runtime_authority import RuntimeAuthorityError, RuntimeStorageUnavailable
+from custos.core.runtime_authority import (
+    RuntimeAuthorityError,
+    RuntimeRiskPending,
+    RuntimeStorageUnavailable,
+)
 from custos.local.reduction_claims import LocalReductionClaims
 from custos.local.reservation_ledger import LocalReservationLedger, _Refused
 
@@ -117,10 +121,8 @@ class LocalNativeDispatch:
             except _Refused as error:
                 connection.execute("ROLLBACK TO native_risk_change")
                 connection.execute("RELEASE native_risk_change")
-                fault = error.code
-                self._ledger._fault(
-                    connection, operation + ":" + identifier, "risk_refused", request, fault
-                )
+                fault = error
+                self._ledger._reject(connection, operation + ":" + identifier, request, error)
             else:
                 connection.execute("RELEASE native_risk_change")
                 current = self._current(connection, identifier)
@@ -134,7 +136,9 @@ class LocalNativeDispatch:
                     risk=record,
                 )
         if fault:
-            raise RuntimeAuthorityError(fault)
+            if fault.retryable:
+                raise RuntimeRiskPending(fault.code)
+            raise RuntimeAuthorityError(fault.code)
         return result
 
     def load(self, identifier: str) -> NativeDispatchSnapshot | None:
@@ -227,7 +231,7 @@ class LocalNativeDispatch:
                 self._reductions._set_state(connection, identifier, "dispatching")
             else:
                 if reason := self._ledger._gate(connection):
-                    raise _Refused(reason)
+                    raise reason
             connection.execute(
                 "UPDATE local_native_dispatch SET state='dispatched' WHERE account_scope=? AND client_order_id=?",
                 (self._ledger.identity.account_scope, identifier),

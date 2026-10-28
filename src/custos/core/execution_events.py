@@ -116,18 +116,33 @@ class ExecutionEventStore:
                     PRIMARY KEY(sequence,process_generation,owner_id)
                 );
                 CREATE TABLE local_risk_meta (
-                    schema_version INTEGER NOT NULL CHECK(schema_version=3),
+                    schema_version INTEGER NOT NULL CHECK(schema_version=4),
                     account_scope TEXT,
                     native_account_id TEXT,
                     client_id TEXT,
-                    native_journal_id TEXT
+                    native_journal_id TEXT,
+                    loss_budget_required INTEGER NOT NULL CHECK(loss_budget_required IN (0,1)),
+                    loss_budget_id TEXT
                 );
-                INSERT INTO local_risk_meta VALUES (3,NULL,NULL,NULL,NULL);
+                INSERT INTO local_risk_meta VALUES (4,NULL,NULL,NULL,NULL,0,NULL);
                 CREATE TABLE local_account_risk (
                     account_scope TEXT PRIMARY KEY,
                     reason_code TEXT,
                     source_event_id TEXT
                 );
+                CREATE TABLE local_account_loss (
+                    account_scope TEXT PRIMARY KEY REFERENCES local_account_risk(account_scope),
+                    budget_id TEXT NOT NULL UNIQUE,
+                    enabled_audit_sequence INTEGER NOT NULL REFERENCES execution_event(sequence),
+                    baseline_json TEXT,
+                    baseline_audit_sequence INTEGER REFERENCES execution_event(sequence),
+                    observation_json TEXT,
+                    observation_audit_sequence INTEGER REFERENCES execution_event(sequence)
+                );
+                CREATE INDEX local_loss_audit_head ON execution_event(
+                    json_extract(payload,'$.request.budget_id'),
+                    json_extract(payload,'$.operation'),sequence
+                ) WHERE kind='risk_mutation';
                 CREATE TABLE local_order_reservation (
                     account_scope TEXT NOT NULL REFERENCES local_account_risk(account_scope),
                     client_order_id TEXT NOT NULL,

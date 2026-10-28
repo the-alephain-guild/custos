@@ -43,6 +43,10 @@ class RiskMutationRecord:
             "native_dispatch",
             "native_not_sent",
             "native_no_fill",
+            "loss_enable",
+            "loss_baseline",
+            "loss_observe",
+            "loss_fault",
         }:
             raise RuntimeAuthorityError("unknown local risk operation")
         fields = {
@@ -87,6 +91,8 @@ class RiskMutationRecord:
             "proof_digest",
             "proof_source",
             "sealed_at_revision",
+            "budget_id",
+            "previous_audit_sequence",
         }
         for name in ("request", "outcome"):
             value = dict(getattr(self, name))
@@ -103,7 +109,13 @@ class RiskMutationRecord:
             raise RuntimeAuthorityError("risk audit error must be a structured reason code")
         if (
             self.operation
-            in {"risk_refused", "fact_conflict", "cross_run_fact", "recovery_required"}
+            in {
+                "risk_refused",
+                "fact_conflict",
+                "cross_run_fact",
+                "recovery_required",
+                "loss_fault",
+            }
             and error is None
         ):
             raise RuntimeAuthorityError("a refused risk audit requires its reason")

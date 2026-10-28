@@ -166,9 +166,7 @@ def native_fill(*, account=ACCOUNT, trade="close-trade-7"):
     )
 
 
-@pytest.fixture
-def gated(local_risk):
-    risk = local_risk
+def build_gated(risk):
     reserve(risk)
     digest = hashlib.sha256(b"opening-trade").hexdigest()
     risk.store.record_order_fill_sync(
@@ -244,6 +242,50 @@ def gated(local_risk):
         native_journal=native_journal,
         storage=storage,
     )
+
+
+@pytest.fixture
+def gated(local_risk):
+    return build_gated(local_risk)
+
+
+def test_temporary_cash_refusal_compensates_only_the_unsent_prepared_opening(
+    local_risk, monkeypatch
+):
+    from dataclasses import replace
+
+    from tests.test_local_loss_budget import observation
+
+    risk = local_risk
+    budget = risk.store.bind_loss_budget()
+    initial = observation(risk)
+    budget.initialize(initial)
+    runtime = build_gated(risk)
+    original = runtime.port.begin_dispatch
+
+    def become_pending(identifier):
+        budget.observe(
+            replace(
+                initial,
+                checkpoint_sequence=2,
+                source_digest="0x" + "22" * 32,
+                position_ids=("PT-7",),
+                cohort_ready=False,
+            )
+        )
+        return original(identifier)
+
+    monkeypatch.setattr(runtime.port, "begin_dispatch", become_pending)
+    opening = close_order("pending-opening", reduce_only=False)
+    opening.quantity = Quantity.from_str("500")
+    opening.is_quote_quantity = True
+    sent = []
+    assert runtime.gate.submit_order(lambda *a, **kw: sent.append(True), opening) is False
+    assert sent == []
+    assert runtime.port._dispatch.load("pending-opening").state == "not_sent"
+    assert snapshot(risk, "pending-opening").reserved_notional == 0
+    assert snapshot(risk).filled_exposure == 500
+    assert not risk.blocker.is_frozen()
 
 
 def test_a_local_control_lease_cannot_select_platform_memory_reductions(local_risk):
@@ -452,6 +494,23 @@ def test_opening_exception_keeps_reserved_notional_and_a_durable_latch(gated):
     with pytest.raises(RuntimeError):
         gated.gate.submit_order(native, opening)
     assert snapshot(gated.risk, "new-entry").reserved_notional == Decimal("500")
+    assert gated.risk.blocker.is_frozen()
+
+
+def test_pending_exception_after_native_call_cannot_use_unsent_compensation(gated):
+    from custos.core.runtime_authority import RuntimeRiskPending
+
+    opening = close_order("post-native-pending", reduce_only=False)
+    opening.quantity = Quantity.from_str("500")
+    opening.is_quote_quantity = True
+
+    def native(*args, **kwargs):
+        raise RuntimeRiskPending("injected exception after entering Native")
+
+    with pytest.raises(RuntimeRiskPending):
+        gated.gate.submit_order(native, opening)
+    assert snapshot(gated.risk, "post-native-pending").reserved_notional == 500
+    assert gated.port._dispatch.load("post-native-pending").state == "dispatched"
     assert gated.risk.blocker.is_frozen()
 
 

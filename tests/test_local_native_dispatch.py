@@ -123,6 +123,48 @@ def test_native_marker_is_durable_and_single_use(native_risk):
     assert snapshot(risk).reserved_notional == Decimal("500")
 
 
+def test_pending_cash_cohort_refuses_final_marker_without_latching(native_risk):
+    from custos.core.runtime_authority import RuntimeRiskPending
+    from tests.test_local_loss_budget import observation
+
+    risk = native_risk
+    budget = risk.store.bind_loss_budget()
+    initial = observation(risk)
+    budget.initialize(initial)
+    prepare_native(risk)
+    pending = replace(
+        initial, checkpoint_sequence=2, source_digest="0x" + "22" * 32, cohort_ready=False
+    )
+    budget.observe(pending)
+    sequence = risk.events.identity().sequence
+    with pytest.raises(RuntimeRiskPending):
+        risk.dispatch.begin_dispatch("entry")
+    assert risk.dispatch.load("entry").state == "prepared"
+    assert risk.events.identity().sequence > sequence
+    assert not risk.blocker.is_frozen()
+    budget.observe(replace(pending, cohort_ready=True))
+    assert risk.dispatch.begin_dispatch("entry") is True
+
+
+def test_final_marker_expiry_records_the_budget_fault_identity(native_risk):
+    from datetime import timedelta
+
+    from tests.test_local_loss_budget import observation
+
+    risk = native_risk
+    budget = risk.store.bind_loss_budget()
+    budget.initialize(observation(risk))
+    prepare_native(risk)
+    risk.clock[0] += timedelta(seconds=risk.manifest.data_policy.max_account_age_seconds)
+    with pytest.raises(RuntimeAuthorityError):
+        risk.dispatch.begin_dispatch("entry")
+    records = risk.events.risk_events(risk.manifest.run_id)
+    assert records[-1].risk.operation == "loss_fault"
+    assert records[-1].risk.request["budget_id"] == str(budget.snapshot().baseline_id)
+    assert risk.dispatch.load("entry").state == "prepared"
+    assert risk.blocker.is_frozen()
+
+
 def test_current_unsent_withdrawal_releases_only_its_prepared_reservation(native_risk):
     risk = native_risk
     prepare_native(risk)

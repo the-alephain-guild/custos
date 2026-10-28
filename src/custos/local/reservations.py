@@ -29,6 +29,7 @@ from custos.core.reservation_math import (
 )
 from custos.core.runtime_authority import RuntimeAuthorityError
 from custos.local.authorization import VerifiedLocalRunAuthorization
+from custos.local.loss_budget import LocalLossBudget
 from custos.local.native_dispatch import LocalNativeDispatch
 from custos.local.reduction_claims import LocalReductionClaims
 from custos.local.reservation_ledger import (
@@ -68,6 +69,13 @@ class LocalReservationStore:
         self._limits = authorization.manifest.limits
         self._reductions: LocalReductionClaims | None = None
         self._native_dispatch: LocalNativeDispatch | None = None
+        self._loss_budget: LocalLossBudget | None = None
+
+    def bind_loss_budget(self) -> LocalLossBudget:
+        candidate = LocalLossBudget(self._ledger)
+        if self._loss_budget is None:
+            self._loss_budget = candidate
+        return self._loss_budget
 
     def bind_native_dispatch(self, *, journal: BoundRuntimeStore) -> LocalNativeDispatch:
         candidate = LocalNativeDispatch(

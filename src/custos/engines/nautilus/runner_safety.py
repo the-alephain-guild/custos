@@ -54,7 +54,7 @@ from custos.core.order_reservation_boundary import (
 )
 from custos.core.reduction_claims import ReductionTarget
 from custos.core.runner_fact import RunnerStateAuthorityError
-from custos.core.runtime_authority import RuntimeAuthorityError
+from custos.core.runtime_authority import RuntimeAuthorityError, RuntimeRiskPending
 from custos.engines.nautilus.strategy_hooks import StrategyHookUnsupported, install_hook
 
 _log = get_logger("custos.runner_safety")
@@ -644,6 +644,7 @@ class RunnerSafetyOrderGate:
         if refusal is not None:
             self._refuse((order,), refusal)
             return False
+        reservations = ()
         try:
             intent = _SubmitIntent(order, args, kwargs)
             reservations = self._boundary.before_submit_order(intent)
@@ -651,6 +652,15 @@ class RunnerSafetyOrderGate:
             if not self._boundary.before_dispatch(reservations):
                 self._refuse((order,), "custos_local_close_already_dispatched")
                 return False
+        except RuntimeRiskPending as exc:
+            if reservations:
+                self._compensate(
+                    lambda: self._boundary.rollback_submit(
+                        reservations, command_id=runner_command_id(intent)
+                    )
+                )
+            self._refuse((order,), self._reservation_refusal_reason(exc), exc=exc)
+            return False
         except Exception as exc:  # noqa: BLE001 - every refusal reason is reported below
             self._refuse((order,), self._reservation_refusal_reason(exc), exc=exc)
             return False

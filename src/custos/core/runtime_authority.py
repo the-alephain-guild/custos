@@ -29,6 +29,10 @@ class RuntimeStorageUnavailable(RuntimeAuthorityError):
     """Registered storage is missing, replaced, or behind its checkpoint."""
 
 
+class RuntimeRiskPending(RuntimeAuthorityError):
+    """A recorded, retryable risk refusal happened before any venue dispatch."""
+
+
 def _address(value: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"0x[0-9a-fA-F]{40}", value):
         raise RuntimeAuthorityError("account address must be a 20-byte EVM address")

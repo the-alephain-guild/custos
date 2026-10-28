@@ -24,6 +24,7 @@ from decimal import (
     Underflow,
     localcontext,
 )
+from fractions import Fraction
 from typing import Protocol, cast
 from uuid import UUID
 
@@ -36,8 +37,13 @@ from custos.core.execution_reservation_store import (
 )
 from custos.core.execution_risk_events import RiskMutationRecord, _token
 from custos.core.local_runtime_state import RuntimeLease
-from custos.core.runtime_authority import RuntimeAuthorityError, RuntimeStorageUnavailable
+from custos.core.runtime_authority import (
+    RuntimeAuthorityError,
+    RuntimeRiskPending,
+    RuntimeStorageUnavailable,
+)
 from custos.local.authorization import VerifiedLocalRunAuthorization, _utc_instant
+from custos.local.loss_state import epoch_ns, loss_admission, loss_row
 
 _MATH = Context(
     prec=100,
@@ -65,8 +71,12 @@ class RiskBlocker(Protocol):
 
 
 class _Refused(Exception):
-    def __init__(self, code: str) -> None:
+    def __init__(
+        self, code: str, *, retryable: bool = False, loss_budget_id: str | None = None
+    ) -> None:
         self.code = code
+        self.retryable = retryable
+        self.loss_budget_id = loss_budget_id
 
 
 @dataclass(frozen=True)
@@ -74,6 +84,7 @@ class _Decision:
     snapshot: ExecutionReservationSnapshot | None
     error_code: str | None = None
     audit_sequence: int | None = None
+    retryable: bool = False
 
 
 def _number(value: object, *, positive: bool = False, derived: bool = False) -> Decimal:
@@ -193,7 +204,7 @@ class LocalReservationLedger:
                 metadata = connection.execute(
                     "SELECT schema_version,account_scope,native_account_id,client_id,native_journal_id FROM local_risk_meta"
                 ).fetchall()
-                if len(metadata) != 1 or metadata[0][0] != 3:
+                if len(metadata) != 1 or metadata[0][0] != 4:
                     raise RuntimeStorageUnavailable("local risk schema is unavailable")
                 connection.execute("SELECT * FROM local_venue_fill LIMIT 0")
                 connection.execute("SELECT * FROM local_order_reservation LIMIT 0")
@@ -248,6 +259,7 @@ class LocalReservationLedger:
                     )
                 if self.latch_reason(connection):
                     self._blocker.freeze()
+                loss_row(connection, self._account)
                 inherited = connection.execute(
                     "SELECT reserved_notional,filled_exposure FROM local_order_reservation WHERE account_scope=? AND run_id<>?",
                     (self._account, str(self._run)),
@@ -328,15 +340,49 @@ class LocalReservationLedger:
         self._latch(connection, fault_id, code)
         return _Decision(None, code, sequence)
 
-    def _gate(self, connection: sqlite3.Connection) -> str | None:
+    def _reject(
+        self,
+        connection: sqlite3.Connection,
+        event_id: str,
+        request: Mapping[str, str | None],
+        refusal: _Refused,
+    ) -> _Decision:
+        if refusal.loss_budget_id is not None:
+            request = {**request, "budget_id": refusal.loss_budget_id}
+        if not refusal.retryable:
+            operation = "loss_fault" if refusal.loss_budget_id is not None else "risk_refused"
+            return self._fault(connection, event_id, operation, request, refusal.code)
+        record = RiskMutationRecord(
+            "risk_refused", {**request, "source_event_id": event_id}, {"error_code": refusal.code}
+        )
+        identity = "risk-pending:" + hashlib.sha256(record.payload().encode()).hexdigest()
+        sequence = self._events._append_risk(
+            connection, lease=self._lease, identity=self._identity, event_id=identity, risk=record
+        )
+        return _Decision(None, refusal.code, sequence, retryable=True)
+
+    def _gate(self, connection: sqlite3.Connection) -> _Refused | None:
         if self.latch_reason(connection) or self._blocker.is_frozen():
-            return "local_risk_frozen"
+            return _Refused("local_risk_frozen")
         now = self._clock()
         if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() != timedelta(0):
-            return "local_risk_clock_unreliable"
+            return _Refused("local_risk_clock_unreliable")
         permit = self._authorization.permit
         if not (_utc_instant(permit.not_before_utc) <= now < _utc_instant(permit.expires_at_utc)):
-            return "local_permit_not_current"
+            return _Refused("local_permit_not_current")
+        if refusal := loss_admission(
+            connection,
+            self._account,
+            now=epoch_ns(now),
+            maximum_account_age_ns=self._authorization.manifest.data_policy.max_account_age_seconds
+            * 10**9,
+            maximum_quote_age_ns=self._authorization.manifest.data_policy.max_quote_age_seconds
+            * 10**9,
+            maximum_loss=Fraction(Decimal(self._authorization.manifest.limits.max_loss_usd)),
+        ):
+            return _Refused(
+                refusal.code, retryable=refusal.retryable, loss_budget_id=refusal.budget_id
+            )
         return None
 
     def row(
@@ -500,7 +546,7 @@ class LocalReservationLedger:
                             "local Native journal has no routing binding"
                         )
                     if metadata[0][0] is not None:
-                        reason = "local_native_mutation_requires_evidence"
+                        reason = _Refused("local_native_mutation_requires_evidence")
                     elif connection.execute(
                         "SELECT 1 FROM local_reduction_claim UNION ALL SELECT 1 FROM local_native_dispatch LIMIT 1"
                     ).fetchone():
@@ -517,7 +563,7 @@ class LocalReservationLedger:
                 )
                 prior = self._events._find_risk(connection, run_id=self._run, event_id=event_id)
                 if reason:
-                    decision = self._fault(connection, event_id, "risk_refused", request, reason)
+                    decision = self._reject(connection, event_id, request, reason)
                 elif fact is not None:
                     if fact["original_run_id"] != str(self._run):
                         decision = self._fault(
@@ -639,6 +685,8 @@ class LocalReservationLedger:
             self._blocker.freeze()
             raise
         if decision.error_code:
+            if decision.retryable:
+                raise RuntimeRiskPending(decision.error_code)
             raise RuntimeAuthorityError(decision.error_code)
         if decision.snapshot is None:
             raise RuntimeStorageUnavailable("risk operation completed without an outcome")

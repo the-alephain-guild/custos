@@ -85,12 +85,14 @@ def local_risk(tmp_path):
     leases = []
     alternate_authorization = None
 
-    def make(*, previous=None, recover=False, blocker=None):
+    def make(*, previous=None, recover=False, blocker=None, manifest_override=None):
         nonlocal alternate_authorization
         manifest = (
             previous.manifest
             if previous and recover
-            else parse_local_manifest(canonical_json_bytes(manifest_document()))
+            else parse_local_manifest(
+                canonical_json_bytes(manifest_override or manifest_document())
+            )
         )
         permit = (
             previous.permit

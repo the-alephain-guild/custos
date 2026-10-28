@@ -75,6 +75,45 @@ send gate remain separate acceptance requirements.
 
 ## Account control store
 
+The internal cash loss budget is an implementation foundation, not runtime
+readiness. Risk schema 4 binds one account budget UUID and an explicit
+uninitialized row to its enable audit before creating a baseline. A baseline
+requires a fresh, flat pre-trading observation with no inherited economic
+history. It survives process recovery and replacement permits. Missing rows,
+cleared enable markers, conflicting source checkpoints or old audited state
+pointers refuse recovery; they never create another initial baseline. Schema 3
+is refused rather than automatically initialized with empty cash history.
+
+Cash and non-debt collateral use the protocol's 18-decimal raw amount. Exact
+Fraction arithmetic compares initial cash equity with current conservative
+equity, excludes unrealized gains and counts fees already included in cash
+once. A confirmed cash-only loss crossing the permit threshold latches before
+waiting for cache or fill delivery. Changed cash-flow counters and unsupported
+queued/debt funds are source faults, not assertions of trading loss.
+
+Normal cohort gaps retain an account-scoped pending origin. Repeated samples,
+process recovery and late complete data cannot extend its deadline, which uses
+the permit's account-age budget. Pending refuses new risk without permanently
+latching before its deadline. Both reservation and final local dispatch marker
+checks audit this retryable refusal in their transaction, then raise it after
+commit. Only this pre-Native refusal may withdraw the current process's unsent
+prepared reservation. An exception after entering Native retains uncertainty.
+
+Ready admission checks the current permit's exact loss threshold, account age
+and mark age, including when a replacement permit tightens them or an old
+reservation is replayed. Source and per-position mark watermarks persist across
+pending; read time cannot renew source validity. Every budget transition
+extends its previous audit head. Repeating the current body is idempotent, but
+ready/pending/ready transitions do not reuse an earlier head. A SQLite JSON
+expression index supports the budget-specific audit-head check. Audit and
+storage failure freezes the same local risk blocker.
+
+The internal observation DTO alone proves neither Native provenance nor
+cache/ledger agreement. The actual held-probe/cache producer, independent
+watchdog, Native final freshness constraints and host activation remain separate
+implementation and acceptance requirements. Unbound amount primitives remain
+component interfaces; they are not an independent live entry point.
+
 One durable account registry exists in the canonical guard directory. It records control source, run UUID, authorization_epoch, process_generation, opaque owner instance UUID, phase, permit digest and transfer identity. authorization_epoch changes only on operator-authorized run/configuration replacement or control-source transfer. process_generation increments whenever a new process acquires execution ownership, including crash recovery. Both counters survive stop and restart; deleting a run never resets them. PID is diagnostic only. Every outgoing action and callback checks the tuple (authorization_epoch, process_generation, owner UUID). A valid permit binds authorization_epoch, not process_generation; recovery never changes or re-signs its authorization.
 
 A canonical host-local guard directory is shared by both entry points. It is derived from account identity and is not selectable per run or credential. A kernel-owned OS lock prevents two local processes from holding the account while SQLite transactions persist state. A different run-state or journal directory must not select another account guard. The first release assumes one operator-controlled host; it does not claim to fence unrelated devices, users or external applications holding valid venue access.
