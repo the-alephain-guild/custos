@@ -481,6 +481,22 @@ Native 截止更新仍须由宿主接入，不能仅凭构造该 DTO 启用实�
 
 ## Readiness, restart and stop
 
+实际账户采集使用 `LocalReservationStore.risk_cohort()` 读取原注册 SQLite。
+接口在同一 lease 和同一事务内核路由、活跃开仓成本、关闭 claim 及其 Native
+marker，返回冻结的 tuple；`state_sequence` 是该事务看到的原审计水位，本身
+不证明账户、成交或来源完整。未绑定 Native 的金额组件不能提供这个观测。
+
+接口独立检查本地 prepared 和 dispatched 记录与经济行的关联，不能因关联行
+缺失或错误变成零金额终态而返回空仓。合法开平仓历史通过原 venue fact 与对应
+审计 payload 核对后排除，保留其原 run 身份；当前进程的未发送撤回也不再算活跃
+风险。每类活跃订单及关闭 claim 最多 256 项，Native marker 历史最多 4,096 项，
+单个完成事实查询最多 256 项，超界拒绝并冻结，不截断数据继续运行。
+
+读取不制造 fill、不释放预留、不清 latch，也不授予 ready。现有 owner 构造器
+对旧 run 的 dispatched marker 仍保守要求恢复，完整开平仓之后也可能触发此门；
+本读取接口不自动解冻它。空仓交接必须另行核对这项恢复条件。实际 held probe、
+cache、行情、Native 账户摘要门和宿主仍需在后续共同接线验收。
+
 原执行 client 的 held account probe 返回 `account_source_healthy`、
 `session_key_address` 和 `session_key_expiry_raw`。所选地址来自该 client 的
 实际 signer；注册期限来自同一账户 checkpoint 的 session 注册表。无 signer

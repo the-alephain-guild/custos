@@ -42,6 +42,7 @@ from custos.local.reservation_ledger import (
     _stored_reservation,
     _text,
 )
+from custos.local.risk_cohort import LocalRiskCohort, read_risk_cohort
 
 
 class LocalReservationStore:
@@ -104,6 +105,13 @@ class LocalReservationStore:
     @property
     def runtime_lease(self) -> RuntimeLease:
         return self._ledger._lease
+
+    def risk_cohort(self) -> LocalRiskCohort:
+        if self._native_dispatch is None or self._reductions is None:
+            raise RuntimeAuthorityError("risk cohort requires the original Native route binding")
+        return read_risk_cohort(
+            self._ledger, reductions=self._reductions, dispatch=self._native_dispatch
+        )
 
     def require_opening_instrument(self, instrument_id: str) -> None:
         _token(instrument_id, "instrument_id")
