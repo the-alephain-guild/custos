@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import asyncio
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -109,3 +111,31 @@ class ExternalSourceRunnerSession:
             return None
         self._revalidated_scope()
         return await self.dispatcher.process_once(self.authority, at=at)
+
+    async def run(
+        self,
+        stop: asyncio.Event,
+        *,
+        clock: Callable[[], datetime] | None = None,
+        poll_seconds: float = 0.5,
+    ) -> None:
+        """Drain durable targets and consume one exact broker subscription."""
+        if not 0 < poll_seconds <= 5:
+            raise ValueError("source subscription poll interval is invalid")
+        now = clock or (lambda: datetime.now(UTC))
+        try:
+            await self.bind(at=now())
+            while not stop.is_set():
+                self._revalidated_scope()
+                await self.dispatcher.process_once(self.authority, at=now())
+                try:
+                    message = await self.subscription.next_msg(timeout=poll_seconds)
+                except TimeoutError:
+                    continue
+                if stop.is_set():
+                    break
+                await self.handle_message(message, at=now())
+        finally:
+            if self.subscription is not None:
+                await self.subscription.unsubscribe()
+                self.subscription = None

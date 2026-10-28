@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
@@ -36,6 +37,7 @@ class Host:
     def __init__(self) -> None:
         self.scope = scope()
         self.queued = []
+        self.queued_event = asyncio.Event()
 
     def external_source_runtime_scope(self, instance_id: str):
         assert instance_id == str(INSTANCE)
@@ -44,6 +46,7 @@ class Host:
     def queue_external_source_signal(self, authority, signal) -> bool:
         assert authority == AUTHORITY
         self.queued.append(signal)
+        self.queued_event.set()
         return True
 
     async def request_external_source_flatten(self, authority, *, risk_action=None) -> int:
@@ -54,6 +57,7 @@ class Broker:
     def __init__(self, config) -> None:
         self.config = config
         self.bound = False
+        self.subscription = object()
 
     async def consumer_info(self, stream, durable):
         assert stream == SIGNAL_STREAM_NAME
@@ -64,7 +68,7 @@ class Broker:
         self.bound = True
         assert stream == SIGNAL_STREAM_NAME and manual_ack
         assert consumer == self.config.durable_name
-        return object()
+        return self.subscription
 
 
 def setup(tmp_path: Path):
@@ -164,3 +168,76 @@ async def test_wrong_preprovisioned_consumer_is_never_bound(tmp_path: Path) -> N
     with pytest.raises(ExternalSourceTransportError, match="existing signal consumer"):
         await second.bind(at=NOW)
     assert not replay_broker.bound
+
+
+@pytest.mark.asyncio
+async def test_runner_loop_hands_off_pending_message_and_unsubscribes_on_stop(
+    tmp_path: Path,
+) -> None:
+    session, _, _, host, broker, _ = setup(tmp_path)
+    stop = asyncio.Event()
+    acked = asyncio.Event()
+
+    class QueuedMessage(Message):
+        async def ack(self) -> None:
+            await super().ack()
+            acked.set()
+
+    class Subscription:
+        def __init__(self) -> None:
+            self.messages: asyncio.Queue = asyncio.Queue()
+            self.unsubscribed = False
+
+        async def next_msg(self, *, timeout: float):
+            return await asyncio.wait_for(self.messages.get(), timeout=timeout)
+
+        async def unsubscribe(self) -> None:
+            self.unsubscribed = True
+
+    broker.subscription = Subscription()
+    task = asyncio.create_task(session.run(stop, clock=lambda: NOW, poll_seconds=0.01))
+    try:
+        for _ in range(100):
+            if broker.bound:
+                break
+            await asyncio.sleep(0.01)
+        assert broker.bound
+        message = QueuedMessage(
+            published_bytes(tmp_path), signal_subject("tenant-a", "synthetic-supertrend")
+        )
+        await broker.subscription.messages.put(message)
+        await asyncio.wait_for(acked.wait(), timeout=2)
+        await asyncio.wait_for(host.queued_event.wait(), timeout=2)
+        assert len(host.queued) == 1
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, timeout=2)
+    assert broker.subscription.unsubscribed
+
+
+@pytest.mark.asyncio
+async def test_runner_loop_stops_receiving_when_authorization_changes(tmp_path: Path) -> None:
+    session, path, _, host, broker, _ = setup(tmp_path)
+
+    class IdleSubscription:
+        unsubscribed = False
+
+        async def next_msg(self, *, timeout: float):
+            await asyncio.sleep(timeout)
+            raise TimeoutError
+
+        async def unsubscribe(self) -> None:
+            self.unsubscribed = True
+
+    broker.subscription = IdleSubscription()
+    task = asyncio.create_task(session.run(asyncio.Event(), clock=lambda: NOW, poll_seconds=0.01))
+    for _ in range(100):
+        if broker.bound:
+            break
+        await asyncio.sleep(0.01)
+    assert broker.bound
+    rewrite(path, generation=8)
+    with pytest.raises(ExternalSourceAuthorizationError, match="active"):
+        await asyncio.wait_for(task, timeout=2)
+    assert broker.subscription.unsubscribed
+    assert host.queued == []

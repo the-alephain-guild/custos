@@ -119,8 +119,10 @@ and again before handoff. It also pins the active connector, pair set and
 leverage observed at bind time. A changed generation, venue scope, source mapping or credential
 digest leaves the broker message unacknowledged and prevents host handoff. It
 binds only an existing consumer whose delivery, filter, ack and replay policy
-match the computed subscription. This one-shot session is tested with an
-injected broker and host. `ExternalSourceNatsProfile` separately reads the
+match the computed subscription. Its bounded run loop rechecks scope, drains
+persisted pending deliveries and unsubscribes on stop or failure; a source
+message is acknowledged after inbox persistence, before host handoff. The
+session is tested with an injected broker and host. `ExternalSourceNatsProfile` separately reads the
 exact owner-only credential bytes, rechecks their digest, and connects with
 TLS certificate validation and a dedicated NATS user credential; it never
 reuses the runner-control transport. A mocked connection test proves its
