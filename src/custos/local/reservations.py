@@ -228,7 +228,9 @@ class LocalReservationStore:
             )
             return _Decision(self._ledger.snapshot(self._ledger.row(connection, client_order_id)))
 
-        return self._ledger.apply("replace", event_id, request, change, increases_risk=True)
+        return self._ledger.apply(
+            "replace", event_id, request, change, increases_risk=True, unbound_only=True
+        )
 
     def release_order_reservation_sync(
         self, *, event_id: str, runtime_id: UUID, client_order_id: str, reason: str
@@ -248,7 +250,7 @@ class LocalReservationStore:
             )
             return _Decision(self._ledger.snapshot(self._ledger.row(connection, client_order_id)))
 
-        return self._ledger.apply("release", event_id, request, change)
+        return self._ledger.apply("release", event_id, request, change, unbound_only=True)
 
     def record_order_fill_sync(
         self,

@@ -452,6 +452,7 @@ class LocalReservationLedger:
         *,
         increases_risk: bool = False,
         fill_identity: str | None = None,
+        unbound_only: bool = False,
     ) -> ExecutionReservationSnapshot:
         _token(event_id, "event_id")
         decision = _Decision(None, "local_risk_operation_incomplete")
@@ -462,7 +463,21 @@ class LocalReservationLedger:
                     lease=self._lease, identity=self._identity
                 ) as connection,
             ):
-                reason = self._gate(connection) if increases_risk else None
+                reason = None
+                if unbound_only:
+                    metadata = connection.execute(
+                        "SELECT native_account_id,client_id FROM local_risk_meta"
+                    ).fetchall()
+                    if len(metadata) != 1 or (metadata[0][0] is None) != (metadata[0][1] is None):
+                        raise RuntimeStorageUnavailable("local Native routing metadata is invalid")
+                    if metadata[0][0] is not None:
+                        reason = "local_native_mutation_requires_evidence"
+                    elif connection.execute(
+                        "SELECT 1 FROM local_reduction_claim LIMIT 1"
+                    ).fetchone():
+                        raise RuntimeStorageUnavailable("local Native routing history is unbound")
+                if reason is None and increases_risk:
+                    reason = self._gate(connection)
                 fact = (
                     connection.execute(
                         "SELECT * FROM local_venue_fill WHERE account_scope=? AND fill_identity=?",

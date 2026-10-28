@@ -348,6 +348,14 @@ chain scanner. Consumer protocol tests use fixture JSON and do not substitute
 for actual Native acceptance. This read-only seam changes no risk schema or
 settlement and grants no reservation release, execution or live admission.
 
+The original generic release and replacement APIs remain available only to
+unbound component accounting. Once the Native route is durably bound, both
+operations are refused within the economic transaction, before replaying any
+previous success. Reopening another store object cannot bypass the persistent
+gate. Refusal preserves the reservation, records the fault and latches new risk.
+Dedicated current-process pre-dispatch withdrawal and proof settlement remain
+required work; this guard supplies neither an alternative release nor admission.
+
 ## Readiness, restart and stop
 
 Readiness requires an alive node, actual data and execution connectivity, initialized reliable account/portfolio state, completed account reconciliation, active risk enforcement and durable current authority. The current blanket live refusal may be replaced only by proved checks, not a mode-based true value.
