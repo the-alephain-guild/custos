@@ -191,3 +191,51 @@ async def test_broker_disconnect_suspends_source_without_flattening_host(
     assert connection.closed
     assert broker.subscription.unsubscribed
     assert host.queued == []
+
+
+@pytest.mark.asyncio
+async def test_broker_close_failure_is_reported_without_killing_signed_host(
+    tmp_path: Path, monkeypatch
+) -> None:
+    config, broker = options(tmp_path)
+    stop = asyncio.Event()
+    states = []
+    host = Host()
+
+    class Subscription:
+        async def next_msg(self, *, timeout: float):
+            await asyncio.sleep(timeout)
+            raise TimeoutError
+
+        async def unsubscribe(self) -> None:
+            return None
+
+    broker.subscription = Subscription()
+
+    class Connection:
+        def jetstream(self):
+            return broker
+
+        async def close(self):
+            raise RuntimeError("synthetic broker close failure")
+
+    async def connect(self, **kwargs):
+        return Connection()
+
+    monkeypatch.setattr(ExternalSourceNatsProfile, "connect", connect)
+
+    def report(state: str, reason: str | None) -> None:
+        states.append((state, reason))
+        if state == "active":
+            stop.set()
+
+    runtime = ExternalSourceRunnerRuntime(
+        options=config,
+        tenant_id="tenant-a",
+        runner_id=RUNNER,
+        host=host,
+        report=report,
+    )
+    await asyncio.wait_for(runtime.run(stop), timeout=2)
+    assert states == [("active", None), ("fault", "source_unavailable")]
+    assert host.queued == []

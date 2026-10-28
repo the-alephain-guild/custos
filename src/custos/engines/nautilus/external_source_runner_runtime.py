@@ -136,6 +136,9 @@ class ExternalSourceRunnerRuntime:
                     lost_task.cancel()
                     await asyncio.gather(lost_task, return_exceptions=True)
                 if connection is not None:
-                    await connection.close()
+                    try:
+                        await asyncio.wait_for(connection.close(), timeout=2)
+                    except Exception:  # noqa: BLE001 — source fault must not stop signed host
+                        self._status("fault", "source_unavailable")
             if not stop.is_set():
                 await self._retry_or_stop(stop)
