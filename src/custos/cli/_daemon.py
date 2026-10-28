@@ -598,6 +598,7 @@ def _build_runner_safety_boundary_factory(
             policy_id=limits.policy_id,
             fallback_breaker=breaker,
             trading_mode=str(spec["trading_mode"]),
+            reduction_claims="platform_memory",
         )
         if boundaries is not None:
             boundaries[instance_id] = boundary

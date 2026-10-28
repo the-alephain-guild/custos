@@ -23,6 +23,7 @@ def runtime_lease(tmp_path):
         permit_digest="a" * 64,
         expected_authorization_epoch=0,
         stores=stores(tmp_path / "run"),
+        control_source="platform",
     )
     try:
         yield lease

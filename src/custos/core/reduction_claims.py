@@ -1,12 +1,17 @@
 """Immutable position evidence for an explicitly targeted reduction."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import UUID
 
 from custos.core.execution_risk_events import _token
 from custos.core.runtime_authority import RuntimeAuthorityError
+
+if TYPE_CHECKING:
+    from custos.core.local_runtime_state import RuntimeLease
 
 
 @dataclass(frozen=True)
@@ -68,3 +73,21 @@ class ReductionClaimSnapshot:
             "filled",
         }:
             raise RuntimeAuthorityError("reduction claim target or state is invalid")
+
+
+class DurableReductionPort(Protocol):
+    @property
+    def reservation_store(self) -> object: ...
+    @property
+    def runtime_lease(self) -> RuntimeLease: ...
+    @property
+    def runtime_id(self) -> UUID: ...
+    @property
+    def policy_id(self) -> UUID: ...
+    def bind_runtime(self, semantics: Any) -> None: ...
+    def prepare_submit(self, intent: Any) -> bool: ...
+    def begin_dispatch(self, client_order_id: str) -> bool: ...
+    def mark_not_sent(self, client_order_id: str) -> None: ...
+    def dispatch_failed(self, client_order_id: str) -> None: ...
+    def judged_risk_reducing(self, client_order_id: str) -> bool | None: ...
+    def on_order_event(self, event: Any, *, stable_event_id: str) -> None: ...

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from decimal import (
     Decimal,
@@ -67,11 +67,52 @@ class LocalReservationStore:
         self._limits = authorization.manifest.limits
         self._reductions: LocalReductionClaims | None = None
 
-    def bind_reductions(self, *, account_id: str, client_id: str) -> None:
-        if self._reductions is not None:
-            raise RuntimeAuthorityError("local reduction routing is already bound")
-        self._reductions = LocalReductionClaims(
+    def bind_reductions(self, *, account_id: str, client_id: str) -> LocalReductionClaims:
+        candidate = LocalReductionClaims(
             ledger=self._ledger, account_id=account_id, client_id=client_id
+        )
+        if self._reductions is None:
+            self._reductions = candidate
+        return self._reductions
+
+    @property
+    def runtime_id(self) -> UUID:
+        return self._run
+
+    @property
+    def policy_id(self) -> UUID:
+        return self._policy
+
+    @property
+    def runtime_lease(self) -> RuntimeLease:
+        return self._ledger._lease
+
+    def require_opening_instrument(self, instrument_id: str) -> None:
+        _token(instrument_id, "instrument_id")
+        if instrument_id not in self._authorization.manifest.instrument_ids:
+            raise RuntimeAuthorityError("local opening instrument is outside the signed manifest")
+
+    def record_dispatch_unknown(self, client_order_id: str, *, reason: str) -> None:
+        _token(client_order_id, "client_order_id")
+        _token(reason, "reason")
+        with self._ledger.transaction() as connection:
+            self._ledger._fault(
+                connection,
+                "dispatch-unknown:" + client_order_id,
+                "risk_refused",
+                {"client_order_id": client_order_id, "reason": reason},
+                "local_order_outcome_unknown",
+            )
+
+    def retain_unapplied_fill(
+        self, *, event_id: str, context: str, reducing: bool, raw: Mapping[str, object]
+    ) -> None:
+        self._ledger.retain_unapplied(
+            event_id=event_id,
+            operation="reduce" if reducing else "fill",
+            context=context,
+            reducing=reducing,
+            raw=raw,
         )
 
     @property

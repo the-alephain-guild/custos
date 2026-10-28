@@ -298,9 +298,37 @@ Local risk schema 2 requires the claim table and refuses historical schema 1 or
 missing state without rebuilding an empty ledger. The old cost-accounting APIs
 remain usable in unbound component tests; once Native reduction routing is
 bound they refuse claim-free reductions. They are not a local live admission
-path. Native terminal rejection/cancellation proof, direct-close, list and
-modify handling, and the shared outbound boundary integration remain necessary
-before any local live entry can be enabled.
+path. Actual Native acceptance of the outbound boundary, terminal non-execution
+proof and complete runtime risk enforcement remain necessary before any local
+live entry can be enabled.
+
+The shared RunnerReservationBoundary now explicitly accepts platform_memory or
+a durable reduction port. A local lease requires the durable port and the exact
+same lease, run, fixed permit policy and reservation store. The Native binding
+uses one canonical cache and the durable factory account/client route; rebinding
+another cache or applying platform policy renewal to a local permit is refused.
+Platform composition explicitly retains its existing memory behavior.
+
+Local single-order submit prepares its full-position claim and obtains the
+single-use dispatch marker immediately before calling Native. An exception after
+that call retains unknown close state, or retains an opening reservation and
+persists a risk latch. Direct close, order lists and modification are refused;
+the complete reduce-only single-order path is the local exit path. Persisted
+claims also provide risk-reducing classification after memory or cache loss.
+
+Local fill handling selects the persisted closing client ID before reading any
+opening-order cache relationship. Actual Native account mismatch or unavailable
+fill valuation retains pending venue evidence and freezes new risk. Native fill
+types in component tests validate the callback ABI, not actual venue execution.
+
+Generic Native terminal events do not release local claims or opening capacity.
+The execution manager can synthesize rejection or cancellation after query
+timeouts while the original signed intent may still execute. These observations
+retain unknown state and a durable latch; a later verified fill remains
+recordable. Release after terminal non-execution still requires a dedicated
+adapter-held per-intent proof. The journal UUID/revision probe cannot provide
+that proof. Actual node integration, complete risk enforcement and local runtime
+entry remain unaccepted; these components do not enable live admission.
 
 ## Readiness, restart and stop
 

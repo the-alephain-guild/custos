@@ -143,6 +143,10 @@ class NautilusCachedOrderSemantics:
     def __init__(self, cache: Any) -> None:
         self._cache = cache
 
+    @property
+    def canonical_cache(self) -> Any:
+        return self._cache
+
     def order_notional(self, order: Any) -> Decimal:
         if order.is_quote_quantity:
             return _decimal(order.quantity, field="quote order quantity")
@@ -630,6 +634,9 @@ class RunnerSafetyOrderGate:
             intent = _SubmitIntent(order, args, kwargs)
             reservations = self._boundary.before_submit_order(intent)
             self._boundary.assert_control_current()
+            if not self._boundary.before_dispatch(reservations):
+                self._refuse((order,), "custos_local_close_already_dispatched")
+                return False
         except Exception as exc:  # noqa: BLE001 - every refusal reason is reported below
             self._refuse((order,), self._reservation_refusal_reason(exc), exc=exc)
             return False
@@ -638,7 +645,7 @@ class RunnerSafetyOrderGate:
             return True
         except Exception:
             self._compensate(
-                lambda: self._boundary.rollback_submit(
+                lambda: self._boundary.dispatch_failed(
                     reservations, command_id=runner_command_id(intent)
                 )
             )
@@ -652,6 +659,9 @@ class RunnerSafetyOrderGate:
         *args: Any,
         **kwargs: Any,
     ) -> bool:
+        if self._boundary.uses_durable_reductions:
+            self._refuse((), "custos_local_order_list_unsupported")
+            return False
         orders = tuple(order_list.orders)
         # One unusable leg fails the list: the venue would refuse that leg and leave
         # the rest as an unintended partial structure.
@@ -693,6 +703,9 @@ class RunnerSafetyOrderGate:
         # This used to read ``.client_order_id`` off the argument, which works only
         # for a double shaped like the old API -- against the real strategy it raised
         # AttributeError before any judgement was made.
+        if self._boundary.uses_durable_reductions:
+            self._refuse((), "custos_local_order_modification_unsupported")
+            return None
         intent = _ModifyIntent(client_order_id, quantity, price, trigger_price)
         try:
             modification = self._boundary.before_modify_order(intent)
@@ -764,6 +777,8 @@ class RunnerSafetyOrderGate:
         and the strategy already has a path for that: submit the order, where it
         is measured against the room actually left on the position.
         """
+        if self._boundary.uses_durable_reductions:
+            return self._refuse_plain_native_close(CLOSE_POSITION)
         if not self._control_allows_action():
             return None
         if self._native_close_reduces(args, kwargs, flag_index=4):
@@ -773,6 +788,8 @@ class RunnerSafetyOrderGate:
     @_serialized_dispatch
     def close_all_positions(self, close: Callable[..., None], *args: Any, **kwargs: Any):
         """Same judgement as close_position, for the all-positions form."""
+        if self._boundary.uses_durable_reductions:
+            return self._refuse_plain_native_close(CLOSE_ALL_POSITIONS)
         if not self._control_allows_action():
             return None
         if self._native_close_reduces(args, kwargs, flag_index=5):

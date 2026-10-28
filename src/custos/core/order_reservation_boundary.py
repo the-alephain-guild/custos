@@ -6,12 +6,14 @@ import hashlib
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from custos.core.fallback_breaker import FallbackBreaker
 from custos.core.local_runtime_state import RuntimeLease
 from custos.core.log import get_logger
+from custos.core.reduction_claims import DurableReductionPort
+from custos.core.runtime_authority import RuntimeAuthorityError
 
 _log = get_logger("custos.order_reservation_boundary")
 
@@ -116,6 +118,7 @@ def runner_command_id(command: Any) -> Any:
 @dataclass(frozen=True)
 class _Reservation:
     client_order_id: str
+    reduction: bool = False
 
 
 @dataclass(frozen=True)
@@ -147,6 +150,7 @@ class RunnerReservationBoundary:
         trading_mode: str,
         semantics: OrderSemantics | None = None,
         control_guard: RuntimeLease | None = None,
+        reduction_claims: Literal["platform_memory"] | DurableReductionPort = "platform_memory",
     ) -> None:
         if control_guard is not None and control_guard.fence.run_id != runtime_id:
             raise ExecutionControlUnavailable("control guard belongs to another runtime")
@@ -160,6 +164,27 @@ class RunnerReservationBoundary:
         self._fallback_breaker = fallback_breaker
         self._semantics = semantics
         self._control_guard = control_guard
+        if isinstance(reduction_claims, str):
+            if reduction_claims != "platform_memory" or (
+                control_guard is not None and control_guard.fence.control_source == "local"
+            ):
+                raise RuntimeAuthorityError("local execution requires durable reduction claims")
+            self._durable_reductions: DurableReductionPort | None = None
+        else:
+            if (
+                not isinstance(control_guard, RuntimeLease)
+                or control_guard.fence.control_source != "local"
+                or reduction_claims.runtime_lease is not control_guard
+                or reduction_claims.reservation_store is not store
+                or reduction_claims.runtime_id != runtime_id
+                or reduction_claims.policy_id != policy_id
+            ):
+                raise RuntimeAuthorityError(
+                    "durable reductions differ from the actual execution binding"
+                )
+            self._durable_reductions = reduction_claims
+            if semantics is not None:
+                reduction_claims.bind_runtime(semantics)
         self._pending_modifications: dict[str, _Modification] = {}
         # Reduce-only orders deliberately bypass notional reservation so a frozen or
         # temporarily unavailable policy store can never block risk reduction. Keep
@@ -172,8 +197,15 @@ class RunnerReservationBoundary:
         self._unsettled_reductions: dict[str, tuple[str, Decimal]] = {}
 
     def bind_runtime(self, *, semantics: OrderSemantics) -> None:
-        if self._semantics is None:
+        if self._durable_reductions is not None:
+            self._durable_reductions.bind_runtime(semantics)
             self._semantics = semantics
+        elif self._semantics is None:
+            self._semantics = semantics
+
+    @property
+    def uses_durable_reductions(self) -> bool:
+        return self._durable_reductions is not None
 
     @property
     def fallback_breaker(self) -> FallbackBreaker:
@@ -240,9 +272,33 @@ class RunnerReservationBoundary:
             self._unsettled_reductions.pop(client_order_id, None)
 
     def before_submit_order(self, command: Any) -> tuple[_Reservation, ...]:
+        if self._durable_reductions is not None:
+            self.assert_control_current()
+            if self._durable_reductions.prepare_submit(command):
+                return (_Reservation(str(command.order.client_order_id), reduction=True),)
+            return self._reserve_orders(
+                (command.order,), command_id=runner_command_id(command), allow_reductions=False
+            )
         return self._reserve_orders((command.order,), command_id=runner_command_id(command))
 
+    def before_dispatch(self, reservations: tuple[_Reservation, ...]) -> bool:
+        if self._durable_reductions is None:
+            return True
+        return all(
+            not item.reduction or self._durable_reductions.begin_dispatch(item.client_order_id)
+            for item in reservations
+        )
+
+    def dispatch_failed(self, reservations: tuple[_Reservation, ...], *, command_id: Any) -> None:
+        if self._durable_reductions is None:
+            self.rollback_submit(reservations, command_id=command_id)
+            return
+        for item in reservations:
+            self._durable_reductions.dispatch_failed(item.client_order_id)
+
     def before_submit_order_list(self, command: Any) -> tuple[_Reservation, ...]:
+        if self._durable_reductions is not None:
+            raise RuntimeAuthorityError("local execution does not admit order lists")
         return self._reserve_orders(
             tuple(command.order_list.orders),
             command_id=runner_command_id(command),
@@ -262,6 +318,8 @@ class RunnerReservationBoundary:
         back, so both are settled here. The durable book is written first: an order
         left in neither book, or in both, is worse than a refused amendment.
         """
+        if self._durable_reductions is not None:
+            raise RuntimeAuthorityError("local execution does not admit order modification")
         self.assert_control_current()
         semantics = self._require_semantics()
         client_order_id = str(command.client_order_id)
@@ -365,6 +423,9 @@ class RunnerReservationBoundary:
     ) -> None:
         self.assert_control_current()
         for reservation in reservations:
+            if self._durable_reductions is not None and reservation.reduction:
+                self._durable_reductions.mark_not_sent(reservation.client_order_id)
+                continue
             self._store.release_order_reservation_sync(
                 event_id=self._event_id(
                     "submit_dispatch_failed",
@@ -444,6 +505,14 @@ class RunnerReservationBoundary:
                 )
         if stable_event_id is None:
             raise RuntimeError(f"{event_name} has no stable event identity")
+
+        if self._durable_reductions is not None:
+            try:
+                self._durable_reductions.on_order_event(event, stable_event_id=str(stable_event_id))
+            except Exception as error:
+                self._fallback_breaker.fail_closed("local_order_evidence_unavailable")
+                _log.error("local_order_evidence_unavailable", error_type=type(error).__name__)
+            return
 
         if event_name == "OrderFilled":
             semantics = self._require_semantics()
@@ -561,6 +630,7 @@ class RunnerReservationBoundary:
         orders: tuple[Any, ...],
         *,
         command_id: Any,
+        allow_reductions: bool = True,
     ) -> tuple[_Reservation, ...]:
         self.assert_control_current()
         semantics = self._require_semantics()
@@ -568,7 +638,7 @@ class RunnerReservationBoundary:
         try:
             for order in orders:
                 instrument_id = semantics.order_instrument_id(order)
-                if semantics.order_is_risk_reducing(
+                if allow_reductions and semantics.order_is_risk_reducing(
                     order, self._unsettled_reduction_for(instrument_id)
                 ):
                     client_order_id = str(order.client_order_id)
@@ -631,6 +701,10 @@ class RunnerReservationBoundary:
         right boundaries anyway; this makes picking wrongly an error instead of a
         silently lowered ceiling on a deployment nobody was renewing.
         """
+        if self._durable_reductions is not None:
+            raise RuntimeAuthorityError(
+                "a local permit cannot be replaced by platform policy renewal"
+            )
         if trading_mode != self._trading_mode:
             raise RuntimeError("runner safety policy trading mode does not match this deployment")
         self._policy_id = policy_id
@@ -646,6 +720,8 @@ class RunnerReservationBoundary:
         one that decided what the order was allowed to do is this one.
         """
         order_id = str(client_order_id)
+        if self._durable_reductions is not None:
+            return self._durable_reductions.judged_risk_reducing(order_id)
         if order_id in self._risk_reducing_order_ids:
             return True
         if self._has_reservation(order_id):

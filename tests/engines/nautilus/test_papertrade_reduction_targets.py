@@ -128,6 +128,8 @@ def test_target_requires_current_account_direction_and_the_complete_exact_positi
 
 
 class Boundary:
+    uses_durable_reductions = False
+
     def __init__(self, callback):
         self.callback = callback
         self.fallback_breaker = FallbackBreaker(
@@ -140,6 +142,9 @@ class Boundary:
 
     def assert_control_current(self):
         pass
+
+    def before_dispatch(self, reservations):
+        return True
 
     def before_submit_order(self, intent):
         self.calls += 1
