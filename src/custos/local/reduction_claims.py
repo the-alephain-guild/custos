@@ -227,6 +227,7 @@ class LocalReductionClaims:
 
     def begin_dispatch(self, closing_client_order_id: str) -> bool:
         def change(connection: sqlite3.Connection) -> bool:
+            self._require_legacy_transition(connection, closing_client_order_id)
             self._exit_current()
             claim = self._current(connection, closing_client_order_id)
             if claim.state != "prepared" or (
@@ -259,6 +260,7 @@ class LocalReductionClaims:
 
     def mark_not_sent(self, closing_client_order_id: str) -> ReductionClaimSnapshot:
         def change(connection: sqlite3.Connection) -> ReductionClaimSnapshot:
+            self._require_legacy_transition(connection, closing_client_order_id)
             claim = self._current(connection, closing_client_order_id)
             if claim.state == "not_sent":
                 return claim
@@ -273,6 +275,18 @@ class LocalReductionClaims:
             ReductionClaimSnapshot,
             self._mutate("close_not_sent", closing_client_order_id, {}, change),
         )
+
+    def _require_legacy_transition(self, connection: sqlite3.Connection, close: str) -> None:
+        native = connection.execute("SELECT native_journal_id FROM local_risk_meta").fetchone()
+        if (
+            native is None
+            or native[0] is not None
+            or connection.execute(
+                "SELECT 1 FROM local_native_dispatch WHERE account_scope=? AND client_order_id=?",
+                (self._ledger.identity.account_scope, close),
+            ).fetchone()
+        ):
+            raise _Refused("local_native_close_requires_joint_transition")
 
     def _set_state(
         self, connection: sqlite3.Connection, close: str, state: ReductionClaimState

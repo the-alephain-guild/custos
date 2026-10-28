@@ -604,6 +604,7 @@ class RuntimeLease:
         self._pid = os.getpid()
         self._lock_descriptor = lock_descriptor
         self._action_guard = threading.RLock()
+        self._observed_journal_sequence: int | None = None
 
     def __enter__(self) -> RuntimeLease:
         return self
@@ -611,6 +612,20 @@ class RuntimeLease:
     @property
     def state_store(self) -> BoundRuntimeStore:
         return self._stores.state
+
+    @property
+    def journal_store(self) -> BoundRuntimeStore:
+        self._require_open()
+        return self._stores.journal
+
+    @property
+    def observed_journal_sequence(self) -> int:
+        self._require_open()
+        if self._observed_journal_sequence is None:
+            raise RuntimeStorageUnavailable(
+                "journal continuity has not been observed by this lease"
+            )
+        return self._observed_journal_sequence
 
     @property
     def control_registry_id(self) -> UUID:
@@ -638,6 +653,10 @@ class RuntimeLease:
             connection.execute(
                 "UPDATE account_authority SET stores=? WHERE scope=?",
                 (observed, self.fence.account_scope),
+            )
+            current_sequence = json.loads(observed)["journal"]["sequence"]
+            self._observed_journal_sequence = max(
+                self._observed_journal_sequence or 0, current_sequence
             )
 
     def assert_control_current(self) -> None:

@@ -294,7 +294,7 @@ Repeated facts do not settle again; conflicting or unusable facts retain a
 pending venue identity and freeze risk. A synchronous fill already recorded as
 terminal cannot be overwritten by a subsequent dispatch exception.
 
-Local risk schema 2 requires the claim table and refuses historical schema 1 or
+Local risk schema 3 requires the claim and Native dispatch tables and refuses historical schemas 1/2 or
 missing state without rebuilding an empty ledger. The old cost-accounting APIs
 remain usable in unbound component tests; once Native reduction routing is
 bound they refuse claim-free reductions. They are not a local live admission
@@ -354,7 +354,39 @@ operations are refused within the economic transaction, before replaying any
 previous success. Reopening another store object cannot bypass the persistent
 gate. Refusal preserves the reservation, records the fault and latches new risk.
 Dedicated current-process pre-dispatch withdrawal and proof settlement remain
-required work; this guard supplies neither an alternative release nor admission.
+separate APIs; the legacy guard itself supplies neither release nor admission.
+
+The internal Native dispatch ledger binds the original order semantics and
+Native parameter Keccak to one run, authorization epoch, process generation,
+permit and registered journal. Account plus client order ID stays unique across
+runs. The first Missing journal revision is retained; it does not itself prove
+no submission. A single marker is committed before a Native call, jointly with
+the reduction claim's dispatching transition. Managed claims cannot independently
+use the older dispatch/not-sent APIs, including the interval before their Native
+dispatch row is prepared.
+
+Local withdrawal requires the current process's prepared marker and, for a
+reduction, its still-prepared same-generation claim. It cannot withdraw an old
+process's preparation or a dispatching/unknown claim. A no-fill settlement must
+match the complete original binding and journal, have a sealed revision strictly
+after the first Missing observation, and meet the continuity floor freshly
+observed by the existing lease guard. SQLite reads that last guard observation
+without acquiring the registry or probing the same SQLite database from within
+its transaction. Every Native proof still requires a fresh held-probe read.
+
+No-fill settlement and its audit share the risk transaction. Opening capacity is
+released; a reduction becomes proven_no_fill and gives back its claim while
+retaining original position cost. Duplicate proof consumption checks identity
+and current facts first. Known or pending conflicting venue facts refuse
+settlement. A later contradictory opening fill keeps its actual economics and
+stable venue identity and latches risk. Existing latches are never cleared by
+proof settlement. Audit or marker failure rolls back all related mutations.
+
+These persistence APIs do not themselves verify Native proof provenance or wire
+the outbound gate. The adapter must supply observations from the same held
+client and compare its pre-dispatch Native parameter digest. That wiring,
+actual LiveNode acceptance and complete risk enforcement remain unfinished;
+these components grant no local live entry.
 
 ## Readiness, restart and stop
 

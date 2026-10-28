@@ -191,25 +191,39 @@ class LocalReservationLedger:
                 lease=lease, identity=self._identity
             ) as connection:
                 metadata = connection.execute(
-                    "SELECT schema_version,account_scope,native_account_id,client_id FROM local_risk_meta"
+                    "SELECT schema_version,account_scope,native_account_id,client_id,native_journal_id FROM local_risk_meta"
                 ).fetchall()
-                if len(metadata) != 1 or metadata[0][0] != 2:
+                if len(metadata) != 1 or metadata[0][0] != 3:
                     raise RuntimeStorageUnavailable("local risk schema is unavailable")
                 connection.execute("SELECT * FROM local_venue_fill LIMIT 0")
                 connection.execute("SELECT * FROM local_order_reservation LIMIT 0")
                 connection.execute("SELECT * FROM local_reduction_claim LIMIT 0")
+                connection.execute("SELECT * FROM local_native_dispatch LIMIT 0")
                 if (metadata[0][2] is None) != (metadata[0][3] is None):
                     raise RuntimeStorageUnavailable(
                         "local reduction routing metadata is incomplete"
                     )
+                if metadata[0][4] is not None and metadata[0][2] is None:
+                    raise RuntimeStorageUnavailable("local Native journal has no routing binding")
                 if (
                     metadata[0][2] is None
                     and connection.execute("SELECT 1 FROM local_reduction_claim LIMIT 1").fetchone()
                 ):
                     raise RuntimeStorageUnavailable("local reduction routing history is unbound")
+                native_history = connection.execute(
+                    "SELECT 1 FROM local_native_dispatch LIMIT 1"
+                ).fetchone()
+                if native_history and (metadata[0][2] is None or metadata[0][4] is None):
+                    raise RuntimeStorageUnavailable("local Native dispatch history is unbound")
+                if metadata[0][4] is not None and metadata[0][4] != str(
+                    lease.journal_store.store_id
+                ):
+                    raise RuntimeStorageUnavailable(
+                        "local Native journal differs from registration"
+                    )
                 if metadata[0][1] is None:
                     history = connection.execute(
-                        "SELECT 1 FROM local_account_risk UNION ALL SELECT 1 FROM local_order_reservation UNION ALL SELECT 1 FROM local_venue_fill UNION ALL SELECT 1 FROM local_reduction_claim UNION ALL SELECT 1 FROM execution_event WHERE kind='risk_mutation' LIMIT 1"
+                        "SELECT 1 FROM local_account_risk UNION ALL SELECT 1 FROM local_order_reservation UNION ALL SELECT 1 FROM local_venue_fill UNION ALL SELECT 1 FROM local_reduction_claim UNION ALL SELECT 1 FROM local_native_dispatch UNION ALL SELECT 1 FROM execution_event WHERE kind='risk_mutation' LIMIT 1"
                     ).fetchone()
                     identities = connection.execute("SELECT identity FROM execution_run").fetchall()
                     if history is not None or any(
@@ -257,6 +271,17 @@ class LocalReservationLedger:
                         "recovery_required",
                         {},
                         "inherited_close_requires_reconciliation",
+                    )
+                if connection.execute(
+                    "SELECT 1 FROM local_native_dispatch WHERE account_scope=? AND state IN ('prepared','dispatched') AND (run_id<>? OR process_generation<>?) LIMIT 1",
+                    (self._account, str(self._run), lease.fence.process_generation),
+                ).fetchone():
+                    self._fault(
+                        connection,
+                        "inherited-native",
+                        "recovery_required",
+                        {},
+                        "inherited_native_dispatch_requires_reconciliation",
                     )
         except Exception:
             self._blocker.freeze()
@@ -466,14 +491,18 @@ class LocalReservationLedger:
                 reason = None
                 if unbound_only:
                     metadata = connection.execute(
-                        "SELECT native_account_id,client_id FROM local_risk_meta"
+                        "SELECT native_account_id,client_id,native_journal_id FROM local_risk_meta"
                     ).fetchall()
                     if len(metadata) != 1 or (metadata[0][0] is None) != (metadata[0][1] is None):
                         raise RuntimeStorageUnavailable("local Native routing metadata is invalid")
+                    if metadata[0][2] is not None and metadata[0][0] is None:
+                        raise RuntimeStorageUnavailable(
+                            "local Native journal has no routing binding"
+                        )
                     if metadata[0][0] is not None:
                         reason = "local_native_mutation_requires_evidence"
                     elif connection.execute(
-                        "SELECT 1 FROM local_reduction_claim LIMIT 1"
+                        "SELECT 1 FROM local_reduction_claim UNION ALL SELECT 1 FROM local_native_dispatch LIMIT 1"
                     ).fetchone():
                         raise RuntimeStorageUnavailable("local Native routing history is unbound")
                 if reason is None and increases_risk:

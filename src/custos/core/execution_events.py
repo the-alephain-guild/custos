@@ -116,12 +116,13 @@ class ExecutionEventStore:
                     PRIMARY KEY(sequence,process_generation,owner_id)
                 );
                 CREATE TABLE local_risk_meta (
-                    schema_version INTEGER NOT NULL CHECK(schema_version=2),
+                    schema_version INTEGER NOT NULL CHECK(schema_version=3),
                     account_scope TEXT,
                     native_account_id TEXT,
-                    client_id TEXT
+                    client_id TEXT,
+                    native_journal_id TEXT
                 );
-                INSERT INTO local_risk_meta VALUES (2,NULL,NULL,NULL);
+                INSERT INTO local_risk_meta VALUES (3,NULL,NULL,NULL,NULL);
                 CREATE TABLE local_account_risk (
                     account_scope TEXT PRIMARY KEY,
                     reason_code TEXT,
@@ -165,12 +166,26 @@ class ExecutionEventStore:
                     side TEXT NOT NULL CHECK(side IN ('BUY','SELL')),
                     quantity TEXT NOT NULL,
                     params_digest TEXT NOT NULL,
-                    state TEXT NOT NULL CHECK(state IN ('prepared','dispatching','unknown','not_sent','filled')),
+                    state TEXT NOT NULL CHECK(state IN ('prepared','dispatching','unknown','not_sent','filled','proven_no_fill')),
                     PRIMARY KEY(account_scope,closing_client_order_id)
                 );
                 CREATE UNIQUE INDEX local_active_position_close
                     ON local_reduction_claim(account_scope,position_id)
                     WHERE state IN ('prepared','dispatching','unknown');
+                CREATE TABLE local_native_dispatch (
+                    account_scope TEXT NOT NULL REFERENCES local_account_risk(account_scope),
+                    client_order_id TEXT NOT NULL,
+                    run_id TEXT NOT NULL REFERENCES execution_run(run_id),
+                    authorization_epoch INTEGER NOT NULL,
+                    process_generation INTEGER NOT NULL,
+                    permit_digest TEXT NOT NULL,
+                    journal_id TEXT NOT NULL,
+                    missing_revision INTEGER NOT NULL CHECK(missing_revision>0),
+                    binding_json TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK(state IN ('prepared','dispatched','not_sent','proven_no_fill')),
+                    proof_json TEXT,
+                    PRIMARY KEY(account_scope,client_order_id)
+                );
                 """
             )
             connection.execute("INSERT INTO execution_meta VALUES (1,?)", (str(store_id),))

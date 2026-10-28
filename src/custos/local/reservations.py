@@ -19,7 +19,7 @@ from custos.core.execution_reservation_store import (
     ExecutionReservationSnapshot,
 )
 from custos.core.execution_risk_events import _token
-from custos.core.local_runtime_state import RuntimeLease
+from custos.core.local_runtime_state import BoundRuntimeStore, RuntimeLease
 from custos.core.reservation_math import (
     PositionCostLot,
     allocate_fifo_cost,
@@ -29,6 +29,7 @@ from custos.core.reservation_math import (
 )
 from custos.core.runtime_authority import RuntimeAuthorityError
 from custos.local.authorization import VerifiedLocalRunAuthorization
+from custos.local.native_dispatch import LocalNativeDispatch
 from custos.local.reduction_claims import LocalReductionClaims
 from custos.local.reservation_ledger import (
     _MATH,
@@ -66,6 +67,15 @@ class LocalReservationStore:
         self._policy = authorization.permit.permit_id
         self._limits = authorization.manifest.limits
         self._reductions: LocalReductionClaims | None = None
+        self._native_dispatch: LocalNativeDispatch | None = None
+
+    def bind_native_dispatch(self, *, journal: BoundRuntimeStore) -> LocalNativeDispatch:
+        candidate = LocalNativeDispatch(
+            ledger=self._ledger, reductions=self.reductions, journal=journal
+        )
+        if self._native_dispatch is None:
+            self._native_dispatch = candidate
+        return self._native_dispatch
 
     def bind_reductions(self, *, account_id: str, client_id: str) -> LocalReductionClaims:
         candidate = LocalReductionClaims(
@@ -344,6 +354,16 @@ class LocalReservationStore:
                 Decimal(self._limits.max_total_notional_usd),
             )
             code = "local_post_trade_cap_exceeded" if breach else None
+            native_mode = connection.execute(
+                "SELECT native_journal_id FROM local_risk_meta"
+            ).fetchone()
+            if native_mode is not None and native_mode[0] is not None:
+                dispatch = connection.execute(
+                    "SELECT state FROM local_native_dispatch WHERE account_scope=? AND client_order_id=?",
+                    (self._account, client_order_id),
+                ).fetchone()
+                if dispatch is None or dispatch[0] != "dispatched":
+                    code = code or "local_fill_conflicts_with_native_dispatch"
             if (
                 instrument_id not in self._authorization.manifest.instrument_ids
                 or side not in {"BUY", "SELL"}

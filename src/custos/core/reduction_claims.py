@@ -41,7 +41,9 @@ class ReductionTarget:
             raise RuntimeAuthorityError("reduction parameters require a SHA-256 digest")
 
 
-ReductionClaimState = Literal["prepared", "dispatching", "unknown", "not_sent", "filled"]
+ReductionClaimState = Literal[
+    "prepared", "dispatching", "unknown", "not_sent", "filled", "proven_no_fill"
+]
 
 
 @dataclass(frozen=True)
@@ -71,6 +73,7 @@ class ReductionClaimSnapshot:
             "unknown",
             "not_sent",
             "filled",
+            "proven_no_fill",
         }:
             raise RuntimeAuthorityError("reduction claim target or state is invalid")
 
