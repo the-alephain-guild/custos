@@ -108,6 +108,30 @@ failed preparation guard remains a caller obligation to verify during wiring.
 If claim has committed but subsequent setup fails, retain recovery-required
 authority; do not erase registration or mark the account retired.
 
+`PapertradeRuntimeStorageProbe` bridges the live native journal probe into those
+registered-store checks. The kernel supplies the actual factory account and
+journal configuration; the bridge verifies the native snapshot's exact owner,
+UUID4, positive bounded revision and canonical path rather than attesting an
+arbitrary caller path using another journal's probe. Duplicate or unknown JSON
+fields, missing canonical-path evidence, a changed UUID or regressing revision
+are refused. Each journal read calls the original probe, whose held storage
+checks its original and canonical path against the open file identity. No redb
+reopen or cached successful snapshot replaces a released owner. SQLite identity
+uses the existing registered ExecutionEventStore and cannot initialize missing
+state. Only the two bound paths are readable, and fork children refuse before
+acquiring an inherited thread lock or calling native code. The native probe also
+retains the actual journal owner creation PID and refuses a cross-process read
+before upgrading its weak owner reference or touching redb. Constructing a new
+Python bridge or capturing another probe from a fork copy cannot refresh that
+native owner process identity.
+
+This bridge is a storage-evidence capability, not a permit verifier or execution
+host. Its callback must be passed to the same guard's claim and retained by that
+lease. Native clients must still be constructed under that guard, disconnected,
+then bound to the verified permit, risk blocker, material and readiness checks
+before running a strategy. Older probes without canonical-path evidence cannot
+meet this bridge's identity requirements.
+
 ## Venue authorization and observation
 
 Read-only market/account/history/chain observation is a separate capability and does not require an unexpired trading session. It cannot sign or submit intents, renew keys or silently fall back to an execution connection that requires trading authorization. This path is required after key revocation to verify flat-transfer evidence.
