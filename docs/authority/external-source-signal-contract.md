@@ -61,6 +61,20 @@ source-IP/TLS edge. The shared stream/ACL provisioning and independent broker
 credential issuance remain operator work. The signed runner can opt into a
 separate subscriber.
 
+The internal `python -m custos.cli.subcommands.source_publisher_tls` process
+uses a separate publisher JWT and verified broker TLS connection. Its
+owner-only authorization JSON has exactly `schemaVersion`, `tenantId`,
+`sourceId`, `allowedSymbols`, `signalTokenSha256` and
+`natsCredentialsSha256`; the JWT seed stays in a different owner-only file.
+The process checks the credential digest before connecting and rechecks both
+files before each outbox publication. HTTP still binds only to `127.0.0.1`;
+the public TLS endpoint and source-IP allowlist belong to an operator edge,
+not this HTTP server. A test with an isolated real TLS NATS broker sends an
+authenticated loopback HTTP source event through the private outbox to two
+distinct JWT subscribers and verifies their independent inbox handoffs. It
+does not provision a shared broker or exercise a real TradingView alert or
+venue account.
+
 `external_source_transport.py` provides an adapter for
 isolated JetStream lane, exact source subjects, a stable `Nats-Msg-Id`, and one
 pre-provisioned durable per runner and deployment. Its worker marks the outbox

@@ -55,10 +55,20 @@ class AuthorizedSourceSubscription:
 
 def read_bound_nats_credentials(grant: AuthorizedSourceSubscription) -> bytes:
     """Read the exact owner-only credential bytes accepted by this grant."""
-    credentials = _private_file(grant.credentials_path, max_bytes=65536)
-    if not hmac.compare_digest(hashlib.sha256(credentials).hexdigest(), grant.credentials_sha256):
+    return read_source_nats_credentials(grant.credentials_path, grant.credentials_sha256)
+
+
+def read_source_nats_credentials(path: Path, expected_sha256: str) -> bytes:
+    """Verify a publisher or subscriber's dedicated private JWT credential."""
+    credentials = _private_file(path, max_bytes=65536)
+    if not hmac.compare_digest(hashlib.sha256(credentials).hexdigest(), expected_sha256):
         raise ExternalSourceAuthorizationError("source credential differs from authorization")
     return credentials
+
+
+def read_private_source_file(path: Path, *, max_bytes: int) -> bytes:
+    """Read one owner-only authorization file without following symlinks."""
+    return _private_file(path, max_bytes=max_bytes)
 
 
 def _private_file(path: Path, *, max_bytes: int) -> bytes:

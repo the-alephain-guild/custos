@@ -4,19 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import http.client
 import json
 import os
 import shutil
-import ssl
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import nats
 import nkeys  # type: ignore[import-untyped]
 import pytest
-from nats.aio.client import RawCredentials
 from test_nats_revocation import (
     _account_jwt,
     _connect_admin,
@@ -29,9 +29,15 @@ from test_nats_revocation import (
     _write_tls_material,
 )
 
+from custos.cli.subcommands.source_publisher_tls import _AuthorizedPublicationWorker, build_settings
+from custos.cli.subcommands.source_webhook import (
+    SourcePublisherService,
+    SourceWebhookIngress,
+    create_source_webhook_server,
+)
 from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.core.external_source_outbox import ExternalSourceOutbox
-from custos.core.external_source_signal import make_source_event_id, parse_external_source_signal
+from custos.core.external_source_signal import make_source_event_id
 from custos.core.external_source_transport import (
     SIGNAL_STREAM_NAME,
     SourcePublicationWorker,
@@ -149,15 +155,42 @@ async def _exercise(
     for spec in specs:
         await stream.add_consumer(SIGNAL_STREAM_NAME, config=spec.consumer_config)
 
-    tls = ssl.create_default_context(cafile=str(certificate))
-    publisher = await nats.connect(
-        servers=[url],
-        user_credentials=RawCredentials(_credentials(publisher_jwt, pub_seed).decode()),
-        tls=tls,
-        tls_hostname="localhost",
-        allow_reconnect=False,
+    publisher_credentials = root / "publisher.creds"
+    publisher_credentials.write_bytes(_credentials(publisher_jwt, pub_seed))
+    publisher_credentials.chmod(0o600)
+    publisher_authorization = root / "publisher-authorization.json"
+    publisher_authorization.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "tenantId": tenant,
+                "sourceId": source,
+                "allowedSymbols": ["ETH-USDT-SWAP"],
+                "signalTokenSha256": hashlib.sha256(
+                    b"synthetic-only-never-brokered-0123456789"
+                ).hexdigest(),
+                "natsCredentialsSha256": hashlib.sha256(
+                    publisher_credentials.read_bytes()
+                ).hexdigest(),
+            }
+        )
     )
+    publisher_authorization.chmod(0o600)
+    publisher_settings = build_settings(
+        SimpleNamespace(
+            authorization=publisher_authorization,
+            nats_credentials=publisher_credentials,
+            outbox=root / "publisher.sqlite",
+            nats_url=url,
+            nats_ca=certificate,
+            nats_server_name="localhost",
+            listen_port=0,
+        )
+    )
+    publisher = await publisher_settings.profile.connect()
     subscribers = []
+    publisher_stop = asyncio.Event()
+    publisher_task = None
     try:
         for index, (runner, authority, _spec) in enumerate(
             zip(runner_ids, authorities, specs, strict=True)
@@ -226,30 +259,46 @@ async def _exercise(
             target="LONG",
             risk_action=None,
         )
-        event = parse_external_source_signal(
-            {
-                "schemaVersion": 1,
-                "sourceId": source,
-                "strategyRevision": "v1",
-                "symbol": "ETH-USDT-SWAP",
-                "timeframe": "30",
-                "barCloseTime": bar.isoformat(),
-                "timestamp": now.isoformat(),
-                "maxLag": 3600,
-                "target": "LONG",
-                "eventId": event_id,
-                "signalToken": "synthetic-only-never-brokered-0123456789",
-            },
-            tenant_id=tenant,
-            expected_source_id=source,
-            allowed_symbols=frozenset({"ETH-USDT-SWAP"}),
-            now=now,
-        )
+        payload = {
+            "schemaVersion": 1,
+            "sourceId": source,
+            "strategyRevision": "v1",
+            "symbol": "ETH-USDT-SWAP",
+            "timeframe": "30",
+            "barCloseTime": bar.isoformat(),
+            "timestamp": now.isoformat(),
+            "maxLag": 3600,
+            "target": "LONG",
+            "eventId": event_id,
+            "signalToken": "synthetic-only-never-brokered-0123456789",
+        }
         outbox = ExternalSourceOutbox(root / "source.sqlite")
-        outbox.accept(event, received_at=now)
-        assert await SourcePublicationWorker(
-            outbox, publisher.jetstream(), tenant_id=tenant
-        ).publish_once(at=now)
+        ingress = SourceWebhookIngress(publisher_settings.ingress, outbox)
+        server = create_source_webhook_server(("127.0.0.1", 0), ingress, clock=lambda: now)
+        worker = _AuthorizedPublicationWorker(
+            publisher_settings,
+            SourcePublicationWorker(outbox, publisher.jetstream(), tenant_id=tenant),
+        )
+        service = SourcePublisherService(server, worker, clock=lambda: now, idle_seconds=0.01)
+        publisher_task = asyncio.create_task(service.run(publisher_stop))
+        await service.started.wait()
+
+        def post() -> int:
+            connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+            try:
+                connection.request(
+                    "POST",
+                    "/v1/external-source-signals",
+                    json.dumps(payload).encode(),
+                    {"Content-Type": "application/json"},
+                )
+                response = connection.getresponse()
+                response.read()
+                return response.status
+            finally:
+                connection.close()
+
+        assert await asyncio.to_thread(post) == 202
         deliveries = []
         for _connection, session, host in subscribers:
             message = await session.subscription.next_msg(timeout=3)
@@ -273,6 +322,9 @@ async def _exercise(
             )
         assert (await stream.stream_info(SIGNAL_STREAM_NAME)).state.messages == 1
     finally:
+        publisher_stop.set()
+        if publisher_task is not None:
+            await publisher_task
         for connection, session, _ in subscribers:
             if session.subscription is not None:
                 await session.subscription.unsubscribe()
