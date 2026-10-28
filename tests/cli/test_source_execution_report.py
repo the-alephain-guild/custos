@@ -1,6 +1,8 @@
 """A read-only local report keeps target and deployment identities explicit."""
 
 import json
+import os
+import sqlite3
 from datetime import timedelta
 from pathlib import Path
 
@@ -76,3 +78,35 @@ def test_wrong_generation_or_missing_inbox_cannot_claim_target(tmp_path: Path) -
         read_report(
             _build_parser().parse_args(args(tmp_path / "missing.sqlite", delivery.delivery_id))
         )
+
+
+def test_flat_report_names_venue_observation_instead_of_generic_success(tmp_path: Path) -> None:
+    path = tmp_path / "target.sqlite"
+    inbox = ExternalTargetInbox(path)
+    risk = directive(FIRST, target="FLAT", risk_action="FLATTEN")
+    inbox.accept(risk, received_at=NOW)
+    assert inbox.begin_delivery(risk.delivery_id, authority=FIRST, at=NOW)
+    assert inbox.mark_handoff(risk.delivery_id, authority=FIRST, at=NOW)
+    assert inbox.confirm_flat(
+        risk.delivery_id,
+        authority=FIRST,
+        at=NOW + timedelta(seconds=2),
+        source="venue_api",
+        observed_at=NOW + timedelta(seconds=1),
+    )
+    document = read_report(_build_parser().parse_args(args(path, risk.delivery_id)))
+    assert document["target"]["handoffStatus"] == "flat_confirmed"
+    assert document["target"]["flatConfirmationSourceClaim"] == "venue_api"
+    assert document["target"]["flatObservedAtNs"] == int(
+        (NOW + timedelta(seconds=1)).timestamp() * 1_000_000_000
+    )
+
+
+def test_read_only_report_refuses_pre_migration_schema(tmp_path: Path) -> None:
+    path = tmp_path / "old.sqlite"
+    descriptor = os.open(path, os.O_CREAT | os.O_WRONLY, 0o600)
+    os.close(descriptor)
+    with sqlite3.connect(path) as connection:
+        connection.execute("CREATE TABLE external_target_flat_fence (confirmed_at_ns INTEGER)")
+    with pytest.raises(ValueError, match="schema"):
+        read_report(_build_parser().parse_args(args(path, "a" * 64)))

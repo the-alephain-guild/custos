@@ -66,6 +66,9 @@ class TargetDeliveryExecution:
     connector: str
     target: str
     status: str
+    flat_confirmation_source: str | None
+    flat_observed_at_ns: int | None
+    flat_confirmed_at_ns: int | None
     orders: tuple[TargetOrderExecution, ...]
 
     @property
@@ -180,6 +183,8 @@ class ExternalTargetInbox:
                     bar_close_ns INTEGER NOT NULL,
                     flat_delivery_id TEXT NOT NULL,
                     confirmed_at_ns INTEGER,
+                    confirmation_source TEXT,
+                    observation_at_ns INTEGER,
                     PRIMARY KEY (tenant_id, source_id, deployment_instance_id, pair)
                 );
                 CREATE TABLE IF NOT EXISTS external_target_order_link (
@@ -217,6 +222,18 @@ class ExternalTargetInbox:
                 connection.execute(
                     "ALTER TABLE external_target_fill_link "
                     "ADD COLUMN venue_order_id TEXT NOT NULL DEFAULT ''"
+                )
+            fence_columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(external_target_flat_fence)")
+            }
+            if "confirmation_source" not in fence_columns:
+                connection.execute(
+                    "ALTER TABLE external_target_flat_fence ADD COLUMN confirmation_source TEXT"
+                )
+            if "observation_at_ns" not in fence_columns:
+                connection.execute(
+                    "ALTER TABLE external_target_flat_fence ADD COLUMN observation_at_ns INTEGER"
                 )
 
     def _connect(self) -> sqlite3.Connection:
@@ -887,11 +904,20 @@ class ExternalTargetInbox:
         with self._transaction() as connection:
             connection.execute("BEGIN")
             target = connection.execute(
-                """SELECT source_event_id, connector, target, status
-                   FROM external_target_delivery
-                   WHERE delivery_id = ? AND deployment_instance_id = ?
-                     AND deployment_spec_id = ? AND deployment_spec_digest = ?
-                     AND generation = ?""",
+                """SELECT target.source_event_id, target.connector, target.target,
+                          target.status, fence.confirmation_source,
+                          fence.observation_at_ns, fence.confirmed_at_ns
+                   FROM external_target_delivery AS target
+                   LEFT JOIN external_target_flat_fence AS fence
+                     ON fence.flat_delivery_id = target.delivery_id
+                    AND fence.deployment_instance_id = target.deployment_instance_id
+                    AND fence.tenant_id = target.tenant_id
+                    AND fence.source_id = target.source_id
+                    AND fence.pair = target.pair
+                   WHERE target.delivery_id = ? AND target.deployment_instance_id = ?
+                     AND target.deployment_spec_id = ?
+                     AND target.deployment_spec_digest = ?
+                     AND target.generation = ?""",
                 (
                     delivery_id,
                     instance_id,
@@ -920,20 +946,44 @@ class ExternalTargetInbox:
             connector=target["connector"],
             target=target["target"],
             status=target["status"],
+            flat_confirmation_source=target["confirmation_source"],
+            flat_observed_at_ns=target["observation_at_ns"],
+            flat_confirmed_at_ns=target["confirmed_at_ns"],
             orders=orders,
         )
 
     def confirm_flat(
-        self, delivery_id: str, *, authority: EngineLifecycleAuthority, at: datetime
+        self,
+        delivery_id: str,
+        *,
+        authority: EngineLifecycleAuthority,
+        at: datetime,
+        source: str = "operator_claim",
+        observed_at: datetime | None = None,
     ) -> bool:
         """Persist a caller-proven flat account; this method does not inspect a venue."""
         _require_non_live(authority)
+        if source not in {"operator_claim", "sandbox_engine", "venue_api"}:
+            raise ExternalTargetInboxError("flat confirmation source is invalid")
+        if (
+            authority.trading_mode == "sandbox"
+            and source == "venue_api"
+            or authority.trading_mode == "testnet"
+            and source == "sandbox_engine"
+        ):
+            raise ExternalTargetInboxError("flat confirmation source differs from trading mode")
+        if source != "operator_claim" and observed_at is None:
+            raise ExternalTargetInboxError("flat confirmation observation is required")
         confirmed_ns = _epoch_ns(at)
+        observed_ns = _epoch_ns(observed_at or at)
+        if observed_ns > confirmed_ns:
+            raise ExternalTargetInboxError("flat observation is after confirmation")
         instance = str(authority.deployment_instance_id)
         with self._transaction() as connection:
             connection.execute("BEGIN IMMEDIATE")
             result = connection.execute(
-                """UPDATE external_target_flat_fence SET confirmed_at_ns = ?
+                """UPDATE external_target_flat_fence
+                   SET confirmed_at_ns = ?, confirmation_source = ?, observation_at_ns = ?
                    WHERE flat_delivery_id = ? AND confirmed_at_ns IS NULL
                      AND deployment_instance_id = ? AND EXISTS (
                        SELECT 1 FROM external_target_delivery
@@ -941,9 +991,12 @@ class ExternalTargetInbox:
                          AND deployment_spec_id = ? AND deployment_spec_digest = ?
                          AND generation = ? AND target = 'FLAT'
                          AND status IN ('flat_requested', 'uncertain')
+                         AND handoff_at_ns IS NOT NULL AND handoff_at_ns <= ?
                    )""",
                 (
                     confirmed_ns,
+                    source,
+                    observed_ns,
                     delivery_id,
                     instance,
                     delivery_id,
@@ -951,6 +1004,7 @@ class ExternalTargetInbox:
                     str(authority.deployment_spec_id),
                     authority.deployment_spec_digest,
                     authority.generation,
+                    observed_ns,
                 ),
             )
             if result.rowcount != 1:

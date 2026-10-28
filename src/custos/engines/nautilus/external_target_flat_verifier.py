@@ -92,5 +92,10 @@ class ExternalTargetFlatVerifier:
         if self.revalidate is not None:
             self.revalidate()
         return await asyncio.to_thread(
-            self.inbox.confirm_flat, delivery_id, authority=authority, at=at
+            self.inbox.confirm_flat,
+            delivery_id,
+            authority=authority,
+            at=at,
+            source="venue_api" if observed is not None else "sandbox_engine",
+            observed_at=observed_at if observed is not None else at,
         )

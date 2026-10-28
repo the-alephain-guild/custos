@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sqlite3
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -213,7 +215,42 @@ def test_pending_flat_requests_are_scoped_to_source_and_active_generation(tmp_pa
         == []
     )
     assert inbox.confirm_flat(risk.delivery_id, authority=FIRST, at=NOW)
+    confirmed = inbox.target_execution(FIRST, risk.delivery_id)
+    assert confirmed is not None and confirmed.flat_confirmation_source == "operator_claim"
     assert inbox.pending_flat_requests(FIRST, source_id="synthetic-supertrend") == []
+
+
+def test_predecessor_flat_fence_migrates_confirmation_provenance(tmp_path: Path) -> None:
+    path = tmp_path / "target.sqlite"
+    descriptor = os.open(path, os.O_CREAT | os.O_WRONLY, 0o600)
+    os.close(descriptor)
+    with sqlite3.connect(path) as connection:
+        connection.execute(
+            """CREATE TABLE external_target_flat_fence (
+                tenant_id TEXT NOT NULL,
+                source_id TEXT NOT NULL,
+                deployment_instance_id TEXT NOT NULL,
+                pair TEXT NOT NULL,
+                bar_close_ns INTEGER NOT NULL,
+                flat_delivery_id TEXT NOT NULL,
+                confirmed_at_ns INTEGER,
+                PRIMARY KEY (tenant_id, source_id, deployment_instance_id, pair)
+            )"""
+        )
+    inbox = ExternalTargetInbox(path)
+    risk = directive(FIRST, target="FLAT", risk_action="FLATTEN")
+    inbox.accept(risk, received_at=NOW)
+    assert inbox.begin_delivery(risk.delivery_id, authority=FIRST, at=NOW)
+    assert inbox.mark_handoff(risk.delivery_id, authority=FIRST, at=NOW)
+    assert inbox.confirm_flat(
+        risk.delivery_id,
+        authority=FIRST,
+        at=NOW + timedelta(seconds=2),
+        source="venue_api",
+        observed_at=NOW + timedelta(seconds=1),
+    )
+    report = inbox.target_execution(FIRST, risk.delivery_id)
+    assert report is not None and report.flat_confirmation_source == "venue_api"
 
 
 def test_restart_does_not_dispatch_an_already_accepted_new_entry(tmp_path: Path) -> None:

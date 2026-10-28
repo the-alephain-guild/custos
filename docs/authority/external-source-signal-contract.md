@@ -214,6 +214,10 @@ independent venue receipt. Unit tests use injected
 responses and a fake host; no real testnet account has yet supplied a flat
 receipt. A venue API snapshot is also not an atomic order/fill history, so
 full order lineage and a two-account venue acceptance run remain outstanding.
+The flat fence persists the claimed observation source and timestamp. The
+local JSON export calls this `flatConfirmationSourceClaim` and retains the
+`local_callbacks_only` grade; a string saying `venue_api` in that file is not
+itself a signed or independently verified venue receipt.
 
 For entry targets, the strategy adds the canonical target delivery digest to
 the entry order's local Nautilus tags without changing the signal-generated

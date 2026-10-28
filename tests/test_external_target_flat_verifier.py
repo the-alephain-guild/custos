@@ -62,6 +62,11 @@ async def test_fresh_venue_flat_observation_releases_only_its_target(tmp_path: P
     )
     assert await verifier.confirm_if_flat(risk.delivery_id, authority=FIRST)
     assert reader.calls == [("okx_perpetual", "ETH-USDT")]
+    confirmed = inbox.target_execution(FIRST, risk.delivery_id)
+    assert confirmed is not None and confirmed.flat_confirmation_source == "venue_api"
+    assert confirmed.flat_observed_at_ns == int(
+        (NOW + timedelta(seconds=1)).timestamp() * 1_000_000_000
+    )
     assert not await verifier.confirm_if_flat(risk.delivery_id, authority=FIRST)
     later = directive(
         FIRST,
@@ -180,6 +185,14 @@ async def test_sandbox_can_release_flat_only_from_guarded_local_engine(tmp_path:
     inbox.accept(risk, received_at=NOW)
     assert inbox.begin_delivery(risk.delivery_id, authority=sandbox, at=NOW)
     assert inbox.mark_handoff(risk.delivery_id, authority=sandbox, at=NOW)
+    with pytest.raises(ExternalTargetInboxError, match="source"):
+        inbox.confirm_flat(
+            risk.delivery_id,
+            authority=sandbox,
+            at=NOW + timedelta(seconds=2),
+            source="venue_api",
+            observed_at=NOW + timedelta(seconds=1),
+        )
     runtime = host(sandbox)
     runtime.scope = replace(runtime.scope, connector="binance_perpetual")
     verifier = ExternalTargetFlatVerifier(
@@ -189,6 +202,8 @@ async def test_sandbox_can_release_flat_only_from_guarded_local_engine(tmp_path:
     assert not await verifier.confirm_if_flat(risk.delivery_id, authority=sandbox)
     runtime.flat_local_clear = True
     assert await verifier.confirm_if_flat(risk.delivery_id, authority=sandbox)
+    confirmed = inbox.target_execution(sandbox, risk.delivery_id)
+    assert confirmed is not None and confirmed.flat_confirmation_source == "sandbox_engine"
     assert runtime.flat_local_checks == [
         (sandbox, "ETH-USDT"),
         (sandbox, "ETH-USDT"),

@@ -55,12 +55,67 @@ def read_report(args: argparse.Namespace) -> dict[str, object]:
     try:
         connection.execute("PRAGMA query_only=ON")
         connection.execute("BEGIN")
+        required_columns = {
+            "external_target_delivery": {
+                "delivery_id",
+                "source_event_id",
+                "connector",
+                "target",
+                "status",
+                "deployment_instance_id",
+                "deployment_spec_id",
+                "deployment_spec_digest",
+                "generation",
+                "tenant_id",
+                "source_id",
+                "pair",
+            },
+            "external_target_flat_fence": {
+                "flat_delivery_id",
+                "deployment_instance_id",
+                "tenant_id",
+                "source_id",
+                "pair",
+                "confirmation_source",
+                "observation_at_ns",
+                "confirmed_at_ns",
+            },
+            "external_target_order_link": {
+                "deployment_instance_id",
+                "delivery_id",
+                "client_order_id",
+                "instrument",
+                "initialized_at_ns",
+            },
+            "external_target_fill_link": {
+                "deployment_instance_id",
+                "client_order_id",
+                "fill_event_id",
+                "venue_order_id",
+                "venue_trade_id",
+                "quantity",
+                "filled_at_ns",
+            },
+        }
+        for table, required in required_columns.items():
+            columns = {row["name"] for row in connection.execute(f"PRAGMA table_info({table})")}
+            if not required.issubset(columns):
+                raise ValueError("source target inbox schema requires runner migration")
         target = connection.execute(
-            """SELECT delivery_id, source_event_id, connector, target, status
-               FROM external_target_delivery
-               WHERE delivery_id = ? AND deployment_instance_id = ?
-                 AND deployment_spec_id = ? AND deployment_spec_digest = ?
-                 AND generation = ?""",
+            """SELECT target.delivery_id, target.source_event_id, target.connector,
+                      target.target, target.status, fence.confirmation_source,
+                      fence.observation_at_ns, fence.confirmed_at_ns
+               FROM external_target_delivery AS target
+               LEFT JOIN external_target_flat_fence AS fence
+                 ON fence.flat_delivery_id = target.delivery_id
+                AND fence.deployment_instance_id = target.deployment_instance_id
+                AND fence.tenant_id = target.tenant_id
+                AND fence.source_id = target.source_id
+                AND fence.pair = target.pair
+               WHERE target.delivery_id = ? AND target.deployment_instance_id = ?
+                 AND target.deployment_spec_id = ?
+                 AND target.deployment_spec_digest = ?
+                 AND target.generation = ?""",
             (
                 args.delivery_id,
                 str(authority.deployment_instance_id),
@@ -120,6 +175,9 @@ def read_report(args: argparse.Namespace) -> dict[str, object]:
             "connector": target["connector"],
             "target": target["target"],
             "handoffStatus": target["status"],
+            "flatConfirmationSourceClaim": target["confirmation_source"],
+            "flatObservedAtNs": target["observation_at_ns"],
+            "flatConfirmedAtNs": target["confirmed_at_ns"],
             "localFillCount": local_fill_count,
             "orders": rendered_orders,
         },
