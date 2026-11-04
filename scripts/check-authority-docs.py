@@ -2177,8 +2177,35 @@ def verify_runner_fact_contract(manifest: dict[str, Any], errors: list[str]) -> 
     consumer_receipt = load_json(consumer_receipt_path)
     if index.get("authority_coordinate") != "custos.runner-fact.v1":
         errors.append("RunnerFact authority coordinate must be custos.runner-fact.v1")
-    if index.get("status") != "CANONICAL_V1_PENDING_RUNTIME_RECEIPTS":
-        errors.append("RunnerFact V1 must remain pending runtime receipts")
+    if index.get("status") != "CANONICAL_V1_PENDING_CONSUMER_AND_RUNTIME_RECEIPTS":
+        errors.append(
+            "current RunnerFact revision must remain pending consumer and runtime receipts"
+        )
+    schema = load_json(resolve("docs/gateway-contract/v1/runner_fact_batch_v1.schema.json"))
+    if (
+        index.get("contract_id") != schema.get("x-contract-id")
+        or type(index.get("contract_revision")) is not int
+        or index.get("contract_revision") != schema.get("x-contract-revision")
+    ):
+        errors.append("current RunnerFact asset index must identify its exact contract revision")
+    if index.get("open_blockers") != [
+        "current_revision_strict_consumer_acceptance",
+        "native_inventory_runtime_acceptance",
+        "opening_release_protocol_and_process_fence",
+    ]:
+        errors.append(
+            "current RunnerFact revision must retain its consumer, native and release blockers"
+        )
+    for field in (
+        "consumer_ready",
+        "runtime_rc",
+        "real_runtime_round_trip_ready",
+        "live_ready",
+        "runtime_ready",
+        "production_ready",
+    ):
+        if index.get(field) is not False:
+            errors.append(f"current RunnerFact revision {field} must remain false")
     if "supersedes_candidate_coordinate" in index or "superseded_candidate_status" in index:
         errors.append("RunnerFact V1 index must not retain candidate lineage")
     assets = index.get("assets")

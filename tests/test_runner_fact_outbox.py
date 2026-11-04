@@ -428,6 +428,7 @@ async def test_the_outbox_remembers_the_last_equity_and_clears_a_closed_month(
 ) -> None:
     import sqlite3
 
+    from custos.core.opening_inventory_contract import unavailable_opening_inventory
     from custos.core.runner_fact import equity_snapshot, settlement_period_closed
 
     authority = _authority()
@@ -444,6 +445,8 @@ async def test_the_outbox_remembers_the_last_equity_and_clears_a_closed_month(
                     amount=amount,
                     currency="USDT",
                     observed_at=f"2026-09-30T23:5{index}:00Z",
+                    trading_gate="awaiting_release",
+                    account_inventory=unavailable_opening_inventory(authority, "binance"),
                 )
             ],
         )

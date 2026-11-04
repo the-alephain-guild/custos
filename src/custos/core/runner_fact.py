@@ -20,6 +20,7 @@ import time
 import unicodedata
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from contextlib import contextmanager
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Context, Decimal, Inexact, InvalidOperation, Overflow, Rounded, localcontext
@@ -57,7 +58,7 @@ from custos.core.runner_command_intake import (
     compute_command_fingerprint,
 )
 from custos.core.runtime_identity import RuntimeIdentityError, validate_runtime_identity
-from custos.core.utc_time import render_utc
+from custos.core.utc_time import normalize_utc_timestamp, render_utc, utc_timestamp_key
 
 RUNNER_FACT_SCHEMA_VERSION: Final = 1
 RUNNER_FACT_SIGNING_DOMAIN: Final = b"CRUCIBLE-RUNNER-FACT-BATCH-V1\0"
@@ -254,6 +255,14 @@ RUNNER_FACT_PROJECTOR_CONTRACTS: Final[Mapping[str, Mapping[str, object]]] = Map
             {
                 "schema_version": 1,
                 "equity_snapshot": "v1",
+                "opening_inventory": {
+                    "schema_revision": 1,
+                    "source_models": ["unavailable", "sodex_public_account_v1"],
+                    "capture_apis": ["sodex_public_get_v1"],
+                    "mapping_revisions": [],
+                    "runtime_artifact_digests": [],
+                    "complete_models": [],
+                },
                 "position_snapshot": "v1",
                 "heartbeat": "v1",
             }
@@ -472,7 +481,8 @@ def _capability_shape(
 ) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
     projectors = dict(RUNNER_FACT_KIND_PROJECTORS)
     contracts = {
-        projector: dict(contract) for projector, contract in RUNNER_FACT_PROJECTOR_CONTRACTS.items()
+        projector: deepcopy(dict(contract))
+        for projector, contract in RUNNER_FACT_PROJECTOR_CONTRACTS.items()
     }
     for declared, kind, projector, flag in (
         (terminal_valuation, TERMINAL_VALUATION_KIND, "settlement", "terminal_valuation"),
@@ -630,6 +640,10 @@ def validate_runner_fact_payload(value: object, *, path: str = "$") -> None:
     if isinstance(value, (list, tuple)):
         for index, item in enumerate(value):
             validate_runner_fact_payload(item, path=f"{path}[{index}]")
+
+
+class RunnerFactPayloadTooLarge(RunnerFactContractError):
+    """A canonical batch cannot fit the transport's byte budget."""
 
 
 class RunnerFactIdentityError(RunnerFactError):
@@ -1018,8 +1032,10 @@ class RunnerFactAuthority:
 
     def __post_init__(self) -> None:
         _non_empty(self.tenant_id, "tenant_id")
-        if not _NATS_TOKEN.fullmatch(self.tenant_id):
-            raise RunnerFactContractError("tenant_id must be one safe NATS subject token")
+        if not _NATS_TOKEN.fullmatch(self.tenant_id) or len(self.tenant_id) > 64:
+            raise RunnerFactContractError(
+                "tenant_id must be one ASCII subject token of 1..64 bytes"
+            )
         if self.trading_mode not in {"live", "sandbox", "testnet"}:
             raise RunnerFactContractError("trading_mode must be live, sandbox, or testnet")
         _uuid(self.runner_id, "runner_id")
@@ -1450,13 +1466,32 @@ def equity_snapshot(
     amount: Decimal | str | int,
     currency: str,
     observed_at: datetime | str,
+    trading_gate: str,
+    account_inventory: Mapping[str, Any],
 ) -> dict[str, Any]:
+    from custos.core.opening_inventory_contract import normalize_opening_inventory
+
+    if trading_gate not in {"awaiting_release", "released"}:
+        raise RunnerFactContractError("equity trading_gate is outside the opening contract")
+    normalized_amount = _signed_decimal(amount, "amount", bounded=True)
+    normalized_currency = _currency(currency)
+    try:
+        normalized_time = normalize_utc_timestamp(observed_at)
+    except (TypeError, ValueError) as exc:
+        raise RunnerFactContractError("observed_at must be RFC3339 with a timezone") from exc
     return {
         "kind": "equity_snapshot",
         "event_id": _uuid(event_id, "event_id"),
-        "amount": _signed_decimal(amount, "amount", bounded=True),
-        "currency": _currency(currency),
-        "observed_at": _timestamp(observed_at, "observed_at"),
+        "amount": normalized_amount,
+        "currency": normalized_currency,
+        "observed_at": normalized_time,
+        "trading_gate": trading_gate,
+        "account_inventory": normalize_opening_inventory(
+            account_inventory,
+            amount=normalized_amount,
+            currency=normalized_currency,
+            observed_at=normalized_time,
+        ),
     }
 
 
@@ -1768,13 +1803,17 @@ def _terminal_prior_equity(value: Any) -> dict[str, Any] | None:
     seq = prior["seq"]
     if type(seq) is not int or seq < 1:
         raise RunnerFactContractError("prior_equity.seq must be a positive integer")
+    try:
+        observed_at = normalize_utc_timestamp(prior["observed_at"])
+    except (TypeError, ValueError) as exc:
+        raise RunnerFactContractError("prior_equity.observed_at must be RFC3339") from exc
     return {
         "event_id": _uuid(prior["event_id"], "prior_equity.event_id"),
         "seq": seq,
         # A copy of an already signed equity snapshot, so it keeps that fact's rule.
         "amount": _signed_decimal(prior["amount"], "prior_equity.amount", bounded=True),
         "currency": _currency(prior["currency"]),
-        "observed_at": _timestamp(prior["observed_at"], "prior_equity.observed_at"),
+        "observed_at": observed_at,
     }
 
 
@@ -2051,7 +2090,7 @@ def _require_terminal_time_order(
             raise RunnerFactContractError(
                 "marks_oldest_at must be within the valuation gap before valuation_observed_at"
             )
-    if _terminal_instant(str(prior["observed_at"])) > observed_at:
+    if utc_timestamp_key(str(prior["observed_at"])) > utc_timestamp_key(observed):
         raise RunnerFactContractError("prior_equity must not follow the terminal valuation")
 
 
@@ -3493,6 +3532,131 @@ class RunnerFactOutbox:
     ) -> UUID | None:
         return await asyncio.to_thread(self._enqueue, authority, identity, facts)
 
+    async def enqueue_observability(
+        self,
+        authority: RunnerFactAuthority,
+        identity: RunnerFactIdentity,
+        facts: Sequence[Mapping[str, Any]],
+        command_fingerprint: str,
+    ) -> UUID | None:
+        return await asyncio.to_thread(
+            self._enqueue_observability, authority, identity, facts, command_fingerprint
+        )
+
+    def _enqueue_observability(self, authority, identity, facts, command_fingerprint):
+        from custos.contracts.crucible_runner_command import CrucibleRunnerDeploymentCommandV1
+
+        if not isinstance(command_fingerprint, str) or not _LOWER_HEX_64.fullmatch(
+            command_fingerprint
+        ):
+            raise RunnerStateAuthorityError(
+                "platform observation requires its exact command fingerprint"
+            )
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?",
+                (str(authority.deployment_instance_id),),
+            ).fetchone()
+            fields = (
+                "tenant_id",
+                "trading_mode",
+                "runner_id",
+                "deployment_instance_id",
+                "deployment_spec_id",
+                "deployment_spec_digest",
+                "generation",
+            )
+            expected = {
+                field: str(getattr(authority, field))
+                if isinstance(getattr(authority, field), UUID)
+                else getattr(authority, field)
+                for field in fields
+            }
+            if (
+                row is None
+                or row["command_fingerprint"] != command_fingerprint
+                or any(row[field] != value for field, value in expected.items())
+            ):
+                raise RunnerStateAuthorityError(
+                    "observation differs from current durable desired authority"
+                )
+            try:
+                command = CrucibleRunnerDeploymentCommandV1.model_validate_json(
+                    row["canonical_command"]
+                )
+                receipt = CommandVerificationReceipt(**json.loads(row["verification_receipt"]))
+                spec = command.to_runtime_spec()
+            except (ValueError, TypeError, KeyError) as exc:
+                raise RunnerStateAuthorityError("observation durable command is corrupt") from exc
+            if (
+                command.lifecycle_state not in {"running", "paused"}
+                or any(
+                    (
+                        str(getattr(command, field))
+                        if isinstance(getattr(command, field), UUID)
+                        else getattr(command, field)
+                    )
+                    != value
+                    for field, value in expected.items()
+                )
+                or str(spec.strategy_id) != str(authority.strategy_id)
+                or receipt.command_fingerprint != command_fingerprint
+                or receipt.exact_subject != row["exact_subject"]
+                or receipt.verified_event_bytes_sha256
+                != _sha256_hex(bytes(row["exact_event_bytes"]))
+            ):
+                raise RunnerStateAuthorityError(
+                    "observation signed desired binding is retired or corrupt"
+                )
+            for fact in facts:
+                if fact.get("kind") == "equity_snapshot" and (
+                    fact.get("trading_gate") != "awaiting_release"
+                    or fact.get("account_inventory", {}).get("scope", {}).get("connector")
+                    != spec.connector
+                ):
+                    raise RunnerStateAuthorityError(
+                        "observation gate or connector differs from its source"
+                    )
+            connection.execute("SAVEPOINT opening_observation_payload")
+            try:
+                batch_id = self._enqueue_in_transaction(connection, authority, identity, facts)
+            except RunnerFactPayloadTooLarge:
+                connection.execute("ROLLBACK TO opening_observation_payload")
+                if not any(
+                    fact.get("kind") == "equity_snapshot"
+                    and fact.get("account_inventory", {}).get("status") == "observed"
+                    for fact in facts
+                ):
+                    raise
+                from custos.core.opening_inventory_contract import unavailable_opening_inventory
+
+                reduced = [
+                    {
+                        **fact,
+                        "account_inventory": unavailable_opening_inventory(
+                            authority, spec.connector, "wire_budget_exceeded"
+                        ),
+                    }
+                    if fact.get("kind") == "equity_snapshot"
+                    else fact
+                    for fact in facts
+                ]
+                batch_id = self._enqueue_in_transaction(connection, authority, identity, reduced)
+                _log.warning(
+                    "runner_fact_opening_inventory_budget_exceeded",
+                    deployment_instance_id=str(authority.deployment_instance_id),
+                )
+            connection.execute("RELEASE opening_observation_payload")
+            connection.commit()
+            return batch_id
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
     async def enqueue_group(
         self,
         authority: RunnerFactAuthority,
@@ -3595,6 +3759,18 @@ class RunnerFactOutbox:
             if kind not in RUNNER_FACT_KIND_PROJECTORS:
                 raise RunnerFactContractError(f"unsupported runner fact kind: {kind}")
             fact["kind"] = kind
+            if kind == "equity_snapshot":
+                from custos.core.opening_inventory_contract import normalize_opening_inventory
+
+                if fact.get("trading_gate") not in {"awaiting_release", "released"}:
+                    raise RunnerFactContractError("equity requires a valid trading_gate")
+                fact["account_inventory"] = normalize_opening_inventory(
+                    fact.get("account_inventory"),
+                    amount=fact["amount"],
+                    currency=fact["currency"],
+                    authority=authority,
+                    observed_at=fact["observed_at"],
+                )
             event_id = _uuid(fact.get("event_id"), "event_id")
             if event_id in event_ids:
                 raise RunnerFactContractError("batch contains duplicate event_id")
@@ -3658,7 +3834,7 @@ class RunnerFactOutbox:
         }
         payload = _canonical_json_bytes(batch)
         if len(payload) > MAX_BATCH_BYTES:
-            raise RunnerFactContractError(f"batch exceeds {MAX_BATCH_BYTES} bytes")
+            raise RunnerFactPayloadTooLarge(f"batch exceeds {MAX_BATCH_BYTES} bytes")
         connection.execute(
             """
             INSERT INTO runner_fact_outbox (
@@ -9093,6 +9269,17 @@ class RunnerFactEmitter:
     ) -> UUID | None:
         self._authority_guard()
         return await self._outbox.enqueue(authority, self._identity, tuple(facts))
+
+    async def emit_observability(
+        self,
+        authority: RunnerFactAuthority,
+        facts: Iterable[Mapping[str, Any]],
+        command_fingerprint: str,
+    ) -> UUID | None:
+        self._authority_guard()
+        return await self._outbox.enqueue_observability(
+            authority, self._identity, tuple(facts), command_fingerprint
+        )
 
     async def emit_group(
         self,

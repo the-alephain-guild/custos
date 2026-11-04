@@ -81,33 +81,33 @@
       ]
     },
     "alephain.custos.runner_fact_batch.v1": {
-      "revision": 6,
+      "revision": 7,
       "revision_carrier": "schema",
       "schema_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-      "wire_sha256": "eded38c3a402a2b661fc2ad15ab00787ddb9fed91de3a82218ae9da45f98cb82",
-      "vectors_sha256": "ea62a272a95b50e8a0bfaf45795110f8f8e158b74b234915b795a5bfff9c8636",
-      "sequences_sha256": "c54833dc8117a38b7c7ea62d5e947606b78f8b41342d025f66285c85bd60f8e2",
+      "wire_sha256": "791fb23a55f9f76944fee25f0e90d536c06c827f91e0a84d1d5ec45b377f8086",
+      "vectors_sha256": "db2b8a846dd7d9d05845d651d1fff788c593d5561fb1acc405dca2fdcaa05de9",
+      "sequences_sha256": "6b570045df7e8afd48b97ec4758b0c289c6a61972f7c0ed8b984762f466da637",
       "vectors_path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
       "assets": [
         {
           "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-          "sha256": "8b557849a1a79cce25b1fe3df5f36232a9df17f63443411d14e2047a3877d267",
-          "size_bytes": 129188
+          "sha256": "2e91691014bb1cdd7a8f9b187dee22c2c8763b01839cf3cd761e62a6612276ef",
+          "size_bytes": 181645
         },
         {
           "path": "docs/authority/runner-fact-golden-v1.json",
-          "sha256": "77b07f92c7c52b3b57bc21002d937af3805fa144cd0a8729b15a76713e7cc86b",
-          "size_bytes": 9222
+          "sha256": "c7b4a53744ba4ab6910ebb4f90305abfc3796bbfa2f24379ff02c4d73a26a018",
+          "size_bytes": 12959
         },
         {
           "path": "docs/authority/runner-fact-capability-manifest-v1.json",
-          "sha256": "5ebcea0c968e619153cb3935fe649b3fde35ea060d602663444846398640cd0c",
-          "size_bytes": 4246
+          "sha256": "5c92be593a95f5d07e9a7040b27ff111f2dac07bc830ed416e73ba494c4ad8f4",
+          "size_bytes": 4585
         },
         {
           "path": "docs/authority/runner-fact-capability-receipt-golden-v1.json",
-          "sha256": "f7069369e7009eb0a0cd40619669d27715fe4f2f8685078a6c355b989fec8f69",
-          "size_bytes": 7526
+          "sha256": "2c7936271e9140c040f6dc7b0b95a6c9bb7a724357c21e01f5d2ae65b80ea26c",
+          "size_bytes": 7891
         },
         {
           "path": "docs/authority/runner-fact-parity-matrix-v1.json",
@@ -116,42 +116,42 @@
         },
         {
           "path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
-          "sha256": "db7d9f3c2773fa30f33318088893d65394e40a071a083652cd29528609bd89ab",
+          "sha256": "a3f42d9c0e41e57858adde931920a21b989789114b0c75144bd4260df6d6c90a",
           "size_bytes": 5434
         },
         {
           "path": "docs/authority/runner-fact-terminal-boundary-golden-v1.json",
-          "sha256": "ad0ce237c6d74a76902a3c72e17461fa290e76e77315d518242b72f271cb6c3f",
-          "size_bytes": 5080
+          "sha256": "dcfa105f6e0b4b69811ff17c97bf0c88cf29c8864d033f1ab700318a5d09797e",
+          "size_bytes": 9039
         },
         {
           "path": "docs/authority/runner-fact-lineage-golden-v1.json",
-          "sha256": "5345d72c1967f5198563c953cf0373a8bca3bb0d9616fd6212ec431c25b07264",
-          "size_bytes": 10047
+          "sha256": "8b65d3ab08aed9f6104ee4f2b8674e5204107d372c026c561adbdc8a8c4f06e3",
+          "size_bytes": 10412
         },
         {
           "path": "docs/authority/runner-fact-contract-assets-v1.json",
-          "sha256": "f6baba458c526596b17afb1561f5efefff8082239fe2d57fef7ac50fcafec374",
-          "size_bytes": 4568
+          "sha256": "49122b41ae885a5f93136b11523ccc7c2d400d4f99f665586b4573e8eacee153",
+          "size_bytes": 4861
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
-          "sha256": "ea62a272a95b50e8a0bfaf45795110f8f8e158b74b234915b795a5bfff9c8636",
-          "size_bytes": 1311844
+          "sha256": "db2b8a846dd7d9d05845d651d1fff788c593d5561fb1acc405dca2fdcaa05de9",
+          "size_bytes": 1819497
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json.sha256",
-          "sha256": "b1f4acc0ee3b64fbf1060e11efc260052a0f5de7752cd4ddd9a01e835a6775f4",
+          "sha256": "026db55b3795a27e711c43316c47299449d1b8241327ada21569282540ada65c",
           "size_bytes": 100
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json",
-          "sha256": "c54833dc8117a38b7c7ea62d5e947606b78f8b41342d025f66285c85bd60f8e2",
+          "sha256": "6b570045df7e8afd48b97ec4758b0c289c6a61972f7c0ed8b984762f466da637",
           "size_bytes": 183009
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json.sha256",
-          "sha256": "fe1680d7579d9e5c46d90ab711b6b9791f42b60d9399420d891d1c213d8e6380",
+          "sha256": "1cfd0a0ae2625630dbeb9c265a6b3aa126b6b42274d4630ac6554bc5b2e87748",
           "size_bytes": 102
         }
       ],
@@ -192,6 +192,13 @@
           "wire_sha256": "eded38c3a402a2b661fc2ad15ab00787ddb9fed91de3a82218ae9da45f98cb82",
           "vectors_sha256": "ea62a272a95b50e8a0bfaf45795110f8f8e158b74b234915b795a5bfff9c8636",
           "sequences_sha256": "c54833dc8117a38b7c7ea62d5e947606b78f8b41342d025f66285c85bd60f8e2",
+          "note": "raised"
+        },
+        {
+          "revision": 7,
+          "wire_sha256": "791fb23a55f9f76944fee25f0e90d536c06c827f91e0a84d1d5ec45b377f8086",
+          "vectors_sha256": "db2b8a846dd7d9d05845d651d1fff788c593d5561fb1acc405dca2fdcaa05de9",
+          "sequences_sha256": "6b570045df7e8afd48b97ec4758b0c289c6a61972f7c0ed8b984762f466da637",
           "note": "raised"
         }
       ]

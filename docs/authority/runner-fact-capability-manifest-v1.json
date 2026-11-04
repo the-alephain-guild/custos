@@ -32,6 +32,19 @@
     "risk": {
       "schema_version": 1,
       "equity_snapshot": "v1",
+      "opening_inventory": {
+        "schema_revision": 1,
+        "source_models": [
+          "unavailable",
+          "sodex_public_account_v1"
+        ],
+        "capture_apis": [
+          "sodex_public_get_v1"
+        ],
+        "mapping_revisions": [],
+        "runtime_artifact_digests": [],
+        "complete_models": []
+      },
       "position_snapshot": "v1",
       "heartbeat": "v1"
     },

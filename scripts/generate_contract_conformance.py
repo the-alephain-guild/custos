@@ -13,6 +13,7 @@ runner does not write but a consumer must handle as the expectation says.
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import sys
@@ -28,6 +29,11 @@ from custos_toolkit.contracts.strategy_execution import canonical_json_bytes
 
 from custos.core import runner_deployment_lifecycle_fact as lifecycle_module
 from custos.core import runtime_log_fact as runtime_log_module
+from custos.core.opening_inventory_contract import (
+    NATIVE_CAPTURE_CHANNELS,
+    native_capture_token,
+    unavailable_opening_inventory,
+)
 from custos.core.runner_deployment_lifecycle_fact import RunnerDeploymentLifecycleFact
 from custos.core.runner_fact import (
     ORDER_EVENT_FIELDS,
@@ -58,7 +64,7 @@ RUNNER_FACT_VECTORS_PATH = Path("docs/authority/conformance/runner-fact-batch-v1
 RUNNER_FACT_SEQUENCES_PATH = Path("docs/authority/conformance/runner-fact-batch-v1.sequences.json")
 LINEAGE_GOLDEN_PATH = Path("docs/authority/runner-fact-lineage-golden-v1.json")
 STRATEGY_VECTORS_PATH = Path("docs/authority/conformance/strategy-canonical-json-v1.vectors.json")
-RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 6)
+RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 7)
 STRATEGY_CANONICAL_CONTRACT = ("alephain.custos.strategy_canonical_json.v1", 1)
 CAPABILITY_MANIFEST_PATH = Path("docs/authority/runner-fact-capability-manifest-v1.json")
 
@@ -265,6 +271,7 @@ def bridged_position_closes(events: Sequence[Mapping[str, Any]]) -> list[dict[st
         deployment_spec_id=str(SPEC_ID),
         deployment_spec_digest=SPEC_DIGEST,
         venue="BINANCE",
+        connector="binance_perpetual",
         currency="USDT",
         reconciliation_available=True,
         strategy_version="v1",
@@ -618,6 +625,7 @@ def runner_fact_vectors() -> list[dict[str, Any]]:
     vectors.extend(_decimal_spelling_vectors())
     vectors.extend(_decimal_range_vectors())
     vectors.extend(_omitted_nullable_vectors())
+    vectors.extend(_opening_inventory_vectors())
 
     largest = 9_223_372_036_854_775_807
     batch = signed_batch(
@@ -664,6 +672,8 @@ def _equity(amount: Any) -> dict[str, Any]:
         amount=amount,
         currency="USDT",
         observed_at="2026-10-04T13:52:00Z",
+        trading_gate="awaiting_release",
+        account_inventory=unavailable_opening_inventory(authority(), "binance"),
     )
 
 
@@ -768,6 +778,527 @@ def _decimal_range_vectors() -> list[dict[str, Any]]:
                 "expected": {**reject("decimal_out_of_range", "decode"), **(extra or {})},
             }
         )
+    return vectors
+
+
+def _opening_inventory_vectors() -> list[dict[str, Any]]:
+    vectors = []
+
+    def vector(
+        name,
+        inventory,
+        outcome,
+        *,
+        coarse=False,
+        error="schema_violation",
+        mutate_fact=None,
+        auth=None,
+        risk_amount="1234.5",
+    ):
+        fact = _equity(risk_amount)
+        if (
+            inventory["equity_binding"]["status"] == "coherent"
+            and inventory["equity_binding"]["observed_at"] is not None
+        ):
+            fact["observed_at"] = inventory["equity_binding"]["observed_at"]
+        if outcome == "accept":
+            fact = equity_snapshot(
+                event_id=fact["event_id"],
+                amount=fact["amount"],
+                currency=fact["currency"],
+                observed_at=fact["observed_at"],
+                trading_gate="awaiting_release",
+                account_inventory=inventory,
+            )
+        else:
+            fact["account_inventory"] = inventory
+        if mutate_fact is not None:
+            mutate_fact(fact)
+        if name == "opening-nested-binary-float":
+            safe = copy.deepcopy(fact)
+            safe["account_inventory"]["observations"]["balances"]["rows"][0]["total"] = "0.1"
+            batch = signed_batch(name, [safe], emitted_at="2026-11-04T00:00:01Z", auth=auth)
+            batch["facts"][0]["account_inventory"]["observations"]["balances"]["rows"][0][
+                "total"
+            ] = 0.1
+        else:
+            batch = signed_batch(name, [fact], emitted_at="2026-11-04T00:00:01Z", auth=auth)
+        expected = (
+            accept(batch, typed_roundtrip_equal=True)
+            if outcome == "accept"
+            else reject(error, "decode")
+        )
+        if (
+            outcome == "accept"
+            and inventory["scope"]["source"] is not None
+            and inventory["scope"]["source"]["kind"] == "sandbox_engine"
+        ):
+            expected = reject("capability_mismatch", "admission")
+        if coarse:
+            expected.update(SCHEMA_COARSE)
+        result = {
+            "id": name,
+            "origin": "producer-canonical" if outcome == "accept" else "tolerance",
+            "covers": ["closed opening inventory acceptance domain and preserved risk equity"],
+            "raw": raw(batch),
+            "expected": expected,
+        }
+        if outcome == "accept":
+            result["producer_input"] = {"opening_inventory": inventory}
+        vectors.append(result)
+
+    for connector in ("binance", "binance_perpetual", "okx", "okx_perpetual"):
+        vector(
+            f"opening-unavailable-{connector}",
+            unavailable_opening_inventory(authority(), connector),
+            "accept",
+        )
+    partial = unavailable_opening_inventory(authority(), "binance")
+    partial["scope"]["source"] = {
+        "kind": "sandbox_engine",
+        "incarnation": "90000000-0000-4000-8000-000000000001",
+        "client_id": "BINANCE",
+        "account_id": "BINANCE-001",
+        "venue": "BINANCE",
+        "account_type": "CASH",
+        "api_revision": "execution-account-capture-v1",
+        "model_revision": "sandbox-account-state-v1",
+        "runtime_version": "2.0.0",
+        "configuration_json": '{"allow_borrowing":false}',
+        "configuration_sha256": hashlib.sha256(b'{"allow_borrowing":false}').hexdigest(),
+    }
+    partial["capability_binding"].update(
+        capture_api_revision="execution-account-capture-v1",
+        model_revision="sandbox-account-state-v1",
+    )
+    partial["native_capture"] = {
+        "node_instance_id": "90000000-0000-4000-8000-000000000002",
+        "environment": "SANDBOX",
+        "capture_sequence": 1,
+        "observed_at_ns": 1793750400000000000,
+        "no_borrowing_model": True,
+        "frontier": [{"channel": c, "applied": 0, "admitted": 0} for c in NATIVE_CAPTURE_CHANNELS],
+    }
+    token = native_capture_token(partial["scope"]["source"], partial["native_capture"])
+    partial["status"] = "observed"
+    partial["observations"]["balances"].update(
+        status="observed",
+        reason=None,
+        source_time="2026-11-04T00:00:00Z",
+        capture_token=token,
+        pagination="owner_full",
+        rows=[
+            {
+                "raw_asset_id": None,
+                "raw_asset_code": "USDT",
+                "native_currency": {"precision": 8, "currency_type": "CRYPTO", "iso4217": 0},
+                "namespace": "native.currency",
+                "denomination": None,
+                "mapping_revision": None,
+                "total": "100",
+                "locked": "0",
+                "collateral": None,
+                "available": "100",
+            }
+        ],
+    )
+    partial["equity_binding"]["reason"] = "independent_risk_observation"
+    for name, amount in (("mantissa-max", LARGEST_DECIMAL), ("scale-28", "0." + "0" * 27 + "1")):
+        inventory = copy.deepcopy(partial)
+        inventory["observations"]["balances"]["rows"][0]["total"] = amount
+        vector(f"opening-nested-{name}", inventory, "accept")
+    # Future-shaped native parser fixtures remain unauthorized by the actual manifest.
+    cash = copy.deepcopy(partial)
+    cash["capability_binding"].update(
+        mapping_revision="native_currency_codes_v1", runtime_artifact_digest="e" * 64
+    )
+
+    def owner_read(rows):
+        return {**cash["observations"]["balances"], "rows": rows}
+
+    source = cash["scope"]["source"]
+    cash["observations"]["identity"] = owner_read(
+        [
+            {
+                "kind": "sandbox_account",
+                **{
+                    k: source[k]
+                    for k in (
+                        "incarnation",
+                        "client_id",
+                        "account_id",
+                        "venue",
+                        "account_type",
+                        "configuration_sha256",
+                    )
+                },
+            }
+        ]
+    )
+    cash["observations"].update(positions=owner_read([]), ordinary_orders=owner_read([]))
+    cash["observations"]["liabilities"] = owner_read(None)
+    cash["observations"]["liabilities"].update(
+        status="not_applicable", reason="model_not_applicable"
+    )
+    balance = cash["observations"]["balances"]["rows"][0]
+    balance.update(
+        total="1234.5",
+        available="1234.5",
+        denomination="USDT",
+        mapping_revision="native_currency_codes_v1",
+    )
+    cash["completeness"] = dict.fromkeys(cash["completeness"], True)
+    cash["inventory_complete"] = True
+    cash["equity_binding"] = {
+        "status": "coherent",
+        "capture_token": token,
+        "currency": "USDT",
+        "amount": "1234.5",
+        "observed_at": "2026-11-04T00:00:00Z",
+        "valuation_rule": "settlement_cash_total_v1",
+        "reason": None,
+    }
+    vector("opening-native-cash-parser-only", cash, "accept")
+    zero = copy.deepcopy(cash)
+    zero["equity_binding"]["amount"] = "0"
+    zero["observations"]["balances"]["rows"] = []
+    vector("opening-native-zero-empty-balances-parser-only", zero, "accept", risk_amount="0")
+    zero_other = copy.deepcopy(zero)
+    zero_other["observations"]["balances"]["rows"] = [
+        {
+            **balance,
+            "raw_asset_code": "BTC",
+            "denomination": "BTC",
+            "total": "0",
+            "available": "0",
+        }
+    ]
+    vector(
+        "opening-native-zero-other-known-asset-parser-only", zero_other, "accept", risk_amount="0"
+    )
+    zero_changes = (
+        ("missing-account", lambda i: i["observations"]["identity"].update(rows=[])),
+        (
+            "unavailable-balances",
+            lambda i: i["observations"].update(
+                balances=unavailable_opening_inventory(authority(), "binance")["observations"][
+                    "balances"
+                ]
+            ),
+        ),
+        (
+            "incomplete-balances",
+            lambda i: (
+                i["completeness"].update(balances=False),
+                i.update(inventory_complete=False),
+            ),
+        ),
+        (
+            "unknown-boundary",
+            lambda i: (
+                i["completeness"].update(common_boundary=None),
+                i.update(inventory_complete=False),
+            ),
+        ),
+        ("unmapped-settlement", lambda i: i["equity_binding"].update(currency="VUSDC")),
+        ("nonzero-equity", lambda i: i["equity_binding"].update(amount="1")),
+        (
+            "other-nonzero-asset",
+            lambda i: i["observations"]["balances"].update(
+                rows=[
+                    {
+                        **zero_other["observations"]["balances"]["rows"][0],
+                        "total": "1",
+                        "available": "1",
+                    }
+                ]
+            ),
+        ),
+        (
+            "unknown-nonzero-asset",
+            lambda i: i["observations"]["balances"].update(
+                rows=[
+                    {
+                        **balance,
+                        "raw_asset_code": "SOL",
+                        "denomination": None,
+                        "mapping_revision": None,
+                        "total": "1",
+                        "available": "1",
+                    }
+                ]
+            ),
+        ),
+        (
+            "nonzero-liability",
+            lambda i: i["observations"].update(
+                liabilities=owner_read(
+                    [
+                        {
+                            "raw_asset_id": None,
+                            "raw_asset_code": "USDT",
+                            "namespace": "native.currency",
+                            "amount": "1",
+                        }
+                    ]
+                )
+            ),
+        ),
+        (
+            "effective-position",
+            lambda i: i["observations"].update(
+                positions=owner_read(
+                    [
+                        {
+                            "position_id": "P-1",
+                            "instrument": "BTCUSDT.BINANCE",
+                            "quantity": "1",
+                            "active": True,
+                            "position_side": "LONG",
+                            "average_entry_price": None,
+                            "settlement_currency": "USDT",
+                        }
+                    ]
+                )
+            ),
+        ),
+        ("wrong-source", lambda i: i["scope"]["source"].update(account_id="BINANCE-other")),
+        ("wrong-token", lambda i: i["observations"]["balances"].update(capture_token="wrong")),
+        (
+            "wrong-time",
+            lambda i: i["observations"]["balances"].update(
+                source_time="2026-11-04T00:00:00.000000001Z"
+            ),
+        ),
+    )
+    for name, mutate in zero_changes:
+        inventory = copy.deepcopy(zero)
+        mutate(inventory)
+        if name == "wrong-source":
+            changed_token = native_capture_token(
+                inventory["scope"]["source"], inventory["native_capture"]
+            )
+            for read in inventory["observations"].values():
+                read["capture_token"] = changed_token
+            inventory["equity_binding"]["capture_token"] = changed_token
+        vector(
+            f"opening-native-zero-{name}",
+            inventory,
+            "reject",
+            coarse=True,
+            risk_amount="1" if name == "nonzero-equity" else "0",
+        )
+    native_changes = (
+        ("missing-capture", lambda i: i.pop("native_capture"), False),
+        ("null-capture", lambda i: i.update(native_capture=None), True),
+        ("missing-account-type", lambda i: i["scope"]["source"].pop("account_type"), False),
+        ("wrong-environment", lambda i: i["native_capture"].update(environment="LIVE"), False),
+        ("bool-sequence", lambda i: i["native_capture"].update(capture_sequence=True), False),
+        ("pending-frontier", lambda i: i["native_capture"]["frontier"][0].update(admitted=1), True),
+        (
+            "duplicate-channel",
+            lambda i: i["native_capture"]["frontier"][-1].update(channel="time_events"),
+            True,
+        ),
+        (
+            "wrong-time-nanos",
+            lambda i: i["native_capture"].update(observed_at_ns=1793750400000000001),
+            True,
+        ),
+        (
+            "wrong-config-bytes",
+            lambda i: i["scope"]["source"].update(configuration_json="{}"),
+            True,
+        ),
+        (
+            "opaque-token",
+            lambda i: i["observations"]["balances"].update(capture_token="opaque"),
+            True,
+        ),
+        (
+            "currency-collision",
+            lambda i: i["observations"]["balances"]["rows"][0]["native_currency"].update(
+                precision=2
+            ),
+            True,
+        ),
+        ("hidden-capture-member", lambda i: i["native_capture"].update(hidden=True), False),
+        (
+            "false-no-borrowing",
+            lambda i: i["native_capture"].update(no_borrowing_model=False),
+            True,
+        ),
+        (
+            "cash-with-missing-positions",
+            lambda i: i["observations"].update(
+                positions=unavailable_opening_inventory(authority(), "binance")["observations"][
+                    "positions"
+                ]
+            ),
+            True,
+        ),
+        (
+            "cash-extra-asset",
+            lambda i: i["observations"]["balances"]["rows"].append(
+                {
+                    **i["observations"]["balances"]["rows"][0],
+                    "raw_asset_code": "BTC",
+                    "denomination": "BTC",
+                    "total": "100",
+                    "available": "100",
+                }
+            ),
+            True,
+        ),
+        (
+            "cash-effective-position",
+            lambda i: i["observations"].update(
+                positions=owner_read(
+                    [
+                        {
+                            "position_id": "P-1",
+                            "instrument": "BTCUSDT.BINANCE",
+                            "quantity": "1",
+                            "active": True,
+                            "position_side": "LONG",
+                            "average_entry_price": None,
+                            "settlement_currency": "USDT",
+                        }
+                    ]
+                )
+            ),
+            True,
+        ),
+        (
+            "cash-nonzero-liability",
+            lambda i: i["observations"].update(
+                liabilities=owner_read(
+                    [
+                        {
+                            "raw_asset_id": None,
+                            "raw_asset_code": "USDT",
+                            "namespace": "native.currency",
+                            "amount": "1",
+                        }
+                    ]
+                )
+            ),
+            True,
+        ),
+    )
+    for name, mutate, coarse in native_changes:
+        inventory = copy.deepcopy(cash)
+        mutate(inventory)
+        # Recompute the descriptor token so semantic counterexamples cannot fail only on a stale digest.
+        if inventory.get("native_capture") is not None:
+            current_token = native_capture_token(
+                inventory["scope"]["source"], inventory["native_capture"]
+            )
+            for read in inventory["observations"].values():
+                if read["status"] != "unavailable" and name != "opaque-token":
+                    read["capture_token"] = current_token
+            inventory["equity_binding"]["capture_token"] = current_token
+        vector(f"opening-native-{name}", inventory, "reject", coarse=coarse)
+    nested_changes = (
+        ("mantissa-overflow", lambda r: r.update(total="79228162514264337593543950336"), True),
+        ("scale-29", lambda r: r.update(total="0." + "0" * 28 + "1"), True),
+        ("negative-zero", lambda r: r.update(total="-0"), False),
+        ("trailing-zero", lambda r: r.update(total="1.00"), False),
+        ("binary-float", lambda r: r.update(total=0.1), False),
+        ("asset-65", lambda r: r.update(raw_asset_code="A" * 65), False),
+        ("asset-unicode", lambda r: r.update(raw_asset_code="é"), False),
+        (
+            "unknown-denomination",
+            lambda r: r.update(denomination="SOL", mapping_revision="map"),
+            False,
+        ),
+    )
+    for name, mutate, coarse in nested_changes:
+        inventory = copy.deepcopy(partial)
+        mutate(inventory["observations"]["balances"]["rows"][0])
+        vector(f"opening-nested-{name}", inventory, "reject", coarse=coarse)
+    partial_order_claim = copy.deepcopy(partial)
+    partial_order_claim["observations"]["identity"] = copy.deepcopy(
+        cash["observations"]["identity"]
+    )
+    partial_order_claim["capability_binding"] = copy.deepcopy(cash["capability_binding"])
+    partial_order_claim["completeness"]["order_kinds"] = True
+    vector("opening-native-order-kinds-without-orders", partial_order_claim, "reject", coarse=True)
+    for dimension in ("identity", "balances", "liabilities", "positions", "ordinary_orders"):
+        inventory = unavailable_opening_inventory(authority(), "binance")
+        inventory["observations"][dimension].update(
+            status="not_applicable", reason="model_not_applicable"
+        )
+        vector(f"opening-unknown-source-inapplicable-{dimension}", inventory, "reject", coarse=True)
+    changes = (
+        ("missing-source", lambda i: i["scope"].pop("source"), False),
+        ("unknown-source", lambda i: i["scope"].update(source={"kind": "unknown"}), False),
+        ("tenant-65", lambda i: i["scope"].update(tenant_id="a" * 65), False),
+        ("tenant-nonascii", lambda i: i["scope"].update(tenant_id="é"), False),
+        ("nil-runner", lambda i: i["scope"].update(runner_id=str(UUID(int=0))), True),
+        ("generation-bool", lambda i: i["scope"].update(generation=True), False),
+        ("complete-without-evidence", lambda i: i.update(inventory_complete=True), True),
+        ("coherent-without-capture", lambda i: i["equity_binding"].update(status="coherent"), True),
+        ("unknown-completeness", lambda i: i["completeness"].update(hidden=True), False),
+        ("null-read-empty-rows", lambda i: i["observations"]["balances"].update(rows=[]), True),
+        (
+            "unknown-read-field",
+            lambda i: i["observations"]["balances"].update(hidden="value"),
+            False,
+        ),
+    )
+    for name, mutate, coarse in changes:
+        inventory = copy.deepcopy(unavailable_opening_inventory(authority(), "binance"))
+        mutate(inventory)
+        vector(f"opening-{name}", inventory, "reject", coarse=coarse)
+    for field, value in (
+        ("tenant_id", "other"),
+        ("trading_mode", "live"),
+        ("runner_id", "10000000-0000-4000-8000-000000000009"),
+        ("deployment_instance_id", "20000000-0000-4000-8000-000000000009"),
+        ("deployment_spec_id", "30000000-0000-4000-8000-000000000009"),
+        ("deployment_spec_digest", "f" * 64),
+        ("generation", GENERATION + 1),
+    ):
+        inventory = unavailable_opening_inventory(authority(), "binance")
+        inventory["scope"][field] = value
+        vector(
+            f"opening-envelope-mismatch-{field}",
+            inventory,
+            "reject",
+            coarse=True,
+            error="invariant_violation",
+        )
+    for field, value in (
+        ("capability_version_id", "50000000-0000-4000-8000-000000000009"),
+        ("capability_version", 2),
+        ("capability_manifest_digest", "f" * 64),
+    ):
+        inventory = unavailable_opening_inventory(authority(), "binance")
+        inventory["capability_binding"][field] = value
+        vector(
+            f"opening-capability-header-mismatch-{field}",
+            inventory,
+            "reject",
+            coarse=True,
+            error="invariant_violation",
+        )
+    for field in ("trading_gate", "account_inventory"):
+        vector(
+            f"opening-missing-{field}",
+            unavailable_opening_inventory(authority(), "binance"),
+            "reject",
+            mutate_fact=lambda fact, name=field: fact.pop(name),
+        )
+    inventory = unavailable_opening_inventory(authority(), "binance")
+    vector("opening-deep-digest-tamper", inventory, "accept")
+    tampered = json.loads(vectors[-1]["raw"])
+    tampered["facts"][0]["account_inventory"]["reasons"] = ["capture_unavailable"]
+    vectors[-1].update(
+        origin="tolerance",
+        raw=raw(tampered),
+        expected={**reject("digest_mismatch", "decode"), **SCHEMA_COARSE},
+    )
     return vectors
 
 

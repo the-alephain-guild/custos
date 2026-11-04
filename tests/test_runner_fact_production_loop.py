@@ -57,6 +57,10 @@ class _CapturingEmitter:
         json.dumps(facts, allow_nan=False, separators=(",", ":"), sort_keys=True)
         self.emissions.append((authority, tuple(facts)))
 
+    async def emit_observability(self, authority, facts, command_fingerprint):
+        assert len(command_fingerprint) == 64
+        return await self.emit(authority, facts)
+
     async def emit_group(self, authority, batches):
         for facts in batches:
             await self.emit(authority, facts)
@@ -411,6 +415,20 @@ class _CapitalBasisHost:
     async def deployment_ready(self, deployment_instance_id):
         return True
 
+    async def runner_fact_observation_token(self, authority):
+        from custos.core.runner_fact_producer import RunnerFactObservationToken
+
+        assert authority is self.deployment.authority
+        return RunnerFactObservationToken(None, id(self.deployment), 0, "simulation")
+
+    async def runner_fact_opening_snapshot(self, deployment_instance_id):
+        from custos.core.opening_inventory_contract import unavailable_opening_inventory
+
+        assert deployment_instance_id == self.deployment.deployment_instance_id
+        return "awaiting_release", unavailable_opening_inventory(
+            self.deployment.authority, "binance"
+        )
+
     async def runner_fact_risk_snapshot(self, deployment_instance_id, currency):
         assert deployment_instance_id == self.deployment.deployment_instance_id
         assert currency == "USDT"
@@ -443,11 +461,15 @@ async def test_observability_emits_signed_capital_basis_without_log_inference() 
         deployment_spec_id=uuid4(),
         deployment_spec_digest="a" * 64,
         generation=1,
+        capability_version_id=uuid4(),
+        capability_version=1,
+        capability_manifest_digest="b" * 64,
     )
     deployment = SimpleNamespace(
         authority=authority,
         deployment_instance_id=str(authority.deployment_instance_id),
         currency="USDT",
+        connector="binance",
     )
     emitter = _CapturingEmitter()
     loop = RunnerFactProductionLoop(
@@ -492,6 +514,7 @@ async def test_observability_reports_degraded_when_host_audit_state_is_unreliabl
         authority=authority,
         deployment_instance_id=str(uuid4()),
         currency="USDT",
+        connector="binance",
     )
 
     class DegradedHost(_CapitalBasisHost):
@@ -524,11 +547,21 @@ async def test_observability_reports_degraded_until_the_engine_is_ready() -> Non
     authority = SimpleNamespace(
         stream_key="default:sandbox:runner:starting",
         deployment_spec_id=uuid4(),
+        tenant_id="default",
+        trading_mode="sandbox",
+        runner_id=uuid4(),
+        deployment_instance_id=uuid4(),
+        deployment_spec_digest="a" * 64,
+        generation=1,
+        capability_version_id=uuid4(),
+        capability_version=1,
+        capability_manifest_digest="b" * 64,
     )
     deployment = SimpleNamespace(
         authority=authority,
         deployment_instance_id=str(uuid4()),
         currency="USDT",
+        connector="binance",
     )
 
     class StartingHost(_CapitalBasisHost):

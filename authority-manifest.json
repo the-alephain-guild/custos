@@ -3,6 +3,10 @@
   "project": "custos",
   "authority_documents": [
     {
+      "role": "opening_inventory_runner_fact_v1",
+      "path": "docs/authority/opening-inventory-runner-fact-v1.md"
+    },
+    {
       "role": "opening_inventory_observation",
       "path": "docs/authority/opening-inventory-observation.md"
     },
@@ -477,14 +481,31 @@
     "module_root": "src/custos/offline",
     "guard_module": "mode_guard.py",
     "guard_reference": "custos.offline.mode_guard",
-    "permitted_modes": ["sandbox", "testnet"],
+    "permitted_modes": [
+      "sandbox",
+      "testnet"
+    ],
     "excluded_mode": "live",
     "promotable": false,
     "opt_in_flag": "--reconcile-strategy-id",
     "consumer": "philosophers-stone/deploy/custos",
-    "guarded_modules": ["spec.py", "reconciler.py", "daemon.py", "safety.py"],
-    "mode_agnostic_modules": ["__init__.py", "mode_guard.py", "transport.py", "state.py", "strategy_config.py", "telemetry.py"],
-    "guarded_entry_points": ["src/custos/cli/subcommands/deployment.py"],
+    "guarded_modules": [
+      "spec.py",
+      "reconciler.py",
+      "daemon.py",
+      "safety.py"
+    ],
+    "mode_agnostic_modules": [
+      "__init__.py",
+      "mode_guard.py",
+      "transport.py",
+      "state.py",
+      "strategy_config.py",
+      "telemetry.py"
+    ],
+    "guarded_entry_points": [
+      "src/custos/cli/subcommands/deployment.py"
+    ],
     "doc_drift_exemption": "The lane lives outside doc_drift.paths by decision, not by oversight: its subjects and symbols are exactly what those patterns forbid inside the signed path's files. verify_offline_lane bounds it instead."
   },
   "doc_drift": {

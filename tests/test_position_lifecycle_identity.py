@@ -80,6 +80,7 @@ def _deployment() -> RunnerFactDeployment:
         deployment_spec_id="30000000-0000-4000-8000-000000000001",
         deployment_spec_digest="a" * 64,
         venue="BINANCE",
+        connector="binance_perpetual",
         currency="USDT",
         reconciliation_available=True,
         strategy_version="v2",

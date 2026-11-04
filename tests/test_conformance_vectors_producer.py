@@ -235,6 +235,7 @@ def test_a_netting_slot_reopened_by_another_order_closes_as_two_lifecycles() -> 
             deployment_spec_id=str(authority.deployment_spec_id),
             deployment_spec_digest=authority.deployment_spec_digest,
             venue="BINANCE",
+            connector="binance_perpetual",
             currency="USDT",
             reconciliation_available=True,
             strategy_version="v1",
@@ -330,6 +331,8 @@ def test_the_runner_signs_exactly_the_decimals_the_consumer_can_hold(
             amount=signed["amount"],
             currency=signed["currency"],
             observed_at=signed["observed_at"],
+            trading_gate=signed["trading_gate"],
+            account_inventory=signed["account_inventory"],
         )
 
     if vector["expected"]["outcome"] == "accept":
@@ -783,3 +786,46 @@ def test_sequences_continue_one_stream() -> None:
             batch = json.loads(step["raw"])
             assert batch["source_seq_start"] == expected_start, sequence["id"]
             expected_start = batch["source_seq_end"] + 1
+
+
+OPENING_VECTORS = _vectors(lambda v: v["id"].startswith("opening-"))
+
+
+@pytest.mark.parametrize("vector", OPENING_VECTORS, ids=_ids(OPENING_VECTORS))
+def test_opening_vectors_execute_the_actual_closed_producer_contract(vector):
+    from custos.core.opening_inventory_contract import normalize_opening_inventory
+
+    batch = _batch(vector)
+    fact = batch["facts"][0]
+
+    def build():
+        normalized = normalize_opening_inventory(
+            fact.get("account_inventory"),
+            amount=fact["amount"],
+            currency=fact["currency"],
+            authority=_authority(batch),
+        )
+        return equity_snapshot(
+            event_id=fact["event_id"],
+            amount=fact["amount"],
+            currency=fact["currency"],
+            observed_at=fact["observed_at"],
+            trading_gate=fact.get("trading_gate"),
+            account_inventory=normalized,
+        )
+
+    if vector["expected"].get("error_class") == "digest_mismatch":
+        with pytest.raises(RunnerFactContractError, match="digest"):
+            runner_fact_signing_preimage(batch)
+    elif vector["expected"].get("stage") == "admission":
+        from custos.core.opening_inventory_contract import require_opening_inventory_support
+
+        rebuilt = build()
+        manifest = _json(ROOT / "docs/authority/runner-fact-capability-manifest-v1.json")
+        with pytest.raises(RunnerFactContractError, match="registered"):
+            require_opening_inventory_support(rebuilt["account_inventory"], manifest)
+    elif vector["expected"]["outcome"] == "accept":
+        assert build() == {k: v for k, v in fact.items() if k != "seq"}
+    else:
+        with pytest.raises(RunnerFactContractError):
+            build()

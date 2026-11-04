@@ -140,7 +140,10 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
     assert index["authority_coordinate"] == "custos.runner-fact.v1"
     assert "supersedes_candidate_coordinate" not in index
     assert "superseded_candidate_status" not in index
-    assert index["status"] == "CANONICAL_V1_PENDING_RUNTIME_RECEIPTS"
+    assert index["status"] == "CANONICAL_V1_PENDING_CONSUMER_AND_RUNTIME_RECEIPTS"
+    assert index["contract_revision"] == 7
+    assert index["consumer_ready"] is False
+    assert "current_revision_strict_consumer_acceptance" in index["open_blockers"]
     assert index["stream_identity_fields"] == [
         "tenant_id",
         "trading_mode",

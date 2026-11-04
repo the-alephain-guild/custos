@@ -46,14 +46,20 @@ class PlatformOpeningGate:
     def defer_refusal(self, callback: Callable[[], None]) -> bool:
         return self._store.defer_opening_control_callback(callback)
 
-    async def current_running_desired(self):
+    async def current_observation_desired(self):
         current = await self._store.load_durable_desired_command(
             self.authority.deployment_instance_id
         )
         if (
-            current.command.lifecycle_state != "running"
+            current.command.lifecycle_state not in {"running", "paused"}
             or EngineLifecycleAuthority.from_verified_command(current) != self.authority
         ):
+            raise RunnerStateAuthorityError("risk observation authority is no longer current")
+        return current
+
+    async def current_running_desired(self):
+        current = await self.current_observation_desired()
+        if current.command.lifecycle_state != "running":
             raise RunnerStateAuthorityError("opening observation authority is no longer running")
         await asyncio.to_thread(self._store.load_opening_gate_state_sync, self.authority)
         return current

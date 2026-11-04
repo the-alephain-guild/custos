@@ -48,6 +48,7 @@ from custos.core.runner_fact import (
     SUPPORTED_CURRENCIES,
     RunnerCapabilityReceipt,
     RunnerFactAuthority,
+    RunnerFactContractError,
     RunnerFactEmitter,
     runner_fact_event_id,
 )
@@ -55,6 +56,8 @@ from custos.core.runner_fact_producer import (
     RunnerCapitalBasisSnapshot,
     RunnerFactDeployment,
     RunnerFactEventBridge,
+    RunnerFactObservationRetired,
+    RunnerFactObservationToken,
     RunnerRuntimeLogPort,
     VenueLedgerEvidence,
     strategy_signal_metadata,
@@ -648,6 +651,7 @@ class NtTradingNodeHost:
             str, SodexOpeningInventoryCollector | InventoryUnavailable
         ] = {}
         self._opening_observation_epochs: dict[str, int] = {}
+        self._opening_fact_reads: dict[str, tuple[RunnerFactObservationToken, asyncio.Task]] = {}
         self._runner_safety_boundaries: dict[str, RunnerReservationBoundary] = {}
         # A real venue credential scope represents one account-level order/position
         # stream. Two active deployment nodes on the same scope would both observe and
@@ -1621,6 +1625,7 @@ class NtTradingNodeHost:
             deployment_spec_id=identity.spec_id,
             deployment_spec_digest=deployment_spec_digest,
             venue=identity.venue,
+            connector=identity.connector,
             currency=currency,
             reconciliation_available=provider is not None,
             strategy_version=strategy_version,
@@ -1994,6 +1999,9 @@ class NtTradingNodeHost:
         self._runner_fact_contexts.pop(deployment_instance_id, None)
         self._opening_inventory_providers.pop(deployment_instance_id, None)
         self._opening_observation_epochs.pop(deployment_instance_id, None)
+        read_entry = self._opening_fact_reads.get(deployment_instance_id)
+        if read_entry is not None and read_entry[1].done():
+            self._opening_fact_reads.pop(deployment_instance_id, None)
         self._runner_safety_boundaries.pop(deployment_instance_id, None)
         self._cancel_disciplines.pop(deployment_instance_id, None)
         self._signed_unpriced_dust.pop(deployment_instance_id, None)
@@ -2489,6 +2497,124 @@ class NtTradingNodeHost:
 
     def runner_fact_deployments(self) -> tuple[RunnerFactDeployment, ...]:
         return tuple(context[0] for context in self._runner_fact_contexts.values())
+
+    async def runner_fact_observation_token(
+        self, authority: RunnerFactAuthority
+    ) -> RunnerFactObservationToken:
+        instance = str(authority.deployment_instance_id)
+        context = self._runner_fact_contexts.get(instance)
+        runtime = self._active_nodes.get(instance)
+        lifecycle = self._lifecycle_authorities.get(instance)
+        boundary = self._runner_safety_boundaries.get(instance)
+        if (
+            context is None
+            or context[0].authority != authority
+            or runtime is None
+            or runtime.task.done()
+            or instance in self._stopping
+            or boundary is None
+            or lifecycle is None
+            or boundary.platform_opening_gate is None
+            or boundary.platform_opening_gate.authority != lifecycle
+        ):
+            raise RunnerFactObservationRetired("risk observation source is not current")
+        observation_epoch = self._opening_observation_epochs.get(instance, 0)
+        try:
+            desired = await boundary.platform_opening_gate.current_observation_desired()
+        except Exception as exc:
+            raise RunnerFactObservationRetired(
+                "risk observation durable authority is unavailable"
+            ) from exc
+        if (
+            self._active_nodes.get(instance) is not runtime
+            or runtime.task.done()
+            or self._runner_fact_contexts.get(instance) is not context
+            or instance in self._stopping
+            or self._lifecycle_authorities.get(instance) != lifecycle
+            or self._opening_observation_epochs.get(instance, 0) != observation_epoch
+        ):
+            raise RunnerFactObservationRetired("risk observation retired during authority read")
+        if (
+            desired.command.tenant_id != authority.tenant_id
+            or desired.command.runner_id != authority.runner_id
+        ):
+            raise RunnerFactObservationRetired("risk observation signer scope changed")
+        return RunnerFactObservationToken(
+            desired.command_fingerprint,
+            id(runtime),
+            self._opening_observation_epochs.get(instance, 0),
+        )
+
+    def _opening_fact_read_finished(self, instance: str, task: asyncio.Task) -> None:
+        entry = self._opening_fact_reads.get(instance)
+        runtime = self._active_nodes.get(instance)
+        if (
+            entry is not None
+            and entry[1] is task
+            and (runtime is None or id(runtime) != entry[0].runtime_identity)
+        ):
+            self._opening_fact_reads.pop(instance, None)
+            if not task.cancelled():
+                task.exception()
+
+    async def runner_fact_opening_snapshot(self, deployment_instance_id: str) -> tuple[str, dict]:
+        from custos.core.opening_inventory_contract import (
+            require_opening_inventory_support,
+            unavailable_opening_inventory,
+        )
+        from custos.engines.nautilus.opening_inventory_fact import opening_inventory_observation
+
+        context = self._runner_fact_contexts.get(deployment_instance_id)
+        if context is None:
+            raise RunnerFactObservationRetired("opening observation has no current signed instance")
+        deployment = context[0]
+        token = await self.runner_fact_observation_token(deployment.authority)
+        lifecycle = self._lifecycle_authorities[deployment_instance_id]
+        gate = self._runner_safety_boundaries[deployment_instance_id].platform_opening_gate
+        desired = await gate.current_observation_desired()
+        connector = deployment.connector
+
+        def unavailable(reason):
+            return "awaiting_release", unavailable_opening_inventory(
+                deployment.authority, connector, reason
+            )
+
+        if desired.command.lifecycle_state != "running":
+            return unavailable("source_unavailable")
+        provider = self._opening_inventory_providers.get(deployment_instance_id)
+        if isinstance(provider, InventoryUnavailable):
+            return unavailable("provider_unsupported")
+        entry = self._opening_fact_reads.get(deployment_instance_id)
+        if entry is None:
+            # A host owns one unfinished venue census, including retired workers.
+            # Never cancel to_thread work and free its slot before the worker ends.
+            if any(not task.done() for _, task in self._opening_fact_reads.values()):
+                return unavailable("collector_busy")
+            task = asyncio.create_task(self.read_opening_account_inventory(lifecycle))
+            self._opening_fact_reads[deployment_instance_id] = (token, task)
+            task.add_done_callback(
+                lambda done: self._opening_fact_read_finished(deployment_instance_id, done)
+            )
+            return unavailable("observation_pending")
+        captured_token, task = entry
+        if not task.done():
+            return unavailable("observation_pending")
+        self._opening_fact_reads.pop(deployment_instance_id, None)
+        if captured_token != token:
+            if not task.cancelled():
+                task.exception()
+            return unavailable("observation_retired")
+        if task.cancelled():
+            return unavailable("source_unavailable")
+        observation = task.result()
+        inventory = opening_inventory_observation(deployment.authority, connector, observation)
+        try:
+            require_opening_inventory_support(
+                inventory, self._capability_receipt.capability_manifest
+            )
+        except RunnerFactContractError:
+            return unavailable("provider_unsupported")
+        return "awaiting_release", inventory
 
     async def runner_fact_risk_snapshot(
         self, deployment_instance_id: str, currency: str
@@ -3083,6 +3209,9 @@ class NtTradingNodeHost:
             self._runner_fact_contexts.pop(deployment_instance_id, None)
             self._opening_inventory_providers.pop(deployment_instance_id, None)
             self._opening_observation_epochs.pop(deployment_instance_id, None)
+            read_entry = self._opening_fact_reads.get(deployment_instance_id)
+            if read_entry is not None and read_entry[1].done():
+                self._opening_fact_reads.pop(deployment_instance_id, None)
             self._runner_safety_boundaries.pop(deployment_instance_id, None)
             self._event_forwarding_failures.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)

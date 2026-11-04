@@ -15,6 +15,7 @@ from uuid import UUID
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from custos.core.opening_inventory_contract import OpeningInventory, unavailable_opening_inventory
 from custos.core.runner_fact import (
     FILL_CORRECTION_KIND,
     ORDER_ATTRIBUTION_SOURCES,
@@ -66,7 +67,7 @@ AUTHORITY_COORDINATE = "custos.runner-fact.v1"
 # Raised only when the wire shape or the meaning of a field changes; a change to
 # descriptive text alone keeps the revision.
 CONTRACT_ID = "alephain.custos.runner_fact_batch.v1"
-CONTRACT_REVISION = 6
+CONTRACT_REVISION = 7
 TENANT_ID = "acme"
 MODE = "sandbox"
 RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
@@ -474,7 +475,13 @@ def _schema() -> dict[str, Any]:
         ),
         "equity_snapshot": _object_schema(
             "equity_snapshot",
-            {"amount": decimal, "currency": currency, "observed_at": timestamp},
+            {
+                "amount": decimal,
+                "currency": currency,
+                "observed_at": timestamp,
+                "trading_gate": {"enum": ["awaiting_release", "released"]},
+                "account_inventory": {"$ref": "#/$defs/OpeningInventory"},
+            },
         ),
         "position_snapshot": _object_schema(
             "position_snapshot",
@@ -678,6 +685,9 @@ def _schema() -> dict[str, Any]:
         positive_decimal=positive_decimal,
         side=side,
     )
+    inventory_schema = OpeningInventory.model_json_schema()
+    definitions.update(inventory_schema.pop("$defs"))
+    definitions["OpeningInventory"] = inventory_schema
     facts["execution_fill"]["properties"]["fee_currency"] = currency
     facts["execution_fill"]["properties"]["fee"] = decimal
     facts["fee"]["properties"]["amount"] = decimal
@@ -717,7 +727,12 @@ def _schema() -> dict[str, Any]:
         "properties": {
             "schema_version": {"const": RUNNER_FACT_SCHEMA_VERSION},
             "batch_id": uuid,
-            "tenant_id": {"type": "string", "pattern": r"^[A-Za-z0-9_-]+$"},
+            "tenant_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": r"^[A-Za-z0-9_-]+$",
+            },
             "trading_mode": {"enum": ["live", "sandbox", "testnet"]},
             "runner_id": uuid,
             "deployment_instance_id": uuid,
@@ -1297,7 +1312,24 @@ def _capability_receipt(
     }
 
 
-def _facts() -> list[dict[str, Any]]:
+def _inventory(manifest_digest: str, generation: int) -> dict[str, Any]:
+    authority = RunnerFactAuthority(
+        tenant_id=TENANT_ID,
+        trading_mode=MODE,
+        runner_id=RUNNER_ID,
+        deployment_instance_id=INSTANCE_ID,
+        deployment_spec_id=SPEC_ID,
+        deployment_spec_digest=SPEC_DIGEST,
+        generation=generation,
+        strategy_id=STRATEGY_ID,
+        capability_version_id=CAPABILITY_ID,
+        capability_version=1,
+        capability_manifest_digest=manifest_digest,
+    )
+    return unavailable_opening_inventory(authority, "binance")
+
+
+def _facts(manifest_digest: str) -> list[dict[str, Any]]:
     fill_id = UUID("70000000-0000-4000-8000-000000000007")
     snapshot_id = UUID("71000000-0000-4000-8000-000000000007")
     timestamp = "2026-07-15T07:59:00Z"
@@ -1363,6 +1395,8 @@ def _facts() -> list[dict[str, Any]]:
             amount="10012.5",
             currency="USDT",
             observed_at=timestamp,
+            trading_gate="awaiting_release",
+            account_inventory=_inventory(manifest_digest, 7),
         ),
         position_snapshot(
             event_id=UUID("80000000-0000-4000-8000-000000000007"),
@@ -1575,6 +1609,8 @@ def _terminal_boundary(
                 amount="10050",
                 currency="USDT",
                 observed_at="2026-08-14T09:59:30Z",
+                trading_gate="awaiting_release",
+                account_inventory=_inventory(capability_manifest_digest, running_generation),
             )
         ],
         batch_id=TERMINAL_RUN_BATCH_ID,
@@ -1882,7 +1918,7 @@ def build_assets() -> dict[Path, bytes]:
     manifest_digest = _sha256(_canonical(manifest))
     capability_receipt = _capability_receipt(manifest, CAPABILITY_ID, key_id, public_key)
     golden = _batch(
-        facts=_facts(),
+        facts=_facts(manifest_digest),
         batch_id=BATCH_ID,
         emitted_at=EMITTED_AT,
         source_seq_start=1,
@@ -1978,7 +2014,15 @@ def build_assets() -> dict[Path, bytes]:
     index = {
         "asset_index_schema_version": 1,
         "authority_coordinate": AUTHORITY_COORDINATE,
-        "status": "CANONICAL_V1_PENDING_RUNTIME_RECEIPTS",
+        "status": "CANONICAL_V1_PENDING_CONSUMER_AND_RUNTIME_RECEIPTS",
+        "contract_id": CONTRACT_ID,
+        "contract_revision": CONTRACT_REVISION,
+        "consumer_ready": False,
+        "open_blockers": [
+            "current_revision_strict_consumer_acceptance",
+            "native_inventory_runtime_acceptance",
+            "opening_release_protocol_and_process_fence",
+        ],
         "runtime_rc": False,
         "real_runtime_round_trip_ready": False,
         "live_ready": False,

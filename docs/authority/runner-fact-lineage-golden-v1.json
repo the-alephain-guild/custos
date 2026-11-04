@@ -35,6 +35,19 @@
       "risk": {
         "schema_version": 1,
         "equity_snapshot": "v1",
+        "opening_inventory": {
+          "schema_revision": 1,
+          "source_models": [
+            "unavailable",
+            "sodex_public_account_v1"
+          ],
+          "capture_apis": [
+            "sodex_public_get_v1"
+          ],
+          "mapping_revisions": [],
+          "runtime_artifact_digests": [],
+          "complete_models": []
+        },
         "position_snapshot": "v1",
         "heartbeat": "v1"
       },
@@ -136,7 +149,7 @@
       "strategy_id": "40000000-0000-4000-8000-000000000004",
       "capability_version_id": "50000000-0000-4000-8000-000000000015",
       "capability_version": 1,
-      "capability_manifest_digest": "e11fb66d45bc08321b3889ad77b488f29f943965bdbbe7a75550fb3dfdd53fcb",
+      "capability_manifest_digest": "fbccfc64b44c5ac67bf8b6a37c678ecdd55bebb52aa557cd9893f26d75433438",
       "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
       "emitted_at": "2026-07-15T08:00:00Z",
       "source_seq_start": 1,
@@ -252,7 +265,7 @@
           "seq": 6
         }
       ],
-      "signature": "noFB2kx-HHdDiqcG5GaIiM3-E3qoH0UKEMicsByTDM9hHbN3o0WodJcb3m5AKp88EXlDbXxYDmqTdJkWErRSDA"
+      "signature": "e7Zj8b13-sD6cslIJTQl5l6t9Yv-PcoOBLT38tCV4kfMImdHCRiHDESqQBujp-rI8uTFDYGMamOXpvtEuXQPBQ"
     }
   ]
 }

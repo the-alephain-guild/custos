@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "custos://gateway-contract/v1/runner_fact_batch_v1.schema.json",
   "x-contract-id": "alephain.custos.runner_fact_batch.v1",
-  "x-contract-revision": 6,
+  "x-contract-revision": 7,
   "title": "Custos RunnerFactBatchV1",
   "type": "object",
   "additionalProperties": false,
@@ -38,6 +38,8 @@
     },
     "tenant_id": {
       "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
       "pattern": "^[A-Za-z0-9_-]+$"
     },
     "trading_mode": {
@@ -501,7 +503,9 @@
         "seq",
         "amount",
         "currency",
-        "observed_at"
+        "observed_at",
+        "trading_gate",
+        "account_inventory"
       ],
       "properties": {
         "kind": {
@@ -533,6 +537,15 @@
         "observed_at": {
           "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$"
+        },
+        "trading_gate": {
+          "enum": [
+            "awaiting_release",
+            "released"
+          ]
+        },
+        "account_inventory": {
+          "$ref": "#/$defs/OpeningInventory"
         }
       }
     },
@@ -4272,6 +4285,2080 @@
           "fill_commission"
         ]
       }
+    },
+    "Balance": {
+      "additionalProperties": false,
+      "properties": {
+        "raw_asset_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Raw Asset Id"
+        },
+        "raw_asset_code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Raw Asset Code",
+          "type": "string"
+        },
+        "native_currency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NativeCurrency"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "namespace": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Namespace",
+          "type": "string"
+        },
+        "denomination": {
+          "anyOf": [
+            {
+              "enum": [
+                "USD",
+                "USDT",
+                "USDC",
+                "BTC",
+                "ETH",
+                "VUSDC",
+                "VBTC",
+                "VETH"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Denomination"
+        },
+        "mapping_revision": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Mapping Revision"
+        },
+        "total": {
+          "pattern": "^(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+          "title": "Total",
+          "type": "string"
+        },
+        "locked": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0|(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Locked"
+        },
+        "collateral": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0|(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Collateral"
+        },
+        "available": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Available"
+        }
+      },
+      "required": [
+        "raw_asset_id",
+        "raw_asset_code",
+        "native_currency",
+        "namespace",
+        "denomination",
+        "mapping_revision",
+        "total",
+        "locked",
+        "collateral",
+        "available"
+      ],
+      "title": "Balance",
+      "type": "object"
+    },
+    "CapabilityBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "capability_version_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Capability Version Id",
+          "type": "string"
+        },
+        "capability_version": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Capability Version",
+          "type": "integer"
+        },
+        "capability_manifest_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Capability Manifest Digest",
+          "type": "string"
+        },
+        "inventory_schema_revision": {
+          "maximum": 1,
+          "minimum": 1,
+          "title": "Inventory Schema Revision",
+          "type": "integer"
+        },
+        "capture_api_revision": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Capture Api Revision"
+        },
+        "model_revision": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Model Revision"
+        },
+        "mapping_revision": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Mapping Revision"
+        },
+        "runtime_artifact_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Runtime Artifact Digest"
+        }
+      },
+      "required": [
+        "capability_version_id",
+        "capability_version",
+        "capability_manifest_digest",
+        "inventory_schema_revision",
+        "capture_api_revision",
+        "model_revision",
+        "mapping_revision",
+        "runtime_artifact_digest"
+      ],
+      "title": "CapabilityBinding",
+      "type": "object"
+    },
+    "Completeness": {
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Identity"
+        },
+        "balances": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Balances"
+        },
+        "liabilities": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Liabilities"
+        },
+        "positions": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Positions"
+        },
+        "ordinary_orders": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Ordinary Orders"
+        },
+        "order_kinds": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Order Kinds"
+        },
+        "pagination": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pagination"
+        },
+        "common_boundary": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Common Boundary"
+        }
+      },
+      "required": [
+        "identity",
+        "balances",
+        "liabilities",
+        "positions",
+        "ordinary_orders",
+        "order_kinds",
+        "pagination",
+        "common_boundary"
+      ],
+      "title": "Completeness",
+      "type": "object"
+    },
+    "EquityBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "coherent",
+            "unproven",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "capture_token": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Capture Token"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "enum": [
+                "USD",
+                "USDT",
+                "USDC",
+                "BTC",
+                "ETH",
+                "VUSDC",
+                "VBTC",
+                "VETH"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Currency"
+        },
+        "amount": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Amount"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Observed At"
+        },
+        "valuation_rule": {
+          "anyOf": [
+            {
+              "const": "settlement_cash_total_v1",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Valuation Rule"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "provider_unsupported",
+                "source_unavailable",
+                "source_identity_unverified",
+                "source_identity_mismatch",
+                "liabilities_unverified",
+                "pagination_unverified",
+                "order_kinds_unverified",
+                "common_boundary_unverified",
+                "wire_dimension_unavailable",
+                "wire_budget_exceeded",
+                "denomination_unmapped",
+                "inventory_unavailable",
+                "independent_risk_observation",
+                "model_not_applicable",
+                "capture_unavailable",
+                "observation_pending",
+                "observation_retired",
+                "collector_busy"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "status",
+        "capture_token",
+        "currency",
+        "amount",
+        "observed_at",
+        "valuation_rule",
+        "reason"
+      ],
+      "title": "EquityBinding",
+      "type": "object"
+    },
+    "IdentityObservation": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "observed",
+            "unavailable",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "rows": {
+          "anyOf": [
+            {
+              "items": {
+                "discriminator": {
+                  "mapping": {
+                    "sandbox_account": "#/$defs/NativeIdentity",
+                    "sodex_account": "#/$defs/ReportedIdentity"
+                  },
+                  "propertyName": "kind"
+                },
+                "oneOf": [
+                  {
+                    "$ref": "#/$defs/ReportedIdentity"
+                  },
+                  {
+                    "$ref": "#/$defs/NativeIdentity"
+                  }
+                ]
+              },
+              "maxItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Rows"
+        },
+        "requested_at": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Requested At"
+        },
+        "received_at": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Received At"
+        },
+        "source_time": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Time"
+        },
+        "block_height": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Block Height"
+        },
+        "capture_token": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Capture Token"
+        },
+        "response_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Response Digest"
+        },
+        "pagination": {
+          "enum": [
+            "unknown",
+            "indicated_more",
+            "owner_full"
+          ],
+          "title": "Pagination",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "provider_unsupported",
+                "source_unavailable",
+                "source_identity_unverified",
+                "source_identity_mismatch",
+                "liabilities_unverified",
+                "pagination_unverified",
+                "order_kinds_unverified",
+                "common_boundary_unverified",
+                "wire_dimension_unavailable",
+                "wire_budget_exceeded",
+                "denomination_unmapped",
+                "inventory_unavailable",
+                "independent_risk_observation",
+                "model_not_applicable",
+                "capture_unavailable",
+                "observation_pending",
+                "observation_retired",
+                "collector_busy"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "status",
+        "rows",
+        "requested_at",
+        "received_at",
+        "source_time",
+        "block_height",
+        "capture_token",
+        "response_digest",
+        "pagination",
+        "reason"
+      ],
+      "title": "IdentityObservation",
+      "type": "object"
+    },
+    "InventoryScope": {
+      "additionalProperties": false,
+      "properties": {
+        "tenant_id": {
+          "pattern": "^[A-Za-z0-9_-]{1,64}$",
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "trading_mode": {
+          "enum": [
+            "sandbox",
+            "testnet",
+            "live"
+          ],
+          "title": "Trading Mode",
+          "type": "string"
+        },
+        "runner_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Runner Id",
+          "type": "string"
+        },
+        "deployment_instance_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Deployment Instance Id",
+          "type": "string"
+        },
+        "deployment_spec_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Deployment Spec Id",
+          "type": "string"
+        },
+        "deployment_spec_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Deployment Spec Digest",
+          "type": "string"
+        },
+        "generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "connector": {
+          "enum": [
+            "binance",
+            "binance_perpetual",
+            "okx",
+            "okx_perpetual",
+            "sodex",
+            "sodex_perpetual"
+          ],
+          "title": "Connector",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "discriminator": {
+                "mapping": {
+                  "sandbox_engine": "#/$defs/SandboxSource",
+                  "sodex_venue_account": "#/$defs/SodexSource"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/SodexSource"
+                },
+                {
+                  "$ref": "#/$defs/SandboxSource"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "trading_mode",
+        "runner_id",
+        "deployment_instance_id",
+        "deployment_spec_id",
+        "deployment_spec_digest",
+        "generation",
+        "connector",
+        "source"
+      ],
+      "title": "InventoryScope",
+      "type": "object"
+    },
+    "Liability": {
+      "additionalProperties": false,
+      "properties": {
+        "raw_asset_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Raw Asset Id"
+        },
+        "raw_asset_code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Raw Asset Code",
+          "type": "string"
+        },
+        "namespace": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Namespace",
+          "type": "string"
+        },
+        "amount": {
+          "pattern": "^(?:0|(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+          "title": "Amount",
+          "type": "string"
+        }
+      },
+      "required": [
+        "raw_asset_id",
+        "raw_asset_code",
+        "namespace",
+        "amount"
+      ],
+      "title": "Liability",
+      "type": "object"
+    },
+    "NativeCapture": {
+      "additionalProperties": false,
+      "properties": {
+        "node_instance_id": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Node Instance Id",
+          "type": "string"
+        },
+        "environment": {
+          "const": "SANDBOX",
+          "title": "Environment",
+          "type": "string"
+        },
+        "capture_sequence": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Capture Sequence",
+          "type": "integer"
+        },
+        "frontier": {
+          "items": {
+            "$ref": "#/$defs/NativeFrontier"
+          },
+          "maxItems": 9,
+          "minItems": 9,
+          "title": "Frontier",
+          "type": "array"
+        },
+        "observed_at_ns": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Observed At Ns",
+          "type": "integer"
+        },
+        "no_borrowing_model": {
+          "title": "No Borrowing Model",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "node_instance_id",
+        "environment",
+        "capture_sequence",
+        "frontier",
+        "observed_at_ns",
+        "no_borrowing_model"
+      ],
+      "title": "NativeCapture",
+      "type": "object"
+    },
+    "NativeCurrency": {
+      "additionalProperties": false,
+      "properties": {
+        "precision": {
+          "maximum": 255,
+          "minimum": 0,
+          "title": "Precision",
+          "type": "integer"
+        },
+        "currency_type": {
+          "enum": [
+            "FIAT",
+            "CRYPTO"
+          ],
+          "title": "Currency Type",
+          "type": "string"
+        },
+        "iso4217": {
+          "maximum": 65535,
+          "minimum": 0,
+          "title": "Iso4217",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "precision",
+        "currency_type",
+        "iso4217"
+      ],
+      "title": "NativeCurrency",
+      "type": "object"
+    },
+    "NativeFrontier": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "enum": [
+            "time_events",
+            "system_events",
+            "system_commands",
+            "execution_events",
+            "execution_commands",
+            "data_events",
+            "data_commands",
+            "external_events",
+            "maintenance"
+          ],
+          "title": "Channel",
+          "type": "string"
+        },
+        "applied": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Applied",
+          "type": "integer"
+        },
+        "admitted": {
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Admitted",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "channel",
+        "applied",
+        "admitted"
+      ],
+      "title": "NativeFrontier",
+      "type": "object"
+    },
+    "NativeIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "sandbox_account",
+          "title": "Kind",
+          "type": "string"
+        },
+        "incarnation": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Incarnation",
+          "type": "string"
+        },
+        "client_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Client Id",
+          "type": "string"
+        },
+        "account_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Account Id",
+          "type": "string"
+        },
+        "venue": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Venue",
+          "type": "string"
+        },
+        "account_type": {
+          "enum": [
+            "CASH",
+            "MARGIN",
+            "BETTING",
+            "WALLET"
+          ],
+          "title": "Account Type",
+          "type": "string"
+        },
+        "configuration_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Configuration Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "incarnation",
+        "client_id",
+        "account_id",
+        "venue",
+        "account_type",
+        "configuration_sha256"
+      ],
+      "title": "NativeIdentity",
+      "type": "object"
+    },
+    "Observation_Balance_": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "observed",
+            "unavailable",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "rows": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Balance"
+              },
+              "maxItems": 192,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Rows"
+        },
+        "requested_at": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Requested At"
+        },
+        "received_at": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Received At"
+        },
+        "source_time": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Time"
+        },
+        "block_height": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Block Height"
+        },
+        "capture_token": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Capture Token"
+        },
+        "response_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Response Digest"
+        },
+        "pagination": {
+          "enum": [
+            "unknown",
+            "indicated_more",
+            "owner_full"
+          ],
+          "title": "Pagination",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "provider_unsupported",
+                "source_unavailable",
+                "source_identity_unverified",
+                "source_identity_mismatch",
+                "liabilities_unverified",
+                "pagination_unverified",
+                "order_kinds_unverified",
+                "common_boundary_unverified",
+                "wire_dimension_unavailable",
+                "wire_budget_exceeded",
+                "denomination_unmapped",
+                "inventory_unavailable",
+                "independent_risk_observation",
+                "model_not_applicable",
+                "capture_unavailable",
+                "observation_pending",
+                "observation_retired",
+                "collector_busy"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "status",
+        "rows",
+        "requested_at",
+        "received_at",
+        "source_time",
+        "block_height",
+        "capture_token",
+        "response_digest",
+        "pagination",
+        "reason"
+      ],
+      "title": "Observation[Balance]",
+      "type": "object"
+    },
+    "Observation_Liability_": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "observed",
+            "unavailable",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "rows": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Liability"
+              },
+              "maxItems": 192,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Rows"
+        },
+        "requested_at": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Requested At"
+        },
+        "received_at": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Received At"
+        },
+        "source_time": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Time"
+        },
+        "block_height": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Block Height"
+        },
+        "capture_token": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Capture Token"
+        },
+        "response_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Response Digest"
+        },
+        "pagination": {
+          "enum": [
+            "unknown",
+            "indicated_more",
+            "owner_full"
+          ],
+          "title": "Pagination",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "provider_unsupported",
+                "source_unavailable",
+                "source_identity_unverified",
+                "source_identity_mismatch",
+                "liabilities_unverified",
+                "pagination_unverified",
+                "order_kinds_unverified",
+                "common_boundary_unverified",
+                "wire_dimension_unavailable",
+                "wire_budget_exceeded",
+                "denomination_unmapped",
+                "inventory_unavailable",
+                "independent_risk_observation",
+                "model_not_applicable",
+                "capture_unavailable",
+                "observation_pending",
+                "observation_retired",
+                "collector_busy"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "status",
+        "rows",
+        "requested_at",
+        "received_at",
+        "source_time",
+        "block_height",
+        "capture_token",
+        "response_digest",
+        "pagination",
+        "reason"
+      ],
+      "title": "Observation[Liability]",
+      "type": "object"
+    },
+    "Observation_Order_": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "observed",
+            "unavailable",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "rows": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Order"
+              },
+              "maxItems": 192,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Rows"
+        },
+        "requested_at": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Requested At"
+        },
+        "received_at": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Received At"
+        },
+        "source_time": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Time"
+        },
+        "block_height": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Block Height"
+        },
+        "capture_token": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Capture Token"
+        },
+        "response_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Response Digest"
+        },
+        "pagination": {
+          "enum": [
+            "unknown",
+            "indicated_more",
+            "owner_full"
+          ],
+          "title": "Pagination",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "provider_unsupported",
+                "source_unavailable",
+                "source_identity_unverified",
+                "source_identity_mismatch",
+                "liabilities_unverified",
+                "pagination_unverified",
+                "order_kinds_unverified",
+                "common_boundary_unverified",
+                "wire_dimension_unavailable",
+                "wire_budget_exceeded",
+                "denomination_unmapped",
+                "inventory_unavailable",
+                "independent_risk_observation",
+                "model_not_applicable",
+                "capture_unavailable",
+                "observation_pending",
+                "observation_retired",
+                "collector_busy"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "status",
+        "rows",
+        "requested_at",
+        "received_at",
+        "source_time",
+        "block_height",
+        "capture_token",
+        "response_digest",
+        "pagination",
+        "reason"
+      ],
+      "title": "Observation[Order]",
+      "type": "object"
+    },
+    "Observation_Position_": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "observed",
+            "unavailable",
+            "not_applicable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "rows": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Position"
+              },
+              "maxItems": 192,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Rows"
+        },
+        "requested_at": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Requested At"
+        },
+        "received_at": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Received At"
+        },
+        "source_time": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Time"
+        },
+        "block_height": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Block Height"
+        },
+        "capture_token": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Capture Token"
+        },
+        "response_digest": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Response Digest"
+        },
+        "pagination": {
+          "enum": [
+            "unknown",
+            "indicated_more",
+            "owner_full"
+          ],
+          "title": "Pagination",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "provider_unsupported",
+                "source_unavailable",
+                "source_identity_unverified",
+                "source_identity_mismatch",
+                "liabilities_unverified",
+                "pagination_unverified",
+                "order_kinds_unverified",
+                "common_boundary_unverified",
+                "wire_dimension_unavailable",
+                "wire_budget_exceeded",
+                "denomination_unmapped",
+                "inventory_unavailable",
+                "independent_risk_observation",
+                "model_not_applicable",
+                "capture_unavailable",
+                "observation_pending",
+                "observation_retired",
+                "collector_busy"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        }
+      },
+      "required": [
+        "status",
+        "rows",
+        "requested_at",
+        "received_at",
+        "source_time",
+        "block_height",
+        "capture_token",
+        "response_digest",
+        "pagination",
+        "reason"
+      ],
+      "title": "Observation[Position]",
+      "type": "object"
+    },
+    "Observations": {
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "$ref": "#/$defs/IdentityObservation"
+        },
+        "balances": {
+          "$ref": "#/$defs/Observation_Balance_"
+        },
+        "liabilities": {
+          "$ref": "#/$defs/Observation_Liability_"
+        },
+        "positions": {
+          "$ref": "#/$defs/Observation_Position_"
+        },
+        "ordinary_orders": {
+          "$ref": "#/$defs/Observation_Order_"
+        }
+      },
+      "required": [
+        "identity",
+        "balances",
+        "liabilities",
+        "positions",
+        "ordinary_orders"
+      ],
+      "title": "Observations",
+      "type": "object"
+    },
+    "Order": {
+      "additionalProperties": false,
+      "properties": {
+        "order_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Order Id",
+          "type": "string"
+        },
+        "instrument": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Instrument",
+          "type": "string"
+        },
+        "side": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Side",
+          "type": "string"
+        },
+        "order_type": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Order Type",
+          "type": "string"
+        },
+        "status": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Status",
+          "type": "string"
+        },
+        "original_quantity": {
+          "pattern": "^(?:0|(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+          "title": "Original Quantity",
+          "type": "string"
+        },
+        "executed_quantity": {
+          "pattern": "^(?:0|(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+          "title": "Executed Quantity",
+          "type": "string"
+        },
+        "price": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0|(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Price"
+        },
+        "client_order_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Client Order Id"
+        },
+        "venue_order_id": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Venue Order Id"
+        },
+        "trigger_price": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0|(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Trigger Price"
+        },
+        "in_matching_engine": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "In Matching Engine"
+        },
+        "pending": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Pending"
+        }
+      },
+      "required": [
+        "order_id",
+        "instrument",
+        "side",
+        "order_type",
+        "status",
+        "original_quantity",
+        "executed_quantity",
+        "price",
+        "client_order_id",
+        "venue_order_id",
+        "trigger_price",
+        "in_matching_engine",
+        "pending"
+      ],
+      "title": "Order",
+      "type": "object"
+    },
+    "Position": {
+      "additionalProperties": false,
+      "properties": {
+        "position_id": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Position Id",
+          "type": "string"
+        },
+        "instrument": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Instrument",
+          "type": "string"
+        },
+        "quantity": {
+          "pattern": "^(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+          "title": "Quantity",
+          "type": "string"
+        },
+        "active": {
+          "title": "Active",
+          "type": "boolean"
+        },
+        "position_side": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Position Side",
+          "type": "string"
+        },
+        "average_entry_price": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0|(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Average Entry Price"
+        },
+        "settlement_currency": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^[A-Za-z0-9_.:-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Settlement Currency"
+        }
+      },
+      "required": [
+        "position_id",
+        "instrument",
+        "quantity",
+        "active",
+        "position_side",
+        "average_entry_price",
+        "settlement_currency"
+      ],
+      "title": "Position",
+      "type": "object"
+    },
+    "ReportedIdentity": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "sodex_account",
+          "title": "Kind",
+          "type": "string"
+        },
+        "main_wallet": {
+          "pattern": "^0x[0-9a-fA-F]{40}$",
+          "title": "Main Wallet",
+          "type": "string"
+        },
+        "account_id": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Account Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "main_wallet",
+        "account_id"
+      ],
+      "title": "ReportedIdentity",
+      "type": "object"
+    },
+    "SandboxSource": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "sandbox_engine",
+          "title": "Kind",
+          "type": "string"
+        },
+        "incarnation": {
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Incarnation",
+          "type": "string"
+        },
+        "client_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Client Id",
+          "type": "string"
+        },
+        "account_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Account Id",
+          "type": "string"
+        },
+        "venue": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Venue",
+          "type": "string"
+        },
+        "account_type": {
+          "enum": [
+            "CASH",
+            "MARGIN",
+            "BETTING",
+            "WALLET"
+          ],
+          "title": "Account Type",
+          "type": "string"
+        },
+        "api_revision": {
+          "const": "execution-account-capture-v1",
+          "title": "Api Revision",
+          "type": "string"
+        },
+        "model_revision": {
+          "const": "sandbox-account-state-v1",
+          "title": "Model Revision",
+          "type": "string"
+        },
+        "runtime_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.:-]+$",
+          "title": "Runtime Version",
+          "type": "string"
+        },
+        "configuration_json": {
+          "maxLength": 65536,
+          "minLength": 2,
+          "title": "Configuration Json",
+          "type": "string"
+        },
+        "configuration_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Configuration Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "incarnation",
+        "client_id",
+        "account_id",
+        "venue",
+        "account_type",
+        "api_revision",
+        "model_revision",
+        "runtime_version",
+        "configuration_json",
+        "configuration_sha256"
+      ],
+      "title": "SandboxSource",
+      "type": "object"
+    },
+    "SodexSource": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "sodex_venue_account",
+          "title": "Kind",
+          "type": "string"
+        },
+        "network": {
+          "enum": [
+            "testnet",
+            "mainnet"
+          ],
+          "title": "Network",
+          "type": "string"
+        },
+        "main_wallet": {
+          "pattern": "^0x[0-9a-fA-F]{40}$",
+          "title": "Main Wallet",
+          "type": "string"
+        },
+        "account_id": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Account Id",
+          "type": "integer"
+        },
+        "account_type": {
+          "enum": [
+            "spot",
+            "perps"
+          ],
+          "title": "Account Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "network",
+        "main_wallet",
+        "account_id",
+        "account_type"
+      ],
+      "title": "SodexSource",
+      "type": "object"
+    },
+    "OpeningInventory": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "enum": [
+            "observed",
+            "unavailable"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/InventoryScope"
+        },
+        "capability_binding": {
+          "$ref": "#/$defs/CapabilityBinding"
+        },
+        "native_capture": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NativeCapture"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observations": {
+          "$ref": "#/$defs/Observations"
+        },
+        "completeness": {
+          "$ref": "#/$defs/Completeness"
+        },
+        "equity_binding": {
+          "$ref": "#/$defs/EquityBinding"
+        },
+        "inventory_complete": {
+          "title": "Inventory Complete",
+          "type": "boolean"
+        },
+        "reasons": {
+          "items": {
+            "enum": [
+              "provider_unsupported",
+              "source_unavailable",
+              "source_identity_unverified",
+              "source_identity_mismatch",
+              "liabilities_unverified",
+              "pagination_unverified",
+              "order_kinds_unverified",
+              "common_boundary_unverified",
+              "wire_dimension_unavailable",
+              "wire_budget_exceeded",
+              "denomination_unmapped",
+              "inventory_unavailable",
+              "independent_risk_observation",
+              "model_not_applicable",
+              "capture_unavailable",
+              "observation_pending",
+              "observation_retired",
+              "collector_busy"
+            ],
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Reasons",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "scope",
+        "capability_binding",
+        "native_capture",
+        "observations",
+        "completeness",
+        "equity_binding",
+        "inventory_complete",
+        "reasons"
+      ],
+      "title": "OpeningInventory",
+      "type": "object"
     }
   },
   "x-custos-invariants": {

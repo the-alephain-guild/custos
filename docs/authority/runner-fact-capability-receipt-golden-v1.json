@@ -4,7 +4,7 @@
   "runner_id": "10000000-0000-4000-8000-000000000001",
   "capability_version_id": "50000000-0000-4000-8000-000000000005",
   "capability_version": 1,
-  "manifest_digest": "eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3",
+  "manifest_digest": "6c20633e215b43e39dc3fedc458c42df3f3b3cb9b208eeb680b2fc7b14e6e173",
   "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
   "key_version": 1,
   "algorithm": "ed25519",
@@ -45,6 +45,19 @@
       "risk": {
         "schema_version": 1,
         "equity_snapshot": "v1",
+        "opening_inventory": {
+          "schema_revision": 1,
+          "source_models": [
+            "unavailable",
+            "sodex_public_account_v1"
+          ],
+          "capture_apis": [
+            "sodex_public_get_v1"
+          ],
+          "mapping_revisions": [],
+          "runtime_artifact_digests": [],
+          "complete_models": []
+        },
         "position_snapshot": "v1",
         "heartbeat": "v1"
       },

@@ -20,6 +20,7 @@ from uuid import UUID
 
 import pytest
 
+from custos.core.opening_inventory_contract import unavailable_opening_inventory
 from custos.core.runner_fact import (
     RunnerFactContractError,
     _decimal,
@@ -33,6 +34,7 @@ from custos.core.runner_fact import (
     valuation_checkpoint,
     venue_ledger_snapshot_facts,
 )
+from tests.test_runner_fact_outbox import _authority as opening_test_authority
 
 ROOT = Path(__file__).resolve().parents[1]
 EVENT = UUID("92000000-0000-4000-8000-0000000000a1")
@@ -301,7 +303,14 @@ DECIMALS: tuple[tuple[str, bool, Callable[[str], Any]], ...] = (
     (
         "equity_snapshot.amount",
         True,
-        lambda v: equity_snapshot(event_id=EVENT, amount=v, currency="USDT", observed_at=AT),
+        lambda v: equity_snapshot(
+            event_id=EVENT,
+            amount=v,
+            currency="USDT",
+            observed_at=AT,
+            trading_gate="awaiting_release",
+            account_inventory=unavailable_opening_inventory(opening_test_authority(), "binance"),
+        ),
     ),
     (
         "position_snapshot.quantity",

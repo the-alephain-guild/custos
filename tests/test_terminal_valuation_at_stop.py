@@ -24,6 +24,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from custos.artifacts.runtime import ArtifactRuntimeCapabilityV1
 from custos.core.engine_lifecycle import EngineLifecycleConfig, EngineLifecycleSupervisor
 from custos.core.engine_protocol import EngineStopBoundary, StopBoundaryValuation
+from custos.core.opening_inventory_contract import unavailable_opening_inventory
 from custos.core.runner_fact import (
     TERMINAL_VALUATION_KIND,
     RunnerFactContractError,
@@ -120,6 +121,8 @@ def _equity(outbox: RunnerFactOutbox, verified, amount: str, observed_at: dateti
                 amount=amount,
                 currency="USDT",
                 observed_at=observed_at,
+                trading_gate="awaiting_release",
+                account_inventory=unavailable_opening_inventory(authority, "binance"),
             ),
         ),
     )
@@ -550,6 +553,7 @@ async def test_the_production_loop_cannot_emit_into_a_sealed_stream(tmp_path: Pa
         deployment_spec_id=str(authority.deployment_spec_id),
         deployment_spec_digest=authority.deployment_spec_digest,
         venue="BINANCE",
+        connector="binance_perpetual",
         currency="USDT",
         reconciliation_available=False,
         strategy_version="1",

@@ -126,6 +126,7 @@ async def _batch(instance: UUID, manifest_digest: str) -> dict[str, object]:
             deployment_spec_id=str(DEPLOYMENT_SPEC_ID),
             deployment_spec_digest=SPEC_DIGEST,
             venue="BINANCE",
+            connector="binance_perpetual",
             currency="USDT",
             reconciliation_available=True,
             strategy_version="v2",

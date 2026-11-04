@@ -17,6 +17,8 @@ from custos.core.runner_fact import (
 from custos.core.runner_fact_producer import (
     RunnerCapitalBasisSnapshot,
     RunnerFactDeployment,
+    RunnerFactObservationRetired,
+    RunnerFactObservationToken,
     VenueLedgerEvidence,
     strategy_signal_metadata,
 )
@@ -46,12 +48,14 @@ class SandboxRunnerFactHost(SandboxSimulationHost):
         self._tenant_id = tenant_id
         self._capability_receipt = capability_receipt
         self._runner_fact_contexts: dict[str, tuple[RunnerFactDeployment, Decimal]] = {}
+        self._opening_connectors: dict[str, str] = {}
 
     async def deploy(self, spec: dict, credential: dict, artifact: object):
         context = self._build_runner_fact_context(spec)
         engine_receipt = await super().deploy(spec, credential, artifact)
         if context is not None:
             deployment, starting_equity = context
+            self._opening_connectors[deployment.deployment_instance_id] = spec["connector"]
             self._runner_fact_contexts[deployment.deployment_instance_id] = (
                 deployment,
                 starting_equity,
@@ -61,9 +65,33 @@ class SandboxRunnerFactHost(SandboxSimulationHost):
     async def stop(self, deployment_instance_id: str) -> None:
         await super().stop(deployment_instance_id)
         self._runner_fact_contexts.pop(deployment_instance_id, None)
+        self._opening_connectors.pop(deployment_instance_id, None)
 
     def runner_fact_deployments(self) -> tuple[RunnerFactDeployment, ...]:
         return tuple(context[0] for context in self._runner_fact_contexts.values())
+
+    async def runner_fact_observation_token(
+        self, authority: RunnerFactAuthority
+    ) -> RunnerFactObservationToken:
+        instance = str(authority.deployment_instance_id)
+        context = self._runner_fact_contexts.get(instance)
+        if (
+            context is None
+            or context[0].authority != authority
+            or instance not in self._lifecycle_authorities
+        ):
+            raise RunnerFactObservationRetired("sandbox simulator observation is retired")
+        return RunnerFactObservationToken(None, id(context), 0, "simulation")
+
+    async def runner_fact_opening_snapshot(self, deployment_instance_id: str) -> tuple[str, dict]:
+        from custos.core.opening_inventory_contract import unavailable_opening_inventory
+
+        deployment, _ = self._runner_fact_contexts[deployment_instance_id]
+        return "awaiting_release", unavailable_opening_inventory(
+            deployment.authority,
+            self._opening_connectors[deployment_instance_id],
+            "capture_unavailable",
+        )
 
     async def runner_fact_risk_snapshot(
         self, deployment_instance_id: str, currency: str
@@ -176,6 +204,7 @@ class SandboxRunnerFactHost(SandboxSimulationHost):
                 deployment_spec_id=deployment_spec_id,
                 deployment_spec_digest=deployment_spec_digest,
                 venue=venue,
+                connector=spec["connector"],
                 currency=currency,
                 reconciliation_available=False,
                 strategy_version=strategy_version,

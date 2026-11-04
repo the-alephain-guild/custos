@@ -11,12 +11,12 @@
   "strategy_id": "40000000-0000-4000-8000-000000000004",
   "capability_version_id": "50000000-0000-4000-8000-000000000005",
   "capability_version": 1,
-  "capability_manifest_digest": "eea7f2f5d052a8b6da8fee98f3f8256bf93cc233d184cdd0298a79e5df9f62c3",
+  "capability_manifest_digest": "6c20633e215b43e39dc3fedc458c42df3f3b3cb9b208eeb680b2fc7b14e6e173",
   "key_id": "ed25519-65b60673d6ed884bf01c2c222d82ada0",
   "emitted_at": "2026-07-15T08:00:00Z",
   "source_seq_start": 1,
   "source_seq_end": 14,
-  "payload_digest": "1adb33b9605be461084b0e73d29265ed8bb7abc1d21ed688e3c4253e95bc1180",
+  "payload_digest": "81b959939a1ed3b81e0a83f0d7cd61fc52469c41dd72e1d55e373b1fb72429ed",
   "facts": [
     {
       "kind": "execution_fill",
@@ -78,6 +78,117 @@
       "amount": "10012.5",
       "currency": "USDT",
       "observed_at": "2026-07-15T07:59:00Z",
+      "trading_gate": "awaiting_release",
+      "account_inventory": {
+        "status": "unavailable",
+        "scope": {
+          "tenant_id": "acme",
+          "trading_mode": "sandbox",
+          "runner_id": "10000000-0000-4000-8000-000000000001",
+          "deployment_instance_id": "20000000-0000-4000-8000-000000000002",
+          "deployment_spec_id": "30000000-0000-4000-8000-000000000003",
+          "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "generation": 7,
+          "connector": "binance",
+          "source": null
+        },
+        "capability_binding": {
+          "capability_version_id": "50000000-0000-4000-8000-000000000005",
+          "capability_version": 1,
+          "capability_manifest_digest": "6c20633e215b43e39dc3fedc458c42df3f3b3cb9b208eeb680b2fc7b14e6e173",
+          "inventory_schema_revision": 1,
+          "capture_api_revision": null,
+          "model_revision": null,
+          "mapping_revision": null,
+          "runtime_artifact_digest": null
+        },
+        "native_capture": null,
+        "observations": {
+          "identity": {
+            "status": "unavailable",
+            "rows": null,
+            "requested_at": null,
+            "received_at": null,
+            "source_time": null,
+            "block_height": null,
+            "capture_token": null,
+            "response_digest": null,
+            "pagination": "unknown",
+            "reason": "provider_unsupported"
+          },
+          "balances": {
+            "status": "unavailable",
+            "rows": null,
+            "requested_at": null,
+            "received_at": null,
+            "source_time": null,
+            "block_height": null,
+            "capture_token": null,
+            "response_digest": null,
+            "pagination": "unknown",
+            "reason": "provider_unsupported"
+          },
+          "liabilities": {
+            "status": "unavailable",
+            "rows": null,
+            "requested_at": null,
+            "received_at": null,
+            "source_time": null,
+            "block_height": null,
+            "capture_token": null,
+            "response_digest": null,
+            "pagination": "unknown",
+            "reason": "provider_unsupported"
+          },
+          "positions": {
+            "status": "unavailable",
+            "rows": null,
+            "requested_at": null,
+            "received_at": null,
+            "source_time": null,
+            "block_height": null,
+            "capture_token": null,
+            "response_digest": null,
+            "pagination": "unknown",
+            "reason": "provider_unsupported"
+          },
+          "ordinary_orders": {
+            "status": "unavailable",
+            "rows": null,
+            "requested_at": null,
+            "received_at": null,
+            "source_time": null,
+            "block_height": null,
+            "capture_token": null,
+            "response_digest": null,
+            "pagination": "unknown",
+            "reason": "provider_unsupported"
+          }
+        },
+        "completeness": {
+          "identity": null,
+          "balances": null,
+          "liabilities": null,
+          "positions": null,
+          "ordinary_orders": null,
+          "order_kinds": null,
+          "pagination": null,
+          "common_boundary": null
+        },
+        "equity_binding": {
+          "status": "unproven",
+          "capture_token": null,
+          "currency": null,
+          "amount": null,
+          "observed_at": null,
+          "valuation_rule": null,
+          "reason": "inventory_unavailable"
+        },
+        "inventory_complete": false,
+        "reasons": [
+          "provider_unsupported"
+        ]
+      },
       "seq": 6
     },
     {
@@ -280,5 +391,5 @@
       "seq": 14
     }
   ],
-  "signature": "55mq5fKKsEPScHzB2HvSq3FmiHXCsVDggk6OTkl6YwVeWfbArWvVyTFOhqVAettE6DjBT32ZEP2q5fd8oXRBDA"
+  "signature": "Y7cjQegO1fuX7kZh0vWwX7-acFNRpvxxMSCw3oaWd_wJFZwaSgHlkQ90EsAqNEcLpD55jj75HdfF7JvTLciFDQ"
 }

@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from custos.core.log import get_logger
 from custos.core.runner_fact import (
@@ -53,6 +53,7 @@ class RunnerFactDeployment:
     deployment_spec_id: str
     deployment_spec_digest: str
     venue: str
+    connector: str
     currency: str
     reconciliation_available: bool
     strategy_version: str
@@ -126,7 +127,40 @@ class RunnerCapitalBasisSnapshot:
     within_policy: bool
 
 
+class RunnerFactObservationRetired(RunnerFactContractError):
+    """No fact from this read may be signed for the retired source."""
+
+
+@dataclass(frozen=True, slots=True)
+class RunnerFactObservationToken:
+    command_fingerprint: str | None
+    runtime_identity: int
+    observation_epoch: int
+    source_kind: Literal["platform", "simulation"] = "platform"
+
+    def __post_init__(self):
+        if self.source_kind == "platform":
+            if (
+                not isinstance(self.command_fingerprint, str)
+                or len(self.command_fingerprint) != 64
+                or any(char not in "0123456789abcdef" for char in self.command_fingerprint)
+            ):
+                raise RunnerFactObservationRetired(
+                    "platform observation has no exact durable command"
+                )
+        elif self.source_kind != "simulation" or self.command_fingerprint is not None:
+            raise RunnerFactObservationRetired("observation source kind is invalid")
+
+
 class RunnerFactHost(Protocol):
+    async def runner_fact_observation_token(
+        self, authority: RunnerFactAuthority
+    ) -> RunnerFactObservationToken: ...
+
+    async def runner_fact_opening_snapshot(
+        self, deployment_instance_id: str
+    ) -> tuple[str, Mapping[str, Any]]: ...
+
     def runner_fact_deployments(self) -> Sequence[RunnerFactDeployment]: ...
 
     async def deployment_ready(self, deployment_instance_id: str) -> bool: ...
@@ -918,7 +952,9 @@ class RunnerFactProductionLoop:
     async def _emit_observability(self, deployment: RunnerFactDeployment) -> None:
         observed_at = datetime.now(UTC)
         authority = deployment.authority
+        observation_token = None
         try:
+            observation_token = await self._host.runner_fact_observation_token(authority)
             status_reader = getattr(self._host, "get_engine_status", None)
             status = (
                 await status_reader(deployment.deployment_instance_id)
@@ -932,12 +968,44 @@ class RunnerFactProductionLoop:
             equity, positions = await self._host.runner_fact_risk_snapshot(
                 deployment.deployment_instance_id, deployment.currency
             )
+            from custos.core.opening_inventory_contract import (
+                normalize_opening_inventory,
+                unavailable_opening_inventory,
+            )
+
+            try:
+                trading_gate, inventory = await self._host.runner_fact_opening_snapshot(
+                    deployment.deployment_instance_id
+                )
+                if trading_gate not in {"awaiting_release", "released"}:
+                    raise RunnerFactContractError("opening gate observation is invalid")
+                inventory = normalize_opening_inventory(
+                    inventory,
+                    amount=str(equity),
+                    currency=deployment.currency,
+                    authority=authority,
+                    observed_at=render_utc(observed_at),
+                )
+            except RunnerFactObservationRetired:
+                raise
+            except Exception as exc:
+                _log.error(
+                    "runner_fact_opening_inventory_failed",
+                    deployment_instance_id=deployment.deployment_instance_id,
+                    error_type=type(exc).__name__,
+                )
+                trading_gate = "awaiting_release"
+                inventory = unavailable_opening_inventory(
+                    authority, deployment.connector, "source_unavailable"
+                )
             facts: tuple[dict[str, Any], ...] = (
                 equity_snapshot(
                     event_id=_scoped_event_id(authority, "equity", observed_at.isoformat()),
                     amount=equity,
                     currency=deployment.currency,
                     observed_at=observed_at,
+                    trading_gate=trading_gate,
+                    account_inventory=inventory,
                 ),
                 position_snapshot(
                     event_id=_scoped_event_id(authority, "positions", observed_at.isoformat()),
@@ -971,6 +1039,8 @@ class RunnerFactProductionLoop:
                     deployment_spec_id=str(authority.deployment_spec_id),
                     error=str(exc),
                 )
+        except RunnerFactObservationRetired:
+            return
         except Exception as exc:
             _log.error(
                 "runner_fact_risk_snapshot_failed",
@@ -986,7 +1056,29 @@ class RunnerFactProductionLoop:
                 ),
             )
         try:
-            await self._emitter.emit(authority, facts)
+            current_token = await self._host.runner_fact_observation_token(authority)
+            if observation_token is None or current_token != observation_token:
+                return
+            if observation_token.source_kind == "platform":
+                await self._emitter.emit_observability(
+                    authority, facts, observation_token.command_fingerprint
+                )
+            else:
+                if any(
+                    fact["kind"] == "equity_snapshot"
+                    and (
+                        fact["account_inventory"]["status"] != "unavailable"
+                        or fact["account_inventory"]["inventory_complete"]
+                        or fact["trading_gate"] != "awaiting_release"
+                    )
+                    for fact in facts
+                ):
+                    raise RunnerFactObservationRetired(
+                        "simulation cannot claim a native opening observation"
+                    )
+                await self._emitter.emit(authority, facts)
+        except RunnerFactObservationRetired:
+            return
         except Exception as exc:
             _log.error("runner_fact_observability_enqueue_failed", error=str(exc))
 
