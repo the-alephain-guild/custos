@@ -221,18 +221,17 @@ def test_refused_risk_audit_requires_a_structured_error(error):
         RiskMutationRecord("risk_refused", {}, {"error_code": error})
 
 
-async def test_a_refusal_record_failure_reaches_host_health(monkeypatch):
+async def test_a_refusal_record_failure_reaches_host_health(monkeypatch, tmp_path):
     pytest.importorskip("nautilus_trader")
     from custos.core.runner_fact_producer import RunnerFactEventBridge
     from custos.engines.nautilus import host as host_module
     from custos.engines.nautilus.host import NtTradingNodeHost
     from tests.engines.nautilus.test_runner_safety_execution_boundary import (
-        _boundary,
         _GatedStrategy,
         _order,
-        _Store,
     )
     from tests.fixtures.fake_live_node import FakeLiveNodeType
+    from tests.fixtures.platform_opening import closed_platform_runtime
     from tests.fixtures.trading_scope import declare_trading_scope_of
     from tests.test_nt_trading_node_host import (
         _Artifact,
@@ -247,19 +246,20 @@ async def test_a_refusal_record_failure_reaches_host_health(monkeypatch):
 
     monkeypatch.setattr(RunnerFactEventBridge, "record_local_refusal", unavailable)
     monkeypatch.setattr(host_module, "LiveNode", FakeLiveNodeType)
-    boundary = _boundary(_Store([]))
+    spec = _fact_spec("refusal-health", "binance_perpetual")
+    runtime = await closed_platform_runtime(tmp_path / "runner.sqlite3", spec)
     host = NtTradingNodeHost(
         tenant_id="tenant-a",
         runner_fact_emitter=_FactEmitterStub(),
         capability_receipt=_FactCapabilityReceipt(),
-        runner_safety_boundary_factory=lambda _: boundary,
+        runner_safety_boundary_factory=runtime.factory,
     )
-    spec = _fact_spec("refusal-health", "binance_perpetual")
     strategy = _GatedStrategy()
     strategy.on_order_event = lambda _event: None
     strategy.on_position_event = lambda _event: None
     declare_trading_scope_of(strategy, spec)
     instance = await host.deploy(spec, _credential(), _Artifact(strategy=strategy))
+    boundary = runtime.boundaries[instance]
     try:
         strategy.submit_order(_order("x" * 100))
         status = await host.get_engine_status(instance)
@@ -272,6 +272,6 @@ async def test_a_refusal_record_failure_reaches_host_health(monkeypatch):
         assert boundary.fallback_breaker.frozen
         strategy.submit_order(_order("next"))
         strategy.submit_order(_order("exit", reduce_only=True))
-        assert [str(order.client_order_id) for order in strategy.submitted] == ["exit"]
+        assert strategy.submitted == []
     finally:
         await host.stop(instance)

@@ -1514,11 +1514,14 @@ async def test_a_deployments_facts_name_the_venue_it_actually_trades_on(monkeypa
         "facts-sodex",
         strategy_id=str(uuid5(NAMESPACE_URL, "custos-test-strategy:facts-sodex")),
     )
-    await host.deploy(spec, _credential(), _Artifact(strategy=_StrategyDouble(spec)))
-    try:
-        assert [d.venue for d in host.runner_fact_deployments()] == ["SODEX_PERPS"]
-    finally:
-        await host.stop(spec["deployment_instance_id"])
+    # Test observation construction without fabricating platform opening-release
+    # authority merely to enter a running host.
+    authority = nautilus_host.EngineLifecycleAuthority.from_spec(spec)
+    identity = nautilus_host._deployment_identity(spec, authority)
+    deployment, _provider = host._build_runner_fact_context(
+        spec, _credential(), identity, runtime_strategy=_StrategyDouble(spec)
+    )
+    assert deployment.venue == "SODEX_PERPS"
 
 
 @pytest.mark.asyncio
@@ -1527,11 +1530,10 @@ async def test_a_binance_deployments_facts_still_name_binance(monkeypatch) -> No
     monkeypatch.setattr(nautilus_host, "LiveNode", FakeLiveNodeType)
     host, _receipt = _fact_host()
     spec = _fact_spec("facts-binance", "binance_perpetual")
-    await host.deploy(spec, _credential(), _Artifact())
-    try:
-        assert [d.venue for d in host.runner_fact_deployments()] == ["BINANCE"]
-    finally:
-        await host.stop(spec["deployment_instance_id"])
+    authority = nautilus_host.EngineLifecycleAuthority.from_spec(spec)
+    identity = nautilus_host._deployment_identity(spec, authority)
+    deployment, _provider = host._build_runner_fact_context(spec, _credential(), identity)
+    assert deployment.venue == "BINANCE"
 
 
 @pytest.mark.asyncio

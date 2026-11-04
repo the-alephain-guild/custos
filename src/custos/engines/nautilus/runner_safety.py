@@ -45,6 +45,7 @@ from uuid import uuid4
 from nautilus_trader.model import ClientId, PositionId, PriceType, Quantity
 
 from custos.core.execution_events import ExecutionRefusalRecorder
+from custos.core.execution_reservation_store import RunnerOpeningGateClosed
 from custos.core.log import get_logger
 from custos.core.order_reservation_boundary import (
     ExecutionControlUnavailable,
@@ -597,9 +598,24 @@ def _serialized_dispatch(method):
         with ExitStack() as stack:
             try:
                 stack.enter_context(self._boundary.dispatch_control())
+                if method.__name__ != "cancel":
+                    self._boundary.assert_opening_released()
+            except RunnerOpeningGateClosed as error:
+                stack.close()
+                self._dispatch_refusal(method.__name__, args, error.reason_code)
+                return False if method.__name__ in {SUBMIT_ORDER, SUBMIT_ORDER_LIST} else None
             except ExecutionControlUnavailable:
+                stack.close()
                 _log.warning("runner_execution_control_refused", operation=method.__name__)
-                self._report(OrderRefusal("", "", "", _CONTROL_REJECTION_REASON))
+                self._dispatch_refusal(method.__name__, args, _CONTROL_REJECTION_REASON)
+                return False if method.__name__ in {SUBMIT_ORDER, SUBMIT_ORDER_LIST} else None
+            except Exception as error:
+                stack.close()
+                # Unknown boundary failures are visible refusals, never permission
+                # and never the normal awaiting-release outcome.
+                self._dispatch_refusal(
+                    method.__name__, args, self._reservation_refusal_reason(error)
+                )
                 return False if method.__name__ in {SUBMIT_ORDER, SUBMIT_ORDER_LIST} else None
             return method(self, *args, **kwargs)
 
@@ -631,6 +647,20 @@ class RunnerSafetyOrderGate:
         self._on_refusal = on_refusal
         self._client_order_id_validator = client_order_id_validator
         self._on_recording_failure = on_recording_failure
+
+    def _dispatch_refusal(self, operation: str, args: tuple, reason: str) -> None:
+        if operation == SUBMIT_ORDER and len(args) > 1:
+            self._refuse((args[1],), reason)
+        elif operation == SUBMIT_ORDER_LIST and len(args) > 1:
+            orders = tuple(getattr(args[1], "orders", ()))
+            if orders:
+                self._refuse(orders, reason)
+            else:
+                self._report(OrderRefusal("", "", "", reason))
+        elif operation == MODIFY_ORDER and len(args) > 1:
+            self._report(OrderRefusal(str(args[1]), "", "", reason))
+        else:
+            self._report(OrderRefusal("", "", "", reason))
 
     @_serialized_dispatch
     def submit_order(
@@ -757,6 +787,7 @@ class RunnerSafetyOrderGate:
             self._boundary.fallback_breaker.fail_closed("runner_dispatch_compensation_failed")
             _log.error("runner_dispatch_compensation_failed", error_type=type(error).__name__)
 
+    @_serialized_dispatch
     def modify_orders(self, _modify: Callable[..., None], *_args: Any, **_kwargs: Any):
         """Refuse batch modification outright.
 
@@ -769,6 +800,7 @@ class RunnerSafetyOrderGate:
         self._refuse((), _BATCH_MODIFY_REJECTION_REASON)
         return None
 
+    @_serialized_dispatch
     def market_exit(self, _exit: Callable[..., None], *_args: Any, **_kwargs: Any):
         """Refuse the exit nautilus would perform on the strategy's behalf.
 
@@ -951,6 +983,13 @@ class RunnerSafetyOrderGate:
             )
 
     def _report(self, refusal: OrderRefusal) -> None:
+        if isinstance(self._boundary, RunnerReservationBoundary) and (
+            self._boundary.defer_opening_refusal(lambda: self._record_refusal(refusal))
+        ):
+            return
+        self._record_refusal(refusal)
+
+    def _record_refusal(self, refusal: OrderRefusal) -> None:
         if self._on_refusal is None:
             return
         try:

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
+from custos.core.execution_reservation_store import PlatformOpeningGate
 from custos.core.fallback_breaker import FallbackBreaker
 from custos.core.local_runtime_state import RuntimeLease
 from custos.core.log import get_logger
@@ -151,6 +153,7 @@ class RunnerReservationBoundary:
         semantics: OrderSemantics | None = None,
         control_guard: RuntimeLease | None = None,
         reduction_claims: Literal["platform_memory"] | DurableReductionPort = "platform_memory",
+        platform_opening_gate: PlatformOpeningGate | None = None,
     ) -> None:
         if control_guard is not None and control_guard.fence.run_id != runtime_id:
             raise ExecutionControlUnavailable("control guard belongs to another runtime")
@@ -164,6 +167,12 @@ class RunnerReservationBoundary:
         self._fallback_breaker = fallback_breaker
         self._semantics = semantics
         self._control_guard = control_guard
+        if platform_opening_gate is not None and (
+            platform_opening_gate.authority.deployment_instance_id != runtime_id
+            or platform_opening_gate.authority.trading_mode != trading_mode
+        ):
+            raise ExecutionControlUnavailable("opening gate belongs to another runtime")
+        self.platform_opening_gate = platform_opening_gate
         if isinstance(reduction_claims, str):
             if reduction_claims != "platform_memory" or (
                 control_guard is not None and control_guard.fence.control_source == "local"
@@ -220,9 +229,25 @@ class RunnerReservationBoundary:
                     "current execution control is unavailable"
                 ) from error
 
+    def assert_opening_released(self) -> None:
+        if self.platform_opening_gate is not None:
+            self.platform_opening_gate.assert_released()
+
+    def defer_opening_refusal(self, callback: Callable[[], None]) -> bool:
+        if self.platform_opening_gate is None:
+            return False
+        return self.platform_opening_gate.defer_refusal(callback)
+
     @contextmanager
     def dispatch_control(self):
         with ExitStack() as stack:
+            if self.platform_opening_gate is not None:
+                try:
+                    stack.enter_context(self.platform_opening_gate.control_action())
+                except Exception as error:
+                    raise ExecutionControlUnavailable(
+                        "current signed opening control is unavailable"
+                    ) from error
             if self._control_guard is not None:
                 try:
                     stack.enter_context(self._control_guard.control_action())

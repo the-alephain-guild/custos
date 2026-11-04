@@ -15,9 +15,11 @@ import os
 import re
 import shutil
 import sqlite3
+import threading
 import time
 import unicodedata
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Context, Decimal, Inexact, InvalidOperation, Overflow, Rounded, localcontext
@@ -34,7 +36,7 @@ from custos.contracts.crucible_runner_safety_policy import (
     RunnerAggregateCapPolicyV1,
     VerifiedRunnerSafetyPolicy,
 )
-from custos.core.engine_protocol import EngineStopBoundary
+from custos.core.engine_protocol import EngineLifecycleAuthority, EngineStopBoundary
 from custos.core.log import get_logger
 from custos.core.reservation_math import (
     PositionCostLot,
@@ -2979,11 +2981,18 @@ class CommandOutcomeCommitResult:
     committed: bool
 
 
+class _OpeningControlContext(threading.local):
+    def __init__(self) -> None:
+        self.connection: sqlite3.Connection | None = None
+        self.after_release: list[Callable[[], None]] = []
+
+
 class RunnerFactOutbox:
     """SQLite-backed sequence allocator, event deduper, and durable outbox."""
 
     def __init__(self, path: Path) -> None:
         self.path = path.expanduser().resolve()
+        self._opening_control = _OpeningControlContext()
         self.path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         self._initialize()
 
@@ -3181,6 +3190,20 @@ class RunnerFactOutbox:
                     desired_status TEXT NOT NULL,
                     quarantine_reason TEXT,
                     updated_at_ns INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS runner_opening_gate (
+                    deployment_instance_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    trading_mode TEXT NOT NULL,
+                    runner_id TEXT NOT NULL,
+                    deployment_spec_id TEXT NOT NULL,
+                    deployment_spec_digest TEXT NOT NULL,
+                    generation INTEGER NOT NULL CHECK (generation > 0),
+                    command_fingerprint TEXT NOT NULL,
+                    state TEXT NOT NULL CHECK (state IN ('awaiting_release', 'revoked')),
+                    updated_at_ns INTEGER NOT NULL,
+                    FOREIGN KEY (deployment_instance_id)
+                        REFERENCES desired_deployments(deployment_instance_id)
                 );
                 CREATE TABLE IF NOT EXISTS artifact_activation (
                     activation_id TEXT PRIMARY KEY,
@@ -5006,6 +5029,37 @@ class RunnerStateStore:
                         time.time_ns(),
                     ),
                 )
+                connection.execute(
+                    """
+                    INSERT INTO runner_opening_gate (
+                        deployment_instance_id, tenant_id, trading_mode, runner_id,
+                        deployment_spec_id, deployment_spec_digest, generation,
+                        command_fingerprint, state, updated_at_ns
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(deployment_instance_id) DO UPDATE SET
+                        tenant_id = excluded.tenant_id,
+                        trading_mode = excluded.trading_mode,
+                        runner_id = excluded.runner_id,
+                        deployment_spec_id = excluded.deployment_spec_id,
+                        deployment_spec_digest = excluded.deployment_spec_digest,
+                        generation = excluded.generation,
+                        command_fingerprint = excluded.command_fingerprint,
+                        state = excluded.state,
+                        updated_at_ns = excluded.updated_at_ns
+                    """,
+                    (
+                        str(command.deployment_instance_id),
+                        command.tenant_id,
+                        command.trading_mode,
+                        str(command.runner_id),
+                        str(command.deployment_spec_id),
+                        command.deployment_spec_digest,
+                        command.generation,
+                        command_fingerprint,
+                        "awaiting_release" if command.lifecycle_state == "running" else "revoked",
+                        time.time_ns(),
+                    ),
+                )
             replay_disposition = InboundCommandDisposition.NONE
             if decision is CommandIdentityDecision.IDEMPOTENT:
                 outcome = connection.execute(
@@ -5037,6 +5091,92 @@ class RunnerStateStore:
             raise
         finally:
             connection.close()
+
+    def load_opening_gate_state_sync(self, authority: EngineLifecycleAuthority) -> str:
+        """Read only a gate bound to the current durable signed desired command.
+
+        This foundation has no released state or release mutation API. Older
+        databases with no gate record remain closed until a newer signed command
+        records one; reopening or replaying a command never manufactures permission.
+        """
+        with self._outbox._connect() as connection:
+            connection.execute("BEGIN")
+            return self._opening_gate_state(connection, authority)
+
+    @contextmanager
+    def opening_control_action(self, authority: EngineLifecycleAuthority):
+        """Serialize an outbound action with durable desired-command retirement."""
+        control = self._outbox._opening_control
+        if control.connection is not None:
+            # Native cancellation publishes callbacks synchronously. A callback
+            # must recheck authority using this same transaction, not wait for
+            # its own thread's outer SQLite writer lock.
+            self._opening_gate_state(control.connection, authority)
+            yield
+            return
+        connection = self._outbox._connect()
+        control.connection = connection
+        control.after_release = []
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            self._opening_gate_state(connection, authority)
+            yield
+            connection.commit()
+        except BaseException:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+            callbacks = control.after_release
+            control.connection = None
+            control.after_release = []
+            for callback in callbacks:
+                callback()
+
+    def defer_opening_control_callback(self, callback: Callable[[], None]) -> bool:
+        """Keep refusal signing outside every reentrant native control action."""
+        control = self._outbox._opening_control
+        if control.connection is None:
+            return False
+        control.after_release.append(callback)
+        return True
+
+    def _opening_gate_state(
+        self, connection: sqlite3.Connection, authority: EngineLifecycleAuthority
+    ) -> str:
+        desired = connection.execute(
+            "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?",
+            (str(authority.deployment_instance_id),),
+        ).fetchone()
+        gate = connection.execute(
+            "SELECT * FROM runner_opening_gate WHERE deployment_instance_id = ?",
+            (str(authority.deployment_instance_id),),
+        ).fetchone()
+        if desired is None or gate is None:
+            raise RunnerStateDurabilityError("opening gate or signed desired command is missing")
+        expected = {
+            "deployment_instance_id": str(authority.deployment_instance_id),
+            "tenant_id": self._tenant_id,
+            "trading_mode": authority.trading_mode,
+            "runner_id": str(self._runner_id),
+            "deployment_spec_id": str(authority.deployment_spec_id),
+            "deployment_spec_digest": authority.deployment_spec_digest,
+            "generation": authority.generation,
+        }
+        if any(desired[key] != value or gate[key] != value for key, value in expected.items()):
+            raise RunnerStateAuthorityError("opening gate differs from current signed authority")
+        if gate["command_fingerprint"] != desired["command_fingerprint"]:
+            raise RunnerStateAuthorityError("opening gate differs from current command fingerprint")
+        document = json.loads(desired["canonical_command"])
+        expected_state = (
+            "awaiting_release" if document["lifecycle_state"] == "running" else "revoked"
+        )
+        if gate["state"] != expected_state or desired["desired_status"] not in {
+            "recorded",
+            "applied",
+        }:
+            raise RunnerStateDurabilityError("opening gate state or desired command is invalid")
+        return str(gate["state"])
 
     async def commit_untrusted_command_rejection(
         self,

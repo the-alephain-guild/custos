@@ -143,6 +143,10 @@ def test_the_installed_gate_records_its_refusals_as_facts() -> None:
         def before_submit_order(self, _intent):
             raise RuntimeError("over the cap")
 
+        def assert_opening_released(self):
+            # The neutral kernel has no platform command or release authority.
+            pass
+
     gate = RunnerSafetyOrderGate(
         boundary=_RefusingBoundary(),
         client_order_id_len_limit=None,

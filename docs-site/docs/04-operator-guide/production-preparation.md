@@ -23,6 +23,28 @@ The signed lane starts only when its capability receipt declares the runtime run
 
 ## Runtime approval
 
+### Opening preparation is currently closed
+
+The signed runner now keeps every deployment in opening preparation. It may
+connect, reconcile and observe the account, but refuses all order creation and
+modification, including reduce-only closes. Restarting the runner or changing a
+strategy setting does not release this restriction. The signed release and
+acknowledgement path is not delivered yet, so this version cannot resume signed
+trading. No local flag or configuration override enables it.
+
+Do not upgrade an active trading runner to this foundation. First stop new
+activity, clear working orders and positions through your authorized venue
+procedures, and verify the final account state. Preserve execution records and
+the persistent runner storage. Do not delete its database to try to resume.
+Existing installations receive no automatic trading exemption; missing or
+invalid stored preparation state also prevents new orders.
+
+Cancellation remains available for the current deployment authority. A newer
+stop or pause retires the old generation's ability to send further actions.
+Do not rely on automatic reduce-only containment to close inherited positions
+while preparation is closed. Testnet and production rollout must wait for the
+release protocol, account evidence and restart acceptance to be delivered.
+
 The signed daemon accepts these inputs together:
 
 | Input | Purpose |

@@ -2,12 +2,48 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Protocol
 from uuid import UUID
 
+from custos.core.engine_protocol import EngineLifecycleAuthority
 from custos.core.runner_fact import RunnerStateAuthorityError
+
+
+class RunnerOpeningGateClosed(RuntimeError):
+    """An instance has no committed opening-release permission."""
+
+    def __init__(self, reason_code: str) -> None:
+        self.reason_code = reason_code
+        super().__init__(reason_code)
+
+
+class PlatformOpeningGate:
+    """Enforce the signed lane's durable opening boundary, without an open API."""
+
+    def __init__(self, store: Any, authority: EngineLifecycleAuthority) -> None:
+        self._store = store
+        self.authority = authority
+
+    def assert_released(self) -> None:
+        try:
+            state = self._store.load_opening_gate_state_sync(self.authority)
+        except Exception as error:
+            raise RunnerOpeningGateClosed("opening_gate_unavailable") from error
+        # No signed release protocol has been delivered in this foundation. Even
+        # corrupt or future state strings cannot manufacture permission to trade.
+        reason = (
+            "awaiting_opening_release" if state == "awaiting_release" else "opening_gate_revoked"
+        )
+        raise RunnerOpeningGateClosed(reason)
+
+    def control_action(self):
+        return self._store.opening_control_action(self.authority)
+
+    def defer_refusal(self, callback: Callable[[], None]) -> bool:
+        return self._store.defer_opening_control_callback(callback)
 
 
 @dataclass(frozen=True)

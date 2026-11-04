@@ -93,6 +93,9 @@ async def test_boundary_factory_uses_durable_owner_policy_identity() -> None:
     boundary = await factory(
         {
             "deployment_instance_id": str(DEPLOYMENT_INSTANCE_ID),
+            "deployment_spec_id": "33333333-3333-4333-8333-333333333333",
+            "deployment_spec_digest": "a" * 64,
+            "generation": 1,
             "trading_mode": "testnet",
         }
     )
@@ -108,6 +111,9 @@ async def test_boundary_factory_uses_durable_owner_policy_identity() -> None:
     replacement = await factory(
         {
             "deployment_instance_id": str(DEPLOYMENT_INSTANCE_ID),
+            "deployment_spec_id": "33333333-3333-4333-8333-333333333333",
+            "deployment_spec_digest": "a" * 64,
+            "generation": 1,
             "trading_mode": "testnet",
         }
     )
@@ -157,6 +163,9 @@ async def test_signed_safety_supervision_trips_the_order_boundary_breaker() -> N
     )(
         {
             "deployment_instance_id": str(DEPLOYMENT_INSTANCE_ID),
+            "deployment_spec_id": "33333333-3333-4333-8333-333333333333",
+            "deployment_spec_digest": "a" * 64,
+            "generation": 1,
             "trading_mode": "sandbox",
         }
     )
@@ -207,6 +216,9 @@ async def test_boundary_factory_fails_closed_without_owner_policy() -> None:
         await factory(
             {
                 "deployment_instance_id": str(DEPLOYMENT_INSTANCE_ID),
+                "deployment_spec_id": "33333333-3333-4333-8333-333333333333",
+                "deployment_spec_digest": "a" * 64,
+                "generation": 1,
                 "trading_mode": "sandbox",
             }
         )

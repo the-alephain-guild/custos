@@ -268,7 +268,13 @@ async def test_the_daemon_loads_the_freeze_before_it_hands_out_a_boundary(
     resolver.resolve.return_value = type(
         "Limits", (), {"owner_policy": True, "policy_id": POLICY_ID, "breaker": _config()}
     )()
-    spec = {"trading_mode": "sandbox", "deployment_instance_id": str(INSTANCE_A)}
+    spec = {
+        "trading_mode": "sandbox",
+        "deployment_instance_id": str(INSTANCE_A),
+        "deployment_spec_id": "33333333-3333-4333-8333-333333333333",
+        "deployment_spec_digest": "a" * 64,
+        "generation": 1,
+    }
 
     build = _build_runner_safety_boundary_factory(
         state_store=store, safety_policy_resolver=resolver, boundaries={}

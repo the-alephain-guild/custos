@@ -1489,32 +1489,43 @@ class _RecordingFactEmitter:
         return tuple(facts)
 
 
-def test_the_gate_and_the_fact_agree_on_reduction() -> None:
+def test_the_neutral_kernel_and_fact_bridge_agree_on_reduction() -> None:
     """Whatever the gate let out without reserving, the signed fact calls a reduction.
 
     The two answer one question, and the host wires the fact to the gate's answer
     rather than to a second judgement of its own; asked twice, the answers drift
     apart exactly where the claims of earlier exits matter.
     """
-    from custos.engines.nautilus.host import NtTradingNodeHost
-    from tests.test_nt_trading_node_host import _FactCapabilityReceipt
+    from custos.core.runner_fact_producer import RunnerFactEventBridge
+    from custos.engines.nautilus.strategy_event_forwarding import StrategyEventForwarder
     from tests.test_strategy_signal_bridge import _deployment
 
     emitter = _RecordingFactEmitter()
-    host = NtTradingNodeHost(
-        tenant_id="tenant-a",
-        runner_fact_emitter=emitter,
-        capability_receipt=_FactCapabilityReceipt(),
-    )
     cache = _long_cache("1")
     store = _Store([])
     strategy = _PublishingStrategy(cache)
-    host._attach_runtime_bridges(  # noqa: SLF001 - the host's own wiring under test
-        str(DEPLOYMENT_INSTANCE_ID),
+    boundary = _long_boundary(cache, store)
+    # Exercise shared reduction semantics without inventing an acknowledged
+    # platform opening. Signed host admission is covered separately.
+    forwarder = StrategyEventForwarder(
+        deployment_instance_id=str(DEPLOYMENT_INSTANCE_ID),
+        on_sink_failure=lambda *_args: pytest.fail("event sink failed"),
+    )
+    bridge = RunnerFactEventBridge(
+        emitter=emitter,
+        deployment=_deployment(),
+        order_reduces_exposure=boundary.judged_risk_reducing,
+    )
+    boundary.bootstrap(forwarder)
+    bridge.bootstrap(forwarder)
+    forwarder.install(strategy)
+    install_recorded_order_gate(
         strategy,
-        cache,
-        (_deployment(), None),
-        _long_boundary(cache, store),
+        cache=cache,
+        boundary=boundary,
+        recorder=bridge,
+        on_recording_failure=lambda *_args: pytest.fail("refusal recording failed"),
+        client_order_id_len_limit=None,
     )
     orders = [
         _plain_sell("exit-part", quantity="0.4"),

@@ -1358,6 +1358,21 @@ class NtTradingNodeHost:
         Safety first, then facts, matching the order the bus subscriptions were
         registered in.
         """
+        signed_composition = (
+            fact_context is not None
+            or self._runner_fact_emitter is not None
+            or self._capability_receipt is not None
+            or self._runner_safety_boundary_factory is not None
+        )
+        if signed_composition and (
+            fact_context is None
+            or not isinstance(runner_safety_boundary, RunnerReservationBoundary)
+            or runner_safety_boundary.platform_opening_gate is None
+            or runner_safety_boundary.platform_opening_gate.authority != source_authority
+        ):
+            raise RuntimeError(
+                "signed execution requires its signed fact stream and durable platform opening gate"
+            )
         forwarder = StrategyEventForwarder(
             deployment_instance_id=deployment_instance_id,
             on_sink_failure=lambda sink, reason: self._record_forwarding_failure(

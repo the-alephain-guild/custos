@@ -62,6 +62,54 @@ The default live enable gate is false. It becomes true only in the composition
 root that consumes the final exact-image receipt; it is not a compatibility or
 operator bypass flag.
 
+## Signed opening preparation
+
+Every newer verified desired command atomically records an instance opening gate
+in the existing RunnerFact SQLite database. Running commands start at
+`awaiting_release`; paused, stopped and archived commands revoke the gate. The
+record binds tenant, mode, runner, instance, immutable spec id/digest, generation
+and exact command fingerprint. Replaying an old command does not recreate a
+missing gate, and a restart does not grant trading permission.
+
+The canonical daemon always supplies this platform gate. A host configured with
+any signed observation or boundary component refuses missing observation context
+or a missing platform gate before adding the strategy to its node. Strategy
+configuration cannot select an unsigned lane or synthesize a release. Independent
+local and offline execution retain their own existing authority and guards; a
+failed signed setup never falls back to either.
+
+The gate is installed before strategy execution and blocks single/list submit,
+modify, native close (including reduce-only and the native default), and every
+other order-creating method. Existing algorithm/emulation bypass rejection stays
+in force. Cancellation remains available only while the bound durable desired
+identity is current; it holds a SQLite `BEGIN IMMEDIATE` control action so a
+new stop/pause desired command waits for that cancellation, then fences later
+actions by the old generation. Refusal recording occurs after that transaction
+is released, so its signed fact can write the same outbox. Native synchronous
+callbacks reenter the same thread's control transaction and revalidate their own
+authority. Their refusal callbacks are queued until the outermost transaction
+has committed or rolled back and closed; they are then signed before the outer
+gate call returns. A different thread never inherits that connection. The daemon
+composes one shared outbox; independently constructing another outbox for the same
+path is not a supported callback composition.
+
+This foundation has no `released` state, successful release command consumer,
+acknowledgement producer or opening API. It intentionally keeps all signed
+instances closed, including instances recovered from an older database. It does
+not establish complete account inventory or a persistent signed-daemon process
+fence. Existing local-runtime process fencing is unchanged. A reliable platform
+process fence, stop/pause precedence, complete account inventory, exact signed
+release identity and the atomic acknowledgement/outbox transaction are mandatory
+before any subsequent implementation may open this gate.
+
+Do not roll this foundation onto a trading instance. Drain and reconcile it at
+the venue before a coordinated upgrade, preserving its evidence and state.
+Reduce-only/native containment cannot close inherited positions while this gate
+is shut; use the venue's authorized operator procedures if intervention is needed.
+There is no grandfathered permission, strategy setting or command-line bypass.
+Local tests establish the refusal boundary only; venue logs, restart failure
+windows, exact-image acceptance and production rollout require separate evidence.
+
 ## Venue capability is per mode
 
 `supports_venue(venue, mode)` answers from one allow-list per trading mode, not

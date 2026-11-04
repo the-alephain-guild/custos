@@ -143,6 +143,10 @@ class Boundary:
     def assert_control_current(self):
         pass
 
+    def assert_opening_released(self):
+        # This tests the neutral dispatch ABI, not a signed platform deployment.
+        pass
+
     def before_dispatch(self, reservations):
         return True
 

@@ -3,6 +3,10 @@
   "project": "custos",
   "authority_documents": [
     {
+      "role": "platform_opening_gate_foundation",
+      "path": "docs/authority/nautilus-host-contract.md"
+    },
+    {
       "role": "local_strategy_execution_context_schema_v1",
       "path": "docs/gateway-contract/v1/local_strategy_execution_context_v1.schema.json",
       "contract_only": true

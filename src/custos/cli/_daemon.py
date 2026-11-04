@@ -57,11 +57,12 @@ from custos.core.credential_resolver import VaultRunnerCredentialResolverV1
 from custos.core.engine_lifecycle import EngineLifecycleConfig, EngineLifecycleSupervisor
 from custos.core.engine_protocol import (
     EngineDependencyUnavailable,
+    EngineLifecycleAuthority,
     EngineNodeCapacity,
     ExecutionEngineProtocol,
 )
 from custos.core.engine_safety import EngineSafetySupervisor
-from custos.core.execution_reservation_store import PlatformReservationStore
+from custos.core.execution_reservation_store import PlatformOpeningGate, PlatformReservationStore
 from custos.core.fallback_breaker import FallbackBreaker
 from custos.core.log import get_logger
 from custos.core.machine_credential_vault import (
@@ -604,6 +605,9 @@ def _build_runner_safety_boundary_factory(
             fallback_breaker=breaker,
             trading_mode=str(spec["trading_mode"]),
             reduction_claims="platform_memory",
+            platform_opening_gate=PlatformOpeningGate(
+                state_store, EngineLifecycleAuthority.from_spec(spec)
+            ),
         )
         if boundaries is not None:
             boundaries[instance_id] = boundary

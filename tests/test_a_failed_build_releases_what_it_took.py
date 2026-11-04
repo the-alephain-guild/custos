@@ -19,6 +19,7 @@ import pytest
 from custos.core.runner_fact import RunnerFactContractError
 from custos.engines.nautilus import host as host_module
 from tests.fixtures.fake_live_node import FakeLiveNode, FakeLiveNodeType
+from tests.fixtures.platform_opening import closed_platform_runtime
 from tests.test_nt_trading_node_host import (
     _Artifact,
     _credential,
@@ -37,7 +38,13 @@ def fake_nodes(monkeypatch: pytest.MonkeyPatch):
 def _artifact(timeframe: str = "5-MINUTE", spec: dict | None = None) -> _Artifact:
     from types import SimpleNamespace as NS
 
-    strategy = _StrategyDouble(spec)
+    from tests.engines.nautilus.test_runner_safety_execution_boundary import _GatedStrategy
+
+    class Strategy(_StrategyDouble, _GatedStrategy):
+        pass
+
+    strategy = Strategy(spec)
+    strategy.submitted = []
     strategy.config.platforms = NS(nautilus=NS(bar_type=timeframe))
     return _Artifact(strategy=strategy)
 
@@ -136,7 +143,7 @@ async def test_a_spec_refused_before_the_claim_takes_nothing_either(fake_nodes) 
 
 
 @pytest.mark.asyncio
-async def test_the_corrected_config_can_start_on_the_same_host(fake_nodes) -> None:
+async def test_the_corrected_config_can_start_on_the_same_host(fake_nodes, tmp_path) -> None:
     """The scenario an operator actually hits: get it wrong, fix it, deploy again.
 
     Deliberately the *same* host. Starting a clean one would prove nothing -- the
@@ -162,7 +169,9 @@ async def test_the_corrected_config_can_start_on_the_same_host(fake_nodes) -> No
         credential_scope=scope,
         strategy_config={"timeframe": "5-MINUTE"},
     )
-    await host.deploy(corrected, _credential(), _artifact("5-MINUTE"))
+    runtime = await closed_platform_runtime(tmp_path / "runner.sqlite3", corrected)
+    host._runner_safety_boundary_factory = runtime.factory
+    await host.deploy(corrected, _credential(), _artifact("5-MINUTE", corrected))
 
     try:
         assert corrected["deployment_instance_id"] in host._active_nodes  # noqa: SLF001
@@ -171,12 +180,14 @@ async def test_the_corrected_config_can_start_on_the_same_host(fake_nodes) -> No
 
 
 @pytest.mark.asyncio
-async def test_a_deployment_that_did_start_keeps_the_scope(fake_nodes) -> None:
+async def test_a_deployment_that_did_start_keeps_the_scope(fake_nodes, tmp_path) -> None:
     """The control: releasing on failure must not become releasing on success."""
     host, _ = _fact_host()
     spec = _fact_spec("lb4-healthy", "binance_perpetual", trading_mode="testnet")
+    runtime = await closed_platform_runtime(tmp_path / "runner.sqlite3", spec)
+    host._runner_safety_boundary_factory = runtime.factory
 
-    await host.deploy(spec, _credential(), _artifact())
+    await host.deploy(spec, _credential(), _artifact(spec=spec))
 
     try:
         assert spec["deployment_instance_id"] in host._execution_account_partitions  # noqa: SLF001
