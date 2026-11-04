@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.metadata
 import json
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -15,6 +17,49 @@ from typing import Any
 
 class VenueLedgerError(RuntimeError):
     pass
+
+
+MAX_VENUE_RESPONSE_BYTES = 16 * 1024 * 1024
+
+
+@dataclass(frozen=True, slots=True)
+class ExactVenueResponse:
+    data: Any
+    payload_digest: str
+
+
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise VenueLedgerError("venue response contains duplicate JSON keys")
+        result[key] = value
+    return result
+
+
+def _reject_constant(_value):
+    raise VenueLedgerError("venue response contains a nonfinite JSON constant")
+
+
+def _successful_data(document):
+    if not isinstance(document, dict) or str(document.get("code")) != "0" or "data" not in document:
+        raise VenueLedgerError("venue ledger response is not successful")
+    return document["data"]
+
+
+def decode_exact_venue_response(payload: bytes) -> ExactVenueResponse:
+    try:
+        if not isinstance(payload, bytes) or len(payload) > MAX_VENUE_RESPONSE_BYTES:
+            raise VenueLedgerError("venue response exceeds the bounded JSON size")
+        document = json.loads(
+            payload,
+            parse_float=Decimal,
+            parse_constant=_reject_constant,
+            object_pairs_hook=_unique_object,
+        )
+        return ExactVenueResponse(_successful_data(document), hashlib.sha256(payload).hexdigest())
+    except (TypeError, ValueError, UnicodeError, RecursionError) as error:
+        raise VenueLedgerError("venue response JSON is invalid") from error
 
 
 def _user_agent() -> str:
@@ -44,6 +89,16 @@ class ReadOnlyVenueHttp:
     def get(
         self, path: str, params: dict[str, object], headers: dict[str, str] | None = None
     ) -> Any:
+        try:
+            payload = self._request(path, params, headers)
+            return _successful_data(json.loads(payload, parse_float=Decimal))
+        except (TypeError, ValueError, UnicodeError) as error:
+            raise VenueLedgerError("venue ledger request failed") from error
+
+    def get_exact(self, path: str, params: dict[str, object]) -> ExactVenueResponse:
+        return decode_exact_venue_response(self._request(path, params, None))
+
+    def _request(self, path, params, headers) -> bytes:
         query = urllib.parse.urlencode(params)
         target = path + ("?" + query if query else "")
         delay = self._minimum_interval - (time.monotonic() - self._last_request)
@@ -57,17 +112,10 @@ class ReadOnlyVenueHttp:
                 method="GET",
             )
             with self._opener.open(request, timeout=15) as response:
-                payload = response.read(16 * 1024 * 1024 + 1)
-            if len(payload) > 16 * 1024 * 1024:
+                payload = response.read(MAX_VENUE_RESPONSE_BYTES + 1)
+            if len(payload) > MAX_VENUE_RESPONSE_BYTES:
                 raise VenueLedgerError("venue ledger response exceeds the size limit")
-            document = json.loads(payload, parse_float=Decimal)
-            if (
-                not isinstance(document, dict)
-                or str(document.get("code")) != "0"
-                or "data" not in document
-            ):
-                raise VenueLedgerError("venue ledger response is not successful")
-            return document["data"]
+            return payload
         except VenueLedgerError:
             raise
         except (OSError, ValueError, urllib.error.URLError) as error:

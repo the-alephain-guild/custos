@@ -112,6 +112,11 @@ windows, exact-image acceptance and production rollout require separate evidence
 
 ## Venue capability is per mode
 
+Read-only opening diagnostics are separately defined in
+[`opening-inventory-observation.md`](opening-inventory-observation.md). Their
+typed SoDEX observations retain partial and unknown coverage, and cannot release
+the signed opening gate or replace actual venue acceptance.
+
 `supports_venue(venue, mode)` answers from one allow-list per trading mode, not
 from a single set. Listing a connector for a mode is a claim that this runner can
 take it all the way to that mode, and the modes do not cost the same: sandbox and

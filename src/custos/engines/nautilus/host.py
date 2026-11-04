@@ -62,11 +62,17 @@ from custos.core.runner_fact_producer import (
 from custos.core.runtime_log_fact import RunnerRuntimeLogEmitter, RuntimeLogRedactor
 from custos.core.venue_proxy import VenueProxy
 from custos.engines.nautilus.cancel_discipline import CancelDiscipline, PartitionGate
+from custos.engines.nautilus.opening_inventory import (
+    InventoryAccountScope,
+    InventoryUnavailable,
+    OpeningAccountInventory,
+)
 from custos.engines.nautilus.portfolio_snapshot import (
     NautilusPortfolioSnapshot,
     NautilusPortfolioSnapshotProvider,
 )
 from custos.engines.nautilus.settlement import settlement_currency_for_pairs
+from custos.engines.nautilus.sodex_opening_inventory import SodexOpeningInventoryCollector
 from custos.engines.nautilus.strategy_event_forwarding import StrategyEventForwarder
 from custos.engines.nautilus.venues import (
     venue_for_connector,
@@ -638,6 +644,10 @@ class NtTradingNodeHost:
         self._lifecycle_authorities: dict[str, EngineLifecycleAuthority] = {}
         # deployment_instance_id -> signed fact scope plus independent venue ledger adapter.
         self._runner_fact_contexts: dict[str, tuple[RunnerFactDeployment, object | None]] = {}
+        self._opening_inventory_providers: dict[
+            str, SodexOpeningInventoryCollector | InventoryUnavailable
+        ] = {}
+        self._opening_observation_epochs: dict[str, int] = {}
         self._runner_safety_boundaries: dict[str, RunnerReservationBoundary] = {}
         # A real venue credential scope represents one account-level order/position
         # stream. Two active deployment nodes on the same scope would both observe and
@@ -1194,6 +1204,11 @@ class NtTradingNodeHost:
                 identity,
                 runtime_strategy=strategy,
             )
+            opening_provider = (
+                self._build_opening_inventory_provider(spec, lifecycle_authority)
+                if fact_context is not None
+                else None
+            )
             discipline = self._new_cancel_discipline(deployment_instance_id, venue)
             self._attach_runtime_bridges(
                 deployment_instance_id,
@@ -1213,6 +1228,8 @@ class NtTradingNodeHost:
         try:
             if fact_context is not None:
                 self._runner_fact_contexts[fact_context[0].deployment_instance_id] = fact_context
+            if opening_provider is not None:
+                self._opening_inventory_providers[deployment_instance_id] = opening_provider
             if runner_safety_boundary is not None:
                 self._runner_safety_boundaries[deployment_instance_id] = runner_safety_boundary
             self._cancel_disciplines[deployment_instance_id] = discipline
@@ -1224,6 +1241,7 @@ class NtTradingNodeHost:
             task = asyncio.create_task(node.run_async())
         except Exception:
             self._runner_fact_contexts.pop(deployment_instance_id, None)
+            self._opening_inventory_providers.pop(deployment_instance_id, None)
             self._runner_safety_boundaries.pop(deployment_instance_id, None)
             self._cancel_disciplines.pop(deployment_instance_id, None)
             self._event_forwarding_failures.pop(deployment_instance_id, None)
@@ -1617,6 +1635,86 @@ class NtTradingNodeHost:
         )
         return deployment, provider
 
+    def _build_opening_inventory_provider(self, spec: dict, authority: EngineLifecycleAuthority):
+        connector = str(spec["connector"])
+        if connector not in {"sodex", "sodex_perpetual"}:
+            return InventoryUnavailable(authority, connector, "connector_inventory_unsupported")
+        try:
+            scope = InventoryAccountScope.from_spec(
+                spec, tenant_id=self._tenant_id, runner_id=UUID(self._runner_id)
+            )
+        except (TypeError, ValueError, KeyError):
+            return InventoryUnavailable(authority, connector, "opening_account_scope_unavailable")
+        return SodexOpeningInventoryCollector(scope)
+
+    async def read_opening_account_inventory(
+        self, authority: EngineLifecycleAuthority
+    ) -> OpeningAccountInventory | InventoryUnavailable:
+        """Read independent public account observations without opening or signing anything."""
+        instance = str(authority.deployment_instance_id)
+        provider = self._opening_inventory_providers.get(instance)
+        connector = (
+            provider.scope.connector
+            if isinstance(provider, SodexOpeningInventoryCollector)
+            else "unknown"
+        )
+
+        def unavailable(reason):
+            return InventoryUnavailable(authority, connector, reason)
+
+        runtime = self._active_nodes.get(instance)
+        observation_epoch = self._opening_observation_epochs.get(instance, 0)
+        boundary = self._runner_safety_boundaries.get(instance)
+        if (
+            runtime is None
+            or runtime.task.done()
+            or instance in self._stopping
+            or self._lifecycle_authorities.get(instance) != authority
+            or boundary is None
+            or boundary.platform_opening_gate is None
+            or boundary.platform_opening_gate.authority != authority
+        ):
+            return unavailable("opening_instance_not_current")
+        gate = boundary.platform_opening_gate
+        try:
+            before = await gate.current_running_desired()
+            if (
+                before.command.tenant_id != self._tenant_id
+                or str(before.command.runner_id) != self._runner_id
+            ):
+                return unavailable("opening_source_identity_mismatch")
+            if isinstance(provider, InventoryUnavailable):
+                return provider
+            if not isinstance(provider, SodexOpeningInventoryCollector):
+                return unavailable("opening_inventory_provider_missing")
+            expected_scope = InventoryAccountScope.from_spec(
+                before.command.to_runtime_spec().model_dump(mode="python"),
+                tenant_id=before.command.tenant_id,
+                runner_id=before.command.runner_id,
+            )
+            if provider.scope != expected_scope:
+                return unavailable("opening_account_scope_changed")
+            # Venue latency must never hold the desired-state SQLite writer lock.
+            result = await provider.collect()
+            after = await gate.current_running_desired()
+            if (
+                before.command_fingerprint != after.command_fingerprint
+                or self._active_nodes.get(instance) is not runtime
+                or runtime.task.done()
+                or instance in self._stopping
+                or self._lifecycle_authorities.get(instance) != authority
+                or self._opening_inventory_providers.get(instance) is not provider
+                or self._opening_observation_epochs.get(instance, 0) != observation_epoch
+            ):
+                return unavailable("opening_observation_retired")
+            if result.scope != expected_scope:
+                return unavailable("opening_observation_scope_mismatch")
+            return result
+        except Exception:
+            # A typed unavailable observation retains uncertainty; it grants no
+            # order permission and cannot manufacture a zero account.
+            return unavailable("opening_observation_unavailable")
+
     def _declared_currency(self, deployment_instance_id: str) -> str | None:
         """The currency this instance settles in, or None with a record of why not.
 
@@ -1662,6 +1760,10 @@ class NtTradingNodeHost:
         """
         in_flight = self._stops_in_flight.get(deployment_instance_id)
         if in_flight is None:
+            if deployment_instance_id in self._active_nodes:
+                self._opening_observation_epochs[deployment_instance_id] = (
+                    self._opening_observation_epochs.get(deployment_instance_id, 0) + 1
+                )
             in_flight = asyncio.ensure_future(self._stop_at_boundary_once(deployment_instance_id))
             self._stops_in_flight[deployment_instance_id] = in_flight
             in_flight.add_done_callback(
@@ -1890,6 +1992,8 @@ class NtTradingNodeHost:
         self._peak_equity.pop(deployment_instance_id, None)
         self._settlement_currencies.pop(deployment_instance_id, None)
         self._runner_fact_contexts.pop(deployment_instance_id, None)
+        self._opening_inventory_providers.pop(deployment_instance_id, None)
+        self._opening_observation_epochs.pop(deployment_instance_id, None)
         self._runner_safety_boundaries.pop(deployment_instance_id, None)
         self._cancel_disciplines.pop(deployment_instance_id, None)
         self._signed_unpriced_dust.pop(deployment_instance_id, None)
@@ -2977,6 +3081,8 @@ class NtTradingNodeHost:
             self._active_nodes.pop(deployment_instance_id, None)
             self._containment_confirmed.discard(deployment_instance_id)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
+            self._opening_inventory_providers.pop(deployment_instance_id, None)
+            self._opening_observation_epochs.pop(deployment_instance_id, None)
             self._runner_safety_boundaries.pop(deployment_instance_id, None)
             self._event_forwarding_failures.pop(deployment_instance_id, None)
             self._release_execution_account_partition(deployment_instance_id)

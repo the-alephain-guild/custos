@@ -3,6 +3,10 @@
   "project": "custos",
   "authority_documents": [
     {
+      "role": "opening_inventory_observation",
+      "path": "docs/authority/opening-inventory-observation.md"
+    },
+    {
       "role": "platform_opening_gate_foundation",
       "path": "docs/authority/nautilus-host-contract.md"
     },

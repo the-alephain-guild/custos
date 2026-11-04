@@ -25,7 +25,9 @@ from tests.test_runner_fact_store import (
 )
 
 
-async def closed_platform_runtime(database, spec, *, tenant_id="tenant-a"):
+async def closed_platform_runtime(
+    database, spec, *, tenant_id="tenant-a", lifecycle_state="running"
+):
     event = copy.deepcopy(json.loads(COMMAND_GOLDEN_PATH.read_text())["cases"][0]["event_document"])
     mode = spec["trading_mode"]
     instance = str(spec["deployment_instance_id"])
@@ -63,6 +65,7 @@ async def closed_platform_runtime(database, spec, *, tenant_id="tenant-a"):
         deployment_spec_id=str(spec["deployment_spec_id"]),
         deployment_spec_digest=digest,
         generation=spec["generation"],
+        lifecycle_state=lifecycle_state,
     )
     event.update(
         tenant_id=tenant_id,
