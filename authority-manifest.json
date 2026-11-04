@@ -441,7 +441,7 @@
     }
   ],
   "expected_migration_heads": {
-    "arx": "0123",
+    "arx": "0124",
     "crucible_control": "0027",
     "crucible_mode": "0115"
   },
