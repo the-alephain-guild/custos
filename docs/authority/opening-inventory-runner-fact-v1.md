@@ -34,10 +34,14 @@ notation, signed zero or silent asset filtering is allowed. A local observation
 outside the wire domain makes that entire dimension unavailable while preserving
 other valid dimensions and the original risk equity. If the combined observability
 batch exceeds its byte budget because of inventory, the platform outbox rolls
-back that attempt and retries once with explicit unavailable inventory and
-`wire_budget_exceeded`. Equity, positions, event identities and sequence allocation
-are preserved; it never truncates rows to claim an empty census. An original risk
-batch that itself cannot fit remains an error, rather than a fabricated value.
+back that attempt and selects the complete independent risk plan, with explicit
+unavailable inventory and `wire_budget_exceeded`, in the same SQLite transaction.
+That plan retains the independently sampled amount, positions, nanosecond time and
+event identities. It never retains a native amount while replacing only its
+inventory. Rolled-back attempts consume no fact identity or sequence. Without a
+trustworthy independent sample there is no risk fallback; an oversized native
+batch is refused atomically. An independent batch that itself cannot fit remains
+an error, rather than a fabricated value or truncated census.
 
 Balances preserve raw asset ID/code and namespace separately from nullable
 canonical denomination and mapping revision. Case conversion does not establish
@@ -98,7 +102,8 @@ the epoch value. Every applicable observation must use that exact time and the
 recomputed SHA-256 token over canonical JSON `{"source":scope.source,
 "native_capture":native_capture}`. This descriptor binds a reported boundary;
 it does not replace registered runtime capability evidence or prove a native API
-was called. Actual runtime acquisition is a later delivery unit.
+was called. The host now acquires a native capture handle before its hosted run,
+but acceptance of a fixed installed runtime artifact remains a separate gate.
 
 Native balances retain precision, currency type and ISO code in required-nullable
 `native_currency`; SoDEX carries null. `native_currency_codes_v1` identifies exact
@@ -136,9 +141,30 @@ consumer and runtime acceptance remain open.
 
 ## Risk cadence and lifecycle
 
-The canonical host samples independent risk as before. An opening provider,
-transport or conversion failure produces unavailable inventory rather than
-suppressing trustworthy equity and positions. A paused but still current source
+The canonical host records an independent risk sample with its own amount,
+positions, nanosecond observation time, source and sample identity. It also tries
+the native owner capture when the portfolio sample fails. A typed opening bundle
+retains these independent sources, including explicit risk unavailability. Only
+a complete, coherent, manifest-admitted no-borrow cash capture can supply native
+equity and empty effective positions at the capture's exact nanosecond time. A
+nonempty native order list, unknown denomination, nonzero other asset, effective
+position or liability prevents that cash qualification; the original rows remain
+observed and unproven. Native sample identities use the full capture token, so two
+captures at the same timestamp retain distinct identities.
+
+The bundle, independent positions and complete primary/fallback plans retain
+immutable canonical JSON bytes. Construction inputs and later property reads do
+not share mutable nested dictionaries with the signing plan. The admitted native
+sample also binds the exact inventory snapshot, including artifact admission.
+Heartbeat keeps its own local observation time. Capital telemetry uses the
+independent portfolio equity and records that sample's source, time and identity;
+its log time remains the actual capital-sample completion time. If independent
+risk is unavailable the auxiliary capital log is omitted, even when a native risk
+sample is usable. Health/status and readiness reads can also fail independently;
+those failures produce a degraded heartbeat and still attempt the native bundle.
+Source retirement and task cancellation continue to abort the old observation.
+An opening provider, transport or conversion failure produces
+unavailable inventory rather than suppressing trustworthy equity and positions. A paused but still current source
 may report risk; it has no permission to send orders. Stopped, archived,
 superseded or locally retired observations must not be signed for the old source.
 
@@ -159,8 +185,12 @@ It does not add a platform process fence or an opening API. The existing explici
 simulation host has a separate token variant and can emit only unavailable,
 awaiting-release equity; a platform token missing a fingerprint cannot select it.
 
-The gate remains default closed. Native owner capture and its actual capabilities,
-reliable platform process fencing, independent signed release, atomic release
+The gate remains default closed. The current installed `sodex.3` runtime has no
+capture API and remains explicitly unavailable. The native API's crate version is
+not a wheel identity. A future-shaped handle or artifact fixture proves conversion
+semantics only. Fixed CPython 3.12 artifact installation, verified artifact identity,
+registered capability and actual host-to-signed-outbox consumer acceptance remain
+necessary before claiming native runtime completion. Reliable platform process fencing, independent signed release, atomic release
 acknowledgement and first-fill ordering require their own implementation and
 acceptance. Ordinary cache contents, initial balance maps and empty reports are
 not a complete native or venue account census.

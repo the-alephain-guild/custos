@@ -10,6 +10,8 @@ import pytest
 pytest.importorskip("nautilus_trader")
 
 from custos.core.engine_protocol import EngineLifecycleAuthority
+from custos.core.opening_observation import ObservabilityFactPlan
+from custos.core.runner_fact_producer import RunnerFactObservationRetired
 from custos.engines.nautilus import host as host_module
 from custos.engines.nautilus import venue_sodex
 from custos.engines.nautilus.ledger_http import ReadOnlyVenueHttp, decode_exact_venue_response
@@ -113,8 +115,6 @@ async def test_network_read_does_not_hold_a_write_lock_and_new_desired_retires_t
     import asyncio
     from threading import Event
 
-    from custos.engines.nautilus.opening_inventory import InventoryUnavailable
-
     subject = signed_host
     started, resume = Event(), Event()
     original = ReadOnlyVenueHttp.get_exact
@@ -143,17 +143,14 @@ async def test_network_read_does_not_hold_a_write_lock_and_new_desired_retires_t
         )
     finally:
         resume.set()
-    result = await asyncio.wait_for(task, timeout=2)
-    assert isinstance(result, InventoryUnavailable)
-    assert result.inventory_complete is False
+    with pytest.raises(RunnerFactObservationRetired):
+        await asyncio.wait_for(task, timeout=2)
     assert await subject.runtime.outbox.pending() == []
 
 
 async def test_local_stop_during_network_read_discards_provider_result(signed_host, monkeypatch):
     import asyncio
     from threading import Event
-
-    from custos.engines.nautilus.opening_inventory import InventoryUnavailable
 
     subject = signed_host
     started, resume = Event(), Event()
@@ -171,7 +168,8 @@ async def test_local_stop_during_network_read_discards_provider_result(signed_ho
         await subject.host.stop(subject.spec["deployment_instance_id"])
     finally:
         resume.set()
-    assert isinstance(await task, InventoryUnavailable)
+    with pytest.raises(RunnerFactObservationRetired):
+        await task
 
 
 @pytest.mark.parametrize(
@@ -208,7 +206,6 @@ async def test_inventory_from_another_wallet_is_not_reassigned_to_the_current_ho
 ):
     from dataclasses import replace
 
-    from custos.engines.nautilus.opening_inventory import InventoryUnavailable
     from custos.engines.nautilus.sodex_opening_inventory import SodexOpeningInventoryCollector
 
     original = SodexOpeningInventoryCollector.collect
@@ -218,17 +215,13 @@ async def test_inventory_from_another_wallet_is_not_reassigned_to_the_current_ho
         return replace(result, scope=replace(result.scope, wallet_address="0x" + "b" * 40))
 
     monkeypatch.setattr(SodexOpeningInventoryCollector, "collect", foreign)
-    assert isinstance(
-        await signed_host.host.read_opening_account_inventory(signed_host.authority),
-        InventoryUnavailable,
-    )
+    with pytest.raises(RunnerFactObservationRetired):
+        await signed_host.host.read_opening_account_inventory(signed_host.authority)
 
 
 async def test_failed_stop_attempt_also_retires_an_inflight_account_read(signed_host, monkeypatch):
     import asyncio
     from threading import Event
-
-    from custos.engines.nautilus.opening_inventory import InventoryUnavailable
 
     subject = signed_host
     started, resume = Event(), Event()
@@ -252,7 +245,8 @@ async def test_failed_stop_attempt_also_retires_an_inflight_account_read(signed_
                 await subject.host.stop(subject.spec["deployment_instance_id"])
     finally:
         resume.set()
-    assert isinstance(await task, InventoryUnavailable)
+    with pytest.raises(RunnerFactObservationRetired):
+        await task
 
 
 @pytest.mark.parametrize("signed_host", ["binance_perpetual"], indirect=True)
@@ -490,7 +484,11 @@ async def test_observability_rechecks_desired_inside_the_signing_transaction(sig
     )
     emitter = RunnerFactEmitter(subject.runtime.outbox, _identity(), lambda: None)
     with pytest.raises(RunnerStateAuthorityError):
-        await emitter.emit_observability(deployment.authority, [fact], token.command_fingerprint)
+        await emitter.emit_observability(
+            deployment.authority,
+            ObservabilityFactPlan.from_facts([fact], None),
+            token.command_fingerprint,
+        )
     assert await subject.runtime.outbox.pending() == []
 
 
@@ -518,7 +516,11 @@ async def test_current_platform_observation_signs_under_the_same_desired_fence(s
         account_inventory=unavailable_opening_inventory(deployment.authority, deployment.connector),
     )
     emitter = RunnerFactEmitter(subject.runtime.outbox, _identity(), lambda: None)
-    await emitter.emit_observability(deployment.authority, [fact], token.command_fingerprint)
+    await emitter.emit_observability(
+        deployment.authority,
+        ObservabilityFactPlan.from_facts([fact], None),
+        token.command_fingerprint,
+    )
     pending = await subject.runtime.outbox.pending()
     assert json.loads(pending[0].payload)["facts"][0]["amount"] == "1234.5"
 
@@ -593,6 +595,18 @@ async def test_one_pending_venue_census_does_not_block_another_deployments_risk(
                 return await subject.host.runner_fact_observation_token(authority)
             desired = await second_gate.current_observation_desired()
             return RunnerFactObservationToken(desired.command_fingerprint, id(second_runtime), 0)
+
+        async def runner_fact_opening_bundle(self, instance, currency):
+            from custos.core.opening_observation import collect_opening_observation
+
+            deployment = first if instance == first.deployment_instance_id else second
+            return await collect_opening_observation(
+                self,
+                authority=deployment.authority,
+                connector=deployment.connector,
+                currency=currency,
+                manifest=subject.host._capability_receipt.capability_manifest,
+            )
 
         async def runner_fact_opening_snapshot(self, instance):
             if instance == first.deployment_instance_id:
@@ -703,7 +717,16 @@ async def test_large_inventory_never_suppresses_an_otherwise_signable_risk_batch
     )
     token = await subject.host.runner_fact_observation_token(authority)
     emitter = RunnerFactEmitter(subject.runtime.outbox, _identity(), lambda: None)
-    await emitter.emit_observability(authority, [equity, positions], token.command_fingerprint)
+    from copy import deepcopy
+
+    from custos.core.opening_inventory_contract import unavailable_opening_inventory
+
+    fallback_equity = deepcopy(equity)
+    fallback_equity["account_inventory"] = unavailable_opening_inventory(
+        authority, deployment.connector, "wire_budget_exceeded"
+    )
+    plan = ObservabilityFactPlan.from_facts([equity, positions], [fallback_equity, positions])
+    await emitter.emit_observability(authority, plan, token.command_fingerprint)
     pending = await subject.runtime.outbox.pending()
     batch = json.loads(pending[0].payload)
     assert batch["source_seq_start"] == 1

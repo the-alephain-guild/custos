@@ -1,0 +1,296 @@
+{
+  "provenance": {
+    "nt_revision": "846b3d026ba40f74a0fb7527d62200bec28c1b40",
+    "evidence_commit": "35a116c2",
+    "purpose": "Recorded public API data for conversion regression; not an installed consumer runtime acceptance."
+  },
+  "cases": {
+    "cash": {
+      "source": {
+        "incarnation": "074bfc35-3b72-4cf6-89a9-3a66d33871d5",
+        "client_id": "N2-CASH",
+        "account_id": "SIM-CASH",
+        "venue": "SIM",
+        "account_type": "CASH",
+        "api_revision": "execution-account-capture-v1",
+        "model_revision": "sandbox-account-state-v1",
+        "runtime_version": "0.64.0",
+        "configuration_json": "{\"client_config\":{\"account_id\":\"SIM-CASH\",\"venue\":\"SIM\",\"starting_balances\":[\"100.00 USD\"],\"base_currency\":\"USD\",\"oms_type\":\"NETTING\",\"account_type\":\"CASH\",\"default_leverage\":\"1\",\"leverages\":{},\"book_type\":\"L1_MBP\",\"frozen_account\":false,\"bar_execution\":true,\"trade_execution\":true,\"reject_stop_orders\":true,\"support_gtd_orders\":true,\"support_contingent_orders\":true,\"use_position_ids\":true,\"use_random_ids\":false,\"use_reduce_only\":true,\"queue_position\":false,\"liquidity_consumption\":false,\"bar_adaptive_high_low_ordering\":false,\"use_market_order_acks\":false,\"oto_full_trigger\":false,\"price_protection_points\":0},\"starting_currency_definitions\":[{\"code\":\"USD\",\"precision\":2,\"currency_type\":\"FIAT\",\"iso4217\":840}],\"base_currency_definition\":{\"code\":\"USD\",\"precision\":2,\"currency_type\":\"FIAT\",\"iso4217\":840}}",
+        "configuration_sha256": "6d075fa0c0437744833c1df2740dc71dc4a4e64b21535e3fba15c42de2d9ca43"
+      },
+      "response": {
+        "status": "captured",
+        "capture": {
+          "node_instance_id": "9e455a9d-e03c-4333-9294-5733b9615be2",
+          "environment": "SANDBOX",
+          "capture_sequence": 1,
+          "frontier": [
+            {
+              "channel": "time_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "system_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "system_commands",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "execution_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "execution_commands",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "data_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "data_commands",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "external_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "maintenance",
+              "applied": 0,
+              "admitted": 0
+            }
+          ],
+          "snapshot": {
+            "source": {
+              "incarnation": "074bfc35-3b72-4cf6-89a9-3a66d33871d5",
+              "client_id": "N2-CASH",
+              "account_id": "SIM-CASH",
+              "venue": "SIM",
+              "account_type": "CASH",
+              "api_revision": "execution-account-capture-v1",
+              "model_revision": "sandbox-account-state-v1",
+              "runtime_version": "0.64.0",
+              "configuration_json": "{\"client_config\":{\"account_id\":\"SIM-CASH\",\"venue\":\"SIM\",\"starting_balances\":[\"100.00 USD\"],\"base_currency\":\"USD\",\"oms_type\":\"NETTING\",\"account_type\":\"CASH\",\"default_leverage\":\"1\",\"leverages\":{},\"book_type\":\"L1_MBP\",\"frozen_account\":false,\"bar_execution\":true,\"trade_execution\":true,\"reject_stop_orders\":true,\"support_gtd_orders\":true,\"support_contingent_orders\":true,\"use_position_ids\":true,\"use_random_ids\":false,\"use_reduce_only\":true,\"queue_position\":false,\"liquidity_consumption\":false,\"bar_adaptive_high_low_ordering\":false,\"use_market_order_acks\":false,\"oto_full_trigger\":false,\"price_protection_points\":0},\"starting_currency_definitions\":[{\"code\":\"USD\",\"precision\":2,\"currency_type\":\"FIAT\",\"iso4217\":840}],\"base_currency_definition\":{\"code\":\"USD\",\"precision\":2,\"currency_type\":\"FIAT\",\"iso4217\":840}}",
+              "configuration_sha256": "6d075fa0c0437744833c1df2740dc71dc4a4e64b21535e3fba15c42de2d9ca43"
+            },
+            "observed_at": 1793800715928747000,
+            "balances": [
+              {
+                "asset_code": "USD",
+                "asset_precision": 2,
+                "asset_type": "FIAT",
+                "asset_iso4217": 840,
+                "total": "100",
+                "locked": "0",
+                "free": "100"
+              }
+            ],
+            "positions": [],
+            "orders": [],
+            "no_borrowing_model": true
+          }
+        }
+      },
+      "wheel_sha256": "de0f2c2c1eec23e27c973b504099a90d467cc72fd63555caebee7ce63ce42af8"
+    },
+    "empty": {
+      "source": {
+        "incarnation": "b31c69fd-1b8f-4a8c-9ffd-11303315d7d7",
+        "client_id": "N2-EMPTY",
+        "account_id": "SIM-EMPTY",
+        "venue": "SIM",
+        "account_type": "CASH",
+        "api_revision": "execution-account-capture-v1",
+        "model_revision": "sandbox-account-state-v1",
+        "runtime_version": "0.64.0",
+        "configuration_json": "{\"client_config\":{\"account_id\":\"SIM-EMPTY\",\"venue\":\"SIM\",\"starting_balances\":[],\"base_currency\":\"USD\",\"oms_type\":\"NETTING\",\"account_type\":\"CASH\",\"default_leverage\":\"1\",\"leverages\":{},\"book_type\":\"L1_MBP\",\"frozen_account\":false,\"bar_execution\":true,\"trade_execution\":true,\"reject_stop_orders\":true,\"support_gtd_orders\":true,\"support_contingent_orders\":true,\"use_position_ids\":true,\"use_random_ids\":false,\"use_reduce_only\":true,\"queue_position\":false,\"liquidity_consumption\":false,\"bar_adaptive_high_low_ordering\":false,\"use_market_order_acks\":false,\"oto_full_trigger\":false,\"price_protection_points\":0},\"starting_currency_definitions\":[],\"base_currency_definition\":{\"code\":\"USD\",\"precision\":2,\"currency_type\":\"FIAT\",\"iso4217\":840}}",
+        "configuration_sha256": "e12602af15cf74c5d89cdc1d6c1f61eff72c82d84484bd05b325dbcdbe135c7f"
+      },
+      "response": {
+        "status": "captured",
+        "capture": {
+          "node_instance_id": "b97ba0fb-49fd-403d-a999-53c7f0ff5c68",
+          "environment": "SANDBOX",
+          "capture_sequence": 1,
+          "frontier": [
+            {
+              "channel": "time_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "system_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "system_commands",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "execution_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "execution_commands",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "data_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "data_commands",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "external_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "maintenance",
+              "applied": 0,
+              "admitted": 0
+            }
+          ],
+          "snapshot": {
+            "source": {
+              "incarnation": "b31c69fd-1b8f-4a8c-9ffd-11303315d7d7",
+              "client_id": "N2-EMPTY",
+              "account_id": "SIM-EMPTY",
+              "venue": "SIM",
+              "account_type": "CASH",
+              "api_revision": "execution-account-capture-v1",
+              "model_revision": "sandbox-account-state-v1",
+              "runtime_version": "0.64.0",
+              "configuration_json": "{\"client_config\":{\"account_id\":\"SIM-EMPTY\",\"venue\":\"SIM\",\"starting_balances\":[],\"base_currency\":\"USD\",\"oms_type\":\"NETTING\",\"account_type\":\"CASH\",\"default_leverage\":\"1\",\"leverages\":{},\"book_type\":\"L1_MBP\",\"frozen_account\":false,\"bar_execution\":true,\"trade_execution\":true,\"reject_stop_orders\":true,\"support_gtd_orders\":true,\"support_contingent_orders\":true,\"use_position_ids\":true,\"use_random_ids\":false,\"use_reduce_only\":true,\"queue_position\":false,\"liquidity_consumption\":false,\"bar_adaptive_high_low_ordering\":false,\"use_market_order_acks\":false,\"oto_full_trigger\":false,\"price_protection_points\":0},\"starting_currency_definitions\":[],\"base_currency_definition\":{\"code\":\"USD\",\"precision\":2,\"currency_type\":\"FIAT\",\"iso4217\":840}}",
+              "configuration_sha256": "e12602af15cf74c5d89cdc1d6c1f61eff72c82d84484bd05b325dbcdbe135c7f"
+            },
+            "observed_at": 1793800717645399000,
+            "balances": [],
+            "positions": [],
+            "orders": [],
+            "no_borrowing_model": true
+          }
+        }
+      },
+      "wheel_sha256": "de0f2c2c1eec23e27c973b504099a90d467cc72fd63555caebee7ce63ce42af8"
+    },
+    "btc_zero": {
+      "source": {
+        "incarnation": "18cbbb18-ec19-410b-ab8c-038826d0b130",
+        "client_id": "N2-BTCZERO",
+        "account_id": "SIM-BTCZERO",
+        "venue": "SIM",
+        "account_type": "CASH",
+        "api_revision": "execution-account-capture-v1",
+        "model_revision": "sandbox-account-state-v1",
+        "runtime_version": "0.64.0",
+        "configuration_json": "{\"client_config\":{\"account_id\":\"SIM-BTCZERO\",\"venue\":\"SIM\",\"starting_balances\":[\"0.00000000 BTC\"],\"base_currency\":\"USD\",\"oms_type\":\"NETTING\",\"account_type\":\"CASH\",\"default_leverage\":\"1\",\"leverages\":{},\"book_type\":\"L1_MBP\",\"frozen_account\":false,\"bar_execution\":true,\"trade_execution\":true,\"reject_stop_orders\":true,\"support_gtd_orders\":true,\"support_contingent_orders\":true,\"use_position_ids\":true,\"use_random_ids\":false,\"use_reduce_only\":true,\"queue_position\":false,\"liquidity_consumption\":false,\"bar_adaptive_high_low_ordering\":false,\"use_market_order_acks\":false,\"oto_full_trigger\":false,\"price_protection_points\":0},\"starting_currency_definitions\":[{\"code\":\"BTC\",\"precision\":8,\"currency_type\":\"CRYPTO\",\"iso4217\":0}],\"base_currency_definition\":{\"code\":\"USD\",\"precision\":2,\"currency_type\":\"FIAT\",\"iso4217\":840}}",
+        "configuration_sha256": "874d03a988b7618dc243821457a24aebbaba232b5849a80ba23fc0a0a9d44c5a"
+      },
+      "response": {
+        "status": "captured",
+        "capture": {
+          "node_instance_id": "48a8af6f-b0fa-492a-9b17-42bbc65a54f8",
+          "environment": "SANDBOX",
+          "capture_sequence": 1,
+          "frontier": [
+            {
+              "channel": "time_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "system_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "system_commands",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "execution_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "execution_commands",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "data_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "data_commands",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "external_events",
+              "applied": 0,
+              "admitted": 0
+            },
+            {
+              "channel": "maintenance",
+              "applied": 0,
+              "admitted": 0
+            }
+          ],
+          "snapshot": {
+            "source": {
+              "incarnation": "18cbbb18-ec19-410b-ab8c-038826d0b130",
+              "client_id": "N2-BTCZERO",
+              "account_id": "SIM-BTCZERO",
+              "venue": "SIM",
+              "account_type": "CASH",
+              "api_revision": "execution-account-capture-v1",
+              "model_revision": "sandbox-account-state-v1",
+              "runtime_version": "0.64.0",
+              "configuration_json": "{\"client_config\":{\"account_id\":\"SIM-BTCZERO\",\"venue\":\"SIM\",\"starting_balances\":[\"0.00000000 BTC\"],\"base_currency\":\"USD\",\"oms_type\":\"NETTING\",\"account_type\":\"CASH\",\"default_leverage\":\"1\",\"leverages\":{},\"book_type\":\"L1_MBP\",\"frozen_account\":false,\"bar_execution\":true,\"trade_execution\":true,\"reject_stop_orders\":true,\"support_gtd_orders\":true,\"support_contingent_orders\":true,\"use_position_ids\":true,\"use_random_ids\":false,\"use_reduce_only\":true,\"queue_position\":false,\"liquidity_consumption\":false,\"bar_adaptive_high_low_ordering\":false,\"use_market_order_acks\":false,\"oto_full_trigger\":false,\"price_protection_points\":0},\"starting_currency_definitions\":[{\"code\":\"BTC\",\"precision\":8,\"currency_type\":\"CRYPTO\",\"iso4217\":0}],\"base_currency_definition\":{\"code\":\"USD\",\"precision\":2,\"currency_type\":\"FIAT\",\"iso4217\":840}}",
+              "configuration_sha256": "874d03a988b7618dc243821457a24aebbaba232b5849a80ba23fc0a0a9d44c5a"
+            },
+            "observed_at": 1793800719305572000,
+            "balances": [
+              {
+                "asset_code": "BTC",
+                "asset_precision": 8,
+                "asset_type": "CRYPTO",
+                "asset_iso4217": 0,
+                "total": "0",
+                "locked": "0",
+                "free": "0"
+              }
+            ],
+            "positions": [],
+            "orders": [],
+            "no_borrowing_model": true
+          }
+        }
+      },
+      "wheel_sha256": "de0f2c2c1eec23e27c973b504099a90d467cc72fd63555caebee7ce63ce42af8"
+    }
+  }
+}

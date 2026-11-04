@@ -59,7 +59,7 @@ class _CapturingEmitter:
 
     async def emit_observability(self, authority, facts, command_fingerprint):
         assert len(command_fingerprint) == 64
-        return await self.emit(authority, facts)
+        return await self.emit(authority, facts.primary)
 
     async def emit_group(self, authority, batches):
         for facts in batches:
@@ -421,6 +421,19 @@ class _CapitalBasisHost:
         assert authority is self.deployment.authority
         return RunnerFactObservationToken(None, id(self.deployment), 0, "simulation")
 
+    async def runner_fact_opening_bundle(self, deployment_instance_id, currency):
+        from custos.core.opening_observation import collect_opening_observation
+        from custos.core.runner_fact import runner_fact_capability_shape
+
+        return await collect_opening_observation(
+            self,
+            authority=self.deployment.authority,
+            connector="binance",
+            currency=currency,
+            manifest={"runner_fact_contracts": runner_fact_capability_shape()[1]},
+            source="simulation",
+        )
+
     async def runner_fact_opening_snapshot(self, deployment_instance_id):
         from custos.core.opening_inventory_contract import unavailable_opening_inventory
 
@@ -489,7 +502,11 @@ async def test_observability_emits_signed_capital_basis_without_log_inference() 
     assert isinstance(capital["correlation_id"], str)
     assert capital["message"] == "runner_capital_basis_observed"
     assert capital["component"] == "custos.capital_basis"
-    assert capital["structured_fields"] == {
+    fields = dict(capital["structured_fields"])
+    assert fields.pop("venue_equity_source") == "simulation"
+    assert fields.pop("venue_equity_sample_id")
+    assert fields.pop("venue_equity_observed_at")
+    assert fields == {
         "schema_version": 1,
         "currency": "USDT",
         "venue_equity": "4470",

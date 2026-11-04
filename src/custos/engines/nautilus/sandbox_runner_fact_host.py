@@ -108,6 +108,20 @@ class SandboxRunnerFactHost(SandboxSimulationHost):
             )
         return starting_equity, ()
 
+    async def runner_fact_opening_bundle(self, deployment_instance_id: str, currency: str):
+        from custos.core.opening_observation import collect_opening_observation
+        from custos.core.runner_fact import runner_fact_capability_shape
+
+        deployment, _ = self._runner_fact_contexts[deployment_instance_id]
+        return await collect_opening_observation(
+            self,
+            authority=deployment.authority,
+            connector=self._opening_connectors[deployment_instance_id],
+            currency=currency,
+            manifest={"runner_fact_contracts": runner_fact_capability_shape()[1]},
+            source="simulation",
+        )
+
     async def runner_fact_capital_snapshot(
         self, deployment_instance_id: str, currency: str
     ) -> RunnerCapitalBasisSnapshot:

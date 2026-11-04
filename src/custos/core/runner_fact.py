@@ -39,6 +39,7 @@ from custos.contracts.crucible_runner_safety_policy import (
 )
 from custos.core.engine_protocol import EngineLifecycleAuthority, EngineStopBoundary
 from custos.core.log import get_logger
+from custos.core.opening_observation import ObservabilityFactPlan
 from custos.core.reservation_math import (
     PositionCostLot,
     allocate_fifo_cost,
@@ -1501,6 +1502,10 @@ def position_snapshot(
     positions: Sequence[Mapping[str, Any]],
     observed_at: datetime | str,
 ) -> dict[str, Any]:
+    try:
+        normalized_time = normalize_utc_timestamp(observed_at)
+    except (TypeError, ValueError) as exc:
+        raise RunnerFactContractError("observed_at must be RFC3339 with a timezone") from exc
     normalized = [
         {
             "instrument": _identifier(
@@ -1518,7 +1523,7 @@ def position_snapshot(
         "kind": "position_snapshot",
         "event_id": _uuid(event_id, "event_id"),
         "positions": normalized,
-        "observed_at": _timestamp(observed_at, "observed_at"),
+        "observed_at": normalized_time,
     }
 
 
@@ -3536,7 +3541,7 @@ class RunnerFactOutbox:
         self,
         authority: RunnerFactAuthority,
         identity: RunnerFactIdentity,
-        facts: Sequence[Mapping[str, Any]],
+        facts: ObservabilityFactPlan,
         command_fingerprint: str,
     ) -> UUID | None:
         return await asyncio.to_thread(
@@ -3545,6 +3550,12 @@ class RunnerFactOutbox:
 
     def _enqueue_observability(self, authority, identity, facts, command_fingerprint):
         from custos.contracts.crucible_runner_command import CrucibleRunnerDeploymentCommandV1
+        from custos.core.opening_observation import ObservabilityFactPlan
+
+        if not isinstance(facts, ObservabilityFactPlan):
+            raise RunnerFactContractError("observability requires complete primary/fallback plans")
+        plan = facts
+        facts = plan.primary
 
         if not isinstance(command_fingerprint, str) or not _LOWER_HEX_64.fullmatch(
             command_fingerprint
@@ -3610,40 +3621,39 @@ class RunnerFactOutbox:
                 raise RunnerStateAuthorityError(
                     "observation signed desired binding is retired or corrupt"
                 )
-            for fact in facts:
-                if fact.get("kind") == "equity_snapshot" and (
-                    fact.get("trading_gate") != "awaiting_release"
-                    or fact.get("account_inventory", {}).get("scope", {}).get("connector")
-                    != spec.connector
-                ):
-                    raise RunnerStateAuthorityError(
-                        "observation gate or connector differs from its source"
-                    )
+            for alternative in (plan.primary, plan.fallback):
+                for fact in alternative or ():
+                    validate_runner_fact_payload(fact)
+                    if fact.get("kind") == "equity_snapshot":
+                        from custos.core.opening_inventory_contract import (
+                            normalize_opening_inventory,
+                        )
+
+                        if (
+                            fact.get("trading_gate") != "awaiting_release"
+                            or fact.get("account_inventory", {}).get("scope", {}).get("connector")
+                            != spec.connector
+                        ):
+                            raise RunnerStateAuthorityError(
+                                "observation gate or connector differs from its source"
+                            )
+                        normalize_opening_inventory(
+                            fact["account_inventory"],
+                            authority=authority,
+                            amount=fact["amount"],
+                            currency=fact["currency"],
+                            observed_at=fact["observed_at"],
+                        )
             connection.execute("SAVEPOINT opening_observation_payload")
             try:
                 batch_id = self._enqueue_in_transaction(connection, authority, identity, facts)
             except RunnerFactPayloadTooLarge:
                 connection.execute("ROLLBACK TO opening_observation_payload")
-                if not any(
-                    fact.get("kind") == "equity_snapshot"
-                    and fact.get("account_inventory", {}).get("status") == "observed"
-                    for fact in facts
-                ):
+                if plan.fallback is None:
                     raise
-                from custos.core.opening_inventory_contract import unavailable_opening_inventory
-
-                reduced = [
-                    {
-                        **fact,
-                        "account_inventory": unavailable_opening_inventory(
-                            authority, spec.connector, "wire_budget_exceeded"
-                        ),
-                    }
-                    if fact.get("kind") == "equity_snapshot"
-                    else fact
-                    for fact in facts
-                ]
-                batch_id = self._enqueue_in_transaction(connection, authority, identity, reduced)
+                batch_id = self._enqueue_in_transaction(
+                    connection, authority, identity, plan.fallback
+                )
                 _log.warning(
                     "runner_fact_opening_inventory_budget_exceeded",
                     deployment_instance_id=str(authority.deployment_instance_id),
@@ -9273,12 +9283,12 @@ class RunnerFactEmitter:
     async def emit_observability(
         self,
         authority: RunnerFactAuthority,
-        facts: Iterable[Mapping[str, Any]],
+        facts: ObservabilityFactPlan,
         command_fingerprint: str,
     ) -> UUID | None:
         self._authority_guard()
         return await self._outbox.enqueue_observability(
-            authority, self._identity, tuple(facts), command_fingerprint
+            authority, self._identity, facts, command_fingerprint
         )
 
     async def emit_group(

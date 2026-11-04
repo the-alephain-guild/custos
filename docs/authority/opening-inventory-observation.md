@@ -2,7 +2,8 @@
 
 `NtTradingNodeHost.read_opening_account_inventory(authority)` is a local read-only
 observation API for the current signed instance. It returns an immutable
-`OpeningAccountInventory` or a typed `InventoryUnavailable`. It never opens the
+`OpeningAccountInventory`, a detached `NativeOpeningAccountInventory` observation,
+or a typed `InventoryUnavailable`. It never opens the
 trading gate, submits an order, writes a RunnerFact, or allocates a fact sequence.
 This is not a new wire payload or a successful opening-release acknowledgement.
 
@@ -11,8 +12,9 @@ generation, plus connector, network, main wallet and numeric account id. Public
 account configuration is reconstructed from the durable signed command and
 compared with the provider created for the actual host lifecycle. Missing or
 different source authority refuses the read; it never selects an unsigned lane.
-Unsupported connectors return unavailable rather than reading NT cache as a
-venue-wide inventory.
+Unsupported real-venue connectors return unavailable rather than reading NT cache
+as a venue-wide inventory. Sandbox sources use a separate native owner handle,
+not the public venue-account routes.
 
 The host rechecks durable running desired state, command fingerprint, gate
 binding, node, provider and lifecycle identity before and after the network read.
@@ -56,6 +58,30 @@ The ordinary order route does not establish coverage of TWAP, conditional or
 other hosted order categories. Pagination hints can report more data but cannot
 prove endpoint exhaustion.
 
+## Native sandbox owner
+
+For a sandbox execution client, the host obtains
+`node.account_capture_handle(ClientId(client_name))` after building the node and
+before `run_async` consumes it. The source must match the actual registered
+client/account/venue and execution account type. Missing APIs or malformed source
+identity produce explicit unavailability. The handle returns bounded closed JSON;
+consumer conversion refuses duplicate fields, numeric money, unknown fields,
+foreign or replayed boundaries and unsupported environments. It preserves exact
+amount strings, every asset, position and order, nullable prices and native
+currency metadata. It never reads a starting balance map as current account data.
+Source configuration retains its original digest and independently verifies the
+configured currency definitions before any cash completeness claim.
+
+Native capture uses the existing single unfinished collection slot and durable
+before/after desired-state checks. Network/owner waits hold no SQLite writer
+transaction. A stop attempt, replacement, scope change or retired handle prevents
+signing the old observation, including when the native result arrives later.
+`runner_fact_opening_bundle` keeps portfolio failure distinct from inventory
+failure and admits a native cash sample only against actual registered capability
+and runtime artifact evidence. The checked-in capability has no native complete
+model, and the currently installed wheel has no capture API. Local future-handle
+fixtures do not establish actual native runtime acceptance or release permission.
+
 ## Completeness and acceptance
 
 `account_identity_matches` checks the reported main-wallet/account echo and a
@@ -63,8 +89,9 @@ positive observed height. It does not prove signer-key registration or complete
 account identity. Wrong echoes are false; missing or zero-height evidence stays
 unknown. The per-dimension completeness view is immutable. Identity, balances,
 liabilities, positions, order categories, pagination and common-boundary coverage
-remain unproven; `inventory_complete` is always false in this implementation and
-cannot be enabled by caller configuration.
+remain unproven for these SoDEX routes; their `inventory_complete` is always false
+and cannot be enabled by caller configuration. Native complete-cash conversion
+has separate model, mapping, artifact and common-owner-boundary requirements.
 
 Local fixtures validate collection, isolation, invalidation and exact parsing;
 they do not establish venue capability. Actual account identity, key ownership,

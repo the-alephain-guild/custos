@@ -13,6 +13,12 @@ from decimal import Decimal
 from typing import Any, Literal, Protocol
 
 from custos.core.log import get_logger
+from custos.core.opening_observation import (
+    IndependentRiskSample,
+    ObservabilityFactPlan,
+    OpeningObservationBundle,
+    RiskSampleUnavailable,
+)
 from custos.core.runner_fact import (
     RunnerFactAuthority,
     RunnerFactContractError,
@@ -161,6 +167,10 @@ class RunnerFactHost(Protocol):
         self, deployment_instance_id: str
     ) -> tuple[str, Mapping[str, Any]]: ...
 
+    async def runner_fact_opening_bundle(
+        self, deployment_instance_id: str, currency: str
+    ) -> OpeningObservationBundle: ...
+
     def runner_fact_deployments(self) -> Sequence[RunnerFactDeployment]: ...
 
     async def deployment_ready(self, deployment_instance_id: str) -> bool: ...
@@ -225,6 +235,7 @@ def _capital_basis_fact(
     observed_at: datetime,
     venue_equity: Decimal | str | int,
     snapshot: RunnerCapitalBasisSnapshot,
+    equity_sample: IndependentRiskSample | None = None,
 ) -> dict[str, Any]:
     """Build one signed, structured capital-basis observation.
 
@@ -271,6 +282,15 @@ def _capital_basis_fact(
             **normalized,
             "capital_mode": snapshot.capital_mode,
             "within_policy": snapshot.within_policy,
+            **(
+                {
+                    "venue_equity_observed_at": equity_sample.observed_at,
+                    "venue_equity_source": equity_sample.source,
+                    "venue_equity_sample_id": equity_sample.sample_id,
+                }
+                if equity_sample is not None
+                else {}
+            ),
         },
         "correlation_id": correlation_id,
         "causation_id": None,
@@ -956,89 +976,120 @@ class RunnerFactProductionLoop:
         try:
             observation_token = await self._host.runner_fact_observation_token(authority)
             status_reader = getattr(self._host, "get_engine_status", None)
-            status = (
-                await status_reader(deployment.deployment_instance_id)
-                if callable(status_reader)
-                else None
-            )
-            # A deployment is registered as soon as a start attempt begins, well
-            # before its engine is ready; one whose venue cannot be reached never
-            # gets there. Only a ready engine may report itself online.
-            ready = await self._host.deployment_ready(deployment.deployment_instance_id)
-            equity, positions = await self._host.runner_fact_risk_snapshot(
-                deployment.deployment_instance_id, deployment.currency
-            )
-            from custos.core.opening_inventory_contract import (
-                normalize_opening_inventory,
-                unavailable_opening_inventory,
-            )
-
+            health_available = True
             try:
-                trading_gate, inventory = await self._host.runner_fact_opening_snapshot(
-                    deployment.deployment_instance_id
-                )
-                if trading_gate not in {"awaiting_release", "released"}:
-                    raise RunnerFactContractError("opening gate observation is invalid")
-                inventory = normalize_opening_inventory(
-                    inventory,
-                    amount=str(equity),
-                    currency=deployment.currency,
-                    authority=authority,
-                    observed_at=render_utc(observed_at),
+                status = (
+                    await status_reader(deployment.deployment_instance_id)
+                    if callable(status_reader)
+                    else None
                 )
             except RunnerFactObservationRetired:
                 raise
             except Exception as exc:
+                status = None
+                health_available = False
                 _log.error(
-                    "runner_fact_opening_inventory_failed",
+                    "runner_fact_health_snapshot_failed",
                     deployment_instance_id=deployment.deployment_instance_id,
                     error_type=type(exc).__name__,
                 )
-                trading_gate = "awaiting_release"
-                inventory = unavailable_opening_inventory(
-                    authority, deployment.connector, "source_unavailable"
+            # A deployment is registered as soon as a start attempt begins, well
+            # before its engine is ready; one whose venue cannot be reached never
+            # gets there. Only a ready engine may report itself online.
+            try:
+                ready = await self._host.deployment_ready(deployment.deployment_instance_id)
+            except RunnerFactObservationRetired:
+                raise
+            except Exception as exc:
+                ready = False
+                health_available = False
+                _log.error(
+                    "runner_fact_readiness_snapshot_failed",
+                    deployment_instance_id=deployment.deployment_instance_id,
+                    error_type=type(exc).__name__,
                 )
-            facts: tuple[dict[str, Any], ...] = (
-                equity_snapshot(
-                    event_id=_scoped_event_id(authority, "equity", observed_at.isoformat()),
-                    amount=equity,
-                    currency=deployment.currency,
-                    observed_at=observed_at,
-                    trading_gate=trading_gate,
-                    account_inventory=inventory,
-                ),
-                position_snapshot(
-                    event_id=_scoped_event_id(authority, "positions", observed_at.isoformat()),
-                    positions=positions,
-                    observed_at=observed_at,
-                ),
+            bundle = await self._host.runner_fact_opening_bundle(
+                deployment.deployment_instance_id, deployment.currency
+            )
+            if (
+                bundle.authority != authority
+                or bundle.token != observation_token
+                or bundle.inventory["scope"]["connector"] != deployment.connector
+            ):
+                raise RunnerFactObservationRetired("opening bundle differs from its source")
+            from custos.core.opening_inventory_contract import unavailable_opening_inventory
+
+            auxiliary: tuple[dict[str, Any], ...] = (
                 heartbeat(
                     event_id=_scoped_event_id(authority, "heartbeat", observed_at.isoformat()),
                     status=(
-                        "online" if ready and (status is None or status.reliable) else "degraded"
+                        "online"
+                        if health_available and ready and (status is None or status.reliable)
+                        else "degraded"
                     ),
                     observed_at=observed_at,
                 ),
             )
-            try:
-                capital = await self._host.runner_fact_capital_snapshot(
-                    deployment.deployment_instance_id, deployment.currency
-                )
-                facts += (
-                    _capital_basis_fact(
-                        authority,
-                        observed_at=observed_at,
-                        venue_equity=equity,
-                        snapshot=capital,
+            if isinstance(bundle.independent, IndependentRiskSample):
+                try:
+                    capital = await self._host.runner_fact_capital_snapshot(
+                        deployment.deployment_instance_id, deployment.currency
+                    )
+                    auxiliary += (
+                        _capital_basis_fact(
+                            authority,
+                            observed_at=datetime.now(UTC),
+                            venue_equity=bundle.independent.equity,
+                            snapshot=capital,
+                            equity_sample=bundle.independent,
+                        ),
+                    )
+                except Exception as exc:
+                    _log.error(
+                        "runner_fact_capital_snapshot_failed",
+                        deployment_instance_id=deployment.deployment_instance_id,
+                        error_type=type(exc).__name__,
+                    )
+
+            def risk_facts(sample, inventory):
+                if isinstance(sample, RiskSampleUnavailable):
+                    return ()
+                if sample.currency != deployment.currency:
+                    raise RunnerFactContractError("risk sample currency differs from deployment")
+                return (
+                    equity_snapshot(
+                        event_id=_scoped_event_id(
+                            authority, "equity", sample.source, sample.sample_id
+                        ),
+                        amount=sample.equity,
+                        currency=sample.currency,
+                        observed_at=sample.observed_at,
+                        trading_gate=bundle.trading_gate,
+                        account_inventory=inventory,
+                    ),
+                    position_snapshot(
+                        event_id=_scoped_event_id(
+                            authority, "positions", sample.source, sample.sample_id
+                        ),
+                        positions=sample.positions,
+                        observed_at=sample.observed_at,
                     ),
                 )
-            except Exception as exc:
-                _log.error(
-                    "runner_fact_capital_snapshot_failed",
-                    deployment_instance_id=deployment.deployment_instance_id,
-                    deployment_spec_id=str(authority.deployment_spec_id),
-                    error=str(exc),
-                )
+
+            plan = ObservabilityFactPlan.from_facts(
+                risk_facts(bundle.native or bundle.independent, bundle.inventory) + auxiliary,
+                (
+                    risk_facts(
+                        bundle.independent,
+                        unavailable_opening_inventory(
+                            authority, deployment.connector, "wire_budget_exceeded"
+                        ),
+                    )
+                    + auxiliary
+                    if isinstance(bundle.independent, IndependentRiskSample)
+                    else None
+                ),
+            )
         except RunnerFactObservationRetired:
             return
         except Exception as exc:
@@ -1055,13 +1106,14 @@ class RunnerFactProductionLoop:
                     observed_at=observed_at,
                 ),
             )
+            plan = ObservabilityFactPlan.from_facts(facts, None)
         try:
             current_token = await self._host.runner_fact_observation_token(authority)
             if observation_token is None or current_token != observation_token:
                 return
             if observation_token.source_kind == "platform":
                 await self._emitter.emit_observability(
-                    authority, facts, observation_token.command_fingerprint
+                    authority, plan, observation_token.command_fingerprint
                 )
             else:
                 if any(
@@ -1071,12 +1123,12 @@ class RunnerFactProductionLoop:
                         or fact["account_inventory"]["inventory_complete"]
                         or fact["trading_gate"] != "awaiting_release"
                     )
-                    for fact in facts
+                    for fact in plan.primary
                 ):
                     raise RunnerFactObservationRetired(
                         "simulation cannot claim a native opening observation"
                     )
-                await self._emitter.emit(authority, facts)
+                await self._emitter.emit(authority, plan.primary)
         except RunnerFactObservationRetired:
             return
         except Exception as exc:

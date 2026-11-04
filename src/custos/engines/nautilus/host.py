@@ -65,6 +65,12 @@ from custos.core.runner_fact_producer import (
 from custos.core.runtime_log_fact import RunnerRuntimeLogEmitter, RuntimeLogRedactor
 from custos.core.venue_proxy import VenueProxy
 from custos.engines.nautilus.cancel_discipline import CancelDiscipline, PartitionGate
+from custos.engines.nautilus.native_opening_inventory import (
+    NativeInventoryScope,
+    NativeOpeningAccountInventory,
+    NativeOpeningInventoryCollector,
+    NativeRuntimeArtifactIdentity,
+)
 from custos.engines.nautilus.opening_inventory import (
     InventoryAccountScope,
     InventoryUnavailable,
@@ -92,7 +98,7 @@ try:
     from nautilus_trader.adapters.sandbox import SandboxExecutionClientFactory
     from nautilus_trader.common import Environment, LoggerConfig, LogLevel
     from nautilus_trader.live import LiveExecutionEngineConfig, LiveNode, NodeState
-    from nautilus_trader.model import PriceType, TraderId
+    from nautilus_trader.model import ClientId, PriceType, TraderId
 except ImportError:  # nautilus extra absent (audit / paper install) — deploy fails fast
     SandboxExecutionClientFactory = None
     Environment = None
@@ -103,6 +109,7 @@ except ImportError:  # nautilus extra absent (audit / paper install) — deploy 
     NodeState = None
     TraderId = None
     PriceType = None
+    ClientId = None
 
 __all__ = ["SandboxSimulationHost", "NtTradingNodeHost"]
 
@@ -635,6 +642,7 @@ class NtTradingNodeHost:
         runner_safety_boundary_factory: Callable[[dict], object] | None = None,
         venue_proxy: VenueProxy | None = None,
         source_inbox_path: Path | None = None,
+        native_runtime_artifact_identity: NativeRuntimeArtifactIdentity | None = None,
     ) -> None:
         # deployment_instance_id -> its running node and the state captured with it.
         # Never holds credentials.
@@ -648,8 +656,10 @@ class NtTradingNodeHost:
         # deployment_instance_id -> signed fact scope plus independent venue ledger adapter.
         self._runner_fact_contexts: dict[str, tuple[RunnerFactDeployment, object | None]] = {}
         self._opening_inventory_providers: dict[
-            str, SodexOpeningInventoryCollector | InventoryUnavailable
+            str,
+            SodexOpeningInventoryCollector | NativeOpeningInventoryCollector | InventoryUnavailable,
         ] = {}
+        self._native_runtime_artifact_identity = native_runtime_artifact_identity
         self._opening_observation_epochs: dict[str, int] = {}
         self._opening_fact_reads: dict[str, tuple[RunnerFactObservationToken, asyncio.Task]] = {}
         self._runner_safety_boundaries: dict[str, RunnerReservationBoundary] = {}
@@ -1209,7 +1219,14 @@ class NtTradingNodeHost:
                 runtime_strategy=strategy,
             )
             opening_provider = (
-                self._build_opening_inventory_provider(spec, lifecycle_authority)
+                self._build_opening_inventory_provider(
+                    spec,
+                    lifecycle_authority,
+                    node=node,
+                    deployment=fact_context[0],
+                    client_name=client_name,
+                    exec_config=exec_cfg,
+                )
                 if fact_context is not None
                 else None
             )
@@ -1640,8 +1657,47 @@ class NtTradingNodeHost:
         )
         return deployment, provider
 
-    def _build_opening_inventory_provider(self, spec: dict, authority: EngineLifecycleAuthority):
+    def _build_opening_inventory_provider(
+        self,
+        spec: dict,
+        authority: EngineLifecycleAuthority,
+        *,
+        node,
+        deployment: RunnerFactDeployment,
+        client_name: str,
+        exec_config,
+    ):
         connector = str(spec["connector"])
+        if authority.trading_mode == "sandbox":
+            try:
+                # Native owner access must be acquired before run_async consumes node.
+                handle = node.account_capture_handle(ClientId(client_name))
+            except AttributeError:
+                return InventoryUnavailable(authority, connector, "native_capture_api_unavailable")
+            except Exception:
+                return InventoryUnavailable(
+                    authority, connector, "native_capture_handle_unavailable"
+                )
+            try:
+                scope = NativeInventoryScope(
+                    deployment.authority,
+                    connector,
+                    deployment.currency,
+                    client_name,
+                    str(exec_config.account_id),
+                    str(exec_config.venue),
+                )
+                collector = NativeOpeningInventoryCollector(
+                    scope,
+                    handle,
+                    self._capability_receipt.capability_manifest,
+                    self._native_runtime_artifact_identity,
+                )
+                if collector.source.account_type != str(exec_config.account_type):
+                    raise ValueError("native account type differs from the actual execution config")
+                return collector
+            except Exception:
+                return InventoryUnavailable(authority, connector, "native_capture_source_invalid")
         if connector not in {"sodex", "sodex_perpetual"}:
             return InventoryUnavailable(authority, connector, "connector_inventory_unsupported")
         try:
@@ -1654,13 +1710,15 @@ class NtTradingNodeHost:
 
     async def read_opening_account_inventory(
         self, authority: EngineLifecycleAuthority
-    ) -> OpeningAccountInventory | InventoryUnavailable:
+    ) -> OpeningAccountInventory | NativeOpeningAccountInventory | InventoryUnavailable:
         """Read independent public account observations without opening or signing anything."""
         instance = str(authority.deployment_instance_id)
         provider = self._opening_inventory_providers.get(instance)
         connector = (
             provider.scope.connector
-            if isinstance(provider, SodexOpeningInventoryCollector)
+            if isinstance(
+                provider, (SodexOpeningInventoryCollector, NativeOpeningInventoryCollector)
+            )
             else "unknown"
         )
 
@@ -1690,18 +1748,35 @@ class NtTradingNodeHost:
                 return unavailable("opening_source_identity_mismatch")
             if isinstance(provider, InventoryUnavailable):
                 return provider
-            if not isinstance(provider, SodexOpeningInventoryCollector):
+            if isinstance(provider, NativeOpeningInventoryCollector):
+                context = self._runner_fact_contexts.get(instance)
+                if (
+                    context is None
+                    or provider.scope.authority != context[0].authority
+                    or provider.scope.connector != before.command.to_runtime_spec().connector
+                    or provider.scope.currency != context[0].currency
+                    or before.command.trading_mode != "sandbox"
+                ):
+                    raise RunnerFactObservationRetired("native opening account scope changed")
+                expected_scope = provider.scope
+            elif isinstance(provider, SodexOpeningInventoryCollector):
+                expected_scope = InventoryAccountScope.from_spec(
+                    before.command.to_runtime_spec().model_dump(mode="python"),
+                    tenant_id=before.command.tenant_id,
+                    runner_id=before.command.runner_id,
+                )
+                if provider.scope != expected_scope:
+                    raise RunnerFactObservationRetired("opening account scope changed")
+            else:
                 return unavailable("opening_inventory_provider_missing")
-            expected_scope = InventoryAccountScope.from_spec(
-                before.command.to_runtime_spec().model_dump(mode="python"),
-                tenant_id=before.command.tenant_id,
-                runner_id=before.command.runner_id,
-            )
-            if provider.scope != expected_scope:
-                return unavailable("opening_account_scope_changed")
             # Venue latency must never hold the desired-state SQLite writer lock.
             result = await provider.collect()
-            after = await gate.current_running_desired()
+            try:
+                after = await gate.current_running_desired()
+            except Exception as exc:
+                raise RunnerFactObservationRetired(
+                    "opening desired state became unavailable during capture"
+                ) from exc
             if (
                 before.command_fingerprint != after.command_fingerprint
                 or self._active_nodes.get(instance) is not runtime
@@ -1711,10 +1786,14 @@ class NtTradingNodeHost:
                 or self._opening_inventory_providers.get(instance) is not provider
                 or self._opening_observation_epochs.get(instance, 0) != observation_epoch
             ):
-                return unavailable("opening_observation_retired")
+                raise RunnerFactObservationRetired("opening observation retired during capture")
+            if isinstance(result, InventoryUnavailable):
+                return result
             if result.scope != expected_scope:
-                return unavailable("opening_observation_scope_mismatch")
+                raise RunnerFactObservationRetired("opening observation scope changed")
             return result
+        except RunnerFactObservationRetired:
+            raise
         except Exception:
             # A typed unavailable observation retains uncertainty; it grants no
             # order permission and cannot manufacture a zero account.
@@ -2607,7 +2686,11 @@ class NtTradingNodeHost:
         if task.cancelled():
             return unavailable("source_unavailable")
         observation = task.result()
-        inventory = opening_inventory_observation(deployment.authority, connector, observation)
+        inventory = (
+            dict(observation.inventory)
+            if isinstance(observation, NativeOpeningAccountInventory)
+            else opening_inventory_observation(deployment.authority, connector, observation)
+        )
         try:
             require_opening_inventory_support(
                 inventory, self._capability_receipt.capability_manifest
@@ -2628,6 +2711,20 @@ class NtTradingNodeHost:
         snapshot = self._portfolio_snapshot_provider.snapshot(runtime, currency=currency)
         self._require_signable(deployment_instance_id, snapshot)
         return snapshot.equity, snapshot.runner_fact_rows()
+
+    async def runner_fact_opening_bundle(self, deployment_instance_id: str, currency: str):
+        from custos.core.opening_observation import collect_opening_observation
+
+        context = self._runner_fact_contexts.get(deployment_instance_id)
+        if context is None or context[0].currency != currency:
+            raise RunnerFactObservationRetired("opening bundle has no current deployment")
+        return await collect_opening_observation(
+            self,
+            authority=context[0].authority,
+            connector=context[0].connector,
+            currency=currency,
+            manifest=self._capability_receipt.capability_manifest,
+        )
 
     async def runner_fact_valuation_snapshot(
         self, deployment_instance_id: str, currency: str
