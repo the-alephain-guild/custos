@@ -717,8 +717,8 @@ def strategy_oci_artifact_ref_v1_json_schema() -> dict[str, object]:
             "config": {"$ref": "#/$defs/OciBlobDescriptorV1"},
             "layers": {
                 "items": {"$ref": "#/$defs/OciStrategyLayerDescriptorV1"},
-                "maxItems": 5,
-                "minItems": 5,
+                "maxItems": len(RELEASE_LAYER_MEDIA_TYPES),
+                "minItems": len(RELEASE_LAYER_MEDIA_TYPES),
                 "type": "array",
             },
             "manifest_digest": digest,
