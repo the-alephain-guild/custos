@@ -218,6 +218,47 @@ def test_actual_native_archive_installs_with_all_four_candidate_packages(
     installed = json.loads((output / "installed-payloads.log").read_text())
     assert installed["installed_payloads_match"] is True
     assert installed["profile_id"] == PROFILE
+    subprocess.run(
+        [
+            str(output / "runtime/.venv/bin/python"),
+            "-I",
+            "-B",
+            "-c",
+            "import sys; from pathlib import Path; "
+            "import custos.core.platform_process_fence as fence; "
+            "import custos.engines.nautilus.platform_account_identity as identity; "
+            "from nautilus_trader.adapters.sodex import SodexExecClientConfig; "
+            "assert Path(fence.__file__).resolve().is_relative_to(Path(sys.prefix)); "
+            "assert Path(identity.__file__).resolve().is_relative_to(Path(sys.prefix)); "
+            "config = SodexExecClientConfig(account_id=123, wallet_address='0x'+'11'*20); "
+            "assert config.account_id == 123; "
+            "assert config.wallet_address == '0x'+'11'*20; "
+            "assert not hasattr(config, 'api_private_key')",
+        ],
+        cwd=output,
+        check=True,
+        capture_output=True,
+    )
+
+
+@pytest.mark.integration
+def test_previous_same_version_archive_is_refused_before_source_export(source_repository, tmp_path):
+    previous = os.environ.get("CUSTOS_PREVIOUS_NATIVE_CANDIDATE_WHEEL")
+    if previous is None:
+        pytest.skip("the previous same-version archive must be provided explicitly")
+    from scripts.build_native_candidate import build_native_candidate
+
+    output = tmp_path / "previous-candidate"
+    with pytest.raises(ValueError, match="native archive digest differs"):
+        build_native_candidate(
+            repository_root=source_repository,
+            source_commit=_head(source_repository),
+            profile_id=PROFILE,
+            native_wheel=Path(previous),
+            python=ROOT / ".venv/bin/python",
+            output_root=output,
+        )
+    assert not output.exists()
 
 
 def test_an_output_inside_an_existing_virtual_environment_is_refused(source_repository, tmp_path):
