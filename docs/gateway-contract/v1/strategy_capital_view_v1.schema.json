@@ -1,0 +1,932 @@
+{
+  "$defs": {
+    "CapitalChangeSourceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "allocation_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "not": {
+                "const": "00000000-0000-0000-0000-000000000000"
+              },
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Allocation Id"
+        },
+        "allocation_target_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "not": {
+                "const": "00000000-0000-0000-0000-000000000000"
+              },
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Allocation Target Id"
+        },
+        "allocation_version": {
+          "anyOf": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Allocation Version"
+        },
+        "digest": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "effect_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Effect Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "contribution",
+            "redemption",
+            "internal_transfer",
+            "profit_distribution"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "request_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "version": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "request_id",
+        "effect_id",
+        "version",
+        "digest",
+        "allocation_id",
+        "allocation_version",
+        "allocation_target_id"
+      ],
+      "title": "CapitalChangeSourceV1",
+      "type": "object"
+    },
+    "CapitalChangeV1": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "maxLength": 31,
+          "not": {
+            "pattern": "[^0-9.\\-]"
+          },
+          "pattern": "^(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+          "title": "Amount",
+          "type": "string",
+          "x-decimal-mantissa-bits": 96,
+          "x-decimal-max-scale": 28
+        },
+        "change_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Change Id",
+          "type": "string"
+        },
+        "currency": {
+          "enum": [
+            "USD",
+            "USDT",
+            "USDC",
+            "BTC",
+            "ETH",
+            "VUSDC",
+            "VBTC",
+            "VETH"
+          ],
+          "title": "Currency",
+          "type": "string"
+        },
+        "effective_at": {
+          "not": {
+            "pattern": "[^0-9T:.Z-]"
+          },
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.(?:[0-9]{3}|[0-9]{6}|[0-9]{9}))?Z$",
+          "title": "Effective At",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "contribution",
+            "redemption",
+            "internal_transfer",
+            "profit_distribution"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "operation_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "not": {
+                "const": "00000000-0000-0000-0000-000000000000"
+              },
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Operation Id"
+        },
+        "reversal_of_change_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "not": {
+                "const": "00000000-0000-0000-0000-000000000000"
+              },
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reversal Of Change Id"
+        },
+        "source": {
+          "$ref": "#/$defs/CapitalChangeSourceV1"
+        }
+      },
+      "required": [
+        "change_id",
+        "kind",
+        "amount",
+        "currency",
+        "effective_at",
+        "operation_id",
+        "reversal_of_change_id",
+        "source"
+      ],
+      "title": "CapitalChangeV1",
+      "type": "object"
+    },
+    "CapitalObservationProvenanceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "not": {
+            "pattern": "[^0-9T:.Z-]"
+          },
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.(?:[0-9]{3}|[0-9]{6}|[0-9]{9}))?Z$",
+          "title": "As Of",
+          "type": "string"
+        },
+        "period": {
+          "$ref": "#/$defs/CapitalPeriodV1"
+        },
+        "scope": {
+          "$ref": "#/$defs/CapitalScopeV1"
+        },
+        "source": {
+          "$ref": "#/$defs/CapitalObservationSourceV1"
+        }
+      },
+      "required": [
+        "scope",
+        "period",
+        "as_of",
+        "source"
+      ],
+      "title": "CapitalObservationProvenanceV1",
+      "type": "object"
+    },
+    "CapitalObservationSourceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "batch_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "capital_revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Capital Revision",
+          "type": "integer"
+        },
+        "capital_state_digest": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Capital State Digest",
+          "type": "string"
+        },
+        "kind": {
+          "const": "runner_observation",
+          "title": "Kind",
+          "type": "string"
+        },
+        "observation_id": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "pnl_basis_digest": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Pnl Basis Digest",
+          "type": "string"
+        },
+        "seq_end": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Seq End",
+          "type": "integer"
+        },
+        "seq_start": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Seq Start",
+          "type": "integer"
+        },
+        "source_prefix_digest": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Prefix Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "batch_id",
+        "seq_start",
+        "seq_end",
+        "observation_id",
+        "pnl_basis_digest",
+        "source_prefix_digest",
+        "capital_revision",
+        "capital_state_digest"
+      ],
+      "title": "CapitalObservationSourceV1",
+      "type": "object"
+    },
+    "CapitalPeriodV1": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "maxLength": 7,
+          "minLength": 7,
+          "pattern": "^[0-9]{4}-(?:0[1-9]|1[0-2])$",
+          "title": "Code",
+          "type": "string"
+        },
+        "end_exclusive_utc": {
+          "not": {
+            "pattern": "[^0-9T:.Z-]"
+          },
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.(?:[0-9]{3}|[0-9]{6}|[0-9]{9}))?Z$",
+          "title": "End Exclusive Utc",
+          "type": "string"
+        },
+        "start_utc": {
+          "not": {
+            "pattern": "[^0-9T:.Z-]"
+          },
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.(?:[0-9]{3}|[0-9]{6}|[0-9]{9}))?Z$",
+          "title": "Start Utc",
+          "type": "string"
+        },
+        "trading_mode": {
+          "enum": [
+            "sandbox",
+            "testnet",
+            "live"
+          ],
+          "title": "Trading Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "start_utc",
+        "end_exclusive_utc",
+        "trading_mode"
+      ],
+      "title": "CapitalPeriodV1",
+      "type": "object"
+    },
+    "CapitalScopeV1": {
+      "additionalProperties": false,
+      "properties": {
+        "deployment_instance_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Deployment Instance Id",
+          "type": "string"
+        },
+        "deployment_spec_digest": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Deployment Spec Digest",
+          "type": "string"
+        },
+        "deployment_spec_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Deployment Spec Id",
+          "type": "string"
+        },
+        "generation": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "runner_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Runner Id",
+          "type": "string"
+        },
+        "strategy_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Strategy Id",
+          "type": "string"
+        },
+        "tenant_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "not": {
+            "pattern": "[^A-Za-z0-9_-]"
+          },
+          "pattern": "^[A-Za-z0-9_-]{1,64}$",
+          "title": "Tenant Id",
+          "type": "string"
+        },
+        "trading_mode": {
+          "enum": [
+            "sandbox",
+            "testnet",
+            "live"
+          ],
+          "title": "Trading Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant_id",
+        "trading_mode",
+        "runner_id",
+        "strategy_id",
+        "deployment_instance_id",
+        "deployment_spec_id",
+        "deployment_spec_digest",
+        "generation"
+      ],
+      "title": "CapitalScopeV1",
+      "type": "object"
+    },
+    "CapitalStateProvenanceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "not": {
+            "pattern": "[^0-9T:.Z-]"
+          },
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.(?:[0-9]{3}|[0-9]{6}|[0-9]{9}))?Z$",
+          "title": "As Of",
+          "type": "string"
+        },
+        "period": {
+          "$ref": "#/$defs/CapitalPeriodV1"
+        },
+        "scope": {
+          "$ref": "#/$defs/CapitalScopeV1"
+        },
+        "source": {
+          "$ref": "#/$defs/CapitalStateSourceV1"
+        }
+      },
+      "required": [
+        "scope",
+        "period",
+        "as_of",
+        "source"
+      ],
+      "title": "CapitalStateProvenanceV1",
+      "type": "object"
+    },
+    "CapitalStateSourceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "capital_revision": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Capital Revision",
+          "type": "integer"
+        },
+        "capital_state_digest": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Capital State Digest",
+          "type": "string"
+        },
+        "command_digest": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Command Digest",
+          "type": "string"
+        },
+        "command_event_id": {
+          "maxLength": 36,
+          "minLength": 36,
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          },
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Command Event Id",
+          "type": "string"
+        },
+        "kind": {
+          "const": "capital_state",
+          "title": "Kind",
+          "type": "string"
+        },
+        "operation_id": {
+          "anyOf": [
+            {
+              "maxLength": 36,
+              "minLength": 36,
+              "not": {
+                "const": "00000000-0000-0000-0000-000000000000"
+              },
+              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Operation Id"
+        },
+        "phase": {
+          "enum": [
+            "committed",
+            "preparing"
+          ],
+          "title": "Phase",
+          "type": "string"
+        },
+        "principal_lineage_digest": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Principal Lineage Digest",
+          "type": "string"
+        },
+        "source_frontier": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Source Frontier",
+          "type": "integer"
+        },
+        "source_ledger_digest": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Source Ledger Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "command_event_id",
+        "command_digest",
+        "capital_revision",
+        "capital_state_digest",
+        "source_frontier",
+        "source_ledger_digest",
+        "principal_lineage_digest",
+        "phase",
+        "operation_id"
+      ],
+      "title": "CapitalStateSourceV1",
+      "type": "object"
+    },
+    "KnownAllocatedCapitalV1": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "maxLength": 31,
+          "not": {
+            "pattern": "[^0-9.\\-]"
+          },
+          "pattern": "^(?:0|(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+          "title": "Amount",
+          "type": "string",
+          "x-decimal-mantissa-bits": 96,
+          "x-decimal-max-scale": 28
+        },
+        "currency": {
+          "enum": [
+            "USD",
+            "USDT",
+            "USDC",
+            "BTC",
+            "ETH",
+            "VUSDC",
+            "VBTC",
+            "VETH"
+          ],
+          "title": "Currency",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/CapitalStateProvenanceV1"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "null"
+        },
+        "status": {
+          "const": "known",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "amount",
+        "currency",
+        "reason",
+        "provenance"
+      ],
+      "title": "KnownAllocatedCapitalV1",
+      "type": "object"
+    },
+    "KnownCapitalChangesV1": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/CapitalChangeV1"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "provenance": {
+          "$ref": "#/$defs/CapitalStateProvenanceV1"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "null"
+        },
+        "status": {
+          "const": "known",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "entries",
+        "reason",
+        "provenance"
+      ],
+      "title": "KnownCapitalChangesV1",
+      "type": "object"
+    },
+    "KnownCapitalPnlV1": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "maxLength": 31,
+          "not": {
+            "pattern": "[^0-9.\\-]"
+          },
+          "pattern": "^(?:0|-?(?:[1-9][0-9]*(?:\\.[0-9]*[1-9])?|0\\.[0-9]*[1-9]))$",
+          "title": "Amount",
+          "type": "string",
+          "x-decimal-mantissa-bits": 96,
+          "x-decimal-max-scale": 28
+        },
+        "currency": {
+          "enum": [
+            "USD",
+            "USDT",
+            "USDC",
+            "BTC",
+            "ETH",
+            "VUSDC",
+            "VBTC",
+            "VETH"
+          ],
+          "title": "Currency",
+          "type": "string"
+        },
+        "provenance": {
+          "$ref": "#/$defs/CapitalObservationProvenanceV1"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "null"
+        },
+        "status": {
+          "const": "known",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "amount",
+        "currency",
+        "reason",
+        "provenance"
+      ],
+      "title": "KnownCapitalPnlV1",
+      "type": "object"
+    },
+    "UnavailableCapitalChangesV1": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "title": "Entries",
+          "type": "null"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CapitalStateProvenanceV1"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "enum": [
+            "capital_source_unavailable",
+            "capital_lineage_unproven",
+            "period_boundary_missing",
+            "journal_prefix_incomplete",
+            "period_mismatch",
+            "observation_unavailable",
+            "observation_retired",
+            "model_not_applicable",
+            "wire_budget_exceeded"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "status": {
+          "const": "unavailable",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "entries",
+        "reason",
+        "provenance"
+      ],
+      "title": "UnavailableCapitalChangesV1",
+      "type": "object"
+    },
+    "UnavailableCapitalMoneyV1": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "title": "Amount",
+          "type": "null"
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "enum": [
+                "USD",
+                "USDT",
+                "USDC",
+                "BTC",
+                "ETH",
+                "VUSDC",
+                "VBTC",
+                "VETH"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Currency"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CapitalStateProvenanceV1"
+            },
+            {
+              "$ref": "#/$defs/CapitalObservationProvenanceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Provenance"
+        },
+        "reason": {
+          "enum": [
+            "capital_source_unavailable",
+            "capital_lineage_unproven",
+            "period_boundary_missing",
+            "journal_prefix_incomplete",
+            "period_mismatch",
+            "observation_unavailable",
+            "observation_retired",
+            "model_not_applicable",
+            "wire_budget_exceeded"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "status": {
+          "const": "unavailable",
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "amount",
+        "currency",
+        "reason",
+        "provenance"
+      ],
+      "title": "UnavailableCapitalMoneyV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://custos.the-alephain-guild/contracts/v1/strategy-capital-view-v1.schema.json",
+  "additionalProperties": false,
+  "description": "Four read-only fields, without financial authority or execution admission.",
+  "properties": {
+    "allocated_capital": {
+      "discriminator": {
+        "mapping": {
+          "known": "#/$defs/KnownAllocatedCapitalV1",
+          "unavailable": "#/$defs/UnavailableCapitalMoneyV1"
+        },
+        "propertyName": "status"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KnownAllocatedCapitalV1"
+        },
+        {
+          "$ref": "#/$defs/UnavailableCapitalMoneyV1"
+        }
+      ],
+      "title": "Allocated Capital"
+    },
+    "capital_changes": {
+      "discriminator": {
+        "mapping": {
+          "known": "#/$defs/KnownCapitalChangesV1",
+          "unavailable": "#/$defs/UnavailableCapitalChangesV1"
+        },
+        "propertyName": "status"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KnownCapitalChangesV1"
+        },
+        {
+          "$ref": "#/$defs/UnavailableCapitalChangesV1"
+        }
+      ],
+      "title": "Capital Changes"
+    },
+    "realized_pnl": {
+      "discriminator": {
+        "mapping": {
+          "known": "#/$defs/KnownCapitalPnlV1",
+          "unavailable": "#/$defs/UnavailableCapitalMoneyV1"
+        },
+        "propertyName": "status"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KnownCapitalPnlV1"
+        },
+        {
+          "$ref": "#/$defs/UnavailableCapitalMoneyV1"
+        }
+      ],
+      "title": "Realized Pnl"
+    },
+    "unrealized_pnl": {
+      "discriminator": {
+        "mapping": {
+          "known": "#/$defs/KnownCapitalPnlV1",
+          "unavailable": "#/$defs/UnavailableCapitalMoneyV1"
+        },
+        "propertyName": "status"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/KnownCapitalPnlV1"
+        },
+        {
+          "$ref": "#/$defs/UnavailableCapitalMoneyV1"
+        }
+      ],
+      "title": "Unrealized Pnl"
+    }
+  },
+  "required": [
+    "allocated_capital",
+    "realized_pnl",
+    "unrealized_pnl",
+    "capital_changes"
+  ],
+  "title": "StrategyCapitalViewV1",
+  "type": "object",
+  "x-contract-id": "alephain.custos.strategy_capital_view.v1",
+  "x-contract-revision": 1,
+  "x-runtime-supported": false
+}

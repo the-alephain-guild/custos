@@ -62,6 +62,36 @@
       "size_bytes": 103
     },
     {
+      "path": "docs/authority/strategy-capital-contract-support-v1.golden.json",
+      "sha256": "29bb94d8e92064bff38395eb3662f98c1fbd81f044d5b4fe9c0595b65a2889ad",
+      "size_bytes": 136
+    },
+    {
+      "path": "docs/authority/strategy-capital-contract-support-v1.golden.json.sha256",
+      "sha256": "ad451cec0e28375b090c26e99af41e8e1c5d5f28ccf7136200dd969d66c35594",
+      "size_bytes": 115
+    },
+    {
+      "path": "docs/authority/strategy-capital-view-v1.golden.json",
+      "sha256": "9745099fdcfbddeb01ce247db63eaad9a174d7c69efb523f3f47a4197a582cb5",
+      "size_bytes": 4659
+    },
+    {
+      "path": "docs/authority/strategy-capital-view-v1.golden.json.sha256",
+      "sha256": "73f38d99f09cac86e3d26d9acb4ea62b50a14ba98647fa244bfc4dfc0c2047a7",
+      "size_bytes": 103
+    },
+    {
+      "path": "docs/authority/strategy-capital-view-v1.negative.json",
+      "sha256": "64f4f2ada7df69bf5260fe44d92008bc079c8bbe9e0aef4ccf07632190ef6fcb",
+      "size_bytes": 3685
+    },
+    {
+      "path": "docs/authority/strategy-capital-view-v1.negative.json.sha256",
+      "sha256": "0c5b09954a17d8ebf90798e1f2af0f9d1e562604e85146529c2bb091c3a2bc5e",
+      "size_bytes": 105
+    },
+    {
       "path": "docs/gateway-contract/v1/local_strategy_execution_context_v1.schema.json",
       "sha256": "79c034001798267681cb14dcf214ec2cc7fae9623d3d241f674e6a63488b83e6",
       "size_bytes": 1651
@@ -75,6 +105,16 @@
       "path": "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json",
       "sha256": "5dc10e7c6f44545f6eaf34915da64c1e2877c11a64f0023eb06e6e762498f9b9",
       "size_bytes": 5050
+    },
+    {
+      "path": "docs/gateway-contract/v1/strategy_capital_contract_support_v1.schema.json",
+      "sha256": "ff3401ee6e87ef3d6ba2031c1c24c37959402873f2bdd1b065f403bcac1689ec",
+      "size_bytes": 1056
+    },
+    {
+      "path": "docs/gateway-contract/v1/strategy_capital_view_v1.schema.json",
+      "sha256": "c89603d65773981697c1259ec698d9bb465f2663f9f13b36d59cf63ee36210ee",
+      "size_bytes": 24460
     },
     {
       "path": "docs/gateway-contract/v1/strategy_local_context_support_v1.schema.json",
@@ -107,6 +147,19 @@
       "schema_path": "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json",
       "type": "StrategyArtifactRefV1"
     },
+    "strategy_capital_contract_support": {
+      "contract_only": true,
+      "golden_path": "docs/authority/strategy-capital-contract-support-v1.golden.json",
+      "schema_path": "docs/gateway-contract/v1/strategy_capital_contract_support_v1.schema.json",
+      "type": "StrategyCapitalContractSupportV1"
+    },
+    "strategy_capital_view": {
+      "contract_only": true,
+      "golden_path": "docs/authority/strategy-capital-view-v1.golden.json",
+      "negative_path": "docs/authority/strategy-capital-view-v1.negative.json",
+      "schema_path": "docs/gateway-contract/v1/strategy_capital_view_v1.schema.json",
+      "type": "StrategyCapitalViewV1"
+    },
     "strategy_local_context_support": {
       "contract_only": true,
       "golden_path": "docs/authority/local-strategy-context-support-v1.golden.json",
@@ -116,6 +169,18 @@
   },
   "producer": {
     "repository": "tesseract-trading/custos",
+    "source_models": [
+      {
+        "path": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
+        "sha256": "c1e833b964f9a0bc8f0c73ee811a63613fe5d217957bded62e8bc7fd5d377825",
+        "size_bytes": 40676
+      },
+      {
+        "path": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_capital.py",
+        "sha256": "c2bff0aa5e5102ded0ce00e82f30175323db5c50d5c4b31ece2dcfa3905cad7f",
+        "size_bytes": 15527
+      }
+    ],
     "source_path": "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
     "source_sha256": "c1e833b964f9a0bc8f0c73ee811a63613fe5d217957bded62e8bc7fd5d377825"
   },

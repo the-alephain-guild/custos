@@ -177,3 +177,14 @@ def test_internal_candidate_schemas_stay_out_of_public_inventory(
     (checker.ROOT / "docs/gateway-contract/v1/local_unreviewed.schema.json").write_text("{}\n")
     with pytest.raises(ValueError, match="local_unreviewed"):
         checker.schema_table(False)
+
+
+def test_capital_contract_only_schemas_have_exact_internal_visibility():
+    checker = load_checker()
+    table = checker.schema_table(False)
+    for name in (
+        "strategy_capital_view_v1.schema.json",
+        "strategy_capital_contract_support_v1.schema.json",
+    ):
+        assert name in checker.INTERNAL_SCHEMAS
+        assert name not in table

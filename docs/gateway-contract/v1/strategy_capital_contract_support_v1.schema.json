@@ -1,0 +1,38 @@
+{
+  "$id": "https://custos.the-alephain-guild/contracts/v1/strategy-capital-contract-support-v1.schema.json",
+  "additionalProperties": false,
+  "description": "A schema-only declaration which cannot assert runtime capabilities.",
+  "properties": {
+    "capital_change_supported": {
+      "const": false,
+      "title": "Capital Change Supported",
+      "type": "boolean"
+    },
+    "contract_id": {
+      "const": "alephain.custos.strategy_capital_view.v1",
+      "title": "Contract Id",
+      "type": "string"
+    },
+    "runtime_supported": {
+      "const": false,
+      "title": "Runtime Supported",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "maximum": 1,
+      "minimum": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "contract_id",
+    "runtime_supported",
+    "capital_change_supported"
+  ],
+  "title": "StrategyCapitalContractSupportV1",
+  "type": "object",
+  "x-contract-id": "alephain.custos.strategy_capital_contract_support.v1",
+  "x-contract-revision": 1
+}

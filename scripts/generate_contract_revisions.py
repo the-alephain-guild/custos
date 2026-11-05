@@ -62,6 +62,26 @@ STRATEGY_SIGNAL_VECTORS = "docs/authority/conformance/strategy-signal-fact-v1.ve
 
 CONTRACTS = (
     Contract(
+        contract_id="alephain.custos.strategy_capital_view.v1",
+        schema_path="docs/gateway-contract/v1/strategy_capital_view_v1.schema.json",
+        assets=(
+            "docs/gateway-contract/v1/strategy_capital_view_v1.schema.json",
+            "docs/authority/strategy-capital-view-v1.golden.json",
+            "docs/authority/strategy-capital-view-v1.golden.json.sha256",
+            "docs/authority/strategy-capital-view-v1.negative.json",
+            "docs/authority/strategy-capital-view-v1.negative.json.sha256",
+        ),
+    ),
+    Contract(
+        contract_id="alephain.custos.strategy_capital_contract_support.v1",
+        schema_path="docs/gateway-contract/v1/strategy_capital_contract_support_v1.schema.json",
+        assets=(
+            "docs/gateway-contract/v1/strategy_capital_contract_support_v1.schema.json",
+            "docs/authority/strategy-capital-contract-support-v1.golden.json",
+            "docs/authority/strategy-capital-contract-support-v1.golden.json.sha256",
+        ),
+    ),
+    Contract(
         contract_id="alephain.custos.local_strategy_execution_context.v1",
         schema_path="docs/gateway-contract/v1/local_strategy_execution_context_v1.schema.json",
         assets=(

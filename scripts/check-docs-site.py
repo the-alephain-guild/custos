@@ -37,6 +37,8 @@ INTERNAL_SCHEMAS = frozenset(
     {
         "local_strategy_execution_context_v1.schema.json",
         "strategy_local_context_support_v1.schema.json",
+        "strategy_capital_view_v1.schema.json",
+        "strategy_capital_contract_support_v1.schema.json",
     }
 )
 

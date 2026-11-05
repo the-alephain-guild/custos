@@ -335,6 +335,121 @@ def _validate_requirement_review(
         errors.append(f"{name} reviewed schema asset digest set differs")
 
 
+def strategy_capital_contract_errors(root: Path) -> list[str]:
+    """Check current schema-only capital sources without changing historical receipts."""
+    try:
+        index = json.loads((root / "docs/authority/strategy-contract-assets-v1.json").read_bytes())
+        model_paths = (
+            "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py",
+            "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_capital.py",
+        )
+        expected_sources = [
+            {
+                "path": path,
+                "sha256": hashlib.sha256((root / path).read_bytes()).hexdigest(),
+                "size_bytes": (root / path).stat().st_size,
+            }
+            for path in model_paths
+        ]
+        errors = []
+        producer = index.get("producer", {})
+        if producer.get("source_models") != expected_sources:
+            errors.append("current capital contract source inventory differs")
+        if (producer.get("source_path"), producer.get("source_sha256")) != (
+            model_paths[0],
+            expected_sources[0]["sha256"],
+        ):
+            errors.append("current strategy contract source identity differs")
+        view_schema = "docs/gateway-contract/v1/strategy_capital_view_v1.schema.json"
+        support_schema = "docs/gateway-contract/v1/strategy_capital_contract_support_v1.schema.json"
+        view = "docs/authority/strategy-capital-view-v1.golden.json"
+        negative = "docs/authority/strategy-capital-view-v1.negative.json"
+        support = "docs/authority/strategy-capital-contract-support-v1.golden.json"
+        expected_contracts = {
+            "strategy_capital_view": {
+                "type": "StrategyCapitalViewV1",
+                "schema_path": view_schema,
+                "golden_path": view,
+                "negative_path": negative,
+                "contract_only": True,
+            },
+            "strategy_capital_contract_support": {
+                "type": "StrategyCapitalContractSupportV1",
+                "schema_path": support_schema,
+                "golden_path": support,
+                "contract_only": True,
+            },
+        }
+        for name, expected in expected_contracts.items():
+            actual = index.get("current_contracts", {}).get(name, {})
+            if actual != expected or actual.get("contract_only") is not True:
+                errors.append(f"current capital contract-only registration differs: {name}")
+        paths = {
+            view_schema,
+            support_schema,
+            view,
+            negative,
+            support,
+            *(path + ".sha256" for path in (view, negative, support)),
+        }
+        entries = [entry for entry in index.get("assets", []) if entry.get("path") in paths]
+        if len(entries) != len(paths) or {entry["path"] for entry in entries} != paths:
+            errors.append("current capital contract asset set differs")
+        for entry in entries:
+            data = (root / entry["path"]).read_bytes()
+            if (entry.get("sha256"), entry.get("size_bytes")) != (
+                hashlib.sha256(data).hexdigest(),
+                len(data),
+            ):
+                errors.append(f"current capital contract asset bytes differ: {entry['path']}")
+        declaration = json.loads((root / support).read_bytes())
+        expected_declaration = {
+            "schema_version": 1,
+            "contract_id": "alephain.custos.strategy_capital_view.v1",
+            "runtime_supported": False,
+            "capital_change_supported": False,
+        }
+        if (
+            declaration != expected_declaration
+            or type(declaration.get("schema_version")) is not int
+            or declaration.get("runtime_supported") is not False
+            or declaration.get("capital_change_supported") is not False
+        ):
+            errors.append("capital contract cannot declare runtime support")
+        for path, contract_id in (
+            (view_schema, "alephain.custos.strategy_capital_view.v1"),
+            (support_schema, "alephain.custos.strategy_capital_contract_support.v1"),
+        ):
+            schema = json.loads((root / path).read_bytes())
+            if (
+                schema.get("x-contract-id") != contract_id
+                or type(schema.get("x-contract-revision")) is not int
+                or schema.get("x-contract-revision") != 1
+                or schema.get("additionalProperties") is not False
+            ):
+                errors.append(f"current capital contract schema identity differs: {path}")
+            properties = schema.get("properties", {})
+            if path == view_schema:
+                fields = {"allocated_capital", "realized_pnl", "unrealized_pnl", "capital_changes"}
+                if (
+                    schema.get("x-runtime-supported") is not False
+                    or set(properties) != fields
+                    or set(schema.get("required", [])) != fields
+                ):
+                    errors.append(
+                        "capital view schema cannot declare runtime support or extra fields"
+                    )
+            elif any(
+                properties.get(field, {}).get("const") is not False
+                or properties.get(field, {}).get("type") != "boolean"
+                for field in ("runtime_supported", "capital_change_supported")
+            ):
+                errors.append("capital support schema cannot permit runtime capability")
+        return errors
+    except (OSError, ValueError, TypeError, KeyError, AttributeError) as error:
+        return [f"current capital contract evidence is unreadable: {type(error).__name__}"]
+
+
 def verify_strategy_contract_assets(errors: list[str]) -> None:
     index_path = resolve("docs/authority/strategy-contract-assets-v1.json")
     if not index_path.is_file():
@@ -2636,6 +2751,7 @@ def main() -> int:
                             f"runner command golden differs from optional sibling: {sibling_path}"
                         )
     verify_strategy_contract_assets(errors)
+    errors.extend(strategy_capital_contract_errors(ROOT))
     verify_strategy_contract_authority(errors)
     verify_runner_command_consumer(errors)
     verify_artifact_runtime(manifest, errors)

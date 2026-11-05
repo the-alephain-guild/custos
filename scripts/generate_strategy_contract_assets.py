@@ -9,6 +9,10 @@ import json
 from pathlib import Path
 
 from custos_toolkit.contracts.engine_profile import ENGINE_VERSION
+from custos_toolkit.contracts.strategy_capital import (
+    StrategyCapitalContractSupportV1,
+    StrategyCapitalViewV1,
+)
 from custos_toolkit.contracts.strategy_execution import (
     ArtifactMemberRole,
     ArtifactMemberV1,
@@ -32,6 +36,14 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_MODEL = (
     ROOT / "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_execution.py"
 )
+SOURCE_CAPITAL_MODEL = (
+    ROOT / "packages/custos-strategy-toolkit/src/custos_toolkit/contracts/strategy_capital.py"
+)
+CAPITAL_VIEW_SCHEMA = "docs/gateway-contract/v1/strategy_capital_view_v1.schema.json"
+CAPITAL_SUPPORT_SCHEMA = "docs/gateway-contract/v1/strategy_capital_contract_support_v1.schema.json"
+CAPITAL_VIEW_GOLDEN = "docs/authority/strategy-capital-view-v1.golden.json"
+CAPITAL_VIEW_NEGATIVE = "docs/authority/strategy-capital-view-v1.negative.json"
+CAPITAL_SUPPORT_GOLDEN = "docs/authority/strategy-capital-contract-support-v1.golden.json"
 INVENTORY_PATH = "docs/authority/strategy-toolkit-inventory-v1.json"
 INDEX_PATH = "docs/authority/strategy-contract-assets-v1.json"
 ARTIFACT_REF_SCHEMA_PATH = "docs/gateway-contract/v1/strategy_artifact_ref_v1.schema.json"
@@ -122,6 +134,201 @@ def with_contract_revision(schema: dict, contract: tuple[str, int]) -> dict:
 
 def _sidecar(path: str, content: bytes) -> bytes:
     return f"{sha256(content)}  {Path(path).name}\n".encode("ascii")
+
+
+def _build_capital_assets() -> dict[str, bytes]:
+    """Generate schema-only samples, never signed capital states or observations."""
+    uid = "11000000-0000-4000-8000-000000000001"
+    capital = {
+        "kind": "capital_state",
+        "command_event_id": uid,
+        "command_digest": "a" * 64,
+        "capital_revision": 1,
+        "capital_state_digest": "b" * 64,
+        "source_frontier": 0,
+        "source_ledger_digest": "c" * 64,
+        "principal_lineage_digest": "d" * 64,
+        "phase": "committed",
+        "operation_id": None,
+    }
+    observation = {
+        "kind": "runner_observation",
+        "batch_id": uid,
+        "seq_start": 1,
+        "seq_end": 2,
+        "observation_id": "e" * 64,
+        "pnl_basis_digest": "f" * 64,
+        "source_prefix_digest": "c" * 64,
+        "capital_revision": 1,
+        "capital_state_digest": "b" * 64,
+    }
+
+    def provenance(source):
+        return {
+            "scope": {
+                "tenant_id": "fixture",
+                "trading_mode": "sandbox",
+                "runner_id": uid,
+                "strategy_id": uid,
+                "deployment_instance_id": uid,
+                "deployment_spec_id": uid,
+                "deployment_spec_digest": "a" * 64,
+                "generation": 1,
+            },
+            "period": {
+                "code": "2026-11",
+                "start_utc": "2026-11-01T00:00:00Z",
+                "end_exclusive_utc": "2026-12-01T00:00:00Z",
+                "trading_mode": "sandbox",
+            },
+            "as_of": "2026-11-05T12:00:00.123456789Z",
+            "source": source,
+        }
+
+    def money(amount, source):
+        return {
+            "status": "known",
+            "amount": amount,
+            "currency": "USD",
+            "reason": None,
+            "provenance": provenance(source),
+        }
+
+    sample = StrategyCapitalViewV1.model_validate(
+        {
+            "allocated_capital": money("100", capital),
+            "realized_pnl": money("-2", observation),
+            "unrealized_pnl": money("5", observation),
+            "capital_changes": {
+                "status": "known",
+                "entries": [],
+                "reason": None,
+                "provenance": provenance(capital),
+            },
+        }
+    )
+    support = StrategyCapitalContractSupportV1(
+        schema_version=1,
+        contract_id="alephain.custos.strategy_capital_view.v1",
+        runtime_supported=False,
+        capital_change_supported=False,
+    )
+    negative = {
+        "schema_version": 1,
+        "contract_only": True,
+        "vectors": [
+            {
+                "name": "negative-allocation",
+                "path": ["allocated_capital", "amount"],
+                "value": "-1",
+                "schema_rejects": True,
+            },
+            {
+                "name": "boolean-money",
+                "path": ["allocated_capital", "amount"],
+                "value": True,
+                "schema_rejects": True,
+            },
+            {
+                "name": "float-money",
+                "path": ["allocated_capital", "amount"],
+                "value": 1.5,
+                "schema_rejects": True,
+            },
+            {
+                "name": "exponent",
+                "path": ["allocated_capital", "amount"],
+                "value": "1e2",
+                "schema_rejects": True,
+            },
+            {
+                "name": "negative-zero",
+                "path": ["allocated_capital", "amount"],
+                "value": "-0",
+                "schema_rejects": True,
+            },
+            {
+                "name": "trailing-zero",
+                "path": ["allocated_capital", "amount"],
+                "value": "1.0",
+                "schema_rejects": True,
+            },
+            {
+                "name": "decimal-range",
+                "path": ["allocated_capital", "amount"],
+                "value": "79228162514264337593543950336",
+                "schema_rejects": False,
+            },
+            {
+                "name": "currency-case",
+                "path": ["allocated_capital", "currency"],
+                "value": "usd",
+                "schema_rejects": True,
+            },
+            {
+                "name": "nil-uuid",
+                "path": ["allocated_capital", "provenance", "scope", "runner_id"],
+                "value": "00000000-0000-0000-0000-000000000000",
+                "schema_rejects": True,
+            },
+            {
+                "name": "boolean-revision",
+                "path": ["allocated_capital", "provenance", "source", "capital_revision"],
+                "value": True,
+                "schema_rejects": True,
+            },
+            {
+                "name": "wrong-observation",
+                "path": ["realized_pnl", "provenance", "source", "observation_id"],
+                "value": "1" * 64,
+                "schema_rejects": False,
+            },
+            {
+                "name": "wrong-capital-state",
+                "path": ["capital_changes", "provenance", "source", "capital_revision"],
+                "value": 2,
+                "schema_rejects": False,
+            },
+            {
+                "name": "unknown-is-not-zero",
+                "path": ["realized_pnl", "status"],
+                "value": "unavailable",
+                "schema_rejects": True,
+            },
+            {
+                "name": "noncanonical-time",
+                "path": ["allocated_capital", "provenance", "as_of"],
+                "value": "2026-11-05T12:00:00.123000Z",
+                "schema_rejects": False,
+            },
+        ],
+    }
+    for label, separator in (
+        ("lf", "\n"),
+        ("cr", "\r"),
+        ("line-separator", "\u2028"),
+        ("paragraph-separator", "\u2029"),
+    ):
+        negative["vectors"].append(
+            {
+                "name": f"timestamp-terminal-{label}",
+                "path": ["allocated_capital", "provenance", "as_of"],
+                "value": "2026-11-05T12:00:00.123456789Z" + separator,
+                "schema_rejects": True,
+            }
+        )
+    payloads = {
+        CAPITAL_VIEW_SCHEMA: json_bytes(StrategyCapitalViewV1.model_json_schema(mode="validation")),
+        CAPITAL_SUPPORT_SCHEMA: json_bytes(
+            StrategyCapitalContractSupportV1.model_json_schema(mode="validation")
+        ),
+        CAPITAL_VIEW_GOLDEN: canonical_json_bytes(sample.model_dump(mode="json")),
+        CAPITAL_VIEW_NEGATIVE: json_bytes(negative),
+        CAPITAL_SUPPORT_GOLDEN: canonical_json_bytes(support.model_dump(mode="json")),
+    }
+    for path in (CAPITAL_VIEW_GOLDEN, CAPITAL_VIEW_NEGATIVE, CAPITAL_SUPPORT_GOLDEN):
+        payloads[f"{path}.sha256"] = _sidecar(path, payloads[path])
+    return payloads
 
 
 def _build_local_context_assets() -> dict[str, bytes]:
@@ -451,6 +658,7 @@ def build_v1_contract_assets() -> dict[str, bytes]:
     generated = {
         **artifact_assets,
         **_build_local_context_assets(),
+        **_build_capital_assets(),
         PRE_IMPORT_SCHEMA_PATH: schema_bytes,
         PRE_IMPORT_GOLDEN_PATH: golden,
         f"{PRE_IMPORT_GOLDEN_PATH}.sha256": _sidecar(PRE_IMPORT_GOLDEN_PATH, golden),
@@ -467,6 +675,19 @@ def build_v1_contract_assets() -> dict[str, bytes]:
             "canonical_name": "Custos canonical first-production V1 strategy execution contracts",
             "status": "CANONICAL_V1_CONTRACT_ASSETS_PUBLISHED",
             "current_contracts": {
+                "strategy_capital_view": {
+                    "type": "StrategyCapitalViewV1",
+                    "schema_path": CAPITAL_VIEW_SCHEMA,
+                    "golden_path": CAPITAL_VIEW_GOLDEN,
+                    "negative_path": CAPITAL_VIEW_NEGATIVE,
+                    "contract_only": True,
+                },
+                "strategy_capital_contract_support": {
+                    "type": "StrategyCapitalContractSupportV1",
+                    "schema_path": CAPITAL_SUPPORT_SCHEMA,
+                    "golden_path": CAPITAL_SUPPORT_GOLDEN,
+                    "contract_only": True,
+                },
                 "local_strategy_execution_context": {
                     "type": "LocalStrategyExecutionContextV1",
                     "schema_path": LOCAL_CONTEXT_SCHEMA_PATH,
@@ -496,6 +717,14 @@ def build_v1_contract_assets() -> dict[str, bytes]:
                 "repository": "tesseract-trading/custos",
                 "source_path": str(SOURCE_MODEL.relative_to(ROOT)),
                 "source_sha256": sha256(SOURCE_MODEL.read_bytes()),
+                "source_models": [
+                    {
+                        "path": str(path.relative_to(ROOT)),
+                        "sha256": sha256(path.read_bytes()),
+                        "size_bytes": path.stat().st_size,
+                    }
+                    for path in (SOURCE_MODEL, SOURCE_CAPITAL_MODEL)
+                ],
             },
             "assets": index_entries,
         }

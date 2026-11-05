@@ -1,0 +1,181 @@
+{
+  "contract_only": true,
+  "schema_version": 1,
+  "vectors": [
+    {
+      "name": "negative-allocation",
+      "path": [
+        "allocated_capital",
+        "amount"
+      ],
+      "schema_rejects": true,
+      "value": "-1"
+    },
+    {
+      "name": "boolean-money",
+      "path": [
+        "allocated_capital",
+        "amount"
+      ],
+      "schema_rejects": true,
+      "value": true
+    },
+    {
+      "name": "float-money",
+      "path": [
+        "allocated_capital",
+        "amount"
+      ],
+      "schema_rejects": true,
+      "value": 1.5
+    },
+    {
+      "name": "exponent",
+      "path": [
+        "allocated_capital",
+        "amount"
+      ],
+      "schema_rejects": true,
+      "value": "1e2"
+    },
+    {
+      "name": "negative-zero",
+      "path": [
+        "allocated_capital",
+        "amount"
+      ],
+      "schema_rejects": true,
+      "value": "-0"
+    },
+    {
+      "name": "trailing-zero",
+      "path": [
+        "allocated_capital",
+        "amount"
+      ],
+      "schema_rejects": true,
+      "value": "1.0"
+    },
+    {
+      "name": "decimal-range",
+      "path": [
+        "allocated_capital",
+        "amount"
+      ],
+      "schema_rejects": false,
+      "value": "79228162514264337593543950336"
+    },
+    {
+      "name": "currency-case",
+      "path": [
+        "allocated_capital",
+        "currency"
+      ],
+      "schema_rejects": true,
+      "value": "usd"
+    },
+    {
+      "name": "nil-uuid",
+      "path": [
+        "allocated_capital",
+        "provenance",
+        "scope",
+        "runner_id"
+      ],
+      "schema_rejects": true,
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    {
+      "name": "boolean-revision",
+      "path": [
+        "allocated_capital",
+        "provenance",
+        "source",
+        "capital_revision"
+      ],
+      "schema_rejects": true,
+      "value": true
+    },
+    {
+      "name": "wrong-observation",
+      "path": [
+        "realized_pnl",
+        "provenance",
+        "source",
+        "observation_id"
+      ],
+      "schema_rejects": false,
+      "value": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    {
+      "name": "wrong-capital-state",
+      "path": [
+        "capital_changes",
+        "provenance",
+        "source",
+        "capital_revision"
+      ],
+      "schema_rejects": false,
+      "value": 2
+    },
+    {
+      "name": "unknown-is-not-zero",
+      "path": [
+        "realized_pnl",
+        "status"
+      ],
+      "schema_rejects": true,
+      "value": "unavailable"
+    },
+    {
+      "name": "noncanonical-time",
+      "path": [
+        "allocated_capital",
+        "provenance",
+        "as_of"
+      ],
+      "schema_rejects": false,
+      "value": "2026-11-05T12:00:00.123000Z"
+    },
+    {
+      "name": "timestamp-terminal-lf",
+      "path": [
+        "allocated_capital",
+        "provenance",
+        "as_of"
+      ],
+      "schema_rejects": true,
+      "value": "2026-11-05T12:00:00.123456789Z\n"
+    },
+    {
+      "name": "timestamp-terminal-cr",
+      "path": [
+        "allocated_capital",
+        "provenance",
+        "as_of"
+      ],
+      "schema_rejects": true,
+      "value": "2026-11-05T12:00:00.123456789Z\r"
+    },
+    {
+      "name": "timestamp-terminal-line-separator",
+      "path": [
+        "allocated_capital",
+        "provenance",
+        "as_of"
+      ],
+      "schema_rejects": true,
+      "value": "2026-11-05T12:00:00.123456789Z "
+    },
+    {
+      "name": "timestamp-terminal-paragraph-separator",
+      "path": [
+        "allocated_capital",
+        "provenance",
+        "as_of"
+      ],
+      "schema_rejects": true,
+      "value": "2026-11-05T12:00:00.123456789Z "
+    }
+  ]
+}

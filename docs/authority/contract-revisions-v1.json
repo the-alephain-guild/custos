@@ -4,6 +4,82 @@
   "canonicalization": "utf8-json-sort-keys-compact-v1",
   "revision_rule": "raise a contract's revision by one when its wire fingerprint, its conformance vectors or its conformance sequences change; descriptive text alone keeps the revision",
   "contracts": {
+    "alephain.custos.strategy_capital_view.v1": {
+      "revision": 1,
+      "revision_carrier": "schema",
+      "schema_path": "docs/gateway-contract/v1/strategy_capital_view_v1.schema.json",
+      "wire_sha256": "5b9e427a761a07a5d220f1c0f614af408c9b5e4ea2ad4cfa31980b656a241c83",
+      "vectors_sha256": null,
+      "vectors_path": null,
+      "assets": [
+        {
+          "path": "docs/gateway-contract/v1/strategy_capital_view_v1.schema.json",
+          "sha256": "c89603d65773981697c1259ec698d9bb465f2663f9f13b36d59cf63ee36210ee",
+          "size_bytes": 24460
+        },
+        {
+          "path": "docs/authority/strategy-capital-view-v1.golden.json",
+          "sha256": "9745099fdcfbddeb01ce247db63eaad9a174d7c69efb523f3f47a4197a582cb5",
+          "size_bytes": 4659
+        },
+        {
+          "path": "docs/authority/strategy-capital-view-v1.golden.json.sha256",
+          "sha256": "73f38d99f09cac86e3d26d9acb4ea62b50a14ba98647fa244bfc4dfc0c2047a7",
+          "size_bytes": 103
+        },
+        {
+          "path": "docs/authority/strategy-capital-view-v1.negative.json",
+          "sha256": "64f4f2ada7df69bf5260fe44d92008bc079c8bbe9e0aef4ccf07632190ef6fcb",
+          "size_bytes": 3685
+        },
+        {
+          "path": "docs/authority/strategy-capital-view-v1.negative.json.sha256",
+          "sha256": "0c5b09954a17d8ebf90798e1f2af0f9d1e562604e85146529c2bb091c3a2bc5e",
+          "size_bytes": 105
+        }
+      ],
+      "history": [
+        {
+          "revision": 1,
+          "wire_sha256": "5b9e427a761a07a5d220f1c0f614af408c9b5e4ea2ad4cfa31980b656a241c83",
+          "vectors_sha256": null,
+          "note": "first revision; earlier versions of the contract carried no revision"
+        }
+      ]
+    },
+    "alephain.custos.strategy_capital_contract_support.v1": {
+      "revision": 1,
+      "revision_carrier": "schema",
+      "schema_path": "docs/gateway-contract/v1/strategy_capital_contract_support_v1.schema.json",
+      "wire_sha256": "ba02f64e81371e1ab447c32d918d8eeccb9351a1aafb518e77bc4fb0162ed7d4",
+      "vectors_sha256": null,
+      "vectors_path": null,
+      "assets": [
+        {
+          "path": "docs/gateway-contract/v1/strategy_capital_contract_support_v1.schema.json",
+          "sha256": "ff3401ee6e87ef3d6ba2031c1c24c37959402873f2bdd1b065f403bcac1689ec",
+          "size_bytes": 1056
+        },
+        {
+          "path": "docs/authority/strategy-capital-contract-support-v1.golden.json",
+          "sha256": "29bb94d8e92064bff38395eb3662f98c1fbd81f044d5b4fe9c0595b65a2889ad",
+          "size_bytes": 136
+        },
+        {
+          "path": "docs/authority/strategy-capital-contract-support-v1.golden.json.sha256",
+          "sha256": "ad451cec0e28375b090c26e99af41e8e1c5d5f28ccf7136200dd969d66c35594",
+          "size_bytes": 115
+        }
+      ],
+      "history": [
+        {
+          "revision": 1,
+          "wire_sha256": "ba02f64e81371e1ab447c32d918d8eeccb9351a1aafb518e77bc4fb0162ed7d4",
+          "vectors_sha256": null,
+          "note": "first revision; earlier versions of the contract carried no revision"
+        }
+      ]
+    },
     "alephain.custos.local_strategy_execution_context.v1": {
       "revision": 1,
       "revision_carrier": "schema",
@@ -223,8 +299,8 @@
         },
         {
           "path": "docs/authority/strategy-contract-assets-v1.json",
-          "sha256": "9ae613a13ac6a29dcc2e4922b92423fb803f9498c58a34f667a0420715c29add",
-          "size_bytes": 5437
+          "sha256": "2d2181f9e5cd0c7e58cc0edf7f025e436bcdcf7b9ca30aa34675f0e22595c9a8",
+          "size_bytes": 8199
         }
       ],
       "history": [
