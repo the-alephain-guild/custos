@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from custos_toolkit.contracts.engine_profile import ENGINE_VERSION
 from custos_toolkit.contracts.strategy_execution import (
     ArtifactMemberRole,
     ArtifactMemberV1,
@@ -205,7 +206,7 @@ def _build_artifact_ref_assets() -> dict[str, bytes]:
         normalized_source_tree_sha256="3" * 64,
         python_version="3.12.4",
         engine="nautilus",
-        engine_version="2.0.0rc5+sodex.3",
+        engine_version=ENGINE_VERSION,
         base_contracts_version="1.0.0rc1",
         engine_toolkit_version="1.0.0rc1",
         build_inputs=(DigestBindingV1(name="uv.lock", sha256="9" * 64),),
@@ -504,6 +505,19 @@ def build_v1_contract_assets() -> dict[str, bytes]:
         StrategyManifestV1.model_json_schema(mode="validation")
     )
     return generated
+
+
+def build_standalone_contract_assets() -> dict[str, bytes]:
+    """Render owner-local assets without claiming a peer handoff or RC authority."""
+    assets = _build_local_context_assets()
+    assets.update(_build_artifact_ref_assets())
+    assets[STRATEGY_MANIFEST_SCHEMA_PATH] = json_bytes(
+        StrategyManifestV1.model_json_schema(mode="validation")
+    )
+    schema = StrategyArtifactPreImportVerificationReceiptV1.model_json_schema(mode="validation")
+    schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
+    assets[PRE_IMPORT_SCHEMA_PATH] = json_bytes(with_contract_revision(schema, PRE_IMPORT_CONTRACT))
+    return assets
 
 
 def build_toolkit_rc_foundation_assets() -> dict[str, bytes]:

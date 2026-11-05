@@ -30,6 +30,8 @@ from pydantic import (
     model_validator,
 )
 
+from .engine_profile import EngineVersion
+
 STRATEGY_EXECUTION_ABI_V1 = "alephain.strategy_runtime.v1"
 STRATEGY_CONTRACT_SCHEMA_VERSION = 1
 STRATEGY_CONTRACT_CANONICALIZATION = "sha256-canonical-json-v1"
@@ -237,7 +239,7 @@ class StrategyManifestV1(_StrictFrozenModel):
     entry_point_group: Literal["alephain.strategy_runtime.v1"]
     entry_point: NonEmptyString
     engine: Literal["nautilus"]
-    engine_version: Literal["2.0.0rc5+sodex.3"]
+    engine_version: EngineVersion
     requires_python: Literal[">=3.12,<3.13"]
     base_contracts_version: NonEmptyString
     engine_toolkit_version: NonEmptyString
@@ -295,7 +297,7 @@ class StrategyArtifactRefV1(_StrictFrozenModel):
     normalized_source_tree_sha256: Sha256Hex
     python_version: Annotated[str, StringConstraints(pattern=r"^3\.12\.[0-9]+$")]
     engine: Literal["nautilus"]
-    engine_version: Literal["2.0.0rc5+sodex.3"]
+    engine_version: EngineVersion
     base_contracts_version: NonEmptyString
     engine_toolkit_version: NonEmptyString
     build_inputs: tuple[DigestBindingV1, ...] = Field(min_length=1)

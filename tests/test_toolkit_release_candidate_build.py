@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -16,10 +17,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DATE_EPOCH = 1_704_067_200
 
 
-def _head() -> str:
+def _head(repository: Path) -> str:
     return subprocess.run(
         ["git", "rev-parse", "HEAD"],
-        cwd=ROOT,
+        cwd=repository,
         check=True,
         capture_output=True,
         text=True,
@@ -27,10 +28,35 @@ def _head() -> str:
 
 
 @pytest.fixture(scope="module")
-def candidate(tmp_path_factory: pytest.TempPathFactory) -> ToolkitRcBuildCandidate:
+def source_repository(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Commit the actual current packages without requiring a clean developer HEAD."""
+    repository = tmp_path_factory.mktemp("toolkit-source-snapshot")
+    for name in ("custos-strategy-toolkit", "custos-strategy-toolkit-nautilus"):
+        relative = Path("packages") / name
+        shutil.copytree(
+            ROOT / relative,
+            repository / relative,
+            symlinks=True,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+        )
+    for arguments in (
+        ["init", "-q"],
+        ["config", "user.name", "Source fixture"],
+        ["config", "user.email", "fixture@example.invalid"],
+        ["add", "packages/custos-strategy-toolkit", "packages/custos-strategy-toolkit-nautilus"],
+        ["-c", "commit.gpgsign=false", "commit", "-q", "-m", "Current package source fixture"],
+    ):
+        subprocess.run(["git", *arguments], cwd=repository, check=True, capture_output=True)
+    return repository
+
+
+@pytest.fixture(scope="module")
+def candidate(
+    tmp_path_factory: pytest.TempPathFactory, source_repository: Path
+) -> ToolkitRcBuildCandidate:
     return build_reproducible_toolkit_rc_candidate(
-        repository_root=ROOT,
-        source_commit=_head(),
+        repository_root=source_repository,
+        source_commit=_head(source_repository),
         source_date_epoch=SOURCE_DATE_EPOCH,
         candidate_version="0.1.0rc1",
         output_root=tmp_path_factory.mktemp("toolkit-release-build") / "toolkit-rc-candidate",
@@ -38,10 +64,10 @@ def candidate(tmp_path_factory: pytest.TempPathFactory) -> ToolkitRcBuildCandida
 
 
 def test_real_toolkit_rc_wheels_are_byte_reproducible(
-    candidate: ToolkitRcBuildCandidate,
+    candidate: ToolkitRcBuildCandidate, source_repository: Path
 ) -> None:
     result = candidate
-    assert result.source_commit == _head()
+    assert result.source_commit == _head(source_repository)
     assert result.source_date_epoch == SOURCE_DATE_EPOCH
     assert result.candidate_version == "0.1.0rc1"
     assert set(result.first.wheels) == {
@@ -102,11 +128,11 @@ def test_real_wheels_enforce_rc_metadata_and_ephemeral_sbom_inputs(
 
 
 def test_candidate_coordinate_cannot_be_mutable_or_overwritten(
-    candidate: ToolkitRcBuildCandidate, tmp_path: Path
+    candidate: ToolkitRcBuildCandidate, tmp_path: Path, source_repository: Path
 ) -> None:
     with pytest.raises(FileExistsError, match="immutable"):
         build_reproducible_toolkit_rc_candidate(
-            repository_root=ROOT,
+            repository_root=source_repository,
             source_commit=candidate.source_commit,
             source_date_epoch=SOURCE_DATE_EPOCH,
             candidate_version="0.1.0rc1",
@@ -114,12 +140,35 @@ def test_candidate_coordinate_cannot_be_mutable_or_overwritten(
         )
     with pytest.raises(ValueError, match="0.1.0rcN"):
         build_reproducible_toolkit_rc_candidate(
-            repository_root=ROOT,
+            repository_root=source_repository,
             source_commit=candidate.source_commit,
             source_date_epoch=SOURCE_DATE_EPOCH,
             candidate_version="0.1.0",
             output_root=tmp_path / "mutable-version",
         )
+
+
+def test_real_builder_still_refuses_a_dirty_source_snapshot(
+    source_repository: Path, tmp_path: Path
+):
+    repository = tmp_path / "dirty-source"
+    subprocess.run(
+        ["git", "clone", "--quiet", "--local", str(source_repository), str(repository)],
+        check=True,
+        capture_output=True,
+    )
+    commit = _head(repository)
+    module = repository / "packages/custos-strategy-toolkit/src/custos_toolkit/__init__.py"
+    module.write_text(module.read_text() + "\nDIRTY_SOURCE = True\n")
+    with pytest.raises(ValueError, match="exactly match the clean source commit"):
+        build_reproducible_toolkit_rc_candidate(
+            repository_root=repository,
+            source_commit=commit,
+            source_date_epoch=SOURCE_DATE_EPOCH,
+            candidate_version="0.1.0rc1",
+            output_root=tmp_path / "must-not-build",
+        )
+    assert not (tmp_path / "must-not-build").exists()
 
 
 def test_dedicated_workflow_has_no_publish_or_ready_authority() -> None:
