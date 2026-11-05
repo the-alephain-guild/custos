@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "profile_id": "native-capture-darwin7-v1",
+  "engine": {
+    "distribution": "nautilus-trader",
+    "version": "2.0.0rc5+papertrade.7",
+    "artifact_sha256": "021849664dcc27e5b5b471d556c38f464c6d03b1ab9ea703a23ebb6d999dc64c",
+    "abi": "cp312",
+    "platform": "macosx_11_0_arm64"
+  },
+  "versions": {
+    "custos-runner": "0.8.0.dev20261105+nt.papertrade.7",
+    "custos-strategy-toolkit": "0.1.0.dev20261105+nt.papertrade.7",
+    "custos-strategy-toolkit-nautilus": "0.1.0.dev20261105+nt.papertrade.7",
+    "custos-strategy-publisher": "0.1.0.dev20261105+nt.papertrade.7"
+  }
+}

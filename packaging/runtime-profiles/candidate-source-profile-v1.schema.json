@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://custos.the-alephain-guild/contracts/candidate-source-profile-v1.schema.json",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "alephain.custos.native-candidate-source-profile.v1"
+    },
+    "profile_id": {
+      "const": "native-capture-darwin7-v1"
+    },
+    "source_repository": {
+      "const": "https://github.com/the-alephain-guild/custos"
+    },
+    "source_commit": {
+      "type": "string",
+      "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "source_date_epoch": {
+      "type": "integer",
+      "minimum": 315532800
+    },
+    "source_root": {
+      "const": "source"
+    },
+    "source_inventory_path": {
+      "const": "source-inventory.json"
+    },
+    "source_inventory_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "source_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "engine": {
+      "type": "object",
+      "properties": {
+        "distribution": {
+          "const": "nautilus-trader"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "artifact_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "wheel_path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[^\\u0000]+$"
+        },
+        "abi": {
+          "const": "cp312"
+        },
+        "platform": {
+          "const": "macosx_11_0_arm64"
+        }
+      },
+      "required": [
+        "distribution",
+        "version",
+        "artifact_sha256",
+        "wheel_path",
+        "abi",
+        "platform"
+      ],
+      "additionalProperties": false
+    },
+    "distributions": {
+      "type": "object",
+      "properties": {
+        "custos-runner": {
+          "$ref": "#/$defs/distribution"
+        },
+        "custos-strategy-toolkit": {
+          "$ref": "#/$defs/distribution"
+        },
+        "custos-strategy-toolkit-nautilus": {
+          "$ref": "#/$defs/distribution"
+        },
+        "custos-strategy-publisher": {
+          "$ref": "#/$defs/distribution"
+        }
+      },
+      "required": [
+        "custos-runner",
+        "custos-strategy-toolkit",
+        "custos-strategy-toolkit-nautilus",
+        "custos-strategy-publisher"
+      ],
+      "additionalProperties": false
+    },
+    "engine_definitions": {
+      "type": "object",
+      "properties": {
+        "source/packages/custos-strategy-toolkit/src/custos_toolkit/contracts/engine_profile.py": {
+          "type": "object",
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "sha256"
+          ],
+          "additionalProperties": false
+        },
+        "source/packages/custos-strategy-publisher/src/custos_strategy_publisher/engine_profile.py": {
+          "type": "object",
+          "properties": {
+            "sha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          },
+          "required": [
+            "sha256"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "source/packages/custos-strategy-toolkit/src/custos_toolkit/contracts/engine_profile.py",
+        "source/packages/custos-strategy-publisher/src/custos_strategy_publisher/engine_profile.py"
+      ],
+      "additionalProperties": false
+    },
+    "acceptance": {
+      "type": "object",
+      "properties": {
+        "local_candidate": {
+          "const": true
+        },
+        "rc_published": {
+          "const": false
+        },
+        "control_ready": {
+          "const": false
+        }
+      },
+      "required": [
+        "local_candidate",
+        "rc_published",
+        "control_ready"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "profile_id",
+    "source_repository",
+    "source_commit",
+    "source_date_epoch",
+    "source_root",
+    "source_inventory_path",
+    "source_inventory_sha256",
+    "source_version",
+    "engine",
+    "distributions",
+    "engine_definitions",
+    "acceptance"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "distribution": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "wheel_path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[^\\u0000]+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "metadata_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "requires_python": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requires_dist": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "name",
+        "version",
+        "wheel_path",
+        "sha256",
+        "size_bytes",
+        "metadata_sha256",
+        "requires_python",
+        "requires_dist"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
