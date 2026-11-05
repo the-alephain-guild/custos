@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from custos.core.platform_process_identity import PlatformFenceError, platform_counter_triggers
 from custos.core.runner_fact import (
     RunnerFactOutbox,
     RunnerStateMigrationError,
@@ -39,6 +40,17 @@ def _as_if_the_lot_table_had_never_existed(path: Path) -> None:
     outbox = RunnerFactOutbox.__new__(RunnerFactOutbox)
     object.__setattr__(outbox, "path", path)
     with outbox._connect() as connection:
+        # This predecessor had neither platform ownership metadata nor mutation
+        # guards. Keeping a current store identity would instead model corruption
+        # of a registered current database, which must not be repaired at startup.
+        for name in platform_counter_triggers():
+            connection.execute(f"DROP TRIGGER {name}")
+        for table in (
+            "platform_process_heads",
+            "platform_process_bindings",
+            "runner_store_identity",
+        ):
+            connection.execute(f"DROP TABLE {table}")
         connection.execute("DROP TABLE runner_position_exposure_lot")
 
 
@@ -103,6 +115,8 @@ def test_an_old_database_with_nothing_open_still_opens(tmp_path: Path) -> None:
     assert reopened.load_order_reservation_sync(INSTANCE_A, "entry").filled_quantity == Decimal(
         "0"
     ), "the released reservation holds nothing that would need attributing"
+    with pytest.raises(PlatformFenceError, match="platform_storage_identity_missing"):
+        RunnerFactOutbox(path).platform_storage_snapshot()
 
 
 def test_a_current_database_whose_fill_carried_no_position_still_opens(tmp_path: Path) -> None:

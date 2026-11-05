@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
 import threading
 import time
 import unicodedata
@@ -40,6 +41,15 @@ from custos.contracts.crucible_runner_safety_policy import (
 from custos.core.engine_protocol import EngineLifecycleAuthority, EngineStopBoundary
 from custos.core.log import get_logger
 from custos.core.opening_observation import ObservabilityFactPlan
+from custos.core.platform_process_identity import (
+    PLATFORM_STATE_TABLES,
+    PlatformFenceError,
+    PlatformProcessBinding,
+    PlatformProcessContext,
+    PlatformProcessSnapshot,
+    PlatformStorageSnapshot,
+    platform_counter_triggers,
+)
 from custos.core.reservation_math import (
     PositionCostLot,
     allocate_fifo_cost,
@@ -3072,6 +3082,13 @@ class RunnerFactOutbox:
                 str(row[0])
                 for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
             }
+            if (
+                "runner_store_identity" in tables_before
+                and connection.execute(
+                    "SELECT 1 FROM runner_store_identity WHERE singleton=1"
+                ).fetchone()
+            ):
+                self._validate_platform_storage_contract(connection)
             connection.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS runner_fact_stream (
@@ -3527,7 +3544,101 @@ class RunnerFactOutbox:
                 """,
                 (RUNNER_STATE_SCHEMA_VERSION, _utc_now()),
             )
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS runner_store_identity (
+                    singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                    store_id TEXT NOT NULL,
+                    schema_revision INTEGER NOT NULL CHECK(schema_revision=1),
+                    mutation_seq INTEGER NOT NULL CHECK(
+                        typeof(mutation_seq)='integer' AND mutation_seq>=0
+                    )
+                )"""
+            )
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS platform_process_bindings (
+                    owner_id TEXT PRIMARY KEY,
+                    registry_id TEXT NOT NULL,
+                    process_epoch INTEGER NOT NULL CHECK(
+                        typeof(process_epoch)='integer' AND process_epoch>0
+                    ),
+                    instance_id TEXT NOT NULL,
+                    aliases BLOB NOT NULL,
+                    context BLOB NOT NULL,
+                    adapter_binding BLOB NOT NULL
+                )"""
+            )
+            connection.execute(
+                """CREATE TABLE IF NOT EXISTS platform_process_heads (
+                    instance_id TEXT PRIMARY KEY,
+                    owner_id TEXT NOT NULL REFERENCES platform_process_bindings(owner_id)
+                )"""
+            )
+            if not tables_before:
+                connection.execute(
+                    "INSERT INTO runner_store_identity VALUES(1,?,1,0)", (str(uuid4()),)
+                )
+            existing_triggers = {
+                row[0]
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type='trigger'")
+            }
+            for name, statement in platform_counter_triggers().items():
+                if name not in existing_triggers:
+                    connection.execute(statement)
         os.chmod(self.path, 0o600)
+
+    @staticmethod
+    def _validate_platform_storage_contract(connection: sqlite3.Connection) -> None:
+        tables = {
+            row[0]
+            for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            if not row[0].startswith("sqlite_")
+        }
+        triggers = dict(
+            connection.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger'")
+        )
+        if tables != PLATFORM_STATE_TABLES | {"runner_store_identity"} or any(
+            " ".join(triggers.get(name, "").split()) != " ".join(statement.split())
+            for name, statement in platform_counter_triggers().items()
+        ):
+            raise PlatformFenceError("platform_storage_schema_differs")
+
+    def platform_storage_snapshot(self) -> PlatformStorageSnapshot:
+        """Read an existing store identity without creating or adopting an old database."""
+        with self._platform_storage_read() as (_, snapshot):
+            return snapshot
+
+    @contextmanager
+    def _platform_storage_read(self, *, write: bool = False):
+        try:
+            before = self.path.lstat()
+            if not stat.S_ISREG(before.st_mode):
+                raise PlatformFenceError("platform_storage_identity_invalid")
+            connection = sqlite3.connect(self.path.as_uri() + "?mode=rw", uri=True)
+            connection.row_factory = sqlite3.Row
+            try:
+                connection.execute("PRAGMA foreign_keys=ON")
+                connection.execute("PRAGMA synchronous=FULL")
+                connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
+                row = connection.execute(
+                    "SELECT store_id,schema_revision,mutation_seq FROM runner_store_identity "
+                    "WHERE singleton=1"
+                ).fetchone()
+                if row is None or row[1] != 1:
+                    raise PlatformFenceError("platform_storage_identity_missing")
+                self._validate_platform_storage_contract(connection)
+                snapshot = PlatformStorageSnapshot(
+                    self.path, UUID(row[0]), row[2], (before.st_dev, before.st_ino)
+                )
+                yield connection, snapshot
+                if write:
+                    connection.commit()
+            finally:
+                connection.close()
+            after = self.path.lstat()
+            if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+                raise PlatformFenceError("platform_storage_replaced")
+        except (OSError, sqlite3.Error, ValueError, TypeError) as error:
+            raise PlatformFenceError("platform_storage_unavailable") from error
 
     async def enqueue(
         self,
@@ -8553,18 +8664,21 @@ class RunnerStateStore:
         return tuple(identities)
 
     def _load_durable_desired_command(self, deployment_instance_id: UUID) -> DurableDesiredCommand:
-        from custos.contracts.crucible_runner_command import (
-            CrucibleRunnerDeploymentCommandV1,
-        )
-
         instance_id = _uuid(deployment_instance_id, "deployment_instance_id")
         with self._outbox._connect() as connection:
             row = connection.execute(
                 "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?",
                 (instance_id,),
             ).fetchone()
+        return self._decode_durable_desired_command(row, deployment_instance_id)
+
+    def _decode_durable_desired_command(
+        self, row, deployment_instance_id: UUID
+    ) -> DurableDesiredCommand:
+        from custos.contracts.crucible_runner_command import CrucibleRunnerDeploymentCommandV1
+
         if row is None:
-            raise KeyError(instance_id)
+            raise KeyError(str(deployment_instance_id))
         if row["tenant_id"] != self._tenant_id or row["runner_id"] != str(self._runner_id):
             raise RunnerStateAuthorityError(
                 "durable desired command differs from local tenant/runner scope"
@@ -8595,6 +8709,96 @@ class RunnerStateStore:
             exact_subject=row["exact_subject"],
             verification_receipt=receipt,
         )
+
+    def platform_process_snapshot(
+        self, authority: EngineLifecycleAuthority
+    ) -> PlatformProcessSnapshot:
+        """Read signed desired and storage progress at the same SQLite snapshot."""
+        with self._outbox._platform_storage_read() as (connection, storage):
+            context = self._platform_context(connection, authority)
+            mirrors = tuple(
+                PlatformProcessBinding(
+                    UUID(row["owner_id"]),
+                    UUID(row["registry_id"]),
+                    row["process_epoch"],
+                    bytes(row["aliases"]),
+                    bytes(row["context"]),
+                    bytes(row["adapter_binding"]),
+                )
+                for row in connection.execute("SELECT * FROM platform_process_bindings")
+            )
+            head = connection.execute(
+                "SELECT owner_id FROM platform_process_heads WHERE instance_id=?",
+                (str(authority.deployment_instance_id),),
+            ).fetchone()
+            return PlatformProcessSnapshot(
+                storage, context, mirrors, UUID(head[0]) if head else None
+            )
+
+    def platform_storage_snapshot(self) -> PlatformStorageSnapshot:
+        return self._outbox.platform_storage_snapshot()
+
+    def _platform_context(self, connection, authority):
+        from custos.contracts.crucible_runner_command import CrucibleRunnerDeploymentCommandV1
+        from custos.core.runner_command_intake import compute_command_fingerprint
+
+        row = connection.execute(
+            "SELECT * FROM desired_deployments WHERE deployment_instance_id=?",
+            (str(authority.deployment_instance_id),),
+        ).fetchone()
+        try:
+            desired = self._decode_durable_desired_command(row, authority.deployment_instance_id)
+            exact = desired.command.exact_signed_event_bytes
+            observed = CrucibleRunnerDeploymentCommandV1.model_validate(
+                json.loads(exact)["payload"]
+            )
+            expected_subject = f"crucible.runner.command.v1.{observed.tenant_id}.{observed.runner_id}.{observed.mode}"
+            if (
+                observed.model_dump(mode="json") != desired.command.model_dump(mode="json")
+                or desired.exact_subject != expected_subject
+                or compute_command_fingerprint(
+                    subject=desired.exact_subject, verified_exact_event_bytes=exact
+                )
+                != desired.command_fingerprint
+            ):
+                raise PlatformFenceError("platform_desired_invalid")
+            context = PlatformProcessContext.from_durable_desired(desired)
+            if context.authority != authority:
+                raise PlatformFenceError("platform_desired_stale")
+            self._opening_gate_state(connection, authority)
+            return context
+        except (
+            RunnerStateAuthorityError,
+            RunnerStateDurabilityError,
+            KeyError,
+            ValueError,
+            TypeError,
+        ) as error:
+            raise PlatformFenceError("platform_desired_invalid") from error
+
+    def _record_platform_process_binding(self, account, registry_id, owner_id, epoch) -> None:
+        with self._outbox._platform_storage_read(write=True) as (connection, _):
+            context = self._platform_context(connection, account.context.authority)
+            if context.binding_bytes != account.context.binding_bytes:
+                raise PlatformFenceError("platform_desired_stale")
+            instance = str(context.authority.deployment_instance_id)
+            connection.execute(
+                "INSERT INTO platform_process_bindings VALUES(?,?,?,?,?,?,?)",
+                (
+                    str(owner_id),
+                    str(registry_id),
+                    epoch,
+                    instance,
+                    account.aliases_bytes,
+                    context.binding_bytes,
+                    account.adapter_binding,
+                ),
+            )
+            connection.execute(
+                "INSERT INTO platform_process_heads VALUES(?,?) ON CONFLICT(instance_id) "
+                "DO UPDATE SET owner_id=excluded.owner_id",
+                (instance, str(owner_id)),
+            )
 
     async def load_artifact_activation(
         self,

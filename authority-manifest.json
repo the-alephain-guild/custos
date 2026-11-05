@@ -3,6 +3,11 @@
   "project": "custos",
   "authority_documents": [
     {
+      "role": "platform_process_fence_foundation",
+      "path": "docs/authority/platform-process-fence.md",
+      "contract_only": true
+    },
+    {
       "role": "opening_inventory_runner_fact_v1",
       "path": "docs/authority/opening-inventory-runner-fact-v1.md"
     },

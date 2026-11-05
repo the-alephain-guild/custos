@@ -18,19 +18,59 @@ PROFILE = "native-capture-darwin7-v1"
 VERSION = "0.1.0.dev20261105+nt.papertrade.7"
 
 
-def _head() -> str:
-    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+def _head(repository: Path) -> str:
+    return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repository, text=True).strip()
 
 
-def test_fixed_source_export_has_truthful_metadata_without_touching_released_inputs(tmp_path):
+@pytest.fixture(scope="module")
+def source_repository(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Commit actual build inputs while keeping the developer checkout untouched."""
+    from scripts.build_native_candidate import SOURCE_PATHS
+
+    repository = tmp_path_factory.mktemp("native-candidate-source")
+    for relative in SOURCE_PATHS:
+        original = ROOT / relative
+        target = repository / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if original.is_dir():
+            shutil.copytree(
+                original,
+                target,
+                symlinks=True,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+            )
+        else:
+            shutil.copy2(original, target, follow_symlinks=False)
+    for arguments in (
+        ["init", "-q"],
+        ["config", "user.name", "Candidate source fixture"],
+        ["config", "user.email", "candidate@example.invalid"],
+        ["add", "--", *SOURCE_PATHS],
+        [
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-qm",
+            "Current candidate source fixture",
+        ],
+    ):
+        subprocess.run(["git", *arguments], cwd=repository, check=True, capture_output=True)
+    return repository
+
+
+def test_fixed_source_export_has_truthful_metadata_without_touching_released_inputs(
+    source_repository, tmp_path
+):
     from scripts.build_native_candidate import export_candidate_source
 
     protected = [ROOT / "pyproject.toml", ROOT / "uv.lock"]
     protected += list((ROOT / "docs/authority/receipts").rglob("*.json"))
     before = {p: hashlib.sha256(p.read_bytes()).hexdigest() for p in protected}
     exported = export_candidate_source(
-        repository_root=ROOT,
-        source_commit=_head(),
+        repository_root=source_repository,
+        source_commit=_head(source_repository),
         profile_id=PROFILE,
         output_root=tmp_path / "candidate",
     )
@@ -64,12 +104,12 @@ def test_fixed_source_export_has_truthful_metadata_without_touching_released_inp
     assert not (tmp_path / "candidate/candidate-source-profile.json").exists()
 
 
-def test_export_recipe_cannot_be_changed_through_a_mutable_alias(tmp_path):
+def test_export_recipe_cannot_be_changed_through_a_mutable_alias(source_repository, tmp_path):
     from scripts.build_native_candidate import export_candidate_source
 
     exported = export_candidate_source(
-        repository_root=ROOT,
-        source_commit=_head(),
+        repository_root=source_repository,
+        source_commit=_head(source_repository),
         profile_id=PROFILE,
         output_root=tmp_path / "candidate",
     )
@@ -80,12 +120,14 @@ def test_export_recipe_cannot_be_changed_through_a_mutable_alias(tmp_path):
     assert exported.recipe["engine"]["version"] == "2.0.0rc5+papertrade.7"
 
 
-def test_four_candidate_wheels_have_real_metadata_and_static_engine_payloads(tmp_path):
+def test_four_candidate_wheels_have_real_metadata_and_static_engine_payloads(
+    source_repository, tmp_path
+):
     from scripts.build_native_candidate import build_candidate_wheels, export_candidate_source
 
     exported = export_candidate_source(
-        repository_root=ROOT,
-        source_commit=_head(),
+        repository_root=source_repository,
+        source_commit=_head(source_repository),
         profile_id=PROFILE,
         output_root=tmp_path / "candidate",
     )
@@ -117,7 +159,9 @@ def test_four_candidate_wheels_have_real_metadata_and_static_engine_payloads(tmp
 
 
 @pytest.mark.integration
-def test_actual_native_archive_installs_with_all_four_candidate_packages(tmp_path):
+def test_actual_native_archive_installs_with_all_four_candidate_packages(
+    source_repository, tmp_path
+):
     archive = os.environ.get("CUSTOS_NATIVE_CANDIDATE_WHEEL")
     if archive is None:
         pytest.skip("an actual qualified native candidate archive must be provided explicitly")
@@ -125,8 +169,8 @@ def test_actual_native_archive_installs_with_all_four_candidate_packages(tmp_pat
 
     output = tmp_path / "runtime-candidate"
     profile = build_native_candidate(
-        repository_root=ROOT,
-        source_commit=_head(),
+        repository_root=source_repository,
+        source_commit=_head(source_repository),
         profile_id=PROFILE,
         native_wheel=Path(archive),
         python=ROOT / ".venv/bin/python",
@@ -146,7 +190,7 @@ def test_actual_native_archive_installs_with_all_four_candidate_packages(tmp_pat
         (ROOT / "packaging/runtime-profiles/candidate-source-profile-v1.schema.json").read_bytes()
     )
     Draft202012Validator(schema).validate(profile)
-    assert profile["source_commit"] == _head()
+    assert profile["source_commit"] == _head(source_repository)
     assert profile["source_version"] == VERSION
     assert profile["engine"]["abi"] == "cp312"
     assert profile["acceptance"] == {
@@ -176,7 +220,7 @@ def test_actual_native_archive_installs_with_all_four_candidate_packages(tmp_pat
     assert installed["profile_id"] == PROFILE
 
 
-def test_an_output_inside_an_existing_virtual_environment_is_refused(tmp_path):
+def test_an_output_inside_an_existing_virtual_environment_is_refused(source_repository, tmp_path):
     from scripts.build_native_candidate import export_candidate_source
 
     environment = tmp_path / "existing-environment"
@@ -185,15 +229,15 @@ def test_an_output_inside_an_existing_virtual_environment_is_refused(tmp_path):
     marker.write_text("include-system-site-packages = false\n")
     with pytest.raises(ValueError, match="existing virtual environment"):
         export_candidate_source(
-            repository_root=ROOT,
-            source_commit=_head(),
+            repository_root=source_repository,
+            source_commit=_head(source_repository),
             profile_id=PROFILE,
             output_root=environment / "candidate",
         )
     assert not (environment / "candidate").exists()
 
 
-def test_a_recipe_cannot_reuse_a_released_distribution_version(tmp_path):
+def test_a_recipe_cannot_reuse_a_released_distribution_version(source_repository, tmp_path):
     tool = tmp_path / "tool"
     (tool / "scripts").mkdir(parents=True)
     (tool / "packaging/runtime-profiles").mkdir(parents=True)
@@ -206,8 +250,8 @@ def test_a_recipe_cannot_reuse_a_released_distribution_version(tmp_path):
     api = runpy.run_path(str(tool / "scripts/build_native_candidate.py"))
     with pytest.raises(ValueError, match="candidate distribution version"):
         api["export_candidate_source"](
-            repository_root=ROOT,
-            source_commit=_head(),
+            repository_root=source_repository,
+            source_commit=_head(source_repository),
             profile_id=PROFILE,
             output_root=tmp_path / "candidate",
         )
@@ -215,7 +259,7 @@ def test_a_recipe_cannot_reuse_a_released_distribution_version(tmp_path):
 
 
 @pytest.mark.parametrize("digest", [None, 3, []])
-def test_malformed_recipe_digest_is_rejected_before_export(tmp_path, digest):
+def test_malformed_recipe_digest_is_rejected_before_export(source_repository, tmp_path, digest):
     tool = tmp_path / "tool"
     (tool / "scripts").mkdir(parents=True)
     (tool / "packaging/runtime-profiles").mkdir(parents=True)
@@ -228,8 +272,8 @@ def test_malformed_recipe_digest_is_rejected_before_export(tmp_path, digest):
     api = runpy.run_path(str(tool / "scripts/build_native_candidate.py"))
     with pytest.raises(ValueError, match="recipe"):
         api["export_candidate_source"](
-            repository_root=ROOT,
-            source_commit=_head(),
+            repository_root=source_repository,
+            source_commit=_head(source_repository),
             profile_id=PROFILE,
             output_root=tmp_path / "candidate",
         )
@@ -237,7 +281,7 @@ def test_malformed_recipe_digest_is_rejected_before_export(tmp_path, digest):
 
 
 @pytest.mark.integration
-def test_real_native_archive_cannot_be_renamed_to_another_engine(tmp_path):
+def test_real_native_archive_cannot_be_renamed_to_another_engine(source_repository, tmp_path):
     archive = os.environ.get("CUSTOS_NATIVE_CANDIDATE_WHEEL")
     if archive is None:
         pytest.skip("an actual qualified native candidate archive must be provided explicitly")
@@ -247,8 +291,8 @@ def test_real_native_archive_cannot_be_renamed_to_another_engine(tmp_path):
     os.link(archive, renamed)
     with pytest.raises(ValueError, match="native archive filename"):
         build_native_candidate(
-            repository_root=ROOT,
-            source_commit=_head(),
+            repository_root=source_repository,
+            source_commit=_head(source_repository),
             profile_id=PROFILE,
             native_wheel=renamed,
             python=ROOT / ".venv/bin/python",
@@ -257,12 +301,12 @@ def test_real_native_archive_cannot_be_renamed_to_another_engine(tmp_path):
     assert not (tmp_path / "candidate").exists()
 
 
-def test_built_metadata_cannot_retain_a_released_cross_package_pin(tmp_path):
+def test_built_metadata_cannot_retain_a_released_cross_package_pin(source_repository, tmp_path):
     from scripts.build_native_candidate import build_candidate_wheels, export_candidate_source
 
     exported = export_candidate_source(
-        repository_root=ROOT,
-        source_commit=_head(),
+        repository_root=source_repository,
+        source_commit=_head(source_repository),
         profile_id=PROFILE,
         output_root=tmp_path / "candidate",
     )
@@ -281,14 +325,14 @@ def test_built_metadata_cannot_retain_a_released_cross_package_pin(tmp_path):
     "profile,revision", [("unknown", None), ("released-sodex3-v1", None), (PROFILE, "HEAD")]
 )
 def test_export_requires_an_explicit_candidate_profile_and_exact_commit(
-    tmp_path, profile, revision
+    source_repository, tmp_path, profile, revision
 ):
     from scripts.build_native_candidate import export_candidate_source
 
     with pytest.raises(ValueError, match="unknown candidate|exact Git"):
         export_candidate_source(
-            repository_root=ROOT,
-            source_commit=revision or _head(),
+            repository_root=source_repository,
+            source_commit=revision or _head(source_repository),
             profile_id=profile,
             output_root=tmp_path / "candidate",
         )
@@ -296,11 +340,15 @@ def test_export_requires_an_explicit_candidate_profile_and_exact_commit(
 
 
 @pytest.mark.parametrize("mutation", ["tracked", "untracked", "symlink"])
-def test_source_export_rejects_dirty_inputs_and_committed_symlinks(tmp_path, mutation):
+def test_source_export_rejects_dirty_inputs_and_committed_symlinks(
+    source_repository, tmp_path, mutation
+):
     from scripts.build_native_candidate import export_candidate_source
 
     repository = tmp_path / "repository"
-    subprocess.run(["git", "clone", "--quiet", "--shared", str(ROOT), str(repository)], check=True)
+    subprocess.run(
+        ["git", "clone", "--quiet", "--shared", str(source_repository), str(repository)], check=True
+    )
     if mutation == "tracked":
         (repository / "README.md").write_text("changed source\n")
     elif mutation == "untracked":
@@ -338,27 +386,30 @@ def test_source_export_rejects_dirty_inputs_and_committed_symlinks(tmp_path, mut
     assert not (tmp_path / "candidate").exists()
 
 
-def test_output_cannot_overwrite_existing_files_or_enter_the_checkout(tmp_path):
+def test_output_cannot_overwrite_existing_files_or_enter_the_checkout(source_repository, tmp_path):
     from scripts.build_native_candidate import export_candidate_source
 
     marker = tmp_path / "candidate"
     marker.write_text("existing data")
     with pytest.raises(FileExistsError, match="must be new"):
         export_candidate_source(
-            repository_root=ROOT, source_commit=_head(), profile_id=PROFILE, output_root=marker
+            repository_root=source_repository,
+            source_commit=_head(source_repository),
+            profile_id=PROFILE,
+            output_root=marker,
         )
     assert marker.read_text() == "existing data"
     with pytest.raises(ValueError, match="outside the source checkout"):
         export_candidate_source(
-            repository_root=ROOT,
-            source_commit=_head(),
+            repository_root=source_repository,
+            source_commit=_head(source_repository),
             profile_id=PROFILE,
-            output_root=ROOT / "candidate-output",
+            output_root=source_repository / "candidate-output",
         )
 
 
 @pytest.mark.parametrize("mutation", ["duplicate", "noncanonical"])
-def test_recipe_rejects_ambiguous_or_noncanonical_identity(tmp_path, mutation):
+def test_recipe_rejects_ambiguous_or_noncanonical_identity(source_repository, tmp_path, mutation):
     tool = tmp_path / "tool"
     (tool / "scripts").mkdir(parents=True)
     (tool / "packaging/runtime-profiles").mkdir(parents=True)
@@ -374,8 +425,8 @@ def test_recipe_rejects_ambiguous_or_noncanonical_identity(tmp_path, mutation):
     api = runpy.run_path(str(tool / "scripts/build_native_candidate.py"))
     with pytest.raises(ValueError, match="duplicate|canonical"):
         api["export_candidate_source"](
-            repository_root=ROOT,
-            source_commit=_head(),
+            repository_root=source_repository,
+            source_commit=_head(source_repository),
             profile_id=PROFILE,
             output_root=tmp_path / "candidate",
         )
