@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import os
 import selectors
 import subprocess
 import sys
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -18,17 +20,28 @@ pytest.importorskip("nautilus_trader")
 WORKER = Path(__file__).with_name("platform_process_fence_worker.py")
 
 
-def response(process):
+def response(process, *, timeout_seconds=15):
+    if type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 15:
+        raise ValueError("response deadline must be positive and at most fifteen seconds")
+    deadline = time.monotonic() + timeout_seconds
+    buffered = getattr(process, "_ownership_response_bytes", b"")
     with selectors.DefaultSelector() as selector:
         selector.register(process.stdout, selectors.EVENT_READ)
-        if not selector.select(15):
-            process.kill()
-            _, error = process.communicate(timeout=5)
-            pytest.fail(f"worker failed to reach its real ownership barrier: {error}")
-    value = process.stdout.readline()
-    if not value:
-        _, error = process.communicate(timeout=5)
-        pytest.fail(f"worker exited before its ownership result: {error}")
+        while b"\n" not in buffered:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not selector.select(remaining):
+                process.kill()
+                _, error = process.communicate(timeout=5)
+                pytest.fail(f"worker failed to reach its real ownership barrier: {error}")
+            chunk = os.read(process.stdout.fileno(), 4096)
+            if not chunk:
+                if process.poll() is None:
+                    process.kill()
+                _, error = process.communicate(timeout=5)
+                pytest.fail(f"worker exited before its ownership result: {error}")
+            buffered += chunk
+    value, _, remaining_bytes = buffered.partition(b"\n")
+    process._ownership_response_bytes = remaining_bytes
     return json.loads(value)
 
 
@@ -368,3 +381,74 @@ def test_unmirrored_pending_rewind_has_no_anchor_and_only_returns_a_new_closed_o
         if second is not None:
             terminate(second)
         registry.close()
+
+
+def ipc_process(payload):
+    """Only an IPC framing fixture; it makes no ownership or engine claim."""
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-I",
+            "-B",
+            "-c",
+            "import os,sys; os.write(1,bytes.fromhex(sys.argv[1])); "
+            "print('written',file=sys.stderr,flush=True); sys.stdin.readline()",
+            payload.hex(),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert process.stderr.readline().strip() == "written"
+    return process
+
+
+def test_response_consumes_two_coalesced_frames_while_child_waits_for_stdin():
+    process = ipc_process(b'{"status":"first"}\n{"status":"second"}\n')
+    try:
+        assert response(process) == {"status": "first"}
+        assert response(process) == {"status": "second"}
+        assert process.poll() is None
+    finally:
+        terminate(process)
+
+
+def test_response_rejects_eof_before_the_next_complete_frame():
+    process = ipc_process(b'{"status":"first"}\n')
+    try:
+        assert response(process) == {"status": "first"}
+        process.stdin.write("finish\n")
+        process.stdin.flush()
+        with pytest.raises(pytest.fail.Exception, match="exited before"):
+            response(process)
+    finally:
+        terminate(process)
+
+
+def test_response_rejects_unterminated_json_at_eof():
+    process = ipc_process(b'{"status":"not_a_complete_frame"}')
+    try:
+        process.stdin.write("finish\n")
+        process.stdin.flush()
+        with pytest.raises(pytest.fail.Exception, match="exited before"):
+            response(process)
+    finally:
+        terminate(process)
+
+
+def test_response_partial_frame_obeys_one_short_regression_deadline():
+    process = ipc_process(b'{"status":"unfinished"')
+    try:
+        # The real ownership callers retain the default fifteen-second deadline.
+        with pytest.raises(pytest.fail.Exception, match="ownership barrier"):
+            response(process, timeout_seconds=0.1)
+        assert process.poll() is not None
+    finally:
+        terminate(process)
+
+
+@pytest.mark.parametrize("timeout_seconds", [0, -1, 16, True, float("inf"), float("nan")])
+def test_response_regression_deadline_cannot_extend_ownership_wait(timeout_seconds):
+    with pytest.raises(ValueError, match="at most fifteen seconds"):
+        response(None, timeout_seconds=timeout_seconds)
