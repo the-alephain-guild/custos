@@ -1102,6 +1102,20 @@ def test_the_gate_sits_on_every_outbound_method() -> None:
         )
 
 
+def test_unsigned_boundary_does_not_bind_a_platform_native_control_factory() -> None:
+    class DeliveryAware(_GatedStrategy):
+        def _bind_control_delivery(self, _factory):
+            pytest.fail("an independent boundary must not manufacture a platform owner binding")
+
+    strategy = DeliveryAware()
+    log: list[tuple] = []
+    install_order_gate(strategy, _gate(_boundary(_Store(log))))
+    order = _order("independent-order")
+    strategy.submit_order(order)
+    assert strategy.submitted == [order]
+    assert [entry[0] for entry in log] == ["reserve"]
+
+
 def test_a_strategy_that_lets_nautilus_submit_for_it_is_refused() -> None:
     """The order manager submits contingent and emulated orders from inside the
     engine, where the gate is not. The switch defaults off; this is what makes

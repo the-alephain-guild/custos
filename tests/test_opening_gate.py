@@ -194,6 +194,65 @@ async def test_closed_gate_allows_cancellation_for_its_current_signed_authority(
     assert runtime.refusals == []
 
 
+async def test_native_delivery_binds_the_real_durable_control_factory_without_opening(runtime):
+    from custos.core.order_reservation_boundary import ExecutionControlUnavailable
+    from custos.engines.nautilus.runner_safety import install_order_gate
+    from tests.engines.nautilus.test_runner_safety_execution_boundary import _GatedStrategy, _order
+
+    class DeliveryAware(_GatedStrategy):
+        def _bind_control_delivery(self, context_factory):
+            self.context_factory = context_factory
+
+    strategy = DeliveryAware()
+    install_order_gate(strategy, runtime.gate)
+    assert strategy.context_factory.__self__ is runtime.boundary
+    with strategy.context_factory():
+        with sqlite3.connect(runtime.database, timeout=0) as other:
+            with pytest.raises(sqlite3.OperationalError, match="locked"):
+                other.execute("BEGIN IMMEDIATE")
+    with sqlite3.connect(runtime.database, timeout=0) as other:
+        other.execute("BEGIN IMMEDIATE")
+        other.rollback()
+    assert strategy.submit_order(_order("still-closed")) is False
+    assert strategy.submitted == []
+    assert [refusal.reason_code for refusal in runtime.refusals] == ["awaiting_opening_release"]
+
+    def pause(event):
+        event["aggregate_version"] = 2
+        event["payload"]["generation"] = 2
+        event["payload"]["lifecycle_state"] = "paused"
+
+    _, _, changed = _verified_command(mutate_event=pause)
+    await runtime.store.record_desired_command(
+        command=changed.command,
+        command_fingerprint=changed.command_fingerprint,
+        verification_receipt=changed.verification_receipt,
+    )
+    with pytest.raises(ExecutionControlUnavailable):
+        with strategy.context_factory():
+            pytest.fail("the original native context admitted a retired signed authority")
+
+
+@pytest.mark.parametrize("binding", ["not-callable", "raises"])
+async def test_native_delivery_binding_failure_precedes_hook_installation(runtime, binding):
+    from custos.engines.nautilus.runner_safety import install_order_gate
+    from custos.engines.nautilus.strategy_hooks import StrategyHookUnsupported
+    from tests.engines.nautilus.test_runner_safety_execution_boundary import _GatedStrategy
+
+    class DeliveryAware(_GatedStrategy):
+        def _bind_control_delivery(self, _context_factory):
+            raise RuntimeError("native owner is unavailable")
+
+    strategy = DeliveryAware()
+    if binding == "not-callable":
+        strategy._bind_control_delivery = object()
+    expected = StrategyHookUnsupported if binding == "not-callable" else RuntimeError
+    with pytest.raises(expected):
+        install_order_gate(strategy, runtime.gate)
+    assert "submit_order" not in vars(strategy)
+    assert "cancel_order" not in vars(strategy)
+
+
 async def test_strategy_config_cannot_forge_a_release_or_select_an_unsigned_lane(runtime):
     from custos.engines.nautilus.runner_safety import install_order_gate
     from tests.engines.nautilus.test_runner_safety_execution_boundary import _GatedStrategy, _order

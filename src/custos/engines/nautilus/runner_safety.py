@@ -1042,6 +1042,11 @@ def require_no_bypass_config(strategy: Any) -> None:
 def install_order_gate(strategy: Any, gate: RunnerSafetyOrderGate) -> None:
     """Put the gate in front of every way this strategy can reach the venue."""
     require_no_bypass_config(strategy)
+    bind_native_delivery = getattr(strategy, "_bind_control_delivery", None)
+    if bind_native_delivery is not None and gate._boundary.platform_opening_gate is not None:
+        if not callable(bind_native_delivery):
+            raise StrategyHookUnsupported("native control delivery binding is not callable")
+        bind_native_delivery(gate._boundary.dispatch_control)
     methods = (
         (SUBMIT_ORDER, gate.submit_order),
         (SUBMIT_ORDER_LIST, gate.submit_order_list),
