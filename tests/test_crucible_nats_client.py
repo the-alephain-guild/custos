@@ -173,3 +173,25 @@ def test_policy_subject_and_verified_payload_must_match_exact_mode_session() -> 
         )
     with pytest.raises(RunnerNatsTransportError, match="payload mode differs"):
         client.assert_policy_binding(subject, SimpleNamespace(trading_mode="live"))
+
+
+def test_opening_release_subject_uses_the_authenticated_uuid():
+    runner = UUID("abcdefab-cdef-4abc-8def-abcdefabcdef")
+    subject = f"crucible.runner.opening-release.v1.acme.{runner}.sandbox"
+    profile = _TransportProfile(
+        runner_id=runner,
+        durable_config={
+            "filter_subjects": [
+                f"crucible.runner.command.v1.acme.{runner}.sandbox",
+                f"crucible.runner.policy.v1.acme.{runner}.sandbox",
+                subject,
+            ]
+        },
+    )
+    client = CrucibleNatsClient(
+        connection_profile=profile,
+        tenant_id="acme",
+        runner_id=str(runner).upper(),
+        machine_credential=_MachineCredential(runner_id=runner),
+    )
+    client.assert_opening_release_binding(subject)

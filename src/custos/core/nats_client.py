@@ -113,9 +113,8 @@ class CrucibleNatsClient:
     def assert_opening_release_binding(self, subject: str) -> None:
         """Require the release subject on the authenticated control durable."""
         mode = self.connection_profile.trading_mode
-        expected = (
-            f"{RUNNER_OPENING_RELEASE_SUBJECT_PREFIX}.{self.tenant_id}.{self.runner_id}.{mode}"
-        )
+        runner = self.connection_profile.runner_id
+        expected = f"{RUNNER_OPENING_RELEASE_SUBJECT_PREFIX}.{self.tenant_id}.{runner}.{mode}"
         subjects = self.connection_profile.durable_config["filter_subjects"]
         if len(subjects) != 3 or subjects[2] != expected or subject != expected:
             raise RunnerNatsTransportError(
