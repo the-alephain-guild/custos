@@ -350,6 +350,14 @@ def _build_vault(args: argparse.Namespace) -> PerKeyVault:
     )
 
 
+def _advertises_opening_release(capability: RunnerCapabilityReceipt) -> bool:
+    manifest = capability.capability_manifest
+    return (
+        manifest.get("fact_kind_projectors", {}).get(OPENING_RELEASE_FACT_KIND) == "risk"
+        and manifest.get("runner_fact_contracts", {}).get("risk", {}).get("opening_release") == "v1"
+    )
+
+
 def _build_host(
     args: argparse.Namespace,
     *,
@@ -370,6 +378,12 @@ def _build_host(
             f"engine {engine!r} is not available "
             f"(available: {', '.join(sorted(_AVAILABLE_ENGINES))})"
         )
+    if (
+        capability_receipt is not None
+        and _advertises_opening_release(capability_receipt)
+        and (engine != "nautilus" or platform_process_fence is None)
+    ):
+        raise PlatformFenceError("platform_registry_unavailable")
     if engine == "nautilus":
         from custos.engines.nautilus.host import NtTradingNodeHost
 
@@ -1347,11 +1361,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
             )
             manifest = capability.capability_manifest
             opening_release_observer = None
-            if (
-                manifest.get("fact_kind_projectors", {}).get(OPENING_RELEASE_FACT_KIND) == "risk"
-                and manifest.get("runner_fact_contracts", {}).get("risk", {}).get("opening_release")
-                == "v1"
-            ):
+            if _advertises_opening_release(capability):
                 opening_release_observer = partial(
                     observe_pending_opening_release,
                     host=host,

@@ -81,3 +81,22 @@ def test_build_host_refuses_an_unusable_proxy_without_echoing_it(monkeypatch) ->
 
     assert "proxy-secret" not in str(raised.value)
     assert "CUSTOS_VENUE_PROXY_URL" in str(raised.value)
+
+
+@pytest.mark.parametrize("engine", ["nautilus", "sandbox-sim"])
+def test_opening_release_capability_requires_the_real_native_host_and_machine_fence(engine):
+    from argparse import Namespace
+    from types import SimpleNamespace
+
+    from custos.cli._daemon import _build_host
+    from custos.core.platform_process_identity import PlatformFenceError
+
+    capability = SimpleNamespace(
+        capability_manifest={
+            "fact_kind_projectors": {"RunnerOpeningReleaseFact.v1": "risk"},
+            "runner_fact_contracts": {"risk": {"opening_release": "v1"}},
+        }
+    )
+    args = Namespace(engine=engine, tenant_id="acme", runner_id="runner")
+    with pytest.raises(PlatformFenceError, match="platform_registry_unavailable"):
+        _build_host(args, capability_receipt=capability)
