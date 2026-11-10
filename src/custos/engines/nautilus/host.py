@@ -1201,6 +1201,12 @@ class NtTradingNodeHost:
                 trading_mode, spec, credential, venue
             )
             runner_safety_boundary = await self._build_runner_safety_boundary(spec)
+            lease = self._platform_process_leases.get(deployment_instance_id)
+            if lease is not None and runner_safety_boundary is not None:
+                opening_gate = runner_safety_boundary.platform_opening_gate
+                if opening_gate is None:
+                    raise RuntimeError("platform process ownership requires a signed opening gate")
+                opening_gate.bind_process_lease(lease)
             nautilus_cfg = spec.get("nautilus_config") or {}
             self._claim_execution_account_partition(spec, identity)
             builder = LiveNode.builder(

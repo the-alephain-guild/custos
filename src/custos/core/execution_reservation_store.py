@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Protocol
 from uuid import UUID
 
 from custos.core.engine_protocol import EngineLifecycleAuthority
+from custos.core.platform_process_fence import PlatformProcessLease
 from custos.core.runner_fact import RunnerStateAuthorityError
 
 
@@ -27,6 +29,12 @@ class PlatformOpeningGate:
     def __init__(self, store: Any, authority: EngineLifecycleAuthority) -> None:
         self._store = store
         self.authority = authority
+        self._process_lease: PlatformProcessLease | None = None
+
+    def bind_process_lease(self, lease: PlatformProcessLease) -> None:
+        if self._process_lease is not None or lease.authority != self.authority:
+            raise RunnerStateAuthorityError("opening gate differs from the platform process lease")
+        self._process_lease = lease
 
     def assert_released(self) -> None:
         try:
@@ -40,8 +48,14 @@ class PlatformOpeningGate:
         )
         raise RunnerOpeningGateClosed(reason)
 
+    @contextmanager
     def control_action(self):
-        return self._store.opening_control_action(self.authority)
+        with self._store.opening_control_action(self.authority) as connection:
+            if self._process_lease is None:
+                yield
+            else:
+                with self._process_lease.dispatch_control(connection):
+                    yield
 
     def defer_refusal(self, callback: Callable[[], None]) -> bool:
         return self._store.defer_opening_control_callback(callback)

@@ -197,16 +197,9 @@ async def test_platform_claim_precedes_validation_and_survives_stop_until_reaped
 ) -> None:
     from uuid import uuid4
 
-    from custos_toolkit_nautilus.adapter.config.trading import TradingConfig
-    from nautilus_trader.model import BarType, InstrumentId
-
     from custos.core.platform_process_fence import PlatformProcessRegistry
     from custos.core.platform_process_identity import PlatformFenceError
     from custos.engines.nautilus.platform_account_identity import PlatformExecutionProcessFence
-    from tests.fixtures.minimal_supertrend_strategy import (
-        MinimalSupertrendConfig,
-        MinimalSupertrendStrategy,
-    )
     from tests.test_platform_process_fence import signed_sandbox_account
 
     store, account = await signed_sandbox_account(tmp_path / "runner.sqlite3")
@@ -217,16 +210,15 @@ async def test_platform_claim_precedes_validation_and_survives_stop_until_reaped
     spec = account.context.spec
     instance = spec["deployment_instance_id"]
     venue = nautilus_host._venue_module_for(spec["connector"])
-    instrument = InstrumentId.from_str(venue.build_instrument_id_strings(spec)[0])
     artifact = SimpleNamespace(
         activation_id="signed-process-fence-fixture",
-        strategy=MinimalSupertrendStrategy(
-            MinimalSupertrendConfig(
-                instrument_id=instrument,
-                bar_type=BarType.from_str(f"{instrument}-1-MINUTE-LAST-EXTERNAL"),
-                trading=TradingConfig(connector=spec["connector"], leverage=spec["leverage"]),
-                external_order_instrument_ids=[instrument],
-            )
+        strategy=SimpleNamespace(
+            on_order_event=lambda _event: None,
+            on_position_event=lambda _event: None,
+            config=SimpleNamespace(
+                trading=SimpleNamespace(connector=spec["connector"], leverage=spec["leverage"]),
+                external_order_instrument_ids=venue.build_instrument_id_strings(spec),
+            ),
         ),
     )
     seen = []

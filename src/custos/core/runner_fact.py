@@ -3634,6 +3634,22 @@ class RunnerFactOutbox:
         with self._platform_storage_read() as (_, snapshot):
             return snapshot
 
+    def _platform_storage_snapshot_on(
+        self, connection: sqlite3.Connection, identity: os.stat_result
+    ) -> PlatformStorageSnapshot:
+        if not stat.S_ISREG(identity.st_mode):
+            raise PlatformFenceError("platform_storage_identity_invalid")
+        row = connection.execute(
+            "SELECT store_id,schema_revision,mutation_seq FROM runner_store_identity "
+            "WHERE singleton=1"
+        ).fetchone()
+        if row is None or row[1] != 1:
+            raise PlatformFenceError("platform_storage_identity_missing")
+        self._validate_platform_storage_contract(connection)
+        return PlatformStorageSnapshot(
+            self.path, UUID(row[0]), row[2], (identity.st_dev, identity.st_ino)
+        )
+
     @contextmanager
     def _platform_storage_read(self, *, write: bool = False):
         try:
@@ -3646,16 +3662,7 @@ class RunnerFactOutbox:
                 connection.execute("PRAGMA foreign_keys=ON")
                 connection.execute("PRAGMA synchronous=FULL")
                 connection.execute("BEGIN IMMEDIATE" if write else "BEGIN")
-                row = connection.execute(
-                    "SELECT store_id,schema_revision,mutation_seq FROM runner_store_identity "
-                    "WHERE singleton=1"
-                ).fetchone()
-                if row is None or row[1] != 1:
-                    raise PlatformFenceError("platform_storage_identity_missing")
-                self._validate_platform_storage_contract(connection)
-                snapshot = PlatformStorageSnapshot(
-                    self.path, UUID(row[0]), row[2], (before.st_dev, before.st_ino)
-                )
+                snapshot = self._platform_storage_snapshot_on(connection, before)
                 yield connection, snapshot
                 if write:
                     connection.commit()
@@ -5755,7 +5762,7 @@ class RunnerStateStore:
             # must recheck authority using this same transaction, not wait for
             # its own thread's outer SQLite writer lock.
             self._opening_gate_state(control.connection, authority)
-            yield
+            yield control.connection
             return
         connection = self._outbox._connect()
         control.connection = connection
@@ -5763,7 +5770,7 @@ class RunnerStateStore:
         try:
             connection.execute("BEGIN IMMEDIATE")
             self._opening_gate_state(connection, authority)
-            yield
+            yield connection
             connection.commit()
         except BaseException:
             connection.rollback()
@@ -9061,25 +9068,44 @@ class RunnerStateStore:
     ) -> PlatformProcessSnapshot:
         """Read signed desired and storage progress at the same SQLite snapshot."""
         with self._outbox._platform_storage_read() as (connection, storage):
-            context = self._platform_context(connection, authority)
-            mirrors = tuple(
-                PlatformProcessBinding(
-                    UUID(row["owner_id"]),
-                    UUID(row["registry_id"]),
-                    row["process_epoch"],
-                    bytes(row["aliases"]),
-                    bytes(row["context"]),
-                    bytes(row["adapter_binding"]),
-                )
-                for row in connection.execute("SELECT * FROM platform_process_bindings")
+            return self._platform_process_snapshot_on(connection, storage, authority)
+
+    def platform_process_snapshot_on_control(
+        self, connection: sqlite3.Connection, authority: EngineLifecycleAuthority
+    ) -> PlatformProcessSnapshot:
+        if connection is None or connection is not self._outbox._opening_control.connection:
+            raise PlatformFenceError("platform_storage_identity_invalid")
+        try:
+            storage = self._outbox._platform_storage_snapshot_on(
+                connection, self._outbox.path.lstat()
             )
-            head = connection.execute(
-                "SELECT owner_id FROM platform_process_heads WHERE instance_id=?",
-                (str(authority.deployment_instance_id),),
-            ).fetchone()
-            return PlatformProcessSnapshot(
-                storage, context, mirrors, UUID(head[0]) if head else None
+        except (OSError, sqlite3.Error, ValueError, TypeError) as error:
+            raise PlatformFenceError("platform_storage_unavailable") from error
+        return self._platform_process_snapshot_on(connection, storage, authority)
+
+    def _platform_process_snapshot_on(
+        self,
+        connection: sqlite3.Connection,
+        storage: PlatformStorageSnapshot,
+        authority: EngineLifecycleAuthority,
+    ) -> PlatformProcessSnapshot:
+        context = self._platform_context(connection, authority)
+        mirrors = tuple(
+            PlatformProcessBinding(
+                UUID(row["owner_id"]),
+                UUID(row["registry_id"]),
+                row["process_epoch"],
+                bytes(row["aliases"]),
+                bytes(row["context"]),
+                bytes(row["adapter_binding"]),
             )
+            for row in connection.execute("SELECT * FROM platform_process_bindings")
+        )
+        head = connection.execute(
+            "SELECT owner_id FROM platform_process_heads WHERE instance_id=?",
+            (str(authority.deployment_instance_id),),
+        ).fetchone()
+        return PlatformProcessSnapshot(storage, context, mirrors, UUID(head[0]) if head else None)
 
     def platform_storage_snapshot(self) -> PlatformStorageSnapshot:
         return self._outbox.platform_storage_snapshot()

@@ -807,3 +807,38 @@ def test_daemon_machine_binding_requires_the_private_exact_registration(
         reason = "binding_invalid" if scenario == "wrong_registry" else "storage_unsafe"
         with pytest.raises(PlatformFenceError, match=reason):
             PlatformProcessRegistry.open_machine_authority()
+
+
+async def test_opening_control_reuses_the_writer_and_rejects_retired_process(tmp_path, monkeypatch):
+    from custos.core.execution_reservation_store import PlatformOpeningGate, RunnerOpeningGateClosed
+    from custos.core.platform_process_fence import PlatformProcessRegistry
+
+    store, account = await signed_sandbox_account(tmp_path / "runner.sqlite3")
+    authority = account.context.authority
+    registry = PlatformProcessRegistry.initialize(tmp_path / "authority", host_scope_id=uuid4())
+    registry.register_store(store)
+    lease = registry.claim_closed(store, account)
+    gate = PlatformOpeningGate(store, authority)
+    gate.bind_process_lease(lease)
+    seen = []
+    snapshot_on_control = store.platform_process_snapshot_on_control
+
+    def capture_writer(connection, expected_authority):
+        seen.append(connection)
+        return snapshot_on_control(connection, expected_authority)
+
+    monkeypatch.setattr(store, "platform_process_snapshot_on_control", capture_writer)
+    try:
+        with gate.control_action():
+            with store.opening_control_action(authority) as writer:
+                with gate.control_action():
+                    assert seen == [writer, writer]
+        with pytest.raises(RunnerOpeningGateClosed, match="awaiting_opening_release"):
+            gate.assert_released()
+        lease.close()
+        with pytest.raises(PlatformFenceError, match="platform_owner_stale"):
+            with gate.control_action():
+                pytest.fail("retired owner admitted a control action")
+    finally:
+        lease.close()
+        registry.close()

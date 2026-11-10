@@ -693,6 +693,10 @@ class PlatformProcessLease:
         return "claimed_closed"
 
     @property
+    def authority(self):
+        return self._account.context.authority
+
+    @property
     def owner_id(self) -> UUID:
         return self._owner_id
 
@@ -724,6 +728,21 @@ class PlatformProcessLease:
             self._assert_snapshot(connection, snapshot)
         self._remember(snapshot)
 
+    @contextmanager
+    def dispatch_control(self, outbox_connection: sqlite3.Connection):
+        """Hold the process lease while the opening writer admits a control action."""
+        with self._state_lock:
+            self._require_open()
+            self._registry._require_current()
+            snapshot = self._store.platform_process_snapshot_on_control(
+                outbox_connection, self.authority
+            )
+            self._require_snapshot_identity(snapshot)
+            with self._registry._transaction(write=False) as connection:
+                self._assert_snapshot(connection, snapshot)
+            self._remember(snapshot)
+            yield
+
     def _remember(self, snapshot) -> None:
         with self._state_lock:
             self._require_open()
@@ -735,6 +754,10 @@ class PlatformProcessLease:
         self._require_open()
         self._registry._require_current()
         snapshot = self._store.platform_process_snapshot(self._account.context.authority)
+        self._require_snapshot_identity(snapshot)
+        return snapshot
+
+    def _require_snapshot_identity(self, snapshot) -> None:
         with self._state_lock:
             self._require_open()
             if (
@@ -743,7 +766,6 @@ class PlatformProcessLease:
                 or snapshot.storage.mutation_seq < self._sequence
             ):
                 raise PlatformFenceError("platform_owner_stale")
-        return snapshot
 
     def _assert_snapshot(self, connection, snapshot) -> None:
         with self._state_lock:
@@ -790,8 +812,8 @@ class PlatformProcessLease:
         self._remember(snapshot)
 
     def retire_closed(self) -> None:
-        self._require_open()
-        with self._registry._transaction() as connection:
+        with self._state_lock, self._registry._transaction() as connection:
+            self._require_open()
             row = connection.execute(
                 "SELECT process_epoch,phase FROM platform_process_claims WHERE owner_id=?",
                 (str(self.owner_id),),
@@ -817,8 +839,8 @@ class PlatformProcessLease:
         with self._registry._mutex:
             if self._closed:
                 return
-            self.retire_closed()
             with self._state_lock:
+                self.retire_closed()
                 for _, descriptor in reversed(self._locks):
                     _close(descriptor)
                 self._closed = True
