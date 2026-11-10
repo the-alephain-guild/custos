@@ -61,9 +61,11 @@ from custos.core.runner_command_intake import (
     CommandIdentityDecision,
     CommandTerminalOutcome,
     CommandVerificationReceipt,
+    CrucibleRunnerCommandAuthenticator,
     DesiredCommandRecord,
     DurableCommandOutcome,
     InboundCommandDisposition,
+    VerifiedOpeningRelease,
     VerifiedRunnerCommand,
     classify_command_identity,
     compute_command_fingerprint,
@@ -239,6 +241,7 @@ _SUB_ACCOUNT_PATTERN: Final = re.compile(
     r"[^\s\x00-\x1f\x7f](?:[^\x00-\x1f\x7f]{0,126}[^\s\x00-\x1f\x7f])?"
 )
 RUNNER_STATE_SCHEMA_VERSION: Final = 1
+OPENING_RELEASE_FACT_KIND: Final = "RunnerOpeningReleaseFact.v1"
 RUNNER_FACT_KIND_PROJECTORS: Final[Mapping[str, str]] = MappingProxyType(
     {
         "execution_fill": "reconciliation",
@@ -3266,6 +3269,26 @@ class RunnerFactOutbox:
                     FOREIGN KEY (deployment_instance_id)
                         REFERENCES desired_deployments(deployment_instance_id)
                 );
+                CREATE TABLE IF NOT EXISTS runner_opening_release_inbox (
+                    release_id TEXT PRIMARY KEY,
+                    deployment_instance_id TEXT NOT NULL
+                        REFERENCES desired_deployments(deployment_instance_id),
+                    generation INTEGER NOT NULL CHECK (generation > 0),
+                    desired_fingerprint TEXT NOT NULL,
+                    exact_subject TEXT NOT NULL,
+                    exact_event_bytes BLOB NOT NULL,
+                    signed_envelope BLOB NOT NULL,
+                    state TEXT NOT NULL CHECK (state IN ('awaiting_observation', 'retired', 'refused')),
+                    recorded_at_ns INTEGER NOT NULL,
+                    retired_at_ns INTEGER,
+                    fact_batch_id TEXT,
+                    signed_fact_batch BLOB,
+                    CHECK ((state = 'retired') = (retired_at_ns IS NOT NULL)),
+                    CHECK ((state = 'refused') = (fact_batch_id IS NOT NULL AND signed_fact_batch IS NOT NULL))
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS runner_opening_release_one_pending
+                    ON runner_opening_release_inbox(deployment_instance_id)
+                    WHERE state = 'awaiting_observation';
                 CREATE TABLE IF NOT EXISTS artifact_activation (
                     activation_id TEXT PRIMARY KEY,
                     deployment_instance_id TEXT NOT NULL,
@@ -3864,6 +3887,8 @@ class RunnerFactOutbox:
         authority: RunnerFactAuthority,
         identity: RunnerFactIdentity,
         facts: Sequence[Mapping[str, Any]],
+        *,
+        opening_release_id: str | None = None,
     ) -> UUID | None:
         if not facts:
             return None
@@ -3877,7 +3902,16 @@ class RunnerFactOutbox:
                 raise RunnerFactContractError("fact seq is allocated only by RunnerFactOutbox")
             validate_runner_fact_payload(fact)
             kind = _non_empty(fact.get("kind"), "fact.kind")
-            if kind not in RUNNER_FACT_KIND_PROJECTORS:
+            if kind == OPENING_RELEASE_FACT_KIND:
+                if (
+                    opening_release_id is None
+                    or fact.get("release_id") != opening_release_id
+                    or len(facts) != 1
+                ):
+                    raise RunnerFactContractError(
+                        "opening release fact requires its exclusive durable transaction"
+                    )
+            elif kind not in RUNNER_FACT_KIND_PROJECTORS:
                 raise RunnerFactContractError(f"unsupported runner fact kind: {kind}")
             fact["kind"] = kind
             if kind == "equity_snapshot":
@@ -5357,6 +5391,14 @@ class RunnerStateStore:
                         time.time_ns(),
                     ),
                 )
+                connection.execute(
+                    """
+                    UPDATE runner_opening_release_inbox
+                    SET state = 'retired', retired_at_ns = ?
+                    WHERE deployment_instance_id = ? AND state = 'awaiting_observation'
+                    """,
+                    (time.time_ns(), str(command.deployment_instance_id)),
+                )
             replay_disposition = InboundCommandDisposition.NONE
             if decision is CommandIdentityDecision.IDEMPOTENT:
                 outcome = connection.execute(
@@ -5388,6 +5430,304 @@ class RunnerStateStore:
             raise
         finally:
             connection.close()
+
+    async def record_opening_release(
+        self,
+        authenticator: CrucibleRunnerCommandAuthenticator,
+        *,
+        subject: str,
+        signed_envelope: bytes,
+    ) -> Literal["recorded", "replayed", "retired"]:
+        """Acknowledge durable receipt only. Account proof is collected later."""
+        verified = authenticator.verify_opening_release(
+            subject=subject, signed_envelope_bytes=signed_envelope
+        )
+        return await asyncio.to_thread(self._record_opening_release, verified, signed_envelope)
+
+    def _record_opening_release(
+        self, verified: VerifiedOpeningRelease, signed_envelope: bytes
+    ) -> Literal["recorded", "replayed", "retired"]:
+        command = verified.command
+        connection = self._outbox._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            previous = connection.execute(
+                "SELECT * FROM runner_opening_release_inbox WHERE release_id = ?",
+                (command.release_id,),
+            ).fetchone()
+            if previous is not None:
+                if (
+                    previous["exact_subject"] != verified.exact_subject
+                    or bytes(previous["exact_event_bytes"]) != verified.exact_signed_event_bytes
+                ):
+                    raise RunnerStateAuthorityError(
+                        "opening release identity has different signed bytes"
+                    )
+                if previous["state"] == "retired":
+                    connection.commit()
+                    return "retired"
+                if previous["state"] == "refused":
+                    connection.commit()
+                    return "replayed"
+            desired = self._require_opening_release_desired(connection, verified)
+            if previous is not None:
+                if previous["desired_fingerprint"] != desired.command_fingerprint:
+                    raise RunnerStateDurabilityError(
+                        "pending release differs from its durable desired command"
+                    )
+                connection.commit()
+                return "replayed"
+            if (
+                connection.execute(
+                    "SELECT 1 FROM runner_opening_release_inbox "
+                    "WHERE deployment_instance_id = ? AND state = 'awaiting_observation'",
+                    (command.deployment_instance_id,),
+                ).fetchone()
+                is not None
+            ):
+                raise RunnerStateAuthorityError(
+                    "another opening release is awaiting its observation"
+                )
+            connection.execute(
+                """
+                INSERT INTO runner_opening_release_inbox (
+                    release_id, deployment_instance_id, generation, desired_fingerprint,
+                    exact_subject, exact_event_bytes, signed_envelope, state, recorded_at_ns
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'awaiting_observation', ?)
+                """,
+                (
+                    command.release_id,
+                    command.deployment_instance_id,
+                    command.generation,
+                    desired.command_fingerprint,
+                    verified.exact_subject,
+                    verified.exact_signed_event_bytes,
+                    signed_envelope,
+                    time.time_ns(),
+                ),
+            )
+            connection.commit()
+            return "recorded"
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def load_pending_opening_release(
+        self,
+        deployment_instance_id: UUID,
+        authenticator: CrucibleRunnerCommandAuthenticator,
+    ) -> VerifiedOpeningRelease | None:
+        """Reauthenticate the retained envelope before collecting account evidence."""
+        with self._outbox._connect() as connection:
+            connection.execute("BEGIN")
+            row = connection.execute(
+                "SELECT * FROM runner_opening_release_inbox "
+                "WHERE deployment_instance_id = ? AND state = 'awaiting_observation'",
+                (str(deployment_instance_id),),
+            ).fetchone()
+            if row is None:
+                return None
+            verified = authenticator.verify_opening_release(
+                subject=row["exact_subject"], signed_envelope_bytes=bytes(row["signed_envelope"])
+            )
+            if (
+                verified.command.release_id != row["release_id"]
+                or verified.command.deployment_instance_id != str(deployment_instance_id)
+                or verified.command.generation != row["generation"]
+                or verified.exact_signed_event_bytes != bytes(row["exact_event_bytes"])
+            ):
+                raise RunnerStateDurabilityError(
+                    "opening release receipt differs from its signed envelope"
+                )
+            desired = self._require_opening_release_desired(connection, verified)
+            if desired.command_fingerprint != row["desired_fingerprint"]:
+                raise RunnerStateDurabilityError(
+                    "pending release differs from its durable desired command"
+                )
+            return verified
+
+    async def commit_refused_opening_release(
+        self,
+        authenticator: CrucibleRunnerCommandAuthenticator,
+        *,
+        release_id: UUID,
+        capability_manifest: Mapping[str, Any],
+        amount: str,
+        currency: str,
+        observed_at: str,
+        inventory: Mapping[str, Any],
+    ) -> tuple[UUID, bytes]:
+        """Commit the refusal and its exact RunnerFact batch in one SQLite writer."""
+        return await asyncio.to_thread(
+            self._commit_refused_opening_release,
+            authenticator,
+            release_id,
+            capability_manifest,
+            amount,
+            currency,
+            observed_at,
+            inventory,
+        )
+
+    def _commit_refused_opening_release(
+        self,
+        authenticator: CrucibleRunnerCommandAuthenticator,
+        release_id: UUID,
+        capability_manifest: Mapping[str, Any],
+        amount: str,
+        currency: str,
+        observed_at: str,
+        inventory: Mapping[str, Any],
+    ) -> tuple[UUID, bytes]:
+        from custos.core.opening_inventory_contract import normalize_opening_inventory
+
+        connection = self._outbox._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM runner_opening_release_inbox WHERE release_id = ?",
+                (str(release_id),),
+            ).fetchone()
+            if row is None or row["state"] == "retired":
+                raise RunnerStateAuthorityError("opening release is absent or retired")
+            verified = authenticator.verify_opening_release(
+                subject=row["exact_subject"], signed_envelope_bytes=bytes(row["signed_envelope"])
+            )
+            command = verified.command
+            if command.release_id != str(release_id) or verified.exact_signed_event_bytes != bytes(
+                row["exact_event_bytes"]
+            ):
+                raise RunnerStateDurabilityError(
+                    "opening release receipt differs from its signed envelope"
+                )
+            if row["state"] == "refused":
+                result = UUID(row["fact_batch_id"]), bytes(row["signed_fact_batch"])
+                connection.commit()
+                return result
+            desired = self._require_opening_release_desired(connection, verified)
+            if row["desired_fingerprint"] != desired.command_fingerprint:
+                raise RunnerStateDurabilityError(
+                    "opening release differs from its durable desired command"
+                )
+            authority = self._authority_resolver(
+                VerifiedRunnerCommand(
+                    desired.command,
+                    desired.command_fingerprint,
+                    desired.verification_receipt,
+                )
+            )
+            if (
+                _sha256_hex(_canonical_json_bytes(capability_manifest))
+                != authority.capability_manifest_digest
+                or capability_manifest.get("fact_kind_projectors", {}).get(
+                    OPENING_RELEASE_FACT_KIND
+                )
+                != "risk"
+                or capability_manifest.get("runner_fact_contracts", {})
+                .get("risk", {})
+                .get("opening_release")
+                != "v1"
+            ):
+                raise RunnerStateAuthorityError("opening release fact capability is not registered")
+            amount = _signed_decimal(amount, "opening release amount", bounded=True)
+            if (
+                currency != command.currency
+                or Decimal(amount) < 0
+                or utc_timestamp_key(observed_at) < utc_timestamp_key(command.issued_at)
+            ):
+                raise RunnerStateAuthorityError(
+                    "opening release observation differs from the command boundary"
+                )
+            checked = normalize_opening_inventory(
+                inventory,
+                amount=amount,
+                currency=currency,
+                authority=authority,
+                observed_at=observed_at,
+            )
+            observations = checked["observations"]
+            if (
+                not checked["inventory_complete"]
+                or observations["positions"]["rows"]
+                or observations["ordinary_orders"]["rows"]
+            ):
+                reason = "inventory_unproven"
+            elif observations["identity"]["rows"] != [
+                command.account_identity.model_dump(mode="json")
+            ]:
+                reason = "account_mismatch"
+            else:
+                with localcontext(Context(prec=64)):
+                    difference = abs(Decimal(amount) - Decimal(command.basis_amount))
+                if difference <= Decimal("0.00000001"):
+                    raise RunnerStateAuthorityError("opening release observation is not a refusal")
+                reason = "balance_mismatch"
+            event = json.loads(verified.exact_signed_event_bytes)
+            fact = {
+                "kind": OPENING_RELEASE_FACT_KIND,
+                "event_id": str(runner_fact_event_id("opening_release_refused", release_id)),
+                "release_id": command.release_id,
+                "release_command_event_id": event["event_id"],
+                "basis_version_digest": command.basis_version_digest,
+                "outcome": "refused",
+                "reason": reason,
+                "amount": amount,
+                "currency": currency,
+                "observed_at": observed_at,
+                "account_inventory": checked,
+            }
+            batch_id = self._outbox._enqueue_in_transaction(
+                connection,
+                authority,
+                self._identity,
+                [fact],
+                opening_release_id=command.release_id,
+            )
+            if batch_id is None:
+                raise RunnerStateDurabilityError("opening refusal lost its signed batch")
+            queued = connection.execute(
+                "SELECT payload FROM runner_fact_outbox WHERE batch_id = ?", (str(batch_id),)
+            ).fetchone()
+            if queued is None:
+                raise RunnerStateDurabilityError("opening refusal lost its pending outbox payload")
+            payload = bytes(queued["payload"])
+            connection.execute(
+                "UPDATE runner_opening_release_inbox SET state = 'refused', fact_batch_id = ?, signed_fact_batch = ? "
+                "WHERE release_id = ? AND state = 'awaiting_observation'",
+                (str(batch_id), payload, command.release_id),
+            )
+            connection.commit()
+            return batch_id, payload
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def _require_opening_release_desired(
+        self, connection: sqlite3.Connection, verified: VerifiedOpeningRelease
+    ) -> DurableDesiredCommand:
+        instance = UUID(verified.command.deployment_instance_id)
+        row = connection.execute(
+            "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?", (str(instance),)
+        ).fetchone()
+        if row is None:
+            raise RunnerStateAuthorityError("opening release has no durable desired command")
+        desired = self._decode_durable_desired_command(row, instance)
+        try:
+            verified.command.require_current_desired(desired.command)
+        except ValueError as error:
+            raise RunnerStateAuthorityError(str(error)) from error
+        authority = EngineLifecycleAuthority.from_verified_command(
+            VerifiedRunnerCommand(
+                desired.command, desired.command_fingerprint, desired.verification_receipt
+            )
+        )
+        if self._opening_gate_state(connection, authority) != "awaiting_release":
+            raise RunnerStateAuthorityError("opening release requires the current closed gate")
+        return desired
 
     def load_opening_gate_state_sync(self, authority: EngineLifecycleAuthority) -> str:
         """Read only a gate bound to the current durable signed desired command.

@@ -21,7 +21,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Literal, Protocol, TypeVar, cast
+from typing import TYPE_CHECKING, Literal, Protocol, TypeVar, cast
 from uuid import UUID
 
 from cryptography.exceptions import InvalidSignature
@@ -34,6 +34,9 @@ from custos.contracts.deployment import (
     DOMAIN_EVENT_SIGNATURE_PROFILE,
 )
 from custos.core.log import get_logger
+
+if TYPE_CHECKING:
+    from custos.core.runner_opening_release import RunnerOpeningReleaseCommandV1
 
 _log = get_logger("custos.runner_command_intake")
 
@@ -137,6 +140,13 @@ class VerifiedRunnerCommand:
     command: CrucibleRunnerDeploymentCommandV1
     command_fingerprint: str
     verification_receipt: CommandVerificationReceipt
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedOpeningRelease:
+    command: RunnerOpeningReleaseCommandV1
+    exact_subject: str
+    exact_signed_event_bytes: bytes
 
 
 @dataclass(frozen=True, slots=True)
@@ -261,40 +271,37 @@ class CrucibleRunnerCommandAuthenticator:
         object.__setattr__(self, "allowed_trading_modes", modes)
         object.__setattr__(self, "signature_keys", MappingProxyType(keys))
 
-    def verify(self, *, subject: str, signed_envelope_bytes: bytes) -> VerifiedRunnerCommand:
-        raw_digest = hashlib.sha256(signed_envelope_bytes).hexdigest()
+    def verify_opening_release(
+        self, *, subject: str, signed_envelope_bytes: bytes
+    ) -> VerifiedOpeningRelease:
+        from custos.core.runner_fact import RunnerFactContractError
+        from custos.core.runner_opening_release import RunnerOpeningReleaseCommandV1
+
+        material, raw_digest = _authenticate_exact_control_envelope(
+            self.signature_keys, subject, signed_envelope_bytes
+        )
         try:
-            material = _signature_material(signed_envelope_bytes)
-        except _UnsupportedEnvelopeVersion as exc:
-            raise CommandVerificationError(
-                UntrustedCommandReason.UNSUPPORTED_VERSION,
-                str(exc),
-                raw_envelope_digest=raw_digest,
-            ) from exc
-        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            command = RunnerOpeningReleaseCommandV1.from_verified_event(
+                subject, material.event_bytes
+            )
+            if (
+                command.tenant_id != self.expected_tenant_id
+                or UUID(command.runner_id) != self.expected_runner_id
+                or command.trading_mode not in self.allowed_trading_modes
+            ):
+                raise ValueError("opening release differs from this runner's configured authority")
+        except (RunnerFactContractError, TypeError, ValueError) as exc:
             raise CommandVerificationError(
                 UntrustedCommandReason.INVALID_SCHEMA,
-                f"signed command envelope is invalid: {exc}",
+                f"signed opening release schema or scope is invalid: {exc}",
                 raw_envelope_digest=raw_digest,
             ) from exc
+        return VerifiedOpeningRelease(command, subject, material.event_bytes)
 
-        authority_key = self.signature_keys.get(material.key_id)
-        if authority_key is None:
-            raise CommandVerificationError(
-                UntrustedCommandReason.INVALID_SIGNATURE,
-                "signed command key id is not trusted by this runner",
-                raw_envelope_digest=raw_digest,
-            )
-        framed = _framed(DOMAIN_EVENT_SIGNATURE_CONTEXT, subject, material.event_bytes)
-        try:
-            authority_key.verify(material.signature, framed)
-        except InvalidSignature as exc:
-            raise CommandVerificationError(
-                UntrustedCommandReason.INVALID_SIGNATURE,
-                "control-plane runner command signature verification failed",
-                raw_envelope_digest=raw_digest,
-            ) from exc
-
+    def verify(self, *, subject: str, signed_envelope_bytes: bytes) -> VerifiedRunnerCommand:
+        material, raw_digest = _authenticate_exact_control_envelope(
+            self.signature_keys, subject, signed_envelope_bytes
+        )
         try:
             command = CrucibleRunnerDeploymentCommandV1.from_verified_signed_envelope(
                 subject=subject,
@@ -598,6 +605,45 @@ def classify_command_identity(
     if hmac.compare_digest(incoming_fingerprint, current_fingerprint):
         return CommandIdentityDecision.IDEMPOTENT
     return CommandIdentityDecision.CONFLICT
+
+
+def _authenticate_exact_control_envelope(
+    keys: Mapping[str, Ed25519PublicKey], subject: str, signed_envelope_bytes: bytes
+) -> tuple[_SignatureMaterial, str]:
+    raw_digest = hashlib.sha256(signed_envelope_bytes).hexdigest()
+    try:
+        material = _signature_material(signed_envelope_bytes)
+    except _UnsupportedEnvelopeVersion as exc:
+        raise CommandVerificationError(
+            UntrustedCommandReason.UNSUPPORTED_VERSION,
+            str(exc),
+            raw_envelope_digest=raw_digest,
+        ) from exc
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise CommandVerificationError(
+            UntrustedCommandReason.INVALID_SCHEMA,
+            f"signed command envelope is invalid: {exc}",
+            raw_envelope_digest=raw_digest,
+        ) from exc
+
+    authority_key = keys.get(material.key_id)
+    if authority_key is None:
+        raise CommandVerificationError(
+            UntrustedCommandReason.INVALID_SIGNATURE,
+            "signed command key id is not trusted by this runner",
+            raw_envelope_digest=raw_digest,
+        )
+    framed = _framed(DOMAIN_EVENT_SIGNATURE_CONTEXT, subject, material.event_bytes)
+    try:
+        authority_key.verify(material.signature, framed)
+    except InvalidSignature as exc:
+        raise CommandVerificationError(
+            UntrustedCommandReason.INVALID_SIGNATURE,
+            "control-plane runner command signature verification failed",
+            raw_envelope_digest=raw_digest,
+        ) from exc
+
+    return material, raw_digest
 
 
 def _signature_material(signed_envelope_bytes: bytes) -> _SignatureMaterial:
