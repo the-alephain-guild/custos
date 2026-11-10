@@ -188,3 +188,99 @@ def test_sandbox_instances_do_not_claim_a_real_venue_account_partition() -> None
     )
 
     assert host._execution_account_partitions == {}  # noqa: SLF001
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["delayed_stop", "validation_failure", "disposal_failure"])
+async def test_platform_claim_precedes_validation_and_survives_stop_until_reaped(
+    tmp_path, monkeypatch, scenario
+) -> None:
+    from uuid import uuid4
+
+    from custos_toolkit_nautilus.adapter.config.trading import TradingConfig
+    from nautilus_trader.model import BarType, InstrumentId
+
+    from custos.core.platform_process_fence import PlatformProcessRegistry
+    from custos.core.platform_process_identity import PlatformFenceError
+    from custos.engines.nautilus.platform_account_identity import PlatformExecutionProcessFence
+    from tests.fixtures.minimal_supertrend_strategy import (
+        MinimalSupertrendConfig,
+        MinimalSupertrendStrategy,
+    )
+    from tests.test_platform_process_fence import signed_sandbox_account
+
+    store, account = await signed_sandbox_account(tmp_path / "runner.sqlite3")
+    registry = PlatformProcessRegistry.initialize(tmp_path / "authority", host_scope_id=uuid4())
+    registry.register_store(store)
+    fence = PlatformExecutionProcessFence(registry, store)
+    host = NtTradingNodeHost(platform_process_fence=fence)
+    spec = account.context.spec
+    instance = spec["deployment_instance_id"]
+    venue = nautilus_host._venue_module_for(spec["connector"])
+    instrument = InstrumentId.from_str(venue.build_instrument_id_strings(spec)[0])
+    artifact = SimpleNamespace(
+        activation_id="signed-process-fence-fixture",
+        strategy=MinimalSupertrendStrategy(
+            MinimalSupertrendConfig(
+                instrument_id=instrument,
+                bar_type=BarType.from_str(f"{instrument}-1-MINUTE-LAST-EXTERNAL"),
+                trading=TradingConfig(connector=spec["connector"], leverage=spec["leverage"]),
+                external_order_instrument_ids=[instrument],
+            )
+        ),
+    )
+    seen = []
+
+    async def validate(_spec, _credential):
+        assert not FakeLiveNode.instances
+        snapshot = store.platform_process_snapshot(account.context.authority)
+        assert snapshot.current_owner_id is not None
+        seen.append(snapshot.current_owner_id)
+        with pytest.raises(PlatformFenceError, match="platform_account_occupied"):
+            registry.claim_closed(store, account)
+        if scenario == "validation_failure":
+            raise ValueError("injected validation failure")
+
+    monkeypatch.setattr(venue, "validate_account_configuration", validate)
+    try:
+        if scenario == "validation_failure":
+            with pytest.raises(ValueError, match="injected validation failure"):
+                await host.deploy(spec, _credential(), artifact)
+            assert host.node_holder() is None
+        else:
+            assert await host.deploy(spec, _credential(), artifact) == instance
+            await asyncio.sleep(0)
+            node = FakeLiveNode.instances[-1]
+            if scenario == "disposal_failure":
+                dispose = node.dispose
+
+                def refuse_disposal():
+                    raise RuntimeError("injected disposal failure")
+
+                monkeypatch.setattr(node, "dispose", refuse_disposal)
+                with pytest.raises(RuntimeError, match="ownership is held"):
+                    await host.stop_at_boundary(instance)
+                assert host.node_holder() is not None
+                with pytest.raises(PlatformFenceError, match="platform_account_occupied"):
+                    registry.claim_closed(store, account)
+                monkeypatch.setattr(node, "dispose", dispose)
+                assert (await host.stop_at_boundary(instance)).reaped
+            else:
+                node.stop_hangs = node.cancel_hangs = True
+                host._stop_timeout_secs = host._reap_timeout_secs = 0.01
+                boundary = await host.stop_at_boundary(instance)
+                assert not boundary.reaped
+                assert not node.disposed
+                with pytest.raises(PlatformFenceError, match="platform_account_occupied"):
+                    registry.claim_closed(store, account)
+                node.released.set()
+                assert boundary.reap is not None
+                await boundary.reap
+            assert node.disposed
+        assert seen
+        assert store.load_opening_gate_state_sync(account.context.authority) == "awaiting_release"
+        successor = registry.claim_closed(store, account)
+        assert successor.owner_id != seen[0]
+        successor.close()
+    finally:
+        registry.close()

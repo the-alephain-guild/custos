@@ -30,6 +30,7 @@ from uuid import UUID
 from custos.core.engine_protocol import (
     ActivatedEngineArtifactV1,
     ConnectivityState,
+    EngineDependencyUnavailable,
     EngineDeploymentRefused,
     EngineLifecycleAuthority,
     EngineNodeHolder,
@@ -44,6 +45,8 @@ from custos.core.engine_protocol import (
 )
 from custos.core.log import get_logger
 from custos.core.order_reservation_boundary import RunnerReservationBoundary
+from custos.core.platform_process_fence import PlatformProcessLease
+from custos.core.platform_process_identity import PlatformFenceError
 from custos.core.runner_fact import (
     SUPPORTED_CURRENCIES,
     RunnerCapabilityReceipt,
@@ -76,6 +79,7 @@ from custos.engines.nautilus.opening_inventory import (
     InventoryUnavailable,
     OpeningAccountInventory,
 )
+from custos.engines.nautilus.platform_account_identity import PlatformExecutionProcessFence
 from custos.engines.nautilus.portfolio_snapshot import (
     NautilusPortfolioSnapshot,
     NautilusPortfolioSnapshotProvider,
@@ -643,6 +647,7 @@ class NtTradingNodeHost:
         venue_proxy: VenueProxy | None = None,
         source_inbox_path: Path | None = None,
         native_runtime_artifact_identity: NativeRuntimeArtifactIdentity | None = None,
+        platform_process_fence: PlatformExecutionProcessFence | None = None,
     ) -> None:
         # deployment_instance_id -> its running node and the state captured with it.
         # Never holds credentials.
@@ -668,6 +673,9 @@ class NtTradingNodeHost:
         # mutate the same net position while claiming instance-scoped facts. Sandbox
         # nodes have independent simulated accounts and intentionally do not participate.
         self._execution_account_partitions: dict[str, tuple[str, str]] = {}
+        self._platform_process_fence = platform_process_fence
+        self._platform_process_leases: dict[str, PlatformProcessLease] = {}
+        self._platform_start_lock = asyncio.Lock()
         # Decimal equity high-water mark per instance so get_engine_status can
         # report drawdown percentage over time. Never a float (red line 0.4).
         self._peak_equity: dict[str, Decimal] = {}
@@ -796,6 +804,10 @@ class NtTradingNodeHost:
         self._execution_account_partitions[instance_id] = partition
 
     def _release_execution_account_partition(self, deployment_instance_id: str) -> None:
+        lease = self._platform_process_leases.get(deployment_instance_id)
+        if lease is not None:
+            lease.close()
+            self._platform_process_leases.pop(deployment_instance_id)
         self._execution_account_partitions.pop(deployment_instance_id, None)
 
     def _partition_gate(self, deployment_instance_id: str, budget) -> PartitionGate:
@@ -841,6 +853,10 @@ class NtTradingNodeHost:
         A node whose run has already ended no longer holds the runner, even before
         its done-callback has removed it from the registry.
         """
+        for instance in self._platform_process_leases:
+            return EngineNodeHolder(
+                deployment_instance_id=instance, releasing=instance in self._stopping
+            )
         for instance, runtime in self._active_nodes.items():
             if not runtime.task.done():
                 return EngineNodeHolder(
@@ -1116,6 +1132,17 @@ class NtTradingNodeHost:
         credential: dict,
         artifact: ActivatedEngineArtifactV1,
     ) -> str:
+        if self._platform_process_fence is None:
+            return await self._deploy(spec, credential, artifact)
+        async with self._platform_start_lock:
+            return await self._deploy(spec, credential, artifact)
+
+    async def _deploy(
+        self,
+        spec: dict,
+        credential: dict,
+        artifact: ActivatedEngineArtifactV1,
+    ) -> str:
         self._ensure_nt_available()
         lifecycle_authority = EngineLifecycleAuthority.from_spec(spec)
         identity = _deployment_identity(spec, lifecycle_authority)
@@ -1146,27 +1173,36 @@ class NtTradingNodeHost:
         # Refuse before anything reaches the venue: an account check that went out
         # directly would already be the connection the proxy was named to prevent.
         data_config_for_mode = self._venue_function(venue, "build_data_client_config_for_mode")
-        await venue.validate_account_configuration(spec, credential)
-
         trading_mode = identity.trading_mode
-        data_cfg = data_config_for_mode(spec, credential, trading_mode)
-        exec_cfg, exec_factory, reconciliation = self._build_exec_plan(
-            trading_mode, spec, credential, venue
-        )
-        runner_safety_boundary = await self._build_runner_safety_boundary(spec)
-
-        # ps runner.py._create_node_config exposes the NT startup timeouts and the
-        # reconciliation lookback to strategy authors; custos accepts the same
-        # knobs via a plain nautilus_config dict-key so operators can tune a slow
-        # exchange without needing a code change. Every knob is optional — an
-        # absent key falls through to the NT internal default.
-        nautilus_cfg = spec.get("nautilus_config") or {}
-
-        # Claim before constructing a node. A conflicting real-venue deployment must
-        # fail without creating and then disposing a node.
-        self._claim_execution_account_partition(spec, identity)
-
+        exec_plan = None
+        if self._platform_process_fence is not None:
+            exec_plan = self._build_exec_plan(trading_mode, spec, credential, venue)
+            try:
+                self._platform_process_leases[
+                    deployment_instance_id
+                ] = await self._platform_process_fence.claim_closed(
+                    lifecycle_authority, exec_plan[0]
+                )
+            except PlatformFenceError as error:
+                if error.reason_code in {
+                    "platform_account_occupied",
+                    "platform_alias_lock_unavailable",
+                    "platform_registry_unavailable",
+                    "platform_storage_unavailable",
+                }:
+                    raise EngineDependencyUnavailable(error.reason_code) from error
+                raise EngineDeploymentRefused(
+                    error.reason_code, "registered platform account ownership is unavailable"
+                ) from error
         try:
+            await venue.validate_account_configuration(spec, credential)
+            data_cfg = data_config_for_mode(spec, credential, trading_mode)
+            exec_cfg, exec_factory, reconciliation = exec_plan or self._build_exec_plan(
+                trading_mode, spec, credential, venue
+            )
+            runner_safety_boundary = await self._build_runner_safety_boundary(spec)
+            nautilus_cfg = spec.get("nautilus_config") or {}
+            self._claim_execution_account_partition(spec, identity)
             builder = LiveNode.builder(
                 self._trader_id(deployment_instance_id),
                 TraderId(self._trader_id(deployment_instance_id)),
@@ -1195,14 +1231,15 @@ class NtTradingNodeHost:
                 trading_mode,
             )
             node = builder.build()
-        except Exception as exc:  # noqa: BLE001 — reconciler maps this to degraded status
-            _log.error(
-                "nt_startup_failure",
-                deployment_instance_id=deployment_instance_id,
-                spec_id=spec_id,
-                **_sanitize_exception(exc),
-            )
+        except BaseException as exc:
             self._release_execution_account_partition(deployment_instance_id)
+            if isinstance(exc, Exception):
+                _log.error(
+                    "nt_startup_failure",
+                    deployment_instance_id=deployment_instance_id,
+                    spec_id=spec_id,
+                    **_sanitize_exception(exc),
+                )
             raise
 
         try:
@@ -1243,8 +1280,7 @@ class NtTradingNodeHost:
                 source_authority=lifecycle_authority,
             )
         except Exception:
-            self._release_execution_account_partition(deployment_instance_id)
-            self._dispose_node(deployment_instance_id, node)
+            self._dispose_and_release_node(deployment_instance_id, node)
             raise
         try:
             if fact_context is not None:
@@ -1266,8 +1302,7 @@ class NtTradingNodeHost:
             self._runner_safety_boundaries.pop(deployment_instance_id, None)
             self._cancel_disciplines.pop(deployment_instance_id, None)
             self._event_forwarding_failures.pop(deployment_instance_id, None)
-            self._release_execution_account_partition(deployment_instance_id)
-            self._dispose_node(deployment_instance_id, node)
+            self._dispose_and_release_node(deployment_instance_id, node)
             raise
         task.add_done_callback(
             lambda task, instance_id=deployment_instance_id: self._on_node_task_done(
@@ -1883,6 +1918,8 @@ class NtTradingNodeHost:
             )
         runtime = self._active_nodes.get(deployment_instance_id)
         if runtime is None:
+            if deployment_instance_id in self._platform_process_leases:
+                raise RuntimeError("platform account ownership remains held after startup cleanup")
             # Idempotent: stopping an unknown / already-stopped spec is a no-op.
             _log.info(
                 "nt_stop_noop_unknown_instance",
@@ -2072,7 +2109,7 @@ class NtTradingNodeHost:
     def _release_stopped_node(self, deployment_instance_id: str, runtime: _NodeRuntime) -> None:
         # Only once the run has ended: run_async holds the node until then, and
         # 2.0 disposal releases the kernel without touching the runner's loop.
-        self._dispose_node(deployment_instance_id, runtime.node)
+        self._dispose_and_release_node(deployment_instance_id, runtime.node)
         self._peak_equity.pop(deployment_instance_id, None)
         self._settlement_currencies.pop(deployment_instance_id, None)
         self._runner_fact_contexts.pop(deployment_instance_id, None)
@@ -2085,7 +2122,6 @@ class NtTradingNodeHost:
         self._cancel_disciplines.pop(deployment_instance_id, None)
         self._signed_unpriced_dust.pop(deployment_instance_id, None)
         self._event_forwarding_failures.pop(deployment_instance_id, None)
-        self._release_execution_account_partition(deployment_instance_id)
         if self._active_nodes.get(deployment_instance_id) is runtime:
             self._active_nodes.pop(deployment_instance_id, None)
         self._containment_confirmed.discard(deployment_instance_id)
@@ -2094,7 +2130,13 @@ class NtTradingNodeHost:
         self._stopping.discard(deployment_instance_id)
         _log.info("nt_stop_completed", deployment_instance_id=deployment_instance_id)
 
-    def _dispose_node(self, deployment_instance_id: str, node: object) -> None:
+    def _dispose_and_release_node(self, deployment_instance_id: str, node: object) -> None:
+        disposed = self._dispose_node(deployment_instance_id, node)
+        if not disposed and deployment_instance_id in self._platform_process_leases:
+            raise RuntimeError("platform account ownership is held until node disposal succeeds")
+        self._release_execution_account_partition(deployment_instance_id)
+
+    def _dispose_node(self, deployment_instance_id: str, node: object) -> bool:
         """Release the node's kernel once its run has ended.
 
         The 1.x version of this took care to avoid ``TradingNode.dispose()``, which
@@ -2103,8 +2145,7 @@ class NtTradingNodeHost:
         stopped -- it does not reach into the host's loop -- so the care is no longer
         warranted and the plain call is the whole of it.
 
-        Disposal failing does not leave the deployment running, and stop must finish
-        cleaning up regardless, so this reports rather than propagates.
+        The platform lease remains held if disposal cannot prove cleanup.
         """
         try:
             node.dispose()
@@ -2114,6 +2155,8 @@ class NtTradingNodeHost:
                 deployment_instance_id=deployment_instance_id,
                 **_sanitize_exception(exc),
             )
+            return False
+        return True
 
     async def _apply_shutdown_policy(
         self,
@@ -3300,7 +3343,21 @@ class NtTradingNodeHost:
         # guard on task identity so a re-deployed spec_id (new task) isn't cleared
         # by a stale callback.
         runtime = self._active_nodes.get(deployment_instance_id)
-        if runtime is not None and runtime.task is task:
+        if (
+            runtime is not None
+            and runtime.task is task
+            and deployment_instance_id in self._platform_process_leases
+        ):
+            if deployment_instance_id not in self._stopping:
+                try:
+                    self._release_stopped_node(deployment_instance_id, runtime)
+                except Exception as error:  # noqa: BLE001 - a failed reap retains ownership
+                    _log.error(
+                        "nt_platform_process_reap_failed",
+                        deployment_instance_id=deployment_instance_id,
+                        error_type=type(error).__name__,
+                    )
+        elif runtime is not None and runtime.task is task:
             self._active_nodes.pop(deployment_instance_id, None)
             self._containment_confirmed.discard(deployment_instance_id)
             self._runner_fact_contexts.pop(deployment_instance_id, None)

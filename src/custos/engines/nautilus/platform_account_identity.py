@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+
+from custos.core.engine_protocol import EngineLifecycleAuthority
+from custos.core.platform_process_fence import PlatformProcessLease, PlatformProcessRegistry
 from custos.core.platform_process_identity import (
     PlatformAccountAliases,
     PlatformFenceError,
@@ -9,6 +13,7 @@ from custos.core.platform_process_identity import (
     canonical_platform_bytes,
     signed_account_aliases,
 )
+from custos.core.runner_fact import RunnerStateStore
 from custos.engines.nautilus.venues import venue_for_connector
 
 
@@ -66,3 +71,18 @@ def resolve_platform_account_identity(
     return PlatformAccountAliases._from_native_resolution(
         context, aliases, canonical_platform_bytes(binding)
     )
+
+
+class PlatformExecutionProcessFence:
+    """Acquire the registered process lease for the host's concrete account."""
+
+    def __init__(self, registry: PlatformProcessRegistry, state_store: RunnerStateStore) -> None:
+        self._registry = registry
+        self._state_store = state_store
+
+    async def claim_closed(
+        self, authority: EngineLifecycleAuthority, exec_config
+    ) -> PlatformProcessLease:
+        snapshot = await asyncio.to_thread(self._state_store.platform_process_snapshot, authority)
+        account = resolve_platform_account_identity(snapshot.context, exec_config)
+        return await self._registry.claim_closed_async(self._state_store, account)
