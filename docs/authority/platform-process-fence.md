@@ -1,11 +1,12 @@
 # Platform process ownership foundation
 
 This module provides persistent, machine-local account exclusion while the
-platform opening gate remains closed. It is a foundation API, not an enabled
-daemon capability. It does not start a node, claim economic recovery, release an
-opening gate, acknowledge a release, or authorize orders. The signed daemon and
-native transport boundaries are not wired to it yet. The independent Papertrade
-local-runtime identity and its live-only restriction are unchanged.
+platform opening gate remains closed. The signed Nautilus host can acquire
+ownership before validating venue connectivity and retain it until the node
+has ended and disposed successfully. The lease carries no order permission.
+Opening acknowledgement, economic recovery, and enforcement at the native
+send boundary remain separate. The independent Papertrade local-runtime
+identity and its live-only restriction are unchanged.
 
 ## Trusted registry and supported storage
 
@@ -13,9 +14,14 @@ local-runtime identity and its live-only restriction are unchanged.
 registry UUID, a non-nil host-scope UUID, and schema version 1. All conforming
 platform runners on the same supported host must receive the same trusted
 binding, even when their tenants, runner configurations, or outbox paths differ.
-It is not obtained from a strategy, DeploymentSpec, outbox directory, or runtime
-environment override. The foundation API accepts an explicit binding; loading
-and enforcing a unique machine configuration belongs to subsequent daemon work.
+The signed Nautilus daemon reads `.arx/platform-process-authority.toml` from
+the operating-system account's registered home directory. The private regular
+file contains exactly `schema_version = 1`, `authority_root`, `registry_id`,
+and `host_scope_id`. The root is an absolute canonical path and the two IDs
+are canonical non-nil UUID strings. The host uses an existing registered
+store and registry. When the file is absent, the daemon retains the existing
+closed opening behavior. Invalid files fail startup.
+
 
 `PlatformProcessRegistry.initialize` exclusively creates a new or empty private
 root. `open_registered` never initializes or repairs missing state. The marker

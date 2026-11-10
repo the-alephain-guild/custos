@@ -758,3 +758,52 @@ else:
         timeout=15,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    "scenario", ["exact", "missing", "world_readable", "wrong_registry", "symlink"]
+)
+def test_daemon_machine_binding_requires_the_private_exact_registration(
+    tmp_path, monkeypatch, scenario
+):
+    import pwd
+    from types import SimpleNamespace
+
+    from custos.core.platform_process_fence import PlatformProcessRegistry
+
+    home = tmp_path / "machine"
+    home.mkdir()
+    machine_dir = home / ".arx"
+    machine_dir.mkdir(mode=0o700)
+    other = tmp_path / "environment-home"
+    other.mkdir()
+    monkeypatch.setenv("HOME", str(other))
+    monkeypatch.setattr(pwd, "getpwuid", lambda uid: SimpleNamespace(pw_dir=str(home)))
+    config = machine_dir / "platform-process-authority.toml"
+
+    registration = PlatformProcessRegistry.initialize(tmp_path / "authority", host_scope_id=uuid4())
+    binding = registration.binding
+    registration.close()
+    if scenario == "missing":
+        assert PlatformProcessRegistry.open_machine_authority() is None
+        return
+
+    source = config if scenario != "symlink" else machine_dir / "linked.toml"
+    registry_id = uuid4() if scenario == "wrong_registry" else binding.registry_id
+    source.write_text(
+        f'schema_version=1\nauthority_root="{binding.authority_root}"\n'
+        f'registry_id="{registry_id}"\nhost_scope_id="{binding.host_scope_id}"\n',
+        encoding="utf-8",
+    )
+    source.chmod(0o644 if scenario == "world_readable" else 0o600)
+    if scenario == "symlink":
+        config.symlink_to(source)
+    if scenario == "exact":
+        loaded = PlatformProcessRegistry.open_machine_authority()
+        assert loaded is not None
+        assert loaded.binding == binding
+        loaded.close()
+    else:
+        reason = "binding_invalid" if scenario == "wrong_registry" else "storage_unsafe"
+        with pytest.raises(PlatformFenceError, match=reason):
+            PlatformProcessRegistry.open_machine_authority()

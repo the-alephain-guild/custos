@@ -84,6 +84,8 @@ from custos.core.nats_transport import (
 )
 from custos.core.order_reservation_boundary import RunnerReservationBoundary
 from custos.core.per_key_vault import PerKeyVault
+from custos.core.platform_process_fence import PlatformProcessRegistry
+from custos.core.platform_process_identity import PlatformFenceError
 from custos.core.readiness import ReadinessFile
 from custos.core.runner_command_intake import (
     CommandDeliveryPolicy,
@@ -354,6 +356,7 @@ def _build_host(
     fact_emitter: RunnerFactEmitter | None = None,
     capability_receipt: RunnerCapabilityReceipt | None = None,
     runner_safety_boundary_factory=None,
+    platform_process_fence=None,
 ) -> RunnerExecutionHost:
     """Pick the execution engine host from the clean-break ``--engine`` enum.
 
@@ -382,6 +385,7 @@ def _build_host(
             runner_fact_emitter=fact_emitter,
             capability_receipt=capability_receipt,
             runner_safety_boundary_factory=runner_safety_boundary_factory,
+            platform_process_fence=platform_process_fence,
             venue_proxy=venue_proxy,
             source_inbox_path=(
                 args.source_runner_options.inbox_path
@@ -1194,6 +1198,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
     tasks: list[asyncio.Task] = []
     host: object | None = None
     command_runtime: RunnerCommandRuntimeCoordinator | None = None
+    platform_registry: PlatformProcessRegistry | None = None
     try:
         tasks.append(
             asyncio.create_task(
@@ -1269,10 +1274,24 @@ async def run_daemon(args: argparse.Namespace) -> int:
             )
             safety_policy_resolver = DurableRunnerSafetyPolicyResolver(state_store)
             runner_safety_boundaries: dict[str, RunnerReservationBoundary] = {}
+            platform_process_fence = None
+            if getattr(args, "engine", "nautilus") == "nautilus":
+                platform_registry = await asyncio.to_thread(
+                    PlatformProcessRegistry.open_machine_authority
+                )
+                if platform_registry is not None:
+                    from custos.engines.nautilus.platform_account_identity import (
+                        PlatformExecutionProcessFence,
+                    )
+
+                    platform_process_fence = PlatformExecutionProcessFence(
+                        platform_registry, state_store
+                    )
             host = _build_host(
                 args,
                 fact_emitter=fact_emitter,
                 capability_receipt=capability,
+                platform_process_fence=platform_process_fence,
                 runner_safety_boundary_factory=_build_runner_safety_boundary_factory(
                     state_store=state_store,
                     safety_policy_resolver=safety_policy_resolver,
@@ -1449,5 +1468,10 @@ async def run_daemon(args: argparse.Namespace) -> int:
             clients=clients,
             command_runtime=command_runtime,
         )
+        if platform_registry is not None:
+            try:
+                platform_registry.close()
+            except PlatformFenceError as error:
+                _slog.warning("platform_process_registry_retained", reason_code=error.reason_code)
         log.info("runner_stopped")
     return 0

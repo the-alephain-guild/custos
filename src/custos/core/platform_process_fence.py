@@ -10,6 +10,7 @@ import sqlite3
 import stat
 import sys
 import threading
+import tomllib
 from contextlib import contextmanager
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -281,6 +282,72 @@ class PlatformProcessRegistry:
         descriptor = _open(root, os.O_RDONLY | os.O_DIRECTORY)
         os.fsync(descriptor)
         _close(descriptor)
+        return cls.open_registered(binding)
+
+    @classmethod
+    def open_machine_authority(cls) -> PlatformProcessRegistry | None:
+        """Open the registry selected by the private machine configuration."""
+        if os.name != "posix":
+            return None
+        import pwd
+
+        try:
+            home = Path(pwd.getpwuid(os.geteuid()).pw_dir)
+        except KeyError as error:
+            raise PlatformFenceError("platform_registry_binding_invalid") from error
+        path = home / ".arx" / "platform-process-authority.toml"
+        try:
+            path.lstat()
+        except FileNotFoundError:
+            return None
+        except OSError as error:
+            raise PlatformFenceError("platform_registry_storage_unavailable") from error
+
+        try:
+            _require_private(path, directory=False)
+            descriptor = _open(path, os.O_RDONLY)
+        except OSError as error:
+            raise PlatformFenceError("platform_registry_storage_unavailable") from error
+        try:
+            opened = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(opened.st_mode)
+                or opened.st_uid != os.geteuid()
+                or opened.st_mode & 0o077
+                or _identity(path.lstat()) != _identity(opened)
+            ):
+                raise PlatformFenceError("platform_registry_storage_unsafe")
+            content = os.pread(descriptor, 4097, 0)
+        except OSError as error:
+            raise PlatformFenceError("platform_registry_storage_unavailable") from error
+        finally:
+            _close(descriptor)
+        try:
+            if len(content) > 4096:
+                raise ValueError("platform authority configuration exceeds its size bound")
+            document = tomllib.loads(content.decode())
+            if document.keys() != {
+                "schema_version",
+                "authority_root",
+                "registry_id",
+                "host_scope_id",
+            }:
+                raise ValueError("platform authority configuration fields differ")
+            root = Path(document["authority_root"])
+            registry_id = UUID(document["registry_id"])
+            host_scope_id = UUID(document["host_scope_id"])
+            if (
+                str(root) != document["authority_root"]
+                or root.anchor != "/"
+                or str(registry_id) != document["registry_id"]
+                or str(host_scope_id) != document["host_scope_id"]
+            ):
+                raise ValueError("platform authority configuration is not canonical")
+            binding = PlatformAuthorityBinding(
+                root, registry_id, host_scope_id, document["schema_version"]
+            )
+        except (UnicodeError, ValueError, TypeError, AttributeError) as error:
+            raise PlatformFenceError("platform_registry_binding_invalid") from error
         return cls.open_registered(binding)
 
     @classmethod
