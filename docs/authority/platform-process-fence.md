@@ -14,11 +14,12 @@ identity and its live-only restriction are unchanged.
 registry UUID, a non-nil host-scope UUID, and schema version 1. All conforming
 platform runners on the same supported host must receive the same trusted
 binding, even when their tenants, runner configurations, or outbox paths differ.
-The signed Nautilus daemon reads `.arx/platform-process-authority.toml` from
-the operating-system account's registered home directory. The private regular
-file contains exactly `schema_version = 1`, `authority_root`, `registry_id`,
-and `host_scope_id`. The root is an absolute canonical path and the two IDs
-are canonical non-nil UUID strings. The host uses an existing registered
+The signed Nautilus daemon reads `/etc/custos/platform-authority.toml`, using
+the physical `/private/etc` path on macOS. The regular file must be owned by
+the host administrator and cannot be group- or world-writable. It contains
+exactly `schema_version = 1`, `authority_root`, `registry_id`, and
+`host_scope_id`. The root is an absolute canonical path and the two IDs are
+canonical non-nil UUID strings. The host uses an existing registered
 store and registry. When the file is absent, the daemon retains the existing
 closed opening behavior. Invalid files fail startup.
 

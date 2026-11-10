@@ -286,25 +286,31 @@ class PlatformProcessRegistry:
 
     @classmethod
     def open_machine_authority(cls) -> PlatformProcessRegistry | None:
-        """Open the registry selected by the private machine configuration."""
+        """Open the registry installed by the host administrator."""
         if os.name != "posix":
             return None
-        import pwd
+        etc = Path("/private/etc" if sys.platform == "darwin" else "/etc")
+        return cls._open_machine_authority(etc / "custos" / "platform-authority.toml", 0)
 
+    @classmethod
+    def _open_machine_authority(
+        cls, path: Path, administrator_uid: int
+    ) -> PlatformProcessRegistry | None:
         try:
-            home = Path(pwd.getpwuid(os.geteuid()).pw_dir)
-        except KeyError as error:
-            raise PlatformFenceError("platform_registry_binding_invalid") from error
-        path = home / ".arx" / "platform-process-authority.toml"
-        try:
-            path.lstat()
+            named = path.lstat()
         except FileNotFoundError:
             return None
         except OSError as error:
             raise PlatformFenceError("platform_registry_storage_unavailable") from error
 
+        if (
+            not stat.S_ISREG(named.st_mode)
+            or named.st_uid != administrator_uid
+            or named.st_mode & 0o022
+        ):
+            raise PlatformFenceError("platform_registry_storage_unsafe")
         try:
-            _require_private(path, directory=False)
+            _require_parent_chain(path)
             descriptor = _open(path, os.O_RDONLY)
         except OSError as error:
             raise PlatformFenceError("platform_registry_storage_unavailable") from error
@@ -312,8 +318,8 @@ class PlatformProcessRegistry:
             opened = os.fstat(descriptor)
             if (
                 not stat.S_ISREG(opened.st_mode)
-                or opened.st_uid != os.geteuid()
-                or opened.st_mode & 0o077
+                or opened.st_uid != administrator_uid
+                or opened.st_mode & 0o022
                 or _identity(path.lstat()) != _identity(opened)
             ):
                 raise PlatformFenceError("platform_registry_storage_unsafe")

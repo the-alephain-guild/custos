@@ -761,31 +761,26 @@ else:
 
 
 @pytest.mark.parametrize(
-    "scenario", ["exact", "missing", "world_readable", "wrong_registry", "symlink"]
+    "scenario", ["exact", "missing", "world_writable", "wrong_owner", "wrong_registry", "symlink"]
 )
-def test_daemon_machine_binding_requires_the_private_exact_registration(
-    tmp_path, monkeypatch, scenario
-):
-    import pwd
-    from types import SimpleNamespace
+def test_daemon_machine_binding_requires_the_administrator_registration(tmp_path, scenario):
+    import os
 
     from custos.core.platform_process_fence import PlatformProcessRegistry
 
-    home = tmp_path / "machine"
-    home.mkdir()
-    machine_dir = home / ".arx"
-    machine_dir.mkdir(mode=0o700)
-    other = tmp_path / "environment-home"
-    other.mkdir()
-    monkeypatch.setenv("HOME", str(other))
-    monkeypatch.setattr(pwd, "getpwuid", lambda uid: SimpleNamespace(pw_dir=str(home)))
-    config = machine_dir / "platform-process-authority.toml"
+    machine_dir = tmp_path / "etc" / "custos"
+    machine_dir.mkdir(parents=True, mode=0o700)
+    config = machine_dir / "platform-authority.toml"
+    administrator_uid = os.geteuid() + int(scenario == "wrong_owner")
+
+    def load():
+        return PlatformProcessRegistry._open_machine_authority(config, administrator_uid)
 
     registration = PlatformProcessRegistry.initialize(tmp_path / "authority", host_scope_id=uuid4())
     binding = registration.binding
     registration.close()
     if scenario == "missing":
-        assert PlatformProcessRegistry.open_machine_authority() is None
+        assert load() is None
         return
 
     source = config if scenario != "symlink" else machine_dir / "linked.toml"
@@ -795,18 +790,18 @@ def test_daemon_machine_binding_requires_the_private_exact_registration(
         f'registry_id="{registry_id}"\nhost_scope_id="{binding.host_scope_id}"\n',
         encoding="utf-8",
     )
-    source.chmod(0o644 if scenario == "world_readable" else 0o600)
+    source.chmod(0o666 if scenario == "world_writable" else 0o644)
     if scenario == "symlink":
         config.symlink_to(source)
     if scenario == "exact":
-        loaded = PlatformProcessRegistry.open_machine_authority()
+        loaded = load()
         assert loaded is not None
         assert loaded.binding == binding
         loaded.close()
     else:
         reason = "binding_invalid" if scenario == "wrong_registry" else "storage_unsafe"
         with pytest.raises(PlatformFenceError, match=reason):
-            PlatformProcessRegistry.open_machine_authority()
+            load()
 
 
 async def test_opening_control_reuses_the_writer_and_rejects_retired_process(tmp_path, monkeypatch):
