@@ -83,6 +83,20 @@ class SandboxExecutionConfigV1(BaseModel):
     starting_balances: list[str] = Field(min_length=1)
 
 
+class _SandboxFundingPlanReferenceV1(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    plan_id: Annotated[UUID, Field(strict=False)]
+    plan_digest: Sha256Hex
+    mode_prepare_receipt_digest: Sha256Hex
+    authorization_epoch: Annotated[StrictInt, Field(ge=1, le=2**63 - 1)]
+    planned_basis: Annotated[
+        str, StringConstraints(pattern=r"^(?:[1-9][0-9]*(?:\.[0-9]*[1-9])?|0\.[0-9]*[1-9])$")
+    ]
+    currency: Annotated[str, StringConstraints(pattern=r"^[A-Z0-9]{3,12}$")]
+    opening_basis_witness_digest: Sha256Hex
+
+
 class ShutdownPositionPolicy(StrEnum):
     PRESERVE = "preserve"
     FLATTEN = "flatten"
@@ -344,12 +358,25 @@ def canonical_deployment_spec_digest(canonical: dict[str, Any]) -> str:
     changing the cross-language hash contract.
     """
     fields = frozenset(canonical)
-    if fields != _CANONICAL_DEPLOYMENT_SPEC_FIELDS:
-        missing = sorted(_CANONICAL_DEPLOYMENT_SPEC_FIELDS - fields)
-        extra = sorted(fields - _CANONICAL_DEPLOYMENT_SPEC_FIELDS)
+    required_fields = _CANONICAL_DEPLOYMENT_SPEC_FIELDS
+    if "funding_plan" in fields:
+        required_fields = required_fields | {"funding_plan"}
+    if fields != required_fields:
+        missing = sorted(required_fields - fields)
+        extra = sorted(fields - required_fields)
         raise ValueError(
             f"canonical DeploymentSpec field set differs: missing={missing}, extra={extra}"
         )
+    if "funding_plan" in fields:
+        if canonical["trading_mode"] != TradingMode.SANDBOX:
+            raise ValueError("canonical DeploymentSpec funding_plan is sandbox-only")
+        funding = _SandboxFundingPlanReferenceV1.model_validate(canonical["funding_plan"])
+        execution = canonical["execution_config"]
+        sandbox = execution.get("sandbox") if isinstance(execution, dict) else None
+        if not isinstance(sandbox, dict) or sandbox.get("starting_balances") != [
+            f"{funding.planned_basis} {funding.currency}"
+        ]:
+            raise ValueError("canonical DeploymentSpec starting balances differ from funding_plan")
     encoded = json.dumps(
         canonical,
         ensure_ascii=False,

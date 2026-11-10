@@ -279,6 +279,52 @@ def test_cross_language_fingerprint_vector_uses_exact_signed_event_bytes() -> No
     assert vector["command_fingerprint"] == fixture["cases"][0]["command_fingerprint"]
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    [
+        (None, None, None),
+        ("plan_digest", "not-a-digest", "plan_digest"),
+        ("authorization_epoch", True, "authorization_epoch"),
+        ("planned_basis", 10000, "planned_basis"),
+        ("planned_basis", "10001", "starting balances"),
+        ("extra", "unexpected", "Extra inputs are not permitted"),
+    ],
+)
+def test_signed_sandbox_funding_reference(field: str | None, value: Any, error: str | None) -> None:
+    funding: dict[str, Any] = {
+        "plan_id": "783aed33-9c35-48a5-8224-536f5d7a4a55",
+        "plan_digest": "1" * 64,
+        "mode_prepare_receipt_digest": "2" * 64,
+        "authorization_epoch": 3,
+        "planned_basis": "10000",
+        "currency": "USDT",
+        "opening_basis_witness_digest": "3" * 64,
+    }
+    if field is not None:
+        funding[field] = value
+
+    def include_funding_reference(event: dict[str, Any]) -> None:
+        payload = event["payload"]
+        spec = payload["deployment_spec"]
+        spec["funding_plan"] = funding
+        payload["deployment_spec_digest"] = hashlib.sha256(
+            _compact(_recursively_sorted(spec))
+        ).hexdigest()
+
+    envelope, subject = _signed_fixture(mutate_event=include_funding_reference)
+    if error is not None:
+        with pytest.raises(CommandVerificationError, match=error) as failure:
+            _authenticator().verify(subject=subject, signed_envelope_bytes=envelope)
+        assert failure.value.reason_code is UntrustedCommandReason.INVALID_SCHEMA
+        return
+
+    verified = _authenticator().verify(subject=subject, signed_envelope_bytes=envelope)
+    assert verified.command.deployment_spec["funding_plan"] == funding
+    sandbox = verified.command.to_runtime_spec().sandbox
+    assert sandbox is not None
+    assert sandbox.starting_balances == ["10000 USDT"]
+
+
 def test_signature_rotation_does_not_change_command_fingerprint() -> None:
     first_bytes, subject = _signed_fixture(private_key=KEY_A, key_id="key-a")
     second_bytes, _ = _signed_fixture(private_key=KEY_B, key_id="key-b")
