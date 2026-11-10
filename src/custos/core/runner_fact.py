@@ -672,6 +672,10 @@ class RunnerStateAuthorityError(RunnerFactError):
     """A durable instance is being addressed through a different authority."""
 
 
+class RunnerOpeningReleaseAwaitingAcknowledgement(RunnerStateAuthorityError):
+    """The account matches the command and must remain closed pending acknowledgement."""
+
+
 class RunnerPostTradeRiskBreach(RunnerStateAuthorityError):
     """An authoritative fill was persisted and latched after breaching policy."""
 
@@ -5662,7 +5666,9 @@ class RunnerStateStore:
                 with localcontext(Context(prec=64)):
                     difference = abs(Decimal(amount) - Decimal(command.basis_amount))
                 if difference <= Decimal("0.00000001"):
-                    raise RunnerStateAuthorityError("opening release observation is not a refusal")
+                    raise RunnerOpeningReleaseAwaitingAcknowledgement(
+                        "opening release observation is not a refusal"
+                    )
                 reason = "balance_mismatch"
             event = json.loads(verified.exact_signed_event_bytes)
             fact = {

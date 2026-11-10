@@ -651,3 +651,107 @@ async def test_control_consumer_binds_release_and_acks_only_after_commit(
         store.load_opening_gate_state_sync(EngineLifecycleAuthority.from_verified_command(desired))
         == "awaiting_release"
     )
+
+
+@pytest.mark.parametrize("case", ("balance_mismatch", "matching", "retired"))
+async def test_pending_release_observation_records_only_a_fresh_refusal(tmp_path, case):
+    import sqlite3
+    from dataclasses import replace
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from custos.core.engine_protocol import EngineLifecycleAuthority
+    from custos.core.opening_observation import OpeningObservationBundle
+    from custos.core.runner_fact import OPENING_RELEASE_FACT_KIND, _canonical_json_bytes
+    from custos.core.runner_fact_producer import (
+        RunnerFactDeployment,
+        observe_pending_opening_release,
+    )
+    from tests.test_runner_fact_opening_bundle import _future_native_bundle
+    from tests.test_runner_fact_store import (
+        _runner_authority,
+        _runner_fact_store,
+        _verified_command,
+    )
+
+    database = tmp_path / "runner.sqlite3"
+    _, store = _runner_fact_store(database)
+    _, _, desired = _verified_command()
+    await record_desired(store, desired)
+    auth, subject, event = local_release(desired)
+    manifest = {
+        "fact_kind_projectors": {OPENING_RELEASE_FACT_KIND: "risk"},
+        "runner_fact_contracts": {"risk": {"opening_release": "v1"}},
+    }
+    store._authority_resolver = lambda verified: replace(
+        _runner_authority(verified),
+        capability_manifest_digest=hashlib.sha256(_canonical_json_bytes(manifest)).hexdigest(),
+    )
+    authority = store._authority_resolver(desired)
+    source = _future_native_bundle(authority=authority)
+    token = replace(source.token, command_fingerprint=desired.command_fingerprint)
+    bundle = OpeningObservationBundle(
+        authority,
+        token,
+        source.independent,
+        source.trading_gate,
+        source.inventory,
+        source.native,
+        source.currency,
+    )
+    event["occurred_at"] = event["payload"]["issued_at"] = "2026-11-04T00:00:00Z"
+    event["payload"]["account_identity"] = bundle.inventory["observations"]["identity"]["rows"][0]
+    event["payload"]["basis_amount"] = "1" if case == "matching" else "100"
+    wire = signed(subject, event)
+    await store.record_opening_release(auth, subject=subject, signed_envelope=wire)
+    deployment = RunnerFactDeployment(
+        authority,
+        str(authority.deployment_instance_id),
+        str(authority.deployment_spec_id),
+        authority.deployment_spec_digest,
+        "BINANCE",
+        "binance",
+        "USDT",
+        False,
+        "1.0.0",
+        "1m",
+    )
+
+    async def read_after_intake(instance, currency):
+        assert (instance, currency) == (deployment.deployment_instance_id, deployment.currency)
+        assert (
+            store.load_pending_opening_release(authority.deployment_instance_id, auth) is not None
+        )
+        return bundle
+
+    host = SimpleNamespace(
+        deployment_ready=AsyncMock(return_value=True),
+        runner_fact_opening_bundle=AsyncMock(side_effect=read_after_intake),
+        runner_fact_observation_token=AsyncMock(
+            side_effect=[token, replace(token, observation_epoch=2) if case == "retired" else token]
+        ),
+    )
+    await observe_pending_opening_release(
+        deployment, host=host, state_store=store, authenticator=auth, manifest=manifest
+    )
+    host.runner_fact_opening_bundle.assert_awaited_once()
+    with sqlite3.connect(database) as connection:
+        rows = connection.execute("SELECT payload FROM runner_fact_outbox").fetchall()
+    if case == "balance_mismatch":
+        (row,) = rows
+        (fact,) = json.loads(row[0])["facts"]
+        assert (fact["amount"], fact["outcome"], fact["reason"]) == (
+            "1",
+            "refused",
+            "balance_mismatch",
+        )
+        assert store.load_pending_opening_release(authority.deployment_instance_id, auth) is None
+    else:
+        assert not rows
+        assert (
+            store.load_pending_opening_release(authority.deployment_instance_id, auth) is not None
+        )
+    assert (
+        store.load_opening_gate_state_sync(EngineLifecycleAuthority.from_verified_command(desired))
+        == "awaiting_release"
+    )

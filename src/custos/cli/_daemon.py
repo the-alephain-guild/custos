@@ -22,6 +22,7 @@ import signal
 import time
 from collections.abc import Collection, Mapping
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any, Final, Protocol
 from uuid import UUID
@@ -93,6 +94,7 @@ from custos.core.runner_command_intake import (
 from custos.core.runner_command_runtime import RunnerCommandRuntimeCoordinator
 from custos.core.runner_control_consumer import RunnerControlConsumerV1
 from custos.core.runner_fact import (
+    OPENING_RELEASE_FACT_KIND,
     RunnerCapabilityReceipt,
     RunnerFactAuthority,
     RunnerFactEmitter,
@@ -105,7 +107,11 @@ from custos.core.runner_fact import (
     runner_command_binding_gap,
     runner_instance_binding_gap,
 )
-from custos.core.runner_fact_producer import RunnerFactHost, RunnerFactProductionLoop
+from custos.core.runner_fact_producer import (
+    RunnerFactHost,
+    RunnerFactProductionLoop,
+    observe_pending_opening_release,
+)
 from custos.core.runner_material_authority import RunnerMaterialAuthorityClient
 from custos.core.runner_safety_policy import (
     DurableRunnerSafetyPolicyResolver,
@@ -1320,12 +1326,27 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 ),
                 node_capacity=_engine_node_capacity(getattr(args, "engine", "nautilus"), host),
             )
+            manifest = capability.capability_manifest
+            opening_release_observer = None
+            if (
+                manifest.get("fact_kind_projectors", {}).get(OPENING_RELEASE_FACT_KIND) == "risk"
+                and manifest.get("runner_fact_contracts", {}).get("risk", {}).get("opening_release")
+                == "v1"
+            ):
+                opening_release_observer = partial(
+                    observe_pending_opening_release,
+                    host=host,
+                    state_store=state_store,
+                    authenticator=command_authenticator,
+                    manifest=manifest,
+                )
             fact_production = RunnerFactProductionLoop(
                 host=host,
                 emitter=fact_emitter,
                 snapshot_interval_secs=args.runner_fact_snapshot_interval_secs,
                 period_secs=args.runner_fact_period_secs,
                 period_retry_secs=args.runner_fact_period_retry_secs,
+                opening_release_observer=opening_release_observer,
             )
             tasks.extend(
                 (

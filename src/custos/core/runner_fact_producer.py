@@ -6,11 +6,12 @@ import asyncio
 import hashlib
 import json
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Literal, Protocol
+from uuid import UUID
 
 from custos.core.log import get_logger
 from custos.core.opening_observation import (
@@ -19,10 +20,14 @@ from custos.core.opening_observation import (
     OpeningObservationBundle,
     RiskSampleUnavailable,
 )
+from custos.core.runner_command_intake import CrucibleRunnerCommandAuthenticator
 from custos.core.runner_fact import (
     RunnerFactAuthority,
     RunnerFactContractError,
     RunnerFactEmitter,
+    RunnerOpeningReleaseAwaitingAcknowledgement,
+    RunnerStateStore,
+    _signed_decimal,
     equity_snapshot,
     execution_fill,
     heartbeat,
@@ -938,6 +943,63 @@ class RunnerFactEventBridge:
         }
 
 
+async def observe_pending_opening_release(
+    deployment: RunnerFactDeployment,
+    *,
+    host: RunnerFactHost,
+    state_store: RunnerStateStore,
+    authenticator: CrucibleRunnerCommandAuthenticator,
+    manifest: Mapping[str, Any],
+) -> None:
+    """Read the account after authenticated intake and preserve a durable refusal."""
+    authority = deployment.authority
+    instance = deployment.deployment_instance_id
+    try:
+        pending = await asyncio.to_thread(
+            state_store.load_pending_opening_release,
+            authority.deployment_instance_id,
+            authenticator,
+        )
+        if pending is None or not await host.deployment_ready(instance):
+            return
+        token = await host.runner_fact_observation_token(authority)
+        if token.source_kind != "platform":
+            return
+        desired = await state_store.load_durable_desired_command(authority.deployment_instance_id)
+        if desired.command_fingerprint != token.command_fingerprint:
+            return
+        bundle = await host.runner_fact_opening_bundle(instance, deployment.currency)
+        inventory = bundle.inventory
+        if (
+            bundle.authority != authority
+            or bundle.token != token
+            or bundle.trading_gate != "awaiting_release"
+            or inventory["scope"]["connector"] != deployment.connector
+            or await host.runner_fact_observation_token(authority) != token
+        ):
+            return
+        sample = bundle.native or bundle.independent
+        if isinstance(sample, RiskSampleUnavailable) or sample.equity < 0:
+            return
+        await state_store.commit_refused_opening_release(
+            authenticator,
+            release_id=UUID(pending.command.release_id),
+            capability_manifest=manifest,
+            amount=_signed_decimal(sample.equity, "opening release equity", bounded=True),
+            currency=sample.currency,
+            observed_at=sample.observed_at,
+            inventory=inventory,
+        )
+    except (RunnerFactObservationRetired, RunnerOpeningReleaseAwaitingAcknowledgement):
+        return
+    except Exception as exc:  # noqa: BLE001 - leave the receipt pending and preserve observation
+        _log.warning(
+            "runner_opening_release_observation_deferred",
+            deployment_instance_id=instance,
+            error_type=type(exc).__name__,
+        )
+
+
 class RunnerFactProductionLoop:
     def __init__(
         self,
@@ -947,6 +1009,7 @@ class RunnerFactProductionLoop:
         snapshot_interval_secs: float,
         period_secs: int,
         period_retry_secs: float,
+        opening_release_observer: Callable[[RunnerFactDeployment], Awaitable[None]] | None = None,
     ) -> None:
         if snapshot_interval_secs <= 0 or period_retry_secs <= 0 or period_secs < 60:
             raise ValueError("RunnerFact intervals must be positive and period_secs >= 60")
@@ -955,6 +1018,7 @@ class RunnerFactProductionLoop:
         self._snapshot_interval_secs = snapshot_interval_secs
         self._period_secs = period_secs
         self._period_retry_secs = period_retry_secs
+        self._opening_release_observer = opening_release_observer
         self._period_starts: dict[str, datetime] = {}
         # Calendar months whose settlement close is owed or already emitted,
         # per stream: the daemon is the only automatic producer of the close
@@ -967,6 +1031,8 @@ class RunnerFactProductionLoop:
         while not stop.is_set():
             for deployment in tuple(self._host.runner_fact_deployments()):
                 await self._emit_observability(deployment)
+                if not stop.is_set() and self._opening_release_observer is not None:
+                    await self._opening_release_observer(deployment)
             await self._wait(stop, self._snapshot_interval_secs)
 
     async def _emit_observability(self, deployment: RunnerFactDeployment) -> None:
