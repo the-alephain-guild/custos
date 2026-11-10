@@ -16,9 +16,16 @@ from custos.contracts.crucible_runner_safety_policy import (
 )
 from custos.core.log import get_logger
 from custos.core.nats_client import CrucibleNatsClient
-from custos.core.nats_transport import RunnerNatsTransportError
+from custos.core.nats_transport import (
+    RUNNER_OPENING_RELEASE_SUBJECT_PREFIX,
+    RunnerNatsTransportError,
+)
+from custos.core.runner_command_intake import (
+    CommandVerificationError,
+    CrucibleRunnerCommandAuthenticator,
+)
 from custos.core.runner_command_runtime import RunnerCommandRuntimeCoordinator
-from custos.core.runner_fact import RunnerStateStore
+from custos.core.runner_fact import RunnerStateAuthorityError, RunnerStateStore
 
 log = get_logger("custos.runner-control")
 
@@ -60,7 +67,7 @@ class JetStreamCommandDelivery:
 
 
 class RunnerControlConsumerV1:
-    """Dispatch commands and policies from the existing exact-mode durable."""
+    """Dispatch signed events from the existing exact-mode durable."""
 
     def __init__(
         self,
@@ -69,11 +76,13 @@ class RunnerControlConsumerV1:
         policy_authenticator: CrucibleRunnerSafetyPolicyAuthenticator,
         state_store: RunnerStateStore,
         on_policy_committed: Callable[[str], Awaitable[None]] | None = None,
+        opening_release_authenticator: CrucibleRunnerCommandAuthenticator | None = None,
     ) -> None:
         self._command_runtime = command_runtime
         self._policy_authenticator = policy_authenticator
         self._state_store = state_store
         self._on_policy_committed = on_policy_committed
+        self._opening_release_authenticator = opening_release_authenticator
 
     async def run(
         self,
@@ -88,6 +97,9 @@ class RunnerControlConsumerV1:
             if str(message.subject).startswith(f"{RUNNER_POLICY_SUBJECT_PREFIX}."):
                 await self._process_policy(client, message)
                 continue
+            if str(message.subject).startswith(f"{RUNNER_OPENING_RELEASE_SUBJECT_PREFIX}."):
+                await self._process_opening_release(client, message)
+                continue
             delivery = JetStreamCommandDelivery(message)
             result = await self._command_runtime.process(delivery)
             log.info(
@@ -96,6 +108,31 @@ class RunnerControlConsumerV1:
                 reason_code=result.reason_code or "none",
                 delivery_count=delivery.delivered_count,
             )
+
+    async def _process_opening_release(self, client: CrucibleNatsClient, message: Any) -> None:
+        try:
+            subject = str(message.subject)
+            client.assert_opening_release_binding(subject)
+            if self._opening_release_authenticator is None:
+                raise RunnerNatsTransportError("opening release authenticator is unavailable")
+            await self._state_store.record_opening_release(
+                self._opening_release_authenticator,
+                subject=subject,
+                signed_envelope=bytes(message.data),
+            )
+        except (
+            CommandVerificationError,
+            RunnerNatsTransportError,
+            RunnerStateAuthorityError,
+        ) as exc:
+            log.warning("runner_opening_release_rejected", error_type=type(exc).__name__)
+            await message.term()
+            return
+        except Exception as exc:  # noqa: BLE001 - local durability failure is retryable
+            log.warning("runner_opening_release_commit_failed", error_type=type(exc).__name__)
+            await message.nak(delay=10.0)
+            return
+        await message.ack()
 
     async def _process_policy(self, client: CrucibleNatsClient, message: Any) -> None:
         try:

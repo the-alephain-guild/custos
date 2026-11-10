@@ -539,3 +539,115 @@ async def test_signed_release_refusal_commits_with_the_outbox_and_replays_exact_
         )
         == "recorded"
     )
+
+
+@pytest.mark.parametrize(
+    ("scenario", "disposition"),
+    [
+        ("exact", "ack"),
+        ("bad_signature", "term"),
+        ("other_mode", "term"),
+        ("legacy_profile", "term"),
+        ("commit_failure", "nak"),
+    ],
+)
+async def test_control_consumer_binds_release_and_acks_only_after_commit(
+    tmp_path, scenario, disposition
+):
+    import asyncio
+    import sqlite3
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from custos.core.engine_protocol import EngineLifecycleAuthority
+    from custos.core.nats_client import CrucibleNatsClient
+    from custos.core.runner_control_consumer import RunnerControlConsumerV1
+    from tests.test_runner_fact_store import _runner_fact_store, _verified_command
+
+    database = tmp_path / "runner.sqlite3"
+    _, store = _runner_fact_store(database)
+    _, _, desired = _verified_command()
+    await record_desired(store, desired)
+    auth, subject, document = local_release(desired)
+    mode = desired.command.trading_mode
+    tenant = desired.command.tenant_id
+    runner = desired.command.runner_id
+    scope = f"{tenant}.{runner}.{mode}"
+    filters = [f"crucible.runner.command.v1.{scope}", f"crucible.runner.policy.v1.{scope}"]
+    if scenario != "legacy_profile":
+        filters.append(subject)
+    profile = SimpleNamespace(
+        tenant_id=tenant,
+        runner_id=runner,
+        trading_mode=mode,
+        durable_config={"filter_subjects": filters},
+        assert_active=lambda: None,
+    )
+    machine = SimpleNamespace(tenant_id=tenant, runner_id=runner, assert_active=lambda: None)
+    client = CrucibleNatsClient(
+        connection_profile=profile,
+        tenant_id=tenant,
+        runner_id=str(runner),
+        machine_credential=machine,
+    )
+    command_runtime = SimpleNamespace(process=AsyncMock())
+    consumer = RunnerControlConsumerV1(
+        command_runtime=command_runtime,
+        policy_authenticator=object(),
+        state_store=store,
+        opening_release_authenticator=auth,
+    )
+    delivery_subject = subject
+    wire = signed(subject, document)
+    if scenario == "bad_signature":
+        tampered = json.loads(wire)
+        tampered["signature"] = "A" * 86
+        wire = json_bytes(tampered)
+    if scenario == "other_mode":
+        document["event_plane"]["trading_mode"] = document["payload"]["trading_mode"] = "live"
+        document["payload"]["account_identity"] = {
+            "kind": "sodex_account",
+            "main_wallet": "0x" + "1" * 40,
+            "account_id": "1",
+        }
+        delivery_subject = release_subject(document["payload"])
+        wire = signed(delivery_subject, document)
+    if scenario == "commit_failure":
+        with sqlite3.connect(database) as connection:
+            connection.execute(
+                """CREATE TRIGGER fail_release_commit BEFORE INSERT ON runner_opening_release_inbox
+                BEGIN SELECT RAISE(ABORT, 'injected receipt write failure'); END"""
+            )
+
+    async def require_durable_before_ack():
+        saved = store.load_pending_opening_release(desired.command.deployment_instance_id, auth)
+        assert saved == auth.verify_opening_release(subject=subject, signed_envelope_bytes=wire)
+
+    delivery = SimpleNamespace(
+        subject=delivery_subject,
+        data=wire,
+        ack=AsyncMock(side_effect=require_durable_before_ack),
+        term=AsyncMock(),
+        nak=AsyncMock(),
+    )
+
+    async def messages():
+        yield delivery
+
+    await consumer.run(
+        client=client, subscription=SimpleNamespace(messages=messages()), stop=asyncio.Event()
+    )
+    assert (delivery.ack.await_count, delivery.term.await_count, delivery.nak.await_count) == (
+        int(disposition == "ack"),
+        int(disposition == "term"),
+        int(disposition == "nak"),
+    )
+    command_runtime.process.assert_not_awaited()
+    if disposition != "ack":
+        assert (
+            store.load_pending_opening_release(desired.command.deployment_instance_id, auth) is None
+        )
+    assert (
+        store.load_opening_gate_state_sync(EngineLifecycleAuthority.from_verified_command(desired))
+        == "awaiting_release"
+    )

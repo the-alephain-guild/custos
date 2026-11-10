@@ -11,6 +11,7 @@ from custos.contracts.crucible_runner_command import (
     _required_uuid,
     _strict_json_object,
 )
+from custos.core.nats_transport import RUNNER_OPENING_RELEASE_SUBJECT_PREFIX
 from custos.core.opening_inventory_contract import (
     AccountIdentity,
     Digest,
@@ -20,7 +21,6 @@ from custos.core.opening_inventory_contract import (
 )
 
 _EVENT_TYPE = "RunnerOpeningReleaseCommand.v1"
-_SUBJECT_PREFIX = "crucible.runner.opening-release.v1"
 _EVENT_FIELDS = frozenset(
     {
         "schema_version",
@@ -92,7 +92,7 @@ class RunnerOpeningReleaseCommandV1(BaseModel):
         command = cls.model_validate(payload)
         if (
             subject
-            != f"{_SUBJECT_PREFIX}.{command.tenant_id}.{command.runner_id}.{command.trading_mode}"
+            != f"{RUNNER_OPENING_RELEASE_SUBJECT_PREFIX}.{command.tenant_id}.{command.runner_id}.{command.trading_mode}"
             or event["tenant_id"] != command.tenant_id
             or event["event_plane"] != {"kind": "mode", "trading_mode": command.trading_mode}
             or event["aggregate_id"] != command.release_id

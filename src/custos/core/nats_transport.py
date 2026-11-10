@@ -41,6 +41,7 @@ RUNNER_CONTROL_STREAM_SIM = "CRUCIBLE_RUNNER_CONTROL_SIM_V1"
 RUNNER_CONTROL_STREAM_LIVE = "CRUCIBLE_RUNNER_CONTROL_LIVE_V1"
 RUNNER_COMMAND_SUBJECT_PREFIX = "crucible.runner.command.v1"
 RUNNER_POLICY_SUBJECT_PREFIX = "crucible.runner.policy.v1"
+RUNNER_OPENING_RELEASE_SUBJECT_PREFIX = "crucible.runner.opening-release.v1"
 RUNNER_FACT_SUBJECT_PREFIX = "crucible.runner.fact.v1"
 RUNNER_STRATEGY_SIGNAL_SUBJECT_PREFIX = "crucible.runner.strategy-signal.v1"
 RUNNER_CONTROL_DELIVERY_SUBJECT_PREFIX = "custos.runner.control.v1.delivery"
@@ -273,9 +274,18 @@ def _expected_durable_config(
     tenant_id: str,
     runner_id: UUID,
     trading_mode: str,
+    *,
+    opening_release: bool = False,
 ) -> dict[str, Any]:
     runner = str(runner_id)
     domain = runner_nats_transport_domain(trading_mode)
+    scope = f"{tenant_id}.{runner}.{trading_mode}"
+    subjects = [
+        f"{RUNNER_COMMAND_SUBJECT_PREFIX}.{scope}",
+        f"{RUNNER_POLICY_SUBJECT_PREFIX}.{scope}",
+    ]
+    if opening_release:
+        subjects.append(f"{RUNNER_OPENING_RELEASE_SUBJECT_PREFIX}.{scope}")
     return {
         "schema_version": RUNNER_NATS_TRANSPORT_SCHEMA_VERSION,
         "transport_domain": domain,
@@ -284,10 +294,7 @@ def _expected_durable_config(
         "delivery_subject": (
             f"{RUNNER_CONTROL_DELIVERY_SUBJECT_PREFIX}.{tenant_id}.{runner}.{trading_mode}"
         ),
-        "filter_subjects": [
-            f"{RUNNER_COMMAND_SUBJECT_PREFIX}.{tenant_id}.{runner}.{trading_mode}",
-            f"{RUNNER_POLICY_SUBJECT_PREFIX}.{tenant_id}.{runner}.{trading_mode}",
-        ],
+        "filter_subjects": subjects,
         "deliver_policy": "all",
         "ack_policy": "explicit",
         "replay_policy": "instant",
@@ -421,10 +428,13 @@ class RunnerNatsTransportCredential:
             raise RunnerNatsTransportError(
                 "permission profile is not exact runner-control authority"
             )
-        expected_durable = _expected_durable_config(
-            self.tenant_id, self.runner_id, self.trading_mode
+        expected_durables = (
+            _expected_durable_config(
+                self.tenant_id, self.runner_id, self.trading_mode, opening_release=enabled
+            )
+            for enabled in (False, True)
         )
-        if self.durable_config != expected_durable:
+        if self.durable_config not in expected_durables:
             raise RunnerNatsTransportError("durable config is not exact runner-control authority")
         _validate_jwt(
             self.user_jwt,

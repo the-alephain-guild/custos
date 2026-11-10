@@ -1356,6 +1356,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 command_runtime=command_runtime,
                 policy_authenticator=policy_authenticator,
                 state_store=state_store,
+                opening_release_authenticator=command_authenticator,
                 on_policy_committed=_build_policy_renewal_notifier(
                     boundaries=runner_safety_boundaries,
                     safety_policy_resolver=safety_policy_resolver,

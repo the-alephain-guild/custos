@@ -215,12 +215,15 @@ def _issued(
     trading_mode: str = _MODE,
     now: datetime | None = None,
     operation_id: UUID = _OPERATION_ID,
+    opening_release_filter: str | None = None,
 ) -> dict[str, object]:
     issued_at = (now or datetime(2026, 7, 19, 8, 0, tzinfo=UTC)).replace(microsecond=0)
     expires_at = issued_at + timedelta(hours=1)
     transport_domain = runner_nats_transport_domain(trading_mode)
     permission = _permission_profile(trading_mode)
     durable = _durable_config(trading_mode)
+    if opening_release_filter is not None:
+        durable["filter_subjects"] = [*durable["filter_subjects"], opening_release_filter]
     header = _b64url(
         json.dumps(
             {"typ": "JWT", "alg": "ed25519-nkey"},
@@ -290,6 +293,7 @@ def _credential(
     generation: int = 1,
     trading_mode: str = _MODE,
     now: datetime | None = None,
+    opening_release_filter: str | None = None,
 ) -> RunnerNatsTransportCredential:
     user_seed, user_pair, user_public = _keypair(nkeys.PREFIX_BYTE_USER)
     account_seed, account_pair, account_public = _keypair(nkeys.PREFIX_BYTE_ACCOUNT)
@@ -303,6 +307,7 @@ def _credential(
                 generation=generation,
                 trading_mode=trading_mode,
                 now=now,
+                opening_release_filter=opening_release_filter,
             ),
             user_seed=user_seed,
             expected_tenant_id=_TENANT,
@@ -327,6 +332,23 @@ def test_issued_credential_verifies_jwt_acl_durable_and_redacts_secrets() -> Non
     )
     assert credential.user_jwt not in rendered
     assert base64.b64encode(credential.user_seed).decode("ascii") not in rendered
+
+
+@pytest.mark.parametrize("mode", ("sandbox", "testnet", "live"))
+def test_credential_accepts_only_its_exact_opening_release_filter(mode) -> None:
+    subject = f"crucible.runner.opening-release.v1.{_TENANT}.{_RUNNER}.{mode}"
+    credential = _credential(trading_mode=mode, opening_release_filter=subject)
+    assert credential.durable_config["filter_subjects"] == [
+        *_durable_config(mode)["filter_subjects"],
+        subject,
+    ]
+    for invalid in (
+        f"crucible.runner.opening-release.v1.other.{_RUNNER}.{mode}",
+        f"crucible.runner.opening-release.v1.{_TENANT}.{_RUNNER}.*",
+        f"crucible.runner.opening-release.v1.{_TENANT}.{_RUNNER}.{'live' if mode != 'live' else 'sandbox'}",
+    ):
+        with pytest.raises(RunnerNatsTransportError, match="durable config is not exact"):
+            _credential(trading_mode=mode, opening_release_filter=invalid)
 
 
 def test_authority_with_millisecond_times_from_crucible_is_accepted() -> None:

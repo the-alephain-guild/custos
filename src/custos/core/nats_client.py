@@ -9,6 +9,7 @@ from uuid import UUID
 from nats.js.api import AckPolicy, DeliverPolicy, ReplayPolicy
 
 from custos.core.nats_transport import (
+    RUNNER_OPENING_RELEASE_SUBJECT_PREFIX,
     RunnerNatsConnectionProfile,
     RunnerNatsTransportError,
 )
@@ -16,7 +17,7 @@ from custos.core.nats_transport import (
 
 @dataclass
 class CrucibleNatsClient:
-    """Bind, but never create, the exact tenant+runner command+policy consumer."""
+    """Bind, but never create, the exact tenant, runner and mode consumer."""
 
     connection_profile: RunnerNatsConnectionProfile
     tenant_id: str
@@ -87,7 +88,7 @@ class CrucibleNatsClient:
         """Bind the broker subject and verified payload to this exact-mode session."""
 
         expected_subjects = list(self.connection_profile.durable_config["filter_subjects"])
-        if len(expected_subjects) != 2 or expected_subjects[0] != subject:
+        if len(expected_subjects) not in (2, 3) or expected_subjects[0] != subject:
             raise RunnerNatsTransportError(
                 "runner command subject is outside the exact runner-control mode authority"
             )
@@ -100,13 +101,25 @@ class CrucibleNatsClient:
         """Bind the runner-safety policy subject and verified body to this exact-mode session."""
 
         expected_subjects = list(self.connection_profile.durable_config["filter_subjects"])
-        if len(expected_subjects) != 2 or expected_subjects[1] != subject:
+        if len(expected_subjects) not in (2, 3) or expected_subjects[1] != subject:
             raise RunnerNatsTransportError(
                 "runner policy subject is outside the exact runner-control mode authority"
             )
         if getattr(policy, "trading_mode", None) != self.connection_profile.trading_mode:
             raise RunnerNatsTransportError(
                 "runner policy payload mode differs from the authenticated session"
+            )
+
+    def assert_opening_release_binding(self, subject: str) -> None:
+        """Require the release subject on the authenticated control durable."""
+        mode = self.connection_profile.trading_mode
+        expected = (
+            f"{RUNNER_OPENING_RELEASE_SUBJECT_PREFIX}.{self.tenant_id}.{self.runner_id}.{mode}"
+        )
+        subjects = self.connection_profile.durable_config["filter_subjects"]
+        if len(subjects) != 3 or subjects[2] != expected or subject != expected:
+            raise RunnerNatsTransportError(
+                "opening release subject is outside the exact runner-control mode authority"
             )
 
 
