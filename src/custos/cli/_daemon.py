@@ -387,6 +387,7 @@ def _build_host(
     capability_receipt: RunnerCapabilityReceipt | None = None,
     runner_safety_boundary_factory=None,
     platform_process_fence=None,
+    native_runtime_artifact_identity=None,
 ) -> RunnerExecutionHost:
     """Pick the execution engine host from the clean-break ``--engine`` enum.
 
@@ -422,6 +423,7 @@ def _build_host(
             capability_receipt=capability_receipt,
             runner_safety_boundary_factory=runner_safety_boundary_factory,
             platform_process_fence=platform_process_fence,
+            native_runtime_artifact_identity=native_runtime_artifact_identity,
             venue_proxy=venue_proxy,
             source_inbox_path=(
                 args.source_runner_options.inbox_path
@@ -1192,6 +1194,15 @@ async def run_daemon(args: argparse.Namespace) -> int:
     require_declared_runtime(
         capability.capability_manifest, observed_runtime, admission=runtime_admission
     )
+    from custos.core.native_runtime_bundle import (
+        NativeRuntimeBundleError,
+        measure_candidate_native_bundle,
+    )
+
+    native_bundle = getattr(args, "native_runtime_bundle", None)
+    if native_bundle is not None and getattr(args, "engine", "nautilus") != "nautilus":
+        raise NativeRuntimeBundleError("a native runtime bundle requires the native host")
+    native_runtime_artifact_identity = await measure_candidate_native_bundle(native_bundle)
     fact_outbox = RunnerFactOutbox(args.runner_fact_outbox)
     fact_publisher = RunnerFactJetStreamPublisher(
         connection_profiles=transport_profiles,
@@ -1326,6 +1337,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
                     )
             host = _build_host(
                 args,
+                native_runtime_artifact_identity=native_runtime_artifact_identity,
                 fact_emitter=fact_emitter,
                 capability_receipt=capability,
                 platform_process_fence=platform_process_fence,

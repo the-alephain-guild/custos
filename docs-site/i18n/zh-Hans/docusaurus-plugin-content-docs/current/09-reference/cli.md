@@ -323,6 +323,7 @@ sidebar_position: 1
 | `--engine` | 可选 | `nautilus` | `nautilus`, `sandbox-sim` |
 | `--ready-file` | 可选 | `~/.arx/state/runner-ready.json` | — |
 | `--runner-capability` | 可选 | `~/.arx/runner-capability.json` | — |
+| `--native-runtime-bundle` | 可选 | — | — |
 | `--runner-fact-outbox` | 可选 | `~/.arx/state/runner-fact-outbox.db` | — |
 | `--development-artifact-root` | 可选 | `~/.alephain/v1-team/strategy-artifacts` | — |
 | `--development-producer-repository` | 可选 | `[]` | —; 可重复 |

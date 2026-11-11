@@ -135,6 +135,11 @@ def register(subparsers: argparse._SubParsersAction) -> None:
     parser.add_argument("--engine", choices=["nautilus", "sandbox-sim"], default="nautilus")
     parser.add_argument("--ready-file", type=Path, default=DEFAULT_READY_FILE)
     parser.add_argument("--runner-capability", type=Path, default=DEFAULT_RUNNER_CAPABILITY)
+    parser.add_argument(
+        "--native-runtime-bundle",
+        type=Path,
+        help="Measure a build-selected local native candidate bundle before host creation",
+    )
     parser.add_argument("--runner-fact-outbox", type=Path, default=DEFAULT_RUNNER_FACT_OUTBOX)
     parser.add_argument(
         "--development-artifact-root",
@@ -387,6 +392,8 @@ def _source_runner_options(args: argparse.Namespace) -> SourceRunnerOptions | No
 
 def run(args: argparse.Namespace) -> int:
     try:
+        if args.reconcile_strategy_id and getattr(args, "native_runtime_bundle", None) is not None:
+            raise ValueError("native runtime bundle applies only to the signed lane")
         if args.reconcile_strategy_id and any(
             getattr(args, field, None)
             for field in (
@@ -464,6 +471,7 @@ def run(args: argparse.Namespace) -> int:
         engine=args.engine,
         ready_file=args.ready_file,
         runner_capability=args.runner_capability,
+        native_runtime_bundle=args.native_runtime_bundle,
         runner_fact_outbox=args.runner_fact_outbox,
         development_artifact_root=args.development_artifact_root,
         development_producer_repositories=tuple(args.development_producer_repository),

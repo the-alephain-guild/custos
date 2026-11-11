@@ -81,6 +81,8 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict:
 
 
 def _recipe(profile_id: str) -> dict:
+    from custos.core.native_runtime_bundle import validate_native_engine
+
     if profile_id != PROFILE_ID:
         raise ValueError("unknown candidate build profile")
     path = ROOT / "packaging/runtime-profiles" / f"{profile_id}.json"
@@ -97,7 +99,8 @@ def _recipe(profile_id: str) -> dict:
         or value["schema_version"] != 1
         or value["profile_id"] != profile_id
         or set(value["versions"]) != set(PROJECTS)
-        or set(value["engine"]) != {"distribution", "version", "artifact_sha256", "abi", "platform"}
+        or set(value["engine"])
+        != {"distribution", "version", "artifact_sha256", "abi", "platform", "native_build"}
         or value["engine"]["distribution"] != "nautilus-trader"
         or value["engine"]["abi"] != "cp312"
         or value["engine"]["platform"] != "macosx_11_0_arm64"
@@ -105,6 +108,7 @@ def _recipe(profile_id: str) -> dict:
         or re.fullmatch(r"[0-9a-f]{64}", value["engine"]["artifact_sha256"]) is None
     ):
         raise ValueError("candidate recipe has unknown fields or incompatible values")
+    validate_native_engine(value["engine"])
     try:
         versions = [Version(v) for v in value["versions"].values()]
         if any(
@@ -250,6 +254,11 @@ def export_candidate_source(
         (source / relative).write_bytes(content)
     for name, relative in PROJECTS.items():
         _project_metadata(source / relative / "pyproject.toml", name, recipe)
+    from custos.core.native_runtime_bundle import descriptor_bytes
+
+    (source / "src/custos/core/_native_build_descriptor_v1.json").write_bytes(
+        descriptor_bytes(recipe, source_commit)
+    )
     epoch = int(_run(["git", "show", "-s", "--format=%ct", source_commit], cwd=repository_root))
     return CandidateSource(source, source_commit, epoch, _canonical(recipe))
 
@@ -543,6 +552,11 @@ from custos_strategy_publisher.model import ENGINE_VERSION as PUBLISHER_ENGINE_V
 from custos_strategy_publisher.engine_profile import ENGINE_PROFILE_ID as PUBLISHER_PROFILE_ID
 from pydantic import TypeAdapter,ValidationError
 from custos_toolkit.contracts.engine_profile import EngineVersion
+from custos.core.native_runtime_bundle import _installed_descriptor
+descriptor = _installed_descriptor()
+assert descriptor['source_commit']==sys.argv[3]
+assert descriptor['engine']['artifact_sha256']==descriptors['nautilus-trader']['sha256']
+assert descriptor['profile_id']==sys.argv[2]
 assert ENGINE_VERSION==PUBLISHER_ENGINE_VERSION==descriptors['nautilus-trader']['version']
 assert ENGINE_PROFILE_ID==PUBLISHER_PROFILE_ID==sys.argv[2]
 for model in [StrategyManifestV1,StrategyArtifactRefV1]:
@@ -554,7 +568,16 @@ else: raise AssertionError('candidate parser accepted released engine identity')
 print(json.dumps({'installed_payloads_match':True,'engine_version':ENGINE_VERSION,'profile_id':ENGINE_PROFILE_ID,'prefix':sys.prefix}))
 """
     _step(
-        [str(project / ".venv/bin/python"), "-I", "-B", "-c", verify, str(output), profile_id],
+        [
+            str(project / ".venv/bin/python"),
+            "-I",
+            "-B",
+            "-c",
+            verify,
+            str(output),
+            profile_id,
+            source_commit,
+        ],
         cwd=output,
         environment=environment,
         log=output / "installed-payloads.log",
@@ -584,6 +607,7 @@ print(json.dumps({'installed_payloads_match':True,'engine_version':ENGINE_VERSIO
             "wheel_path": native["wheel_path"],
             "abi": recipe["engine"]["abi"],
             "platform": recipe["engine"]["platform"],
+            "native_build": recipe["engine"]["native_build"],
         },
         "distributions": wheels,
         "engine_definitions": {

@@ -58,6 +58,9 @@
         },
         "platform": {
           "const": "macosx_11_0_arm64"
+        },
+        "native_build": {
+          "$ref": "#/$defs/native_build"
         }
       },
       "required": [
@@ -66,7 +69,8 @@
         "artifact_sha256",
         "wheel_path",
         "abi",
-        "platform"
+        "platform",
+        "native_build"
       ],
       "additionalProperties": false
     },
@@ -168,6 +172,31 @@
   ],
   "additionalProperties": false,
   "$defs": {
+    "native_build": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_revision", "crate_version", "profile", "features"],
+      "properties": {
+        "source_revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "not": {"const": "0000000000000000000000000000000000000000"}
+        },
+        "crate_version": {
+          "type": "string",
+          "pattern": "^(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)$"
+        },
+        "profile": {"const": "dev"},
+        "features": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "contains": {"const": "extension-module"},
+          "items": {"type": "string", "pattern": "^[A-Za-z0-9_][A-Za-z0-9_./-]*$"},
+          "description": "Explicit maturin feature arguments in their source order, not a transitive feature closure."
+        }
+      }
+    },
     "distribution": {
       "type": "object",
       "properties": {

@@ -99,6 +99,42 @@ def test_start_loads_bound_machine_authority(
     credential.assert_binding.assert_called_once()
 
 
+def test_start_preserves_the_explicit_native_bundle_measurement_input(tmp_path, monkeypatch):
+    runner_toml = tmp_path / "arx" / "runner.toml"
+    _seed_runner_toml(runner_toml)
+    bundle = tmp_path / "candidate-bundle"
+    status, daemon, _ = _run_start(
+        ["--runner-toml", str(runner_toml), "--native-runtime-bundle", str(bundle)],
+        monkeypatch=monkeypatch,
+    )
+    assert status == 0
+    assert daemon.call_args.args[0].native_runtime_bundle == bundle
+
+
+def test_unsigned_lane_cannot_silently_ignore_a_native_bundle(tmp_path, monkeypatch, capsys):
+    runner_toml = tmp_path / "arx" / "runner.toml"
+    _seed_runner_toml(runner_toml)
+
+    def offline(*_args):
+        raise AssertionError("native bundle reached unsigned composition")
+
+    monkeypatch.setattr(start_command, "_run_offline_lane", offline)
+    status, daemon, _ = _run_start(
+        [
+            "--runner-toml",
+            str(runner_toml),
+            "--reconcile-strategy-id",
+            "test-strategy",
+            "--native-runtime-bundle",
+            str(tmp_path / "bundle"),
+        ],
+        monkeypatch=monkeypatch,
+    )
+    assert status == 1
+    assert "native runtime bundle applies only to the signed lane" in capsys.readouterr().err
+    daemon.assert_not_called()
+
+
 def test_start_missing_runner_toml_fails_fast(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

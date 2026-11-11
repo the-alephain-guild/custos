@@ -323,6 +323,7 @@ The following tables are generated from the actual parser. Defaults are shown wi
 | `--engine` | optional | `nautilus` | `nautilus`, `sandbox-sim` |
 | `--ready-file` | optional | `~/.arx/state/runner-ready.json` | — |
 | `--runner-capability` | optional | `~/.arx/runner-capability.json` | — |
+| `--native-runtime-bundle` | optional | — | — |
 | `--runner-fact-outbox` | optional | `~/.arx/state/runner-fact-outbox.db` | — |
 | `--development-artifact-root` | optional | `~/.alephain/v1-team/strategy-artifacts` | — |
 | `--development-producer-repository` | optional | `[]` | —; repeatable |

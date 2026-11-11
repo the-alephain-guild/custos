@@ -453,6 +453,10 @@
       "role": "runner_fact_opening_release_golden_v1",
       "path": "docs/authority/runner-fact-opening-release-golden-v1.json",
       "contract_only": true
+    },
+    {
+      "role": "native_runtime_bundle_measurement_v1",
+      "path": "docs/authority/native-runtime-bundle.md"
     }
   ],
   "external_optional_documents": [

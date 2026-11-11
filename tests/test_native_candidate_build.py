@@ -9,6 +9,7 @@ import runpy
 import shutil
 import subprocess
 import tomllib
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -146,6 +147,14 @@ def test_four_candidate_wheels_have_real_metadata_and_static_engine_payloads(
         "custos-strategy-toolkit-nautilus",
         "custos-strategy-publisher",
     }
+    with zipfile.ZipFile(tmp_path / "candidate" / wheels["custos-runner"]["wheel_path"]) as runner:
+        embedded = json.loads(runner.read("custos/core/_native_build_descriptor_v1.json"))
+    assert embedded == {
+        "schema_version": 1,
+        "profile_id": PROFILE,
+        "source_commit": exported.source_commit,
+        "engine": exported.recipe["engine"],
+    }
     for name, descriptor in wheels.items():
         assert descriptor["name"] == name
         assert descriptor["version"] == exported.recipe["versions"][name]
@@ -233,7 +242,11 @@ def test_actual_native_archive_installs_with_all_four_candidate_packages(
             "config = SodexExecClientConfig(account_id=123, wallet_address='0x'+'11'*20); "
             "assert config.account_id == 123; "
             "assert config.wallet_address == '0x'+'11'*20; "
-            "assert not hasattr(config, 'api_private_key')",
+            "assert not hasattr(config, 'api_private_key'); "
+            "import asyncio; from custos.core.native_runtime_bundle import measure_candidate_native_bundle; "
+            "measured = asyncio.run(measure_candidate_native_bundle(Path.cwd())); "
+            f"assert measured.artifact_digest == {profile['engine']['artifact_sha256']!r}; "
+            f"assert measured.crate_version == {profile['engine']['native_build']['crate_version']!r}",
         ],
         cwd=output,
         check=True,
