@@ -229,6 +229,83 @@ class VendorTest(unittest.TestCase):
         self.assertNotRegex(json.dumps(self._pins()), r"\b[0-9a-f]{40}\b")
         self.assertEqual(self._check(), (0, self._check()[1]))
 
+    def _declare_public_authority(self) -> None:
+        path = self.producer.root / cv.PRODUCER_INDEX_PATH
+        index = json.loads(path.read_bytes())
+        index["producer_authority"] = "alephain.example"
+        path.write_bytes(_pretty(index))
+
+    def _sync_public(self) -> tuple[int, str]:
+        return self._sync(
+            "--public-provenance",
+            "--map",
+            "contracts/widget-golden.json=docs/authority/widget-golden.json",
+            "--map",
+            "conformance/widget.vectors.json=docs/authority/widget.vectors.json",
+            "--map",
+            "conformance/widget.vectors.json.sha256=docs/authority/widget.vectors.json.sha256",
+        )
+
+    def test_public_provenance_keeps_producer_comparison_and_asset_integrity(self) -> None:
+        self._declare_public_authority()
+        code, output = self._sync_public()
+        self.assertEqual(code, 0, output)
+        pin = self._pins()["contracts"][CONTRACT]
+        self.assertEqual(pin["producer_authority"], "alephain.example")
+        self.assertNotIn("producer_repository", pin)
+        self.assertEqual(self._check("--producer-root", str(self.producer.root))[0], 0)
+        changed = _schema()
+        changed["properties"]["amount"]["type"] = "number"
+        self.producer.write(changed, _vectors())
+        self._declare_public_authority()
+        self.assertEqual(self._check("--producer-root", str(self.producer.root))[0], 1)
+
+    def test_public_provenance_requires_a_declared_authority_before_writing(self) -> None:
+        code, output = self._sync_public()
+        self.assertEqual(code, 2, output)
+        self.assertIn("public authority", output)
+        self.assertFalse((self.consumer / cv.PINS_PATH).exists())
+
+    def test_public_provenance_requires_explicit_local_paths(self) -> None:
+        self._declare_public_authority()
+        code, output = self._sync("--public-provenance")
+        self.assertEqual(code, 2, output)
+        self.assertIn("explicit", output)
+        self.assertFalse((self.consumer / cv.PINS_PATH).exists())
+
+    def test_public_authority_removal_does_not_skip_producer_comparison(self) -> None:
+        self._declare_public_authority()
+        self.assertEqual(self._sync_public()[0], 0)
+        self.producer.write(_schema(), _vectors())
+        code, output = self._check("--producer-root", str(self.producer.root))
+        self.assertNotEqual(code, 0, output)
+        self.assertIn("public authority", output)
+
+    def test_public_provenance_is_retained_by_a_later_default_sync(self) -> None:
+        self._declare_public_authority()
+        self.assertEqual(self._sync_public()[0], 0)
+        before = self._pins()["contracts"][CONTRACT]
+        self.assertEqual(self._sync()[0], 0)
+        self.assertEqual(self._pins()["contracts"][CONTRACT], before)
+
+    def test_public_provenance_keeps_existing_asset_bytes_and_revision(self) -> None:
+        self.assertEqual(self._sync()[0], 0)
+        before = self._pins()["contracts"][CONTRACT]
+        before_bytes = {
+            a["producer_path"]: (self.consumer / a["local_path"]).read_bytes()
+            for a in before["assets"]
+        }
+        self._declare_public_authority()
+        self.assertEqual(self._sync_public()[0], 0)
+        after = self._pins()["contracts"][CONTRACT]
+        self.assertEqual(after["revision"], before["revision"])
+        self.assertEqual(after["wire_sha256"], before["wire_sha256"])
+        for asset in after["assets"]:
+            self.assertEqual(
+                (self.consumer / asset["local_path"]).read_bytes(),
+                before_bytes[asset["producer_path"]],
+            )
+
     def test_sync_keeps_the_local_path_a_pin_already_uses(self) -> None:
         self.assertEqual(self._sync()[0], 0)
         code, output = _run(

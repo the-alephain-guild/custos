@@ -1,0 +1,169 @@
+{
+  "contract_id": "alephain.crucible.runner_opening_release_command.v1",
+  "contract_revision": 1,
+  "fixtures": [
+    {
+      "envelope": {
+        "event_bytes": "eyJzY2hlbWFfdmVyc2lvbiI6MSwiZXZlbnRfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDIiLCJ0ZW5hbnRfaWQiOiJ0ZW5hbnQtYSIsImV2ZW50X3BsYW5lIjp7ImtpbmQiOiJtb2RlIiwidHJhZGluZ19tb2RlIjoic2FuZGJveCJ9LCJib3VuZGVkX2NvbnRleHQiOiJkZXBsb3ltZW50IiwiYWdncmVnYXRlX3R5cGUiOiJydW5uZXJfb3BlbmluZ19yZWxlYXNlIiwiYWdncmVnYXRlX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwiYWdncmVnYXRlX3ZlcnNpb24iOjEsImV2ZW50X3R5cGUiOiJSdW5uZXJPcGVuaW5nUmVsZWFzZUNvbW1hbmQudjEiLCJwYXlsb2FkIjp7ImFjY291bnRfaWRlbnRpdHkiOnsiYWNjb3VudF9pZCI6IlNJTS0wMSIsImFjY291bnRfdHlwZSI6IkNBU0giLCJjbGllbnRfaWQiOiJTSU0iLCJjb25maWd1cmF0aW9uX3NoYTI1NiI6ImNjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2MiLCJpbmNhcm5hdGlvbiI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwNyIsImtpbmQiOiJzYW5kYm94X2FjY291bnQiLCJ2ZW51ZSI6IlNJTSJ9LCJiYXNpc19hbW91bnQiOiI0MDAwMC4wMDAwMDAwMSIsImJhc2lzX3ZlcnNpb25fZGlnZXN0IjoiZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZCIsImNyZWRlbnRpYWxfc2NvcGVfZGlnZXN0IjoiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImNyZWRlbnRpYWxfc2NvcGVfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDYiLCJjdXJyZW5jeSI6IlVTRFQiLCJkZXBsb3ltZW50X2luc3RhbmNlX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDA0IiwiZGVwbG95bWVudF9zcGVjX2RpZ2VzdCI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJkZXBsb3ltZW50X3NwZWNfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDUiLCJnZW5lcmF0aW9uIjoxNywiaXNzdWVkX2F0IjoiMjAyNi0xMS0xMVQwNTowMDowMC4xMjM0NTY3ODlaIiwib3BlbmluZ192YWx1YXRpb25fZXZlbnRfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDgiLCJyZWxlYXNlX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwicnVubmVyX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAzIiwic2NoZW1hX3ZlcnNpb24iOjEsInRlbmFudF9pZCI6InRlbmFudC1hIiwidHJhZGluZ19tb2RlIjoic2FuZGJveCJ9LCJjb3JyZWxhdGlvbl9pZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwOSIsImFjdG9yX2Fzc2VydGlvbl9qdGkiOm51bGwsIm9jY3VycmVkX2F0IjoiMjAyNi0xMS0xMVQwNTowMDowMC4xMjM0NTY3ODlaIn0",
+        "event_encoding": "application/json;base64url",
+        "schema_version": 1,
+        "signature": "yumT5LHR8DXsGoyK-5yWK-XHBKjRJm69V4iw1j2qr9bLKEs8GSooLQ8BriuRYWl70PirNRCTfrQAg8cTpR6cDg",
+        "signature_key_id": "opening-release-contract-fixture",
+        "signature_profile": "crucible-domain-event-v1-exact-bytes"
+      },
+      "event": {
+        "actor_assertion_jti": null,
+        "aggregate_id": "00000000-0000-0000-0000-000000000001",
+        "aggregate_type": "runner_opening_release",
+        "aggregate_version": 1,
+        "bounded_context": "deployment",
+        "correlation_id": "00000000-0000-0000-0000-000000000009",
+        "event_id": "00000000-0000-0000-0000-000000000002",
+        "event_plane": {
+          "kind": "mode",
+          "trading_mode": "sandbox"
+        },
+        "event_type": "RunnerOpeningReleaseCommand.v1",
+        "occurred_at": "2026-11-11T05:00:00.123456789Z",
+        "payload": {
+          "account_identity": {
+            "account_id": "SIM-01",
+            "account_type": "CASH",
+            "client_id": "SIM",
+            "configuration_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "incarnation": "00000000-0000-0000-0000-000000000007",
+            "kind": "sandbox_account",
+            "venue": "SIM"
+          },
+          "basis_amount": "40000.00000001",
+          "basis_version_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "credential_scope_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "credential_scope_id": "00000000-0000-0000-0000-000000000006",
+          "currency": "USDT",
+          "deployment_instance_id": "00000000-0000-0000-0000-000000000004",
+          "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "deployment_spec_id": "00000000-0000-0000-0000-000000000005",
+          "generation": 17,
+          "issued_at": "2026-11-11T05:00:00.123456789Z",
+          "opening_valuation_event_id": "00000000-0000-0000-0000-000000000008",
+          "release_id": "00000000-0000-0000-0000-000000000001",
+          "runner_id": "00000000-0000-0000-0000-000000000003",
+          "schema_version": 1,
+          "tenant_id": "tenant-a",
+          "trading_mode": "sandbox"
+        },
+        "schema_version": 1,
+        "tenant_id": "tenant-a"
+      },
+      "name": "sandbox",
+      "subject": "crucible.runner.opening-release.v1.tenant-a.00000000-0000-0000-0000-000000000003.sandbox"
+    },
+    {
+      "envelope": {
+        "event_bytes": "eyJzY2hlbWFfdmVyc2lvbiI6MSwiZXZlbnRfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDIiLCJ0ZW5hbnRfaWQiOiJ0ZW5hbnQtYSIsImV2ZW50X3BsYW5lIjp7ImtpbmQiOiJtb2RlIiwidHJhZGluZ19tb2RlIjoidGVzdG5ldCJ9LCJib3VuZGVkX2NvbnRleHQiOiJkZXBsb3ltZW50IiwiYWdncmVnYXRlX3R5cGUiOiJydW5uZXJfb3BlbmluZ19yZWxlYXNlIiwiYWdncmVnYXRlX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwiYWdncmVnYXRlX3ZlcnNpb24iOjEsImV2ZW50X3R5cGUiOiJSdW5uZXJPcGVuaW5nUmVsZWFzZUNvbW1hbmQudjEiLCJwYXlsb2FkIjp7ImFjY291bnRfaWRlbnRpdHkiOnsiYWNjb3VudF9pZCI6Mywia2luZCI6InNvZGV4X2FjY291bnQiLCJtYWluX3dhbGxldCI6IjB4MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSJ9LCJiYXNpc19hbW91bnQiOiI0MDAwMC4wMDAwMDAwMSIsImJhc2lzX3ZlcnNpb25fZGlnZXN0IjoiZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZCIsImNyZWRlbnRpYWxfc2NvcGVfZGlnZXN0IjoiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImNyZWRlbnRpYWxfc2NvcGVfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDYiLCJjdXJyZW5jeSI6IlVTRFQiLCJkZXBsb3ltZW50X2luc3RhbmNlX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDA0IiwiZGVwbG95bWVudF9zcGVjX2RpZ2VzdCI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJkZXBsb3ltZW50X3NwZWNfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDUiLCJnZW5lcmF0aW9uIjoxNywiaXNzdWVkX2F0IjoiMjAyNi0xMS0xMVQwNTowMDowMC4xMjM0NTY3ODlaIiwib3BlbmluZ192YWx1YXRpb25fZXZlbnRfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDgiLCJyZWxlYXNlX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwicnVubmVyX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAzIiwic2NoZW1hX3ZlcnNpb24iOjEsInRlbmFudF9pZCI6InRlbmFudC1hIiwidHJhZGluZ19tb2RlIjoidGVzdG5ldCJ9LCJjb3JyZWxhdGlvbl9pZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwOSIsImFjdG9yX2Fzc2VydGlvbl9qdGkiOm51bGwsIm9jY3VycmVkX2F0IjoiMjAyNi0xMS0xMVQwNTowMDowMC4xMjM0NTY3ODlaIn0",
+        "event_encoding": "application/json;base64url",
+        "schema_version": 1,
+        "signature": "LQAmVOrbOZnvkBwQt8Gq7cQHiOI8JV7gzaTGV7wAGSIabRKSyDISF1sTiuEOpeDnSKAIeWPm1LjuW3S5pU2CAQ",
+        "signature_key_id": "opening-release-contract-fixture",
+        "signature_profile": "crucible-domain-event-v1-exact-bytes"
+      },
+      "event": {
+        "actor_assertion_jti": null,
+        "aggregate_id": "00000000-0000-0000-0000-000000000001",
+        "aggregate_type": "runner_opening_release",
+        "aggregate_version": 1,
+        "bounded_context": "deployment",
+        "correlation_id": "00000000-0000-0000-0000-000000000009",
+        "event_id": "00000000-0000-0000-0000-000000000002",
+        "event_plane": {
+          "kind": "mode",
+          "trading_mode": "testnet"
+        },
+        "event_type": "RunnerOpeningReleaseCommand.v1",
+        "occurred_at": "2026-11-11T05:00:00.123456789Z",
+        "payload": {
+          "account_identity": {
+            "account_id": 3,
+            "kind": "sodex_account",
+            "main_wallet": "0x1111111111111111111111111111111111111111"
+          },
+          "basis_amount": "40000.00000001",
+          "basis_version_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "credential_scope_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "credential_scope_id": "00000000-0000-0000-0000-000000000006",
+          "currency": "USDT",
+          "deployment_instance_id": "00000000-0000-0000-0000-000000000004",
+          "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "deployment_spec_id": "00000000-0000-0000-0000-000000000005",
+          "generation": 17,
+          "issued_at": "2026-11-11T05:00:00.123456789Z",
+          "opening_valuation_event_id": "00000000-0000-0000-0000-000000000008",
+          "release_id": "00000000-0000-0000-0000-000000000001",
+          "runner_id": "00000000-0000-0000-0000-000000000003",
+          "schema_version": 1,
+          "tenant_id": "tenant-a",
+          "trading_mode": "testnet"
+        },
+        "schema_version": 1,
+        "tenant_id": "tenant-a"
+      },
+      "name": "testnet",
+      "subject": "crucible.runner.opening-release.v1.tenant-a.00000000-0000-0000-0000-000000000003.testnet"
+    },
+    {
+      "envelope": {
+        "event_bytes": "eyJzY2hlbWFfdmVyc2lvbiI6MSwiZXZlbnRfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDIiLCJ0ZW5hbnRfaWQiOiJ0ZW5hbnQtYSIsImV2ZW50X3BsYW5lIjp7ImtpbmQiOiJtb2RlIiwidHJhZGluZ19tb2RlIjoibGl2ZSJ9LCJib3VuZGVkX2NvbnRleHQiOiJkZXBsb3ltZW50IiwiYWdncmVnYXRlX3R5cGUiOiJydW5uZXJfb3BlbmluZ19yZWxlYXNlIiwiYWdncmVnYXRlX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwiYWdncmVnYXRlX3ZlcnNpb24iOjEsImV2ZW50X3R5cGUiOiJSdW5uZXJPcGVuaW5nUmVsZWFzZUNvbW1hbmQudjEiLCJwYXlsb2FkIjp7ImFjY291bnRfaWRlbnRpdHkiOnsiYWNjb3VudF9pZCI6Mywia2luZCI6InNvZGV4X2FjY291bnQiLCJtYWluX3dhbGxldCI6IjB4MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMSJ9LCJiYXNpc19hbW91bnQiOiI0MDAwMC4wMDAwMDAwMSIsImJhc2lzX3ZlcnNpb25fZGlnZXN0IjoiZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZCIsImNyZWRlbnRpYWxfc2NvcGVfZGlnZXN0IjoiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsImNyZWRlbnRpYWxfc2NvcGVfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDYiLCJjdXJyZW5jeSI6IlVTRFQiLCJkZXBsb3ltZW50X2luc3RhbmNlX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDA0IiwiZGVwbG95bWVudF9zcGVjX2RpZ2VzdCI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWEiLCJkZXBsb3ltZW50X3NwZWNfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDUiLCJnZW5lcmF0aW9uIjoxNywiaXNzdWVkX2F0IjoiMjAyNi0xMS0xMVQwNTowMDowMC4xMjM0NTY3ODlaIiwib3BlbmluZ192YWx1YXRpb25fZXZlbnRfaWQiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDgiLCJyZWxlYXNlX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAxIiwicnVubmVyX2lkIjoiMDAwMDAwMDAtMDAwMC0wMDAwLTAwMDAtMDAwMDAwMDAwMDAzIiwic2NoZW1hX3ZlcnNpb24iOjEsInRlbmFudF9pZCI6InRlbmFudC1hIiwidHJhZGluZ19tb2RlIjoibGl2ZSJ9LCJjb3JyZWxhdGlvbl9pZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwOSIsImFjdG9yX2Fzc2VydGlvbl9qdGkiOm51bGwsIm9jY3VycmVkX2F0IjoiMjAyNi0xMS0xMVQwNTowMDowMC4xMjM0NTY3ODlaIn0",
+        "event_encoding": "application/json;base64url",
+        "schema_version": 1,
+        "signature": "vVDcb1MrBvKTQFUrG31zdgpXHRvIh6MhNtlgojbCAEKPhkHYUAi8CDpjbHl2Ve5FrAJ9CDKDSztwVBoKqkUYCA",
+        "signature_key_id": "opening-release-contract-fixture",
+        "signature_profile": "crucible-domain-event-v1-exact-bytes"
+      },
+      "event": {
+        "actor_assertion_jti": null,
+        "aggregate_id": "00000000-0000-0000-0000-000000000001",
+        "aggregate_type": "runner_opening_release",
+        "aggregate_version": 1,
+        "bounded_context": "deployment",
+        "correlation_id": "00000000-0000-0000-0000-000000000009",
+        "event_id": "00000000-0000-0000-0000-000000000002",
+        "event_plane": {
+          "kind": "mode",
+          "trading_mode": "live"
+        },
+        "event_type": "RunnerOpeningReleaseCommand.v1",
+        "occurred_at": "2026-11-11T05:00:00.123456789Z",
+        "payload": {
+          "account_identity": {
+            "account_id": 3,
+            "kind": "sodex_account",
+            "main_wallet": "0x1111111111111111111111111111111111111111"
+          },
+          "basis_amount": "40000.00000001",
+          "basis_version_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "credential_scope_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "credential_scope_id": "00000000-0000-0000-0000-000000000006",
+          "currency": "USDT",
+          "deployment_instance_id": "00000000-0000-0000-0000-000000000004",
+          "deployment_spec_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "deployment_spec_id": "00000000-0000-0000-0000-000000000005",
+          "generation": 17,
+          "issued_at": "2026-11-11T05:00:00.123456789Z",
+          "opening_valuation_event_id": "00000000-0000-0000-0000-000000000008",
+          "release_id": "00000000-0000-0000-0000-000000000001",
+          "runner_id": "00000000-0000-0000-0000-000000000003",
+          "schema_version": 1,
+          "tenant_id": "tenant-a",
+          "trading_mode": "live"
+        },
+        "schema_version": 1,
+        "tenant_id": "tenant-a"
+      },
+      "name": "live",
+      "subject": "crucible.runner.opening-release.v1.tenant-a.00000000-0000-0000-0000-000000000003.live"
+    }
+  ],
+  "key_id": "opening-release-contract-fixture",
+  "schema_version": 1,
+  "verifying_key_base64url": "VLDYHQ-n0A5KfWAN-rpvKyIDWyL-M14X7fX5qluwUHQ"
+}

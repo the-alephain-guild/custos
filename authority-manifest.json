@@ -438,6 +438,11 @@
       "path": "docs/authority/receipts/custos-toolkit-rc10-authority-v1.json.sha256",
       "contract_only": false,
       "ready_receipt_published": true
+    },
+    {
+      "role": "opening_release_command_consumer_v1",
+      "path": "docs/authority/opening-release-command-consumer-v1.md",
+      "contract_only": true
     }
   ],
   "external_optional_documents": [
@@ -647,7 +652,7 @@
     ],
     "forbidden_regex": [
       "ArxNatsTelemetryAdapter",
-      "Custos\\s*(<->|->|↔).*ARX",
+      "Custos\\s*(<->|->|\u2194).*ARX",
       "DeploymentMessage\\.create",
       "NtRiskEngineBridge",
       "StrategyArtifactRefV[2-9]",
@@ -748,5 +753,25 @@
     "runtime_compatibility_layers_allowed": false,
     "v2_requires_external_production_consumer": true,
     "v2_requires_explicit_migration_window": true
+  },
+  "opening_release_command_consumer_v1": {
+    "contract_id": "alephain.crucible.runner_opening_release_command.v1",
+    "contract_revision": 1,
+    "producer_authority": "alephain.crucible",
+    "scope": "contract_acceptance_only",
+    "schema": {
+      "path": "docs/authority/vendor/runner-opening-release-command-v1.schema.json"
+    },
+    "golden": {
+      "path": "docs/authority/vendor/runner-opening-release-command-v1.golden.json"
+    },
+    "boundary_vectors": {
+      "path": "docs/authority/conformance/runner-opening-release-command-v1.boundary-vectors.json"
+    },
+    "conformance_test": "tests/test_wire_opening_release_producer.py",
+    "runtime_ready": false,
+    "acknowledgement_ready": false,
+    "live_ready": false,
+    "production_ready": false
   }
 }

@@ -15,7 +15,7 @@
           "size_bytes": 107
         }
       ],
-      "producer_repository": "tesseract-trading/crucible-rust",
+      "producer_authority": "alephain.crucible",
       "revision": 1,
       "revision_carrier": "index",
       "schema_local_path": null,
@@ -50,7 +50,7 @@
           "size_bytes": 111
         }
       ],
-      "producer_repository": "tesseract-trading/crucible-rust",
+      "producer_authority": "alephain.crucible",
       "revision": 1,
       "revision_carrier": "schema",
       "schema_local_path": "docs/authority/vendor/crucible-runner-machine-request-golden-v1.schema.json",
@@ -79,13 +79,60 @@
           "size_bytes": 7030
         }
       ],
-      "producer_repository": "tesseract-trading/crucible-rust",
+      "producer_authority": "alephain.crucible",
       "revision": 1,
       "revision_carrier": "schema",
       "schema_local_path": "docs/authority/vendor/crucible-runner-nats-transport-authority-v1.schema.json",
       "vectors_local_path": null,
       "vectors_sha256": null,
       "wire_sha256": "46e2d6d4734e7b38d34a693b91b5da349e6238ca6658bfa711e6bd9b46cf327b"
+    },
+    "alephain.crucible.runner_opening_release_command.v1": {
+      "assets": [
+        {
+          "local_path": "docs/authority/conformance/runner-opening-release-command-v1.boundary-vectors.json",
+          "producer_path": "docs/authority/golden/crucible-runner-opening-release-command-v1-boundary-vectors.json",
+          "sha256": "163031a8360dc1a38de2300ce0e07c3bc2ff42c1bec5fc8603275524416e618b",
+          "size_bytes": 109011
+        },
+        {
+          "local_path": "docs/authority/conformance/runner-opening-release-command-v1.boundary-vectors.json.sha256",
+          "producer_path": "docs/authority/golden/crucible-runner-opening-release-command-v1-boundary-vectors.json.sha256",
+          "sha256": "c462b2a6a1fd4a3ec1633cfb5ab56d1a21104396c04a3c9f4794311474703418",
+          "size_bytes": 65
+        },
+        {
+          "local_path": "docs/authority/vendor/runner-opening-release-command-v1.golden.json",
+          "producer_path": "docs/authority/golden/crucible-runner-opening-release-command-v1.json",
+          "sha256": "353401315f02fd4bcce783270f3659f787ab23e6b9d5b04edfca61d57529e82b",
+          "size_bytes": 13481
+        },
+        {
+          "local_path": "docs/authority/vendor/runner-opening-release-command-v1.golden.json.sha256",
+          "producer_path": "docs/authority/golden/crucible-runner-opening-release-command-v1.json.sha256",
+          "sha256": "93c94e84a24bd80707c72d822d1958581e04dc688765c40c3a74c8f808ee23f3",
+          "size_bytes": 65
+        },
+        {
+          "local_path": "docs/authority/vendor/runner-opening-release-command-v1.schema.json",
+          "producer_path": "docs/authority/schemas/crucible-runner-opening-release-command-v1.schema.json",
+          "sha256": "932aa4bb2afb8b002b086af5f2a8291efe8455a48b660aa6c52ffc55d713f377",
+          "size_bytes": 10445
+        },
+        {
+          "local_path": "docs/authority/vendor/runner-opening-release-command-v1.schema.json.sha256",
+          "producer_path": "docs/authority/schemas/crucible-runner-opening-release-command-v1.schema.json.sha256",
+          "sha256": "e647dd5a28b2136176df21674015028cd411394b842f047e311ff215739d1c56",
+          "size_bytes": 65
+        }
+      ],
+      "producer_authority": "alephain.crucible",
+      "revision": 1,
+      "revision_carrier": "schema",
+      "schema_local_path": "docs/authority/vendor/runner-opening-release-command-v1.schema.json",
+      "vectors_local_path": "docs/authority/conformance/runner-opening-release-command-v1.boundary-vectors.json",
+      "vectors_sha256": "163031a8360dc1a38de2300ce0e07c3bc2ff42c1bec5fc8603275524416e618b",
+      "wire_sha256": "3b41b7bc52fd4c2b95c979b5da1ac4b29cdb91aa4669f2d2b1da397a70bbbc28"
     },
     "alephain.crucible.runner_safety_policy.v1": {
       "assets": [
@@ -108,7 +155,7 @@
           "size_bytes": 2632
         }
       ],
-      "producer_repository": "tesseract-trading/crucible-rust",
+      "producer_authority": "alephain.crucible",
       "revision": 1,
       "revision_carrier": "schema",
       "schema_local_path": "docs/authority/vendor/crucible-runner-safety-policy-v1.schema.json",
@@ -143,7 +190,7 @@
           "size_bytes": 116
         }
       ],
-      "producer_repository": "tesseract-trading/crucible-rust",
+      "producer_authority": "alephain.crucible",
       "revision": 2,
       "revision_carrier": "schema",
       "schema_local_path": "docs/authority/vendor/crucible-runner-strategy-release-resolution-v1.schema.json",

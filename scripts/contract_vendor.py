@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Vendor cross-repository contracts by schema revision and check the pins offline.
 
-Canonical copy: tesseract-trading/crucible-rust scripts/contract_vendor.py. Every
-other repository keeps a byte-identical copy; `check --sibling-copy <path>`
+Repositories keep byte-identical maintained copies; `check --sibling-copy <path>`
 compares two copies when both checkouts are present. Standard library only.
+
+Public consumers can pin a declared producer authority with `--public-provenance`
+and explicit local asset maps, without publishing implementation repository names.
 
 A producer lists each contract in docs/authority/contract-revisions-v1.json with
 its current revision, wire fingerprint, assets and conformance vectors. A
@@ -21,6 +23,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -59,6 +62,15 @@ SCHEMA_LIST_KEYWORDS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems", "ite
 
 class UsageError(Exception):
     """Arguments or file structure are wrong; exit 2."""
+
+
+def _public_authority(index: dict[str, Any]) -> str:
+    authority = index.get("producer_authority")
+    if not isinstance(authority, str) or not re.fullmatch(
+        r"[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*", authority
+    ):
+        raise UsageError("producer index must declare a valid public authority")
+    return authority
 
 
 def canonical_json(value: Any) -> bytes:
@@ -165,6 +177,12 @@ def _load_pins(consumer: Path, *, required: bool) -> dict[str, Any]:
                 raise UsageError(f"{PINS_PATH} contract {contract_id} has a malformed asset")
         if not isinstance(pin.get("revision"), int) or isinstance(pin.get("revision"), bool):
             raise UsageError(f"{PINS_PATH} contract {contract_id} lacks an integer revision")
+        if "producer_authority" in pin:
+            authority = _public_authority(pin)
+            if "producer_repository" in pin or not contract_id.startswith(authority + "."):
+                raise UsageError(
+                    f"{PINS_PATH} contract {contract_id} has inconsistent public authority"
+                )
     return pins
 
 
@@ -259,8 +277,18 @@ def _compare_with_producer(pins: dict[str, Any], producer: _Producer) -> list[st
     index = producer.index()
     repository = index["producer_repository"]
     errors: list[str] = []
+    public_authority = (
+        _public_authority(index)
+        if any("producer_authority" in pin for pin in pins["contracts"].values())
+        else None
+    )
     for contract_id, pin in sorted(pins["contracts"].items()):
-        if pin.get("producer_repository") != repository:
+        matches = (
+            pin["producer_authority"] == public_authority
+            if "producer_authority" in pin
+            else pin.get("producer_repository") == repository
+        )
+        if not matches:
             continue
         entry = index["contracts"].get(contract_id)
         if entry is None:
@@ -314,6 +342,22 @@ def command_sync(args: argparse.Namespace) -> int:
     previous_paths = {
         asset["producer_path"]: asset["local_path"] for asset in previous.get("assets", [])
     }
+    use_public = args.public_provenance or "producer_authority" in previous
+    authority = _public_authority(index) if use_public else None
+    if use_public:
+        if not args.contract.startswith(authority + "."):
+            raise UsageError("contract coordinate differs from the public authority")
+        if any(
+            asset["path"] not in mapping and asset["path"] not in previous_paths
+            for asset in entry["assets"]
+        ):
+            raise UsageError("public provenance requires explicit local paths for every new asset")
+        for contract_id, pin in pins["contracts"].items():
+            if pin.get("producer_repository") == index["producer_repository"]:
+                if not contract_id.startswith(authority + "."):
+                    raise UsageError("an existing contract differs from the public authority")
+                del pin["producer_repository"]
+                pin["producer_authority"] = authority
     name = _producer_name(index["producer_repository"])
     vectors_path = entry.get("vectors_path")
     stale: list[str] = []
@@ -363,7 +407,11 @@ def command_sync(args: argparse.Namespace) -> int:
         if local_path not in payloads:
             print(f"{args.contract}: {producer_path} is no longer listed; {local_path} kept")
     pins["contracts"][args.contract] = {
-        "producer_repository": index["producer_repository"],
+        **(
+            {"producer_authority": authority}
+            if use_public
+            else {"producer_repository": index["producer_repository"]}
+        ),
         "revision": entry["revision"],
         "revision_carrier": entry.get("revision_carrier"),
         "wire_sha256": entry.get("wire_sha256"),
@@ -421,6 +469,11 @@ def _parser() -> argparse.ArgumentParser:
     sync.add_argument("--producer-ref")
     sync.add_argument("--contract", required=True)
     sync.add_argument("--revision", type=int)
+    sync.add_argument(
+        "--public-provenance",
+        action="store_true",
+        help="record the declared public authority with explicit local asset paths",
+    )
     sync.add_argument("--map", action="append", metavar="PRODUCER_PATH=LOCAL_PATH")
     sync.set_defaults(handler=command_sync)
 
