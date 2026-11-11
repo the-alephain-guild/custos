@@ -571,7 +571,7 @@ def test_creation_price_vectors_follow_the_frozen_price_table(order_type: str) -
 
 def test_capability_shape_verdicts_are_the_frozen_shape_table() -> None:
     shapes = RUNNER_FACT_DOCUMENT["capability_shapes"]
-    assert len(shapes) == 16
+    assert len(shapes) == 32
     for shape in shapes:
         declared = tuple(shape["declares"][flag] for flag in frozen.CAPABILITY_FLAGS)
         expected = "accept" if declared in frozen.ACCEPTED_CAPABILITY_SHAPES else "reject"
@@ -799,6 +799,21 @@ def test_opening_vectors_execute_the_actual_closed_producer_contract(vector):
     fact = batch["facts"][0]
 
     def build():
+        if fact["kind"] == "RunnerOpeningReleaseFact.v1":
+            from custos.core.runner_opening_release_fact import (
+                RunnerOpeningReleaseFactV1,
+                opening_release_fact,
+            )
+
+            fields = {k: v for k, v in fact.items() if k != "seq"}
+            try:
+                RunnerOpeningReleaseFactV1.model_validate(fields)
+            except ValueError as error:
+                raise RunnerFactContractError(str(error)) from error
+            return opening_release_fact(
+                authority=_authority(batch),
+                **{k: v for k, v in fields.items() if k not in {"kind", "event_id"}},
+            )
         normalized = normalize_opening_inventory(
             fact.get("account_inventory"),
             amount=fact["amount"],

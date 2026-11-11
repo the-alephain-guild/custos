@@ -47,12 +47,21 @@ Contract golden keys are synthetic test evidence and must not be trusted as runt
 | Purpose | `facts[].kind` |
 |---|---|
 | Settlement | `fill`, `position_closed`, `fee`, `period_closed`, `RunnerInstanceTerminalValuationFact.v1`, `RunnerFillCorrectionFact.v1` |
-| Risk | `equity_snapshot`, `position_snapshot` |
+| Risk | `equity_snapshot`, `position_snapshot`, `RunnerOpeningReleaseFact.v1` |
 | Health | `heartbeat`, `RunnerRuntimeLogFact.v1` |
 | Reconciliation | `execution_fill`, `venue_ledger_snapshot_manifest`, `venue_ledger_snapshot_chunk`, `reconciliation_period_closed`, `RunnerValuationCheckpointFact.v1`, `RunnerOrderEventFact.v1` |
 | Deployment lifecycle | `RunnerDeploymentLifecycleFact.v1` |
 
-Four kinds appear only when the runner's capability declares their flag: `RunnerInstanceTerminalValuationFact.v1` with `settlement.terminal_valuation`, `RunnerValuationCheckpointFact.v1` with `reconciliation.valuation_checkpoint`, `RunnerOrderEventFact.v1` with `reconciliation.order_lineage`, and `RunnerFillCorrectionFact.v1` with `settlement.fill_correction`. Refuse a batch that carries a kind its capability does not declare. The batch bytes alone cannot show this: the check needs the capability record the batch's `capability_manifest_digest` names, so it runs after decoding and before the batch is taken in. The conformance vectors list every combination of the four flags with its verdict, and name for every refusal its error class and the stage that decides it, each defined in the vector file. The conformance sequences give the state a fold must reach after each step of an order's history, and how much each fill correction takes off its settled fill and its commission.
+Five kinds appear only when the runner's capability declares their flag: `RunnerInstanceTerminalValuationFact.v1` with `settlement.terminal_valuation`, `RunnerValuationCheckpointFact.v1` with `reconciliation.valuation_checkpoint`, `RunnerOrderEventFact.v1` with `reconciliation.order_lineage`, `RunnerFillCorrectionFact.v1` with `settlement.fill_correction`, and `RunnerOpeningReleaseFact.v1` with `risk.opening_release`. Refuse a batch that carries a kind its capability does not declare. The batch bytes alone cannot show this: the check needs the capability record the batch's `capability_manifest_digest` names, so it runs after decoding and before the batch is taken in. The conformance vectors list every combination of the five flags with its verdict, and name for every refusal its error class and the stage that decides it, each defined in the vector file. The conformance sequences give the state a fold must reach after each step of an order's history, and how much each fill correction takes off its settled fill and its commission.
+
+An opening decision binds the release command event, release ID and basis digest.
+A refusal includes a closed reason. An acknowledgement has a null reason and a
+complete, coherent cash inventory with no positions or ordinary orders. Its
+signed stream sequence must precede trading facts; a consumer must independently
+check the retained command, basis, account and lifecycle. The published
+acknowledgement parser fixture does not enable a successful release transaction
+or declare a complete runtime model. Current consumer and runtime readiness
+remain false.
 
 A `heartbeat` reports `online` only while the deployment's engine is ready and its state is reliable. A deployment that is still starting, including one retrying because its venue cannot be reached, reports `degraded`.
 

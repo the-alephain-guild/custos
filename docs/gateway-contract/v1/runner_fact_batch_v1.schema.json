@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "custos://gateway-contract/v1/runner_fact_batch_v1.schema.json",
   "x-contract-id": "alephain.custos.runner_fact_batch.v1",
-  "x-contract-revision": 7,
+  "x-contract-revision": 8,
   "title": "Custos RunnerFactBatchV1",
   "type": "object",
   "additionalProperties": false,
@@ -128,6 +128,9 @@
           },
           {
             "$ref": "#/$defs/fact_equity_snapshot"
+          },
+          {
+            "$ref": "#/$defs/fact_RunnerOpeningReleaseFact.v1"
           },
           {
             "$ref": "#/$defs/fact_position_snapshot"
@@ -548,6 +551,147 @@
           "$ref": "#/$defs/OpeningInventory"
         }
       }
+    },
+    "fact_RunnerOpeningReleaseFact.v1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "event_id",
+        "seq",
+        "release_id",
+        "release_command_event_id",
+        "basis_version_digest",
+        "outcome",
+        "reason",
+        "amount",
+        "currency",
+        "observed_at",
+        "account_inventory"
+      ],
+      "properties": {
+        "kind": {
+          "const": "RunnerOpeningReleaseFact.v1"
+        },
+        "event_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "release_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "release_command_event_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "not": {
+            "const": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "basis_version_digest": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "outcome": {
+          "enum": [
+            "acknowledged",
+            "refused"
+          ]
+        },
+        "reason": {
+          "enum": [
+            null,
+            "inventory_unproven",
+            "account_mismatch",
+            "balance_mismatch"
+          ]
+        },
+        "amount": {
+          "type": "string",
+          "pattern": "^(?![^.]*\\.[0-9]{29})(?=-?(?:0\\.0*)?(?:[0-9]\\.?){1,29}$)(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$"
+        },
+        "currency": {
+          "enum": [
+            "USD",
+            "USDT",
+            "USDC",
+            "BTC",
+            "ETH",
+            "VUSDC",
+            "VBTC",
+            "VETH"
+          ]
+        },
+        "observed_at": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3,9})?Z$"
+        },
+        "account_inventory": {
+          "$ref": "#/$defs/OpeningInventory"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "acknowledged"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "type": "null"
+              },
+              "account_inventory": {
+                "properties": {
+                  "inventory_complete": {
+                    "const": true
+                  },
+                  "observations": {
+                    "properties": {
+                      "positions": {
+                        "properties": {
+                          "rows": {
+                            "type": "array",
+                            "maxItems": 0
+                          }
+                        }
+                      },
+                      "ordinary_orders": {
+                        "properties": {
+                          "rows": {
+                            "type": "array",
+                            "maxItems": 0
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "reason": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
     },
     "fact_position_snapshot": {
       "type": "object",

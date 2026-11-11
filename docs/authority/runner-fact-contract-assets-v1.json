@@ -3,7 +3,7 @@
   "authority_coordinate": "custos.runner-fact.v1",
   "status": "CANONICAL_V1_PENDING_CONSUMER_AND_RUNTIME_RECEIPTS",
   "contract_id": "alephain.custos.runner_fact_batch.v1",
-  "contract_revision": 7,
+  "contract_revision": 8,
   "consumer_ready": false,
   "open_blockers": [
     "current_revision_strict_consumer_acceptance",
@@ -63,6 +63,7 @@
     "fee": "settlement",
     "period_closed": "settlement",
     "equity_snapshot": "risk",
+    "RunnerOpeningReleaseFact.v1": "risk",
     "position_snapshot": "risk",
     "heartbeat": "health",
     "RunnerRuntimeLogFact.v1": "health",
@@ -78,7 +79,8 @@
   "closed_fact_union_assets": [
     "docs/authority/runner-fact-golden-v1.json",
     "docs/authority/runner-fact-terminal-boundary-golden-v1.json",
-    "docs/authority/runner-fact-lineage-golden-v1.json"
+    "docs/authority/runner-fact-lineage-golden-v1.json",
+    "docs/authority/runner-fact-opening-release-golden-v1.json"
   ],
   "synthetic_signature": {
     "algorithm": "ed25519",
@@ -90,8 +92,8 @@
     {
       "role": "runner_fact_batch_schema",
       "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-      "sha256": "2e91691014bb1cdd7a8f9b187dee22c2c8763b01839cf3cd761e62a6612276ef",
-      "size_bytes": 181645
+      "sha256": "c6bdcffe0a1fcc8c8d2f0812c18b0736c09b78da50bc1933f00bf888e0a135cb",
+      "size_bytes": 185502
     },
     {
       "role": "runner_fact_batch_golden",
@@ -114,8 +116,8 @@
     {
       "role": "runtime_event_fact_parity_matrix",
       "path": "docs/authority/runner-fact-parity-matrix-v1.json",
-      "sha256": "46bb5e16dc8354155b5bcd1b1ba49940b3cfc4b0ac3078ee609dbc2360208c8d",
-      "size_bytes": 4743
+      "sha256": "ca9836efbf9d834cb4b9433602d4de013a40469645ee28bcc7d28730c7360cf9",
+      "size_bytes": 5011
     },
     {
       "role": "runner_fact_signing_preimage_golden",
@@ -134,6 +136,12 @@
       "path": "docs/authority/runner-fact-lineage-golden-v1.json",
       "sha256": "8b65d3ab08aed9f6104ee4f2b8674e5204107d372c026c561adbdc8a8c4f06e3",
       "size_bytes": 10412
+    },
+    {
+      "role": "runner_fact_opening_release_golden",
+      "path": "docs/authority/runner-fact-opening-release-golden-v1.json",
+      "sha256": "601e524a1e8ba604c75b98cd15de37af3c49d287b65fd939a75ab49457e731c2",
+      "size_bytes": 10842
     }
   ]
 }

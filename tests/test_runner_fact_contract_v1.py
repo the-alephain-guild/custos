@@ -47,6 +47,7 @@ PARITY_PATH = ROOT / "docs/authority/runner-fact-parity-matrix-v1.json"
 SIGNING_PREIMAGE_PATH = ROOT / "docs/authority/runner-fact-signing-preimage-golden-v1.json"
 TERMINAL_BOUNDARY_PATH = ROOT / "docs/authority/runner-fact-terminal-boundary-golden-v1.json"
 LINEAGE_PATH = ROOT / "docs/authority/runner-fact-lineage-golden-v1.json"
+OPENING_PATH = ROOT / "docs/authority/runner-fact-opening-release-golden-v1.json"
 TERMINAL_KIND = "RunnerInstanceTerminalValuationFact.v1"
 ORDER_EVENT_KIND = "RunnerOrderEventFact.v1"
 FILL_CORRECTION_KIND = "RunnerFillCorrectionFact.v1"
@@ -92,7 +93,7 @@ EXPECTED_KINDS = {
 # Declared only by a capability that opts in; the canonical manifest declares
 # neither.
 LINEAGE_KINDS = {ORDER_EVENT_KIND: "reconciliation", FILL_CORRECTION_KIND: "settlement"}
-ALL_KINDS = {**EXPECTED_KINDS, **LINEAGE_KINDS}
+ALL_KINDS = {**EXPECTED_KINDS, **LINEAGE_KINDS, "RunnerOpeningReleaseFact.v1": "risk"}
 # The terminal valuation fact must be the last fact of a stop batch, so the
 # single-batch golden cannot carry it; the stop-boundary asset does.
 SINGLE_BATCH_GOLDEN_KINDS = set(EXPECTED_KINDS) - {TERMINAL_KIND}
@@ -141,7 +142,7 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
     assert "supersedes_candidate_coordinate" not in index
     assert "superseded_candidate_status" not in index
     assert index["status"] == "CANONICAL_V1_PENDING_CONSUMER_AND_RUNTIME_RECEIPTS"
-    assert index["contract_revision"] == 7
+    assert index["contract_revision"] == 8
     assert index["consumer_ready"] is False
     assert "current_revision_strict_consumer_acceptance" in index["open_blockers"]
     assert index["stream_identity_fields"] == [
@@ -171,6 +172,7 @@ def test_v1_inventory_is_complete_and_byte_pinned() -> None:
             SIGNING_PREIMAGE_PATH,
             TERMINAL_BOUNDARY_PATH,
             LINEAGE_PATH,
+            OPENING_PATH,
         )
     }
     assets = {asset["path"]: asset for asset in index["assets"]}
@@ -620,12 +622,16 @@ def test_closed_union_holds_across_the_golden_and_the_terminal_boundary_asset() 
     }
     assert TERMINAL_KIND not in golden_kinds
     assert golden_kinds | boundary_kinds == set(EXPECTED_KINDS)
-    assert golden_kinds | boundary_kinds | lineage_kinds == set(ALL_KINDS)
+    opening_kinds = {
+        fact["kind"] for batch in _json(OPENING_PATH)["batches"] for fact in batch["facts"]
+    }
+    assert golden_kinds | boundary_kinds | lineage_kinds | opening_kinds == set(ALL_KINDS)
     assert index["fact_kind_projectors"] == ALL_KINDS
     assert index["closed_fact_union_assets"] == [
         str(GOLDEN_PATH.relative_to(ROOT)),
         str(TERMINAL_BOUNDARY_PATH.relative_to(ROOT)),
         str(LINEAGE_PATH.relative_to(ROOT)),
+        str(OPENING_PATH.relative_to(ROOT)),
     ]
 
 
@@ -1244,7 +1250,7 @@ def test_the_receipt_shapes_are_the_published_capability_shape_vectors() -> None
         for shape in vectors["capability_shapes"]
         if shape["expected"] == "accept"
     ]
-    assert len(vectors["capability_shapes"]) == 16
+    assert len(vectors["capability_shapes"]) == 32
     assert sorted(map(json.dumps, accepted)) == sorted(
         map(json.dumps, runner_fact_module.RUNNER_FACT_CAPABILITY_SHAPES)
     )
@@ -1257,6 +1263,7 @@ def test_the_receipt_shapes_are_the_published_capability_shape_vectors() -> None
             "valuation_checkpoint": False,
             "order_lineage": False,
             "fill_correction": False,
+            "opening_release": False,
         }
     )
     assert terminal_only["expected"] == "reject"
@@ -1265,7 +1272,7 @@ def test_the_receipt_shapes_are_the_published_capability_shape_vectors() -> None
 def test_lineage_golden_is_a_signed_batch_under_its_own_capability(tmp_path: Path) -> None:
     lineage = _json(LINEAGE_PATH)
     manifest = lineage["capability_manifest"]
-    assert manifest["fact_kind_projectors"] == ALL_KINDS
+    assert manifest["fact_kind_projectors"] == {**EXPECTED_KINDS, **LINEAGE_KINDS}
     assert manifest["runner_fact_contracts"]["reconciliation"]["order_lineage"] == "v1"
     assert manifest["runner_fact_contracts"]["settlement"]["fill_correction"] == "v1"
     canonical = _json(CAPABILITY_MANIFEST_PATH)

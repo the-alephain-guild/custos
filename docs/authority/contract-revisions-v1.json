@@ -157,18 +157,18 @@
       ]
     },
     "alephain.custos.runner_fact_batch.v1": {
-      "revision": 7,
+      "revision": 8,
       "revision_carrier": "schema",
       "schema_path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-      "wire_sha256": "791fb23a55f9f76944fee25f0e90d536c06c827f91e0a84d1d5ec45b377f8086",
-      "vectors_sha256": "db2b8a846dd7d9d05845d651d1fff788c593d5561fb1acc405dca2fdcaa05de9",
-      "sequences_sha256": "6b570045df7e8afd48b97ec4758b0c289c6a61972f7c0ed8b984762f466da637",
+      "wire_sha256": "dfb80001661fe6b439c4fff91ea5accca5ec410c0ff442f1de370324f8cad637",
+      "vectors_sha256": "994e2b88d64d19a92b31c2e127eeb15f047feeec79168f7d6caf1dfb93df4e5b",
+      "sequences_sha256": "7ca358df5ef58585d8df2768b7bfc6984d148b831dc4fa70c8bd05b82a76c7cf",
       "vectors_path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
       "assets": [
         {
           "path": "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json",
-          "sha256": "2e91691014bb1cdd7a8f9b187dee22c2c8763b01839cf3cd761e62a6612276ef",
-          "size_bytes": 181645
+          "sha256": "c6bdcffe0a1fcc8c8d2f0812c18b0736c09b78da50bc1933f00bf888e0a135cb",
+          "size_bytes": 185502
         },
         {
           "path": "docs/authority/runner-fact-golden-v1.json",
@@ -187,8 +187,8 @@
         },
         {
           "path": "docs/authority/runner-fact-parity-matrix-v1.json",
-          "sha256": "46bb5e16dc8354155b5bcd1b1ba49940b3cfc4b0ac3078ee609dbc2360208c8d",
-          "size_bytes": 4743
+          "sha256": "ca9836efbf9d834cb4b9433602d4de013a40469645ee28bcc7d28730c7360cf9",
+          "size_bytes": 5011
         },
         {
           "path": "docs/authority/runner-fact-signing-preimage-golden-v1.json",
@@ -206,28 +206,33 @@
           "size_bytes": 10412
         },
         {
+          "path": "docs/authority/runner-fact-opening-release-golden-v1.json",
+          "sha256": "601e524a1e8ba604c75b98cd15de37af3c49d287b65fd939a75ab49457e731c2",
+          "size_bytes": 10842
+        },
+        {
           "path": "docs/authority/runner-fact-contract-assets-v1.json",
-          "sha256": "49122b41ae885a5f93136b11523ccc7c2d400d4f99f665586b4573e8eacee153",
-          "size_bytes": 4861
+          "sha256": "563d27e8f374131eb5b802e86d33dd77fa908abd6e8a47912e541d758937ed77",
+          "size_bytes": 5219
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json",
-          "sha256": "db2b8a846dd7d9d05845d651d1fff788c593d5561fb1acc405dca2fdcaa05de9",
-          "size_bytes": 1819497
+          "sha256": "994e2b88d64d19a92b31c2e127eeb15f047feeec79168f7d6caf1dfb93df4e5b",
+          "size_bytes": 2061615
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.vectors.json.sha256",
-          "sha256": "026db55b3795a27e711c43316c47299449d1b8241327ada21569282540ada65c",
+          "sha256": "d90df0dca565dfc2e909498eeb53ee6c3cf09d25865d2f7a59234cc786ef99b4",
           "size_bytes": 100
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json",
-          "sha256": "6b570045df7e8afd48b97ec4758b0c289c6a61972f7c0ed8b984762f466da637",
+          "sha256": "7ca358df5ef58585d8df2768b7bfc6984d148b831dc4fa70c8bd05b82a76c7cf",
           "size_bytes": 183009
         },
         {
           "path": "docs/authority/conformance/runner-fact-batch-v1.sequences.json.sha256",
-          "sha256": "1cfd0a0ae2625630dbeb9c265a6b3aa126b6b42274d4630ac6554bc5b2e87748",
+          "sha256": "586b56e98c04368a27d87465d659b10ced6a4c141e1c2c2af69d11ecd3371806",
           "size_bytes": 102
         }
       ],
@@ -275,6 +280,13 @@
           "wire_sha256": "791fb23a55f9f76944fee25f0e90d536c06c827f91e0a84d1d5ec45b377f8086",
           "vectors_sha256": "db2b8a846dd7d9d05845d651d1fff788c593d5561fb1acc405dca2fdcaa05de9",
           "sequences_sha256": "6b570045df7e8afd48b97ec4758b0c289c6a61972f7c0ed8b984762f466da637",
+          "note": "raised"
+        },
+        {
+          "revision": 8,
+          "wire_sha256": "dfb80001661fe6b439c4fff91ea5accca5ec410c0ff442f1de370324f8cad637",
+          "vectors_sha256": "994e2b88d64d19a92b31c2e127eeb15f047feeec79168f7d6caf1dfb93df4e5b",
+          "sequences_sha256": "7ca358df5ef58585d8df2768b7bfc6984d148b831dc4fa70c8bd05b82a76c7cf",
           "note": "raised"
         }
       ]

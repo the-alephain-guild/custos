@@ -115,6 +115,7 @@ CONTRACTS = (
             "docs/authority/runner-fact-signing-preimage-golden-v1.json",
             "docs/authority/runner-fact-terminal-boundary-golden-v1.json",
             "docs/authority/runner-fact-lineage-golden-v1.json",
+            "docs/authority/runner-fact-opening-release-golden-v1.json",
             "docs/authority/runner-fact-contract-assets-v1.json",
             RUNNER_FACT_VECTORS,
             RUNNER_FACT_VECTORS + ".sha256",

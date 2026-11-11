@@ -498,6 +498,13 @@ async def test_signed_release_refusal_commits_with_the_outbox_and_replays_exact_
 
     batch_id, payload = await store.commit_refused_opening_release(auth, **observation)
     envelope = json.loads(payload)
+    from jsonschema import Draft202012Validator
+
+    schema_path = (
+        Path(__file__).resolve().parents[1]
+        / "docs/gateway-contract/v1/runner_fact_batch_v1.schema.json"
+    )
+    Draft202012Validator(json.loads(schema_path.read_text())).validate(envelope)
     (fact,) = envelope["facts"]
     assert fact["seq"] == 1
     assert fact["kind"] == OPENING_RELEASE_FACT_KIND

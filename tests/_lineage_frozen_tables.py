@@ -101,22 +101,26 @@ PRICES = {
     "trailing_stop_limit": (("O", "O"), ("O", "O")),
 }
 
-# The capability shapes both sides accept, as which of the four optional flags
-# they declare: terminal valuation, valuation checkpoint, order lineage, fill
-# correction. Every other combination is refused.
+# An opening decision requires the current terminal/checkpoint shape. Its flag
+# is independent of lineage and correction, and old declarations remain valid.
 ACCEPTED_CAPABILITY_SHAPES = {
-    (False, False, False, False),
-    (False, True, False, False),
-    (True, True, False, False),
-    (True, True, True, False),
-    (True, True, False, True),
-    (True, True, True, True),
+    (False, False, False, False, False),
+    (False, True, False, False, False),
+    (True, True, False, False, False),
+    (True, True, True, False, False),
+    (True, True, False, True, False),
+    (True, True, True, True, False),
+    (True, True, False, False, True),
+    (True, True, True, False, True),
+    (True, True, False, True, True),
+    (True, True, True, True, True),
 }
 CAPABILITY_FLAGS = (
     "terminal_valuation",
     "valuation_checkpoint",
     "order_lineage",
     "fill_correction",
+    "opening_release",
 )
 
 # Fields that only come together, from the frozen rules: a native quantity and

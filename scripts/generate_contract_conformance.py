@@ -19,6 +19,7 @@ import json
 import sys
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -64,7 +65,7 @@ RUNNER_FACT_VECTORS_PATH = Path("docs/authority/conformance/runner-fact-batch-v1
 RUNNER_FACT_SEQUENCES_PATH = Path("docs/authority/conformance/runner-fact-batch-v1.sequences.json")
 LINEAGE_GOLDEN_PATH = Path("docs/authority/runner-fact-lineage-golden-v1.json")
 STRATEGY_VECTORS_PATH = Path("docs/authority/conformance/strategy-canonical-json-v1.vectors.json")
-RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 7)
+RUNNER_FACT_CONTRACT = ("alephain.custos.runner_fact_batch.v1", 8)
 STRATEGY_CANONICAL_CONTRACT = ("alephain.custos.strategy_canonical_json.v1", 1)
 CAPABILITY_MANIFEST_PATH = Path("docs/authority/runner-fact-capability-manifest-v1.json")
 
@@ -625,7 +626,9 @@ def runner_fact_vectors() -> list[dict[str, Any]]:
     vectors.extend(_decimal_spelling_vectors())
     vectors.extend(_decimal_range_vectors())
     vectors.extend(_omitted_nullable_vectors())
-    vectors.extend(_opening_inventory_vectors())
+    opening_vectors = _opening_inventory_vectors()
+    vectors.extend(opening_vectors)
+    vectors.extend(_opening_release_vectors(opening_vectors))
 
     largest = 9_223_372_036_854_775_807
     batch = signed_batch(
@@ -685,6 +688,118 @@ def _position_snapshot() -> dict[str, Any]:
         ],
         observed_at="2026-10-04T13:53:00Z",
     )
+
+
+def _opening_release_vectors(opening_vectors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    from custos.core.runner_opening_release_fact import opening_release_fact
+
+    artifact = json.loads(
+        (ROOT / "docs/authority/runner-fact-opening-release-golden-v1.json").read_text()
+    )
+    manifest = artifact["capability_manifest"]
+    auth = replace(authority(), capability_manifest_digest=_sha256(_canonical(manifest)))
+    arguments = {
+        "release_id": "90000000-0000-4000-8000-000000000001",
+        "release_command_event_id": "90000000-0000-4000-8000-000000000002",
+        "basis_version_digest": "f" * 64,
+        "outcome": "refused",
+        "reason": "inventory_unproven",
+        "amount": "0",
+        "currency": "USDT",
+        "observed_at": "2026-11-04T00:00:00Z",
+        "account_inventory": unavailable_opening_inventory(auth, "binance"),
+    }
+    refused = opening_release_fact(authority=auth, **arguments)
+    cash_vector = next(v for v in opening_vectors if v["id"] == "opening-native-cash-parser-only")
+    cash = json.loads(cash_vector["raw"])["facts"][0]["account_inventory"]
+    cash["capability_binding"]["capability_manifest_digest"] = auth.capability_manifest_digest
+    acknowledged_arguments = {
+        **arguments,
+        "outcome": "acknowledged",
+        "reason": None,
+        "amount": "1234.5",
+        "account_inventory": cash,
+    }
+    acknowledged = opening_release_fact(authority=auth, **acknowledged_arguments)
+    vectors = []
+
+    def vector(name, fact, *, expected=None, producer_input=None):
+        batch = signed_batch(name, [fact], emitted_at="2026-11-04T00:00:01Z", auth=auth)
+        item = {
+            "id": name,
+            "origin": "producer-canonical" if producer_input is not None else "tolerance",
+            "covers": ["closed opening decision and unchanged signed stream authority"],
+            "capability_manifest": manifest,
+            "raw": raw(batch),
+            "expected": expected or accept(batch, typed_roundtrip_equal=True),
+        }
+        if producer_input is not None:
+            item["producer_input"] = {"opening_decision": producer_input}
+        vectors.append(item)
+
+    vector("opening-release-refused-unavailable", refused, producer_input=arguments)
+    # The signed parser fixture is valid; no complete native runtime model has
+    # been registered, so full admission must still refuse its synthetic model.
+    vector(
+        "opening-release-acknowledged-parser-only",
+        acknowledged,
+        expected=reject("capability_mismatch", "admission"),
+        producer_input=acknowledged_arguments,
+    )
+    changes = (
+        ("unknown-field", lambda f: f.update(unknown=True), False),
+        ("unknown-outcome", lambda f: f.update(outcome="released"), False),
+        ("refused-without-reason", lambda f: f.update(reason=None), False),
+        ("unknown-reason", lambda f: f.update(reason="unknown"), False),
+        (
+            "nil-release",
+            lambda f: f.update(release_id="00000000-0000-0000-0000-000000000000"),
+            False,
+        ),
+        (
+            "nil-command",
+            lambda f: f.update(release_command_event_id="00000000-0000-0000-0000-000000000000"),
+            False,
+        ),
+        ("missing-command", lambda f: f.pop("release_command_event_id"), False),
+        ("uppercase-basis", lambda f: f.update(basis_version_digest="F" * 64), False),
+        ("negative-equity", lambda f: f.update(amount="-1"), False),
+        ("noncanonical-equity", lambda f: f.update(amount="1.0"), False),
+        (
+            "equity-mantissa-overflow",
+            lambda f: f.update(amount="79228162514264337593543950336"),
+            True,
+        ),
+        (
+            "wrong-event-identity",
+            lambda f: f.update(event_id="90000000-0000-4000-8000-000000000009"),
+            True,
+        ),
+        (
+            "acknowledged-unavailable",
+            lambda f: f.update(outcome="acknowledged", reason=None),
+            False,
+        ),
+    )
+    for name, change, coarse in changes:
+        fact = copy.deepcopy(refused)
+        change(fact)
+        expected = reject("invariant_violation" if coarse else "schema_violation", "decode")
+        if coarse:
+            expected.update(SCHEMA_COARSE)
+        vector("opening-release-" + name, fact, expected=expected)
+    for name, change, coarse in (
+        ("acknowledged-with-reason", lambda f: f.update(reason="inventory_unproven"), False),
+        ("acknowledged-wrong-equity", lambda f: f.update(amount="1"), True),
+        ("acknowledged-wrong-time", lambda f: f.update(observed_at="2026-11-04T00:00:01Z"), True),
+    ):
+        fact = copy.deepcopy(acknowledged)
+        change(fact)
+        expected = reject("invariant_violation" if coarse else "schema_violation", "decode")
+        if coarse:
+            expected.update(SCHEMA_COARSE)
+        vector("opening-release-" + name, fact, expected=expected)
+    return vectors
 
 
 def _identifier_vectors() -> list[dict[str, Any]]:
@@ -2156,16 +2271,17 @@ def capability_shape_vectors() -> list[dict[str, Any]]:
 
     known = list(RUNNER_FACT_CAPABILITY_SHAPES)
     current_projectors, current_contracts = runner_fact_capability_shape(
-        order_lineage=True, fill_correction=True
+        order_lineage=True, fill_correction=True, opening_release=True
     )
     flags = (
         ("terminal_valuation", "RunnerInstanceTerminalValuationFact.v1", "settlement"),
         ("valuation_checkpoint", "RunnerValuationCheckpointFact.v1", "reconciliation"),
         ("order_lineage", "RunnerOrderEventFact.v1", "reconciliation"),
         ("fill_correction", "RunnerFillCorrectionFact.v1", "settlement"),
+        ("opening_release", "RunnerOpeningReleaseFact.v1", "risk"),
     )
     shapes = []
-    for mask in range(16):
+    for mask in range(32):
         declared = {flag: bool(mask & (1 << index)) for index, (flag, _, _) in enumerate(flags)}
         projectors = dict(current_projectors)
         contracts = {name: dict(contract) for name, contract in current_contracts.items()}

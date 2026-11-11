@@ -443,6 +443,16 @@
       "role": "opening_release_command_consumer_v1",
       "path": "docs/authority/opening-release-command-consumer-v1.md",
       "contract_only": true
+    },
+    {
+      "role": "opening_release_fact_v1",
+      "path": "docs/authority/opening-release-fact-v1.md",
+      "contract_only": true
+    },
+    {
+      "role": "runner_fact_opening_release_golden_v1",
+      "path": "docs/authority/runner-fact-opening-release-golden-v1.json",
+      "contract_only": true
     }
   ],
   "external_optional_documents": [
@@ -652,7 +662,7 @@
     ],
     "forbidden_regex": [
       "ArxNatsTelemetryAdapter",
-      "Custos\\s*(<->|->|\u2194).*ARX",
+      "Custos\\s*(<->|->|↔).*ARX",
       "DeploymentMessage\\.create",
       "NtRiskEngineBridge",
       "StrategyArtifactRefV[2-9]",

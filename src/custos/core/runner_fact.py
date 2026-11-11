@@ -250,6 +250,7 @@ RUNNER_FACT_KIND_PROJECTORS: Final[Mapping[str, str]] = MappingProxyType(
         "fee": "settlement",
         "period_closed": "settlement",
         "equity_snapshot": "risk",
+        OPENING_RELEASE_FACT_KIND: "risk",
         "position_snapshot": "risk",
         "heartbeat": "health",
         "RunnerRuntimeLogFact.v1": "health",
@@ -269,6 +270,7 @@ RUNNER_FACT_PROJECTOR_CONTRACTS: Final[Mapping[str, Mapping[str, object]]] = Map
             {
                 "schema_version": 1,
                 "equity_snapshot": "v1",
+                "opening_release": "v1",
                 "opening_inventory": {
                     "schema_revision": 1,
                     "source_models": ["unavailable", "sodex_public_account_v1"],
@@ -492,6 +494,7 @@ def _capability_shape(
     valuation_checkpoint: bool,
     order_lineage: bool,
     fill_correction: bool,
+    opening_release: bool = False,
 ) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
     projectors = dict(RUNNER_FACT_KIND_PROJECTORS)
     contracts = {
@@ -508,6 +511,7 @@ def _capability_shape(
         ),
         (order_lineage, ORDER_EVENT_KIND, "reconciliation", "order_lineage"),
         (fill_correction, FILL_CORRECTION_KIND, "settlement", "fill_correction"),
+        (opening_release, OPENING_RELEASE_FACT_KIND, "risk", "opening_release"),
     ):
         if not declared:
             projectors.pop(kind)
@@ -516,23 +520,26 @@ def _capability_shape(
 
 
 def runner_fact_capability_shape(
-    *, order_lineage: bool = False, fill_correction: bool = False
+    *,
+    order_lineage: bool = False,
+    fill_correction: bool = False,
+    opening_release: bool = False,
 ) -> tuple[dict[str, str], dict[str, dict[str, object]]]:
     """The projectors and contracts of a capability on the current shape, with
-    the order lineage and fill correction flags as asked."""
+    optional lineage, correction and opening-decision flags as asked."""
 
     return _capability_shape(
         terminal_valuation=True,
         valuation_checkpoint=True,
         order_lineage=order_lineage,
         fill_correction=fill_correction,
+        opening_release=opening_release,
     )
 
 
-# Every capability shape a receipt may declare. Each optional flag is declared
-# exactly when its kind is routed, so a receipt published before a flag existed
-# stays valid. The order lineage and fill correction flags are offered only on
-# the current shape; an older shape that declares one is refused.
+# Each optional flag is declared exactly when its kind is routed, so old
+# receipts remain valid. Lineage, correction and opening decisions require the
+# current terminal/checkpoint shape.
 RUNNER_FACT_CAPABILITY_SHAPES: Final[
     tuple[tuple[dict[str, str], dict[str, dict[str, object]]], ...]
 ] = (
@@ -568,6 +575,17 @@ RUNNER_FACT_CAPABILITY_SHAPES: Final[
     ),
     _capability_shape(
         terminal_valuation=True, valuation_checkpoint=True, order_lineage=True, fill_correction=True
+    ),
+    *(
+        _capability_shape(
+            terminal_valuation=True,
+            valuation_checkpoint=True,
+            order_lineage=lineage,
+            fill_correction=correction,
+            opening_release=True,
+        )
+        for lineage in (False, True)
+        for correction in (False, True)
     ),
 )
 # A terminal valuation is only "same boundary" when its prices and the stop it
@@ -3922,6 +3940,25 @@ class RunnerFactOutbox:
                     raise RunnerFactContractError(
                         "opening release fact requires its exclusive durable transaction"
                     )
+                from custos.core.runner_opening_release_fact import (
+                    RunnerOpeningReleaseFactV1,
+                    opening_release_fact,
+                )
+
+                try:
+                    RunnerOpeningReleaseFactV1.model_validate(fact)
+                except ValueError as error:
+                    raise RunnerFactContractError(f"invalid opening decision: {error}") from error
+                fact = opening_release_fact(
+                    authority=authority,
+                    **{
+                        name: item
+                        for name, item in fact.items()
+                        if name not in {"kind", "event_id"}
+                    },
+                )
+                if fact["event_id"] != value.get("event_id"):
+                    raise RunnerFactContractError("opening decision event identity is invalid")
             elif kind not in RUNNER_FACT_KIND_PROJECTORS:
                 raise RunnerFactContractError(f"unsupported runner fact kind: {kind}")
             fact["kind"] = kind
@@ -5678,19 +5715,20 @@ class RunnerStateStore:
                     )
                 reason = "balance_mismatch"
             event = json.loads(verified.exact_signed_event_bytes)
-            fact = {
-                "kind": OPENING_RELEASE_FACT_KIND,
-                "event_id": str(runner_fact_event_id("opening_release_refused", release_id)),
-                "release_id": command.release_id,
-                "release_command_event_id": event["event_id"],
-                "basis_version_digest": command.basis_version_digest,
-                "outcome": "refused",
-                "reason": reason,
-                "amount": amount,
-                "currency": currency,
-                "observed_at": observed_at,
-                "account_inventory": checked,
-            }
+            from custos.core.runner_opening_release_fact import opening_release_fact
+
+            fact = opening_release_fact(
+                authority=authority,
+                release_id=command.release_id,
+                release_command_event_id=event["event_id"],
+                basis_version_digest=command.basis_version_digest,
+                outcome="refused",
+                reason=reason,
+                amount=amount,
+                currency=currency,
+                observed_at=observed_at,
+                account_inventory=checked,
+            )
             batch_id = self._outbox._enqueue_in_transaction(
                 connection,
                 authority,

@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from custos.core.opening_inventory_contract import OpeningInventory, unavailable_opening_inventory
 from custos.core.runner_fact import (
     FILL_CORRECTION_KIND,
+    OPENING_RELEASE_FACT_KIND,
     ORDER_ATTRIBUTION_SOURCES,
     ORDER_CONTINGENCY_TYPES,
     ORDER_EVENT_FIELDS,
@@ -67,7 +68,7 @@ AUTHORITY_COORDINATE = "custos.runner-fact.v1"
 # Raised only when the wire shape or the meaning of a field changes; a change to
 # descriptive text alone keeps the revision.
 CONTRACT_ID = "alephain.custos.runner_fact_batch.v1"
-CONTRACT_REVISION = 7
+CONTRACT_REVISION = 8
 TENANT_ID = "acme"
 MODE = "sandbox"
 RUNNER_ID = UUID("10000000-0000-4000-8000-000000000001")
@@ -111,6 +112,7 @@ PARITY_PATH = Path("docs/authority/runner-fact-parity-matrix-v1.json")
 SIGNING_PREIMAGE_PATH = Path("docs/authority/runner-fact-signing-preimage-golden-v1.json")
 TERMINAL_BOUNDARY_PATH = Path("docs/authority/runner-fact-terminal-boundary-golden-v1.json")
 LINEAGE_PATH = Path("docs/authority/runner-fact-lineage-golden-v1.json")
+OPENING_RELEASE_PATH = Path("docs/authority/runner-fact-opening-release-golden-v1.json")
 INDEX_PATH = Path("docs/authority/runner-fact-contract-assets-v1.json")
 RECEIPT_PATH = Path("docs/authority/receipts/custos-runner-fact-v1-producer-receipt.json")
 
@@ -416,6 +418,11 @@ def _schema() -> dict[str, Any]:
         "required": ["venue", "snapshot_id"],
         "properties": {"venue": _identifier(128), "snapshot_id": uuid},
     }
+    opening_uuid = {
+        "type": "string",
+        "pattern": r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        "not": {"const": "00000000-0000-0000-0000-000000000000"},
+    }
     facts = {
         "execution_fill": _object_schema(
             "execution_fill",
@@ -480,6 +487,22 @@ def _schema() -> dict[str, Any]:
                 "currency": currency,
                 "observed_at": timestamp,
                 "trading_gate": {"enum": ["awaiting_release", "released"]},
+                "account_inventory": {"$ref": "#/$defs/OpeningInventory"},
+            },
+        ),
+        OPENING_RELEASE_FACT_KIND: _object_schema(
+            OPENING_RELEASE_FACT_KIND,
+            {
+                "release_id": opening_uuid,
+                "release_command_event_id": opening_uuid,
+                "basis_version_digest": digest,
+                "outcome": {"enum": ["acknowledged", "refused"]},
+                "reason": {
+                    "enum": [None, "inventory_unproven", "account_mismatch", "balance_mismatch"]
+                },
+                "amount": unsigned_decimal,
+                "currency": currency,
+                "observed_at": timestamp,
                 "account_inventory": {"$ref": "#/$defs/OpeningInventory"},
             },
         ),
@@ -685,6 +708,32 @@ def _schema() -> dict[str, Any]:
         positive_decimal=positive_decimal,
         side=side,
     )
+    facts[OPENING_RELEASE_FACT_KIND]["allOf"] = [
+        {
+            "if": {"properties": {"outcome": {"const": "acknowledged"}}},
+            "then": {
+                "properties": {
+                    "reason": {"type": "null"},
+                    "account_inventory": {
+                        "properties": {
+                            "inventory_complete": {"const": True},
+                            "observations": {
+                                "properties": {
+                                    name: {"properties": {"rows": {"type": "array", "maxItems": 0}}}
+                                    for name in ("positions", "ordinary_orders")
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+            "else": {"properties": {"reason": {"type": "string"}}},
+        }
+    ]
+    facts[OPENING_RELEASE_FACT_KIND]["properties"]["event_id"] = {
+        **uuid,
+        "not": {"const": "00000000-0000-0000-0000-000000000000"},
+    }
     inventory_schema = OpeningInventory.model_json_schema()
     definitions.update(inventory_schema.pop("$defs"))
     definitions["OpeningInventory"] = inventory_schema
@@ -1250,6 +1299,7 @@ def _capability_manifest(
     *,
     instance_id: UUID = INSTANCE_ID,
     lineage: bool = False,
+    opening_release: bool = False,
 ) -> dict[str, Any]:
     """The capability on the current shape. The canonical manifest declares
     neither order lineage nor fill correction: those flags are an operator's
@@ -1257,7 +1307,7 @@ def _capability_manifest(
 
     base = _scope(spec_id, spec_digest, instance_id)
     projectors, contracts = runner_fact_capability_shape(
-        order_lineage=lineage, fill_correction=lineage
+        order_lineage=lineage, fill_correction=lineage, opening_release=opening_release
     )
     return {
         "schema_version": 1,
@@ -1864,6 +1914,51 @@ def _lineage(identity: RunnerFactIdentity) -> dict[str, Any]:
     return {"capability_manifest": manifest, "batches": [batch]}
 
 
+def _opening_release_boundary(identity: RunnerFactIdentity) -> dict[str, Any]:
+    from custos.core.runner_opening_release_fact import opening_release_fact
+
+    manifest = _capability_manifest(SPEC_ID, SPEC_DIGEST, opening_release=True)
+    digest = _sha256(_canonical(manifest))
+    authority = RunnerFactAuthority(
+        tenant_id=TENANT_ID,
+        trading_mode=MODE,
+        runner_id=RUNNER_ID,
+        deployment_instance_id=INSTANCE_ID,
+        deployment_spec_id=SPEC_ID,
+        deployment_spec_digest=SPEC_DIGEST,
+        generation=7,
+        strategy_id=STRATEGY_ID,
+        capability_version_id=CAPABILITY_ID,
+        capability_version=1,
+        capability_manifest_digest=digest,
+    )
+    fact = opening_release_fact(
+        authority=authority,
+        release_id="90000000-0000-4000-8000-000000000001",
+        release_command_event_id="90000000-0000-4000-8000-000000000002",
+        basis_version_digest="f" * 64,
+        outcome="refused",
+        reason="inventory_unproven",
+        amount="0",
+        currency="USDT",
+        observed_at=EMITTED_AT,
+        account_inventory=unavailable_opening_inventory(authority, "binance"),
+    )
+    batch = _batch(
+        facts=[fact],
+        batch_id=UUID("60000000-0000-4000-8000-000000000016"),
+        emitted_at=EMITTED_AT,
+        source_seq_start=1,
+        spec_id=SPEC_ID,
+        spec_digest=SPEC_DIGEST,
+        generation=7,
+        capability_id=CAPABILITY_ID,
+        capability_manifest_digest=digest,
+        identity=identity,
+    )
+    return {"runtime_evidence": False, "capability_manifest": manifest, "batches": [batch]}
+
+
 def _parity() -> dict[str, Any]:
     sources = {
         "RunnerValuationCheckpointFact.v1": "common-mark independent ledger valuation",
@@ -1873,6 +1968,7 @@ def _parity() -> dict[str, Any]:
         "fee": "Nautilus OrderFilled commission",
         "period_closed": "runner settlement period timer",
         "equity_snapshot": "canonical portfolio equity snapshot",
+        OPENING_RELEASE_FACT_KIND: "durable opening decision on a signed release command",
         "position_snapshot": "canonical trusted-mark position snapshot",
         "heartbeat": "runner observability cadence",
         "RunnerRuntimeLogFact.v1": "sanitized local deny reject and runtime diagnostics",
@@ -1933,10 +2029,12 @@ def build_assets() -> dict[Path, bytes]:
         golden, capability_manifest_digest=manifest_digest, identity=identity
     )
     lineage = _lineage(identity)
+    opening = _opening_release_boundary(identity)
     union_kinds = (
         {fact["kind"] for fact in golden["facts"]}
         | {fact["kind"] for batch in terminal_boundary for fact in batch["facts"]}
         | {fact["kind"] for batch in lineage["batches"] for fact in batch["facts"]}
+        | {fact["kind"] for batch in opening["batches"] for fact in batch["facts"]}
     )
     if union_kinds != set(RUNNER_FACT_KIND_PROJECTORS):
         raise RuntimeError("assets do not contain the closed RunnerFact kind union")
@@ -1999,6 +2097,7 @@ def build_assets() -> dict[Path, bytes]:
         SIGNING_PREIMAGE_PATH: signing_vector,
         TERMINAL_BOUNDARY_PATH: terminal_boundary,
         LINEAGE_PATH: lineage,
+        OPENING_RELEASE_PATH: opening,
     }
     assets: dict[Path, bytes] = {path: _pretty(value) for path, value in objects.items()}
     roles = {
@@ -2010,6 +2109,7 @@ def build_assets() -> dict[Path, bytes]:
         SIGNING_PREIMAGE_PATH: "runner_fact_signing_preimage_golden",
         TERMINAL_BOUNDARY_PATH: "runner_fact_terminal_boundary_golden",
         LINEAGE_PATH: "runner_fact_lineage_golden",
+        OPENING_RELEASE_PATH: "runner_fact_opening_release_golden",
     }
     index = {
         "asset_index_schema_version": 1,
@@ -2055,6 +2155,7 @@ def build_assets() -> dict[Path, bytes]:
             str(GOLDEN_PATH),
             str(TERMINAL_BOUNDARY_PATH),
             str(LINEAGE_PATH),
+            str(OPENING_RELEASE_PATH),
         ],
         "synthetic_signature": {
             "algorithm": "ed25519",

@@ -51,6 +51,13 @@
       "canonical_owner_after_ingest": "arx"
     },
     {
+      "runtime_source": "durable opening decision on a signed release command",
+      "fact_kind": "RunnerOpeningReleaseFact.v1",
+      "capability_projector": "risk",
+      "signed_batch": "RunnerFactBatchV1",
+      "canonical_owner_after_ingest": "arx"
+    },
+    {
       "runtime_source": "canonical trusted-mark position snapshot",
       "fact_kind": "position_snapshot",
       "capability_projector": "risk",
