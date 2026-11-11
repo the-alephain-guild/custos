@@ -358,6 +358,28 @@ def _advertises_opening_release(capability: RunnerCapabilityReceipt) -> bool:
     )
 
 
+def _require_opening_release_transport(
+    capability: RunnerCapabilityReceipt,
+    profiles: dict[str, RunnerNatsConnectionProfile],
+) -> None:
+    if not _advertises_opening_release(capability):
+        return
+    if not profiles:
+        raise RunnerNatsTransportError("opening release requires authenticated control transport")
+    for mode, profile in profiles.items():
+        if not isinstance(profile, RunnerNatsTransportConnectionProfile):
+            raise RunnerNatsTransportError(
+                "opening release requires authenticated control transport"
+            )
+        if (
+            profile.tenant_id != capability.tenant_id
+            or profile.runner_id != capability.runner_id
+            or profile.trading_mode != mode
+        ):
+            raise RunnerNatsTransportError("opening release transport has another identity")
+        profile.credential.require_opening_release_channel()
+
+
 def _build_host(
     args: argparse.Namespace,
     *,
@@ -1165,6 +1187,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
         raise RuntimeError(
             "Runner capability bindings are not validated; restart after projection completes"
         )
+    _require_opening_release_transport(capability, transport_profiles)
     observed_runtime = await asyncio.to_thread(observe_runtime_identity, os.environ)
     require_declared_runtime(
         capability.capability_manifest, observed_runtime, admission=runtime_admission

@@ -448,6 +448,15 @@ class RunnerNatsTransportCredential:
         ):
             raise RunnerNatsTransportError("runner NATS authority digest mismatch")
 
+    def require_opening_release_channel(self) -> None:
+        expected = _expected_durable_config(
+            self.tenant_id, self.runner_id, self.trading_mode, opening_release=True
+        )
+        if self.durable_config != expected:
+            raise RunnerNatsTransportError(
+                "opening release requires an enabled authenticated control channel"
+            )
+
     def assert_active(self, *, now: datetime | None = None) -> None:
         if self.source_path is not None and not self.source_path.exists():
             raise RunnerNatsTransportError("NATS transport vault was invalidated locally")

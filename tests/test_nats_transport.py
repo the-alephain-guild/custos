@@ -351,6 +351,86 @@ def test_credential_accepts_only_its_exact_opening_release_filter(mode) -> None:
             _credential(trading_mode=mode, opening_release_filter=invalid)
 
 
+@pytest.mark.parametrize("mode", ("sandbox", "testnet", "live"))
+def test_advertised_opening_requires_the_authenticated_enabled_channel(tmp_path, mode):
+    from custos.cli._daemon import _require_opening_release_transport
+
+    capability = SimpleNamespace(
+        tenant_id=_TENANT,
+        runner_id=_RUNNER,
+        capability_manifest={
+            "fact_kind_projectors": {"RunnerOpeningReleaseFact.v1": "risk"},
+            "runner_fact_contracts": {"risk": {"opening_release": "v1"}},
+        },
+    )
+    ca = tmp_path / "ca.pem"
+    ca.write_text("test-ca")
+
+    def profile(opening):
+        credential = _credential(
+            trading_mode=mode,
+            now=datetime.now(UTC),
+            opening_release_filter=f"crucible.runner.opening-release.v1.{_TENANT}.{_RUNNER}.{mode}"
+            if opening
+            else None,
+        )
+        return RunnerNatsTransportConnectionProfile(
+            credential,
+            "tls://nats.internal:4222",
+            ca,
+            "nats.internal",
+            credential.issuer_public_key,
+        )
+
+    base = profile(False)
+    with pytest.raises(RunnerNatsTransportError, match="opening release.*channel"):
+        _require_opening_release_transport(capability, {mode: base})
+    _require_opening_release_transport(capability, {mode: profile(True)})
+    wrong = profile(True)
+    capability.tenant_id = "another-tenant"
+    with pytest.raises(RunnerNatsTransportError, match="another identity"):
+        _require_opening_release_transport(capability, {mode: wrong})
+    capability.tenant_id = _TENANT
+    invalid_profiles = [{}]
+    if mode == "sandbox":
+        invalid_profiles.append(
+            {
+                mode: DevelopmentLocalNatsConnectionProfile(
+                    _TENANT,
+                    _RUNNER,
+                    "nats://127.0.0.1:4222",
+                )
+            }
+        )
+    for profiles in invalid_profiles:
+        with pytest.raises(RunnerNatsTransportError, match="authenticated"):
+            _require_opening_release_transport(capability, profiles)
+    capability.capability_manifest = {}
+    _require_opening_release_transport(capability, {mode: base})
+
+
+@pytest.mark.parametrize("mode", ("sandbox", "testnet", "live"))
+@pytest.mark.parametrize("opening", (False, True))
+def test_real_issued_credentials_match_the_pinned_transport_schema(mode, opening):
+    from jsonschema import Draft202012Validator
+
+    root = Path(__file__).resolve().parents[1]
+    schema = json.loads(
+        (
+            root / "docs/authority/vendor/crucible-runner-nats-transport-authority-v1.schema.json"
+        ).read_text()
+    )
+    pins = json.loads((root / "docs/authority/vendor/contract-pins-v1.json").read_text())
+    assert (
+        schema["x-contract-revision"]
+        == pins["contracts"]["alephain.crucible.runner_nats_transport_authority.v1"]["revision"]
+        == 2
+    )
+    subject = f"crucible.runner.opening-release.v1.{_TENANT}.{_RUNNER}.{mode}"
+    credential = _credential(trading_mode=mode, opening_release_filter=subject if opening else None)
+    Draft202012Validator(schema).validate(credential.authority_document())
+
+
 def test_authority_with_millisecond_times_from_crucible_is_accepted() -> None:
     # Crucible stamps the authority from a microsecond timestamptz and digests chrono's
     # rendering, which writes a millisecond-aligned instant with three digits (".632Z").

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.alephain.com/crucible/runner-nats-transport-authority-v1.schema.json",
   "x-contract-id": "alephain.crucible.runner_nats_transport_authority.v1",
-  "x-contract-revision": 1,
+  "x-contract-revision": 2,
   "title": "Runner NATS Transport Authority V1",
   "type": "object",
   "additionalProperties": false,
@@ -33,40 +33,91 @@
     "authority_digest"
   ],
   "properties": {
-    "schema_version": { "const": 1 },
-    "authority_coordinate": { "const": "crucible.runner-nats-transport.v1" },
-    "authority_id": { "type": "string", "format": "uuid" },
+    "schema_version": {
+      "const": 1
+    },
+    "authority_coordinate": {
+      "const": "crucible.runner-nats-transport.v1"
+    },
+    "authority_id": {
+      "type": "string",
+      "format": "uuid"
+    },
     "tenant_id": {
       "type": "string",
       "minLength": 1,
       "maxLength": 64,
       "pattern": "^[A-Za-z0-9_-]+$"
     },
-    "runner_id": { "type": "string", "format": "uuid" },
-    "trading_mode": { "enum": ["sandbox", "testnet", "live"] },
-    "transport_domain": { "enum": ["sim", "live"] },
-    "credential_generation": { "type": "integer", "minimum": 1 },
-    "user_public_key": { "type": "string", "pattern": "^U[A-Z2-7]{55}$" },
+    "runner_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "trading_mode": {
+      "enum": [
+        "sandbox",
+        "testnet",
+        "live"
+      ]
+    },
+    "transport_domain": {
+      "enum": [
+        "sim",
+        "live"
+      ]
+    },
+    "credential_generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "user_public_key": {
+      "type": "string",
+      "pattern": "^U[A-Z2-7]{55}$"
+    },
     "user_jwt": {
       "type": "string",
       "pattern": "^[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$"
     },
-    "user_jwt_sha256": { "$ref": "#/$defs/sha256" },
-    "issuer_public_key": { "type": "string", "pattern": "^A[A-Z2-7]{55}$" },
+    "user_jwt_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "issuer_public_key": {
+      "type": "string",
+      "pattern": "^A[A-Z2-7]{55}$"
+    },
     "signing_key_id": {
       "type": "string",
       "minLength": 1,
       "maxLength": 128,
       "pattern": "^[A-Za-z0-9_.:-]+$"
     },
-    "claims_sha256": { "$ref": "#/$defs/sha256" },
-    "permission_profile": { "$ref": "#/$defs/permission_profile" },
-    "permission_profile_sha256": { "$ref": "#/$defs/sha256" },
-    "durable_config": { "$ref": "#/$defs/durable_config" },
-    "durable_config_sha256": { "$ref": "#/$defs/sha256" },
-    "issued_at": { "type": "string", "format": "date-time" },
-    "not_before": { "type": "string", "format": "date-time" },
-    "expires_at": { "type": "string", "format": "date-time" },
+    "claims_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "permission_profile": {
+      "$ref": "#/$defs/permission_profile"
+    },
+    "permission_profile_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "durable_config": {
+      "$ref": "#/$defs/durable_config"
+    },
+    "durable_config_sha256": {
+      "$ref": "#/$defs/sha256"
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "not_before": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
     "status": {
       "enum": [
         "pending_provisioning",
@@ -77,24 +128,46 @@
         "failed"
       ]
     },
-    "operation_id": { "type": "string", "format": "uuid" },
-    "authority_digest": { "$ref": "#/$defs/sha256" }
+    "operation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "authority_digest": {
+      "$ref": "#/$defs/sha256"
+    }
   },
   "allOf": [
     {
       "if": {
-        "properties": { "trading_mode": { "enum": ["sandbox", "testnet"] } }
+        "properties": {
+          "trading_mode": {
+            "enum": [
+              "sandbox",
+              "testnet"
+            ]
+          }
+        }
       },
       "then": {
         "properties": {
-          "transport_domain": { "const": "sim" },
+          "transport_domain": {
+            "const": "sim"
+          },
           "permission_profile": {
-            "properties": { "transport_domain": { "const": "sim" } }
+            "properties": {
+              "transport_domain": {
+                "const": "sim"
+              }
+            }
           },
           "durable_config": {
             "properties": {
-              "transport_domain": { "const": "sim" },
-              "stream_name": { "const": "CRUCIBLE_RUNNER_CONTROL_SIM_V1" }
+              "transport_domain": {
+                "const": "sim"
+              },
+              "stream_name": {
+                "const": "CRUCIBLE_RUNNER_CONTROL_SIM_V1"
+              }
             }
           }
         }
@@ -102,18 +175,32 @@
     },
     {
       "if": {
-        "properties": { "trading_mode": { "const": "live" } }
+        "properties": {
+          "trading_mode": {
+            "const": "live"
+          }
+        }
       },
       "then": {
         "properties": {
-          "transport_domain": { "const": "live" },
+          "transport_domain": {
+            "const": "live"
+          },
           "permission_profile": {
-            "properties": { "transport_domain": { "const": "live" } }
+            "properties": {
+              "transport_domain": {
+                "const": "live"
+              }
+            }
           },
           "durable_config": {
             "properties": {
-              "transport_domain": { "const": "live" },
-              "stream_name": { "const": "CRUCIBLE_RUNNER_CONTROL_LIVE_V1" }
+              "transport_domain": {
+                "const": "live"
+              },
+              "stream_name": {
+                "const": "CRUCIBLE_RUNNER_CONTROL_LIVE_V1"
+              }
             }
           }
         }
@@ -129,7 +216,10 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "permission_profile": {
       "type": "object",
@@ -147,21 +237,47 @@
         "subscribe_deny"
       ],
       "properties": {
-        "schema_version": { "const": 1 },
-        "profile": { "const": "crucible.runner-nats-transport.v1" },
+        "schema_version": {
+          "const": 1
+        },
+        "profile": {
+          "const": "crucible.runner-nats-transport.v1"
+        },
         "tenant_id": {
           "type": "string",
           "minLength": 1,
           "maxLength": 64,
           "pattern": "^[A-Za-z0-9_-]+$"
         },
-        "runner_id": { "type": "string", "format": "uuid" },
-        "trading_mode": { "enum": ["sandbox", "testnet", "live"] },
-        "transport_domain": { "enum": ["sim", "live"] },
-        "publish_allow": { "$ref": "#/$defs/subject_list" },
-        "subscribe_allow": { "$ref": "#/$defs/subject_list" },
-        "publish_deny": { "$ref": "#/$defs/subject_list" },
-        "subscribe_deny": { "$ref": "#/$defs/subject_list" }
+        "runner_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "trading_mode": {
+          "enum": [
+            "sandbox",
+            "testnet",
+            "live"
+          ]
+        },
+        "transport_domain": {
+          "enum": [
+            "sim",
+            "live"
+          ]
+        },
+        "publish_allow": {
+          "$ref": "#/$defs/subject_list"
+        },
+        "subscribe_allow": {
+          "$ref": "#/$defs/subject_list"
+        },
+        "publish_deny": {
+          "$ref": "#/$defs/subject_list"
+        },
+        "subscribe_deny": {
+          "$ref": "#/$defs/subject_list"
+        }
       }
     },
     "durable_config": {
@@ -181,8 +297,15 @@
         "consumer_mode"
       ],
       "properties": {
-        "schema_version": { "const": 1 },
-        "transport_domain": { "enum": ["sim", "live"] },
+        "schema_version": {
+          "const": 1
+        },
+        "transport_domain": {
+          "enum": [
+            "sim",
+            "live"
+          ]
+        },
         "stream_name": {
           "enum": [
             "CRUCIBLE_RUNNER_CONTROL_SIM_V1",
@@ -200,7 +323,7 @@
         "filter_subjects": {
           "type": "array",
           "minItems": 2,
-          "maxItems": 2,
+          "maxItems": 3,
           "uniqueItems": true,
           "prefixItems": [
             {
@@ -210,15 +333,29 @@
             {
               "type": "string",
               "pattern": "^crucible\\.runner\\.policy\\.v1\\.[A-Za-z0-9_-]+\\.[0-9a-f-]{36}\\.(sandbox|testnet|live)$"
+            },
+            {
+              "type": "string",
+              "pattern": "^crucible\\.runner\\.opening-release\\.v1\\.[A-Za-z0-9_-]+\\.[0-9a-f-]{36}\\.(sandbox|testnet|live)$"
             }
           ],
           "items": false
         },
-        "deliver_policy": { "const": "all" },
-        "ack_policy": { "const": "explicit" },
-        "replay_policy": { "const": "instant" },
-        "max_ack_pending": { "const": 1 },
-        "consumer_mode": { "const": "push_existing_only" }
+        "deliver_policy": {
+          "const": "all"
+        },
+        "ack_policy": {
+          "const": "explicit"
+        },
+        "replay_policy": {
+          "const": "instant"
+        },
+        "max_ack_pending": {
+          "const": 1
+        },
+        "consumer_mode": {
+          "const": "push_existing_only"
+        }
       }
     }
   }

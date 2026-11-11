@@ -2,23 +2,30 @@
 
 ## Inbound desired state
 
-Crucible directly publishes signed domain-event envelopes for both creation and
-later desired-state changes:
+The authenticated control consumer uses an issued, exact tenant/runner/mode
+configuration. New authorizations include these three subject families:
 
-    crucible_rust.domain.<tenant>.<mode>.deployment.
-      DeploymentSpecReadyForRunner.<runner_id>.<deployment_instance_id>
+    crucible.runner.command.v1.<tenant_id>.<runner_id>.<trading_mode>
+    crucible.runner.policy.v1.<tenant_id>.<runner_id>.<trading_mode>
+    crucible.runner.opening-release.v1.<tenant_id>.<runner_id>.<trading_mode>
 
-    crucible_rust.domain.<tenant>.<mode>.deployment.
-      DeploymentInstanceDesiredStateChanged.<runner_id>.<deployment_instance_id>
+The consumer uses its existing runner-scoped delivery subject, manual ACK/NAK
+and a single pending acknowledgement. The verifier binds the exact subject and exact event bytes to the provisioned Ed25519 key. Tenant, mode,
+runner, instance, spec identity and digest must agree with the command. Creation
+and later desired-state commands carry the complete spec, generation and
+lifecycle state; missing values are invalid.
 
-Custos uses a durable, runner-scoped JetStream consumer and manual ACK/NAK. The
-verifier binds the exact subject and exact event bytes to the provisioned
-Crucible Ed25519 key. Tenant, mode, runner, instance, canonical spec id and
-canonical digest must agree across subject, event and payload.
+Transport authority remains V1, contract revision 2. Existing exact base
+command/policy authorizations keep their original documents and digests.
+A runner advertising opening release must have an authenticated authority that
+also includes its exact opening-release filter before the daemon starts.
+An old base authority or the unsigned development lane cannot enable that
+capability. Obtain or rotate authority through the existing authorized workflow;
+do not edit a vault or create a consumer to expand permissions locally.
 
-Both event types carry a complete canonical DeploymentSpec plus explicit
-generation and lifecycle_state. Missing values are invalid; Custos never
-defaults a signed desired-state command.
+An opening command does not advance deployment generation. Its transport does
+not prove that the account was reconciled, that an acknowledgement was accepted,
+or that trading is allowed. Those decisions retain their separate checks.
 
 ## Canonical digest
 

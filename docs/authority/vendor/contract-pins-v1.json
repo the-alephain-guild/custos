@@ -63,29 +63,29 @@
         {
           "local_path": "docs/authority/vendor/crucible-runner-nats-transport-authority-golden-v1.json",
           "producer_path": "docs/authority/runner-nats-transport-authority-golden-v1.json",
-          "sha256": "838bfbac494865491e83acb7bee66f364a74e41e6981e56117a9d97b9f8783b8",
-          "size_bytes": 4010
+          "sha256": "1440f47cd76bfe04aaca44701a27b6b2b3c8ce2ee38062ece9217b07bb428bb4",
+          "size_bytes": 4307
         },
         {
           "local_path": "docs/authority/vendor/crucible-runner-nats-transport-authority-golden-v1.json.sha256",
           "producer_path": "docs/authority/runner-nats-transport-authority-golden-v1.json.sha256",
-          "sha256": "5a952c548bbd13bbbe91f962a9e1749e223ce367746d71f6dd7023bc54503bf3",
+          "sha256": "d44dbbe6ac122593587a0240b67506d4c519702a352961adff2a2e5277711fd7",
           "size_bytes": 113
         },
         {
           "local_path": "docs/authority/vendor/crucible-runner-nats-transport-authority-v1.schema.json",
           "producer_path": "docs/authority/runner-nats-transport-authority-v1.schema.json",
-          "sha256": "a421fd383ba10ccc70c19c7aa044e3dfcb636316c1b0532d5c848bc6b51cfe77",
-          "size_bytes": 7030
+          "sha256": "e69f817bffa681faa1c16e53251bd6dbb91916f3f61677a71b7d997e692d5eca",
+          "size_bytes": 8367
         }
       ],
       "producer_authority": "alephain.crucible",
-      "revision": 1,
+      "revision": 2,
       "revision_carrier": "schema",
       "schema_local_path": "docs/authority/vendor/crucible-runner-nats-transport-authority-v1.schema.json",
       "vectors_local_path": null,
       "vectors_sha256": null,
-      "wire_sha256": "46e2d6d4734e7b38d34a693b91b5da349e6238ca6658bfa711e6bd9b46cf327b"
+      "wire_sha256": "1310dde57743986394531bc56c5d4f56e41c94b5d6922ce08ac5d70930b04768"
     },
     "alephain.crucible.runner_opening_release_command.v1": {
       "assets": [
