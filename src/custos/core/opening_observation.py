@@ -158,11 +158,15 @@ class OpeningObservationBundle:
 
     def __post_init__(self) -> None:
         from custos.core.opening_inventory_contract import normalize_opening_inventory
-        from custos.core.runner_fact import RunnerFactContractError
+        from custos.core.runner_fact import RunnerFactContractError, _signed_decimal
 
         sample = self.native or self.independent
         binding = self.inventory.get("equity_binding", {})
-        amount = str(sample.equity) if not isinstance(sample, RiskSampleUnavailable) else "0"
+        amount = (
+            _signed_decimal(sample.equity, "opening observation equity", bounded=True)
+            if not isinstance(sample, RiskSampleUnavailable)
+            else "0"
+        )
         currency = (
             sample.currency if not isinstance(sample, RiskSampleUnavailable) else self.currency
         )
@@ -277,10 +281,12 @@ async def collect_opening_observation(
                 inventory, authority, currency, manifest
             )
         amount = (
-            str(native.equity)
+            _signed_decimal(native.equity, "native opening equity", bounded=True)
             if native is not None
             else (
-                str(independent.equity) if isinstance(independent, IndependentRiskSample) else "0"
+                _signed_decimal(independent.equity, "independent opening equity", bounded=True)
+                if isinstance(independent, IndependentRiskSample)
+                else "0"
             )
         )
         inventory = normalize_opening_inventory(

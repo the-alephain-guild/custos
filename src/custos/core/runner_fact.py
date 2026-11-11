@@ -20,7 +20,7 @@ import threading
 import time
 import unicodedata
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -3063,6 +3063,7 @@ class CommandOutcomeCommitResult:
 class _OpeningControlContext(threading.local):
     def __init__(self) -> None:
         self.connection: sqlite3.Connection | None = None
+        self.scope: tuple | None = None
         self.after_release: list[Callable[[], None]] = []
 
 
@@ -3082,6 +3083,53 @@ class RunnerFactOutbox:
         connection.execute("PRAGMA synchronous = FULL")
         connection.execute("PRAGMA foreign_keys = ON")
         return connection
+
+    @contextmanager
+    def scoped_connection(self, *, instance=None, write=False):
+        """Reuse only this thread's exact platform control writer, never its commit boundary."""
+        control = self._opening_control
+        if control.connection is None:
+            connection = self._connect()
+            try:
+                if write:
+                    connection.execute("BEGIN IMMEDIATE")
+                try:
+                    yield connection
+                except RunnerPostTradeRiskBreach:
+                    connection.commit()
+                    raise
+                except BaseException:
+                    connection.rollback()
+                    raise
+                else:
+                    if write:
+                        connection.commit()
+            finally:
+                connection.close()
+            return
+        if control.scope is None or (
+            instance is not None and _uuid(instance, "instance") != control.scope[2]
+        ):
+            raise RunnerStateAuthorityError(
+                "synchronous writer differs from its current control scope"
+            )
+        connection = control.connection
+        if not write:
+            yield connection
+            return
+        savepoint = "platform_callback_" + uuid4().hex
+        connection.execute(f"SAVEPOINT {savepoint}")
+        try:
+            yield connection
+        except RunnerPostTradeRiskBreach:
+            connection.execute(f"RELEASE {savepoint}")
+            raise
+        except BaseException:
+            connection.execute(f"ROLLBACK TO {savepoint}")
+            connection.execute(f"RELEASE {savepoint}")
+            raise
+        else:
+            connection.execute(f"RELEASE {savepoint}")
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -3113,6 +3161,9 @@ class RunnerFactOutbox:
                     "SELECT 1 FROM runner_store_identity WHERE singleton=1"
                 ).fetchone()
             ):
+                from custos.core.opening_state_upgrade import upgrade_known_opening_state
+
+                upgrade_known_opening_state(connection, self._validate_platform_storage_contract)
                 self._validate_platform_storage_contract(connection)
             connection.executescript(
                 """
@@ -3583,9 +3634,7 @@ class RunnerFactOutbox:
                 """
                 INSERT INTO runner_state_schema (singleton, schema_version, updated_at)
                 VALUES (1, ?, ?)
-                ON CONFLICT(singleton) DO UPDATE SET
-                    schema_version = excluded.schema_version,
-                    updated_at = excluded.updated_at
+                ON CONFLICT(singleton) DO NOTHING
                 """,
                 (RUNNER_STATE_SCHEMA_VERSION, _utc_now()),
             )
@@ -3618,6 +3667,9 @@ class RunnerFactOutbox:
                     owner_id TEXT NOT NULL REFERENCES platform_process_bindings(owner_id)
                 )"""
             )
+            from custos.core.opening_release_state import install as install_opening_release_state
+
+            install_opening_release_state(connection)
             if not tables_before:
                 connection.execute(
                     "INSERT INTO runner_store_identity VALUES(1,?,1,0)", (str(uuid4()),)
@@ -3633,6 +3685,8 @@ class RunnerFactOutbox:
 
     @staticmethod
     def _validate_platform_storage_contract(connection: sqlite3.Connection) -> None:
+        from custos.core.opening_release_state import evidence_triggers
+
         tables = {
             row[0]
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -3643,7 +3697,7 @@ class RunnerFactOutbox:
         )
         if tables != PLATFORM_STATE_TABLES | {"runner_store_identity"} or any(
             " ".join(triggers.get(name, "").split()) != " ".join(statement.split())
-            for name, statement in platform_counter_triggers().items()
+            for name, statement in (platform_counter_triggers() | evidence_triggers()).items()
         ):
             raise PlatformFenceError("platform_storage_schema_differs")
 
@@ -3706,12 +3760,20 @@ class RunnerFactOutbox:
         identity: RunnerFactIdentity,
         facts: ObservabilityFactPlan,
         command_fingerprint: str,
+        opening_owner=None,
     ) -> UUID | None:
         return await asyncio.to_thread(
-            self._enqueue_observability, authority, identity, facts, command_fingerprint
+            self._enqueue_observability,
+            authority,
+            identity,
+            facts,
+            command_fingerprint,
+            opening_owner,
         )
 
-    def _enqueue_observability(self, authority, identity, facts, command_fingerprint):
+    def _enqueue_observability(
+        self, authority, identity, facts, command_fingerprint, opening_owner=None
+    ):
         from custos.contracts.crucible_runner_command import CrucibleRunnerDeploymentCommandV1
         from custos.core.opening_observation import ObservabilityFactPlan
 
@@ -3727,8 +3789,21 @@ class RunnerFactOutbox:
                 "platform observation requires its exact command fingerprint"
             )
         connection = self._connect()
+        guards = ExitStack()
         try:
             connection.execute("BEGIN IMMEDIATE")
+            if opening_owner is not None:
+                from custos.core.platform_opening_observation import PlatformOpeningObservation
+
+                if (
+                    not isinstance(opening_owner, PlatformOpeningObservation)
+                    or opening_owner.authority != authority
+                    or opening_owner.token.command_fingerprint != command_fingerprint
+                ):
+                    raise RunnerStateAuthorityError(
+                        "released observation has no current host owner"
+                    )
+                guards.enter_context(opening_owner.hold(opening_owner.process_lease.authority))
             row = connection.execute(
                 "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?",
                 (str(authority.deployment_instance_id),),
@@ -3792,8 +3867,16 @@ class RunnerFactOutbox:
                             normalize_opening_inventory,
                         )
 
+                        expected_gate = "awaiting_release"
+                        if command.lifecycle_state == "running" and opening_owner is not None:
+                            from custos.core.opening_release_state import require_permission
+
+                            require_permission(
+                                identity, connection, authority, opening_owner.process_lease
+                            )
+                            expected_gate = "released"
                         if (
-                            fact.get("trading_gate") != "awaiting_release"
+                            fact.get("trading_gate") != expected_gate
                             or fact.get("account_inventory", {}).get("scope", {}).get("connector")
                             != spec.connector
                         ):
@@ -3822,6 +3905,8 @@ class RunnerFactOutbox:
                     deployment_instance_id=str(authority.deployment_instance_id),
                 )
             connection.execute("RELEASE opening_observation_payload")
+            if opening_owner is not None:
+                opening_owner.assert_current()
             connection.commit()
             return batch_id
         except Exception:
@@ -3829,6 +3914,7 @@ class RunnerFactOutbox:
             raise
         finally:
             connection.close()
+            guards.close()
 
     async def enqueue_group(
         self,
@@ -3898,6 +3984,22 @@ class RunnerFactOutbox:
         identity: RunnerFactIdentity,
         facts: Sequence[Mapping[str, Any]],
     ) -> UUID | None:
+        control = self._opening_control
+        if control.connection is not None:
+            scope = (
+                authority.tenant_id,
+                str(authority.runner_id),
+                str(authority.deployment_instance_id),
+                str(authority.deployment_spec_id),
+                authority.deployment_spec_digest,
+                authority.generation,
+                authority.trading_mode,
+            )
+            if control.scope != scope:
+                raise RunnerStateAuthorityError(
+                    "native fact callback differs from its current control scope"
+                )
+            return self._enqueue_in_transaction(control.connection, authority, identity, facts)
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
@@ -3909,6 +4011,21 @@ class RunnerFactOutbox:
             raise
         finally:
             connection.close()
+
+    def _require_control_fact_scope(self, authority):
+        control = self._opening_control
+        if control.connection is not None and control.scope != (
+            authority.tenant_id,
+            str(authority.runner_id),
+            str(authority.deployment_instance_id),
+            str(authority.deployment_spec_id),
+            authority.deployment_spec_digest,
+            authority.generation,
+            authority.trading_mode,
+        ):
+            raise RunnerStateAuthorityError(
+                "signed native callback differs from its current control scope"
+            )
 
     def _enqueue_in_transaction(
         self,
@@ -4151,6 +4268,17 @@ class RunnerFactOutbox:
         """Keep, in the same transaction, what a later stop of this stream must read."""
         for fact in sequenced:
             kind = fact["kind"]
+            if kind in {"fill", "execution_fill", "position_closed"}:
+                connection.execute(
+                    "INSERT INTO runner_opening_trade_events VALUES(?,?,?,?,?)",
+                    (
+                        fact["event_id"],
+                        authority.stream_key,
+                        authority.generation,
+                        fact["seq"],
+                        kind,
+                    ),
+                )
             if kind == "equity_snapshot":
                 connection.execute(
                     """
@@ -4294,9 +4422,10 @@ class RunnerFactOutbox:
         client_order_id: str | None = None,
     ) -> UUID | None:
         canonical_fact_id = UUID(_uuid(fact_id, "fact_id"))
-        connection = self._connect()
-        try:
-            connection.execute("BEGIN IMMEDIATE")
+        self._require_control_fact_scope(authority)
+        with self.scoped_connection(
+            instance=authority.deployment_instance_id, write=True
+        ) as connection:
             if (
                 connection.execute(
                     "SELECT 1 FROM strategy_signal_seen WHERE fact_id = ?",
@@ -4304,7 +4433,6 @@ class RunnerFactOutbox:
                 ).fetchone()
                 is not None
             ):
-                connection.commit()
                 return None
             row = connection.execute(
                 "SELECT next_sequence FROM strategy_signal_stream WHERE stream_key = ?",
@@ -4360,20 +4488,14 @@ class RunnerFactOutbox:
                 """,
                 (authority.stream_key, source_sequence + 1, created_at),
             )
-            connection.commit()
             return canonical_fact_id
-        except Exception:
-            connection.rollback()
-            raise
-        finally:
-            connection.close()
 
     def load_breaker_state_sync(
         self, deployment_instance_id: UUID | str
     ) -> DurableBreakerState | None:
         """Read the breaker state a restart has to adopt before admitting orders."""
         instance = _uuid(deployment_instance_id, "deployment_instance_id")
-        with self._connect() as connection:
+        with self.scoped_connection(instance=instance, write=False) as connection:
             row = connection.execute(
                 """
                 SELECT peak_equity, frozen, reason_code, frozen_at_ns,
@@ -4415,8 +4537,7 @@ class RunnerFactOutbox:
         equity = _decimal(peak_equity, "peak_equity")
         recorded_at_ns = time.time_ns()
         frozen_at = recorded_at_ns if frozen else None
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self.scoped_connection(instance=instance, write=True) as connection:
             connection.execute(
                 """
                 INSERT INTO runner_breaker_state (
@@ -4507,7 +4628,7 @@ class RunnerFactOutbox:
         order can still be working when the bridge is rebuilt, and its later
         reports carry no hint of who placed it.
         """
-        with self._connect() as connection:
+        with self.scoped_connection(instance=deployment_instance_id, write=True) as connection:
             connection.execute(
                 """
                 INSERT INTO runner_order_identity (
@@ -4530,7 +4651,7 @@ class RunnerFactOutbox:
 
     def recall_orders_sync(self, deployment_instance_id: str) -> dict[str, tuple[str, str]]:
         """Every order this instance placed and has not finished with, by order id."""
-        with self._connect() as connection:
+        with self.scoped_connection(instance=deployment_instance_id, write=False) as connection:
             rows = connection.execute(
                 """
                 SELECT client_order_id, direction, order_role
@@ -4549,8 +4670,7 @@ class RunnerFactOutbox:
             _non_empty(deployment_instance_id, "deployment_instance_id"),
             _non_empty(client_order_id, "client_order_id"),
         )
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self.scoped_connection(instance=deployment_instance_id, write=True) as connection:
             for table in ("runner_order_identity", "runner_order_identity_release"):
                 connection.execute(
                     f"DELETE FROM {table} WHERE deployment_instance_id = ? AND client_order_id = ?",
@@ -4572,7 +4692,7 @@ class RunnerFactOutbox:
         """
         if type(released_at_ns) is not int or released_at_ns < 0:
             raise RunnerFactContractError("released_at_ns must be a non-negative integer")
-        with self._connect() as connection:
+        with self.scoped_connection(instance=deployment_instance_id, write=True) as connection:
             connection.execute(
                 """
                 INSERT INTO runner_order_identity_release (
@@ -4594,8 +4714,7 @@ class RunnerFactOutbox:
         if type(released_before_ns) is not int:
             raise RunnerFactContractError("released_before_ns must be an integer")
         instance = _non_empty(deployment_instance_id, "deployment_instance_id")
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self.scoped_connection(instance=instance, write=True) as connection:
             expired = tuple(
                 str(row["client_order_id"])
                 for row in connection.execute(
@@ -5440,6 +5559,15 @@ class RunnerStateStore:
                     ),
                 )
                 connection.execute(
+                    "INSERT INTO runner_opening_lifecycle VALUES(?,?,?,?)",
+                    (
+                        str(command.deployment_instance_id),
+                        command.generation,
+                        command.lifecycle_state,
+                        command_fingerprint,
+                    ),
+                )
+                connection.execute(
                     """
                     UPDATE runner_opening_release_inbox
                     SET state = 'retired', retired_at_ns = ?
@@ -5595,6 +5723,50 @@ class RunnerStateStore:
                     "pending release differs from its durable desired command"
                 )
             return verified
+
+    async def commit_acknowledged_opening_release(
+        self,
+        authenticator,
+        *,
+        release_id,
+        process_lease,
+        capability_manifest,
+        observation,
+        observation_owner=None,
+    ):
+        """Commit the current process's verified opening, signature and permission atomically."""
+        from custos.core.opening_release_state import commit_acknowledged
+
+        return await asyncio.to_thread(
+            commit_acknowledged,
+            self,
+            authenticator,
+            release_id,
+            process_lease,
+            capability_manifest,
+            observation,
+            observation_owner,
+        )
+
+    async def rebind_opening_release(
+        self, *, process_lease, capability_manifest, observation, observation_owner=None
+    ):
+        """Rebind successful history after proving account continuity for this signed generation."""
+        from custos.core.opening_release_state import rebind
+
+        return await asyncio.to_thread(
+            rebind,
+            self,
+            process_lease,
+            capability_manifest,
+            observation,
+            observation_owner,
+        )
+
+    async def has_opening_release_history(self, deployment_instance_id):
+        from custos.core.opening_release_state import has_acknowledgement
+
+        return await asyncio.to_thread(has_acknowledgement, self, deployment_instance_id)
 
     async def commit_refused_opening_release(
         self,
@@ -5761,6 +5933,12 @@ class RunnerStateStore:
         self, connection: sqlite3.Connection, verified: VerifiedOpeningRelease
     ) -> DurableDesiredCommand:
         instance = UUID(verified.command.deployment_instance_id)
+        if connection.execute(
+            "SELECT 1 FROM runner_opening_acknowledgements WHERE instance_id=?", (str(instance),)
+        ).fetchone():
+            raise RunnerStateAuthorityError(
+                "successful opening history requires continuity rather than a new cash opening"
+            )
         row = connection.execute(
             "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?", (str(instance),)
         ).fetchone()
@@ -5780,22 +5958,31 @@ class RunnerStateStore:
             raise RunnerStateAuthorityError("opening release requires the current closed gate")
         return desired
 
-    def load_opening_gate_state_sync(self, authority: EngineLifecycleAuthority) -> str:
+    def load_opening_gate_state_sync(
+        self, authority: EngineLifecycleAuthority, process_lease=None
+    ) -> str:
         """Read only a gate bound to the current durable signed desired command.
 
-        This foundation has no released state or release mutation API. Older
-        databases with no gate record remain closed until a newer signed command
-        records one; reopening or replaying a command never manufactures permission.
+        Successful history alone does not authorize a process. A released result
+        requires the exact current held lease; a reader without it sees closed.
         """
+        if process_lease is not None:
+            process_lease.assert_current()
         with self._outbox._connect() as connection:
             connection.execute("BEGIN")
-            return self._opening_gate_state(connection, authority)
+            return self._opening_gate_state(connection, authority, process_lease)
 
     @contextmanager
-    def opening_control_action(self, authority: EngineLifecycleAuthority):
+    def opening_control_action(
+        self, authority: EngineLifecycleAuthority, *, observation_owner=None
+    ):
         """Serialize an outbound action with durable desired-command retirement."""
         control = self._outbox._opening_control
         if control.connection is not None:
+            if observation_owner is not None:
+                raise RunnerStateAuthorityError(
+                    "opening observation requires its outer commit owner"
+                )
             # Native cancellation publishes callbacks synchronously. A callback
             # must recheck authority using this same transaction, not wait for
             # its own thread's outer SQLite writer lock.
@@ -5804,12 +5991,34 @@ class RunnerStateStore:
             return
         connection = self._outbox._connect()
         control.connection = connection
+        control.scope = (
+            self._tenant_id,
+            str(self._runner_id),
+            str(authority.deployment_instance_id),
+            str(authority.deployment_spec_id),
+            authority.deployment_spec_digest,
+            authority.generation,
+            authority.trading_mode,
+        )
         control.after_release = []
         try:
             connection.execute("BEGIN IMMEDIATE")
             self._opening_gate_state(connection, authority)
-            yield connection
-            connection.commit()
+            with (
+                observation_owner.hold(authority)
+                if observation_owner is not None
+                else nullcontext()
+            ):
+                yield connection
+                if observation_owner is not None:
+                    observation_owner.assert_current()
+                connection.commit()
+        except RunnerPostTradeRiskBreach:
+            if observation_owner is None:
+                connection.commit()
+            else:
+                connection.rollback()
+            raise
         except BaseException:
             connection.rollback()
             raise
@@ -5817,6 +6026,7 @@ class RunnerStateStore:
             connection.close()
             callbacks = control.after_release
             control.connection = None
+            control.scope = None
             control.after_release = []
             for callback in callbacks:
                 callback()
@@ -5830,7 +6040,10 @@ class RunnerStateStore:
         return True
 
     def _opening_gate_state(
-        self, connection: sqlite3.Connection, authority: EngineLifecycleAuthority
+        self,
+        connection: sqlite3.Connection,
+        authority: EngineLifecycleAuthority,
+        process_lease=None,
     ) -> str:
         desired = connection.execute(
             "SELECT * FROM desired_deployments WHERE deployment_instance_id = ?",
@@ -5864,6 +6077,20 @@ class RunnerStateStore:
             "applied",
         }:
             raise RunnerStateDurabilityError("opening gate state or desired command is invalid")
+        if expected_state == "awaiting_release" and process_lease is not None:
+            from custos.core.opening_release_state import require_permission
+
+            if connection.execute(
+                "SELECT 1 FROM runner_opening_permissions WHERE instance_id=? AND generation=? AND owner_id=? AND process_epoch=?",
+                (
+                    str(authority.deployment_instance_id),
+                    authority.generation,
+                    str(process_lease.owner_id),
+                    process_lease.process_epoch,
+                ),
+            ).fetchone():
+                require_permission(self._identity, connection, authority, process_lease)
+                return "released"
         return str(gate["state"])
 
     async def commit_untrusted_command_rejection(
@@ -7421,8 +7648,7 @@ class RunnerStateStore:
             "policy_id": policy,
             "requested_notional": _decimal(requested, "requested_notional"),
         }
-        with self._outbox._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._outbox.scoped_connection(instance=instance, write=True) as connection:
             replay = self._reservation_event_replay(connection, event_id, payload)
             if replay is not None:
                 return self._reservation_from_document(replay)
@@ -7530,8 +7756,7 @@ class RunnerStateStore:
             "client_order_id": order,
             "new_reserved_notional": _decimal(new_reserved, "new_reserved_notional"),
         }
-        with self._outbox._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._outbox.scoped_connection(instance=instance, write=True) as connection:
             replay = self._reservation_event_replay(connection, event_id, payload)
             if replay is not None:
                 return self._reservation_from_document(replay)
@@ -7638,8 +7863,7 @@ class RunnerStateStore:
             "client_order_id": order,
             "reason": reason,
         }
-        with self._outbox._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._outbox.scoped_connection(instance=instance, write=True) as connection:
             replay = self._reservation_event_replay(connection, event_id, payload)
             if replay is not None:
                 return self._reservation_from_document(replay)
@@ -7797,8 +8021,7 @@ class RunnerStateStore:
             "side": side,
             "leaves_quantity": None if leaves is None else _decimal(leaves, "leaves_quantity"),
         }
-        with self._outbox._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._outbox.scoped_connection(instance=instance, write=True) as connection:
             replay = self._reservation_event_replay(connection, event_id, payload)
             if replay is not None:
                 return self._reservation_from_document(replay)
@@ -7981,7 +8204,6 @@ class RunnerStateStore:
                     source_event_id=event_id,
                     recorded_at_ns=recorded_at_ns,
                 )
-                connection.commit()
                 raise RunnerPostTradeRiskBreach(reason)
             return snapshot
 
@@ -8005,8 +8227,7 @@ class RunnerStateStore:
             "reduction_notional": _decimal(reduction, "reduction_notional"),
             "reduction_quantity": _decimal(quantity, "reduction_quantity"),
         }
-        with self._outbox._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._outbox.scoped_connection(instance=instance, write=True) as connection:
             replay = self._reservation_event_replay(connection, event_id, payload)
             if replay is not None:
                 return self._reservation_from_document(replay)
@@ -8159,8 +8380,7 @@ class RunnerStateStore:
             "reduction_notional": _decimal(reduction, "reduction_notional"),
             "reduction_quantity": _decimal(quantity, "reduction_quantity"),
         }
-        with self._outbox._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._outbox.scoped_connection(instance=instance, write=True) as connection:
             replay = self._reservation_event_replay(connection, event_id, payload)
             if replay is not None:
                 return self._reservation_from_document(replay)
@@ -8430,7 +8650,7 @@ class RunnerStateStore:
 
         instance = _uuid(deployment_instance_id, "deployment_instance_id")
         order = _non_empty(client_order_id, "client_order_id")
-        with self._outbox._connect() as connection:
+        with self._outbox.scoped_connection(instance=instance, write=False) as connection:
             return (
                 connection.execute(
                     """
@@ -8447,7 +8667,9 @@ class RunnerStateStore:
         deployment_instance_id: UUID,
         client_order_id: str,
     ) -> OrderReservationSnapshot:
-        with self._outbox._connect() as connection:
+        with self._outbox.scoped_connection(
+            instance=deployment_instance_id, write=False
+        ) as connection:
             row = self._reservation_row(
                 connection,
                 _uuid(deployment_instance_id, "deployment_instance_id"),
@@ -8462,7 +8684,7 @@ class RunnerStateStore:
         return await asyncio.to_thread(self._load_runner_exposure, policy_id)
 
     def _load_runner_exposure(self, policy_id: UUID) -> RunnerExposureSnapshot:
-        with self._outbox._connect() as connection:
+        with self._outbox.scoped_connection(write=False) as connection:
             policy_row = self._reservation_policy(connection, _uuid(policy_id, "policy_id"))
             return self._runner_exposure(connection, policy_row)
 
@@ -9899,10 +10121,11 @@ class RunnerFactEmitter:
         authority: RunnerFactAuthority,
         facts: ObservabilityFactPlan,
         command_fingerprint: str,
+        opening_owner=None,
     ) -> UUID | None:
         self._authority_guard()
         return await self._outbox.enqueue_observability(
-            authority, self._identity, facts, command_fingerprint
+            authority, self._identity, facts, command_fingerprint, opening_owner
         )
 
     async def emit_group(

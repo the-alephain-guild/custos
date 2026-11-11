@@ -734,6 +734,25 @@ class PlatformProcessLease:
             self._assert_snapshot(connection, snapshot)
         self._remember(snapshot)
 
+    def require_observed_account(self, inventory) -> None:
+        """Match a fresh owner observation to the actual claimed adapter identity."""
+        self._require_open()
+        binding = json.loads(self._account.adapter_binding)
+        source = inventory["scope"]["source"]
+        if source is None or inventory["scope"]["connector"] != binding["connector"]:
+            raise PlatformFenceError("platform_adapter_identity_differs")
+        if self.authority.trading_mode == "sandbox":
+            if source["kind"] != "sandbox_engine" or any(
+                source[field] != binding[field] for field in ("venue", "account_id", "account_type")
+            ):
+                raise PlatformFenceError("platform_adapter_identity_differs")
+        elif (
+            source["kind"] != "sodex_venue_account"
+            or source["main_wallet"].lower() != binding["wallet_address"].lower()
+            or source["account_id"] != binding["account_id"]
+        ):
+            raise PlatformFenceError("platform_adapter_identity_differs")
+
     @contextmanager
     def dispatch_control(self, outbox_connection: sqlite3.Connection):
         """Hold the process lease while the opening writer admits a control action."""
@@ -746,8 +765,15 @@ class PlatformProcessLease:
             self._require_snapshot_identity(snapshot)
             with self._registry._transaction(write=False) as connection:
                 self._assert_snapshot(connection, snapshot)
-            self._remember(snapshot)
             yield
+            self._require_open()
+            self._registry._require_current()
+            snapshot = self._store.platform_process_snapshot_on_control(
+                outbox_connection, self.authority
+            )
+            self._require_snapshot_identity(snapshot)
+            with self._registry._transaction(write=False) as connection:
+                self._assert_snapshot(connection, snapshot)
 
     def _remember(self, snapshot) -> None:
         with self._state_lock:

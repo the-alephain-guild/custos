@@ -666,6 +666,9 @@ class NtTradingNodeHost:
         ] = {}
         self._native_runtime_artifact_identity = native_runtime_artifact_identity
         self._opening_observation_epochs: dict[str, int] = {}
+        import threading
+
+        self._opening_observation_lock = threading.RLock()
         self._opening_fact_reads: dict[str, tuple[RunnerFactObservationToken, asyncio.Task]] = {}
         self._runner_safety_boundaries: dict[str, RunnerReservationBoundary] = {}
         # A real venue credential scope represents one account-level order/position
@@ -1886,9 +1889,7 @@ class NtTradingNodeHost:
         in_flight = self._stops_in_flight.get(deployment_instance_id)
         if in_flight is None:
             if deployment_instance_id in self._active_nodes:
-                self._opening_observation_epochs[deployment_instance_id] = (
-                    self._opening_observation_epochs.get(deployment_instance_id, 0) + 1
-                )
+                self._retire_opening_observation(deployment_instance_id)
             in_flight = asyncio.ensure_future(self._stop_at_boundary_once(deployment_instance_id))
             self._stops_in_flight[deployment_instance_id] = in_flight
             in_flight.add_done_callback(
@@ -2120,7 +2121,7 @@ class NtTradingNodeHost:
         self._settlement_currencies.pop(deployment_instance_id, None)
         self._runner_fact_contexts.pop(deployment_instance_id, None)
         self._opening_inventory_providers.pop(deployment_instance_id, None)
-        self._opening_observation_epochs.pop(deployment_instance_id, None)
+        self._retire_opening_observation(deployment_instance_id)
         read_entry = self._opening_fact_reads.get(deployment_instance_id)
         if read_entry is not None and read_entry[1].done():
             self._opening_fact_reads.pop(deployment_instance_id, None)
@@ -2673,6 +2674,34 @@ class NtTradingNodeHost:
             self._opening_observation_epochs.get(instance, 0),
         )
 
+    def _retire_opening_observation(self, instance):
+        with self._opening_observation_lock:
+            self._opening_observation_epochs[instance] = (
+                self._opening_observation_epochs.get(instance, 0) + 1
+            )
+
+    async def runner_fact_opening_observation_owner(self, authority, token):
+        from custos.core.platform_opening_observation import PlatformOpeningObservation
+
+        if await self.runner_fact_observation_token(authority) != token:
+            raise RunnerFactObservationRetired("opening observation ownership is retired")
+        return PlatformOpeningObservation._capture(self, authority, token)
+
+    async def runner_fact_opening_process_lease(
+        self, authority: RunnerFactAuthority, token: RunnerFactObservationToken
+    ) -> PlatformProcessLease:
+        if await self.runner_fact_observation_token(authority) != token:
+            raise RunnerFactObservationRetired("opening process observation is retired")
+        lease = self._platform_process_leases.get(str(authority.deployment_instance_id))
+        if lease is None or lease.authority != self._lifecycle_authorities.get(
+            str(authority.deployment_instance_id)
+        ):
+            raise RunnerFactObservationRetired("opening process has no registered held lease")
+        await asyncio.to_thread(lease.assert_current)
+        if await self.runner_fact_observation_token(authority) != token:
+            raise RunnerFactObservationRetired("opening process changed during lease verification")
+        return lease
+
     def _opening_fact_read_finished(self, instance: str, task: asyncio.Task) -> None:
         entry = self._opening_fact_reads.get(instance)
         runtime = self._active_nodes.get(instance)
@@ -2746,7 +2775,7 @@ class NtTradingNodeHost:
             )
         except RunnerFactContractError:
             return unavailable("provider_unsupported")
-        return "awaiting_release", inventory
+        return await asyncio.to_thread(gate.current_trading_gate), inventory
 
     async def runner_fact_risk_snapshot(
         self, deployment_instance_id: str, currency: str
@@ -3368,7 +3397,7 @@ class NtTradingNodeHost:
             self._containment_confirmed.discard(deployment_instance_id)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
             self._opening_inventory_providers.pop(deployment_instance_id, None)
-            self._opening_observation_epochs.pop(deployment_instance_id, None)
+            self._retire_opening_observation(deployment_instance_id)
             read_entry = self._opening_fact_reads.get(deployment_instance_id)
             if read_entry is not None and read_entry[1].done():
                 self._opening_fact_reads.pop(deployment_instance_id, None)

@@ -29,10 +29,44 @@ parser fixture. Its synthetic native model remains refused at capability
 admission because no complete runtime model has been registered. These fixtures
 are not observed account evidence or runtime credentials.
 
-This delivery does not add the successful acknowledgement transaction, a released
-gate state, an issuer or a receiver projector. Current runtime readiness and
-consumer readiness remain false. Successful release must atomically bind the
-current registered process, desired command, observation, sequence, exact signed
-outbox bytes and gate state; restart, pause/resume and first-order acceptance
-remain required before enabling runtime release. Historical acceptance receipts
-retain their original revision and are not regenerated.
+The guarded execution kernel now has an acknowledgement transaction. It binds
+the current registered process, signed desired command and host-owned observation
+while one SQLite writer allocates the sequence, signs the outbox and appends the
+execution permission. The host observation guard remains held through commit.
+Failures roll everything back. A later delivery retries the original signed
+bytes. Every outbound operation still checks the current held process lease and
+its exact generation-scoped permission.
+
+An immutable acknowledgement is history, not an authorization for another
+process. Restart and pause/resume require a fresh complete account-continuity
+observation and an independently observed risk value. Account incarnation and
+configuration must remain identical; existing positions are preserved rather
+than being reclassified as an initial cash account. A stopped or archived
+instance cannot inherit permission, and an unanswered attempt never transfers.
+The native capture and risk observation must follow the current signed command;
+the same node's capture sequence must advance beyond prior permissions. A later
+risk timestamp cannot make an old native capture eligible for a new permission.
+
+The registered pre-opening V1 SQLite layout has one controlled in-place upgrade.
+Its full table, index and trigger catalog must match the committed predecessor
+before one `BEGIN IMMEDIATE` installs the execution tables and guards. The store
+identity, mutation counter, stream, signed outbox and process-registry bindings
+are retained. Unknown or partial layouts are rejected; no database is deleted or
+silently adopted. Installation uses individual DDL statements so a failed table
+or guard rolls back the entire extension. Reopening is idempotent.
+
+Synchronous native callbacks reuse only the exact current control writer. Each
+reservation operation uses a savepoint and leaves commit ownership outside the
+callback; reads see the same pending reservation. Reserve, replace, release,
+fills, FIFO reductions, order identity, breaker evidence, batch facts and signal
+facts do not acquire a second SQLite writer. Executed overfills retain their
+accounting and risk latch, while an opening decision remains all-or-nothing.
+
+Current default capabilities still declare neither opening decisions nor a
+complete native model. No installed native qualification, successful producer to
+receiver runtime acceptance, issuer, or transport permission is enabled here.
+The positive kernel fixtures explicitly register a future semantic model only
+inside isolated tests. They are not an artifact receipt. Runtime and consumer
+readiness remain false; account restoration and a qualified native host must
+provide the continuity evidence before actual restart can trade. Historical
+acceptance receipts retain their original revision and are not regenerated.

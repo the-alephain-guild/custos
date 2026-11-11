@@ -1,0 +1,989 @@
+{
+  "source_revision": "bbfa18ea41d5603641b10c7129f21ff9b28b1d50",
+  "objects": [
+    {
+      "type": "index",
+      "name": "command_outcomes_instance_generation",
+      "table": "command_outcomes",
+      "sql": "CREATE INDEX command_outcomes_instance_generation ON command_outcomes( deployment_instance_id, generation, command_fingerprint )"
+    },
+    {
+      "type": "index",
+      "name": "runner_cap_policy_scope_revision",
+      "table": "runner_cap_policy",
+      "sql": "CREATE UNIQUE INDEX runner_cap_policy_scope_revision ON runner_cap_policy(tenant_scope, trading_mode, runner_id, policy_revision)"
+    },
+    {
+      "type": "index",
+      "name": "runner_fact_outbox_delivery_order",
+      "table": "runner_fact_outbox",
+      "sql": "CREATE INDEX runner_fact_outbox_delivery_order ON runner_fact_outbox(stream_key, source_seq_start)"
+    },
+    {
+      "type": "index",
+      "name": "runner_fact_publication_receipt_stream_sequence",
+      "table": "runner_fact_publication_receipt",
+      "sql": "CREATE INDEX runner_fact_publication_receipt_stream_sequence ON runner_fact_publication_receipt( stream_key, source_seq_start, source_seq_end )"
+    },
+    {
+      "type": "index",
+      "name": "runner_fact_seen_event_stream_sequence",
+      "table": "runner_fact_seen_event",
+      "sql": "CREATE INDEX runner_fact_seen_event_stream_sequence ON runner_fact_seen_event(stream_key, source_sequence)"
+    },
+    {
+      "type": "index",
+      "name": "runner_opening_release_one_pending",
+      "table": "runner_opening_release_inbox",
+      "sql": "CREATE UNIQUE INDEX runner_opening_release_one_pending ON runner_opening_release_inbox(deployment_instance_id) WHERE state = 'awaiting_observation'"
+    },
+    {
+      "type": "index",
+      "name": "runner_order_reservation_event_scope",
+      "table": "runner_order_reservation_event",
+      "sql": "CREATE INDEX runner_order_reservation_event_scope ON runner_order_reservation_event( policy_id, deployment_instance_id, client_order_id, recorded_at_ns )"
+    },
+    {
+      "type": "index",
+      "name": "runner_position_exposure_lot_fifo",
+      "table": "runner_position_exposure_lot",
+      "sql": "CREATE INDEX runner_position_exposure_lot_fifo ON runner_position_exposure_lot( deployment_instance_id, position_id, opened_at_ns, client_order_id )"
+    },
+    {
+      "type": "index",
+      "name": "strategy_signal_outbox_delivery_order",
+      "table": "strategy_signal_outbox",
+      "sql": "CREATE INDEX strategy_signal_outbox_delivery_order ON strategy_signal_outbox(stream_key, source_sequence)"
+    },
+    {
+      "type": "table",
+      "name": "applied_deployments",
+      "table": "applied_deployments",
+      "sql": "CREATE TABLE applied_deployments ( deployment_instance_id TEXT PRIMARY KEY, deployment_spec_id TEXT NOT NULL, deployment_spec_digest TEXT NOT NULL, generation INTEGER NOT NULL CHECK (generation > 0), command_fingerprint TEXT NOT NULL, engine_handle TEXT, observed_status TEXT NOT NULL, restart_count INTEGER NOT NULL DEFAULT 0 CHECK (restart_count >= 0), quarantine_reason TEXT, artifact_activation_id TEXT, artifact_policy_id TEXT, updated_at_ns INTEGER NOT NULL, FOREIGN KEY (deployment_instance_id) REFERENCES desired_deployments(deployment_instance_id), FOREIGN KEY (artifact_activation_id) REFERENCES artifact_activation(activation_id) )"
+    },
+    {
+      "type": "table",
+      "name": "artifact_activation",
+      "table": "artifact_activation",
+      "sql": "CREATE TABLE artifact_activation ( activation_id TEXT PRIMARY KEY, deployment_instance_id TEXT NOT NULL, deployment_spec_id TEXT NOT NULL, deployment_spec_digest TEXT NOT NULL, generation INTEGER NOT NULL CHECK (generation > 0), artifact_identity_digest TEXT NOT NULL, artifact_authority_digest TEXT NOT NULL, state TEXT NOT NULL CHECK ( state IN ('staged', 'active', 'quarantined') ), quarantine_reason TEXT, activated_at_ns INTEGER, updated_at_ns INTEGER NOT NULL, FOREIGN KEY (deployment_instance_id) REFERENCES desired_deployments(deployment_instance_id) )"
+    },
+    {
+      "type": "table",
+      "name": "command_in_progress_lease",
+      "table": "command_in_progress_lease",
+      "sql": "CREATE TABLE command_in_progress_lease ( deployment_instance_id TEXT PRIMARY KEY, delivery_id TEXT NOT NULL, generation INTEGER NOT NULL CHECK (generation > 0), command_fingerprint TEXT NOT NULL, lease_until_ns INTEGER NOT NULL, restart_count INTEGER NOT NULL DEFAULT 0, last_reason_code TEXT, updated_at_ns INTEGER NOT NULL, FOREIGN KEY (deployment_instance_id) REFERENCES desired_deployments(deployment_instance_id) )"
+    },
+    {
+      "type": "table",
+      "name": "command_outcomes",
+      "table": "command_outcomes",
+      "sql": "CREATE TABLE command_outcomes ( outcome_id TEXT PRIMARY KEY, delivery_id TEXT NOT NULL, tenant_id TEXT, trading_mode TEXT, runner_id TEXT, deployment_instance_id TEXT, generation INTEGER, command_fingerprint TEXT, exact_subject TEXT NOT NULL, raw_envelope_digest TEXT, outcome TEXT NOT NULL, reason_code TEXT NOT NULL, durable_disposition TEXT NOT NULL CHECK ( durable_disposition IN ('ack', 'term') ), lifecycle_batch_id TEXT, recorded_at_ns INTEGER NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "desired_deployments",
+      "table": "desired_deployments",
+      "sql": "CREATE TABLE desired_deployments ( deployment_instance_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, trading_mode TEXT NOT NULL, runner_id TEXT NOT NULL, deployment_spec_id TEXT NOT NULL, deployment_spec_digest TEXT NOT NULL, generation INTEGER NOT NULL CHECK (generation > 0), command_event_id TEXT NOT NULL, exact_subject TEXT NOT NULL, command_fingerprint TEXT NOT NULL, verified_event_bytes_digest TEXT NOT NULL, signer_key_id TEXT NOT NULL, signature_profile TEXT NOT NULL, verification_receipt TEXT NOT NULL, canonical_command TEXT NOT NULL, exact_event_bytes BLOB NOT NULL, desired_status TEXT NOT NULL, quarantine_reason TEXT, updated_at_ns INTEGER NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "kept_command_unbound_notice",
+      "table": "kept_command_unbound_notice",
+      "sql": "CREATE TABLE kept_command_unbound_notice ( deployment_instance_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK (generation > 0), binding_gap TEXT NOT NULL, noticed_at_ns INTEGER NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "order_reservation",
+      "table": "order_reservation",
+      "sql": "CREATE TABLE order_reservation ( deployment_instance_id TEXT NOT NULL, client_order_id TEXT NOT NULL, policy_id TEXT NOT NULL, reserved_notional TEXT NOT NULL, filled_exposure TEXT NOT NULL, filled_quantity TEXT NOT NULL, state TEXT NOT NULL, updated_at_ns INTEGER NOT NULL, PRIMARY KEY (deployment_instance_id, client_order_id), FOREIGN KEY (deployment_instance_id) REFERENCES desired_deployments(deployment_instance_id), FOREIGN KEY (policy_id) REFERENCES runner_cap_policy(policy_id) )"
+    },
+    {
+      "type": "table",
+      "name": "platform_process_bindings",
+      "table": "platform_process_bindings",
+      "sql": "CREATE TABLE platform_process_bindings ( owner_id TEXT PRIMARY KEY, registry_id TEXT NOT NULL, process_epoch INTEGER NOT NULL CHECK( typeof(process_epoch)='integer' AND process_epoch>0 ), instance_id TEXT NOT NULL, aliases BLOB NOT NULL, context BLOB NOT NULL, adapter_binding BLOB NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "platform_process_heads",
+      "table": "platform_process_heads",
+      "sql": "CREATE TABLE platform_process_heads ( instance_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL REFERENCES platform_process_bindings(owner_id) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_breaker_state",
+      "table": "runner_breaker_state",
+      "sql": "CREATE TABLE runner_breaker_state ( deployment_instance_id TEXT PRIMARY KEY, peak_equity TEXT NOT NULL, frozen INTEGER NOT NULL CHECK (frozen IN (0, 1)), reason_code TEXT, frozen_at_ns INTEGER, released_at_ns INTEGER, released_by TEXT, release_reason TEXT, updated_at_ns INTEGER NOT NULL, FOREIGN KEY (deployment_instance_id) REFERENCES desired_deployments(deployment_instance_id) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_cap_policy",
+      "table": "runner_cap_policy",
+      "sql": "CREATE TABLE runner_cap_policy ( policy_id TEXT PRIMARY KEY, policy_revision INTEGER NOT NULL CHECK (policy_revision > 0), policy_digest TEXT NOT NULL, tenant_scope TEXT NOT NULL, trading_mode TEXT NOT NULL, runner_id TEXT NOT NULL, previous_policy_id TEXT, previous_policy_revision INTEGER, previous_policy_digest TEXT, settlement_currency TEXT NOT NULL, max_order_notional TEXT NOT NULL, max_notional TEXT NOT NULL, effective_at_ns INTEGER NOT NULL, expires_at_ns INTEGER NOT NULL, policy_status TEXT NOT NULL, signer_key_id TEXT NOT NULL, signature_profile TEXT NOT NULL, exact_subject TEXT NOT NULL, fingerprint TEXT NOT NULL, verified_event_bytes_digest TEXT NOT NULL, exact_event_bytes BLOB NOT NULL, signed_policy BLOB NOT NULL, policy_json TEXT NOT NULL, consumed_at_ns INTEGER NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "runner_cap_policy_head",
+      "table": "runner_cap_policy_head",
+      "sql": "CREATE TABLE runner_cap_policy_head ( tenant_scope TEXT NOT NULL, trading_mode TEXT NOT NULL, runner_id TEXT NOT NULL, policy_id TEXT NOT NULL, policy_revision INTEGER NOT NULL CHECK (policy_revision > 0), policy_digest TEXT NOT NULL, updated_at_ns INTEGER NOT NULL, PRIMARY KEY (tenant_scope, trading_mode, runner_id), FOREIGN KEY (policy_id) REFERENCES runner_cap_policy(policy_id) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_exposure_checkpoint",
+      "table": "runner_exposure_checkpoint",
+      "sql": "CREATE TABLE runner_exposure_checkpoint ( policy_id TEXT PRIMARY KEY, open_exposure TEXT NOT NULL, reconstructed_at_ns INTEGER NOT NULL, source_digest TEXT NOT NULL, FOREIGN KEY (policy_id) REFERENCES runner_cap_policy(policy_id) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_fact_atomic_group",
+      "table": "runner_fact_atomic_group",
+      "sql": "CREATE TABLE runner_fact_atomic_group ( group_id TEXT PRIMARY KEY, stream_key TEXT NOT NULL, payload_digest TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "runner_fact_last_equity",
+      "table": "runner_fact_last_equity",
+      "sql": "CREATE TABLE runner_fact_last_equity ( stream_key TEXT PRIMARY KEY, event_id TEXT NOT NULL, seq INTEGER NOT NULL CHECK (seq > 0), amount TEXT NOT NULL, currency TEXT NOT NULL, observed_at TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "runner_fact_outbox",
+      "table": "runner_fact_outbox",
+      "sql": "CREATE TABLE runner_fact_outbox ( batch_id TEXT PRIMARY KEY, stream_key TEXT NOT NULL, subject TEXT NOT NULL, source_seq_start INTEGER NOT NULL CHECK (source_seq_start > 0), source_seq_end INTEGER NOT NULL CHECK (source_seq_end >= source_seq_start), payload BLOB NOT NULL, created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, UNIQUE(stream_key, source_seq_start, source_seq_end) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_fact_owed_month_close",
+      "table": "runner_fact_owed_month_close",
+      "sql": "CREATE TABLE runner_fact_owed_month_close ( stream_key TEXT PRIMARY KEY, period TEXT NOT NULL, closed_at TEXT NOT NULL, authority_json TEXT NOT NULL, recorded_at TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "runner_fact_publication_receipt",
+      "table": "runner_fact_publication_receipt",
+      "sql": "CREATE TABLE runner_fact_publication_receipt ( batch_id TEXT PRIMARY KEY, stream_key TEXT NOT NULL, subject TEXT NOT NULL, source_seq_start INTEGER NOT NULL CHECK (source_seq_start > 0), source_seq_end INTEGER NOT NULL CHECK ( source_seq_end >= source_seq_start ), batch_payload_sha256 TEXT NOT NULL CHECK ( length(batch_payload_sha256) = 64 ), broker_stream TEXT NOT NULL, broker_sequence INTEGER NOT NULL CHECK (broker_sequence > 0), broker_domain TEXT, duplicate INTEGER NOT NULL CHECK (duplicate IN (0, 1)), publish_attempts INTEGER NOT NULL CHECK (publish_attempts >= 0), published_at TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "runner_fact_seen_event",
+      "table": "runner_fact_seen_event",
+      "sql": "CREATE TABLE runner_fact_seen_event ( event_id TEXT PRIMARY KEY, stream_key TEXT NOT NULL, source_sequence INTEGER NOT NULL CHECK (source_sequence > 0), batch_id TEXT NOT NULL, recorded_at TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "runner_fact_stream",
+      "table": "runner_fact_stream",
+      "sql": "CREATE TABLE runner_fact_stream ( stream_key TEXT PRIMARY KEY, next_sequence INTEGER NOT NULL CHECK (next_sequence > 0), updated_at TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "runner_fact_stream_seal",
+      "table": "runner_fact_stream_seal",
+      "sql": "CREATE TABLE runner_fact_stream_seal ( stream_key TEXT PRIMARY KEY, terminal_event_id TEXT NOT NULL, sealed_at TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "runner_last_running_generation",
+      "table": "runner_last_running_generation",
+      "sql": "CREATE TABLE runner_last_running_generation ( deployment_instance_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK (generation > 0), command_fingerprint TEXT NOT NULL, recorded_at_ns INTEGER NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "runner_opening_gate",
+      "table": "runner_opening_gate",
+      "sql": "CREATE TABLE runner_opening_gate ( deployment_instance_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, trading_mode TEXT NOT NULL, runner_id TEXT NOT NULL, deployment_spec_id TEXT NOT NULL, deployment_spec_digest TEXT NOT NULL, generation INTEGER NOT NULL CHECK (generation > 0), command_fingerprint TEXT NOT NULL, state TEXT NOT NULL CHECK (state IN ('awaiting_release', 'revoked')), updated_at_ns INTEGER NOT NULL, FOREIGN KEY (deployment_instance_id) REFERENCES desired_deployments(deployment_instance_id) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_opening_release_inbox",
+      "table": "runner_opening_release_inbox",
+      "sql": "CREATE TABLE runner_opening_release_inbox ( release_id TEXT PRIMARY KEY, deployment_instance_id TEXT NOT NULL REFERENCES desired_deployments(deployment_instance_id), generation INTEGER NOT NULL CHECK (generation > 0), desired_fingerprint TEXT NOT NULL, exact_subject TEXT NOT NULL, exact_event_bytes BLOB NOT NULL, signed_envelope BLOB NOT NULL, state TEXT NOT NULL CHECK (state IN ('awaiting_observation', 'retired', 'refused')), recorded_at_ns INTEGER NOT NULL, retired_at_ns INTEGER, fact_batch_id TEXT, signed_fact_batch BLOB, CHECK ((state = 'retired') = (retired_at_ns IS NOT NULL)), CHECK ((state = 'refused') = (fact_batch_id IS NOT NULL AND signed_fact_batch IS NOT NULL)) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_order_identity",
+      "table": "runner_order_identity",
+      "sql": "CREATE TABLE runner_order_identity ( deployment_instance_id TEXT NOT NULL, client_order_id TEXT NOT NULL, direction TEXT NOT NULL, order_role TEXT NOT NULL, remembered_at_ns INTEGER NOT NULL, PRIMARY KEY (deployment_instance_id, client_order_id) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_order_identity_release",
+      "table": "runner_order_identity_release",
+      "sql": "CREATE TABLE runner_order_identity_release ( deployment_instance_id TEXT NOT NULL, client_order_id TEXT NOT NULL, released_at_ns INTEGER NOT NULL, PRIMARY KEY (deployment_instance_id, client_order_id) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_order_reservation_event",
+      "table": "runner_order_reservation_event",
+      "sql": "CREATE TABLE runner_order_reservation_event ( event_id TEXT PRIMARY KEY, event_kind TEXT NOT NULL, event_fingerprint TEXT NOT NULL, policy_id TEXT NOT NULL, deployment_instance_id TEXT, client_order_id TEXT, outcome_json TEXT NOT NULL, recorded_at_ns INTEGER NOT NULL, FOREIGN KEY (policy_id) REFERENCES runner_cap_policy(policy_id) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_position_exposure_lot",
+      "table": "runner_position_exposure_lot",
+      "sql": "CREATE TABLE runner_position_exposure_lot ( deployment_instance_id TEXT NOT NULL, position_id TEXT NOT NULL, client_order_id TEXT NOT NULL, instrument_id TEXT NOT NULL, side TEXT NOT NULL CHECK (side IN ('buy', 'sell')), opened_at_ns INTEGER NOT NULL, PRIMARY KEY (deployment_instance_id, position_id, client_order_id), FOREIGN KEY (deployment_instance_id, client_order_id) REFERENCES order_reservation(deployment_instance_id, client_order_id) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_risk_latch",
+      "table": "runner_risk_latch",
+      "sql": "CREATE TABLE runner_risk_latch ( tenant_scope TEXT NOT NULL, trading_mode TEXT NOT NULL, runner_id TEXT NOT NULL, policy_id TEXT NOT NULL, reason_code TEXT NOT NULL, source_event_id TEXT NOT NULL, latched_at_ns INTEGER NOT NULL, cleared_at_ns INTEGER, PRIMARY KEY (tenant_scope, trading_mode, runner_id), FOREIGN KEY (policy_id) REFERENCES runner_cap_policy(policy_id) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_state_schema",
+      "table": "runner_state_schema",
+      "sql": "CREATE TABLE runner_state_schema ( singleton INTEGER PRIMARY KEY CHECK (singleton = 1), schema_version INTEGER NOT NULL CHECK (schema_version > 0), updated_at TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "runner_stop_pending_reap",
+      "table": "runner_stop_pending_reap",
+      "sql": "CREATE TABLE runner_stop_pending_reap ( deployment_instance_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK (generation > 0), command_fingerprint TEXT NOT NULL, delivery_id TEXT NOT NULL, stop_requested_at TEXT NOT NULL, recorded_at_ns INTEGER NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "runner_stop_terminal",
+      "table": "runner_stop_terminal",
+      "sql": "CREATE TABLE runner_stop_terminal ( deployment_instance_id TEXT NOT NULL, generation INTEGER NOT NULL CHECK (generation > 0), command_fingerprint TEXT NOT NULL, outcome TEXT NOT NULL CHECK (outcome IN ('applied', 'retry_exhausted')), terminal_event_id TEXT, recorded_at_ns INTEGER NOT NULL, PRIMARY KEY (deployment_instance_id, generation, command_fingerprint) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_store_identity",
+      "table": "runner_store_identity",
+      "sql": "CREATE TABLE runner_store_identity ( singleton INTEGER PRIMARY KEY CHECK(singleton=1), store_id TEXT NOT NULL, schema_revision INTEGER NOT NULL CHECK(schema_revision=1), mutation_seq INTEGER NOT NULL CHECK( typeof(mutation_seq)='integer' AND mutation_seq>=0 ) )"
+    },
+    {
+      "type": "table",
+      "name": "runner_terminal_valuation_fact",
+      "table": "runner_terminal_valuation_fact",
+      "sql": "CREATE TABLE runner_terminal_valuation_fact ( event_id TEXT PRIMARY KEY, stream_key TEXT NOT NULL UNIQUE, batch_id TEXT NOT NULL, seq INTEGER NOT NULL CHECK (seq > 0), fact BLOB NOT NULL, recorded_at TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "strategy_signal_outbox",
+      "table": "strategy_signal_outbox",
+      "sql": "CREATE TABLE strategy_signal_outbox ( fact_id TEXT PRIMARY KEY, stream_key TEXT NOT NULL, subject TEXT NOT NULL, source_sequence INTEGER NOT NULL CHECK (source_sequence > 0), payload BLOB NOT NULL, created_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT, UNIQUE(stream_key, source_sequence) )"
+    },
+    {
+      "type": "table",
+      "name": "strategy_signal_publication_receipt",
+      "table": "strategy_signal_publication_receipt",
+      "sql": "CREATE TABLE strategy_signal_publication_receipt ( fact_id TEXT PRIMARY KEY, stream_key TEXT NOT NULL, subject TEXT NOT NULL, source_sequence INTEGER NOT NULL CHECK (source_sequence > 0), payload_sha256 TEXT NOT NULL CHECK (length(payload_sha256) = 64), broker_stream TEXT NOT NULL, broker_sequence INTEGER NOT NULL CHECK (broker_sequence > 0), broker_domain TEXT, duplicate INTEGER NOT NULL CHECK (duplicate IN (0, 1)), publish_attempts INTEGER NOT NULL CHECK (publish_attempts >= 0), published_at TEXT NOT NULL )"
+    },
+    {
+      "type": "table",
+      "name": "strategy_signal_seen",
+      "table": "strategy_signal_seen",
+      "sql": "CREATE TABLE strategy_signal_seen ( fact_id TEXT PRIMARY KEY, stream_key TEXT NOT NULL, source_sequence INTEGER NOT NULL CHECK (source_sequence > 0), recorded_at TEXT NOT NULL, UNIQUE(stream_key, source_sequence) )"
+    },
+    {
+      "type": "table",
+      "name": "strategy_signal_stream",
+      "table": "strategy_signal_stream",
+      "sql": "CREATE TABLE strategy_signal_stream ( stream_key TEXT PRIMARY KEY, next_sequence INTEGER NOT NULL CHECK (next_sequence > 0), updated_at TEXT NOT NULL )"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_applied_deployments_delete",
+      "table": "applied_deployments",
+      "sql": "CREATE TRIGGER platform_mutation_applied_deployments_delete AFTER DELETE ON applied_deployments BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_applied_deployments_insert",
+      "table": "applied_deployments",
+      "sql": "CREATE TRIGGER platform_mutation_applied_deployments_insert AFTER INSERT ON applied_deployments BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_applied_deployments_update",
+      "table": "applied_deployments",
+      "sql": "CREATE TRIGGER platform_mutation_applied_deployments_update AFTER UPDATE ON applied_deployments BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_artifact_activation_delete",
+      "table": "artifact_activation",
+      "sql": "CREATE TRIGGER platform_mutation_artifact_activation_delete AFTER DELETE ON artifact_activation BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_artifact_activation_insert",
+      "table": "artifact_activation",
+      "sql": "CREATE TRIGGER platform_mutation_artifact_activation_insert AFTER INSERT ON artifact_activation BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_artifact_activation_update",
+      "table": "artifact_activation",
+      "sql": "CREATE TRIGGER platform_mutation_artifact_activation_update AFTER UPDATE ON artifact_activation BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_command_in_progress_lease_delete",
+      "table": "command_in_progress_lease",
+      "sql": "CREATE TRIGGER platform_mutation_command_in_progress_lease_delete AFTER DELETE ON command_in_progress_lease BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_command_in_progress_lease_insert",
+      "table": "command_in_progress_lease",
+      "sql": "CREATE TRIGGER platform_mutation_command_in_progress_lease_insert AFTER INSERT ON command_in_progress_lease BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_command_in_progress_lease_update",
+      "table": "command_in_progress_lease",
+      "sql": "CREATE TRIGGER platform_mutation_command_in_progress_lease_update AFTER UPDATE ON command_in_progress_lease BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_command_outcomes_delete",
+      "table": "command_outcomes",
+      "sql": "CREATE TRIGGER platform_mutation_command_outcomes_delete AFTER DELETE ON command_outcomes BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_command_outcomes_insert",
+      "table": "command_outcomes",
+      "sql": "CREATE TRIGGER platform_mutation_command_outcomes_insert AFTER INSERT ON command_outcomes BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_command_outcomes_update",
+      "table": "command_outcomes",
+      "sql": "CREATE TRIGGER platform_mutation_command_outcomes_update AFTER UPDATE ON command_outcomes BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_desired_deployments_delete",
+      "table": "desired_deployments",
+      "sql": "CREATE TRIGGER platform_mutation_desired_deployments_delete AFTER DELETE ON desired_deployments BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_desired_deployments_insert",
+      "table": "desired_deployments",
+      "sql": "CREATE TRIGGER platform_mutation_desired_deployments_insert AFTER INSERT ON desired_deployments BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_desired_deployments_update",
+      "table": "desired_deployments",
+      "sql": "CREATE TRIGGER platform_mutation_desired_deployments_update AFTER UPDATE ON desired_deployments BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_kept_command_unbound_notice_delete",
+      "table": "kept_command_unbound_notice",
+      "sql": "CREATE TRIGGER platform_mutation_kept_command_unbound_notice_delete AFTER DELETE ON kept_command_unbound_notice BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_kept_command_unbound_notice_insert",
+      "table": "kept_command_unbound_notice",
+      "sql": "CREATE TRIGGER platform_mutation_kept_command_unbound_notice_insert AFTER INSERT ON kept_command_unbound_notice BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_kept_command_unbound_notice_update",
+      "table": "kept_command_unbound_notice",
+      "sql": "CREATE TRIGGER platform_mutation_kept_command_unbound_notice_update AFTER UPDATE ON kept_command_unbound_notice BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_order_reservation_delete",
+      "table": "order_reservation",
+      "sql": "CREATE TRIGGER platform_mutation_order_reservation_delete AFTER DELETE ON order_reservation BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_order_reservation_insert",
+      "table": "order_reservation",
+      "sql": "CREATE TRIGGER platform_mutation_order_reservation_insert AFTER INSERT ON order_reservation BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_order_reservation_update",
+      "table": "order_reservation",
+      "sql": "CREATE TRIGGER platform_mutation_order_reservation_update AFTER UPDATE ON order_reservation BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_platform_process_bindings_delete",
+      "table": "platform_process_bindings",
+      "sql": "CREATE TRIGGER platform_mutation_platform_process_bindings_delete AFTER DELETE ON platform_process_bindings BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_platform_process_bindings_insert",
+      "table": "platform_process_bindings",
+      "sql": "CREATE TRIGGER platform_mutation_platform_process_bindings_insert AFTER INSERT ON platform_process_bindings BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_platform_process_bindings_update",
+      "table": "platform_process_bindings",
+      "sql": "CREATE TRIGGER platform_mutation_platform_process_bindings_update AFTER UPDATE ON platform_process_bindings BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_platform_process_heads_delete",
+      "table": "platform_process_heads",
+      "sql": "CREATE TRIGGER platform_mutation_platform_process_heads_delete AFTER DELETE ON platform_process_heads BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_platform_process_heads_insert",
+      "table": "platform_process_heads",
+      "sql": "CREATE TRIGGER platform_mutation_platform_process_heads_insert AFTER INSERT ON platform_process_heads BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_platform_process_heads_update",
+      "table": "platform_process_heads",
+      "sql": "CREATE TRIGGER platform_mutation_platform_process_heads_update AFTER UPDATE ON platform_process_heads BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_breaker_state_delete",
+      "table": "runner_breaker_state",
+      "sql": "CREATE TRIGGER platform_mutation_runner_breaker_state_delete AFTER DELETE ON runner_breaker_state BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_breaker_state_insert",
+      "table": "runner_breaker_state",
+      "sql": "CREATE TRIGGER platform_mutation_runner_breaker_state_insert AFTER INSERT ON runner_breaker_state BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_breaker_state_update",
+      "table": "runner_breaker_state",
+      "sql": "CREATE TRIGGER platform_mutation_runner_breaker_state_update AFTER UPDATE ON runner_breaker_state BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_cap_policy_delete",
+      "table": "runner_cap_policy",
+      "sql": "CREATE TRIGGER platform_mutation_runner_cap_policy_delete AFTER DELETE ON runner_cap_policy BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_cap_policy_head_delete",
+      "table": "runner_cap_policy_head",
+      "sql": "CREATE TRIGGER platform_mutation_runner_cap_policy_head_delete AFTER DELETE ON runner_cap_policy_head BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_cap_policy_head_insert",
+      "table": "runner_cap_policy_head",
+      "sql": "CREATE TRIGGER platform_mutation_runner_cap_policy_head_insert AFTER INSERT ON runner_cap_policy_head BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_cap_policy_head_update",
+      "table": "runner_cap_policy_head",
+      "sql": "CREATE TRIGGER platform_mutation_runner_cap_policy_head_update AFTER UPDATE ON runner_cap_policy_head BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_cap_policy_insert",
+      "table": "runner_cap_policy",
+      "sql": "CREATE TRIGGER platform_mutation_runner_cap_policy_insert AFTER INSERT ON runner_cap_policy BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_cap_policy_update",
+      "table": "runner_cap_policy",
+      "sql": "CREATE TRIGGER platform_mutation_runner_cap_policy_update AFTER UPDATE ON runner_cap_policy BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_exposure_checkpoint_delete",
+      "table": "runner_exposure_checkpoint",
+      "sql": "CREATE TRIGGER platform_mutation_runner_exposure_checkpoint_delete AFTER DELETE ON runner_exposure_checkpoint BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_exposure_checkpoint_insert",
+      "table": "runner_exposure_checkpoint",
+      "sql": "CREATE TRIGGER platform_mutation_runner_exposure_checkpoint_insert AFTER INSERT ON runner_exposure_checkpoint BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_exposure_checkpoint_update",
+      "table": "runner_exposure_checkpoint",
+      "sql": "CREATE TRIGGER platform_mutation_runner_exposure_checkpoint_update AFTER UPDATE ON runner_exposure_checkpoint BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_atomic_group_delete",
+      "table": "runner_fact_atomic_group",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_atomic_group_delete AFTER DELETE ON runner_fact_atomic_group BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_atomic_group_insert",
+      "table": "runner_fact_atomic_group",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_atomic_group_insert AFTER INSERT ON runner_fact_atomic_group BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_atomic_group_update",
+      "table": "runner_fact_atomic_group",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_atomic_group_update AFTER UPDATE ON runner_fact_atomic_group BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_last_equity_delete",
+      "table": "runner_fact_last_equity",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_last_equity_delete AFTER DELETE ON runner_fact_last_equity BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_last_equity_insert",
+      "table": "runner_fact_last_equity",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_last_equity_insert AFTER INSERT ON runner_fact_last_equity BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_last_equity_update",
+      "table": "runner_fact_last_equity",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_last_equity_update AFTER UPDATE ON runner_fact_last_equity BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_outbox_delete",
+      "table": "runner_fact_outbox",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_outbox_delete AFTER DELETE ON runner_fact_outbox BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_outbox_insert",
+      "table": "runner_fact_outbox",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_outbox_insert AFTER INSERT ON runner_fact_outbox BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_outbox_update",
+      "table": "runner_fact_outbox",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_outbox_update AFTER UPDATE ON runner_fact_outbox BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_owed_month_close_delete",
+      "table": "runner_fact_owed_month_close",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_owed_month_close_delete AFTER DELETE ON runner_fact_owed_month_close BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_owed_month_close_insert",
+      "table": "runner_fact_owed_month_close",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_owed_month_close_insert AFTER INSERT ON runner_fact_owed_month_close BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_owed_month_close_update",
+      "table": "runner_fact_owed_month_close",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_owed_month_close_update AFTER UPDATE ON runner_fact_owed_month_close BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_publication_receipt_delete",
+      "table": "runner_fact_publication_receipt",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_publication_receipt_delete AFTER DELETE ON runner_fact_publication_receipt BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_publication_receipt_insert",
+      "table": "runner_fact_publication_receipt",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_publication_receipt_insert AFTER INSERT ON runner_fact_publication_receipt BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_publication_receipt_update",
+      "table": "runner_fact_publication_receipt",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_publication_receipt_update AFTER UPDATE ON runner_fact_publication_receipt BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_seen_event_delete",
+      "table": "runner_fact_seen_event",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_seen_event_delete AFTER DELETE ON runner_fact_seen_event BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_seen_event_insert",
+      "table": "runner_fact_seen_event",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_seen_event_insert AFTER INSERT ON runner_fact_seen_event BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_seen_event_update",
+      "table": "runner_fact_seen_event",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_seen_event_update AFTER UPDATE ON runner_fact_seen_event BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_stream_delete",
+      "table": "runner_fact_stream",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_stream_delete AFTER DELETE ON runner_fact_stream BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_stream_insert",
+      "table": "runner_fact_stream",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_stream_insert AFTER INSERT ON runner_fact_stream BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_stream_seal_delete",
+      "table": "runner_fact_stream_seal",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_stream_seal_delete AFTER DELETE ON runner_fact_stream_seal BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_stream_seal_insert",
+      "table": "runner_fact_stream_seal",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_stream_seal_insert AFTER INSERT ON runner_fact_stream_seal BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_stream_seal_update",
+      "table": "runner_fact_stream_seal",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_stream_seal_update AFTER UPDATE ON runner_fact_stream_seal BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_fact_stream_update",
+      "table": "runner_fact_stream",
+      "sql": "CREATE TRIGGER platform_mutation_runner_fact_stream_update AFTER UPDATE ON runner_fact_stream BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_last_running_generation_delete",
+      "table": "runner_last_running_generation",
+      "sql": "CREATE TRIGGER platform_mutation_runner_last_running_generation_delete AFTER DELETE ON runner_last_running_generation BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_last_running_generation_insert",
+      "table": "runner_last_running_generation",
+      "sql": "CREATE TRIGGER platform_mutation_runner_last_running_generation_insert AFTER INSERT ON runner_last_running_generation BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_last_running_generation_update",
+      "table": "runner_last_running_generation",
+      "sql": "CREATE TRIGGER platform_mutation_runner_last_running_generation_update AFTER UPDATE ON runner_last_running_generation BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_opening_gate_delete",
+      "table": "runner_opening_gate",
+      "sql": "CREATE TRIGGER platform_mutation_runner_opening_gate_delete AFTER DELETE ON runner_opening_gate BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_opening_gate_insert",
+      "table": "runner_opening_gate",
+      "sql": "CREATE TRIGGER platform_mutation_runner_opening_gate_insert AFTER INSERT ON runner_opening_gate BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_opening_gate_update",
+      "table": "runner_opening_gate",
+      "sql": "CREATE TRIGGER platform_mutation_runner_opening_gate_update AFTER UPDATE ON runner_opening_gate BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_opening_release_inbox_delete",
+      "table": "runner_opening_release_inbox",
+      "sql": "CREATE TRIGGER platform_mutation_runner_opening_release_inbox_delete AFTER DELETE ON runner_opening_release_inbox BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_opening_release_inbox_insert",
+      "table": "runner_opening_release_inbox",
+      "sql": "CREATE TRIGGER platform_mutation_runner_opening_release_inbox_insert AFTER INSERT ON runner_opening_release_inbox BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_opening_release_inbox_update",
+      "table": "runner_opening_release_inbox",
+      "sql": "CREATE TRIGGER platform_mutation_runner_opening_release_inbox_update AFTER UPDATE ON runner_opening_release_inbox BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_order_identity_delete",
+      "table": "runner_order_identity",
+      "sql": "CREATE TRIGGER platform_mutation_runner_order_identity_delete AFTER DELETE ON runner_order_identity BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_order_identity_insert",
+      "table": "runner_order_identity",
+      "sql": "CREATE TRIGGER platform_mutation_runner_order_identity_insert AFTER INSERT ON runner_order_identity BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_order_identity_release_delete",
+      "table": "runner_order_identity_release",
+      "sql": "CREATE TRIGGER platform_mutation_runner_order_identity_release_delete AFTER DELETE ON runner_order_identity_release BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_order_identity_release_insert",
+      "table": "runner_order_identity_release",
+      "sql": "CREATE TRIGGER platform_mutation_runner_order_identity_release_insert AFTER INSERT ON runner_order_identity_release BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_order_identity_release_update",
+      "table": "runner_order_identity_release",
+      "sql": "CREATE TRIGGER platform_mutation_runner_order_identity_release_update AFTER UPDATE ON runner_order_identity_release BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_order_identity_update",
+      "table": "runner_order_identity",
+      "sql": "CREATE TRIGGER platform_mutation_runner_order_identity_update AFTER UPDATE ON runner_order_identity BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_order_reservation_event_delete",
+      "table": "runner_order_reservation_event",
+      "sql": "CREATE TRIGGER platform_mutation_runner_order_reservation_event_delete AFTER DELETE ON runner_order_reservation_event BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_order_reservation_event_insert",
+      "table": "runner_order_reservation_event",
+      "sql": "CREATE TRIGGER platform_mutation_runner_order_reservation_event_insert AFTER INSERT ON runner_order_reservation_event BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_order_reservation_event_update",
+      "table": "runner_order_reservation_event",
+      "sql": "CREATE TRIGGER platform_mutation_runner_order_reservation_event_update AFTER UPDATE ON runner_order_reservation_event BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_position_exposure_lot_delete",
+      "table": "runner_position_exposure_lot",
+      "sql": "CREATE TRIGGER platform_mutation_runner_position_exposure_lot_delete AFTER DELETE ON runner_position_exposure_lot BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_position_exposure_lot_insert",
+      "table": "runner_position_exposure_lot",
+      "sql": "CREATE TRIGGER platform_mutation_runner_position_exposure_lot_insert AFTER INSERT ON runner_position_exposure_lot BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_position_exposure_lot_update",
+      "table": "runner_position_exposure_lot",
+      "sql": "CREATE TRIGGER platform_mutation_runner_position_exposure_lot_update AFTER UPDATE ON runner_position_exposure_lot BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_risk_latch_delete",
+      "table": "runner_risk_latch",
+      "sql": "CREATE TRIGGER platform_mutation_runner_risk_latch_delete AFTER DELETE ON runner_risk_latch BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_risk_latch_insert",
+      "table": "runner_risk_latch",
+      "sql": "CREATE TRIGGER platform_mutation_runner_risk_latch_insert AFTER INSERT ON runner_risk_latch BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_risk_latch_update",
+      "table": "runner_risk_latch",
+      "sql": "CREATE TRIGGER platform_mutation_runner_risk_latch_update AFTER UPDATE ON runner_risk_latch BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_state_schema_delete",
+      "table": "runner_state_schema",
+      "sql": "CREATE TRIGGER platform_mutation_runner_state_schema_delete AFTER DELETE ON runner_state_schema BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_state_schema_insert",
+      "table": "runner_state_schema",
+      "sql": "CREATE TRIGGER platform_mutation_runner_state_schema_insert AFTER INSERT ON runner_state_schema BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_state_schema_update",
+      "table": "runner_state_schema",
+      "sql": "CREATE TRIGGER platform_mutation_runner_state_schema_update AFTER UPDATE ON runner_state_schema BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_stop_pending_reap_delete",
+      "table": "runner_stop_pending_reap",
+      "sql": "CREATE TRIGGER platform_mutation_runner_stop_pending_reap_delete AFTER DELETE ON runner_stop_pending_reap BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_stop_pending_reap_insert",
+      "table": "runner_stop_pending_reap",
+      "sql": "CREATE TRIGGER platform_mutation_runner_stop_pending_reap_insert AFTER INSERT ON runner_stop_pending_reap BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_stop_pending_reap_update",
+      "table": "runner_stop_pending_reap",
+      "sql": "CREATE TRIGGER platform_mutation_runner_stop_pending_reap_update AFTER UPDATE ON runner_stop_pending_reap BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_stop_terminal_delete",
+      "table": "runner_stop_terminal",
+      "sql": "CREATE TRIGGER platform_mutation_runner_stop_terminal_delete AFTER DELETE ON runner_stop_terminal BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_stop_terminal_insert",
+      "table": "runner_stop_terminal",
+      "sql": "CREATE TRIGGER platform_mutation_runner_stop_terminal_insert AFTER INSERT ON runner_stop_terminal BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_stop_terminal_update",
+      "table": "runner_stop_terminal",
+      "sql": "CREATE TRIGGER platform_mutation_runner_stop_terminal_update AFTER UPDATE ON runner_stop_terminal BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_terminal_valuation_fact_delete",
+      "table": "runner_terminal_valuation_fact",
+      "sql": "CREATE TRIGGER platform_mutation_runner_terminal_valuation_fact_delete AFTER DELETE ON runner_terminal_valuation_fact BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_terminal_valuation_fact_insert",
+      "table": "runner_terminal_valuation_fact",
+      "sql": "CREATE TRIGGER platform_mutation_runner_terminal_valuation_fact_insert AFTER INSERT ON runner_terminal_valuation_fact BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_runner_terminal_valuation_fact_update",
+      "table": "runner_terminal_valuation_fact",
+      "sql": "CREATE TRIGGER platform_mutation_runner_terminal_valuation_fact_update AFTER UPDATE ON runner_terminal_valuation_fact BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_outbox_delete",
+      "table": "strategy_signal_outbox",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_outbox_delete AFTER DELETE ON strategy_signal_outbox BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_outbox_insert",
+      "table": "strategy_signal_outbox",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_outbox_insert AFTER INSERT ON strategy_signal_outbox BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_outbox_update",
+      "table": "strategy_signal_outbox",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_outbox_update AFTER UPDATE ON strategy_signal_outbox BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_publication_receipt_delete",
+      "table": "strategy_signal_publication_receipt",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_publication_receipt_delete AFTER DELETE ON strategy_signal_publication_receipt BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_publication_receipt_insert",
+      "table": "strategy_signal_publication_receipt",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_publication_receipt_insert AFTER INSERT ON strategy_signal_publication_receipt BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_publication_receipt_update",
+      "table": "strategy_signal_publication_receipt",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_publication_receipt_update AFTER UPDATE ON strategy_signal_publication_receipt BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_seen_delete",
+      "table": "strategy_signal_seen",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_seen_delete AFTER DELETE ON strategy_signal_seen BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_seen_insert",
+      "table": "strategy_signal_seen",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_seen_insert AFTER INSERT ON strategy_signal_seen BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_seen_update",
+      "table": "strategy_signal_seen",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_seen_update AFTER UPDATE ON strategy_signal_seen BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_stream_delete",
+      "table": "strategy_signal_stream",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_stream_delete AFTER DELETE ON strategy_signal_stream BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_stream_insert",
+      "table": "strategy_signal_stream",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_stream_insert AFTER INSERT ON strategy_signal_stream BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_mutation_strategy_signal_stream_update",
+      "table": "strategy_signal_stream",
+      "sql": "CREATE TRIGGER platform_mutation_strategy_signal_stream_update AFTER UPDATE ON strategy_signal_stream BEGIN UPDATE runner_store_identity SET mutation_seq=mutation_seq+1 WHERE singleton=1; END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_process_bindings_no_delete",
+      "table": "platform_process_bindings",
+      "sql": "CREATE TRIGGER platform_process_bindings_no_delete BEFORE DELETE ON platform_process_bindings BEGIN SELECT RAISE(ABORT,'platform process binding is append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_process_bindings_no_replace",
+      "table": "platform_process_bindings",
+      "sql": "CREATE TRIGGER platform_process_bindings_no_replace BEFORE INSERT ON platform_process_bindings WHEN EXISTS(SELECT 1 FROM platform_process_bindings WHERE owner_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'platform process binding is append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_process_bindings_no_update",
+      "table": "platform_process_bindings",
+      "sql": "CREATE TRIGGER platform_process_bindings_no_update BEFORE UPDATE ON platform_process_bindings BEGIN SELECT RAISE(ABORT,'platform process binding is append-only'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_store_identity_immutable",
+      "table": "runner_store_identity",
+      "sql": "CREATE TRIGGER platform_store_identity_immutable BEFORE UPDATE ON runner_store_identity WHEN NEW.singleton<>OLD.singleton OR NEW.store_id<>OLD.store_id OR NEW.schema_revision<>OLD.schema_revision OR typeof(NEW.mutation_seq)<>'integer' OR NEW.mutation_seq<>OLD.mutation_seq+1 BEGIN SELECT RAISE(ABORT,'platform store identity is immutable'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_store_identity_no_delete",
+      "table": "runner_store_identity",
+      "sql": "CREATE TRIGGER platform_store_identity_no_delete BEFORE DELETE ON runner_store_identity BEGIN SELECT RAISE(ABORT,'platform store identity is immutable'); END"
+    },
+    {
+      "type": "trigger",
+      "name": "platform_store_identity_no_reinsert",
+      "table": "runner_store_identity",
+      "sql": "CREATE TRIGGER platform_store_identity_no_reinsert BEFORE INSERT ON runner_store_identity WHEN EXISTS(SELECT 1 FROM runner_store_identity) BEGIN SELECT RAISE(ABORT,'platform store identity is immutable'); END"
+    }
+  ]
+}

@@ -164,6 +164,10 @@ class RunnerFactObservationToken:
 
 
 class RunnerFactHost(Protocol):
+    async def runner_fact_opening_process_lease(self, authority, token): ...
+
+    async def runner_fact_opening_observation_owner(self, authority, token): ...
+
     async def runner_fact_observation_token(
         self, authority: RunnerFactAuthority
     ) -> RunnerFactObservationToken: ...
@@ -951,7 +955,7 @@ async def observe_pending_opening_release(
     authenticator: CrucibleRunnerCommandAuthenticator,
     manifest: Mapping[str, Any],
 ) -> None:
-    """Read the account after authenticated intake and preserve a durable refusal."""
+    """Resolve a current release, or rebind proven account continuity after restart."""
     authority = deployment.authority
     instance = deployment.deployment_instance_id
     try:
@@ -960,7 +964,11 @@ async def observe_pending_opening_release(
             authority.deployment_instance_id,
             authenticator,
         )
-        if pending is None or not await host.deployment_ready(instance):
+        if not await host.deployment_ready(instance):
+            return
+        if pending is None and not await state_store.has_opening_release_history(
+            authority.deployment_instance_id
+        ):
             return
         token = await host.runner_fact_observation_token(authority)
         if token.source_kind != "platform":
@@ -968,6 +976,19 @@ async def observe_pending_opening_release(
         desired = await state_store.load_durable_desired_command(authority.deployment_instance_id)
         if desired.command_fingerprint != token.command_fingerprint:
             return
+        if pending is None:
+            from custos.core.engine_protocol import EngineLifecycleAuthority
+
+            current_lease = await host.runner_fact_opening_process_lease(authority, token)
+            if (
+                await asyncio.to_thread(
+                    state_store.load_opening_gate_state_sync,
+                    EngineLifecycleAuthority.from_verified_command(desired),
+                    current_lease,
+                )
+                == "released"
+            ):
+                return
         bundle = await host.runner_fact_opening_bundle(instance, deployment.currency)
         inventory = bundle.inventory
         if (
@@ -978,18 +999,44 @@ async def observe_pending_opening_release(
             or await host.runner_fact_observation_token(authority) != token
         ):
             return
+        if pending is None:
+            lease = await host.runner_fact_opening_process_lease(authority, token)
+            owner = await host.runner_fact_opening_observation_owner(authority, token)
+            if await host.runner_fact_observation_token(authority) != token:
+                return
+            await state_store.rebind_opening_release(
+                process_lease=lease,
+                capability_manifest=manifest,
+                observation=bundle,
+                observation_owner=owner,
+            )
+            return
         sample = bundle.native or bundle.independent
         if isinstance(sample, RiskSampleUnavailable) or sample.equity < 0:
             return
-        await state_store.commit_refused_opening_release(
-            authenticator,
-            release_id=UUID(pending.command.release_id),
-            capability_manifest=manifest,
-            amount=_signed_decimal(sample.equity, "opening release equity", bounded=True),
-            currency=sample.currency,
-            observed_at=sample.observed_at,
-            inventory=inventory,
-        )
+        try:
+            await state_store.commit_refused_opening_release(
+                authenticator,
+                release_id=UUID(pending.command.release_id),
+                capability_manifest=manifest,
+                amount=_signed_decimal(sample.equity, "opening release equity", bounded=True),
+                currency=sample.currency,
+                observed_at=sample.observed_at,
+                inventory=inventory,
+            )
+        except RunnerOpeningReleaseAwaitingAcknowledgement:
+            lease = await host.runner_fact_opening_process_lease(authority, token)
+            owner = await host.runner_fact_opening_observation_owner(authority, token)
+            if await host.runner_fact_observation_token(authority) != token:
+                return
+            await state_store.commit_acknowledged_opening_release(
+                authenticator,
+                release_id=UUID(pending.command.release_id),
+                process_lease=lease,
+                capability_manifest=manifest,
+                observation=bundle,
+                observation_owner=owner,
+            )
     except (RunnerFactObservationRetired, RunnerOpeningReleaseAwaitingAcknowledgement):
         return
     except Exception as exc:  # noqa: BLE001 - leave the receipt pending and preserve observation
@@ -1039,6 +1086,7 @@ class RunnerFactProductionLoop:
         observed_at = datetime.now(UTC)
         authority = deployment.authority
         observation_token = None
+        bundle = None
         try:
             observation_token = await self._host.runner_fact_observation_token(authority)
             status_reader = getattr(self._host, "get_engine_status", None)
@@ -1178,9 +1226,20 @@ class RunnerFactProductionLoop:
             if observation_token is None or current_token != observation_token:
                 return
             if observation_token.source_kind == "platform":
-                await self._emitter.emit_observability(
-                    authority, plan, observation_token.command_fingerprint
-                )
+                if bundle is not None and bundle.trading_gate == "released":
+                    owner = await self._host.runner_fact_opening_observation_owner(
+                        authority, observation_token
+                    )
+                    await self._emitter.emit_observability(
+                        authority,
+                        plan,
+                        observation_token.command_fingerprint,
+                        opening_owner=owner,
+                    )
+                else:
+                    await self._emitter.emit_observability(
+                        authority, plan, observation_token.command_fingerprint
+                    )
             else:
                 if any(
                     fact["kind"] == "equity_snapshot"

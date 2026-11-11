@@ -19,6 +19,8 @@ PLATFORM_STATE_TABLES = frozenset(
     strategy_signal_seen runner_order_identity runner_order_identity_release
     strategy_signal_outbox strategy_signal_publication_receipt runner_state_schema
     desired_deployments runner_opening_gate runner_opening_release_inbox
+    runner_opening_acknowledgements runner_opening_permissions runner_opening_trade_events
+    runner_opening_lifecycle
     artifact_activation runner_cap_policy
     runner_cap_policy_head runner_risk_latch runner_breaker_state applied_deployments
     command_outcomes runner_last_running_generation runner_stop_terminal runner_stop_pending_reap

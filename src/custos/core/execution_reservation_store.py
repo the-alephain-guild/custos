@@ -38,11 +38,28 @@ class PlatformOpeningGate:
 
     def assert_released(self) -> None:
         try:
-            state = self._store.load_opening_gate_state_sync(self.authority)
+            with self.control_action():
+                state = self._store._opening_gate_state(
+                    self._store._outbox._opening_control.connection,
+                    self.authority,
+                    self._process_lease,
+                )
+                if state == "released":
+                    if self._process_lease is None:
+                        raise RunnerStateAuthorityError(
+                            "released execution requires a held process"
+                        )
+                    from custos.core.opening_release_state import require_permission
+
+                    require_permission(
+                        self._store._identity,
+                        self._store._outbox._opening_control.connection,
+                        self.authority,
+                        self._process_lease,
+                    )
+                    return
         except Exception as error:
             raise RunnerOpeningGateClosed("opening_gate_unavailable") from error
-        # No signed release protocol has been delivered in this foundation. Even
-        # corrupt or future state strings cannot manufacture permission to trade.
         reason = (
             "awaiting_opening_release" if state == "awaiting_release" else "opening_gate_revoked"
         )
@@ -77,6 +94,14 @@ class PlatformOpeningGate:
             raise RunnerStateAuthorityError("opening observation authority is no longer running")
         await asyncio.to_thread(self._store.load_opening_gate_state_sync, self.authority)
         return current
+
+    def current_trading_gate(self) -> str:
+        """Report release only while the same current process may actually dispatch."""
+        try:
+            self.assert_released()
+        except RunnerOpeningGateClosed:
+            return "awaiting_release"
+        return "released"
 
 
 @dataclass(frozen=True)
