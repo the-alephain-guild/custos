@@ -102,6 +102,10 @@ class FakeLiveNode:
 
     def dispose(self) -> None:
         self.disposed = True
+        # The real builder clones the native value instead of keeping the Python
+        # factory. Drop our recording reference on the disposing owner thread,
+        # before the node/handle cycle can later be collected by a worker.
+        self.builder.simulated_exec_clients.clear()
 
 
 class FakeBuilder:
