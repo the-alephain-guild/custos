@@ -669,6 +669,8 @@ class NtTradingNodeHost:
         import threading
 
         self._opening_observation_lock = threading.RLock()
+        self._opening_observation_thread_id = threading.get_ident()
+        self._opening_observation_fences = {}
         self._opening_fact_reads: dict[str, tuple[RunnerFactObservationToken, asyncio.Task]] = {}
         self._runner_safety_boundaries: dict[str, RunnerReservationBoundary] = {}
         # A real venue credential scope represents one account-level order/position
@@ -1292,6 +1294,7 @@ class NtTradingNodeHost:
             self._dispose_and_release_node(deployment_instance_id, node)
             raise
         try:
+            self._retire_opening_observation(deployment_instance_id)
             if fact_context is not None:
                 self._runner_fact_contexts[fact_context[0].deployment_instance_id] = fact_context
             if opening_provider is not None:
@@ -1304,8 +1307,9 @@ class NtTradingNodeHost:
             # Captured before the run: run_async moves the node into the awaitable, and
             # reaching for these through the node afterwards raises.
             handle, cache, portfolio = node.handle(), node.cache, node.portfolio
-            task = asyncio.create_task(node.run_async())
+            task = asyncio.create_task(self._run_node_for_opening(deployment_instance_id, node))
         except Exception:
+            self._retire_opening_observation(deployment_instance_id)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
             self._opening_inventory_providers.pop(deployment_instance_id, None)
             self._runner_safety_boundaries.pop(deployment_instance_id, None)
@@ -2116,12 +2120,12 @@ class NtTradingNodeHost:
     def _release_stopped_node(self, deployment_instance_id: str, runtime: _NodeRuntime) -> None:
         # Only once the run has ended: run_async holds the node until then, and
         # 2.0 disposal releases the kernel without touching the runner's loop.
+        self._retire_opening_observation(deployment_instance_id)
         self._dispose_and_release_node(deployment_instance_id, runtime.node)
         self._peak_equity.pop(deployment_instance_id, None)
         self._settlement_currencies.pop(deployment_instance_id, None)
         self._runner_fact_contexts.pop(deployment_instance_id, None)
         self._opening_inventory_providers.pop(deployment_instance_id, None)
-        self._retire_opening_observation(deployment_instance_id)
         read_entry = self._opening_fact_reads.get(deployment_instance_id)
         if read_entry is not None and read_entry[1].done():
             self._opening_fact_reads.pop(deployment_instance_id, None)
@@ -2679,6 +2683,16 @@ class NtTradingNodeHost:
             self._opening_observation_epochs[instance] = (
                 self._opening_observation_epochs.get(instance, 0) + 1
             )
+            fence = self._opening_observation_fences.get(instance)
+            if fence is not None:
+                fence.epoch = self._opening_observation_epochs[instance]
+
+    async def _run_node_for_opening(self, instance, node):
+        try:
+            return await node.run_async()
+        finally:
+            # Retire the native-free proof before Task.done can become true.
+            self._retire_opening_observation(instance)
 
     async def runner_fact_opening_observation_owner(self, authority, token):
         from custos.core.platform_opening_observation import PlatformOpeningObservation
@@ -3393,11 +3407,11 @@ class NtTradingNodeHost:
                         error_type=type(error).__name__,
                     )
         elif runtime is not None and runtime.task is task:
+            self._retire_opening_observation(deployment_instance_id)
             self._active_nodes.pop(deployment_instance_id, None)
             self._containment_confirmed.discard(deployment_instance_id)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
             self._opening_inventory_providers.pop(deployment_instance_id, None)
-            self._retire_opening_observation(deployment_instance_id)
             read_entry = self._opening_fact_reads.get(deployment_instance_id)
             if read_entry is not None and read_entry[1].done():
                 self._opening_fact_reads.pop(deployment_instance_id, None)

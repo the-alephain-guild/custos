@@ -33,6 +33,11 @@ The guarded execution kernel now has an acknowledgement transaction. It binds
 the current registered process, signed desired command and host-owned observation
 while one SQLite writer allocates the sequence, signs the outbox and appends the
 execution permission. The host observation guard remains held through commit.
+The guard is a native-free retirement certificate. Capture validates the runtime,
+context, safety boundary and held lease on the host thread; worker arguments and
+exception tracebacks retain neither the host nor its native runtime. Installing
+or removing bindings retires prior certificates before changing those bindings.
+The hosted run retires its certificate in `finally`, before its task can finish.
 Failures roll everything back. A later delivery retries the original signed
 bytes. Every outbound operation still checks the current held process lease and
 its exact generation-scoped permission.
