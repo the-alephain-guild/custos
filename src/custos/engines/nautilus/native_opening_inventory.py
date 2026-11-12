@@ -446,6 +446,7 @@ class NativeOpeningInventoryCollector:
         candidate = json.loads(json.dumps(result))
         candidate["completeness"] = dict.fromkeys(COMPLETENESS_FIELDS, True)
         candidate["inventory_complete"] = True
+        candidate["reasons"] = []
         total = next(
             (row.total for row in snapshot.balances if row.asset_code == self.scope.currency), "0"
         )

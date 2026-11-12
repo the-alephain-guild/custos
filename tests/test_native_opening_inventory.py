@@ -128,6 +128,7 @@ async def test_native_converter_preserves_the_actual_boundary_and_requires_runti
     }
     assert result.inventory["inventory_complete"] is complete
     assert result.inventory["equity_binding"]["status"] == ("coherent" if complete else "unproven")
+    assert result.inventory["reasons"] == ([] if complete else ["capture_unavailable"])
 
 
 @pytest.mark.parametrize("mutation", ["extra", "float", "frontier", "source", "environment"])
