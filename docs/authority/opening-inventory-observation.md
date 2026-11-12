@@ -70,7 +70,11 @@ foreign or replayed boundaries and unsupported environments. It preserves exact
 amount strings, every asset, position and order, nullable prices and native
 currency metadata. It never reads a starting balance map as current account data.
 Source configuration retains its original digest and independently verifies the
-configured currency definitions before any cash completeness claim.
+configured currency definitions before any cash valuation claim. With an admitted
+model and measured runtime, full owner enumeration retains its complete dimensions
+when nonzero other assets, positions or orders prevent cash coherence. Margin
+observations keep liabilities unverified. Neither case supplies a native cash
+risk sample or opening permission.
 
 Native capture uses the existing single unfinished collection slot and durable
 before/after desired-state checks. Network/owner waits hold no SQLite writer
@@ -79,7 +83,7 @@ signing the old observation, including when the native result arrives later.
 `runner_fact_opening_bundle` keeps portfolio failure distinct from inventory
 failure and admits a native cash sample only against actual registered capability
 and runtime artifact evidence. The checked-in capability has no native complete
-model, and the currently installed wheel has no capture API. Local future-handle
+model, and the default released wheel has no capture API. Local future-handle
 fixtures do not establish actual native runtime acceptance or release permission.
 
 ## Completeness and acceptance

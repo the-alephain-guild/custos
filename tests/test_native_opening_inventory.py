@@ -246,10 +246,11 @@ async def test_real_current_zero_account_does_not_need_a_synthetic_settlement_ro
     assert len(result.inventory["observations"]["balances"]["rows"]) == len(balances)
 
 
+@pytest.mark.parametrize("complete", [False, True])
 @pytest.mark.parametrize(
     "case", ["extra_balance", "liability", "position", "pending", "unknown_asset"]
 )
-async def test_native_rows_are_preserved_without_qualifying_unproved_cash(case):
+async def test_native_rows_are_preserved_without_qualifying_unproved_cash(case, complete):
     response = _response()
     snapshot = response["capture"]["snapshot"]
     if case in {"extra_balance", "liability", "unknown_asset"}:
@@ -291,10 +292,13 @@ async def test_native_rows_are_preserved_without_qualifying_unproved_cash(case):
                 "pending": True,
             }
         ]
-    result = await _collector(response, complete=True).collect()
+    result = await _collector(response, complete=complete).collect()
     assert result.inventory["status"] == "observed"
     assert result.inventory["inventory_complete"] is False
     assert result.inventory["equity_binding"]["status"] == "unproven"
+    assert all(
+        value is (True if complete else None) for value in result.inventory["completeness"].values()
+    )
     for native_key, observation_key in (
         ("balances", "balances"),
         ("positions", "positions"),
@@ -415,3 +419,21 @@ async def test_cash_configuration_alone_cannot_replace_the_actual_owner_no_borro
     result = await _collector(response, complete=True).collect()
     assert result.inventory["equity_binding"]["status"] == "unproven"
     assert result.inventory["observations"]["liabilities"]["status"] == "unavailable"
+
+
+async def test_margin_enumeration_does_not_prove_cash_liabilities_or_equity():
+    response = _response()
+    source = response["capture"]["snapshot"]["source"]
+    source["account_type"] = "MARGIN"
+    configuration = json.loads(source["configuration_json"])
+    configuration["client_config"]["account_type"] = "MARGIN"
+    source["configuration_json"] = json.dumps(configuration)
+    source["configuration_sha256"] = sha256(source["configuration_json"].encode()).hexdigest()
+    response["capture"]["snapshot"]["no_borrowing_model"] = False
+    result = await _collector(response, complete=True, bound_source=source).collect()
+    assert result.inventory["inventory_complete"] is False
+    assert result.inventory["equity_binding"]["status"] == "unproven"
+    assert result.inventory["observations"]["liabilities"]["status"] == "unavailable"
+    assert result.inventory["completeness"] == {
+        name: name != "liabilities" for name in result.inventory["completeness"]
+    }

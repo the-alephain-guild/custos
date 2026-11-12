@@ -430,8 +430,19 @@ class NativeOpeningInventoryCollector:
                 ]
             ),
         }
-        # The closed model proves cash eligibility; the registered manifest must
-        # independently admit its actual runtime before any complete claim survives.
+        # Full enumeration is distinct from the ability to value that inventory
+        # as settlement cash. Both claims still require actual runtime admission.
+        observed = json.loads(json.dumps(result))
+        observed["completeness"] = dict.fromkeys(COMPLETENESS_FIELDS, True)
+        observed["completeness"]["liabilities"] = (
+            self.source.account_type == "CASH" and snapshot.no_borrowing_model
+        )
+        try:
+            observed = OpeningInventory.model_validate(observed).model_dump(mode="json")
+            require_opening_inventory_support(observed, self._manifest)
+        except (ValueError, RunnerFactContractError):
+            observed = result
+        result = observed
         candidate = json.loads(json.dumps(result))
         candidate["completeness"] = dict.fromkeys(COMPLETENESS_FIELDS, True)
         candidate["inventory_complete"] = True
