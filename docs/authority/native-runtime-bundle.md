@@ -31,8 +31,9 @@ the measured archive digest and the descriptor's Cargo version; the collector
 still compares that version with the actual capture source.
 
 The current recipe describes the retained local archive from revision
-`e1c93b08cd773acc8e377e40a593cc7beb2d53ec`. It establishes this measurement
-plumbing only. It does not qualify later native dispatch or opening protocols.
+`50e5bd4dd12bc6a8e9a866bbeae55f7e3d89670b`, with measured archive SHA-256
+`e7cbea544961fdc23d51486d5fad954bd5974cbc8d543628323d9a3c7dbd195e`.
+This measurement plumbing does not qualify native dispatch or opening protocols.
 A new native build requires new measured archive evidence and a reviewed recipe
 update, followed by a normal candidate rebuild and independent observations.
 
