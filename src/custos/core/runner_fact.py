@@ -588,6 +588,19 @@ RUNNER_FACT_CAPABILITY_SHAPES: Final[
         for correction in (False, True)
     ),
 )
+# Actual fixed-wheel qualification is recorded in native-census-qualification.md.
+# The default capability remains unchanged; only this exact tuple may be declared.
+QUALIFIED_NATIVE_CENSUS_INVENTORY: Final[Mapping[str, object]] = {
+    "schema_revision": 1,
+    "source_models": ["sandbox-account-state-v1", "sodex_public_account_v1", "unavailable"],
+    "capture_apis": ["execution-account-capture-v1", "sodex_public_get_v1"],
+    "mapping_revisions": ["native_currency_codes_v1"],
+    "runtime_artifact_digests": [
+        "e7cbea544961fdc23d51486d5fad954bd5974cbc8d543628323d9a3c7dbd195e"
+    ],
+    "complete_models": ["sandbox-account-state-v1"],
+}
+
 # A terminal valuation is only "same boundary" when its prices and the stop it
 # values are this close to the moment the portfolio was read.
 MAX_TERMINAL_VALUATION_GAP_SECONDS: Final = 60
@@ -10526,6 +10539,30 @@ class RunnerCapabilityReceipt:
             manifest.get("runner_fact_contracts"),
         )
         known_contract = declared_contract in RUNNER_FACT_CAPABILITY_SHAPES
+        declared_runtime = manifest.get("runtime")
+        if (
+            not known_contract
+            and isinstance(declared_runtime, dict)
+            and declared_runtime.get("engine_version") == "2.0.0rc5+papertrade.7"
+        ):
+            qualified_contracts = deepcopy(manifest.get("runner_fact_contracts"))
+            if (
+                isinstance(qualified_contracts, dict)
+                and isinstance(qualified_contracts.get("risk"), dict)
+                and qualified_contracts["risk"].get("opening_inventory")
+                == QUALIFIED_NATIVE_CENSUS_INVENTORY
+                and type(qualified_contracts["risk"]["opening_inventory"]["schema_revision"]) is int
+                and "opening_release" not in qualified_contracts["risk"]
+                and isinstance(manifest.get("fact_kind_projectors"), dict)
+                and OPENING_RELEASE_FACT_KIND not in manifest["fact_kind_projectors"]
+            ):
+                qualified_contracts["risk"]["opening_inventory"] = deepcopy(
+                    RUNNER_FACT_PROJECTOR_CONTRACTS["risk"]["opening_inventory"]
+                )
+                known_contract = (
+                    manifest.get("fact_kind_projectors"),
+                    qualified_contracts,
+                ) in RUNNER_FACT_CAPABILITY_SHAPES
         if (
             manifest.get("closed_fact_union") is not True
             or not known_contract

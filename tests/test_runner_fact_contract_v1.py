@@ -1309,3 +1309,63 @@ def test_lineage_golden_is_a_signed_batch_under_its_own_capability(tmp_path: Pat
     for field in ("voided_venue_trade_id", "voided_quantity", "voided_base_quantity"):
         assert void[field] == correction[field]
     assert void["event_id"] != correction["event_id"]
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        None,
+        "artifact",
+        "model",
+        "api",
+        "mapping",
+        "engine",
+        "extra",
+        "release",
+        "route",
+        "bool_revision",
+        "float_revision",
+    ],
+)
+def test_capability_loader_accepts_only_the_demonstrated_native_census_tuple(tmp_path, mutation):
+    def selected(manifest):
+        inventory = manifest["runner_fact_contracts"]["risk"]["opening_inventory"]
+        inventory.update(
+            source_models=["sandbox-account-state-v1", "sodex_public_account_v1", "unavailable"],
+            capture_apis=["execution-account-capture-v1", "sodex_public_get_v1"],
+            mapping_revisions=["native_currency_codes_v1"],
+            runtime_artifact_digests=[
+                "e7cbea544961fdc23d51486d5fad954bd5974cbc8d543628323d9a3c7dbd195e"
+            ],
+            complete_models=["sandbox-account-state-v1"],
+        )
+        manifest["runtime"]["engine_version"] = "2.0.0rc5+papertrade.7"
+        if mutation in {"artifact", "model", "api", "mapping"}:
+            field = {
+                "artifact": "runtime_artifact_digests",
+                "model": "complete_models",
+                "api": "capture_apis",
+                "mapping": "mapping_revisions",
+            }[mutation]
+            inventory[field] = ["0" * 64 if mutation == "artifact" else "unproved"]
+        elif mutation == "engine":
+            manifest["runtime"]["engine_version"] = "2.0.0rc5+sodex.3"
+        elif mutation == "extra":
+            inventory["unproved"] = True
+        elif mutation == "release":
+            manifest["runner_fact_contracts"]["risk"]["opening_release"] = "v1"
+            manifest["fact_kind_projectors"]["RunnerOpeningReleaseFact.v1"] = "risk"
+        elif mutation == "route":
+            manifest["fact_kind_projectors"]["future_fact"] = "risk"
+        elif mutation in {"bool_revision", "float_revision"}:
+            inventory["schema_revision"] = True if mutation == "bool_revision" else 1.0
+
+    path = _receipt_with(tmp_path, "native-census", selected)
+    if mutation is not None:
+        with pytest.raises(RunnerFactContractError, match="closed fact projector contract"):
+            RunnerCapabilityReceipt.load(path)
+        return
+    receipt = RunnerCapabilityReceipt.load(path)
+    inventory = receipt.capability_manifest["runner_fact_contracts"]["risk"]["opening_inventory"]
+    assert inventory["complete_models"] == ["sandbox-account-state-v1"]
+    assert "opening_release" not in receipt.capability_manifest["runner_fact_contracts"]["risk"]
