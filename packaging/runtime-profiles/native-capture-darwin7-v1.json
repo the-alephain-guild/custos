@@ -4,11 +4,11 @@
   "engine": {
     "distribution": "nautilus-trader",
     "version": "2.0.0rc5+papertrade.7",
-    "artifact_sha256": "2e09d560748b41bdd827d681a3ab650d6eb4755f17edead31aaaac0c8b37e307",
+    "artifact_sha256": "e7cbea544961fdc23d51486d5fad954bd5974cbc8d543628323d9a3c7dbd195e",
     "abi": "cp312",
     "platform": "macosx_11_0_arm64",
     "native_build": {
-      "source_revision": "e1c93b08cd773acc8e377e40a593cc7beb2d53ec",
+      "source_revision": "50e5bd4dd12bc6a8e9a866bbeae55f7e3d89670b",
       "crate_version": "0.64.0",
       "profile": "dev",
       "features": [
