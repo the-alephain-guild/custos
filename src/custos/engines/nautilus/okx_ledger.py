@@ -23,6 +23,10 @@ from custos.engines.nautilus.ledger_http import (
     rows,
     timestamp_ms,
 )
+from custos.engines.nautilus.okx_bill_window import (
+    OkxTradingBillWindow,
+    collect_trading_bill_window,
+)
 from custos.engines.nautilus.venue_config import require_credential, venue_options
 
 _HOSTS = {
@@ -77,7 +81,7 @@ class OkxVenueLedgerSource:
                         "OKX account leverage differs from the signed deployment; configure it before starting"
                     )
 
-    def _get(self, path: str, params: dict[str, object], *, private: bool = True):
+    def _headers(self, path: str, params: dict[str, object], *, private: bool):
         headers = {}
         if private:
             timestamp = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -98,7 +102,40 @@ class OkxVenueLedgerSource:
             }
         if self._demo:
             headers["x-simulated-trading"] = "1"
-        return self._http.get(path, params, headers)
+        return headers
+
+    def _get(self, path: str, params: dict[str, object], *, private: bool = True):
+        return self._http.get(path, params, self._headers(path, params, private=private))
+
+    def _get_exact(self, path: str, params: dict[str, object], *, private: bool = True):
+        response = self._http.get_exact(path, params, self._headers(path, params, private=private))
+        pending = [response.data]
+        while pending:
+            value = pending.pop()
+            if isinstance(value, dict):
+                pending.extend(value.keys())
+                pending.extend(value.values())
+            elif isinstance(value, list):
+                pending.extend(value)
+            elif isinstance(value, str) and any(
+                secret in value for secret in self._credential.values()
+            ):
+                raise VenueLedgerError("OKX response contains credential material")
+        return response
+
+    async def collect_trading_bills(
+        self, start: datetime, end: datetime, *, expected_uid: str, expected_main_uid: str
+    ) -> OkxTradingBillWindow:
+        return await asyncio.to_thread(
+            collect_trading_bill_window,
+            self._get_exact,
+            start,
+            end,
+            expected_uid=expected_uid,
+            expected_main_uid=expected_main_uid,
+            trading_mode="testnet" if self._demo else "live",
+            api_origin=self._http.base_url,
+        )
 
     async def observe_flat(self, *, connector: str, pair: str) -> VenueFlatObservation:
         symbol = pair + "-SWAP"

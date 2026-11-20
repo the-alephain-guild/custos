@@ -95,8 +95,10 @@ class ReadOnlyVenueHttp:
         except (TypeError, ValueError, UnicodeError) as error:
             raise VenueLedgerError("venue ledger request failed") from error
 
-    def get_exact(self, path: str, params: dict[str, object]) -> ExactVenueResponse:
-        return decode_exact_venue_response(self._request(path, params, None))
+    def get_exact(
+        self, path: str, params: dict[str, object], headers: dict[str, str] | None = None
+    ) -> ExactVenueResponse:
+        return decode_exact_venue_response(self._request(path, params, headers))
 
     def _request(self, path, params, headers) -> bytes:
         query = urllib.parse.urlencode(params)
