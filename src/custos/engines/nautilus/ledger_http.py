@@ -9,6 +9,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -80,11 +81,18 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class ReadOnlyVenueHttp:
-    def __init__(self, base_url: str, minimum_interval: float = 0.45) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        minimum_interval: float = 0.45,
+        *,
+        before_request: Callable[[], None] | None = None,
+    ) -> None:
         self.base_url = base_url
         self._last_request = 0.0
         self._minimum_interval = minimum_interval
         self._opener = urllib.request.build_opener(_NoRedirect())
+        self.before_request = before_request
 
     def get(
         self, path: str, params: dict[str, object], headers: dict[str, str] | None = None
@@ -113,6 +121,8 @@ class ReadOnlyVenueHttp:
                 headers={"User-Agent": USER_AGENT, **(headers or {})},
                 method="GET",
             )
+            if self.before_request is not None:
+                self.before_request()
             with self._opener.open(request, timeout=15) as response:
                 payload = response.read(MAX_VENUE_RESPONSE_BYTES + 1)
             if len(payload) > MAX_VENUE_RESPONSE_BYTES:

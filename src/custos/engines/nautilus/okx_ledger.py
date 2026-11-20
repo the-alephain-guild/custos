@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import json
+import threading
 import urllib.parse
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -24,7 +25,10 @@ from custos.engines.nautilus.ledger_http import (
     timestamp_ms,
 )
 from custos.engines.nautilus.okx_bill_window import (
+    FundingWindowBudget,
+    OkxFundingBillWindow,
     OkxTradingBillWindow,
+    collect_funding_bill_window,
     collect_trading_bill_window,
 )
 from custos.engines.nautilus.venue_config import require_credential, venue_options
@@ -48,6 +52,8 @@ class OkxVenueLedgerSource:
         if region not in _HOSTS:
             raise VenueLedgerError("unsupported OKX ledger region")
         self._http = ReadOnlyVenueHttp(_HOSTS[region])
+        self._funding_http = ReadOnlyVenueHttp(_HOSTS[region], minimum_interval=1.0)
+        self._funding_window_lock = threading.Lock()
         self._credential = {
             key: require_credential(credential, key)
             for key in ("api_key", "api_secret", "api_passphrase")
@@ -109,6 +115,15 @@ class OkxVenueLedgerSource:
 
     def _get_exact(self, path: str, params: dict[str, object], *, private: bool = True):
         response = self._http.get_exact(path, params, self._headers(path, params, private=private))
+        return self._checked_exact_response(response)
+
+    def _get_funding_exact(self, path: str, params: dict[str, object], *, private: bool = True):
+        response = self._funding_http.get_exact(
+            path, params, self._headers(path, params, private=private)
+        )
+        return self._checked_exact_response(response)
+
+    def _checked_exact_response(self, response):
         pending = [response.data]
         while pending:
             value = pending.pop()
@@ -122,6 +137,41 @@ class OkxVenueLedgerSource:
             ):
                 raise VenueLedgerError("OKX response contains credential material")
         return response
+
+    async def collect_funding_bills(
+        self, start: datetime, end: datetime, *, expected_uid: str, expected_main_uid: str
+    ) -> OkxFundingBillWindow:
+        budget = FundingWindowBudget()
+        try:
+            result = await asyncio.to_thread(
+                self._collect_funding_bills, start, end, expected_uid, expected_main_uid, budget
+            )
+        except asyncio.CancelledError:
+            budget.cancelled.set()
+            raise
+        budget.check()
+        return result
+
+    def _collect_funding_bills(self, start, end, expected_uid, expected_main_uid, budget):
+        # The worker owns the lock even if its awaiting task is cancelled.
+        if not self._funding_window_lock.acquire(timeout=budget.remaining()):
+            raise VenueLedgerError("OKX funding window exceeded its time budget")
+        try:
+            budget.check()
+            self._funding_http.before_request = budget.check
+            return collect_funding_bill_window(
+                self._get_funding_exact,
+                start,
+                end,
+                expected_uid=expected_uid,
+                expected_main_uid=expected_main_uid,
+                trading_mode="testnet" if self._demo else "live",
+                api_origin=self._http.base_url,
+                budget=budget,
+            )
+        finally:
+            self._funding_http.before_request = None
+            self._funding_window_lock.release()
 
     async def collect_trading_bills(
         self, start: datetime, end: datetime, *, expected_uid: str, expected_main_uid: str
