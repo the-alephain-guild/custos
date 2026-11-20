@@ -26,16 +26,17 @@ FUNDING_CUSTODY_SCOPE: Final = "venue-default-not-all-custody-providers"
 class FundingWindowBudget:
     """Acceptance deadline; an in-flight blocking read is not forcibly terminated."""
 
-    def __init__(self):
+    def __init__(self, *, label: str = "funding"):
         self.deadline = time.monotonic() + MAX_FUNDING_WINDOW_SECONDS
         self.cancelled = threading.Event()
+        self._label = label
 
     def remaining(self) -> float:
         if self.cancelled.is_set():
-            raise VenueLedgerError("OKX funding collection was cancelled")
+            raise VenueLedgerError(f"OKX {self._label} collection was cancelled")
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
-            raise VenueLedgerError("OKX funding window exceeded its time budget")
+            raise VenueLedgerError(f"OKX {self._label} window exceeded its time budget")
         return remaining
 
     def check(self) -> None:

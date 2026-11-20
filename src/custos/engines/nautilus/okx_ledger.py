@@ -31,6 +31,10 @@ from custos.engines.nautilus.okx_bill_window import (
     collect_funding_bill_window,
     collect_trading_bill_window,
 )
+from custos.engines.nautilus.okx_withdrawal_window import (
+    OkxWithdrawalWindow,
+    collect_withdrawal_window,
+)
 from custos.engines.nautilus.venue_config import require_credential, venue_options
 
 _HOSTS = {
@@ -186,6 +190,45 @@ class OkxVenueLedgerSource:
             trading_mode="testnet" if self._demo else "live",
             api_origin=self._http.base_url,
         )
+
+    async def collect_withdrawal_details(
+        self, start: datetime, end: datetime, *, expected_uid: str, expected_main_uid: str
+    ) -> OkxWithdrawalWindow:
+        budget = FundingWindowBudget(label="withdrawal")
+        try:
+            result = await asyncio.to_thread(
+                self._collect_withdrawal_details,
+                start,
+                end,
+                expected_uid,
+                expected_main_uid,
+                budget,
+            )
+        except asyncio.CancelledError:
+            budget.cancelled.set()
+            raise
+        budget.check()
+        return result
+
+    def _collect_withdrawal_details(self, start, end, expected_uid, expected_main_uid, budget):
+        if not self._funding_window_lock.acquire(timeout=budget.remaining()):
+            raise VenueLedgerError("OKX withdrawal window exceeded its time budget")
+        try:
+            budget.check()
+            self._funding_http.before_request = budget.check
+            return collect_withdrawal_window(
+                self._get_funding_exact,
+                start,
+                end,
+                expected_uid=expected_uid,
+                expected_main_uid=expected_main_uid,
+                trading_mode="testnet" if self._demo else "live",
+                api_origin=self._http.base_url,
+                budget=budget,
+            )
+        finally:
+            self._funding_http.before_request = None
+            self._funding_window_lock.release()
 
     async def observe_flat(self, *, connector: str, pair: str) -> VenueFlatObservation:
         symbol = pair + "-SWAP"
