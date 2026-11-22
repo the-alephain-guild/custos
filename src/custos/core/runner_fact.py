@@ -9356,6 +9356,58 @@ class RunnerStateStore:
             raise PlatformFenceError("platform_storage_unavailable") from error
         return self._platform_process_snapshot_on(connection, storage, authority)
 
+    def require_ledger_context_on(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        outbox: RunnerFactOutbox,
+        opened_storage: PlatformStorageSnapshot,
+        authority: EngineLifecycleAuthority,
+    ) -> PlatformProcessSnapshot:
+        """Read this transaction's current desired; do not publish its provisional watermark.
+
+        The caller supplies its primary connection and opening stamp. A final
+        capture writer must acquire its ledger owner before BEGIN IMMEDIATE and
+        compare the returned context to that owner's frozen capture binding.
+        This read neither opens another snapshot nor advances owner state.
+        """
+        if outbox is not self._outbox:
+            raise RunnerStateAuthorityError("ledger outbox differs from this Store")
+        if (
+            type(connection) is not sqlite3.Connection
+            or not connection.in_transaction
+            or connection.row_factory is not sqlite3.Row
+        ):
+            raise RunnerStateAuthorityError("ledger requires a controlled active connection")
+        databases = connection.execute("PRAGMA database_list").fetchall()
+        main = [row for row in databases if row[1] == "main"]
+        if len(main) != 1 or not main[0][2] or Path(main[0][2]).resolve() != outbox.path:
+            raise RunnerStateAuthorityError("ledger connection opens a different database")
+        if any(row[1] not in {"main", "temp"} for row in databases):
+            raise RunnerStateAuthorityError("ledger connection has an attached database")
+        if connection.execute("SELECT 1 FROM temp.sqlite_master LIMIT 1").fetchone() is not None:
+            raise RunnerStateAuthorityError("ledger connection has a temporary schema")
+        if (
+            not isinstance(opened_storage, PlatformStorageSnapshot)
+            or opened_storage.path != outbox.path
+        ):
+            raise RunnerStateAuthorityError("ledger opening storage stamp differs")
+        try:
+            identity = outbox.path.lstat()
+        except OSError as error:
+            raise PlatformFenceError("platform_storage_unavailable") from error
+        if (identity.st_dev, identity.st_ino) != opened_storage.file_identity:
+            raise PlatformFenceError("platform_storage_replaced")
+        current = outbox._platform_storage_snapshot_on(connection, identity)
+        if (
+            current.store_id != opened_storage.store_id
+            or current.mutation_seq < opened_storage.mutation_seq
+        ):
+            raise RunnerStateDurabilityError(
+                "ledger transaction storage identity or progress differs"
+            )
+        return self._platform_process_snapshot_on(connection, current, authority)
+
     def _platform_process_snapshot_on(
         self,
         connection: sqlite3.Connection,
