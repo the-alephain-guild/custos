@@ -44,6 +44,11 @@ from custos.core.engine_protocol import (
     StopBoundaryValuation,
 )
 from custos.core.log import get_logger
+from custos.core.okx_ledger_binding import (
+    LedgerCredentialResolver,
+    OkxLedgerOwnerSlot,
+    ResolvedOkxLedgerOwner,
+)
 from custos.core.order_reservation_boundary import RunnerReservationBoundary
 from custos.core.platform_process_fence import PlatformProcessLease
 from custos.core.platform_process_identity import PlatformFenceError
@@ -53,6 +58,7 @@ from custos.core.runner_fact import (
     RunnerFactAuthority,
     RunnerFactContractError,
     RunnerFactEmitter,
+    RunnerStateStore,
     runner_fact_event_id,
 )
 from custos.core.runner_fact_producer import (
@@ -658,6 +664,7 @@ class NtTradingNodeHost:
         # only place that failure can still reach anyone.
         self._event_forwarding_failures: dict[str, str] = {}
         self._lifecycle_authorities: dict[str, EngineLifecycleAuthority] = {}
+        self._okx_ledger_slots: dict[str, OkxLedgerOwnerSlot] = {}
         # deployment_instance_id -> signed fact scope plus independent venue ledger adapter.
         self._runner_fact_contexts: dict[str, tuple[RunnerFactDeployment, object | None]] = {}
         self._opening_inventory_providers: dict[
@@ -761,6 +768,38 @@ class NtTradingNodeHost:
 
     def supports_trading_mode(self, mode: str) -> bool:
         return mode in {"sandbox", "testnet", "live"}
+
+    async def replace_okx_ledger_owner(
+        self,
+        store: RunnerStateStore,
+        authority: EngineLifecycleAuthority,
+        resolver: LedgerCredentialResolver,
+    ) -> ResolvedOkxLedgerOwner:
+        instance = str(authority.deployment_instance_id)
+        previous = self._okx_ledger_slots.get(instance)
+        if previous is not None:
+            previous.retire("replaced")
+        slot = OkxLedgerOwnerSlot()
+        self._okx_ledger_slots[instance] = slot
+        try:
+            return await slot.replace(store, authority, resolver)
+        except BaseException:
+            slot.retire("failed")
+            if self._okx_ledger_slots.get(instance) is slot:
+                self._okx_ledger_slots.pop(instance)
+            raise
+
+    def _retire_okx_ledger_slot(self, instance: str, reason: str) -> None:
+        slot = self._okx_ledger_slots.get(instance)
+        self._retire_captured_okx_ledger_slot(instance, slot, reason)
+
+    def _retire_captured_okx_ledger_slot(
+        self, instance: str, slot: OkxLedgerOwnerSlot | None, reason: str
+    ) -> None:
+        if slot is not None:
+            slot.retire(reason)
+            if self._okx_ledger_slots.get(instance) is slot:
+                self._okx_ledger_slots.pop(instance)
 
     def add_observation_sinks(
         self,
@@ -1137,16 +1176,23 @@ class NtTradingNodeHost:
         credential: dict,
         artifact: ActivatedEngineArtifactV1,
     ) -> str:
-        if self._platform_process_fence is None:
-            return await self._deploy(spec, credential, artifact)
-        async with self._platform_start_lock:
-            return await self._deploy(spec, credential, artifact)
+        instance = str(spec.get("deployment_instance_id"))
+        ledger_slot = self._okx_ledger_slots.get(instance)
+        try:
+            if self._platform_process_fence is None:
+                return await self._deploy(spec, credential, artifact, ledger_slot)
+            async with self._platform_start_lock:
+                return await self._deploy(spec, credential, artifact, ledger_slot)
+        except BaseException:
+            self._retire_captured_okx_ledger_slot(instance, ledger_slot, "failed")
+            raise
 
     async def _deploy(
         self,
         spec: dict,
         credential: dict,
         artifact: ActivatedEngineArtifactV1,
+        ledger_slot: OkxLedgerOwnerSlot | None = None,
     ) -> str:
         self._ensure_nt_available()
         lifecycle_authority = EngineLifecycleAuthority.from_spec(spec)
@@ -1289,6 +1335,7 @@ class NtTradingNodeHost:
                 client_order_id_validator=venue.client_order_id_is_valid,
                 cancel_discipline=discipline,
                 source_authority=lifecycle_authority,
+                okx_ledger_slot=ledger_slot,
             )
         except Exception:
             self._dispose_and_release_node(deployment_instance_id, node)
@@ -1307,7 +1354,9 @@ class NtTradingNodeHost:
             # Captured before the run: run_async moves the node into the awaitable, and
             # reaching for these through the node afterwards raises.
             handle, cache, portfolio = node.handle(), node.cache, node.portfolio
-            task = asyncio.create_task(self._run_node_for_opening(deployment_instance_id, node))
+            task = asyncio.create_task(
+                self._run_node_for_opening(deployment_instance_id, node, ledger_slot)
+            )
         except Exception:
             self._retire_opening_observation(deployment_instance_id)
             self._runner_fact_contexts.pop(deployment_instance_id, None)
@@ -1432,6 +1481,7 @@ class NtTradingNodeHost:
         client_order_id_validator=None,
         cancel_discipline: CancelDiscipline | None = None,
         source_authority: EngineLifecycleAuthority | None = None,
+        okx_ledger_slot: OkxLedgerOwnerSlot | None = None,
     ) -> None:
         """Wire the runner onto the strategy, or refuse the deploy.
 
@@ -1460,11 +1510,12 @@ class NtTradingNodeHost:
             raise RuntimeError(
                 "signed execution requires its signed fact stream and durable platform opening gate"
             )
+        forwarding_failure = self._forwarding_failure_callback(
+            deployment_instance_id, okx_ledger_slot
+        )
         forwarder = StrategyEventForwarder(
             deployment_instance_id=deployment_instance_id,
-            on_sink_failure=lambda sink, reason: self._record_forwarding_failure(
-                deployment_instance_id, sink, reason
-            ),
+            on_sink_failure=forwarding_failure,
         )
         fact_bridge: RunnerFactEventBridge | None = None
         if runner_safety_boundary is not None:
@@ -1523,6 +1574,7 @@ class NtTradingNodeHost:
                 client_order_id_len_limit,
                 client_order_id_validator,
                 deployment_instance_id=deployment_instance_id,
+                forwarding_failure=forwarding_failure,
             )
 
     def _record_external_source_order_event(
@@ -1565,6 +1617,7 @@ class NtTradingNodeHost:
         client_order_id_validator=None,
         *,
         deployment_instance_id: str,
+        forwarding_failure: Callable[[str, str], None],
     ) -> None:
         """Put the reservation gate in front of the strategy's outbound orders.
 
@@ -1586,12 +1639,23 @@ class NtTradingNodeHost:
             cache=cache,
             boundary=boundary,
             recorder=fact_bridge,
-            on_recording_failure=lambda reason: self._record_forwarding_failure(
-                deployment_instance_id, "execution_records", reason
-            ),
+            on_recording_failure=functools.partial(forwarding_failure, "execution_records"),
             client_order_id_len_limit=client_order_id_len_limit,
             client_order_id_validator=client_order_id_validator,
         )
+
+    def _forwarding_failure_callback(
+        self, instance: str, slot: OkxLedgerOwnerSlot | None
+    ) -> Callable[[str, str], None]:
+        owner = slot.current if slot is not None else None
+
+        def record(sink: str, reason: str) -> None:
+            if slot is not None:
+                slot.retire_from_callback(owner, "failed")
+            if self._okx_ledger_slots.get(instance) is slot:
+                self._record_forwarding_failure(instance, sink, reason)
+
+        return record
 
     def _record_forwarding_failure(
         self,
@@ -1890,6 +1954,7 @@ class NtTradingNodeHost:
         cancelled stops waiting without stopping the stop. A failure is not
         remembered past the waiters it reached: the next stop starts afresh.
         """
+        self._retire_okx_ledger_slot(deployment_instance_id, "stopped")
         in_flight = self._stops_in_flight.get(deployment_instance_id)
         if in_flight is None:
             if deployment_instance_id in self._active_nodes:
@@ -2625,7 +2690,8 @@ class NtTradingNodeHost:
         return "engine_task_exited"
 
     async def close(self) -> None:
-        for deployment_instance_id in tuple(self._active_nodes):
+        instances = dict.fromkeys((*self._active_nodes, *self._okx_ledger_slots))
+        for deployment_instance_id in instances:
             await self.stop(deployment_instance_id)
 
     def runner_fact_deployments(self) -> tuple[RunnerFactDeployment, ...]:
@@ -2687,10 +2753,11 @@ class NtTradingNodeHost:
             if fence is not None:
                 fence.epoch = self._opening_observation_epochs[instance]
 
-    async def _run_node_for_opening(self, instance, node):
+    async def _run_node_for_opening(self, instance, node, ledger_slot=None):
         try:
             return await node.run_async()
         finally:
+            self._retire_captured_okx_ledger_slot(instance, ledger_slot, "run_exited")
             # Retire the native-free proof before Task.done can become true.
             self._retire_opening_observation(instance)
 

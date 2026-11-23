@@ -370,6 +370,18 @@ class OkxLedgerOwnerSlot:
                 self._owner.retire(reason)
             self._owner = None
 
+    def retire_from_callback(self, owner: OkxLedgerObservationOwner, reason: str) -> None:
+        """Retire the captured owner without taking this slot inside a writer."""
+        owner.retire_from_callback(reason)
+
+        def clear_original_owner() -> None:
+            with self._lock:
+                if self._owner is owner:
+                    self._owner = None
+
+        if not owner._store.defer_ledger_control_retirement(clear_original_owner):
+            clear_original_owner()
+
     @property
     def current(self) -> OkxLedgerObservationOwner:
         with self._lock:
