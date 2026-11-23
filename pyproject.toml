@@ -66,6 +66,10 @@ build-backend = "hatchling.build"
 # Local build caches and engineering evidence are never release inputs.
 exclude = ["/target/"]
 
+[tool.hatch.build.targets.sdist]
+# Do not let nested VCS inclusion rules re-enter excluded local directories.
+skip-excluded-dirs = true
+
 [tool.hatch.build.targets.wheel]
 # Public package name is `custos-runner` (project.name); import package is `custos`.
 # Build target points hatchling at `src/custos/`.
