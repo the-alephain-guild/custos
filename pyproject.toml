@@ -62,6 +62,10 @@ arx-runner = "custos.cli.subcommands:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+# Local build caches and engineering evidence are never release inputs.
+exclude = ["/target/"]
+
 [tool.hatch.build.targets.wheel]
 # Public package name is `custos-runner` (project.name); import package is `custos`.
 # Build target points hatchling at `src/custos/`.
