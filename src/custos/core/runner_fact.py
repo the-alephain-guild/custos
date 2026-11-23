@@ -3137,7 +3137,7 @@ class FrozenLedgerCapture:
         allowed = {
             "venue_ledger_snapshot_manifest",
             "venue_ledger_snapshot_chunk",
-            "valuation_checkpoint",
+            "RunnerValuationCheckpointFact.v1",
             "reconciliation_period_closed",
         }
         if (

@@ -9,11 +9,14 @@ import hmac
 import json
 import threading
 import urllib.parse
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from custos.core.engine_protocol import EngineLifecycleAuthority
+from custos.core.okx_ledger_binding import OkxLedgerObservationOwner
 from custos.core.runner_fact import SUPPORTED_CURRENCIES
-from custos.core.runner_fact_producer import VenueLedgerEvidence
+from custos.core.runner_fact_producer import OwnedOkxLedgerEvidence, VenueLedgerEvidence
 from custos.engines.nautilus.cash_inventory import book_mid, cash_inventory, scoped_balances
 from custos.engines.nautilus.external_target_flat_observation import VenueFlatObservation
 from custos.engines.nautilus.ledger_http import (
@@ -31,6 +34,7 @@ from custos.engines.nautilus.okx_bill_window import (
     collect_funding_bill_window,
     collect_trading_bill_window,
 )
+from custos.engines.nautilus.okx_cash_flow_mapping import map_main_account_transfers
 from custos.engines.nautilus.okx_withdrawal_window import (
     OkxWithdrawalWindow,
     collect_withdrawal_window,
@@ -590,3 +594,108 @@ class OkxVenueLedgerSource:
             valuation_positions=valuation_positions,
             cash_inventory=inventory,
         )
+
+
+class OwnedOkxVenueLedgerSource(OkxVenueLedgerSource):
+    def __init__(
+        self, spec: dict, credential: dict, *, ledger_owner: OkxLedgerObservationOwner
+    ) -> None:
+        if not isinstance(ledger_owner, OkxLedgerObservationOwner):
+            raise VenueLedgerError("normal OKX collection requires its resolved owner")
+        super().__init__(spec, credential)
+        signed_spec = json.loads(ledger_owner._context_bytes)["spec"]
+        scope = spec.get("credential_scope") or {}
+        if (
+            ledger_owner.api_origin != self._http.base_url
+            or ledger_owner._authority != EngineLifecycleAuthority.from_spec(spec)
+            or str(scope.get("scope_id")) != str(ledger_owner.scope_id)
+            or scope.get("scope_digest") != ledger_owner.scope_digest
+            or any(
+                spec.get(key) != signed_spec.get(key)
+                for key in ("connector", "pairs", "leverage", "nautilus_config")
+            )
+        ):
+            raise VenueLedgerError("normal OKX collection differs from its owner scope")
+        ledger_owner.assert_current()
+        self._ledger_owner = ledger_owner
+        self._collection_lock = threading.Lock()
+
+    async def collect(self, coverage_from: datetime, closed_at: datetime) -> OwnedOkxLedgerEvidence:
+        budget = FundingWindowBudget(label="ledger")
+        try:
+            result = await asyncio.to_thread(self._collect_owned, coverage_from, closed_at, budget)
+        except asyncio.CancelledError:
+            budget.cancelled.set()
+            raise
+        budget.check()
+        return result
+
+    def _collect_owned(self, start, end, budget):
+        owner = self._ledger_owner
+
+        def guard():
+            budget.check()
+            owner.assert_current()
+            budget.check()
+
+        while not self._collection_lock.acquire(timeout=min(0.05, budget.remaining())):
+            guard()
+        try:
+            guard()
+            self._http.before_request = guard
+            binding = None
+
+            def get_exact(path, params, *, private=True):
+                nonlocal binding
+                guard()
+                response = self._get_exact(path, params, private=private)
+                guard()
+                if path == "/api/v5/account/config":
+                    binding = owner.observe_account(response)
+                return response
+
+            get_exact("/api/v5/account/config", {})
+            raw = collect_trading_bill_window(
+                get_exact,
+                start,
+                end,
+                expected_uid=binding.uid,
+                expected_main_uid=binding.main_uid,
+                trading_mode="testnet" if self._demo else "live",
+                api_origin=self._http.base_url,
+            )
+            mapping = map_main_account_transfers(
+                raw, api_origin=self._http.base_url, trading_mode=raw.trading_mode
+            )
+            evidence = super()._collect(start, end)
+            get_exact("/api/v5/account/config", {})
+            guard()
+            flows = [
+                {**row, "from": dict(row["from"]), "to": dict(row["to"])}
+                for row in mapping.cash_flows
+            ]
+            watermark = hashlib.sha256(
+                json.dumps(
+                    [
+                        evidence.watermark,
+                        raw.content_digest,
+                        mapping.profile,
+                        flows,
+                        [(row.bill_id, row.reason) for row in mapping.unmapped],
+                        asdict(binding),
+                    ],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    default=str,
+                ).encode()
+            ).hexdigest()
+            evidence = replace(
+                evidence,
+                watermark=watermark,
+                cash_flows=mapping.cash_flows,
+                completeness={**evidence.completeness, "cash_flows_complete": False},
+            )
+            return OwnedOkxLedgerEvidence(evidence, owner, binding, raw, mapping)
+        finally:
+            self._http.before_request = None
+            self._collection_lock.release()

@@ -10,7 +10,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import UUID
 
 from custos.core.log import get_logger
@@ -42,6 +42,11 @@ from custos.core.runner_fact import (
     venue_ledger_snapshot_facts,
 )
 from custos.core.utc_time import render_utc, render_utc_nanos
+
+if TYPE_CHECKING:
+    from custos.core.okx_ledger_binding import OkxLedgerAccountBinding, OkxLedgerObservationOwner
+    from custos.engines.nautilus.okx_bill_window import OkxTradingBillWindow
+    from custos.engines.nautilus.okx_cash_flow_mapping import OkxCashFlowMapping
 
 _log = get_logger("custos.runner_fact_producer")
 
@@ -120,6 +125,15 @@ class VenueLedgerEvidence:
             raise RunnerFactContractError(
                 "valuation wallet balances must name the valuation wallet they come from"
             )
+
+
+@dataclass(frozen=True, slots=True)
+class OwnedOkxLedgerEvidence:
+    evidence: VenueLedgerEvidence
+    owner: OkxLedgerObservationOwner
+    account_binding: OkxLedgerAccountBinding
+    raw_window: OkxTradingBillWindow
+    mapping: OkxCashFlowMapping
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,7 +216,7 @@ class RunnerFactHost(Protocol):
 
     async def runner_fact_venue_ledger(
         self, deployment_instance_id: str, coverage_from: datetime, closed_at: datetime
-    ) -> VenueLedgerEvidence: ...
+    ) -> VenueLedgerEvidence | OwnedOkxLedgerEvidence: ...
 
 
 class RunnerRuntimeLogPort(Protocol):
@@ -1396,6 +1410,17 @@ class RunnerFactProductionLoop:
                 coverage_from or started_at,
                 closed_at,
             )
+            owned = evidence if isinstance(evidence, OwnedOkxLedgerEvidence) else None
+            if owned is not None:
+                owned.owner.assert_current()
+                evidence = owned.evidence
+            if (
+                evidence.venue == "OKX"
+                or getattr(deployment, "venue", None) == "OKX"
+                or getattr(deployment, "connector", None) in {"okx", "okx_perpetual"}
+            ) and authority.trading_mode in {"testnet", "live"}:
+                if owned is None:
+                    raise RunnerFactContractError("normal OKX ledger requires its owned evidence")
             snapshot_id = _scoped_event_id(
                 authority, "venue_ledger_snapshot", evidence.venue, period
             )
@@ -1549,7 +1574,13 @@ class RunnerFactProductionLoop:
                     ),
                 ),
             )
-            await self._emitter.emit_group(authority, tuple(batches))
+            if owned is not None:
+                capture = owned.owner.freeze_group(
+                    authority, owned.account_binding, owned.raw_window.content_digest, batches
+                )
+                await self._emitter.emit_ledger_group(authority, capture)
+            else:
+                await self._emitter.emit_group(authority, tuple(batches))
             return True
         except Exception as exc:
             _log.error(

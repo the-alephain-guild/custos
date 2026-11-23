@@ -46,6 +46,8 @@ from custos.core.engine_protocol import (
 from custos.core.log import get_logger
 from custos.core.okx_ledger_binding import (
     LedgerCredentialResolver,
+    OkxLedgerObservationOwner,
+    OkxLedgerOwnerRetired,
     OkxLedgerOwnerSlot,
     ResolvedOkxLedgerOwner,
 )
@@ -62,6 +64,7 @@ from custos.core.runner_fact import (
     runner_fact_event_id,
 )
 from custos.core.runner_fact_producer import (
+    OwnedOkxLedgerEvidence,
     RunnerCapitalBasisSnapshot,
     RunnerFactDeployment,
     RunnerFactEventBridge,
@@ -464,6 +467,31 @@ def _sanitize_exception(exc: Exception) -> dict:
     return {"error_type": type(exc).__name__, "error": msg}
 
 
+def _safe_okx_deployment_error(error: Exception, credential: dict) -> Exception:
+    secrets = tuple(
+        value
+        for key in ("api_key", "api_secret", "api_passphrase")
+        if isinstance(value := credential.get(key), str) and value
+    )
+    try:
+        message = RuntimeLogRedactor(secrets).message(str(error) or type(error).__name__)
+    except Exception:  # noqa: BLE001 - an unsafe message never escapes this boundary
+        message = "OKX deployment failed"
+    if any(secret in message for secret in secrets):
+        message = "OKX deployment failed"
+    if isinstance(error, EngineDeploymentRefused):
+        return EngineDeploymentRefused(
+            error.reason_code, message.removeprefix(error.reason_code + ": ")
+        )
+    if isinstance(error, EngineDependencyUnavailable):
+        return EngineDependencyUnavailable(message)
+    if isinstance(error, TimeoutError):
+        return TimeoutError(message)
+    if isinstance(error, OkxLedgerOwnerRetired):
+        return OkxLedgerOwnerRetired(message)
+    return RuntimeError(message)
+
+
 def _base_fill_quantity(cache, instrument_id: str, quantity: str) -> str:
     from nautilus_trader.model import InstrumentId
 
@@ -654,6 +682,8 @@ class NtTradingNodeHost:
         source_inbox_path: Path | None = None,
         native_runtime_artifact_identity: NativeRuntimeArtifactIdentity | None = None,
         platform_process_fence: PlatformExecutionProcessFence | None = None,
+        state_store: RunnerStateStore | None = None,
+        ledger_credential_resolver: LedgerCredentialResolver | None = None,
     ) -> None:
         # deployment_instance_id -> its running node and the state captured with it.
         # Never holds credentials.
@@ -665,6 +695,8 @@ class NtTradingNodeHost:
         self._event_forwarding_failures: dict[str, str] = {}
         self._lifecycle_authorities: dict[str, EngineLifecycleAuthority] = {}
         self._okx_ledger_slots: dict[str, OkxLedgerOwnerSlot] = {}
+        self._state_store = state_store
+        self._ledger_credential_resolver = ledger_credential_resolver
         # deployment_instance_id -> signed fact scope plus independent venue ledger adapter.
         self._runner_fact_contexts: dict[str, tuple[RunnerFactDeployment, object | None]] = {}
         self._opening_inventory_providers: dict[
@@ -1178,14 +1210,48 @@ class NtTradingNodeHost:
     ) -> str:
         instance = str(spec.get("deployment_instance_id"))
         ledger_slot = self._okx_ledger_slots.get(instance)
+        ledger_owner = None
         try:
+            if spec.get("connector") in {"okx", "okx_perpetual"} and spec.get("trading_mode") in {
+                "testnet",
+                "live",
+            }:
+                self._ensure_nt_available()
+                if self._state_store is None or self._ledger_credential_resolver is None:
+                    raise RuntimeError(
+                        "normal OKX deployment requires its Store and ledger resolver"
+                    )
+                authority = EngineLifecycleAuthority.from_spec(spec)
+                resolved = await self.replace_okx_ledger_owner(
+                    self._state_store, authority, self._ledger_credential_resolver
+                )
+                ledger_owner = resolved.owner
+                candidate = self._okx_ledger_slots.get(instance)
+                if candidate is None or candidate.current is not ledger_owner:
+                    raise RuntimeError("normal OKX deployment lost its resolved source")
+                ledger_slot = candidate
+                desired = await self._state_store.load_durable_desired_command(
+                    authority.deployment_instance_id
+                )
+                expected = desired.command.to_runtime_spec().model_dump(mode="python")
+                if any(spec.get(key) != value for key, value in expected.items()):
+                    raise RuntimeError("normal OKX runtime spec differs from signed Store context")
+                await asyncio.to_thread(resolved.owner.assert_current)
+                credential = resolved.credential
             if self._platform_process_fence is None:
                 return await self._deploy(spec, credential, artifact, ledger_slot)
             async with self._platform_start_lock:
+                if ledger_owner is not None:
+                    await asyncio.to_thread(ledger_owner.assert_current)
                 return await self._deploy(spec, credential, artifact, ledger_slot)
-        except BaseException:
+        except BaseException as exc:
+            if ledger_owner is not None:
+                ledger_owner.retire("failed")
             self._retire_captured_okx_ledger_slot(instance, ledger_slot, "failed")
-            raise
+            if ledger_owner is None or not isinstance(exc, Exception):
+                raise
+            safe_error = _safe_okx_deployment_error(exc, resolved.credential)
+        raise safe_error from None
 
     async def _deploy(
         self,
@@ -1295,7 +1361,11 @@ class NtTradingNodeHost:
                     "nt_startup_failure",
                     deployment_instance_id=deployment_instance_id,
                     spec_id=spec_id,
-                    **_sanitize_exception(exc),
+                    **_sanitize_exception(
+                        _safe_okx_deployment_error(exc, credential)
+                        if ledger_slot is not None
+                        else exc
+                    ),
                 )
             raise
 
@@ -1311,6 +1381,7 @@ class NtTradingNodeHost:
                 credential,
                 identity,
                 runtime_strategy=strategy,
+                okx_ledger_owner=ledger_slot.current if ledger_slot is not None else None,
             )
             opening_provider = (
                 self._build_opening_inventory_provider(
@@ -1685,6 +1756,7 @@ class NtTradingNodeHost:
         identity: _DeploymentIdentity,
         *,
         runtime_strategy: object | None = None,
+        okx_ledger_owner: OkxLedgerObservationOwner | None = None,
     ):
         if self._runner_fact_emitter is None or self._capability_receipt is None:
             return None
@@ -1725,9 +1797,15 @@ class NtTradingNodeHost:
             raise RuntimeError(f"settlement currency {currency!r} is outside RunnerFact v1")
         provider = None
         if identity.trading_mode in {"testnet", "live"}:
-            provider = self._venue_function(
+            factory = self._venue_function(
                 _venue_module_for(identity.connector), "venue_ledger_source"
-            )(spec, credential)
+            )
+            if identity.connector in {"okx", "okx_perpetual"}:
+                if not isinstance(okx_ledger_owner, OkxLedgerObservationOwner):
+                    raise RuntimeError("normal OKX provider requires its resolved owner")
+                provider = factory(spec, credential, ledger_owner=okx_ledger_owner)
+            else:
+                provider = factory(spec, credential)
         strategy_version, timeframe = strategy_signal_metadata(
             spec,
             runtime_strategy=runtime_strategy,
@@ -3028,11 +3106,18 @@ class NtTradingNodeHost:
 
     async def runner_fact_venue_ledger(
         self, deployment_instance_id: str, coverage_from, closed_at
-    ) -> VenueLedgerEvidence:
+    ) -> VenueLedgerEvidence | OwnedOkxLedgerEvidence:
         context = self._runner_fact_contexts.get(deployment_instance_id)
         if context is None or context[1] is None:
             raise RuntimeError("independent venue ledger is unavailable for this deployment")
-        return await context[1].collect(coverage_from, closed_at)
+        evidence = await context[1].collect(coverage_from, closed_at)
+        if (
+            context[0].connector in {"okx", "okx_perpetual"}
+            and context[0].authority.trading_mode in {"testnet", "live"}
+            and not isinstance(evidence, OwnedOkxLedgerEvidence)
+        ):
+            raise RuntimeError("normal OKX provider returned unowned evidence")
+        return evidence
 
     async def reconfigure(self, spec: dict) -> None:
         """v1 reconfigure: apply runtime-tunable params in place, reject structural.

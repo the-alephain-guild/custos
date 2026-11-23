@@ -166,10 +166,10 @@ def build_exec_client_config_sandbox(
     )
 
 
-def venue_ledger_source(spec: dict, credential: dict):
-    from custos.engines.nautilus.okx_ledger import OkxVenueLedgerSource
+def venue_ledger_source(spec: dict, credential: dict, *, ledger_owner):
+    from custos.engines.nautilus.okx_ledger import OwnedOkxVenueLedgerSource
 
-    return OkxVenueLedgerSource(spec, credential)
+    return OwnedOkxVenueLedgerSource(spec, credential, ledger_owner=ledger_owner)
 
 
 def client_order_id_len_limit() -> int:
@@ -182,7 +182,9 @@ async def validate_account_configuration(spec: dict, credential: dict) -> None:
         return
     import asyncio
 
-    provider = venue_ledger_source(spec, credential)
+    from custos.engines.nautilus.okx_ledger import OkxVenueLedgerSource
+
+    provider = OkxVenueLedgerSource(spec, credential)
     await asyncio.to_thread(provider.validate_account)
 
 

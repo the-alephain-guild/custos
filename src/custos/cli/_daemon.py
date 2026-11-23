@@ -388,6 +388,8 @@ def _build_host(
     runner_safety_boundary_factory=None,
     platform_process_fence=None,
     native_runtime_artifact_identity=None,
+    state_store: RunnerStateStore | None = None,
+    ledger_credential_resolver=None,
 ) -> RunnerExecutionHost:
     """Pick the execution engine host from the clean-break ``--engine`` enum.
 
@@ -424,6 +426,8 @@ def _build_host(
             runner_safety_boundary_factory=runner_safety_boundary_factory,
             platform_process_fence=platform_process_fence,
             native_runtime_artifact_identity=native_runtime_artifact_identity,
+            state_store=state_store,
+            ledger_credential_resolver=ledger_credential_resolver,
             venue_proxy=venue_proxy,
             source_inbox_path=(
                 args.source_runner_options.inbox_path
@@ -1335,12 +1339,15 @@ async def run_daemon(args: argparse.Namespace) -> int:
                     platform_process_fence = PlatformExecutionProcessFence(
                         platform_registry, state_store
                     )
+            ledger_credential_resolver = VaultRunnerCredentialResolverV1(_build_vault(args))
             host = _build_host(
                 args,
                 native_runtime_artifact_identity=native_runtime_artifact_identity,
                 fact_emitter=fact_emitter,
                 capability_receipt=capability,
                 platform_process_fence=platform_process_fence,
+                state_store=state_store,
+                ledger_credential_resolver=ledger_credential_resolver,
                 runner_safety_boundary_factory=_build_runner_safety_boundary_factory(
                     state_store=state_store,
                     safety_policy_resolver=safety_policy_resolver,
@@ -1386,7 +1393,7 @@ async def run_daemon(args: argparse.Namespace) -> int:
                 artifact_runtime=strategy_artifact_runtime,
                 development_artifact_runtime=development_runtime,
                 entry_point_loader=NautilusRuntimeEntryPointLoaderV1(),
-                credential_resolver=VaultRunnerCredentialResolverV1(_build_vault(args)),
+                credential_resolver=ledger_credential_resolver,
                 engine_lifecycle=lifecycle,
                 delivery_policy=delivery_policy,
                 capability_binding=lambda verified: runner_command_binding_gap(
