@@ -23,13 +23,17 @@ from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import asdict, dataclass
+from dataclasses import field as dataclass_field
 from datetime import UTC, datetime
 from decimal import Context, Decimal, Inexact, InvalidOperation, Overflow, Rounded, localcontext
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Final, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Final, Literal, Protocol
 from uuid import UUID, uuid4, uuid5
+
+if TYPE_CHECKING:
+    from custos.core.okx_ledger_binding import OkxLedgerAccountBinding, OkxLedgerObservationOwner
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -3080,6 +3084,90 @@ class _OpeningControlContext(threading.local):
         self.after_release: list[Callable[[], None]] = []
 
 
+def _ledger_authority_copy(authority: RunnerFactAuthority) -> RunnerFactAuthority:
+    if (
+        not isinstance(authority, RunnerFactAuthority)
+        or type(authority.generation) is not int
+        or type(authority.capability_version) is not int
+    ):
+        raise RunnerFactContractError("ledger capture requires an exact typed fact authority")
+    return RunnerFactAuthority(
+        tenant_id=str(authority.tenant_id),
+        trading_mode=str(authority.trading_mode),
+        runner_id=UUID(str(authority.runner_id)),
+        deployment_instance_id=UUID(str(authority.deployment_instance_id)),
+        deployment_spec_id=UUID(str(authority.deployment_spec_id)),
+        deployment_spec_digest=str(authority.deployment_spec_digest),
+        generation=authority.generation,
+        strategy_id=UUID(str(authority.strategy_id)),
+        capability_version_id=UUID(str(authority.capability_version_id)),
+        capability_version=authority.capability_version,
+        capability_manifest_digest=str(authority.capability_manifest_digest),
+    )
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class FrozenLedgerCapture:
+    authority: RunnerFactAuthority
+    account_binding: OkxLedgerAccountBinding
+    raw_content_digest: str
+    facts_digest: str
+    facts_bytes: bytes = dataclass_field(repr=False)
+    _owner: OkxLedgerObservationOwner = dataclass_field(repr=False)
+    _issuer: object = dataclass_field(repr=False)
+
+    def __init__(self) -> None:
+        raise TypeError("ledger captures are frozen by their observation owner")
+
+    @classmethod
+    def _freeze(
+        cls,
+        owner: OkxLedgerObservationOwner,
+        authority: RunnerFactAuthority,
+        account_binding: OkxLedgerAccountBinding,
+        raw_content_digest: str,
+        batches: Sequence[Sequence[Mapping[str, Any]]],
+    ) -> FrozenLedgerCapture:
+        if not (
+            isinstance(raw_content_digest, str) and _LOWER_HEX_64.fullmatch(raw_content_digest)
+        ):
+            raise RunnerFactContractError("ledger raw content digest is invalid")
+        frozen = _canonical_json_bytes(batches)
+        decoded = json.loads(frozen)
+        allowed = {
+            "venue_ledger_snapshot_manifest",
+            "venue_ledger_snapshot_chunk",
+            "valuation_checkpoint",
+            "reconciliation_period_closed",
+        }
+        if (
+            not isinstance(decoded, list)
+            or not decoded
+            or any(not isinstance(batch, list) or not batch for batch in decoded)
+            or any(
+                not isinstance(fact, dict) or fact.get("kind") not in allowed
+                for batch in decoded
+                for fact in batch
+            )
+            or decoded[-1][-1].get("kind") != "reconciliation_period_closed"
+        ):
+            raise RunnerFactContractError(
+                "ledger capture requires a closed ledger observation group"
+            )
+        value = object.__new__(cls)
+        for name, item in (
+            ("authority", _ledger_authority_copy(authority)),
+            ("account_binding", account_binding),
+            ("raw_content_digest", raw_content_digest),
+            ("facts_digest", _sha256_hex(frozen)),
+            ("facts_bytes", frozen),
+            ("_owner", owner),
+            ("_issuer", owner._capture_issuer),
+        ):
+            object.__setattr__(value, name, item)
+        return value
+
+
 class RunnerFactOutbox:
     """SQLite-backed sequence allocator, event deduper, and durable outbox."""
 
@@ -3938,7 +4026,12 @@ class RunnerFactOutbox:
         """Persist a complete observation atomically, including its retry identity."""
         return await asyncio.to_thread(self._enqueue_group, authority, identity, batches)
 
-    def _enqueue_group(self, authority, identity, batches) -> tuple[UUID, ...]:
+    def _enqueue_group(
+        self,
+        authority: RunnerFactAuthority,
+        identity: RunnerFactIdentity,
+        batches: Sequence[Sequence[Mapping[str, Any]]],
+    ) -> tuple[UUID, ...]:
         if not batches or any(not batch for batch in batches):
             raise RunnerFactContractError("atomic group requires nonempty batches")
         group_id = _uuid(batches[-1][-1].get("event_id"), "group_id")
@@ -3946,42 +4039,92 @@ class RunnerFactOutbox:
         connection = self._connect()
         try:
             connection.execute("BEGIN IMMEDIATE")
-            existing = connection.execute(
-                "SELECT stream_key, payload_digest FROM runner_fact_atomic_group WHERE group_id = ?",
-                (group_id,),
-            ).fetchone()
-            if existing is not None:
-                if tuple(existing) != (authority.stream_key, digest):
-                    raise RunnerFactContractError(
-                        "atomic group replay conflicts with stored capture"
-                    )
-                connection.rollback()
-                return ()
-            event_ids = [str(fact.get("event_id")) for batch in batches for fact in batch]
-            if len(set(event_ids)) != len(event_ids):
-                raise RunnerFactContractError("atomic group contains duplicate event_id")
-            for event_id in event_ids:
-                if connection.execute(
-                    "SELECT 1 FROM runner_fact_seen_event WHERE event_id = ?", (event_id,)
-                ).fetchone():
-                    raise RunnerFactContractError("atomic group overlaps previously stored events")
-            ids = []
-            for batch in batches:
-                batch_id = self._enqueue_in_transaction(connection, authority, identity, batch)
-                if batch_id is None:
-                    raise RunnerFactContractError("atomic group overlaps previously stored events")
-                ids.append(batch_id)
-            connection.execute(
-                "INSERT INTO runner_fact_atomic_group VALUES (?, ?, ?)",
-                (group_id, authority.stream_key, digest),
+            ids = self._enqueue_group_rows(
+                connection, authority, identity, batches, group_id, digest
             )
-            connection.commit()
-            return tuple(ids)
+            if ids:
+                connection.commit()
+            else:
+                connection.rollback()
+            return ids
         except Exception:
             connection.rollback()
             raise
         finally:
             connection.close()
+
+    def _enqueue_group_rows(
+        self,
+        connection: sqlite3.Connection,
+        authority: RunnerFactAuthority,
+        identity: RunnerFactIdentity,
+        batches: Sequence[Sequence[Mapping[str, Any]]],
+        group_id: UUID,
+        digest: str,
+    ) -> tuple[UUID, ...]:
+        existing = connection.execute(
+            "SELECT stream_key, payload_digest FROM runner_fact_atomic_group WHERE group_id = ?",
+            (group_id,),
+        ).fetchone()
+        if existing is not None:
+            if tuple(existing) != (authority.stream_key, digest):
+                raise RunnerFactContractError("atomic group replay conflicts with stored capture")
+            return ()
+        event_ids = [str(fact.get("event_id")) for batch in batches for fact in batch]
+        if len(set(event_ids)) != len(event_ids):
+            raise RunnerFactContractError("atomic group contains duplicate event_id")
+        for event_id in event_ids:
+            if connection.execute(
+                "SELECT 1 FROM runner_fact_seen_event WHERE event_id = ?", (event_id,)
+            ).fetchone():
+                raise RunnerFactContractError("atomic group overlaps previously stored events")
+        ids = []
+        for batch in batches:
+            batch_id = self._enqueue_in_transaction(connection, authority, identity, batch)
+            if batch_id is None:
+                raise RunnerFactContractError("atomic group overlaps previously stored events")
+            ids.append(batch_id)
+        connection.execute(
+            "INSERT INTO runner_fact_atomic_group VALUES (?, ?, ?)",
+            (group_id, authority.stream_key, digest),
+        )
+        return tuple(ids)
+
+    async def enqueue_ledger_group(
+        self,
+        authority: RunnerFactAuthority,
+        identity: RunnerFactIdentity,
+        capture: FrozenLedgerCapture,
+    ) -> tuple[UUID, ...]:
+        return await asyncio.to_thread(self._enqueue_ledger_group, authority, identity, capture)
+
+    def _enqueue_ledger_group(
+        self,
+        authority: RunnerFactAuthority,
+        identity: RunnerFactIdentity,
+        capture: FrozenLedgerCapture,
+    ) -> tuple[UUID, ...]:
+        if not isinstance(capture, FrozenLedgerCapture):
+            raise RunnerFactContractError("ledger group requires a frozen owner capture")
+        authority = _ledger_authority_copy(authority)
+        owner = capture._owner
+        with owner.hold_capture(authority, capture):
+            batches = json.loads(capture.facts_bytes)
+            group_id = _uuid(batches[-1][-1].get("event_id"), "group_id")
+            with self._platform_storage_read(write=True) as (connection, opened):
+                current = owner._store.require_ledger_context_on(
+                    connection, outbox=self, opened_storage=opened, authority=owner._authority
+                )
+                owner.require_capture_on(authority, capture, current)
+                ids = self._enqueue_group_rows(
+                    connection, capture.authority, identity, batches, group_id, capture.facts_digest
+                )
+                final = owner._store.require_ledger_context_on(
+                    connection, outbox=self, opened_storage=opened, authority=owner._authority
+                )
+                owner.require_capture_on(authority, capture, final)
+            owner.acknowledge_ledger_commit(capture, final.storage.mutation_seq)
+            return ids
 
     def enqueue_sync(
         self,
@@ -6043,6 +6186,20 @@ class RunnerStateStore:
             control.after_release = []
             for callback in callbacks:
                 callback()
+
+    def defer_ledger_control_retirement(self, callback: Callable[[], None]) -> bool:
+        """Defer cleanup only while this thread still owns a control transaction."""
+        control = self._outbox._opening_control
+        if control.connection is None:
+            return False
+        try:
+            active = control.connection.in_transaction
+        except sqlite3.ProgrammingError:
+            return False
+        if not active:
+            return False
+        control.after_release.append(callback)
+        return True
 
     def defer_opening_control_callback(self, callback: Callable[[], None]) -> bool:
         """Keep refusal signing outside every reentrant native control action."""
@@ -10192,6 +10349,12 @@ class RunnerFactEmitter:
         return await self._outbox.enqueue_observability(
             authority, self._identity, facts, command_fingerprint, opening_owner
         )
+
+    async def emit_ledger_group(
+        self, authority: RunnerFactAuthority, capture: FrozenLedgerCapture
+    ) -> tuple[UUID, ...]:
+        self._authority_guard()
+        return await self._outbox.enqueue_ledger_group(authority, self._identity, capture)
 
     async def emit_group(
         self,
