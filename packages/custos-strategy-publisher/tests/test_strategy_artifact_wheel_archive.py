@@ -13,7 +13,7 @@ from custos_strategy_publisher.wheel_archive import (
 )
 
 
-def _wheel() -> bytes:
+def _wheel(version: str = "1.0.0") -> bytes:
     return build_wheel(
         {
             "team_strategy/__init__.py": b"",
@@ -21,7 +21,7 @@ def _wheel() -> bytes:
             "team_strategy/py.typed": b"",
         },
         distribution="team-strategy",
-        version="1.0.0",
+        version=version,
         requires_python=">=3.12,<3.13",
         dependencies=("custos-strategy-toolkit==0.1.0rc5",),
         entry_points={
@@ -46,6 +46,53 @@ def test_builds_byte_identical_closed_wheel() -> None:
     )
     assert verified.content("team_strategy/py.typed") == b""
     assert any(path.endswith(".dist-info/RECORD") for path, _ in verified.files)
+
+
+def test_build_and_inspect_exact_local_version() -> None:
+    version = "1.0.0+papertrade.1"
+    verified = inspect_wheel(
+        _wheel(version),
+        distribution="team-strategy",
+        version=version,
+        requires_python=">=3.12,<3.13",
+        required_modules=("team_strategy",),
+    )
+    assert b"Version: 1.0.0+papertrade.1\n" in verified.content(
+        f"team_strategy-{version}.dist-info/METADATA"
+    )
+
+
+@pytest.mark.parametrize(
+    "member",
+    [
+        "team_strategy-1.0.0.dev20261105+nt.papertrade.7.dist-info/WHEEL",
+        "team_strategy-1.0.0.dev20261105+other.dist-info/WHEEL",
+        "team_strategy/bad+name.py",
+        "nested/team_strategy-1.0.0.dev20261105+nt.papertrade.7.dist-info/WHEEL",
+    ],
+)
+def test_inspects_standard_candidate_metadata_without_releasing_other_plus_paths(member: str):
+    version = "1.0.0.dev20261105+nt.papertrade.7"
+    dist_info = f"team_strategy-{version}.dist-info"
+    output = io.BytesIO()
+    with zipfile.ZipFile(output, "w") as archive:
+        archive.writestr(
+            f"{dist_info}/METADATA",
+            f"Name: team-strategy\nVersion: {version}\nRequires-Python: >=3.12,<3.13\n",
+        )
+        archive.writestr("team_strategy/__init__.py", b"")
+        archive.writestr(member, b"")
+    arguments = {
+        "distribution": "team-strategy",
+        "version": version,
+        "requires_python": ">=3.12,<3.13",
+        "required_modules": ("team_strategy",),
+    }
+    if member == f"{dist_info}/WHEEL":
+        assert inspect_wheel(output.getvalue(), **arguments).version == version
+    else:
+        with pytest.raises(WheelArchiveError, match="unsupported characters"):
+            inspect_wheel(output.getvalue(), **arguments)
 
 
 def _unsafe_wheel(

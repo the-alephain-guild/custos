@@ -15,6 +15,7 @@ from email.policy import compat32
 from pathlib import PurePosixPath
 
 from packaging.specifiers import InvalidSpecifier, SpecifierSet
+from packaging.version import InvalidVersion, Version
 
 _SAFE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._-]*$")
 _MAX_MEMBER_BYTES = 32 * 1024 * 1024
@@ -41,13 +42,21 @@ class VerifiedWheelV1:
         return matches[0]
 
 
-def _safe_member_name(value: str) -> str:
+def _safe_member_name(value: str, *, local_dist_info: str | None = None) -> str:
     if "\\" in value or value.endswith("/"):
         raise WheelArchiveError(f"wheel member path is unsafe: {value}")
     path = PurePosixPath(value)
-    if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
+    if (
+        path.is_absolute()
+        or not path.parts
+        or path.as_posix() != value
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
         raise WheelArchiveError(f"wheel member path is unsafe: {value}")
-    if any(not _SAFE_COMPONENT_RE.fullmatch(part) for part in path.parts):
+    parts = path.parts
+    if len(parts) > 1 and parts[0] == local_dist_info:
+        parts = parts[1:]
+    if any(not _SAFE_COMPONENT_RE.fullmatch(part) for part in parts):
         raise WheelArchiveError(f"wheel member path contains unsupported characters: {value}")
     return path.as_posix()
 
@@ -57,6 +66,19 @@ def _normalized_distribution(value: str) -> str:
     if not normalized or not _SAFE_COMPONENT_RE.fullmatch(normalized):
         raise WheelArchiveError("wheel distribution name is invalid")
     return normalized
+
+
+def _local_dist_info(distribution: str, version: str) -> str | None:
+    if "+" not in version:
+        return None
+    try:
+        parsed = Version(version)
+    except InvalidVersion:
+        raise WheelArchiveError("wheel local version is invalid") from None
+    if parsed.local is None or parsed.epoch or str(parsed) != version:
+        raise WheelArchiveError("wheel local version is not canonical")
+    name = distribution.replace("-", "_")
+    return f"{name}-{version}.dist-info"
 
 
 def inspect_wheel(
@@ -70,6 +92,7 @@ def inspect_wheel(
     """Inspect every archive member before any content can enter an import path."""
 
     expected_distribution = _normalized_distribution(distribution)
+    local_dist_info = _local_dist_info(expected_distribution, version)
     try:
         archive = zipfile.ZipFile(io.BytesIO(content), "r")
     except (OSError, zipfile.BadZipFile) as error:
@@ -83,7 +106,7 @@ def inspect_wheel(
         for info in archive.infolist():
             if info.is_dir():
                 raise WheelArchiveError("wheel contains an explicit directory entry")
-            name = _safe_member_name(info.filename)
+            name = _safe_member_name(info.filename, local_dist_info=local_dist_info)
             folded = name.casefold()
             if name in names or folded in folded_names:
                 raise WheelArchiveError(f"wheel contains duplicate member: {name}")
@@ -115,6 +138,8 @@ def inspect_wheel(
                 metadata_paths.append(name)
     if len(metadata_paths) != 1:
         raise WheelArchiveError("wheel must contain exactly one METADATA file")
+    if local_dist_info is not None and metadata_paths[0] != f"{local_dist_info}/METADATA":
+        raise WheelArchiveError("wheel local version metadata directory differs")
     metadata = BytesParser(policy=compat32).parsebytes(dict(files)[metadata_paths[0]])
     actual_requires_python = str(metadata.get("Requires-Python", ""))
     try:
@@ -148,8 +173,10 @@ def _record_digest(content: bytes) -> str:
     return f"sha256={encoded.decode('ascii')}"
 
 
-def _zip_info(path: str) -> zipfile.ZipInfo:
-    info = zipfile.ZipInfo(_safe_member_name(path), date_time=_FIXED_ZIP_TIMESTAMP)
+def _zip_info(path: str, *, local_dist_info: str | None) -> zipfile.ZipInfo:
+    info = zipfile.ZipInfo(
+        _safe_member_name(path, local_dist_info=local_dist_info), date_time=_FIXED_ZIP_TIMESTAMP
+    )
     info.compress_type = zipfile.ZIP_STORED
     info.create_system = 3
     info.external_attr = (stat.S_IFREG | 0o644) << 16
@@ -172,10 +199,13 @@ def build_wheel(
     rebuild that must match an earlier release passes the name that release used.
     """
 
-    normalized_distribution = _normalized_distribution(distribution).replace("-", "_")
-    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?", version):
+    normalized_distribution = _normalized_distribution(distribution)
+    local_dist_info = _local_dist_info(normalized_distribution, version)
+    if local_dist_info is None and not re.fullmatch(
+        r"[0-9]+(?:\.[0-9]+)*(?:(?:a|b|rc)[0-9]+)?", version
+    ):
         raise WheelArchiveError("wheel version is invalid")
-    dist_info = f"{normalized_distribution}-{version}.dist-info"
+    dist_info = f"{normalized_distribution.replace('-', '_')}-{version}.dist-info"
     files = {_safe_member_name(path): bytes(content) for path, content in package_files.items()}
     metadata_lines = [
         "Metadata-Version: 2.3",
@@ -209,7 +239,7 @@ def build_wheel(
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_STORED) as archive:
         for path, payload in sorted(files.items()):
-            archive.writestr(_zip_info(path), payload)
+            archive.writestr(_zip_info(path, local_dist_info=local_dist_info), payload)
     return output.getvalue()
 
 
