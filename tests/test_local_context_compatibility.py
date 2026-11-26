@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,9 @@ from custos_toolkit.contracts.strategy_execution import StrategyArtifactRefV1, c
 from custos.artifacts.errors import ArtifactVerificationError
 from custos.artifacts.local_context import prepare_local_strategy_material
 from custos.artifacts.policy import ArchiveLimitsV1
+from custos.core.toolkit_identity import RuntimeToolkitIdentity, RuntimeToolkitSnapshot
+from custos.local.manifest import LocalRunManifestV1
+from tests.test_local_run_manifest import manifest_document
 
 
 @pytest.fixture
@@ -43,6 +47,152 @@ def _prepare(release):
     return prepare_local_strategy_material(
         **{key: value for key, value in release.items() if key not in {"spec", "files"}}
     )
+
+
+@pytest.fixture
+def run_binding(release):
+    material = _prepare(release)
+    document = manifest_document()
+    config = canonical_json_bytes({"parameters": {"atr_period": 10}})
+    document.update(
+        artifact=material.artifact_ref.model_dump(mode="json"),
+        release_bom_sha256=material.release_bom_digest,
+        entry_point=material.manifest.entry_point,
+        effective_config_digest=hashlib.sha256(config).hexdigest(),
+    )
+    document["limits"].update(
+        leverage=1, max_order_notional_usd="100", max_total_notional_usd="1000"
+    )
+    toolkit = RuntimeToolkitSnapshot(
+        RuntimeToolkitIdentity(
+            trusted=True,
+            candidate_version=material.manifest.engine_toolkit_version,
+            manifest_digest=material.release_bom["toolkit_coordinate"].rsplit("@", 1)[1],
+            nautilus_wheel_sha256=material.release_bom["toolkit_wheel_sha256"],
+            engine_version=material.manifest.engine_version,
+        ),
+        document["toolkit_identity_sha256"],
+    )
+    try:
+        yield material, document, config, toolkit
+    finally:
+        material.quarantine.destroy()
+
+
+def test_run_preflight_returns_the_config_frozen_under_the_manifest_digest(run_binding):
+    from custos.artifacts.local_context import bind_local_strategy_material
+
+    material, document, config, toolkit = run_binding
+    frozen = bind_local_strategy_material(
+        material=material,
+        run=LocalRunManifestV1.model_validate(document),
+        effective_config_bytes=config,
+        toolkit=toolkit,
+    )
+    assert frozen["parameters"]["atr_period"] == 10
+    with pytest.raises(TypeError):
+        frozen["parameters"]["atr_period"] = 20
+    assert material.manifest.entry_point.split(".")[0] not in sys.modules
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "artifact",
+        "bom",
+        "entry-point",
+        "instrument",
+        "leverage",
+        "identity",
+        "untrusted",
+        "toolkit-version",
+        "toolkit-wheel",
+        "engine",
+        "config",
+        "trading-config",
+        "invalid-config",
+    ],
+)
+def test_run_preflight_rejects_mismatched_material_and_configuration(run_binding, field):
+    from custos.artifacts.local_context import bind_local_strategy_material
+
+    material, document, config, toolkit = run_binding
+    if field == "artifact":
+        document["artifact"]["artifact_coordinate"] = (
+            "artifact://different@sha256:" + material.artifact_ref.artifact_sha256
+        )
+    elif field == "bom":
+        document["release_bom_sha256"] = "0" * 64
+    elif field == "entry-point":
+        document["entry_point"] = "untrusted.runtime:Adapter"
+    elif field == "instrument":
+        document["instrument_ids"] = ["ETH-USD-PERP.PAPERTRADE"]
+    elif field == "leverage":
+        document["limits"].update(leverage=2, max_order_notional_usd="200")
+    elif field == "identity":
+        toolkit = replace(toolkit, identity_sha256="0" * 64)
+    elif field == "untrusted":
+        toolkit = replace(toolkit, identity=replace(toolkit.identity, trusted=False))
+    elif field == "toolkit-version":
+        toolkit = replace(toolkit, identity=replace(toolkit.identity, candidate_version="0.9.0"))
+    elif field == "toolkit-wheel":
+        toolkit = replace(
+            toolkit, identity=replace(toolkit.identity, nautilus_wheel_sha256="0" * 64)
+        )
+    elif field == "engine":
+        toolkit = replace(toolkit, identity=replace(toolkit.identity, engine_version="0.9.0"))
+    elif field == "config":
+        config = b"{}"
+    else:
+        config = (
+            b'{"trading":{"leverage":50}}' if field == "trading-config" else b'{"parameters":42}'
+        )
+        document["effective_config_digest"] = hashlib.sha256(config).hexdigest()
+    run = LocalRunManifestV1.model_validate(document)
+    with pytest.raises(ArtifactVerificationError):
+        bind_local_strategy_material(
+            material=material,
+            run=run,
+            effective_config_bytes=config,
+            toolkit=toolkit,
+        )
+
+
+@pytest.mark.parametrize(
+    "constraint,value,accepted",
+    [
+        ('{"minimum":0.1}', "0.1", True),
+        ('{"maximum":0.1}', "0.100000000000000001", False),
+        ('{"multipleOf":0.1}', "0.3", True),
+        ('{"multipleOf":0.1}', "0.300000000000000001", False),
+        ('{"type":"integer"}', "1.0", True),
+        ('{"type":"number"}', "1e999999999999", False),
+        ('{"$ref":"https://invalid.example/config"}', "0.3", False),
+    ],
+)
+def test_run_preflight_schema_uses_exact_decimals_and_resolves_offline(
+    run_binding, constraint, value, accepted
+):
+    from custos.artifacts.local_context import bind_local_strategy_material
+
+    material, document, _, toolkit = run_binding
+    # Supply decoded archive assets at the preflight boundary.
+    assets = tuple(
+        replace(asset, content=b'{"properties":{"parameters":' + constraint.encode() + b"}}")
+        if asset.name == "resources/strategy-config-v1.schema.json"
+        else asset
+        for asset in material.quarantine.runtime_artifacts
+    )
+    material = replace(material, quarantine=replace(material.quarantine, runtime_artifacts=assets))
+    config = b'{"parameters":' + value.encode() + b"}"
+    document["effective_config_digest"] = hashlib.sha256(config).hexdigest()
+    run = LocalRunManifestV1.model_validate(document)
+    arguments = dict(material=material, run=run, effective_config_bytes=config, toolkit=toolkit)
+    if accepted:
+        assert "parameters" in bind_local_strategy_material(**arguments)
+    else:
+        with pytest.raises(ArtifactVerificationError):
+            bind_local_strategy_material(**arguments)
 
 
 def test_actual_producer_release_prepares_without_import_or_execution_authority(release):

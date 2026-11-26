@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 from dataclasses import dataclass
+from decimal import Decimal, DecimalException
+from fractions import Fraction
 from importlib.resources import files
 from pathlib import Path
 
@@ -15,8 +19,13 @@ from custos_toolkit.contracts.strategy_execution import (
     canonical_json_bytes,
     canonical_json_digest,
     deep_freeze_json,
+    parse_and_freeze_json_object,
 )
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
 from pydantic import ValidationError
+from referencing import Registry
+from referencing.exceptions import Unresolvable
 
 from custos.artifacts.archive import QuarantinedWheel, quarantine_wheel
 from custos.artifacts.errors import ArtifactVerificationCode, ArtifactVerificationError
@@ -27,8 +36,15 @@ from custos.artifacts.runtime import (
     verify_execution_member_files,
     verify_release_execution_bindings,
 )
+from custos.core.toolkit_identity import (
+    RuntimeToolkitSnapshot,
+    build_identity_from_release_bom,
+    judge,
+)
+from custos.local.manifest import LocalRunManifestV1
 
 SUPPORT_NAME = "resources/local-context-support-v1.json"
+_MAX_JSON_EXPONENT = 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +65,91 @@ class LocalStrategyMaterialV1:
 
 def _invalid(detail: str) -> ArtifactVerificationError:
     return ArtifactVerificationError(ArtifactVerificationCode.MEMBER_SET_MISMATCH, detail)
+
+
+def _exact_schema_number(token: str) -> int | Fraction:
+    decimal = Decimal(token)
+    exponent = decimal.as_tuple().exponent
+    if not isinstance(exponent, int) or abs(exponent) > _MAX_JSON_EXPONENT:
+        raise ValueError("configuration number exceeds the schema numeric range")
+    number = Fraction(decimal)
+    return number.numerator if number.denominator == 1 else number
+
+
+def bind_local_strategy_material(
+    *,
+    material: LocalStrategyMaterialV1,
+    run: LocalRunManifestV1,
+    effective_config_bytes: bytes,
+    toolkit: RuntimeToolkitSnapshot,
+) -> FrozenJsonObject:
+    """Check a prospective run before import. This does not verify an operator permit."""
+    if (
+        run.artifact != material.artifact_ref
+        or run.release_bom_sha256 != material.release_bom_digest
+        or run.entry_point != material.quarantine.verified_entry_point
+        or run.entry_point != material.manifest.entry_point
+    ):
+        raise _invalid("local run artifact, BOM or entry point differs")
+    if not toolkit.identity.trusted or toolkit.identity_sha256 != run.toolkit_identity_sha256:
+        raise _invalid("local run toolkit identity snapshot differs or is untrusted")
+    version = toolkit.identity.candidate_version
+    if (
+        version is None
+        or material.manifest.base_contracts_version != version
+        or material.manifest.engine_toolkit_version != version
+    ):
+        raise _invalid("local run toolkit distribution versions differ")
+    consistency = judge(build_identity_from_release_bom(material.release_bom), toolkit.identity)
+    if not consistency.consistent:
+        raise _invalid(consistency.refusal_reason() or "local run toolkit binding differs")
+
+    scope = material.manifest.trading_scope
+    if (
+        scope.connector != run.account.connector
+        or scope.leverage != run.limits.leverage
+        or any(re.fullmatch(r"[A-Z0-9]+-USD-PERP", pair) is None for pair in scope.pairs)
+        or {f"{pair}.PAPERTRADE" for pair in scope.pairs} != set(run.instrument_ids)
+    ):
+        raise _invalid("local run trading scope differs from the strategy artifact")
+
+    if hashlib.sha256(effective_config_bytes).hexdigest() != run.effective_config_digest:
+        raise _invalid("local run effective configuration bytes differ")
+    try:
+        effective = parse_and_freeze_json_object(effective_config_bytes)
+    except (DecimalException, TypeError, ValueError):
+        raise _invalid("local run effective configuration digest or content differs") from None
+    if "trading" in effective:
+        raise _invalid("local run effective configuration cannot override trading scope")
+
+    schema_name = next(
+        member.name
+        for member in material.manifest.runtime_artifacts
+        if member.sha256 == material.manifest.config_schema_sha256
+        and member.media_type == "application/schema+json"
+    )
+    schema_payload = next(
+        asset.content
+        for asset in material.quarantine.runtime_artifacts
+        if asset.name == schema_name
+    )
+    try:
+        # Preserve the same exact numerics for both schema limits and config values,
+        # including divisibility checks under an arbitrary Decimal context.
+        parse_and_freeze_json_object(schema_payload)
+        schema = json.loads(schema_payload, parse_float=_exact_schema_number)
+        Draft202012Validator.check_schema(schema)
+        validator = Draft202012Validator(schema, registry=Registry())
+        valid = validator.is_valid(
+            json.loads(effective_config_bytes, parse_float=_exact_schema_number)
+        )
+    except (DecimalException, SchemaError, TypeError, ValueError, Unresolvable):
+        raise _invalid(
+            "local run config schema is invalid or has an unresolved reference"
+        ) from None
+    if not valid:
+        raise _invalid("local run effective configuration fails the artifact schema")
+    return effective
 
 
 def prepare_local_strategy_material(

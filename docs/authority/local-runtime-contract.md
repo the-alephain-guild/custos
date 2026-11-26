@@ -33,6 +33,19 @@ This observation does not prove installed wheel contents, management-key
 isolation, filesystem ownership, permit validity or activation readiness. The
 local host must independently enforce those boundaries before strategy import.
 
+Local material preflight matches the run manifest to the prepared wheel reference,
+release BOM digest, verified entry point and same-read toolkit identity digest.
+Both recorded toolkit versions must equal the observed version, and the existing
+release build identity judge checks the toolkit digest, adapter wheel and engine.
+Preflight requires the strategy's declared Papertrade instruments and leverage to
+match the run. It rejects trading scope overrides and returns only the frozen
+effective configuration with the exact input bytes hashed and the artifact schema
+checked. Numeric schema comparisons use exact fractions with a bounded decimal
+exponent to limit expansion. Schema resolution has no network retrieval.
+Preflight neither grants a permit nor
+imports strategy code. The host must provision and verify the runtime identity
+source independently of the caller and enforce both permit and account ownership.
+
 The Nautilus strategy toolkit maps Papertrade's configured native symbols, such
 as `BTC-USD-PERP`, directly to the `PAPERTRADE` venue for both pair contexts and
 external-order claims. Foreign pair aliases are refused rather than translated.
