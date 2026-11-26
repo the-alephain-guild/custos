@@ -197,6 +197,19 @@ sidebar_position: 1
 | `--age-recipient` | 可选 | — | — |
 | `--valid-days` | 可选 | `365` | — |
 
+### local
+
+### local prepare
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--run-manifest` | 必填 | — | — |
+| `--strategy-wheel` | 必填 | — | — |
+| `--strategy-manifest` | 必填 | — | — |
+| `--release-bom` | 必填 | — | — |
+| `--effective-config` | 必填 | — | — |
+| `--toolkit-identity` | 可选 | `/usr/local/share/custos/toolkit-identity.json` | — |
+
 ### nats
 
 ### nats bootstrap

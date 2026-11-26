@@ -195,9 +195,10 @@ jobs:
           docker run --rm --platform linux/arm64 --entrypoint cat "${CUSTOS_TEST_IMAGE}" \
             /usr/local/share/custos/toolkit-identity.json | cmp - toolkit-identity-amd64.json
           docker run --rm --platform linux/arm64 "${CUSTOS_TEST_IMAGE}" --help
-          for command in breaker credential deployment enroll health identity nats nats-transport publish-capability release-policy start vault; do
+          for command in breaker credential deployment enroll health identity local nats nats-transport publish-capability release-policy start vault; do
             docker run --rm --platform linux/arm64 "${CUSTOS_TEST_IMAGE}" "$command" --help
           done
+          docker run --rm --platform linux/arm64 "${CUSTOS_TEST_IMAGE}" local prepare --help
 
       - name: Install pinned Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
@@ -366,9 +367,10 @@ jobs:
             test "$(docker image inspect "$IMAGE_REF" --format '{{json .Config.Cmd}}')" = \
               '["start","--production-state-root","/home/custos/.arx"]'
             docker run --rm --platform "$platform" "$IMAGE_REF" --help
-            for command in breaker credential deployment enroll health identity nats nats-transport publish-capability release-policy start vault; do
+            for command in breaker credential deployment enroll health identity local nats nats-transport publish-capability release-policy start vault; do
               docker run --rm --platform "$platform" "$IMAGE_REF" "$command" --help
             done
+            docker run --rm --platform "$platform" "$IMAGE_REF" local prepare --help
             docker image rm "$IMAGE_REF"
           done
 

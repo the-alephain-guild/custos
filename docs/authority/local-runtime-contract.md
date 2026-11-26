@@ -46,6 +46,13 @@ Preflight neither grants a permit nor
 imports strategy code. The host must provision and verify the runtime identity
 source independently of the caller and enforce both permit and account ownership.
 
+`arx-runner local prepare` runs this preflight using local manifest, wheel, BOM,
+effective configuration and toolkit identity input files. It verifies material
+in a disposable private directory and reports the exact digests. A successful
+result has status `materials_prepared`. This command accepts a toolkit identity
+path for material inspection only. Starting a run requires the separately
+provisioned runtime identity, operator permit, account lease and Host supervision.
+
 The Nautilus strategy toolkit maps Papertrade's configured native symbols, such
 as `BTC-USD-PERP`, directly to the `PAPERTRADE` venue for both pair contexts and
 external-order claims. Foreign pair aliases are refused rather than translated.

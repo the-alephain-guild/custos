@@ -210,6 +210,70 @@ def test_actual_producer_release_prepares_without_import_or_execution_authority(
         prepared.quarantine.destroy()
 
 
+@pytest.mark.parametrize("drift", [False, True])
+def test_local_prepare_cli_checks_the_same_material_without_importing_strategy(
+    tmp_path, monkeypatch, capsys, run_binding, release, drift
+):
+    from custos.cli.subcommands import main
+    from custos.core.toolkit_identity import observe_runtime_toolkit_snapshot
+
+    material, document, config, toolkit = run_binding
+    identity = toolkit.identity
+    identity_path = tmp_path / "toolkit.json"
+    identity_bytes = canonical_json_bytes(
+        {
+            "schema_version": 1,
+            "candidate_version": identity.candidate_version,
+            "manifest_digest": identity.manifest_digest,
+            "nautilus_wheel_sha256": identity.nautilus_wheel_sha256,
+        }
+    )
+    identity_path.write_bytes(identity_bytes)
+    document["toolkit_identity_sha256"] = hashlib.sha256(identity_bytes).hexdigest()
+    run = LocalRunManifestV1.model_validate(document)
+
+    def installed_version(name):
+        return identity.engine_version if name == "nautilus-trader" else identity.candidate_version
+
+    monkeypatch.setattr(
+        "custos.core.toolkit_identity.observe_runtime_toolkit_snapshot",
+        lambda path, report: observe_runtime_toolkit_snapshot(
+            path, installed_version=installed_version, report=report
+        ),
+    )
+    inputs = {
+        "run-manifest": run.canonical_bytes(),
+        "strategy-manifest": release["manifest_bytes"],
+        "release-bom": release["release_bom_bytes"],
+        "effective-config": config + (b"\n" if drift else b""),
+    }
+    argv = [
+        "local",
+        "prepare",
+        "--strategy-wheel",
+        str(release["wheel_path"]),
+        "--toolkit-identity",
+        str(identity_path),
+    ]
+    for flag, payload in inputs.items():
+        file = tmp_path / flag
+        file.write_bytes(payload)
+        argv.extend(["--" + flag, str(file)])
+    result = main(argv)
+    output = capsys.readouterr()
+    if drift:
+        assert result == 1
+        assert output.out == ""
+        assert "MEMBER_SET_MISMATCH" in output.err
+    else:
+        assert result == 0
+        status = json.loads(output.out)
+        assert status["status"] == "materials_prepared"
+        assert status["manifest_sha256"] == run.digest
+        assert status["strategy_wheel_sha256"] == material.artifact_ref.artifact_sha256
+    assert material.manifest.entry_point.split(".")[0] not in sys.modules
+
+
 @pytest.mark.parametrize(
     "damage",
     [

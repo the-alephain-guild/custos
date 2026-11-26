@@ -23,6 +23,7 @@ from custos.cli.subcommands import (
     enroll,
     health,
     identity,
+    local,
     nats,
     nats_transport,
     publish_capability,
@@ -62,7 +63,7 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(
         dest="cmd",
         metavar=(
-            "{breaker,credential,deployment,enroll,health,identity,nats,"
+            "{breaker,credential,deployment,enroll,health,identity,local,nats,"
             "nats-transport,publish-capability,release-policy,start,vault}"
         ),
     )
@@ -74,6 +75,7 @@ def _build_parser() -> argparse.ArgumentParser:
     release_policy.register(subparsers)
     health.register(subparsers)
     identity.register(subparsers)
+    local.register(subparsers)
     nats.register(subparsers)
     nats_transport.register(subparsers)
     start.register(subparsers)

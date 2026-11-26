@@ -197,6 +197,19 @@ The following tables are generated from the actual parser. Defaults are shown wi
 | `--age-recipient` | optional | — | — |
 | `--valid-days` | optional | `365` | — |
 
+### local
+
+### local prepare
+
+| Option | Requirement | Default | Choices / repetition |
+|---|---|---|---|
+| `--run-manifest` | required | — | — |
+| `--strategy-wheel` | required | — | — |
+| `--strategy-manifest` | required | — | — |
+| `--release-bom` | required | — | — |
+| `--effective-config` | required | — | — |
+| `--toolkit-identity` | optional | `/usr/local/share/custos/toolkit-identity.json` | — |
+
 ### nats
 
 ### nats bootstrap
