@@ -543,7 +543,7 @@ for name,row in descriptors.items():
             assert installed.resolve().is_relative_to(Path(sys.prefix).resolve()),member
             with wheel.open(member) as source,installed.open('rb') as actual:
                 assert hashlib.file_digest(source,'sha256').digest()==hashlib.file_digest(actual,'sha256').digest(),member
-for module in ['custos','custos_toolkit','custos_toolkit_nautilus','custos_strategy_publisher','nautilus_trader']:
+for module in ['custos','custos.artifacts.local_context','custos_toolkit','custos_toolkit_nautilus','custos_strategy_publisher','nautilus_trader']:
     loaded=importlib.import_module(module)
     assert Path(loaded.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()),module
 from custos_toolkit.contracts.engine_profile import ENGINE_VERSION,ENGINE_PROFILE_ID

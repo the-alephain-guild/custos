@@ -142,8 +142,10 @@ source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "custos-strategy-toolkit" },
+    { name = "jsonschema" },
     { name = "nats-py", extra = ["nkeys"] },
     { name = "pydantic" },
+    { name = "referencing" },
     { name = "sigstore" },
     { name = "structlog" },
     { name = "uuid6" },
@@ -154,7 +156,6 @@ all-engines = [
     { name = "custos-strategy-toolkit-nautilus" },
 ]
 dev = [
-    { name = "jsonschema" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -175,7 +176,7 @@ requires-dist = [
     { name = "custos-runner", extras = ["nautilus"], marker = "extra == 'all-engines'" },
     { name = "custos-strategy-toolkit", editable = "packages/custos-strategy-toolkit" },
     { name = "custos-strategy-toolkit-nautilus", marker = "extra == 'nautilus'", editable = "packages/custos-strategy-toolkit-nautilus" },
-    { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.20" },
+    { name = "jsonschema", specifier = ">=4.20" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15" },
     { name = "nats-py", extras = ["nkeys"], specifier = ">=2.9" },
     { name = "pydantic", specifier = ">=2.5" },
@@ -183,6 +184,7 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "pytest-docker", marker = "extra == 'lts'", specifier = ">=3" },
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
+    { name = "referencing", specifier = ">=0.28.4" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "sigstore", specifier = ">=3.0,<4.0" },
     { name = "structlog", specifier = ">=24" },
