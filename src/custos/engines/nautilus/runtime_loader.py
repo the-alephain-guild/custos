@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager, nullcontext
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from custos_toolkit.contracts.strategy_execution import (
@@ -15,9 +18,26 @@ from custos_toolkit.contracts.strategy_execution import (
     StrategyRuntimeExecutionContextV1,
 )
 
+from custos.artifacts.archive import QuarantinedWheel, quarantine_wheel
+from custos.artifacts.errors import ArtifactVerificationError
+from custos.artifacts.local_context import LocalStrategyMaterialV1, bind_local_strategy_material
+from custos.artifacts.policy import ArchiveLimitsV1
+from custos.core.local_runtime_state import RuntimeLease
+from custos.core.runtime_authority import RuntimeAuthorityError
+from custos.core.toolkit_identity import RuntimeToolkitSnapshot
+from custos.local.authorization import VerifiedLocalRunAuthorization, _utc_instant
+
 
 class NautilusRuntimeEntryPointError(RuntimeError):
     """A verified artifact could not satisfy the Nautilus runtime ABI."""
+
+
+@dataclass(frozen=True, slots=True)
+class LocalStrategyActivation:
+    """An imported strategy and its private files, retained by the host until disposal."""
+
+    strategy: object
+    quarantine: QuarantinedWheel
 
 
 def _strategy_registration_scope() -> AbstractContextManager[None]:
@@ -62,6 +82,121 @@ class NautilusRuntimeEntryPointLoaderV1:
             )
         if not isinstance(execution_context, StrategyExecutionContextV1):
             raise NautilusRuntimeEntryPointError("unsupported execution context type")
+        return self._load(
+            activation_root=activation_root,
+            entry_point=entry_point,
+            effective_config=effective_config,
+            execution_context=execution_context,
+        )
+
+    def load_local(
+        self,
+        *,
+        material: LocalStrategyMaterialV1,
+        authorization: VerifiedLocalRunAuthorization,
+        lease: RuntimeLease,
+        effective_config_bytes: bytes,
+        toolkit: RuntimeToolkitSnapshot,
+        activation_parent: Path,
+        limits: ArchiveLimitsV1,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> LocalStrategyActivation:
+        """Import local code from fresh verified bytes while the matching lease is held."""
+        if not isinstance(authorization, VerifiedLocalRunAuthorization) or not isinstance(
+            lease, RuntimeLease
+        ):
+            raise NautilusRuntimeEntryPointError(
+                "local activation requires verified lease authority"
+            )
+        if not activation_parent.is_absolute() or activation_parent.resolve() != activation_parent:
+            raise NautilusRuntimeEntryPointError("local activation parent must be canonical")
+        run, permit = authorization.manifest, authorization.permit
+        fence = lease.fence
+        try:
+            with lease.control_action():
+                if (
+                    fence.control_source != "local"
+                    or run.run_id != fence.run_id
+                    or permit.run_id != fence.run_id
+                    or permit.manifest_digest != run.digest
+                    or permit.control_registry_id != lease.control_registry_id
+                    or authorization.permit_digest != lease.permit_digest
+                    or permit.authorization_epoch != fence.authorization_epoch
+                    or run.account_identity.scope_digest != fence.account_scope
+                    or permit.account_scope != fence.account_scope
+                ):
+                    raise NautilusRuntimeEntryPointError(
+                        "local permit differs from the active lease"
+                    )
+                config = bind_local_strategy_material(
+                    material=material,
+                    run=run,
+                    effective_config_bytes=effective_config_bytes,
+                    toolkit=toolkit,
+                )
+                content = material.strategy_wheel.verified_content
+                if (
+                    len(content) != run.artifact.artifact_size_bytes
+                    or hashlib.sha256(content).hexdigest() != run.artifact.artifact_sha256
+                ):
+                    raise NautilusRuntimeEntryPointError("local wheel snapshot differs")
+                isolated = quarantine_wheel(
+                    content,
+                    entry_point_group=material.manifest.entry_point_group,
+                    entry_point=run.entry_point,
+                    limits=limits,
+                    quarantine_parent=activation_parent,
+                    required_runtime_artifacts=tuple(
+                        member.model_dump(mode="json")
+                        for member in run.artifact.required_runtime_artifacts
+                    ),
+                )
+                try:
+                    lease.assert_current()
+                    now = clock()
+                    if now.tzinfo is None or not (
+                        _utc_instant(permit.not_before_utc)
+                        <= now
+                        < _utc_instant(permit.expires_at_utc)
+                    ):
+                        raise NautilusRuntimeEntryPointError("local permit is not currently valid")
+                    context = LocalStrategyExecutionContextV1(
+                        control_source="local",
+                        engine="nautilus",
+                        trading_mode=run.account.trading_mode,
+                        run_id=fence.run_id,
+                        run_manifest_digest=run.digest,
+                        account_scope=fence.account_scope,
+                        effective_config_digest=run.effective_config_digest,
+                        configuration_revision=run.configuration_revision,
+                        authorization_epoch=fence.authorization_epoch,
+                        process_generation=fence.process_generation,
+                    )
+                    strategy = self._load(
+                        activation_root=isolated.root,
+                        entry_point=isolated.verified_entry_point,
+                        effective_config=config,
+                        execution_context=context,
+                    )
+                except BaseException:
+                    isolated.destroy()
+                    raise
+                return LocalStrategyActivation(strategy, isolated)
+        except (ArtifactVerificationError, RuntimeAuthorityError) as error:
+            raise NautilusRuntimeEntryPointError("local activation evidence was refused") from error
+        except Exception as error:
+            if isinstance(error, NautilusRuntimeEntryPointError):
+                raise
+            raise NautilusRuntimeEntryPointError("local strategy activation failed") from error
+
+    def _load(
+        self,
+        *,
+        activation_root: Path,
+        entry_point: str,
+        effective_config: FrozenJsonObject,
+        execution_context: StrategyRuntimeExecutionContextV1,
+    ) -> object:
         module_name, separator, attribute_name = entry_point.partition(":")
         if not separator or not module_name or not attribute_name or ":" in attribute_name:
             raise NautilusRuntimeEntryPointError(
