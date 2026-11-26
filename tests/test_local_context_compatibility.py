@@ -210,6 +210,20 @@ def test_actual_producer_release_prepares_without_import_or_execution_authority(
         prepared.quarantine.destroy()
 
 
+def test_simulation_cli_initializes_private_control_once(tmp_path, capsys):
+    from custos.cli.subcommands import main
+
+    state = (tmp_path / "venue-state").resolve()
+    args = ["local", "simulation-init", "--state-root", str(state)]
+    assert main(args) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "simulation_initialized"
+    assert (state / "control" / "registry.identity").read_text().strip() == result["registry_id"]
+    assert state.stat().st_mode & 0o077 == 0
+    assert main(args) == 1
+    assert (state / "control" / "registry.identity").read_text().strip() == result["registry_id"]
+
+
 @pytest.mark.parametrize("drift", [False, True])
 def test_local_prepare_cli_checks_the_same_material_without_importing_strategy(
     tmp_path, monkeypatch, capsys, run_binding, release, drift

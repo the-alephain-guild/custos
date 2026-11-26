@@ -210,6 +210,29 @@ sidebar_position: 1
 | `--effective-config` | 必填 | — | — |
 | `--toolkit-identity` | 可选 | `/usr/local/share/custos/toolkit-identity.json` | — |
 
+### local simulation-init
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--state-root` | 必填 | — | — |
+
+### local start
+
+| 参数 | 要求 | 默认值 | 可选值 / 重复 |
+|---|---|---|---|
+| `--run-manifest` | 必填 | — | — |
+| `--strategy-wheel` | 必填 | — | — |
+| `--strategy-manifest` | 必填 | — | — |
+| `--release-bom` | 必填 | — | — |
+| `--effective-config` | 必填 | — | — |
+| `--toolkit-identity` | 可选 | `/usr/local/share/custos/toolkit-identity.json` | — |
+| `--state-root` | 必填 | — | — |
+| `--permit` | 必填 | — | — |
+| `--operator-public-key` | 必填 | — | — |
+| `--simulation-session-file` | 必填 | — | — |
+| `--operator-id` | 必填 | — | — |
+| `--simulation-origin` | 必填 | — | — |
+
 ### nats
 
 ### nats bootstrap

@@ -210,6 +210,29 @@ The following tables are generated from the actual parser. Defaults are shown wi
 | `--effective-config` | required | — | — |
 | `--toolkit-identity` | optional | `/usr/local/share/custos/toolkit-identity.json` | — |
 
+### local simulation-init
+
+| Option | Requirement | Default | Choices / repetition |
+|---|---|---|---|
+| `--state-root` | required | — | — |
+
+### local start
+
+| Option | Requirement | Default | Choices / repetition |
+|---|---|---|---|
+| `--run-manifest` | required | — | — |
+| `--strategy-wheel` | required | — | — |
+| `--strategy-manifest` | required | — | — |
+| `--release-bom` | required | — | — |
+| `--effective-config` | required | — | — |
+| `--toolkit-identity` | optional | `/usr/local/share/custos/toolkit-identity.json` | — |
+| `--state-root` | required | — | — |
+| `--permit` | required | — | — |
+| `--operator-public-key` | required | — | — |
+| `--simulation-session-file` | required | — | — |
+| `--operator-id` | required | — | — |
+| `--simulation-origin` | required | — | — |
+
 ### nats
 
 ### nats bootstrap
