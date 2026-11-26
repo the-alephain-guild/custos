@@ -100,6 +100,7 @@ class NautilusRuntimeEntryPointLoaderV1:
         activation_parent: Path,
         limits: ArchiveLimitsV1,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        configure: Callable[[object], object] | None = None,
     ) -> LocalStrategyActivation:
         """Import local code from fresh verified bytes while the matching lease is held."""
         if not isinstance(authorization, VerifiedLocalRunAuthorization) or not isinstance(
@@ -177,6 +178,7 @@ class NautilusRuntimeEntryPointLoaderV1:
                         entry_point=isolated.verified_entry_point,
                         effective_config=config,
                         execution_context=context,
+                        configure=configure,
                     )
                 except BaseException:
                     isolated.destroy()
@@ -196,6 +198,7 @@ class NautilusRuntimeEntryPointLoaderV1:
         entry_point: str,
         effective_config: FrozenJsonObject,
         execution_context: StrategyRuntimeExecutionContextV1,
+        configure: Callable[[object], object] | None = None,
     ) -> object:
         module_name, separator, attribute_name = entry_point.partition(":")
         if not separator or not module_name or not attribute_name or ":" in attribute_name:
@@ -223,6 +226,7 @@ class NautilusRuntimeEntryPointLoaderV1:
                     attribute_name=attribute_name,
                     effective_config=effective_config,
                     execution_context=execution_context,
+                    **({"configure": configure} if configure is not None else {}),
                 )
             loaded = True
             return strategy
@@ -242,6 +246,7 @@ class NautilusRuntimeEntryPointLoaderV1:
         attribute_name: str,
         effective_config: FrozenJsonObject,
         execution_context: StrategyRuntimeExecutionContextV1,
+        configure: Callable[[object], object] | None = None,
     ) -> object:
         module = importlib.import_module(module_name)
         module_file = getattr(module, "__file__", None)
@@ -270,6 +275,8 @@ class NautilusRuntimeEntryPointLoaderV1:
         if not isinstance(effective_config, Mapping):
             raise NautilusRuntimeEntryPointError("effective strategy config is not an object")
         config = build_config(effective_config, execution_context)
+        if configure is not None:
+            config = configure(config)
         strategy = build_strategy(config)
         if strategy is None:
             raise NautilusRuntimeEntryPointError("runtime adapter returned no strategy")

@@ -59,10 +59,17 @@ class StrategyEventForwarder:
     def __init__(
         self,
         *,
-        deployment_instance_id: str,
+        deployment_instance_id: str | None = None,
+        local_run_id: str | None = None,
         on_sink_failure: Callable[[str, str], None],
     ) -> None:
-        self._deployment_instance_id = deployment_instance_id
+        if bool(deployment_instance_id) == bool(local_run_id):
+            raise ValueError("forwarder requires exactly one execution owner identity")
+        self._identity = (
+            {"local_run_id": local_run_id}
+            if local_run_id
+            else {"deployment_instance_id": deployment_instance_id}
+        )
         self._on_sink_failure = on_sink_failure
         self._order_sinks: list[tuple[str, Callable[[Any], None]]] = []
         self._position_sinks: list[tuple[str, Callable[[Any], None]]] = []
@@ -83,10 +90,10 @@ class StrategyEventForwarder:
         self._install_one(strategy, POSITION_EVENT_CALLBACK, self._position_sinks)
         _log.info(
             "runner_event_forwarding_installed",
-            deployment_instance_id=self._deployment_instance_id,
             strategy=type(strategy).__name__,
             order_sinks=[name for name, _ in self._order_sinks],
             position_sinks=[name for name, _ in self._position_sinks],
+            **self._identity,
         )
 
     def _install_one(
@@ -118,11 +125,11 @@ class StrategyEventForwarder:
         reason = f"{sink_name}:{type(exc).__name__}"
         _log.error(
             "runner_event_forwarding_failed",
-            deployment_instance_id=self._deployment_instance_id,
             sink=sink_name,
             callback=callback_name,
             event_type=type(event).__name__,
             error_type=type(exc).__name__,
+            **self._identity,
         )
         # The rust dispatch discards what this callback raises, so re-raising would
         # lose the failure entirely. Hand it to the host instead, which degrades the

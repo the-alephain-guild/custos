@@ -46,6 +46,29 @@ Preflight neither grants a permit nor
 imports strategy code. The host must provision and verify the runtime identity
 source independently of the caller and enforce both permit and account ownership.
 
+The loopback simulation uses a dedicated state directory and the normal local
+operator permit. `arx-runner local simulation-init` creates its registry and
+`arx-runner local start` accepts only a numeric loopback HTTP origin, with no
+proxy in the process environment. The foreground CLI handles SIGTERM and SIGINT
+by asking the Host to freeze opening orders and confirm its exit. The paper
+trading route maps a strategy entry signal to the fixed signed quote lot and
+uses GTC. The Host selects the mandatory hedged execution representation in the
+verified adapter's configuration so the Native venue position ID survives the
+fill. This does not change the signed inputs, strategy wheel, or its
+instrument, strategy parameters, or venue leverage. A strategy or Host close
+must match the complete size of one specific Papertrade position.
+
+The Host refreshes the existing budget supervisor independently of strategy
+readiness once trading is ready. It drains on a loss latch, a stop request, a
+strategy stop, or exhaustion of the authorized signing and confirmation window.
+Stop completion requires fresh reconciled Native evidence and no remaining
+owned exposure or in-flight intent. Unconfirmed shutdown retains the existing
+ownership record. Recovery opens the original journal and state at their
+registered bounds and leaves opening disabled. The account lease remains held
+until the Native task has actually stopped, including during coroutine
+cancellation. These endpoints are for simulation and do not qualify the
+production identity, transport, or vault.
+
 `arx-runner local prepare` runs this preflight using local manifest, wheel, BOM,
 effective configuration and toolkit identity input files. It verifies material
 in a disposable private directory and reports the exact digests. A successful
